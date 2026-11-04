@@ -16,6 +16,8 @@ export type FakeChatResultsOptions = {
   outcomes?: readonly ChatTaskOutcome[];
   /** The host's download. Absent, a file goes only into `downloads`. */
   download?: ChatDownload;
+  /** `false`: the port says its spend is not real (`ChatResultsPort.reportsSpend`). */
+  reportsSpend?: false;
 };
 
 /** What was asked of the port, in order. */
@@ -25,7 +27,8 @@ export type FakeChatResultsCall = { method: keyof ChatResultsPort; query: unknow
 export type FakeChatResultsDownload = { fileName: string; contentType: string; body: string };
 
 /** Every method present, the optional one included. A test of a client without it leaves it out itself. */
-export type FakeChatResultsPort = Required<ChatResultsPort> & {
+export type FakeChatResultsPort = Required<Omit<ChatResultsPort, "reportsSpend">> & {
+  readonly reportsSpend?: false;
   readonly calls: readonly FakeChatResultsCall[];
   readonly downloads: readonly FakeChatResultsDownload[];
   /** Makes the next call to `method` answer this failure, for drawing a failed read. */
@@ -49,6 +52,7 @@ export function createFakeChatResultsPort(options: FakeChatResultsOptions = {}):
   };
 
   return {
+    ...(options.reportsSpend === undefined ? {} : { reportsSpend: options.reportsSpend }),
     calls,
     downloads,
     failNext(method, failure) {

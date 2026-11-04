@@ -298,8 +298,8 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/is ready/u);
     expect(result?.text).not.toMatch(/Say "run it"/u);
     // The first reply says what will happen, for the person, and names the site, never the address (UI D9).
-    const announced = thread.turns.find((turn) => turn.author === "automation" && turn.text.includes("I'll make you a new automation"))?.text ?? "";
-    expect(announced).toContain("trying them on shop.example.test");
+    const announced = thread.turns.find((turn) => turn.author === "automation" && turn.text.includes("and show you the result here"))?.text ?? "";
+    expect(announced).toContain("I'll do this on shop.example.test");
     expect(thread.turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ")).not.toContain(PAGE);
     // What the build did was shown in this chat.
     const built = world.activity.filter((event) => event.subject.kind === "build");
@@ -602,7 +602,7 @@ describe("the extension's chat, end to end in Core", () => {
       const text = (await world.thread()).turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ");
       expect(text).not.toContain(page); expect(text).not.toContain("token=sensitive");
       expect(text).toContain(page === PAGE ? "shop.example.test" : "the page you had open");
-      expect(text).toContain("test-running the whole Flow once from the start");
+      expect(text).toContain("show you the result here");
     });
   });
 });

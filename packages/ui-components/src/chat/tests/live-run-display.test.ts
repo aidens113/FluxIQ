@@ -71,7 +71,7 @@ test("U-B1: a first message's chat shows what was sent, never the welcome screen
     assert.equal(core.sent.filter((message) => message.type === TEST_MESSAGES.panelConversationSend).length, 1);
     assert.ok(hold.waiting.length > 0, "the read after the send is held");
     assert.equal(welcome(root).hidden, true, "never the welcome screen while the message it sent is being read");
-    assert.equal(root.byClass("chat-live-headline")[0]!.textContent, "Sending your message");
+    assert.equal(root.byClass("chat-work-label")[0]!.textContent, "Sending your message");
     hold.reads = false;
     for (const go of hold.waiting.splice(0)) go();
     for (let turn = 0; turn < 4; turn += 1) await settle();

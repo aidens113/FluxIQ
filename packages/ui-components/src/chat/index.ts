@@ -32,6 +32,7 @@ export {
   type ThreadRefreshDecision
 } from "./feed/index.ts";
 export { parseAssistantText, renderTextBlocks, type TextBlock, type TextRun } from "./format/index.ts";
+export { answerModel, createAnswerReader, createAnswerView, hasAnswerTurn, type AnswerHost, type AnswerKind, type AnswerModel, type AnswerModelOptions, type AnswerReader, type AnswerView } from "./answer/index.ts";
 export * from "./ports/index.ts";
 export { bindChatProjectNavigation, CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
 export {
@@ -54,4 +55,4 @@ export {
 export type { ChatTarget } from "./target.ts";
 export { conversationLauncherLabel, createChatWindow, type ChatWindow, type ChatWindowChat, type ChatWindowOptions } from "./window/index.ts";
 export { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
-export { emptyStateModel, isAtBottom, liveLineModel, stepText, type EmptyStateModel, type LiveLineModel, type TurnMeta } from "./view/index.ts";
+export { emptyStateModel, isAtBottom, stepText, type EmptyStateModel, type TurnMeta } from "./view/index.ts";

@@ -121,7 +121,7 @@ describe("a person's turn, answered in the thread", () => {
 
     expect(answer.response).toMatchObject({ runNow: true, decision: { kind: "invoke", invocation: { capabilityId: "flow.createHere" } } });
     const text = (await turns())[1]?.text ?? "";
-    expect(text).toContain("I'll make you a new automation");
+    expect(text).toContain("show you the result here");
     expect(text).toContain("the page you had open");
     expect(text).not.toContain("Create an automation here");
     expect(text).not.toMatch(/127\.0\.0\.1|https?:\/\//u);
