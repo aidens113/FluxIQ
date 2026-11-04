@@ -66,7 +66,7 @@ describe("checkAutomationStudioTaskAttemptResult", () => {
 
   it("refuses another attempt's result, on any status", () => {
     for (const status of ["working", "waiting_for_person", "achieved", "budget_out", "stopped_by_person"] as const) {
-      expect(issuesOf(status, resultOf({ attemptId: "attempt-2" })), status).toEqual(["task_outcome.other_attempts_result"]);
+      expect(issuesOf(status, resultOf({ attemptId: "attempt-2", label: status === "achieved" ? "confirmed" : "unverified" })), status).toEqual(["task_outcome.other_attempts_result"]);
     }
   });
 
