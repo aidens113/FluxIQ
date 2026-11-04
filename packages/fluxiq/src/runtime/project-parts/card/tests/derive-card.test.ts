@@ -124,7 +124,7 @@ describe("deriveAutomationStudioPartCard", () => {
     const typing = derived({ graph: partGraphFixture({ firstStep: "type" }) });
     expect(typing.snapshot.start.source).toBe("first_step");
     expect(typing.snapshot.start.conditions).toHaveLength(1);
-    expect(typing.snapshot.start.conditions[0]).toMatchObject({ fact: "exists", op: "exists" });
+    expect(typing.snapshot.start.conditions[0]).toMatchObject({ fact: "visible", op: "visible" });
     expect(typing.card.endCheck).toBeUndefined();
   });
 
@@ -146,5 +146,31 @@ describe("deriveAutomationStudioPartCard", () => {
     expect(deriveAutomationStudioPartCard(input({ subflowName: "<div class=\"x\">", words: { name: "https://shop.example/a" } }))).toEqual({ skipped: "part.name_unusable" });
     const broken = partGraphFixture({ metadata: { "fluxiq.successCheck": "not a list" } });
     expect(deriveAutomationStudioPartCard(input({ graph: broken })).hasOwnProperty("skipped")).toBe(true);
+  });
+
+  it("reads a start check from the parameters the domain says name the control, together", () => {
+    const graph = partGraphFixture({ firstStep: "type" });
+    const first = graph.nodes[0]!;
+    first.parameterValues = { selector: "#box", element: { selector: "#box", tagName: "input" }, text: { $state: { path: "query" } } };
+    const named = deriveAutomationStudioPartCard({ partId: "part.a", graph, subflowName: "Find things", requestWords: "find", startLocation: "https://shop.example/", controlParameterKeys: ["target", "selector", "element"] });
+    if ("skipped" in named) throw new Error(named.skipped);
+    expect(named.snapshot.start).toEqual({ source: "first_step", conditions: [{ fact: "visible", op: "visible", target: { selector: "#box", element: { selector: "#box", tagName: "input" } } }] });
+    expect(named.card.startCheck?.conditions).toBe(1);
+    const unnamed = deriveAutomationStudioPartCard({ partId: "part.a", graph, subflowName: "Find things", requestWords: "find", startLocation: "https://shop.example/" });
+    if ("skipped" in unnamed) throw new Error(unnamed.skipped);
+    expect(unnamed.snapshot.start.source).toBe("none");
+  });
+
+  it("takes no address alone, and no binding, for a durable target", () => {
+    const graph = partGraphFixture({ firstStep: "type" });
+    const first = graph.nodes[0]!;
+    first.parameterValues = { selector: "#box", text: "a" };
+    const lone = deriveAutomationStudioPartCard({ partId: "part.a", graph, subflowName: "Find things", requestWords: "find", startLocation: "https://shop.example/", controlParameterKeys: ["selector", "element"] });
+    if ("skipped" in lone) throw new Error(lone.skipped);
+    expect(lone.snapshot.start.source).toBe("none");
+    first.parameterValues = { element: { $state: { path: "row.control" } }, selector: "#box", text: "a" };
+    const bound = deriveAutomationStudioPartCard({ partId: "part.a", graph, subflowName: "Find things", requestWords: "find", startLocation: "https://shop.example/", controlParameterKeys: ["selector", "element"] });
+    if ("skipped" in bound) throw new Error(bound.skipped);
+    expect(bound.snapshot.start.source).toBe("none");
   });
 });

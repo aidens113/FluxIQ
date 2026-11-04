@@ -51,6 +51,7 @@ export async function saveProjectPartsOfAppliedFlow(input: AutomationStudioSaveP
         ...(input.words?.[subflowId] ? { words: input.words[subflowId] } : {}),
         requestWords: input.requestWords,
         ...(input.startLocation !== undefined ? { startLocation: input.startLocation } : {}),
+        ...(input.controlParameterKeys ? { controlParameterKeys: [...input.controlParameterKeys] } : {}),
         callees
       });
       if ("skipped" in derived) {

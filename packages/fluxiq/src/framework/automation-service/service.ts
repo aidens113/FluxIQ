@@ -214,7 +214,7 @@ import {
   type AutomationStudioProjectRecord,
   type AutomationStudioSubflowSummary,
   type RecordingIndex,
-  automationStudioFlowBootstrapInstructionAuthority, automationStudioFlowBootstrapExecutionAuthority, recordAutomationStudioFlowGraphJudgements, saveProjectPartsOfAppliedAdaptation, AutomationStudioProjectParts,
+  automationStudioFlowBootstrapInstructionAuthority, automationStudioFlowBootstrapExecutionAuthority, recordAutomationStudioFlowGraphJudgements, saveProjectPartsOfAppliedAdaptation, AutomationStudioProjectParts, automationStudioOpenPartRun,
   AutomationStudioRecordingEntryRemoval
 } from "./service/index.ts";
 import { AutomationStudioConversations } from "../../runtime/conversations/index.ts";
@@ -452,7 +452,7 @@ export class AutomationStudioService {
     this.legacy = new AutomationStudioLegacyRetirementStore(this.projectPaths, this.projects, this.objectStore);
     this.bootstrapAdaptations = new AutomationStudioBootstrapAdaptationStore(this.projectPaths, this.flowPaths, this.projects);
     this.incompleteDrafts = new AutomationStudioFlowBootstrapIncompleteDraftStore(this.projectPaths, this.flowPaths, this.projects);
-    this.creationSpends = new AutomationStudioFlowBootstrapCreationSpendStore(this.projectPaths, this.flowPaths, this.projects); this.candidateDrafts = new AutomationStudioFlowCandidateDraftStore(this.projectPaths, this.flowPaths, this.projects); this.projectParts = new AutomationStudioProjectParts({ pool: this.runtimeProjectDatabasePool, ports: { ...automationStudioFacadePorts(this), instructionBodies: async (projectId, flowId) => (await this.getFlowInstructionSet({ projectId, flowId })).map((instruction) => instruction.body) } });
+    this.creationSpends = new AutomationStudioFlowBootstrapCreationSpendStore(this.projectPaths, this.flowPaths, this.projects); this.candidateDrafts = new AutomationStudioFlowCandidateDraftStore(this.projectPaths, this.flowPaths, this.projects); this.projectParts = new AutomationStudioProjectParts({ pool: this.runtimeProjectDatabasePool, ports: { ...automationStudioFacadePorts(this), instructionBodies: async (projectId, flowId) => (await this.getFlowInstructionSet({ projectId, flowId })).map((instruction) => instruction.body) }, run: { collaborators: () => this.trialCollaborators, getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), openRun: (projectId, runId, abort) => automationStudioOpenPartRun({ abortControllers: this.runtimeAbortControllers, runControl: this.runControl }, projectId, runId, abort) } });
     this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
     this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore, this.runtimeProjectDatabasePool);

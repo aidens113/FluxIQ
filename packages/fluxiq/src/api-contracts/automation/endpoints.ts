@@ -115,6 +115,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listProjectParts: "list-project-parts",
   getProjectPart: "get-project-part",
   saveProjectPart: "save-project-part",
+  runProjectPart: "run-project-part",
   listFlowInstructions: "list-flow-instructions",
   getFlowInstruction: "get-flow-instruction",
   getFlowInstructionReadiness: "get-flow-instruction-readiness",

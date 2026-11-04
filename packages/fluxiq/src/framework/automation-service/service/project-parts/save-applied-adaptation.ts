@@ -8,6 +8,7 @@ import { automationStudioLlmBuildTrace } from "../../../../runtime/llm/index.ts"
 import type { AutomationStudioBootstrapAdaptation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
+import { AutomationStudioProjectPartControlKeys } from "./control-keys.ts";
 import { saveProjectPartsOfAppliedFlow } from "./save-applied-flow.ts";
 import { firstLiteralAddress } from "./start-location.ts";
 import type { AutomationStudioSaveProjectPartsResult } from "./types.ts";
@@ -29,8 +30,10 @@ export async function saveProjectPartsOfAppliedAdaptation(input: {
         return { subflow: entry.subflow, graphFlow, ...(typeof revision === "number" ? { sourceGraphRevision: revision } : {}) };
       }));
       const startLocation = firstLiteralAddress(subflows.map((entry) => entry.graphFlow));
+      const controlParameterKeys = AutomationStudioProjectPartControlKeys.of(pool);
       return await saveProjectPartsOfAppliedFlow({
         pool,
+        ...(controlParameterKeys ? { controlParameterKeys } : {}),
         projectId: adaptation.projectId,
         flowId: adaptation.flowId,
         subflows,

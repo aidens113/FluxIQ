@@ -15,6 +15,7 @@ import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomation
 import type { AutomationStudioProjectBuildActsRecord } from "./acts-record.ts";
 import type { AutomationStudioProjectBuildDecisions } from "./decisions.ts";
 import { automationStudioProjectBuildBriefTold as told, automationStudioProjectBuildEvidenceBeside as beside } from "../project-build-notes/index.ts";
+import { automationStudioProjectBuildRunPartBundle } from "../project-parts/index.ts";
 import { automationStudioProjectBuildEntryNote } from "./entry-note.ts";
 import { AutomationStudioProjectBuildPermissions } from "./permissions.ts";
 import { AutomationStudioProjectBuildPhaseStart } from "./phase-start.ts";
@@ -270,13 +271,19 @@ export function automationStudioProjectBuildBriefPorts(input: {
   const exploredInterruptions = AutomationStudioExploredInterruptions.of(project.trialEnvironment);
   /** The paces any trial of this build learned, shared as the toggles are: Core writes them on the next submission of every brief (P6 CC8, `../../flow-bootstrap/learned-paces.ts`). */
   const exploredPaces = AutomationStudioLearnedPaces.of(project.trialEnvironment);
+  /** The saved parts this build ran that landed something lasting, across its briefs: a repeat is refused (`./run-part-tool.ts`). */
+  const partsRun = new Set<string>();
   const environment = async (request: AutomationStudioProjectBriefPortRequest, siteReset: AutomationStudioSiteResetCalls, task?: () => AutomationStudioFlowInstruction[]) => {
     const registry = draft.submission.registry ?? new AutomationStudioNodeRegistry();
     const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution });
-    const harness = automationStudioHarnessOptionRegistry({ binding, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
-    const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permittedActs: readonly string[] = request.brief.permittedActs;
     const permittedConsequences = (project.permissions.permittedConsequences ?? []).filter((consequence) => permittedActs.includes(consequence)) as AutomationStudioActionConsequence[];
+    const runPart = project.parts ? automationStudioProjectBuildRunPartBundle({ parts: project.parts, permittedConsequences, done: partsRun, landed: (acts, runId) => {
+      request.ledger.trialRan(acts, runId);
+      input.acts.trialRan(acts, runId);
+    } }) : undefined;
+    const harness = automationStudioHarnessOptionRegistry({ binding, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation, nodeDescriptions, ...(runPart ? { runPart } : {}) }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true });
+    const routing = await startAutomationStudioBuildRouting({ hostRuntime: project.hostRuntime, projectId, flowId, flowInputs: project.flowInputs, start: "first_look", pageless: [AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID] });
     const permissions = automationStudioFlowBootstrapActionPermissions({ ...project.permissions, authoringMode: "project", exploredToggles, exploredInterruptions, permittedConsequences, requireCreateBaseline: true, siteReset: input.acts.calls(siteReset), executeTool: project.cancellation.tool(harness.executeTool) });
     AutomationStudioProjectBuildPermissions.of(project).add(permissions);
     const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harness.tools, signal: AbortSignal.any([permissions.signal, request.signal]), clearedResultCode: automationStudioFlowDraftReplayClearedCode, ...(project.personAsk ? { ask: project.personAsk } : {}) });

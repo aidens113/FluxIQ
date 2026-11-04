@@ -50,6 +50,24 @@ describe("project parts endpoints", () => {
     expect(response).toMatchObject({ ok: true, payload: { saved: true, partId: "part.a" } });
   });
 
+  it("registers a run under runtime.control, forwards exactly its seven fields, and refuses a caller without it", async () => {
+    const answer = { runId: "r", status: "succeeded", outputs: {}, acts: [], modelCalls: 0 };
+    const run = vi.fn().mockResolvedValue(answer);
+    const { registry, call } = setup({ run });
+    expect(registry.endpoints().find((entry) => entry.endpoint === AUTOMATION_STUDIO_ENDPOINTS.runProjectPart)).toMatchObject({ permission: "runtime.control", classification: "authoring" });
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, { projectId: "p", partId: "part.a" })).toMatchObject({ ok: false });
+    expect(run).not.toHaveBeenCalled();
+    const response = await call(AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, { projectId: "p", partId: "part.a", version: 2, inputs: { query: "shoes" }, permittedConsequences: ["create_new", 3], acknowledgedRepeat: true, newRunId: "id", caller: "build", permission: "x", flowId: "f" }, ["runtime.control"]);
+    expect(run).toHaveBeenCalledWith({ projectId: "p", partId: "part.a", version: 2, inputs: { query: "shoes" }, permittedConsequences: ["create_new"], acknowledgedRepeat: true, newRunId: "id" });
+    expect(response).toEqual({ ok: true, payload: answer });
+  });
+
+  it("answers a run's refusal as its closed code, its words and its classes, as a payload", async () => {
+    const refusal = { ok: false, code: "part.confirm_repeat", message: "Running this part will change something that already exists again.", classes: ["modify_existing"] };
+    const { call } = setup({ run: vi.fn().mockResolvedValue(refusal) });
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, { projectId: "p", partId: "part.a", acknowledgedRepeat: "yes" }, ["runtime.control"])).toEqual({ ok: true, payload: { refused: true, code: refusal.code, message: refusal.message, classes: refusal.classes } });
+  });
+
   it("answers a library that is not there as a closed code in the payload, not an error", async () => {
     const refusal = { ok: false, code: "parts.unavailable", message: "This project's library of saved parts is not available right now." };
     const { call } = setup({ list: vi.fn().mockResolvedValue(refusal), get: vi.fn().mockResolvedValue({ ...refusal, code: "parts.not_found" }) });

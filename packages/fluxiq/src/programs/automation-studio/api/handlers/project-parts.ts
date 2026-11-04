@@ -1,12 +1,12 @@
-// The project's library of saved parts: search it, read a part, and keep a Subflow
-// of a Flow as one. Thin on purpose: each handler names the fields it forwards and
+// The project's library of saved parts: search it, read a part, keep a Subflow of a
+// Flow as one, and run one. Thin on purpose: each handler names the fields it forwards and
 // the service's `projectParts` does the work, so a body carries nothing else into it.
 
-import { AUTOMATION_STUDIO_ENDPOINTS, type GetProjectPartRequest, type ListProjectPartsRequest, type SaveProjectPartRequest } from "../../../../api-contracts/automation.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type GetProjectPartRequest, type ListProjectPartsRequest, type RunProjectPartRequest, type SaveProjectPartRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 
-type PartsAnswer = { ok: false; code: string; message: string } | object;
+type PartsAnswer = { ok: false; code: string; message: string; classes?: readonly string[] } | object;
 
 export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -40,6 +40,16 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
     resource: endpointResource.project(),
     handler: async (request) => answer(await service.projectParts.save(saveRequest(request.payload)))
   });
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runProjectPart,
+    permission: "runtime.control",
+    classification: "authoring",
+    action: "studio:RunProjectPart",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
+    handler: async (request) => answer(await service.projectParts.run(runRequest(request.payload)))
+  });
 }
 
 /**
@@ -47,8 +57,8 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
  * answered it: a relay keeps a failed response's error text and drops its code, and the screen reads the code.
  */
 function answer(result: PartsAnswer) {
-  const refusal = result as { ok?: unknown; code?: unknown; message?: unknown };
-  return { ok: true as const, payload: refusal.ok === false ? { refused: true, code: String(refusal.code ?? ""), message: String(refusal.message ?? "") } : result };
+  const refusal = result as { ok?: unknown; code?: unknown; message?: unknown; classes?: unknown };
+  return { ok: true as const, payload: refusal.ok === false ? { refused: true, code: String(refusal.code ?? ""), message: String(refusal.message ?? ""), ...(Array.isArray(refusal.classes) ? { classes: refusal.classes } : {}) } : result };
 }
 
 function body(payload: unknown): Record<string, unknown> {
@@ -94,5 +104,20 @@ function saveRequest(payload: unknown): SaveProjectPartRequest {
     subflowId: String(b.subflowId ?? ""),
     ...(text(b.name) !== undefined ? { name: text(b.name)! } : {}),
     ...(text(b.purpose) !== undefined ? { purpose: text(b.purpose)! } : {})
+  };
+}
+
+function runRequest(payload: unknown): RunProjectPartRequest {
+  const b = body(payload);
+  const inputs = b.inputs && typeof b.inputs === "object" && !Array.isArray(b.inputs) ? b.inputs as NonNullable<RunProjectPartRequest["inputs"]> : undefined;
+  const permitted = words(b.permittedConsequences);
+  return {
+    projectId: String(b.projectId ?? ""),
+    partId: String(b.partId ?? ""),
+    ...(typeof b.version === "number" ? { version: b.version } : {}),
+    ...(inputs ? { inputs } : {}),
+    ...(permitted !== undefined ? { permittedConsequences: Array.isArray(permitted) ? permitted : [permitted] } : {}),
+    ...(b.acknowledgedRepeat === true ? { acknowledgedRepeat: true } : {}),
+    ...(text(b.newRunId) !== undefined ? { newRunId: text(b.newRunId)! } : {})
   };
 }

@@ -23,6 +23,8 @@ export type AutomationStudioSaveProjectPartsInput = {
   words?: Readonly<Record<string, { name?: string | undefined; purpose?: string | undefined }>> | undefined;
   /** Where the build started. Only its origin is read. */
   startLocation?: string | undefined;
+  /** The parameters that name a step's control, from the bound domain. Absent, Core's default. */
+  controlParameterKeys?: ReadonlySet<string> | undefined;
   now?: number | undefined;
 };
 

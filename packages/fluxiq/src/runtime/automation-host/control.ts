@@ -90,4 +90,10 @@ export type AutomationStudioRunControlGate = {
    * as a plain pause.
    */
   heldBy?(): AutomationStudioRunControlHolder | null;
+  /**
+   * Whether the hold just made is the gate's own short check rather than a person's
+   * pause, read as `heldBy` is. Such a hold is not said to anybody. Optional: a gate
+   * that cannot say holds out loud.
+   */
+  heldQuietly?(): boolean;
 };

@@ -369,7 +369,7 @@ async function executeAutomationStudioGraph(
     // everything it had computed; the hold and its release are each said once (`activity/hold.ts`).
     const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
     if (held) {
-      const released = await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
+      const released = options.runControl?.heldQuietly?.() ? await held : await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
       await options.commandRun?.checkpoint();
       if (released.outcome === "stop" || options.signal?.aborted) {
         return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, released.outcome === "stop" ? released.message : "Run cancelled.");

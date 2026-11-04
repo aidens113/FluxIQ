@@ -130,6 +130,8 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "get-project-part",
     // Keeping one Subflow of a Flow as a saved part, `authoring` (flows.write). Narrowed: those five fields and nothing else.
     "save-project-part",
+    // Running one saved part now, with no model, `authoring` (runtime.control), as a Flow's Run is. Narrowed: those seven fields and nothing else. Core's guard then refuses a wrong page, an unasked lasting class and an unconfirmed repeat.
+    "run-project-part",
   ]),
   "secret-keys": Object.freeze([
     // Whether an LLM key is configured, `read`. Projected: kind, provider and enabled only, nothing that names or identifies a key.
@@ -294,6 +296,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
+  if (name === "run-project-part") return narrowRunProjectPart(payload);
   return { ok: true, payload };
 }
 
@@ -347,6 +350,17 @@ function narrowSaveProjectPart(payload: unknown): PairedClientRequestNarrowing {
   const body = payloadRecord(payload) ?? {};
   for (const field of Object.keys(body)) {
     if (!SAVE_PROJECT_PART_FIELDS.includes(field)) return forbidden(`A paired client's save may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+/** The seven fields a person's run of a saved part carries. Anything else a token names is refused, by name. */
+const RUN_PROJECT_PART_FIELDS: readonly string[] = ["projectId", "partId", "version", "inputs", "permittedConsequences", "acknowledgedRepeat", "newRunId"];
+
+function narrowRunProjectPart(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  for (const field of Object.keys(body)) {
+    if (!RUN_PROJECT_PART_FIELDS.includes(field)) return forbidden(`A paired client's part run may not carry ${field}.`);
   }
   return { ok: true, payload: body };
 }

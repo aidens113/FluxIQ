@@ -6,6 +6,7 @@ import { automationStudioFlowGraphVersion } from "../../../../runtime/flow-autho
 import { AutomationStudioProjectStoreUnavailableError, type AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
 import type { SaveProjectPartRequest, SaveProjectPartResponse } from "../../../../api-contracts/automation.ts";
 import { projectPartCallTargets } from "./call-order.ts";
+import { AutomationStudioProjectPartControlKeys } from "./control-keys.ts";
 import type { AutomationStudioProjectPartsPorts, AutomationStudioProjectPartsRefusal } from "./library-types.ts";
 import { saveProjectPartsOfAppliedFlow } from "./save-applied-flow.ts";
 import { projectPartSkipWords } from "./skip-words.ts";
@@ -23,8 +24,10 @@ export async function keepProjectPart(deps: { pool: AutomationStudioProjectDatab
   const words = { ...(input.name ? { name: input.name } : {}), ...(input.purpose ? { purpose: input.purpose } : {}) };
   const start = firstLiteralAddress(entries.map((entry) => entry.graphFlow));
   try {
+    const controlParameterKeys = AutomationStudioProjectPartControlKeys.of(deps.pool);
     const saved = await saveProjectPartsOfAppliedFlow({
       pool: deps.pool,
+      ...(controlParameterKeys ? { controlParameterKeys } : {}),
       projectId: input.projectId,
       flowId: input.flowId,
       subflows: entries.map((entry) => (entry.subflow.subflowId === input.subflowId ? { ...entry, explicit: true } : entry)),

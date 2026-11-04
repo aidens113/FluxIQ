@@ -73,6 +73,7 @@ describe("a paired client on the program route", () => {
         "list-project-parts",
         "get-project-part",
         "save-project-part",
+        "run-project-part",
       ],
       "secret-keys": ["snapshot"],
     });
@@ -230,7 +231,17 @@ describe("a paired client on the program route", () => {
     expect(narrow({ projectId: "p", flowId: "f", subflowId: "s", partId: "part.x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's save may not carry partId." });
     expect(isPairedClientEndpoint("automation-studio", "list-project-parts")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "get-project-part")).toBe(true);
-    expect(isPairedClientEndpoint("automation-studio", "run-project-part")).toBe(false);
+  });
+
+  it("runs a part with exactly its seven fields and names any other a token carries", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-project-part", payload);
+    const whole = { projectId: "p", partId: "part.a", version: 2, inputs: { query: "shoes" }, permittedConsequences: ["create_new"], acknowledgedRepeat: true, newRunId: "id" };
+    expect(narrow(whole)).toEqual({ ok: true, payload: whole });
+    expect(narrow({ projectId: "p", partId: "part.a" })).toMatchObject({ ok: true });
+    for (const field of ["caller", "permission", "flowId", "runIntent", "authorizedDomainIds"]) {
+      expect(narrow({ projectId: "p", partId: "part.a", [field]: "x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's part run may not carry ${field}.` });
+    }
+    expect(isPairedClientEndpoint("automation-studio", "run-project-part")).toBe(true);
   });
 
   it("passes every other endpoint's body unchanged", () => {

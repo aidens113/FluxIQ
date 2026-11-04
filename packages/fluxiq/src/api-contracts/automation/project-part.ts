@@ -3,6 +3,7 @@
 // is names, words a person wrote, hashes and counts. A part's page evidence stays
 // in its snapshot, and none of it is answered here.
 import type { AutomationStudioAttemptActClass, AutomationStudioSubflowCard, AutomationStudioTrustTier } from "@fluxiq/contracts/automation";
+import type { JsonValue } from "../../core/index.ts";
 
 /**
  * What any of the three answers, in place of its own shape, when it cannot: a closed code and plain words. It is the
@@ -81,3 +82,46 @@ export type SaveProjectPartResponse =
 
 /** The tiers `trust` filters by. */
 export const PROJECT_PART_TRUST_TIERS: readonly AutomationStudioTrustTier[] = Object.freeze(["unproven", "provisional", "established"] as const);
+
+/** `run-project-part`: run one saved part now, with these values, and no model. */
+export type RunProjectPartRequest = {
+  projectId: string;
+  partId: string;
+  /** The version to run; the newest when left out. */
+  version?: number;
+  /** What the part is given, by input id. */
+  inputs?: Record<string, JsonValue>;
+  /** The lasting classes the person asked for. Left out, nothing lasting may happen. */
+  permittedConsequences?: string[];
+  /** The person was told this part does its acts again, and said go ahead. */
+  acknowledgedRepeat?: boolean;
+  /** The id the new run is stored under, a UUID, so a caller can read it back whatever happens to this request. */
+  newRunId?: string;
+};
+
+/** Where a part stopped: a step in a person's words, and why in plain words. Never a target or page text. */
+export type ProjectPartRunStop = { stepLabel: string; reason: string };
+
+export type RunProjectPartResponse = {
+  runId: string;
+  status: "succeeded" | "failed" | "stopped" | "cancelled";
+  /** What the part handed back, by output id. */
+  outputs: Record<string, JsonValue>;
+  /** The rows its steps stored under the run, when they stored any; read with the run's dataset endpoints. */
+  rows?: { runId: string; datasets: { datasetId: string; rowCount: number }[]; unread?: true };
+  stoppedAt?: ProjectPartRunStop;
+  /** The lasting classes of the acts that landed. */
+  acts: AutomationStudioAttemptActClass[];
+  modelCalls: 0;
+};
+
+/** Why a part was not run, or not run yet. Nothing on the site changed. */
+export type RunProjectPartRefusal = {
+  refused: true;
+  code:
+    | "part.not_found" | "part.wrong_site" | "part.not_at_start" | "part.input_missing" | "part.input_unknown" | "part.act_not_allowed" | "part.confirm_repeat"
+    | "part.calls_not_available" | "part.repeat_refused" | "parts.unavailable" | "parts.run_id_refused";
+  message: string;
+  /** The lasting classes the refusal is about. */
+  classes?: AutomationStudioAttemptActClass[];
+};

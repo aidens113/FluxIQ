@@ -2,15 +2,16 @@
 // in the host's own form (`runtime/automation-host/contracts/fact-condition.ts`),
 // which a guard evaluates before the part runs.
 //
-// In order: the part's declared entries (`fluxiq.entry`); else an `exists` fact
-// over the first acting step's own target; else, for a part whose first step
+// In order: the part's declared entries (`fluxiq.entry`); else a `visible` fact over
+// the first acting step's own target (not `exists`: a target that matches several
+// things answers `exists`, which is how a press landed on another page's look-alike
+// would pass, and answers `visible` unknown); else, for a part whose first step
 // navigates to a literal address on its own site, no check and `selfArrives`
 // (the part brings its own page); else none, which the runner refuses.
 import type { AutomationStudioSubflowCardCheck } from "@fluxiq/contracts/automation";
-import type { JsonObject } from "../../../core/index.ts";
-import { isAutomationNodeParameterStateBinding } from "../../../components/automation/index.ts";
 import type { AutomationStudioSubflowContract } from "../../../engine/automation/lifecycle/index.ts";
 import { partCheckOf } from "./condition-digest.ts";
+import { partControlTargetOf } from "./control-target.ts";
 import { partOriginOf, partStepNavigates } from "./origins.ts";
 import type { AutomationStudioPartStep } from "./steps.ts";
 import type { AutomationStudioPartStartRecord } from "./types.ts";
@@ -27,9 +28,9 @@ export function partStartCheckOf(input: {
     return { start: { source: "entry", conditions: structuredClone(entry.when) }, ...(check ? { check } : {}) };
   }
   const first = input.steps.find((step) => step.acting);
-  const target = first ? controlTargetOf(first, input.controlKeys) : undefined;
+  const target = first ? partControlTargetOf(first, input.controlKeys) : undefined;
   if (target) {
-    const conditions = [{ fact: "exists", op: "exists" as const, target: structuredClone(target) }];
+    const conditions = [{ fact: "visible", op: "visible" as const, target: structuredClone(target) }];
     const check = partCheckOf(conditions, "The control the first step uses is on the page.");
     return { start: { source: "first_step", conditions }, ...(check ? { check } : {}) };
   }
@@ -40,11 +41,3 @@ export function partStartCheckOf(input: {
   return { start: { source: "none", conditions: [] } };
 }
 
-/** The first parameter the domain says names the control that holds an object; a handle string or a binding is no durable target. */
-function controlTargetOf(step: AutomationStudioPartStep, controlKeys: ReadonlySet<string>): JsonObject | undefined {
-  for (const key of controlKeys) {
-    const target = step.params[key];
-    if (target && typeof target === "object" && !Array.isArray(target) && !isAutomationNodeParameterStateBinding(target) && Object.keys(target).length > 0) return target;
-  }
-  return undefined;
-}

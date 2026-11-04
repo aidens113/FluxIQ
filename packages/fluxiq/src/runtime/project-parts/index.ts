@@ -2,3 +2,4 @@
 // and the trust a card shows from the runs recorded for it.
 export * from "./card/index.ts";
 export * from "./trust/index.ts";
+export * from "./guard/index.ts";
