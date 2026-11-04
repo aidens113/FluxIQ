@@ -13,6 +13,8 @@ export type ChatWidget = {
   setActive(active: boolean): void;
   /** Puts the caret in the composer. */
   focusComposer(): void;
+  /** Replaces what is in the composer with `text` for the person to change or send, with the caret at its end. Sends nothing. */
+  fillComposer(text: string): void;
   /** Attaches the project's newest finished, described recording to the next message; answers whether there was one. */
   attachLatestRecording(): Promise<boolean>;
   /** Shows `target`'s thread; what the person sends from then on goes there. */

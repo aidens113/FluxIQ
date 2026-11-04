@@ -7,8 +7,11 @@ import { createFakeChatResultsPort, fake, fakeTaskOutcomes, withFakeDocument, ty
 import type { ChatTaskOutcome } from "../../ports/index.ts";
 import { createAnswerView, type AnswerHost } from "../index.ts";
 
+// A day and a minute after the first attempts began (1_800_000_000_000), so their saved lines read "yesterday".
+const NOW = 1_800_000_000_000 + 86_400_000 + 60_000;
+
 function draw(outcome: ChatTaskOutcome, host: AnswerHost = {}) {
-  const view = createAnswerView(host);
+  const view = createAnswerView({ now: () => NOW, ...host });
   assert.equal(view.update(outcome), true);
   return { view, root: fake(view.element) };
 }
@@ -42,7 +45,7 @@ test("rows: headline, tick, a table with headers and the first five rows, the li
     assert.equal(root.byClass("answer-row").length, 5);
     assert.equal(root.byClass("answer-table-scroll")[0]!.getAttribute("tabindex"), "0");
     assert.deepEqual(text(root, "answer-note"), ["Showing 5 of 10 rows here. CSV and JSON have every row."]);
-    assert.deepEqual(text(root, "answer-saved"), ["Saved, and it partly works. I will repair it next time."]);
+    assert.deepEqual(text(root, "answer-saved"), ["Saved yesterday: the steps. They only partly work, so next time I will fix what changed."]);
     const lines = text(root, "answer-line");
     assert.ok(lines.includes("On the site: nothing changed"));
     assert.ok(lines.includes("Checked: Right columns, cheapest first, no duplicates"));

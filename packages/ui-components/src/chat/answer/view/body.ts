@@ -37,7 +37,7 @@ function textBlock(model: AnswerModel): HTMLElement[] {
 }
 
 function facts(model: AnswerModel): HTMLElement[] {
-  const lines: Array<[string, string | undefined]> = [["missing", model.missing], ["checked", model.checked], ["compared", model.compared], ["from", model.from]];
+  const lines: Array<[string, string | undefined]> = [["missing", model.missing], ["checked", model.checked], ["how", model.how], ["compared", model.compared], ["from", model.from]];
   return lines.filter((line): line is [string, string] => line[1] !== undefined).map(([name, text]) => createElement("p", { className: "answer-line", text, attrs: { "data-line": name } }));
 }
 

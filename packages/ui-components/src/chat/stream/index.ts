@@ -18,6 +18,7 @@ export {
   type StepMessageKind,
   type StepWords
 } from "./step/index.ts";
+export { FROM_SAVED_STEPS, WORKED_OUT_AGAIN } from "./saved-marks.ts";
 export { buildChatStream, CHAT_STEP_MESSAGE_LIMIT, type ChatStream, type ChatStreamItem } from "./stream-items.ts";
 export { followedRunTarget, threadKey, type RunTargetInput } from "./run-target.ts";
 export { activityForTarget, type TargetActivity } from "./target-activity.ts";

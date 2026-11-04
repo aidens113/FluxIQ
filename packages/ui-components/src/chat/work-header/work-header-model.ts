@@ -25,9 +25,13 @@ export type WorkHeaderInput = {
   sending: boolean;
   /** The question the work waits on is in a thread not on screen. */
   questionElsewhere?: boolean;
+  /** The question the work waits on is in the thread on screen, so the header only points at it. */
+  questionHere?: boolean;
   /** Stop is offered (the raw live subject is a build or run) though no display has arrived yet. */
   stopOffered?: boolean;
   meter?: WorkMeter;
+  /** "Using what I saved from Tuesday.", while the attempt works from saved work. Shown only while working. */
+  usingSaved?: string;
 };
 
 /** The header's words; null hides it. `action` labels its one button, "" for none. */
@@ -38,11 +42,15 @@ export type WorkHeaderModel = {
   cost: string;
   limit: string;
   action: string;
+  /** "Using what I saved from Tuesday.", or "" for none. */
+  saved: string;
 };
 
 const SENDING = "Sending your message";
 /** The button that opens the thread holding the question the work waits on. */
 const SHOW_QUESTION = "Show the question";
+/** All the header says of a question on screen: the question itself says what to do. */
+const QUESTION_ABOVE = "The question is above.";
 const WAITING_PREFIX = /^(waiting for you|paused)\s*:\s*/iu;
 
 /** The header for `input`, or null when nothing works, waits or is on its way. */
@@ -54,7 +62,7 @@ export function workHeaderModel(input: WorkHeaderInput): WorkHeaderModel | null 
       ? display.step.count >= display.step.index ? `Step ${display.step.index} of ${display.step.count}` : `Step ${display.step.index}`
       : "";
     const said = display.detail?.trim() || display.headline.trim();
-    return { state: "working", label: "Working", now: [step, said].filter(Boolean).join(" · "), cost: cost.text, limit: cost.limit, action: "" };
+    return { state: "working", label: "Working", now: [step, said].filter(Boolean).join(" · "), cost: cost.text, limit: cost.limit, action: "", saved: input.usingSaved ?? "" };
   }
   if (display?.outcome === "waiting") {
     const headline = display.headline.trim();
@@ -63,14 +71,15 @@ export function workHeaderModel(input: WorkHeaderInput): WorkHeaderModel | null 
     return {
       state: "waiting",
       label: display.phase === "paused" ? "Paused" : "Waiting for you",
-      now: now || (display.detail?.trim() ?? ""),
+      now: input.questionHere === true ? QUESTION_ABOVE : now || (display.detail?.trim() ?? ""),
       cost: cost.text,
       limit: cost.limit,
-      action: input.questionElsewhere === true ? SHOW_QUESTION : ""
+      action: input.questionElsewhere === true ? SHOW_QUESTION : "",
+      saved: ""
     };
   }
-  if (sending) return { state: "sending", label: SENDING, now: "", cost: "", limit: "", action: "" };
-  if (input.stopOffered === true) return { state: "working", label: "Working", now: "", cost: cost.text, limit: cost.limit, action: "" };
+  if (sending) return { state: "sending", label: SENDING, now: "", cost: "", limit: "", action: "", saved: "" };
+  if (input.stopOffered === true) return { state: "working", label: "Working", now: "", cost: cost.text, limit: cost.limit, action: "", saved: input.usingSaved ?? "" };
   return null;
 }
 
