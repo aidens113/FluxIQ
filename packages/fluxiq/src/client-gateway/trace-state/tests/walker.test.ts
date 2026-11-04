@@ -22,6 +22,55 @@ const EXPLORED = calls(
   ["scan", {}, ok("b")]
 );
 
+describe("the row computer, for a read the state holds no answer for", () => {
+  const shelf = (rows: readonly string[]) => ({ status: "ok", at: "a", rows });
+
+  it("computes it from a read of this state, and the rows are this run's result", () => {
+    const walk = walker(calls(["scan", {}, shelf(["bolt", "nut"])], ["pick", { part: "x" }, ok("a")]));
+    const answer = walk.answer(operation("scan", { keep: "bolt" }));
+    expect(answer).toMatchObject({ status: "answered", rule: "read_computed", entry: 0, computed: { from: 0, rows: ["bolt"] } });
+    expect(walk.rows).toEqual(["bolt"]);
+  });
+
+  it("never computes from a read of another state: that would show what this run did not cause", () => {
+    const walk = walker(calls(["pick", { part: "x" }, ok("a")], ["scan", {}, shelf(["bolt"])]));
+    expect(walk.answer(operation("scan", { keep: "bolt" }))).toMatchObject({ status: "gap", code: "argument_mismatch" });
+  });
+
+  it("stays a gap when the domain cannot compute it, and never reads what was withheld", () => {
+    const walk = walker(calls(["scan", { other: true }, shelf(["bolt"])]));
+    expect(walk.answer(operation("scan", { keep: "bolt" }))).toMatchObject({ status: "gap", code: "argument_mismatch" });
+    const withheld = walker([recorded(0, "scan", {}, shelf(["bolt"]), { redacted: true })]);
+    expect(withheld.answer(operation("scan", { keep: "bolt" }))).toMatchObject({ status: "gap" });
+  });
+
+  it("recomputes a same-input read whose recorded answer does not stand for it, and gaps when it cannot", () => {
+    const refusing = { ...fakeDomain, recordedAnswerFits: () => false };
+    const answer = new ClientGatewayTraceStateWalker(clientGatewayTraceStateRecording({ calls: calls(["scan", {}, shelf(["bolt"])]), domain: refusing }), refusing).answer(operation("scan"));
+    expect(answer).toMatchObject({ status: "gap", code: "argument_mismatch", refusedEntry: 0 });
+    const asked = { ...fakeDomain, recordedAnswerFits: () => false, computeRead: () => ({ from: 0, answer: {}, rows: [] }) };
+    const computed = new ClientGatewayTraceStateWalker(clientGatewayTraceStateRecording({ calls: calls(["scan", {}, shelf(["bolt"])]), domain: asked }), asked).answer(operation("scan"));
+    expect(computed).toMatchObject({ status: "answered", rule: "read_computed", computed: { rows: [] } });
+  });
+});
+
+describe("a run's own handles", () => {
+  it("are read through the domain's scope on both sides, so two runs' calls compare", () => {
+    const scoped = { ...fakeDomain, handleScope: () => {
+      const seen: unknown[] = [];
+      return (read: ReturnType<typeof operation>) => {
+        const { tab, ...rest } = (read.compared.parameters ?? {}) as { tab?: unknown };
+        if (tab === undefined) return read;
+        if (!seen.includes(tab)) seen.push(tab);
+        return operation(read.actionType, { ...rest, tab: seen.indexOf(tab) });
+      };
+    } };
+    const walk = new ClientGatewayTraceStateWalker(clientGatewayTraceStateRecording({ calls: calls(["pick", { part: "x", tab: 41 }, ok("a")], ["pick", { part: "y", tab: 42 }, ok("a")]), domain: scoped }), scoped);
+    expect(walk.answer(operation("pick", { part: "x", tab: 900 }))).toMatchObject({ status: "answered", entry: 0 });
+    expect(walk.answer(operation("pick", { part: "y", tab: 900 }))).toMatchObject({ status: "gap", code: "missing_transition" });
+  });
+});
+
 describe("rule 1: a read", () => {
   it("is answered from the current state, and the nth repeat gets the nth answer, then the last", () => {
     const walk = walker(calls(["scan", {}, ok("a", ["one"])], ["scan", {}, ok("a", ["two"])]));

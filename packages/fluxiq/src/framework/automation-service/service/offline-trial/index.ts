@@ -7,3 +7,4 @@ export { AUTOMATION_STUDIO_OFFLINE_TRIAL_READER_CONTRACTS } from "./reader-contr
 export { automationStudioOfflineTrialEvidenceResult } from "./evidence-result.ts";
 export { runAutomationStudioOfflineCandidateTrial } from "./run.ts";
 export { runAutomationStudioOfflineSubflowTrial } from "./subflow-run.ts";
+export * from "./state/index.ts";

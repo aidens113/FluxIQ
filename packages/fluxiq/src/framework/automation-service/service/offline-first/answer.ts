@@ -24,11 +24,12 @@
 // codes go into a note; the gates' words say them (`WORDS.reasons`).
 //
 // A domain may restate a gap's code on the way to the feedback (the web domain
-// reports it as its own unknown failure), and then no feedback step names it and
-// the note stays `inconclusive`. So the counts the step log reads also carry the
-// first gap as the matcher reported it, whatever the note says, with the step the
-// run stopped at: it is what says why a check was inconclusive, and the note and
-// what the model reads do not change.
+// reports it as its own unknown failure), and then no feedback step names it. The
+// reason is not lost there: the matcher's report holds it, and the feedback still
+// says which step the run stopped at. So the note names that step and the reason
+// the matcher reported, and the model reads why the recording could not answer.
+// With no failed step to name it stays `inconclusive`, under that reason. The
+// counts the step log reads carry the same first gap, whatever the note says.
 
 import { CLIENT_GATEWAY_TRACE_MATCHER_GAP_REASONS, type ClientGatewayTraceMatcherGap } from "../../../../client-gateway/index.ts";
 import type { JsonObject } from "../../../../core/index.ts";
@@ -56,8 +57,10 @@ export function automationStudioOfflineFirstAnswer<Trial extends OfflineTrial>(
     const standingNo = trial.result.standingNo;
     return { kind: "kept", result: trial.result, ...(standingNo !== undefined ? { standingNo } : {}), ...(checked ? { checked } : {}) };
   }
-  const gap = matcher.gaps.length > 0 ? gapStep(trial.result.feedback) : undefined;
-  if (gap) return live({ outcome: "gap", ...gap });
+  const named = matcher.gaps.length > 0 ? gapStep(trial.result.feedback) : undefined;
+  if (named) return live({ outcome: "gap", ...named });
+  const gap = checked?.gap;
+  if (gap?.step !== undefined) return live({ outcome: "gap", step: gap.step, why: gap.code });
   return live({ outcome: "inconclusive", why: evidence.reasonCodes[0] ?? "offline_inconclusive" });
 }
 

@@ -8,7 +8,7 @@
 import type { ClientGatewayTraceStateEndCheck, ClientGatewayTraceStateRecording } from "./types.ts";
 import type { ClientGatewayTraceStateWalker } from "./walker.ts";
 
-export function clientGatewayTraceStateEndCheck(recording: ClientGatewayTraceStateRecording, walker: Pick<ClientGatewayTraceStateWalker, "used" | "rows" | "currentNode">): ClientGatewayTraceStateEndCheck {
+export function clientGatewayTraceStateEndCheck(recording: ClientGatewayTraceStateRecording, walker: Pick<ClientGatewayTraceStateWalker, "used" | "rows" | "currentNode" | "afterChangedRows">): ClientGatewayTraceStateEndCheck {
   const used = new Set(walker.used);
   const receipted: number[] = [];
   const skipped: number[] = [];
@@ -22,6 +22,7 @@ export function clientGatewayTraceStateEndCheck(recording: ClientGatewayTraceSta
     receipted,
     skipped,
     reachedEnd: walker.currentNode === recording.resultNode || walker.currentNode === recording.endNode,
-    rows: walker.rows
+    rows: walker.rows,
+    afterChangedRows: walker.afterChangedRows
   };
 }
