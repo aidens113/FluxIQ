@@ -244,6 +244,11 @@ can stop a third identical dispatch after two positively observed unchanged
 visits. Its optional host evidence remains private and preserves existing
 retry, completed-act and uncertain-effect protections.
 
+A model's own calls are watched for loops in the evidence loop, for every role and
+with no model call: repeats with only the words changed, cycles, stretches with no
+progress and the same fix again are steered, refused and then signalled to the
+caller ([failure facts](automation-studio/failure-control.md#loops-when-calls-that-each-ran-get-nowhere)).
+
 The next additive Flow expansion treats a Flow as the complete automation
 object: interface, router, subflows, scoped instructions, runs, adaptations,
 settings, provenance, and publication lifecycle.

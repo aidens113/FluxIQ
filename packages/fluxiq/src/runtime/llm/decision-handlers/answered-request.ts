@@ -39,6 +39,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   const { limits, trace, accounting, draftSteps, noProgress, evidence, history } = context;
   const end = (endCode: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, endCode, trace, accounting) });
   noProgress.answeredFromEvidence(answeredByCallId, decision.toolId);
+  context.loops.answered(decision.toolId, decision.input, context.contextOf(decision.toolId), context.repeats.state());
   // The node the answering call ran: the same request, so the same node.
   const actionId = draftSteps.find((candidate) => candidate.callId === answeredByCallId)?.actionId;
   const signature = requestSignature;
