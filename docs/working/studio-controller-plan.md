@@ -32,8 +32,8 @@ Related: [code structure](../architecture/code-structure.md), [runtime ownership
 | t851 | Core read browser fields; the audit now covers all of Core, with named exceptions | On dev |
 | t852 | Core's panel had two chat UIs; it now has only the shared widget | On dev |
 | t853 | Framework and runtime imported from `programs/`; the audit now fails on it, the catalog excepted | On dev |
-| t854 | Re-author checks lasting acts before paying for a build; a read's override on a failed step; other refusing codes | In progress |
-| t855 | PIN verified where it is asked for; graph diffs draw; e2e seeding; composer takes text while a thread loads | In progress |
+| t854 | Re-author checks lasting acts before paying for a build; a read's override on a failed step; each refusing code has one route | On dev |
+| t855 | PIN verified where it is asked for; graph diffs draw; e2e seeding; composer takes text while a thread loads | On dev |
 
 **Kept in Core on purpose:** `locator-text.ts` (a safety screen that must not weaken) and `host-target-resolution.ts` (a closed allow-list that reads nothing from a page). Both are named exceptions in the audit, with reasons.
 

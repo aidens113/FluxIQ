@@ -1,187 +1,277 @@
 # Answer First
 
 Status: Active
-Status detail: Draft, being rewritten after the user's refinement of 2026-11-03: one live exploration, simulation with exact recorded inputs, subflow library, extension UI focus. Not yet shown to the user as a plan.
+Status detail: Plan shown to the user on 2026-11-03 and waiting for their review; no code changed for it yet. Standing rules change only once they agree.
 Created: 2026-11-03
 Last updated: 2026-11-03
 Owner: Senior supervisor agent
-Scope: Make every task end with its result, from a deterministic Flow when one works and from an LLM finishing the job when it does not, while keeping everything needed to make the Flow better next time. Measuring one-shot and two-shot per task. Not a rewrite of the build loop, and it does not relax permission gates or the rule against repeating lasting acts.
-Paired document: `docs/working/answer-first-plan.md` in FluxIQWebExtension (the Lab's two scores and the extension side)
-Related: [discovery report](./answer-first-plan/reports/discovery.md), [offline trials plan](./trace-offline-trials-plan.md), [Studio controller plan](./studio-controller-plan.md)
+Scope: One live exploration that reaches the person's result, a best-attempt Flow improved in simulation with the exact recorded inputs, the same loop on every later attempt, a searchable and runnable nested subflow library, and the extension and @fluxiq/ui-components experience for all of it. The web panel is out of scope until the user reopens it.
+Paired document: `docs/working/answer-first-plan.md` in FluxIQWebExtension (the Lab's scores and the extension's phases)
+Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation study](./answer-first-plan/reports/study-simulation.md), [subflow study](./answer-first-plan/reports/study-subflows.md), [extension study](./answer-first-plan/reports/study-extension-ux.md), [offline trials plan](./trace-offline-trials-plan.md)
 
 ---
 
 ## Current State
 
-**The idea, in the user's words (2026-11-03):** "Rather than requiring that a deterministic flow is perfectly built, we try building/repairing/using the flow, then using LLMs to get the final result REGARDLESS of whether the deterministic flow works or not. All the important data INCLUDING THE DRAFTED FLOW is saved for later, so next time we try doing that task we can try building/rebuilding/using that deterministic flow part. This way we get the benefits of a pure LLM automation harness AND the benefits of deterministic flows." And: "we'll really need to refine that internal state engine automation tester. That way we can refine flows internally without testing live. Basically I'm trying to make 'one-shot'/two shot systems that adapt and get more efficient over time."
+**The idea, in the user's words (2026-11-03):**
 
-**State.** Planned, not started. Everything in "The Attempt" and "Phases" is the lead's proposal for the user to review. A decision marked "lead" is not a user rule.
+- "we do our best to one-shot the flow, then return the final result & save our best attempt determinstic flow, notes, etc. Then next time we try that task, we try using flow & do same build/repair/use flow, return final result, etc. Over time it should improve significantly."
+- "since we're switching to a one-time exploration (MUST RESULT IN DESIRED FINAL RESULT), we use internal state engine simulation to improve & test flow with EXACTLY same inputs as real exploration calls recorded."
+- "its not simply that hte LLM fully just takes over and we forget the flow"
+- "We're going to fully focus on the extension/fluxiq ui components package & extension UI/UX for now." The web panel will change later, "but we'll discuss that later".
+- "we need a system for actually detecting when we're repeating a known subflow. And subflows will need to be easily searchable, runnable, etc within a project flow... they may have a subflow that includes one site, that then calls a sub sub flow for a specific action on that site."
+- "I'm trying to make 'one-shot'/two shot systems that adapt and get more efficient over time."
 
-**What the discovery established** (file references in the [report](./answer-first-plan/reports/discovery.md)):
+**State.** Planned and not started. The user's words above are theirs. Everything else here is the lead's proposal unless marked "user".
 
-1. **The product's output is a Flow, not an answer.** Total success says "Your automation is ready". Rows reach the person only as a download link. So the pivot needs a way to show a result as well as an LLM to finish a task.
-2. **No path can end with an answer.** A build can only name a plan or a revision, and a recovery can only return a patch. Rows read while exploring are never stored.
-3. **A passing build has usually done the work already, then drops it.** A whole trial's rows sit in the store and its acts stay on the site, and nothing hands them to the person.
-4. **Saved drafts are not reused in the default mode.** A project build never loads `candidate-draft.json`, and it is overwritten by the latest. The chat model is still told a saved draft continues.
-5. **Lasting acts live in four unconnected records,** two of them memory-only. From reading the code, "run it" straight after a build would press "Add to cart" again; the Lab hides this by resetting the fixture. Not yet proven by a run.
-6. **The live runs of 2026-10-31 and 2026-11-03 ran `legacy`, not the product's default `project`.** Lead verified the three of 2026-11-03 from `snapshots/flow-lane.json`. `project` on Claude has one recorded run, which stopped after one call, so its real cost is unmeasured. `legacy` is the Lab's default by design, not an accident; the gap between the two defaults is the finding.
-7. **Failing costs about the same as passing,** about $1.10 on Claude, and a product default ceiling of $0.25 cannot pay for that. Money is a design question here, not a detail.
-8. **The offline tester has not saved measurable time yet.** Across 12 saved runs: 41 checks, 26 inconclusive, 12 refused for no recording yet, 1 passed, 2 kept failures. It avoided 2 of 61 live test windows, and is off in the product. It cannot prove acts or branches not taken. Its rule that an offline pass is never proof is already enforced and carries over unchanged.
+**What the studies established:**
 
-**Blockers.** Three questions under Open Questions change standing user rules, so they wait for the user. P0 and P7 can start without them.
+1. **The product's output is a Flow, not an answer.** A correct run ends with "Run finished", and the rows are about four presses away as a CSV.
+2. **No path can end with a result today.** A build can only name a plan, a recovery can only return a patch, and rows read while exploring are never stored. A passing trial does the work and then drops it.
+3. **Saved drafts are not reused in the default mode,** though the chat model is told they are.
+4. **Lasting acts live in four unconnected records.** Closing that is the highest-consequence work here.
+5. **The live runs of 2026-10-31 and 2026-11-03 ran `legacy`, not the product's default `project`.**
+6. **Today 0 of 43 of a Flow's acts equal exploration's calls byte for byte.** Most of the difference is mechanical: safe normalisation reaches 37 of 63 non-snapshot commands. The other 26 are real differences: another row, read, target or URL.
+7. **All 26 inconclusive offline checks were real changes, not capture failures.** 11 were a changed filter, which runs in the extension today, and all 34 rows of the six final reads were already in exploration's rows, so those can be computed with no page.
+8. **A state rule answers 141 of 173 commands where the strict cursor answers 6, but a first crude prototype agreed with live too rarely** (URL 51 of 74, act status 8 of 17, against a Flow's own 73 of 77 and 110 of 125). That is why the Engine lane starts with a go/no-go.
+9. **Nesting already runs, but nothing can be shared, searched or run alone.** Every subflow belongs to one Flow, and a saved one records no purpose, site or start.
+10. **The extension tells the story of building a Flow, not of doing the task.** Failure is the common case (2 of 14 Lab runs since 2026-10-30) and reads worst.
 
-**Next.** Merge t854 and t855, then P0.
+**Blockers.** The user's review and the Open Questions. Nothing runs before that except what is already authorised: finishing t854, and tomorrow's sweep of the fixes.
 
-## Objective And Measures
+## The Loop
 
-An **attempt** is one time a person, or a schedule, asks for a task. A **task** is the same request across attempts (D8).
+Every attempt, first or fiftieth, is the same five stages.
 
-Proposed definitions, for the user to confirm:
-
-- **One-shot:** the right answer on attempt 1.
-- **Two-shot:** the right answer by attempt 2.
-- **Flow deterministic:** an attempt reached the right answer with zero model calls.
-- **Getting more efficient:** model calls, tokens, dollars, live trials and elapsed time per attempt fall from one attempt to the next on the same task. Report calls and tokens beside dollars, because models and prices change: the $0.03-$0.11 versus $1+ gap in the discovery is mostly the model.
-
-Only the Lab has ground truth, so these are measured there. In the product the same series rests on judge labels and the person's own answer.
-
-**MVP target, proposed by the lead:** across one task per realistic site, the right answer by attempt 2 on all ten and on attempt 1 on most, with no lasting act repeated on any, and a zero-call attempt following on the tasks whose Flow became deterministic. The exact bar is the user's to set after P0's numbers.
-
-## The Attempt
-
-Every attempt goes through the same five stages. Stages 2 and 3 are the pivot.
-
-| Stage | What happens | Exists today |
+| Stage | Attempt 1 | Attempt 2 and later |
 | --- | --- | --- |
-| 1. Route | Pick the saved Flow, the saved draft, or a fresh build | Only a chat model's guess at names |
-| 2. Try | Run or build the Flow within its share of the budget. Retries and repair at the failing step work as they do now | Yes |
-| 3. Finish | If stage 2 did not produce the result, an LLM carries on from the page as it stands | No. The seams exist |
-| 4. Label and show | The person sees the result, where it came from, how it was checked and what was done on the site | Labels exist for runs only; no answer in chat |
-| 5. Save | Flow or draft, the attempt's record, its acts and its trace, for next time | Partly, and much is memory-only |
+| 1. Find | Nothing saved. The free opening look shortlists known subflows | Saved Flow found by task key |
+| 2. Do it live | One exploration, recorded, that must reach the result. It writes the draft as it goes | Run the Flow, judged. A failing step is repaired live from the page it left, and exploration continues to the result if repair cannot |
+| 3. Answer | The result, shown in chat, labelled honestly | The same, plus "this time vs last time" |
+| 4. Improve | Test and repair the draft in simulation against that recording. No site, no second live run | The same, against this attempt's recording |
+| 5. Save | Best-attempt Flow, notes, recording, acts, attempt record, subflow cards | The same; trust rises or falls |
 
-**D1. Two questions stay separate (lead; user question 1).** "Is this answer right" labels a result. "Does this Flow do the task" decides whether a Flow counts as deterministic. A result no longer needs a Flow, and a Flow still needs its judged whole run. The user's rule ("a finished Flow needs one judged whole run as it finally stands") keeps its meaning, and what goes away is the reading "no finished Flow, no result". The run's `failed` status keeps its retry and repair meaning: a label is metadata beside it, as `resultVerification` is.
+A task becomes **one-shot** when attempt 1 gets the right answer, **two-shot** when attempt 2 does at the latest, and **deterministic** when an attempt gets the right answer with no model calls. **Getting more efficient** means model calls, tokens, dollars, live steps and time per attempt fall on the same task. These definitions are the lead's, for the user to confirm.
 
-**D2. For a task with lasting acts, the next real attempt is the test (lead; user question 2).** This is what makes two-shot natural, and it removes most double-acting at the source. Today a build explores live, which lands the act, then re-runs the whole Flow to prove it, then undoes or re-judges around what it did. Proposed:
+**The Flow is never forgotten and never a gate.** Every attempt tries to leave a better Flow, and no attempt withholds the result because the Flow is not ready.
 
-- **Read-only task.** Testing repeats nothing, so test the whole Flow in the same attempt when the budget allows. The trial's rows are the answer. If its verdict is yes the Flow is finished on attempt 1: one-shot and deterministic.
-- **Task with lasting acts, attempt 1.** Exploration performs the acts once, for real, and they count. The Flow is authored from what worked and saved as an unproven draft. The Finish stage closes anything left. The whole Flow is not re-run, because that would repeat the acts on the person's real site.
-- **Attempt 2.** The draft runs for real, judged, and that run is its whole-run test. A yes makes the Flow finished. A failure is repaired live at the failing step, as now, and the Finish stage closes the rest. Lab reset rules are unchanged for builds that are asked to prove themselves.
+## Decisions
 
-A person can still ask for a Flow to be proven now, using today's reset and judge-by-change machinery.
+**D1. One live exploration, which must reach the result (user).** It ends with the person's result, not at a submission or a test. There is no trial, reset or dry run inside it, so acts land once. A permission ask pauses it and it continues in place, where today that ends the build. The 12 places in today's loop that work against this are tabled in the [simulation study](./answer-first-plan/reports/study-simulation.md), section 8.
 
-**D3. The finisher (lead).** A new loop role with `draft: false`, as the supervisor already has, and the normal node tools under the normal permission gate. It ends with a completion of its own: `{ answer, actsDone, couldNot }`.
+**D2. Exploration may run what it has written, forward from where it is (lead).** "Must reach the result" and the user's rule that the model should generalise rather than run every iteration seem to conflict. They do not, if the model does the first row by hand, sees that it worked, writes the loop, and runs that loop on the remaining rows only, from the page it is on. It reaches the whole result cheaply. A wrong loop shows up after one row, not fifty. Those later calls are recorded in the Flow's own wire form, which is part of what the simulator needs. It is built from `core.run_flow`'s partial run and never restarts from the top. Rows already done are excluded by the act record (D6).
 
-- **Rows come only from real reads.** The finisher's reads go through `recordBatchHandler`, in a session opened as a trial's is. A model never writes rows. A plain-language answer is stored as the model's words and labelled that way.
-- **The same gate as a build.** Deleting, moving money and sending still ask the person. Recovery's narrower "destructive never offered" is not used, or the finisher could not finish such a task; the gate is what protects it.
-- **A fresh, small context.** It starts from the task, the page and the act record, not the build's long history. That keeps it cheap and is what makes its budget calculable (D6).
-- **It cannot teach to the test.** Its guidance is generic, under the standing rule.
-- **Exploration's own reads are kept too,** through the same sink, so a build's work is not thrown away.
+**D3. The result comes first; improving comes after (lead).** The answer reaches the chat as soon as it is judged. Simulation and repair run after it without blocking the person, under the same attempt's budget. A chat line says the steps are being improved. Paid work stays tied to a live attempt, so nothing runs unattended.
 
-**D4. Where the finisher enters (lead).** One entry, four seams:
+**D4. Two questions stay separate (lead).** "Is this answer right" labels a result. "Does this Flow do the task" decides whether a Flow is finished. The user's rule "a finished Flow needs one judged whole run as it finally stands" keeps its meaning and moves in time: attempt 1 ends with a simulated draft that is not finished, and the next real attempt's live judged run is what can finish it.
 
-1. A build ended without a result: draft kept, unfinished, not doable, or out of its budget share (`run.ts`, and the phases' endings).
-2. A run failed at a step and in-run repair could not fix it, with the held run's state intact (`incident-repair.ts`).
-3. A run was refuted and its repairs did not fix it (`run-outcome.ts`).
-4. A Core-computed no with nothing left to try.
+**D5. Later attempts are the same loop (user; lead for the detail).** The Flow runs live and judged. A failing step is repaired live from the page it left, as the standing rule says. If repair cannot fix it, exploration carries on from there to the result. Either way the person gets the result, the new calls are recorded, and the fix is checked in simulation before it is saved. Re-running from the start stays declined when a stated lasting act may have landed (t848, t854).
 
-A cancelled attempt, a person-only check and a permission refusal do not enter it. Those stay exactly as they are.
+**D6. One act record per attempt (lead; the rule is the user's).** Merge the four records into one, persisted and carried across all stages: what, where, classes, state, row. The exploration receives it, an identical repeat is refused, and it looks at the page before acting on anything that may have landed. A repeat that looks different to the code is possible, because identity across build, trial and run is unsolved. The Lab's double-act oracle exists to catch that. An undeclared lasting press stays a disclosed limit until this record covers it.
 
-**D5. One act record per attempt (lead; user rule).** The rule that a lasting act is never repeated matters more under this pivot. Merge the four records into one, persisted, scoped to the attempt and carried across its stages: `{ what, where, classes, state, row }`. `left-on-target.ts` and `act-ledger.ts` already produce most of it, and the project ledger's unused `persist` hook is the place to start.
+**D7. One path: a single loop (lead; user question 1).** One exploration means one loop. The Claude numbers that exist are from the single loop: 10 to 16 decisions and $1.12 to $1.89 a build. The project supervisor, its builders and their per-part tests exist to cut work into separately tested parts, which this design replaces, so it stops being the default. Its code stays, and it may return for large multi-site builds once the library exists. This also means no paid comparison of `project` against `legacy` is needed before starting: money is better spent on the new loop.
 
-- The finisher receives it in its first request, screened, and an identical repeat is refused as `rerun-check.ts` does.
-- The finisher looks at the page before it acts on anything the record says may have landed. Identity across build, trial and run is unsolved: they key by call, step stamp and node plus row. A repeat that looks different to the code is possible, and the Lab needs a double-act oracle to catch it (P7).
-- Re-runs from the start stay declined when a stated lasting act may have landed (t848, t854). An undeclared lasting press is not caught by that check today, and stays a disclosed limit until the act record covers it.
+**D8. One budget per attempt, in order (lead; user question 2).** One purse wraps the attempt. A reserve is kept for finishing and for the judge, using the mechanism the judge's reserve already has. Near the limit the person sees it coming. A refused call ends with what it has, labelled partial, and the draft is still saved.
 
-**D6. One budget per attempt, in order (lead; user question 3).** One purse wraps the attempt, with the Flow's share, then repair, then a held-back reserve for the finish and for judging. The mechanism exists: `keepBackForJudging` and `allowance()`. Because the finisher starts from a small context (D3), its reserve can be N calls at a bounded worst case. Replies stay uncapped, under the user's rule, so a breach is possible and is recorded as now. A refused call ends the finish with what it has, labelled partial. The same split applies to time, so the Flow's share of an attempt leaves time to finish.
+**D9. Honest labels (lead).** Reuse `confirmed`, `refuted` and `unverified`, and say where a result came from. One judge call says it was checked once, because one yes once finished a build on wrong rows (t296). Rows come only from real reads; a model never writes a row. A plain-language answer is labelled as the model's words. The judge needs a Flow-less summary (rows, acts, end view), which is the largest single change in verification.
 
-**D7. Honest labels (lead).** Reuse `confirmed`, `refuted` and `unverified`, and say where a result came from: a Flow, an LLM finish, or both. A label from one judge call says it was checked once. t296 is why: one yes once finished a build on wrong rows, so a label must never overstate. The judge needs a Flow-less summary (rows, acts, end view). The discovery calls this the largest single change in verification.
+**D10. Which task is this (lead).** Running a saved Flow on a guess spends real acts. Only an exact instruction digest, or the person choosing it, may run a saved Flow. A paraphrase starts a new attempt that may use a related draft or subflow as a known starting point, which is safe because it is re-checked as it runs.
 
-**D8. Which task is this (lead).** Running a saved Flow on a guess spends real acts, so only an exact instruction digest, or the person naming the Flow, may run one. A paraphrase is a new attempt that may use a related draft as a seed, which is safe because the build re-checks it. A semantic match can come later if it is worth another model call.
+**D11. What gets saved (lead).** The best-judged draft beside the latest, which today overwrites it. Notes: what worked, what failed and site quirks, written by the model at the end of each attempt, screened, per project, and shown to the next attempt's exploration; they are the person's data and never reach shared guidance. The recording, the act record, and an attempt row with task, attempt number, path, calls, tokens, dollars, time, live steps, simulation result and label.
 
-**D9. Save what the next attempt needs (lead).** An attempt record `{ task, attempt, path, calls, tokens, usd, ms, liveTrials, offlineChecks, label }`. The best-judged draft beside the latest, which today overwrites it. Builder proposals, which are memory-only and lost at the end of a build. The act record. The trace, once tracing is decided for the product (P8).
+**D12. Recording in the product (lead).** Tracing is off in the product today, and page captures pass through secret screening unscreened. Before product use: record explorations only, screen captures, keep the latest recording per Flow with a retention rule, and say so in settings. Recordings stay on the person's FluxIQ. Hosted needs sealing. Firefox has no page capture, so it can use recorded results only.
 
-**D10. Results in chat (user rule; lead for the shape).** The chat is the product and renders from `@fluxiq/ui-components`, so an answer turn with a rows preview and export goes in the shared package and both clients get it. It shows only what the person's own session already saw, and recorded page data never goes beyond that.
+## The Simulation
 
-**D11. Which build path (lead, decided by P0's numbers).** The pivot should sit on the path the product runs. P0 measures `project` against `legacy` on Claude on the same tasks. Afterwards the Lab's default and the product's default are the same.
+The user's "internal state engine" is the offline trial machinery with its cursor replaced. It reuses the socket, intake, virtual clock, id translation, trace admission and the rule that a simulated pass is never proof. Full detail is in the [simulation study](./answer-first-plan/reports/study-simulation.md).
 
-**D12. The tester's job (lead).** Offline trials refine a draft between attempts wherever they can answer, mostly read and computation changes, and never count as proof. They do not gate the MVP, because the attempt works without them and their benefit is unproven. See P8.
+```text
+RECORDING  one exploration's calls, its result, kept acts, end state, witnesses.
+STATE      page position + acts done. A successful act or page move starts a new state.
+READ       same state and exact input -> the recorded answer. The nth repeat gets the nth.
+           Else the row computer for filters on columns already read. Else a gap.
+PAGE MOVE  a recorded move from the same acts done. Else a gap.
+ACT        a recorded act, unused, same row. Once. Siblings may go in any order.
+           Used again -> gap: would repeat. Never recorded -> off the recording.
+END        every recorded act used, or carrying a receipt for why it was dropped.
+VERDICT    no model: same rows + acts covered + reached the end -> passed against the recording.
+           A check failed on recorded support -> fail, with repair feedback.
+           Any gap -> inconclusive, with its step and reason.
+REPAIR     bounded to 3 rounds. The model re-expresses the step with a recorded input,
+           or flags it to be tried live next time. A flag blocks nothing and is shown.
+```
 
-## Phases
+**"Exactly the same inputs" has to be built.** Flow steps wrap the same element in extra target and wait fields, so the first step is one canonical form for exploration and Flow, with every normalisation declared. Row identity, `where`, `text`, `url`, `value`, `checked` and `ensureState` are never normalised away, because those are the real differences. D2 helps further, by recording loops in the Flow's own form.
 
-Interfaces are fixed by the lead before dispatch, then lanes run in parallel, each on its own paired task. Every phase is provider-free until P9, and every model-facing line stays generic.
+**The go/no-go.** Before anything is built on it, saved Flows go through the rule offline and are compared with their own live answers. The target is near a Flow's agreement with itself: 73 of 77 for page URL, 110 of 125 for act status. Then a replay of all saved builds must show **0 false passes on saved failed runs**. If the rule cannot get close, the Engine lane stops and the user decides. The product still works without it, because attempt 2's live run is the real test; drafts would just arrive less polished.
 
-**P0. Measure and prove (first).**
-- Provider-free probe of the double-act finding: a build whose whole trial presses a lasting step, then "run it", counting presses through the real service. Keep it as a test.
-- Paid, supervised, one round: the same two tasks in `project` and in `legacy` on Claude, recording calls, tokens, dollars, time and verdict. The lead states what will run before it runs. This also gives a baseline before the pivot.
-- Save why each offline check was inconclusive (`meta.json` says only that it was). This is the cheap first step in the tester's own measurement.
-- Done when: the probe's answer, the cost table and D11's decision are in the ledger.
+**What it can and cannot do.** It catches a wrong filter, a dropped act, a repeated act, the wrong row, a wrong order and wrong computed rows, all free after the first model call. It cannot prove a new target, a page never reached or a branch not taken: those come back as flags, tried live next time. It knows one history, so a pass says the logic fits the recording and nothing more, and it is shown as "checked against my recording, not yet run live". The simulated-pass, live-fail rate is the metric that says whether it earns its place. A repair round on Claude costs about $0.26-0.34; a re-simulation costs nothing.
 
-**P1. Show the answer (Core and `ui-components`).** An attempt result record; an answer turn in chat with rows preview and export; a passing build's trial rows become the answer; "run it" shows its rows. Tell the person what is on the site. This needs no finisher and is already a real gain.
-- Done when: a provider-free build and run end with their rows in chat, proven headed on a realistic site.
+## The Subflow Library
 
-**P2. One act record (Core).** D5. Done when: the P0 probe's double act is gone, the record survives a restart of the attempt's stages, and a repeat is refused across stages.
+Full detail, including the walk through the user's dashboard example, is in the [subflow study](./answer-first-plan/reports/study-subflows.md).
 
-**P3. The finisher (Core; needs P2's and P4's interfaces fixed first).** D3 and D4: the role, the completion, the row sink and the four seams, with exploration's reads kept. Done when: for each seam, a scripted model finishes a task from the page a failure left, on the real store, with its rows stored from reads and nothing repeated. Includes a test that a model-written row cannot get in.
+**What a subflow is, under one exploration (lead; user question 3).** Nothing cuts parts once the supervisor is gone. The model marks them as it writes the draft, using the `part` grammar it already has, with generic guidance on what makes a good part, and a person can say "save this". The library has nothing to hold until this works, so it comes first.
 
-**P4. One purse per attempt (Core).** D6. Done when: a Flow share that runs out leaves the reserve whole, a finish spends it, and a refused call ends in a labelled partial result.
+**The card.** A versioned, project-scoped subflow with: name, purpose in the person's words, sites, inputs, outputs, fixed values, lasting classes, start check, end check, what it calls, its shape hash and its trust. No page text.
 
-**P5. Labels (Core).** D1 and D7: the Flow-less judge summary, labels as metadata, a Flow's gate unchanged. Done when: a wrong answer from a finish is labelled refuted, and the gate still refuses an unjudged Flow.
+**Search.** Exact filters on site, inputs, outputs, lasting classes and trust, plus SQLite full-text over name, purpose and ports, which Core already uses elsewhere. No embeddings: the model already in the loop covers paraphrase.
 
-**P6. Route and reuse (Core).** D2, D8 and D9: task key, route ladder, seed a build from the saved draft in project mode, keep the best-judged draft, keep proposals, read-only versus lasting tasks. Correct the chat prompt's false claim about drafts. Done when: a second attempt on a scripted site starts from the first's draft and spends less.
+**Run.** One runner for a person and for the model (`run-project-part`, `core.run_part`), built from the existing entry preparation, which already runs saved steps with no model and hands their acts to the ledger. A trusted subflow can run at zero model calls inside an exploration still in progress, and that is how later attempts get cheaper.
 
-**P7. Two scores and the second attempt (Extension; can start now).** See the paired document: `answerVerdict` beside the Flow's verdict, an oracle stage before any reset, a double-act oracle, a same-workspace two-attempt lane and a per-attempt report.
+**Nesting and sharing.** Nesting already runs. Call Subflow gains a pinned `{ part, version }`, so a site subflow and its action sub-subflow can be used from two places through one execution path. Versions are immutable. A repair makes a new version, and only the caller whose judged run used it moves its pin. Others are told and try the newer version first if they fail there.
 
-**P8. The tester (both repositories; does not gate the MVP).** In order, each decided by the one before:
-1. P0's saved reasons show why checks come back inconclusive.
-2. The planned off/on comparison, on Claude, which has never been run.
-3. Look up the latest trace by Flow, and decide about tracing in the product: about 11.5% overhead, plus page data kept.
-4. A repair role over a scoped environment that answers from the recording. Reads need the snapshot page host, deferred until after the MVP because it needs a hidden browser in the person's panel; that was a supervisor decision the user can overrule.
-5. When it runs. Model calls still cost money between attempts and paid work is never unattended, so it runs at the start of the next attempt or while the person's task is live.
+**Detection, in order of value.**
 
-Acts and branches not taken cannot be proven offline, so read and scrape tasks gain the most.
+1. **Before exploring.** The free opening look gains a shortlist of up to 5 cards, by site first, then text. No added model call. The study's measure: 66% of a brief's decisions came before its first test, which is the ceiling on what a hit saves. The real hit rate is unknown until the Lab's second-attempt lane runs.
+2. **At save.** An exact shape hash stops duplicates, so the library does not bloat.
+3. **During exploration.** Only later, and only if precision measured offline is good. Generic pages will match, and it needs data not recorded today.
 
-**P9. Prove it live.** One task per realistic site, attempt 1 and attempt 2, up to four lanes at once in visible browsers from the extension chat, with the extension UI reviewed in each loop. Each failure gets a debug note, and is fixed forward. Then the standing rules are updated in `AGENTS.md`, the docs are brought current, and both `main` branches are promoted after a passing sweep.
+**The rule above all of them: a match only ever produces an offer.** No detector runs anything. A run needs the same site, a true start check (`unknown` fails), its inputs, and lasting classes within what was asked, and it re-checks before its first lasting step. **The worst false match is a fixed value:** a part saved from "add the red shoes" passes every page check on the wrong item. So fixed values are on the card, and a lasting part holding a literal from the person's request is refused from the library.
+
+**Trust** is derived, never set by hand. Reuse `flow-change/confidence.ts`: unproven, then provisional on a judged yes, then established after 2 zero-model runs. A failure drops it. Unproven parts with lasting acts are not offered.
+
+## The Extension
+
+Full detail, with evidence per screen, is in the [extension study](./answer-first-plan/reports/study-extension-ux.md). Chat-first stays, with no split screen, and each step stays visible with its reasoning (both user).
+
+**Words.** The first reply promises the result. Person-facing words become **task**, **automation** and **subflow**; Flow, build, promoted, candidate, trial, judge and Core go (user question 5).
+
+**Working.** A sticky header above the composer: `Working · 1m 12s · $0.34 of $5.00 · [Stop]`. Each step is told once, not up to four times. Routine retries stop being red.
+
+**The answer turn.**
+
+```text
+ Found 10 of 10                                   ✓ Checked
+ [column | column | column | column]
+ [first 5 rows...]                     Show all 10 · CSV · JSON
+ On the site: nothing changed
+ Checked: right columns, cheapest first, no duplicates
+ From: 3 results pages, shop.example  ·  3m 14s · $1.12
+ Saved so next time is quicker      [Run again]  [What I did]
+```
+
+Its kinds: rows; done on the site, from Core's act record and never the model's prose; a plain answer; partial. Three check states: checked, not sure with no tick, failed.
+
+**Failure has one shape:** "I couldn't finish this. Why. What I got. What I saved. Next: Try again." Never a code, never a cut sentence.
+
+**The second attempt is visible.** "Using what I saved from Tuesday." Steps marked from saved or worked out again. `This time 18s and $0.00. First time 3m 14s and $1.12.`
+
+**Tabs.** Chat and a second tab stay, as the user set on 2026-09-29: **Chat** and **Automations**, with Tasks and Library inside the second, and search across both (user question 5). The library is a tree: site subflow, action sub-subflow, with state, inputs, who uses it, Run and Ask about it.
+
+**Setup.** One screen in order, with state detected: FluxIQ running, signed in, browser approved, model key, each with its exact action. Today these are four undocumented stops, and the model-key button goes to the wrong place.
+
+**Not needed:** a Flow editor, run logs, traces or version diffs in the extension; the top-bar record icon; the unused recording review code.
+
+## Lanes And Phases
+
+Interfaces are fixed by the lead before dispatch, and lanes run in parallel, each on its own paired task. Everything is provider-free unless it says paid. A paid step is announced first and supervised. Browser proof uses the ten realistic scenarios in visible browsers.
+
+**Interface lane (lead, first).** The attempt record, the result record, the act record's shape, the `results` port and the part card. Fixing these first is what lets the other lanes run at once.
+
+**Answer lane (`ui-components`, extension). Can start at once with fake ports.**
+1. Truth pass: no codes, no cut sentences, no tick on "not confirmed", red only when it matters, onboarding claims made true, dead code gone.
+2. Answer turn and `results` port. Proof: scripted answer on company-website, CSV and JSON, 360 px, keyboard.
+3. Real rows from an existing run's dataset. Proof: provider-free run on crossborder-marketplace, oracle rows equal the preview.
+4. Work header: time, cost, one Stop, each step told once.
+
+**Exploration lane (Core).**
+1. New single-loop path: no trial, reset or dry run; every asked row and page, with D2; row sink; witnesses before the first lasting act and at the end; ends with the result; generic guidance.
+2. One act record. Proof: a repeat refused across stages; a provider-free probe that "run it" straight after a build no longer repeats silently.
+3. One purse per attempt with its reserve.
+4. Result record, Flow-less judge, labels, the answer event to chat.
+5. **Paid:** one exploration per site, supervised. This is the first real test of "must reach the result".
+
+**Engine lane (Core, domain).**
+1. **Go/no-go:** save each gap's reason, then the corpus harness. Stop if it cannot get close.
+2. One canonical form; re-measure the 0 of 43.
+3. State engine and row computer behind the same socket.
+4. Pure verdict; 0 false passes on saved failed runs.
+5. Repair tools and flags, scripted first, then paid.
+6. Product recording under D12.
+
+**Second attempt lane (Core).**
+1. Task key and route (D10). Correct the chat prompt's false claim about drafts.
+2. Best-attempt save, notes, seeding, attempt row.
+3. Live judged run, repair, carry on to the result, shown as cheaper. Proof: a scripted second attempt spends less than its first.
+
+**Lab lane (extension).** `answerVerdict` beside the Flow's verdict; a double-act oracle; a same-workspace two-attempt lane; a per-attempt report; the Lab's default equal to the product's. See the paired document.
+
+**Library lane (Core).**
+1. Provider-free probe of a likely live bug: replacing a part mints new node ids, and a bound output could silently return `null`.
+2. Parts marked by the model; card and store written at save; trust read from judgement rows.
+3. Search API, reachable from the extension.
+4. Run a part with inputs and start check. Proof: refused on the wrong page with no site change.
+5. Shortlist in the opening look, `core.run_part`, dedupe at save. **Paid** two-task lane on one site: the first real hit-rate number.
+6. Pinned calls, nesting from two places, callers known.
+7. Repair isolation.
+8. Detection during exploration, only if measured precision is good.
+
+**Extension lane (extension, `ui-components`).** Setup; saved state and second attempt visible; Tasks with search and durable steps; asks told once, with the PIN if the user wants it; the library tree, run and inspect; recording as a composer attachment and settings in order; a Firefox pass, where the popup closing on a page click matters most.
+
+**Prove it.** One task per realistic site, attempt 1 and attempt 2, up to four lanes at once from the extension chat, with the UI reviewed in each loop and a debug note per failure. Then the standing rules are updated, docs brought current and both `main` branches promoted after a passing sweep.
 
 ## Schedule
 
-Cut for parallel lanes, with each date's real constraint named. MVP deadline: 2026-11-10.
+Cut for parallel lanes, each date with its real constraint. MVP deadline: 2026-11-10.
 
 | Date | Work | What constrains it |
 | --- | --- | --- |
-| 11-03 | Merge t854, t855. Plan reviewed | The user's three answers |
-| 11-04 | P0. Sweep of today's `dev`, then promote to `main`. Interfaces fixed. P1, P2, P4, P7 start | Full suites: two a day. P0's paid round needs supervision |
-| 11-05 | P1, P2, P4, P7 merge. P3, P5, P6 start | P3 waits on P2's and P4's interfaces only |
-| 11-06 to 11-07 | P3, P5, P6 merge. First live round | Live rounds wait until agreed changes are merged |
-| 11-07 to 11-09 | P9 rounds, fixing forward | Up to four runs at once; each failure needs a debug note before its next run |
-| 11-10 | Acceptance, promote | A sweep must pass on the final commit |
+| 11-03 | t854 merged. Plan reviewed | The user's answers |
+| 11-04 | Sweep of the fixes, then promote to `main`. Interfaces. Answer, Exploration, Engine go/no-go and Lab lanes start | Full suites: two a day |
+| 11-05 | Answer turn and header merge. Act record and purse merge. Second attempt and Library cards start | The go/no-go result decides the Engine lane |
+| 11-06 | Exploration path merges. **First paid explorations** | Live rounds wait for agreed changes to merge |
+| 11-07 | Second attempt merges. Canonical form and engine merge. **First full two-attempt loop live** | Each failure needs a debug note before its next run |
+| 11-08 to 11-09 | Rounds, fixing forward. Library search, run and shortlist. Setup, Tasks and library tree | Up to four live runs at once |
+| 11-10 | Acceptance, sweep, promote | A sweep must pass on the final commit |
 
-Whether this holds depends on what P0 and the first live round find, so the lead will restate it from each. P8 beyond its first two steps may land after 11-10, which does not affect the attempt working.
+**Honest read.** The core loop working end to end in about four days is realistic if the go/no-go passes and the first paid explorations mostly reach their results. These two are the real checkpoints, and the lead will restate this after each. **Likely to land after 11-10:** pinned sharing across Flows, repair isolation, detection during exploration, the Firefox pass, and a hidden-browser simulator tier if it is wanted at all.
+
+## Standing Rules This Changes
+
+Nothing here is changed until the user agrees. Then `AGENTS.md`, memory and any code comments change together.
+
+| Rule | Today | Proposed |
+| --- | --- | --- |
+| "Build the whole Flow first; test it whole only when it should work" | A live whole test inside the build | One live exploration; the draft is tested in simulation; the first whole live run is the next real attempt |
+| "A finished Flow needs one judged whole run" | Stands | Stands, and moves to attempt 2 (D4) |
+| "A failed test is repaired live on the failing step" | In the build | Stands for live attempts; a draft's test failure is repaired in simulation |
+| "Every node retries", "stale target found again", "judge the change", permission gates, ten realistic scenarios, guidance never teaches to the test, lasting acts never repeated | Stand | Stand, and matter more |
+| Claude live tests "$5 per build" | Per build | Per attempt (user question 2) |
+| "Only a few tasks run fully end to end" | About one per site | Stands, as two attempts per task |
+| Memory: generalise rather than run every iteration | Stands | Stands, through D2 |
 
 ## Risks
 
-- **Repeating a lasting act.** The highest consequence. D2, D5, the P0 probe, the Lab's double-act oracle. A press nobody declared as lasting can still slip through, and this will be said plainly until it is covered.
-- **A wrong answer shown as right.** D7: label what was checked and how, and keep two questions separate. Rows only from real reads.
-- **A finisher with broad reach on a real site.** The same permission gate as a build and the same secret screening. It sees only what the session saw.
-- **Cost.** Tasks cost more until a Flow works. $0.25 cannot pay for it on Claude, and `project`'s cost on Claude is unknown until P0.
-- **A site dirtied by attempts.** Final-state oracles are absolute today, so a finish on a used site may read wrong. Seeded baselines per attempt, and judging by change as the standing rule says.
-- **Old pass rates stop being comparable** once there is a first score. Report the two separately and never blend them.
-- **Scope in eight days.** P1 is valuable alone, and P3 is the heart of it. If time runs short, P6's reuse and P8 give way first, because attempt 1 still works without them. The result would then be one-shot without the efficiency curve. That is a trade the user should see before it is made, and it will be raised then.
+- **Repeating a lasting act.** The highest consequence. D1, D2, D6, the Lab's oracle. An undeclared lasting press can still slip through, and this stays disclosed until covered.
+- **Exploration not reaching the result.** The purse and 30-minute limit may stop it short. Then the person gets the partial result and a saved draft, and D2 is what keeps long tasks affordable. Unknown until the first paid round.
+- **The simulation rule may not validate.** The go/no-go exists for that, and the loop still works without it.
+- **Attempt 2 failing often.** Live time moves rather than vanishes: live trials were 31% of build time, and a failure costs the person a second real run. The simulated-pass, live-fail rate will show it.
+- **A wrong answer shown as right.** D9. A pure verdict can also pass a Flow that repeats exploration's mistake, since the reference rests on one live judgement.
+- **A wrong subflow on the right page.** Fixed values on the card, and offers only.
+- **Page data in recordings.** D12 must land before product use.
+- **Failed exploration has no reference.** No simulation then; the draft stays unchecked and says so.
+- **Old pass rates stop being comparable.** Report the two scores separately and never blend them.
+- **Eight days.** If time runs short, the order to give up is: during-exploration detection, repair isolation, pinned sharing, Firefox, then repair in simulation. The answer in chat, one exploration, the act record and the second attempt are what must land, because they are the product.
 
 ## Work Ledger
 
-### 2026-11-03 - Discovery and plan
+### 2026-11-03 - Discovery, three studies and the plan
 
-- Agent: lead; discovery by a read-only worker.
-- Changed: this document, its paired document and `answer-first-plan/reports/discovery.md`. No source.
-- Validation: `grep` of `coreAuthoringMode`/`authoringMode` in `lab-runs/2026-11-03/*/snapshots/flow-lane.json` -> `legacy` on all three runs; `AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT` -> `project`. The discovery's other claims are its own; its inferred items are marked [I] and listed at its end.
-- Outcome: plan ready for the user's review.
+- Agent: lead; four read-only workers.
+- Changed: this document, its paired document and `answer-first-plan/reports/`. No source.
+- Validation: lead checked `authoringMode` in `lab-runs/2026-11-03/*/snapshots/flow-lane.json` -> `legacy` on all three, and `AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT` -> `project`. The studies' measured figures are theirs; each lists what it verified, measured and inferred.
+- Outcome: plan shown to the user for review.
 
 ## Open Questions
 
-For the user. Each changes or re-reads a standing rule, so it waits for an answer. The lead's recommendation is the first option.
+For the user. The lead's recommendation comes first in each.
 
-1. **Does a Flow still need its judged whole run to count as deterministic, while a result does not?** Recommended: yes, D1.
-2. **For tasks with lasting acts, may the next real attempt be the Flow's whole-run test, instead of re-running it in the same attempt?** Recommended: yes, D2. This narrows "a finished Flow needs one judged whole run" only in timing: the draft is not finished until that run.
-3. **What should the ceiling cover, and at what default?** Recommended: one purse per attempt covering Flow, repair, finish and judging, keeping $5 for Claude in the Lab, with the product's default set from P0's numbers. AGENTS.md says $5 per build, the Lab's purse spans the whole Flow including playback, and the product default is $0.25.
+1. **Stop using the project supervisor by default, in favour of one exploration loop?** Recommended: yes, keeping its code for large multi-site builds later (D7).
+2. **What should a budget cover, and at what default?** Recommended: per attempt, covering everything; $5 in the Lab; $2 in the product, from the $1.12-$1.89 measured, with a visible meter. Today AGENTS.md says $5 per build and the product default is $0.25.
+3. **How should subflows get cut?** Recommended: the model marks them as it writes, and a person can say "save this". Scoped to one project for now.
+4. **Should the extension ask for a PIN on money, delete and send?** Recommended: yes, as the web panel does. Today one press grants them in the extension.
+5. **Words and tabs.** Recommended: "task" for what was asked, "automation" for what is saved, "subflow" as the user says it, lifting today's ban on that word; and keeping the two tabs from 2026-09-29, Chat and Automations, rather than the slide-over the study proposed.
+6. **Do the one-shot, two-shot and deterministic definitions under The Loop match what the user means?**
 
-Also worth a line from the user, though nothing waits on them: the definitions under Objective, and whether "internal state engine automation tester" means offline trials. "State engine" appears nowhere in either repository.
+Decided by the user's message of 2026-11-03, recorded here so it is not asked again: a result does not need a finished Flow, and there is no live re-test inside attempt 1. Going ahead on the lead's reading of "internal state engine": the offline trial machinery with a state engine in place of its cursor.
