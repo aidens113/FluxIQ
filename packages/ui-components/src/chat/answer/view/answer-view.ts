@@ -66,7 +66,7 @@ export function createAnswerView(host: AnswerHost = {}): AnswerView {
   return {
     element,
     update(outcome) {
-      model = answerModel(outcome, { reportsSpend: host.results?.reportsSpend !== false, canAddBudget: typeof host.results?.addBudgetAndCarryOn === "function" });
+      model = answerModel(outcome, { reportsSpend: host.results?.reportsSpend !== false, canAddBudget: typeof host.results?.addBudgetAndCarryOn === "function", nowMs: (host.now ?? Date.now)() });
       draw();
       return model !== undefined;
     }

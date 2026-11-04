@@ -74,10 +74,9 @@ test("Core's person-needed ask at a robot check offers Continue and Stop, as Cor
     state: "choices",
     choices: [{ label: "Continue", kind: "choice", value: "person_done" }, { label: "Stop", kind: "choice", value: "person_stop" }]
   });
-  // D7 of the run-murwd8le-79e735a8 UI review: one press of Continue was told
-  // three times. The check's own card ("Robot check · Done. You pressed
-  // Continue.") tells it; the ask under the turn says nothing more.
-  assert.deepEqual(askPresentation({ ...turnAsk, status: "answered", answer: { kind: "choice", value: "person_done" } }), { state: "silent" });
-  assert.deepEqual(askPresentation({ ...turnAsk, status: "answered", answer: { kind: "choice", value: "person_stop" } }), { state: "silent" });
+  // The stream draws no card for a check any more, so the transcript keeps its
+  // ending here, once.
+  assert.deepEqual(askPresentation({ ...turnAsk, status: "answered", answer: { kind: "choice", value: "person_done" } }), { state: "settled", sentence: "Done. You pressed Continue." });
+  assert.deepEqual(askPresentation({ ...turnAsk, status: "answered", answer: { kind: "choice", value: "person_stop" } }), { state: "settled", sentence: "You pressed Stop." });
   assert.deepEqual(askPresentation({ ...turnAsk, status: "expired" }), { state: "settled", sentence: "FluxIQ stopped waiting for an answer." }, "an ask nobody answered still says so");
 });

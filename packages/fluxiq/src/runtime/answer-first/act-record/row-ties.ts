@@ -24,8 +24,11 @@
 // columns still finds the row the press named. Here a word most of that read shares does not
 // count: every remaining row saying "Accept" is not the row an "Accept" was pressed on.
 //
-// **A row a pass carries is matched by its words too (`./same-row.ts`).** It may read differently
-// from the read that noted the press, and that must not read as another row.
+// **Whether two rows are one row is `./same-row.ts`'s.** This file holds what that rule reads:
+// a row's hashed fields, which reads it was in, and which of its fields those reads shared. A value
+// that is one number is held as that number's own writing, since `1,299.00` read back from text
+// is `1299`. The newest rows are kept past `MOST_ROWS`, and a row an act is on always, since that
+// row is what stops the act happening twice.
 //
 // **Nothing here is kept in the clear.** A row's words and addresses are hashed, so what
 // is persisted beside a Flow holds no page text, and one read can still be matched
@@ -42,6 +45,10 @@ const MOST_ROWS = 5_000;
 const FIELD_WORDS_NEEDED = 0.6;
 const HASH_LENGTH = 16;
 const MINTED_HANDLE = /^\$|handle/iu;
+/** An evidence reference is minted per read as a handle is (`./identity/fields.ts`), and no call names one. */
+const MINTED_REFERENCE = /evidence/iu;
+/** A value that is one number, whatever marks it: read back from text, `1,299.00` and `1299` are one value. */
+const ONE_NUMBER = /^[^\p{L}\p{N}]*\d[\d,]*(?:\.\d+)?[^\p{L}\p{N}]*$/u;
 const ADDRESS_OR_PATH = /^(?:[a-z][a-z\d+.-]*:\/\/|\/)/iu;
 const WORD = /[\p{L}\p{N}]+/gu;
 /** A number this long is an id a person tells a row by: too long to be a count or a place on a page. */
@@ -70,21 +77,37 @@ export class AutomationStudioAttemptActRowTies {
     return hashed(trimmed.replace(/^[a-z][a-z\d+.-]*:\/\/[^/?#]+/iu, "").replace(/#.*$/u, "").replace(/\/+$/u, "") || "/");
   }
 
-  /** Holds `rows`, the rows of one read, the newest kept where they run past the bound (`MOST_ROWS`). Answers the digests of the rows it read. */
-  note(rows: readonly JsonObject[]): string[] {
+  /** Holds `rows`, the rows of one read, the newest kept where they run past the bound (`MOST_ROWS`), and `acted` kept always: a row an act is on is what stops it happening twice. Answers the digests of the rows it read. */
+  note(rows: readonly JsonObject[], acted: ReadonlySet<string> = new Set()): string[] {
     const read = this.rows.reduce((newest, row) => Math.max(newest, ...(row.reads ?? [])), 0) + 1;
     const batch = rows.flatMap((row) => notedRow(row) ?? []);
     markCommon(batch);
-    const merged = new Map(this.rows.map((row) => [row.row, row]));
-    for (const noted of batch) {
-      const known = merged.get(noted.row);
-      merged.set(noted.row, withRead(known ? mergedRow(known, noted) : noted, read));
-    }
-    this.rows = [...merged.values()].slice(-MOST_ROWS);
+    this.hold(batch, acted, read);
     return batch.map((row) => row.row);
   }
 
-  /** The digests `row` answers to: its own, and those of the rows earlier reads noted that are the same row (`./same-row.ts`). None for a row that can be told from no other. */
+  /** Holds one row an act is on. It is no read, so it counts in none (`./same-row.ts`). */
+  noteActed(row: JsonObject, acted: ReadonlySet<string>): void {
+    const noted = notedRow(row);
+    if (noted) this.hold([noted], acted);
+  }
+
+  private hold(batch: readonly AutomationStudioAttemptActNotedRow[], acted: ReadonlySet<string>, read?: number): void {
+    const merged = new Map(this.rows.map((row) => [row.row, row]));
+    for (const noted of batch) {
+      const known = merged.get(noted.row);
+      const row = known ? mergedRow(known, noted) : noted;
+      merged.set(noted.row, read === undefined ? row : withRead(row, read));
+    }
+    let over = merged.size - MOST_ROWS;
+    this.rows = [...merged.values()].filter((row) => {
+      if (over <= 0 || acted.has(row.row)) return true;
+      over -= 1;
+      return false;
+    });
+  }
+
+  /** The digests `row` answers to: its own, and those of the rows held that are the same row (`./same-row.ts`). None for a row that can be told from no other. */
   sameAs(row: JsonObject): string[] {
     const carried = notedRow(row);
     if (!carried) return [];
@@ -143,19 +166,26 @@ function noteValue(noted: AutomationStudioAttemptActNotedRow, key: string, value
     for (const [inner, item] of Object.entries(value)) noteValue(noted, inner, item);
     return;
   }
+  if (typeof value === "boolean") {
+    // Tells two rows apart as any value does, and is no word on the page: no sentence fits it and it proves nothing.
+    if (!MINTED_HANDLE.test(key) && !MINTED_REFERENCE.test(key)) noted.fields.push({ words: [hashed(String(value))], lettered: [] });
+    return;
+  }
   if (typeof value !== "string" && typeof value !== "number") return;
   const text = String(value);
   if (MINTED_HANDLE.test(key)) {
     if (text) noted.handles.push(text);
     return;
   }
+  if (MINTED_REFERENCE.test(key)) return;
   const path = AutomationStudioAttemptActRowTies.pathOf(text);
   if (path) {
     noted.paths.push(path);
     return;
   }
-  const words = text.toLowerCase().match(WORD) ?? [];
-  if (words.length > 0) noted.fields.push({ words: words.map(hashed), lettered: words.filter((word) => /\p{L}/u.test(word) || ID_NUMBER.test(word)).map(hashed) });
+  const words = plainNumber(text).toLowerCase().match(WORD) ?? [];
+  // A long number is an id only as it is written: `1,250,000.00` is an amount.
+  if (words.length > 0) noted.fields.push({ words: words.map(hashed), lettered: words.filter((word) => /\p{L}/u.test(word) || (ID_NUMBER.test(word) && text.includes(word))).map(hashed) });
 }
 
 const fieldKey = (field: { words: readonly string[] }) => field.words.join(" ");
@@ -187,6 +217,13 @@ function mergedRow(known: AutomationStudioAttemptActNotedRow, noted: AutomationS
 
 function withRead(row: AutomationStudioAttemptActNotedRow, read: number): AutomationStudioAttemptActNotedRow {
   return { ...row, reads: [...(row.reads ?? []), read].slice(-MOST_READS_KEPT) };
+}
+
+/** A value that is one number as that number's own writing (`ONE_NUMBER`); anything else, or one too long to read exactly, as it stands. */
+function plainNumber(text: string): string {
+  if (!ONE_NUMBER.test(text)) return text;
+  const number = Number(text.replace(/[^\d.]/gu, ""));
+  return Number.isFinite(number) && Math.abs(number) <= Number.MAX_SAFE_INTEGER ? String(number) : text;
 }
 
 /**

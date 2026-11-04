@@ -1,3 +1,5 @@
+import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
+import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstRowCall, AutomationStudioAnswerFirstRowsStored } from "./rows-call.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "./rows-summary.ts";
@@ -9,6 +11,19 @@ export type AutomationStudioAnswerFirstRowSink = {
    * input or from a model's words, and never throws for a store failure.
    */
   fromCall(call: AutomationStudioAnswerFirstRowCall, answer: AutomationStudioLlmEvidenceToolExecutionResult): Promise<AutomationStudioAnswerFirstRowsStored | undefined>;
+  /**
+   * One batch a saved Flow's run captured, as the engine hands it to `onRecordBatch`. Its rows
+   * join this sink's account, and a later read of the same list joins them (`./row-sink.ts`).
+   * A store that fails throws, which the engine reads as the step failing: rows the Flow says
+   * it saves are never dropped in silence.
+   */
+  recordBatch(batch: AutomationStudioRecordBatch): Promise<AutomationStudioRunDatasetSummary>;
+  /**
+   * A judge said no with a run's rows as the result: they no longer outrank or take in a later
+   * read, which is how a run that found the wrong list stops standing in the repair's way.
+   * What was stored stays stored; a later read simply becomes the result by the plain rule.
+   */
+  runRowsRefused(): void;
   /** What this sink stored, now, from its own account (rows repeated whole are counted once, as processing does). */
   summary(): AutomationStudioAnswerFirstRowsSummary;
   /** `summary`, read back from the store after processing, so what is judged and shown is what was stored; the sink's own account when the store cannot be read. */

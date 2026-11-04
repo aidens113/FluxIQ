@@ -89,7 +89,7 @@ function buildContinuationGuidance(context: AutomationStudioConversationDecision
   const offered = (id: string) => context.capabilities.some((capability) => capability.id === id);
   const lines = ["A Flow's name alone does not prove it already does the requested job. Use what the conversation actually established; ask which Flow when the intended one is ambiguous."];
   if (offered(AUTOMATION_STUDIO_CONVERSATION_EXPLORE.capability.id)) {
-    lines.push("When they ask to continue or finish an unfinished creation, choose flow.explore for that Flow and omit instruction to use its saved goal. A compatible saved draft continues while the Flow and instructions are unchanged; the service checks this. A genuinely changed goal goes in instruction and may make old draft evidence incompatible. Repeating the same task is not by itself a request to change its saved goal.");
+    lines.push("When they ask to continue or finish an unfinished creation, choose flow.explore for that Flow and omit instruction to use its saved goal. Never promise that it picks up from saved steps: the service alone decides whether earlier work can be used, from the exact task, and its answer says what was used. A genuinely changed goal goes in instruction and counts as a new task. Repeating the same task is not by itself a request to change its saved goal.");
   }
   if (offered(AUTOMATION_STUDIO_CONVERSATION_IMPROVE.capability.id)) {
     lines.push("Changing a Flow with applied steps uses flow.improve, which works out a change and asks the person before applying it. An unfinished creation is not an applied Flow to improve.");

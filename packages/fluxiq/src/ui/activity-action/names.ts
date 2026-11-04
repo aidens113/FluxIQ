@@ -14,6 +14,7 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["wait", "Wait"],
   ["person_check", "Robot check"],
   ["permission", "Permission"],
+  ["question", "Question"],
   // What was asked, in Core's words: a refused edit's card reads "Change the
   // Flow · Not done: ..." (t193 1003, C13), the verb of the decision's heading
   // "Changing the Flow" (D12 of the t342 round 2 UI review).

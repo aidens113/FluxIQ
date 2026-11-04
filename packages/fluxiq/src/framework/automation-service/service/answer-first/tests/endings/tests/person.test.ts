@@ -89,7 +89,8 @@ describe("a check only a person can clear", () => {
     const { service, projectId, flowId } = await hold.ready();
     const ask = await pendingAsk(service, projectId, flowId, AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND);
     expect(ask.timeoutMs).toBeNull();
-    expect((await keptAttempt(service, projectId, flowId))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "person_only_check" });
+    // The row is written just after the question shows, so it is waited for rather than read once.
+    await vi.waitFor(async () => expect((await keptAttempt(service, projectId, flowId))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "person_only_check" }), { timeout: 10_000, interval: 25 });
     await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION });
     const attempt = await generating;
     const answer = expectReached(attempt);

@@ -5,10 +5,12 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import { fakeTaskOutcomes } from "../../../testing/index.ts";
 import type { ChatTaskOutcome } from "../../ports/index.ts";
-import { answerModel, type AnswerModel } from "../model/index.ts";
+import { answerModel, type AnswerModel, type AnswerModelOptions } from "../model/index.ts";
 
-const REAL = { reportsSpend: true, canAddBudget: true };
-const NO_SPEND = { reportsSpend: false, canAddBudget: true };
+// The first attempts began at 1_800_000_000_000; "now" is a day and a minute later, so a first attempt saved yesterday and a second saved today.
+const NOW = 1_800_000_000_000 + 86_400_000 + 60_000;
+const REAL = { reportsSpend: true, canAddBudget: true, nowMs: NOW };
+const NO_SPEND = { reportsSpend: false, canAddBudget: true, nowMs: NOW };
 
 test("an outcome derived from a run reads as a port that reports no spend, never a made-up $0.00", () => {
   for (const outcome of [fakeTaskOutcomes().rowsChecked, fakeTaskOutcomes().budgetOutPartial]) {
@@ -17,7 +19,7 @@ test("an outcome derived from a run reads as a port that reports no spend, never
   assert.equal(modelOf({ ...fakeTaskOutcomes().budgetOutPartial, spendUnknown: true }).addBudget?.words, "Add budget and carry on");
 });
 
-function modelOf(outcome: ChatTaskOutcome, options = REAL): AnswerModel {
+function modelOf(outcome: ChatTaskOutcome, options: AnswerModelOptions = REAL): AnswerModel {
   const model = answerModel(outcome, options);
   assert.notEqual(model, undefined);
   return model!;
@@ -37,7 +39,7 @@ test("rows, confirmed: found N of N, a tick, the first five rows, nothing change
   assert.equal(model.siteTitle, "On the site: nothing changed");
   assert.equal(model.checked, "Checked: Right columns, cheapest first, no duplicates");
   assert.equal(model.from, "From: 3 results pages on shop.example · 3m 14s · $1.12");
-  assert.equal(model.saved, "Saved, and it partly works. I will repair it next time.");
+  assert.equal(model.saved, "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.");
   assert.equal(model.canExport, true);
   assert.equal(model.canRunAgain, true);
   assert.equal(model.compared, undefined);
@@ -107,7 +109,7 @@ test("a plain answer is the model's words, labelled as the model's", () => {
   assert.equal(model.kind, "plain_answer");
   assert.deepEqual(model.text, { label: "In the model's words", text: "The store is open until nine tonight." });
   assert.equal(model.check?.mark, "tick");
-  assert.equal(model.saved, "Notes only. I could not save steps, so next time I will start from what I learned.");
+  assert.equal(model.saved, "Saved yesterday: notes only. I could not save steps, so next time I will start from what I learned.");
 });
 
 test("partial: here are the 3 I got, and what is missing", () => {
@@ -128,7 +130,7 @@ test("budget out is the one failing shape: the budget, what I got (not confirmed
   assert.equal(model.lead, "It spent $5.00 of $5.00.");
   assert.equal(model.gotLine, "What I got: 3 rows.");
   assert.equal(model.check?.mark, "none");
-  assert.equal(model.saved, "Saved, and it partly works. I will repair it next time.");
+  assert.equal(model.saved, "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.");
   assert.deepEqual(model.addBudget, { addUsd: 5, words: "Add $5.00 and carry on" });
   assert.equal(modelOf(fakeTaskOutcomes().rowsRefuted).check?.mark, "cross", "a refuted result is shown as failed, not hidden");
 });
@@ -193,7 +195,7 @@ test("working has no answer turn, and neither has an ended attempt with no resul
 test("the second attempt says this time and first time, with cost", () => {
   const model = modelOf(fakeTaskOutcomes().secondAttemptFromSaved);
   assert.equal(model.compared, "This time 18s and $0.00. First time 3m 14s and $1.12.");
-  assert.equal(model.saved, "Saved so next time is quicker. It worked last time.");
+  assert.equal(model.saved, "Saved today: the steps. They worked last time.");
   assert.equal(model.from, "From: 3 results pages on shop.example · 18s · $0.00");
 });
 
@@ -220,8 +222,8 @@ test("time is whole seconds: 1m 12s, and hours", () => {
 
 test("each saved state says only what is true, and a Run again is for ended attempts", () => {
   const outcome = fakeTaskOutcomes().rowsChecked;
-  outcome.saved = { state: "needs_you", trust: "unproven", savedAtMs: 1 };
-  assert.equal(modelOf(outcome).saved, "Saved, but it needs you before it can run on its own.");
+  outcome.saved = { state: "needs_you", trust: "unproven", savedAtMs: NOW - 60_000 };
+  assert.equal(modelOf(outcome).saved, "Saved today, but it needs you before it can run on its own.");
   delete outcome.saved;
   assert.equal(modelOf(outcome).saved, undefined);
 });

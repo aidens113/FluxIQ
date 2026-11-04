@@ -111,6 +111,17 @@ export type ChatSavedState =
  */
 export type ChatFinishedRunAttempt = ChatTaskAttemptFields & { status: "finished_unchecked" };
 
+/**
+ * Where an attempt's steps came from: the task's memory of it (`taskMemory.provenance`).
+ * `from` is `saved` for a step the attempt started with and `worked_out` for one new or
+ * changed in it; `ran` says it was reached. Absent on an outcome: nothing is marked.
+ */
+export type ChatAttemptProvenance = {
+  route: string;
+  startedFrom: string;
+  steps: { position: number; label: string; from: "saved" | "worked_out"; ran: boolean }[];
+};
+
 /** An attempt and what goes with it. */
 export type ChatTaskOutcome = {
   attempt: ChatTaskAttempt | ChatFinishedRunAttempt;
@@ -124,6 +135,8 @@ export type ChatTaskOutcome = {
    * whose spend is real. Its `spend` is zeros and nothing is said of its cost. Not part of the contract's records.
    */
   spendUnknown?: true;
+  /** Where its steps came from, when the attempt's record says. */
+  provenance?: ChatAttemptProvenance;
 };
 
 /** Which outcomes a thread holds. */

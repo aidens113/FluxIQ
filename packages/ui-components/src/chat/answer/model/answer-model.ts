@@ -8,7 +8,7 @@
 
 import type { ChatTaskOutcome, ChatTaskResult } from "../../ports/index.ts";
 import type { AnswerKind, AnswerModel } from "./answer-types.ts";
-import { comparedWords, fromWords, savedWords, usdWords, waitingWords } from "../words/index.ts";
+import { comparedWords, fromWords, pathWords, savedWords, usdWords, waitingWords } from "../words/index.ts";
 import { gotSummary, hasContent, resultHeadline } from "./result-headline.ts";
 import { emptyParts, resultParts } from "./result-parts.ts";
 
@@ -18,6 +18,8 @@ export type AnswerModelOptions = {
   reportsSpend: boolean;
   /** The port can raise a spent budget. */
   canAddBudget: boolean;
+  /** The time now in ms, for the day a saved line names; the real time by default. */
+  nowMs?: number;
 };
 
 type Opening = { kind: AnswerKind; headline: string; lead?: string; gotLine?: string };
@@ -80,8 +82,10 @@ export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions)
   if (from !== undefined) model.from = from;
   const compared = ended ? comparedWords(attempt, outcome.comparedTo, options.reportsSpend) : undefined;
   if (compared !== undefined) model.compared = compared;
+  const how = ended ? pathWords(attempt.path, attempt.status) : undefined;
+  if (how !== undefined) model.how = how;
   if (model.canRunAgain && lastingActs(result)) model.runAgainNote = RUN_AGAIN_REPEATS;
-  if (saved !== undefined) model.saved = savedWords(saved);
+  if (saved !== undefined) model.saved = savedWords(saved, options.nowMs ?? Date.now());
   else if (attempt.status === "budget_out") model.saved = "Nothing saved yet.";
   if (attempt.status === "budget_out" && options.canAddBudget && attempt.budget.usd > 0) {
     model.addBudget = { addUsd: attempt.budget.usd, words: options.reportsSpend ? `Add ${usdWords(attempt.budget.usd)} and carry on` : "Add budget and carry on" };

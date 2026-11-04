@@ -62,7 +62,7 @@ function isReset(value: JsonObject): boolean {
 }
 
 /** A call the target answers its own way, or throws on: nothing, and it answers as a library does. */
-export type FakeLibraryFault = (call: { toolId: string; value: JsonObject }, library: FakeLibrary) => AutomationStudioLlmEvidenceToolExecutionResult | undefined;
+export type FakeLibraryFault = (call: { toolId: string; value: JsonObject }, library: FakeLibrary) => AutomationStudioLlmEvidenceToolExecutionResult | Promise<AutomationStudioLlmEvidenceToolExecutionResult> | undefined;
 
 /** The domain: a free look, and a library of three nodes that act on the state above. */
 export function fakeLibraryBinding(library: FakeLibrary, fault?: FakeLibraryFault): AutomationStudioLlmEvidenceRuntimeBinding {

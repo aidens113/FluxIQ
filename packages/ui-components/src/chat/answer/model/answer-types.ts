@@ -44,6 +44,8 @@ export type AnswerModel = {
   checked?: string;
   missing?: string;
   from?: string;
+  /** How it went by its path: whether it used what was saved. Absent on an attempt that explored. */
+  how?: string;
   compared?: string;
   saved?: string;
   canRunAgain: boolean;

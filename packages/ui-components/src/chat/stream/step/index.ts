@@ -12,4 +12,4 @@ export { doneAgainWords } from "./done-again.ts";
 export { stepMessages, type StepMessage, type StepMessageKind } from "./messages.ts";
 export { laneWords, projectWords, type ProjectCardWords, type ProjectNames, type ProjectWords } from "./project-words.ts";
 export { stepWords, type StepWords } from "./words.ts";
-export { withoutPersonCheck } from "./without-person-check.ts";
+export { withoutAskCards } from "./without-ask-cards.ts";

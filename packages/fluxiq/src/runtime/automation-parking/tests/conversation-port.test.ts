@@ -138,8 +138,8 @@ describe("the conversation as a parking port", () => {
     await expect(port.awaitAnswer!(ASK, {})).rejects.toThrow("no longer in its thread");
   });
 
-  it("stops waiting when the run is cancelled, and does not close the question to do it", async () => {
-    const thread = threadHost({ ask: storedAsk });
+  it("stops waiting when the run is cancelled, and closes the question so Continue and Stop do not stay under it", async () => {
+    const thread = threadHost({ ask: storedAsk, expire: () => storedAsk({ status: "expired" }) });
     const port = automationStudioConversationParkingPort({ host: thread.host, projectId: PROJECT_ID, subject: SUBJECT, pollIntervalMs: 600_000 });
     const controller = new AbortController();
 
@@ -148,6 +148,33 @@ describe("the conversation as a parking port", () => {
     controller.abort("Cancelled by user.");
 
     expect(await waiting).toBeUndefined();
-    expect(thread.expireAsk).not.toHaveBeenCalled();
+    expect(thread.expireAsk).toHaveBeenCalledTimes(1);
+    expect(thread.expireAsk).toHaveBeenCalledWith({ projectId: PROJECT_ID, askId: ASK.askId });
+  });
+
+  it("leaves a cancelled wait by the same route when closing the question fails", async () => {
+    const thread = threadHost({ ask: storedAsk });
+    thread.expireAsk.mockRejectedValueOnce(new Error("store is down"));
+    const port = automationStudioConversationParkingPort({ host: thread.host, projectId: PROJECT_ID, subject: SUBJECT, pollIntervalMs: 600_000 });
+    const controller = new AbortController();
+
+    const waiting = port.awaitAnswer!(ASK, { signal: controller.signal });
+    await Promise.resolve();
+    controller.abort("Cancelled by user.");
+
+    expect(await waiting).toBeUndefined();
+    expect(thread.expireAsk).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes the answer that landed before a cancelled run closed the question", async () => {
+    const thread = threadHost({ ask: storedAsk, expire: answered });
+    const port = automationStudioConversationParkingPort({ host: thread.host, projectId: PROJECT_ID, subject: SUBJECT, pollIntervalMs: 600_000 });
+    const controller = new AbortController();
+
+    const waiting = port.awaitAnswer!(ASK, { signal: controller.signal });
+    await Promise.resolve();
+    controller.abort("Cancelled by user.");
+
+    expect(await waiting).toMatchObject({ kind: "grant" });
   });
 });
