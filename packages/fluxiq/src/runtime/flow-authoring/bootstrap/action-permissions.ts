@@ -143,6 +143,7 @@ import {
 } from "./site-reset/contracts.ts";
 import type { AutomationStudioPlanStepGaps, AutomationStudioSiteResetStepAsk, AutomationStudioSiteResetStepGap } from "./reset-admission/index.ts";
 import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
+import type { AutomationStudioFlowBootstrapScreenedControlWords } from "./screened-control-words.ts";
 import { AutomationStudioExploredToggles } from "./explored-toggles.ts";
 import { AutomationStudioExploredInterruptions } from "./explored-interruptions.ts";
 import { automationStudioExploredToggleTie } from "./script-statements/index.ts";
@@ -220,6 +221,13 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
    * quotes and no answers, so it names only the acts lasting by their kind.
    */
   instructedLastingActs(acts: readonly { id: string; quote: string; kind?: AutomationStudioInstructedActKind | undefined; source?: { clause: string; object: string } | undefined }[]): Promise<ReadonlySet<string>>;
+  /**
+   * Optional and additive: tells the gate words a person may be shown as a control's name, for an attempt
+   * that asks before it has shown the gate anything (a saved Flow's run). Each must already have passed the
+   * secret and locator screens (`./screened-control-words.ts`), which the type requires. It is display only: it never changes what
+   * the gate decides, and without it a question reads exactly as it did.
+   */
+  shown?(words: readonly AutomationStudioFlowBootstrapScreenedControlWords[]): void;
   /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
   /** Every explored press the domain answered as a toggle, for the build's submissions to read (header, t775). */
@@ -489,6 +497,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       };
     }, { gaps: (): ReadonlyMap<string, AutomationStudioSiteResetStepGap> => stepGaps }),
     signal: planRefused.signal,
+    shown: (words) => {
+      for (const text of words) gate.observe(text);
+    },
     instructed: () => gate.instructed,
     instructedLastingActs: async (acts) => {
       const own = acts.filter((act) => !act.id.includes("."));
