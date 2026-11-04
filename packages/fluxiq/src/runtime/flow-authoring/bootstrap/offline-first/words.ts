@@ -12,6 +12,17 @@ const ON_SITE = "this test ran on the site, and the verdict here is the site's."
 
 /** Why the recording could not answer a step, by the matcher's gap reason code; each fits "(...)" after "could not answer step N". */
 const REASONS: Readonly<Record<string, string>> = Object.freeze({
+  // The state engine's rule-only reasons (`client-gateway/trace-state/gap-codes.ts`, t864), worded by that lane.
+  state_changed_by_act: "the recording only did that after other actions this draft does not take",
+  other_position: "the recording only did that on another page",
+  would_repeat_act: "the recording did that once, and it would not be done twice",
+  after_unrecorded_act: "an earlier step did something the recording never did",
+  after_unrecorded_move: "an earlier step went somewhere the recording never went",
+  other_row: "the recording did that on another row",
+  act_out_of_order: "the recording did that before an action this draft already took",
+  wait_longer_than_recorded: "the recording gave up waiting sooner than this step would",
+  wait_shorter_than_recorded: "the recording's answer came later than this step waits",
+  // The matcher's.
   missing_transition: "a step was added there, or the steps before it changed",
   argument_mismatch: "its action changed: another target or other values",
   ambiguous_context: "the order of the steps changed",

@@ -64,7 +64,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   const loop: AutomationStudioLlmEvidenceLoopInput = {
     ...input.limits.loop,
     // The purse's cost is what is told, and the only cost ending; a person's or a silence's wait is not the round's time.
-    budget: { ...input.limits.loop.budget, maxCostUsd: Math.max(input.creation.purse.ceilingUsd, Number.MIN_VALUE), now: () => Date.now() - run.waitedMs - (run.ports.personHeldMs?.({ projectId: input.projectId, flowId: input.flowId }) ?? 0) },
+    // No time limit: a build's nine minutes would only force a fresh round on real work, or one a locked key held. The purse, the turns and loop detection bound a round.
+    budget: automationStudioAnswerFirstRoundBudget(input.limits.loop.budget, input.creation.purse.ceilingUsd),
     purse: input.creation.purse,
     tools: options.tools,
     observedStateKeys: options.observedStateKeys,
@@ -128,4 +129,10 @@ function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "sta
     run.waitedMs += waitedMs;
     void automationStudioAnswerFirstKeep(run);
   };
+}
+
+/** A round's bounds: the attempt's purse, and no time limit (see the call). */
+function automationStudioAnswerFirstRoundBudget(budget: AutomationStudioAnswerFirstAttemptRun["input"]["limits"]["loop"]["budget"], ceilingUsd: number): AutomationStudioAnswerFirstAttemptRun["input"]["limits"]["loop"]["budget"] {
+  const { maxDurationMs: _noTimeLimit, ...bounds } = budget;
+  return { ...bounds, maxCostUsd: Math.max(ceilingUsd, Number.MIN_VALUE) };
 }
