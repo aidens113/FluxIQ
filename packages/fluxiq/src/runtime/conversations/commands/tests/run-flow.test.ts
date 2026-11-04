@@ -206,7 +206,7 @@ describe("Run it", () => {
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
     expect(calls.map((call) => call.endpoint)).toEqual(["run-runtime-session", "get-flow"]);
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them was judged to do what you asked. The next run starts with it.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them did what you asked. The next run starts with it.");
   });
 
   it("says a re-author that was not kept left the Flow as it was", async () => {
@@ -269,7 +269,7 @@ describe("Run it", () => {
 
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
 
-    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them was judged to do what you asked. The next run starts with it. The status of a recorded change is not available.");
+    expect(outcome.summary).toBe("\"Kettle prices\" ran all the way through. It kept a change from this run: it re-wrote some of its steps, and a whole run with them did what you asked. The next run starts with it. The status of a recorded change is not available.");
   });
 
   it("reads no change after a run that failed", async () => {

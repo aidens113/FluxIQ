@@ -1,6 +1,6 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioDomainReadings } from "../domain-readings/index.ts";
-import { emitAutomationStudioActivity } from "../activity/index.ts";
+import { AUTOMATION_STUDIO_ACTIVITY_LIMITS, emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 import { automationStudioActivityRunEnding, automationStudioActivityRunObjection, automationStudioActivityRunUncertainEnding } from "./wording/index.ts";
 
@@ -65,10 +65,13 @@ export async function withAutomationStudioRunActivity<T extends { status: string
     }
     const ending = failed?.ending;
     // The check's objection follows in the row's text only: the status line holds the ending alone (R3-U-3).
-    const text = ending && failed?.objection ? `${ending} ${failed.objection}` : ending;
+    // The text opens with a capital, as a sentence of its own; the label keeps the lower case that follows its colon.
+    const text = ending ? (failed?.objection ? `${ending} ${failed.objection}` : ending).replace(/^\p{Ll}/u, (letter) => letter.toUpperCase()) : undefined;
+    // A label the status line would cut is only the title: the ending is whole in the row's text, never cut with "...".
+    const said = ending && `${settled.label}: ${ending}`.length <= AUTOMATION_STUDIO_ACTIVITY_LIMITS.label ? `${settled.label}: ${ending}` : settled.label;
     emitAutomationStudioActivity({
       phase: settled.phase,
-      label: ending ? `${settled.label}: ${ending}` : settled.label,
+      label: said,
       detail: { kind: settled.kind, title: settled.label, status: settled.status, ...(text ? { text } : {}) },
       ...(settled.final ? { final: true } : {}),
       ...(settled.stopped ? { stopped: true as const } : {})

@@ -152,6 +152,33 @@ test("a panel that names the automation itself can leave the chat's context line
   });
 });
 
+test("the wait shows no \"Show the question\" when the question is already in the thread on screen", async () => {
+  await withFakeDocument(async () => {
+    const ask = "FluxIQ needs you: complete the check on this page, then press Continue.";
+    const core = targetCore([
+      { conversationId: "conv-latest", subjectKind: "project", subjectId: "project-1", turns: [{ turnId: "q1", author: "automation", text: ask, ask: { askId: "ask-1", kind: "choice", status: "pending", options: [{ id: "done", label: "Continue" }, { id: "stop", label: "Stop" }] } }] }
+    ]);
+    const at = new Date(Date.UTC(2026, 8, 30, 12, 0, 5)).toISOString();
+    const waiting = { activityId: "run:r1", sequence: 5, subject: { kind: "run", id: "r1", projectId: "project-1", flowId: "flow-7" }, phase: "waiting_permission", label: ask, at, detail: { kind: "ask", title: "Asked the person to complete a check", status: "started", ref: "ask-1" } };
+    const display = { activityId: "run:r1", subjectKind: "run", phase: "waiting_permission", headline: "Waiting for you: finish the check on the page", detail: ask, step: null, working: false, outcome: "waiting", sequence: 5 };
+    const state = { current: waiting, display, recent: [waiting], overlay: "expanded", live: true };
+    const request = async <T>(message: TestMessage): Promise<ChatResult<T>> =>
+      message.type === TEST_ACTIVITY_MESSAGES.read ? { ok: true, value: { ok: true, state } as T } : core.request<T>(message);
+    const chat = createChatWidget(messageTransport(request), { openControl: opener });
+    try {
+      chat.render(CONNECTED);
+      chat.setActive(true);
+      await settle();
+      const root = fake(chat.element);
+      assert.equal(root.byClass("chat-live")[0]!.getAttribute("data-state"), "waiting", "the wait still shows");
+      assert.equal(root.byClass("chat-live-action")[0]!.hidden, true, "its question is on screen, so there is nothing to show");
+      assert.deepEqual(root.byClass("small-button").map((button) => button.textContent), ["Continue", "Stop"]);
+    } finally {
+      chat.setActive(false);
+    }
+  });
+});
+
 test("a run waiting on the person in a thread not on screen shows in the latest chat, and one click brings its Continue and Stop", async () => {
   // A run started from the automations tab: Core parks its person-needed ask
   // in the run's own thread (subject run), which no chat on screen shows.

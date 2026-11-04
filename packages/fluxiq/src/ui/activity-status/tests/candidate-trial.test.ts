@@ -88,8 +88,8 @@ test("each trial verdict is said as the test's own result", () => {
     ["candidate.trial_yes", "The test passed: the Flow did what you asked"],
     ["candidate.trial_no", "The test failed: the Flow didn't do what you asked. Next: changing it and testing again"],
     ["candidate.trial_execution_failed", "The test failed: a step didn't work. Next: changing the Flow and testing again"],
-    ["candidate.trial_unsure", "The test couldn't be judged. Next: testing the Flow again"],
-    ["candidate.trial_not_judged", "The test couldn't be judged. Next: testing the Flow again"],
+    ["candidate.trial_unsure", "The test couldn't be checked. Next: testing the Flow again"],
+    ["candidate.trial_not_judged", "The test couldn't be checked. Next: testing the Flow again"],
     // t769 b13: a test that didn't run says why, in plain words for its code where its row has none.
     ["candidate.trial_stale_revision", "The test didn't run: only the latest saved steps can be tested"],
     ["candidate.trial_some_new_refusal", "The test didn't run. Next: deciding what to do"]

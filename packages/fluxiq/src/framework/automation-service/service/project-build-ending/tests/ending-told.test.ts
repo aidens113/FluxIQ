@@ -33,7 +33,7 @@ describe("the one account of a project build's ending", () => {
   it("never says the whole Flow was never tested when an earlier version of it was test-run whole", () => {
     const told = automationStudioProjectBuildRecordTold({ parts: new Map([["pin", PASSED]]), assembled: true, wholeRuns: { count: 2, last: "no" } })!;
     expect(told).not.toMatch(/never (?:tested|test-run)/u);
-    expect(told).toBe("The one part tested on its own passed its own test. A version of the whole Flow was test-run from its start twice, and the last of those runs was judged not to do what was asked; the latest version was not tested from its start.");
+    expect(told).toBe("The one part tested on its own passed its own test. A version of the whole Flow was test-run from its start twice, and the last of those runs did not do what was asked; the latest version was not tested from its start.");
     // With no whole run at all, it still says so.
     expect(automationStudioProjectBuildRecordTold({ parts: new Map([["pin", PASSED]]), assembled: true, wholeRuns: { count: 0, last: "no" } })).toContain("never tested from its start");
   });
@@ -41,7 +41,7 @@ describe("the one account of a project build's ending", () => {
   it.each([false, true])("keeps earlier whole tests after a refused assembly, with parts tested: %s", (withParts) => {
     // A refused submission clears the current candidate, not the build's earlier trial records.
     const told = automationStudioProjectBuildRecordTold({ parts: new Map(withParts ? [["pin", PASSED]] : []), assembled: false, wholeRuns: { count: 2, last: "no" } });
-    expect(told).toBe(`${withParts ? "The one part tested on its own passed its own test." : "No part of the Flow was tested on its own."} A version of the whole Flow was test-run from its start twice, and the last of those runs was judged not to do what was asked; no current version was assembled to test.`);
+    expect(told).toBe(`${withParts ? "The one part tested on its own passed its own test." : "No part of the Flow was tested on its own."} A version of the whole Flow was test-run from its start twice, and the last of those runs did not do what was asked; no current version was assembled to test.`);
     expect(told).not.toMatch(/never tested|latest version was not tested/u);
   });
 

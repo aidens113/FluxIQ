@@ -454,6 +454,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     checkingRecording: recorded.checking,
     preparing: preparation.preparing,
     resetting: unit.resetting,
+    unconfirmed: unit.unconfirmed,
     waitingOn: event.phase === "waiting_permission" ? "answer" : event.phase === "paused" ? "paused" : "check"
   });
   const sameUnit = previous !== null && previous.activityId === event.activityId;
@@ -481,6 +482,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     step: step === null ? null : { index: step.index, count: step.count },
     working,
     outcome,
+    ...(outcome === "done" && subjectKind === "run" && unit.unconfirmed ? { unconfirmed: true as const } : {}),
     sequence: event.sequence,
     kind: "action"
   };

@@ -49,7 +49,7 @@ export function automationStudioConversationCommandPort(input: {
   return {
     async call(endpoint, payload) {
       const registration = input.registry.endpoints().find((entry) => entry.programId === PROGRAM_ID && entry.endpoint === endpoint);
-      if (!registration) return { ok: false, error: `Core has no ${endpoint} endpoint to call.` };
+      if (!registration) return { ok: false, error: `FluxIQ has no ${endpoint} endpoint to call.` };
       if (!REACHABLE.has(registration.classification)) {
         return { ok: false, error: `${endpoint} is classified ${registration.classification}, and a conversation command only reads and authors; that has to be done from its control.` };
       }

@@ -95,12 +95,12 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
 const DRAFT_TOLD = "What I wrote so far is kept here.";
 
 /** The card line for a draft no test of the whole Flow stands behind: no trial runner ran one. */
-const DRAFT_PENDING = "Saved candidate draft. Verification pending; the Flow's steps are unchanged.";
+const DRAFT_PENDING = "Draft kept: not run or checked yet, and the Flow is unchanged.";
 
-/** What the whole Flow's test came to, in words that follow "Saved candidate draft. ". */
+/** What the whole Flow's test came to, in words that finish the draft card's line. */
 const DRAFT_TESTED: Readonly<Record<NonNullable<AutomationStudioCandidateAuthoringResult["trial"]>["verdict"], string>> = Object.freeze({
-  yes: "Its test run from the start was judged to do what you asked, but the draft was not put into the Flow",
-  no: "Its test run from the start was judged not to do what you asked",
+  yes: "Its test run from the start did what you asked, but the draft was not put into the Flow",
+  no: "Its test run from the start did not do what you asked",
   unsure: "Its test run from the start could not be confirmed to do what you asked",
   not_judged: "Its test run from the start was not checked",
   execution_failed: "Its test run from the start did not get to the end",
@@ -117,5 +117,5 @@ const DRAFT_TESTED: Readonly<Record<NonNullable<AutomationStudioCandidateAuthori
  */
 function draftSavedLine(candidate: Pick<AutomationStudioCandidateAuthoringResult, "trial">, told: boolean): string {
   if (told) return DRAFT_TOLD;
-  return candidate.trial ? `Saved candidate draft. ${DRAFT_TESTED[candidate.trial.verdict]}; the Flow's steps are unchanged.` : DRAFT_PENDING;
+  return candidate.trial ? `${DRAFT_TESTED[candidate.trial.verdict]}; I kept the draft, and nothing was put into the Flow.` : DRAFT_PENDING;
 }

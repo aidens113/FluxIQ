@@ -22,7 +22,7 @@ const performed = (verification: ReturnType<typeof automationStudioResultVerdict
 describe("automationStudioResultCheckActivity", () => {
   it("says a result that answers as a pass, in Core's sentence", () => {
     const words = automationStudioResultCheckActivity(performed(automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes" }, basis: "model" })));
-    expect(words).toEqual({ label: "The result answers the request", status: "succeeded", text: "3 rows came back. The result was judged to answer the request." });
+    expect(words).toEqual({ label: "The result answers the request", status: "succeeded", text: "3 rows came back. The result was found to answer the request." });
   });
 
   it("says a refuted result as a failure with what the check found and advised", () => {
@@ -30,7 +30,7 @@ describe("automationStudioResultCheckActivity", () => {
     const words = automationStudioResultCheckActivity(performed(automationStudioResultVerificationAgreement({ first: refuted, second: refuted })));
     expect(words.label).toBe("The result doesn't answer the request");
     expect(words.status).toBe("failed");
-    expect(words.text).toContain("judged not to answer the request");
+    expect(words.text).toContain("found not to answer the request");
     expect(words.text).toContain("What it found: Only three listings were saved");
     // The advice is for the repair, not the person (t194-w81, U6).
     expect(words.text).not.toContain("Read every page of results");
@@ -43,8 +43,8 @@ describe("automationStudioResultCheckActivity", () => {
     const yes = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes" }, basis: "model" });
     const unconfirmed = automationStudioResultCheckActivity(performed(automationStudioResultVerificationAgreement({ first: no, second: yes })));
     expect(unconfirmed).toMatchObject({ label: "Couldn't confirm the result answers the request", status: "failed" });
-    const skipped = automationStudioResultCheckActivity({ schemaVersion: "automation-studio.result-verification.v1", performed: false, code: "core.result.no_model_available", reason: "No model was available to judge this run's result." });
-    expect(skipped).toEqual({ label: "The result couldn't be checked", status: "failed", text: "No model was available to judge this run's result." });
+    const skipped = automationStudioResultCheckActivity({ schemaVersion: "automation-studio.result-verification.v1", performed: false, code: "core.result.no_model_available", reason: "No model was available to check this run's result." });
+    expect(skipped).toEqual({ label: "The result couldn't be checked", status: "failed", text: "No model was available to check this run's result." });
   });
 
   // t174-w85 D1 (run-murwd8le-79e735a8, 00019): the judges disagreed, so the result was
@@ -80,7 +80,7 @@ describe("automationStudioResultCheckActivity", () => {
       if (first !== yes) expect(said(first, second, "run").text).toMatch(/the run is not marked as failed for it\.$/u);
     }
     // Nothing else changes inside a build.
-    expect(said(no, no, "build").text).toContain("judged not to answer the request");
+    expect(said(no, no, "build").text).toContain("found not to answer the request");
   });
 
   // t194-w81 U6 (run-musp39u8-9ac026ab, moment 22): after the playback the card showed
@@ -114,7 +114,7 @@ describe("automationStudioResultCheckActivity", () => {
     expect(words.label).toBe(ACTIVITY_RESULT_CHECK_LABELS.refuted);
     expect(words.status).toBe("failed");
     expect(words.text).toMatch(/^13 rows came back\./u);
-    expect(words.text).toContain("judged not to answer the request");
+    expect(words.text).toContain("found not to answer the request");
     expect(words.text).toContain("Pages 6+ were never read");
     expect(words.text).toContain("across all pages of the search results");
     for (const internal of ["endView", "reads.stop", "pageLimit", "maxPages", "extractList", "control_disabled", "node.bootstrap", "64c205b534adb35d", "main.s7", "Raise"]) {
@@ -129,6 +129,6 @@ describe("automationStudioResultCheckActivity", () => {
     const none = automationStudioResultVerdict({ summary: { ...summary, totalRecordCount: 0 }, diagnosis: { answersRequest: "no" }, basis: "model" });
     expect(automationStudioResultCheckActivity(performed(none)).text).toMatch(/^No rows came back\./u);
     const one = automationStudioResultVerdict({ summary: { ...summary, totalRecordCount: 1 }, diagnosis: { answersRequest: "yes" }, basis: "model" });
-    expect(automationStudioResultCheckActivity(performed(one)).text).toBe("1 row came back. The result was judged to answer the request.");
+    expect(automationStudioResultCheckActivity(performed(one)).text).toBe("1 row came back. The result was found to answer the request.");
   });
 });

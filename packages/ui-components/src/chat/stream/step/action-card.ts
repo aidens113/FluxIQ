@@ -48,6 +48,11 @@ export type ActionCard = ActivityAction & {
    * Already done", the row named as on any row's step card). Absent otherwise.
    */
   already?: true;
+  /**
+   * A failed step of a test that a later passed result check of the same build got past
+   * (`superseded.ts`): its words stay, but it is no red failure. Absent otherwise.
+   */
+  superseded?: true;
 };
 
 /**

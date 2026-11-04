@@ -42,18 +42,20 @@ export function conversationAskConsequences(ask: ConversationAsk): AutomationStu
   return ask.kind === "permission" ? ask.missing : ask.consequences;
 }
 
-/** The ask id prefix of a confirmation whose invocation the panel runs with the PIN. */
+/** The ask id prefix of a confirmation whose invocation the panel runs with the PIN (a one-off command from chat). */
 const PANEL_COMMAND_ASK_PREFIX = "panel-command.";
 
 /**
  * Whether Core checks the PIN on a yes to this ask: Core's own decision
- * (`runtime/conversations/answer-pin.ts`), read here so the dialog appears exactly
- * where Core would refuse without it. `thread-model.test.ts` holds the two
- * together, because that module is server code and cannot reach the browser.
+ * (`runtime/conversations/panel-command-pin.ts`), read here so the dialog appears
+ * exactly where Core would refuse without it. Only a `panel-command.`
+ * confirmation takes one: a permission ask or a question a run waits on never
+ * does, whatever class it names. `thread-model.test.ts` holds the two together,
+ * because that module is server code and cannot reach the browser.
  */
 function conversationAskTakesPin(ask: ConversationAsk): boolean {
-  if (!conversationAskConsequences(ask).some((consequence) => AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES.includes(consequence))) return false;
-  return ask.kind === "permission" || ask.parks || ask.askId.startsWith(PANEL_COMMAND_ASK_PREFIX);
+  if (!ask.askId.startsWith(PANEL_COMMAND_ASK_PREFIX)) return false;
+  return conversationAskConsequences(ask).some((consequence) => AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES.includes(consequence));
 }
 
 export function conversationAskPresentation(ask: ConversationAsk): ConversationAskPresentation {
@@ -142,10 +144,8 @@ export function conversationAskPresentation(ask: ConversationAsk): ConversationA
 }
 
 /**
- * Whether sending this answer needs the person to prove who they are again:
- * only where Core checks it. Refusing and cancelling commit nothing, and an ask
- * no act depends on has nothing to protect; demanding a PIN for those would
- * train people to type it without reading.
+ * Whether sending this answer needs the PIN: only a panel command's
+ * confirmation, where Core checks it. Nothing inside a Flow or a chat asks.
  */
 export function conversationAnswerNeedsReauthorization(action: ConversationAnswerAction): boolean {
   return action.destructive;

@@ -8,13 +8,17 @@ import { emptyStateModel, MODEL_KEY_LINE, ONBOARDING_CONCEPT } from "../empty-st
 
 const LATEST = { kind: "latest" } as const;
 
-test("the empty latest chat explains FluxIQ, ending on stop and take over, under a short plain title", () => {
+test("the empty latest chat says only what is true before a first task, under a short plain title", () => {
   const model = emptyStateModel("empty", LATEST)!;
   assert.equal(model.title, "What can FluxIQ do for you?");
   assert.equal(model.line, ONBOARDING_CONCEPT);
-  assert.match(model.line, /^FluxIQ turns a job you describe on a website into an automation you can run again\./u);
-  assert.match(model.line, /repeats the saved steps without AI/u);
-  assert.match(model.line, /You can stop it, or take over the page, at any time\.$/u);
+  assert.match(model.line, /^Describe a job on this page and FluxIQ works it out with AI, showing each step here\./u);
+  assert.match(model.line, /repeat the job later without AI/u);
+  assert.match(model.line, /You can stop it at any time\.$/u);
+  // Take over exists for a run only, never a build, and nothing offers scheduling: neither is promised.
+  assert.doesNotMatch(model.line, /take over/iu);
+  assert.doesNotMatch(`${model.line} ${model.examples.join(" ")}`, /every (?:morning|day|hour|week)|schedule/iu);
+  assert.ok(model.line.length < 220, "short");
 });
 
 test("the empty latest chat offers Describe and Extract as starts and keeps the fill-only examples", () => {

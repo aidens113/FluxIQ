@@ -23,7 +23,7 @@ describe("explicit legacy authoring mode", () => {
 
   it("renders an unexpected candidate as a saved unverified draft without issuing an apply call", async () => {
     const { requests, context } = recording({ ok: true, payload: { candidate: { status: "draft", candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
-    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: true, ending: expect.stringContaining("independent execution and verification") });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: true, ending: expect.stringContaining("hasn't been run and checked yet") });
     expect(requests.map((request) => request.endpoint)).toEqual(["generate-flow-bootstrap-adaptation"]);
   });
 
