@@ -47,8 +47,8 @@ import type {
 } from "../../../../flows/authoring/model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import { automationStudioNodeExplicitLastingRisk, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { AUTOMATION_STUDIO_REPAIR_RERUN_DECLINED as UNREADABLE, automationStudioMetadataWithRerunPass, automationStudioRepairChangedFlow, automationStudioRunMayHaveActedLastingly } from "./rerun/index.ts";
 import { automationStudioReferenceNow } from "../../../../runtime/reference-time/index.ts";
-import { automationStudioAttemptsMayHaveActedLastingly } from "../../../../runtime/adaptation/flow-change/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
@@ -157,7 +157,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const held = heldId ? await automationStudioHeldReauthorCandidate(input, heldId) : undefined;
   if (held && "unsupportedTopology" in held) return { declinedCode: `repair_rerun.held_reauthor_unsupported.${held.unsupportedTopology}` };
   if (held && "unreadable" in held) return { declinedCode: UNREADABLE[held.unreadable] };
-  const found = held && "flow" in held ? held : await changedFlow(input);
+  const found = held && "flow" in held ? held : await automationStudioRepairChangedFlow(input);
   if ("declinedCode" in found) return found;
   const updatedFlow = found.flow;
   const ranHeld = held && "flow" in held ? heldId : undefined;
@@ -171,11 +171,12 @@ export async function rerunAutomationStudioSessionAfterRepair(
   // whole-Flow pass for the patches the refuted result's repair wrote, which had
   // no failed step to resume from.
   // A re-run from the start goes through every step again, and the completed-act ledger does not outlive a
-  // pass, so it is declined where a lasting act may have landed: read against the graph the first pass ran, not
-  // a held edit's. A held edit is then settled unapplied, as any edit no pass ran (`./judged-reauthor.ts`).
-  const firstPassGraph = input.from !== "start" ? undefined : held && "flow" in held ? await changedFlow(input) : found;
+  // pass, so it is declined where a lasting act may have landed: the first pass read against the graph it ran, not
+  // a held edit's, and each later pass by its own word (`./rerun/lasting-acts.ts`). A repair asks the same before
+  // it builds anything (`./rerun/preflight.ts`). A held edit is then settled unapplied, as any edit no pass ran (`./judged-reauthor.ts`).
+  const firstPassGraph = input.from !== "start" ? undefined : held && "flow" in held ? await automationStudioRepairChangedFlow(input) : found;
   if (firstPassGraph && "declinedCode" in firstPassGraph) return firstPassGraph;
-  if (firstPassGraph && await automationStudioAttemptsMayHaveActedLastingly({ flow: firstPassGraph.flow, attempts: input.session.trace?.attempts ?? [], resolveActionEffect: input.graphOptions?.resolveActionEffect, subflowGraphs: input.graphOptions?.subflowGraphs })) return { declinedCode: UNREADABLE.lastingAct };
+  if (firstPassGraph && await automationStudioRunMayHaveActedLastingly({ flow: firstPassGraph.flow, session: input.session, detail: input.detail, graphOptions: input.graphOptions })) return { declinedCode: UNREADABLE.lastingAct };
   const settled = input.from === "start"
     ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail, ...(reauthored ? {} : { only: "ran" as const }) })
     : input.detail;
@@ -207,7 +208,8 @@ export async function rerunAutomationStudioSessionAfterRepair(
     // not move when a Subflow's graph is rewritten, and claiming it did would
     // sever the parent from its own history.
     // Which held re-author this pass ran, if any, for the judged end to settle; a pass that ran none clears an earlier pass's.
-    metadata: automationStudioMetadataWithFlowVersions(withHeldReauthorRan(input.session.metadata, ranHeld), automationStudioRunFlowVersions([
+    // And what this pass did, in its own graph's words, for the next read of whether a re-run may follow it.
+    metadata: automationStudioMetadataWithFlowVersions(await automationStudioMetadataWithRerunPass({ metadata: withHeldReauthorRan(input.session.metadata, ranHeld), flow: candidate.flow, attemptsBefore: input.session.trace?.attempts.length ?? 0, pass: retryTrace.attempts, graphOptions: input.graphOptions }), automationStudioRunFlowVersions([
       ...automationStudioFlowVersionsFromMetadata(input.session.metadata),
       automationStudioFlowGraphVersion({ flow: updatedFlow, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
     ])),
@@ -357,54 +359,3 @@ function rerunRecoveryState(
   return { recoveryState: { state: "ended", startedAt, endedAt: Math.max(startedAt, endedAt) } };
 }
 
-/**
- * Why a Flow could not be read back for the re-run. Each one is carried out to
- * the run as its `declinedCode`, because a re-run that did not happen and a
- * repair that had nothing to re-run are different facts: this used to answer
- * `null` for every one of them, and a storage failure then read as "there was
- * nothing to do".
- */
-const UNREADABLE = {
-  flow: "repair_rerun.flow_unreadable",
-  subflow: "repair_rerun.subflow_unreadable",
-  subflowAbsent: "repair_rerun.subflow_absent",
-  graph: "repair_rerun.subflow_graph_unreadable",
-  nothingToRerun: "repair_rerun.nothing_to_rerun",
-  lastingAct: "repair_rerun.lasting_act_may_have_landed",
-  candidate: "repair_rerun.candidate_unreadable",
-  candidateUnwritable: "repair_rerun.candidate_unwritable",
-  heldReauthor: "repair_rerun.held_reauthor_unreadable"
-} as const;
-
-/** The Flow as it now stands: the Subflow's graph where one ran, else the Flow itself. */
-async function changedFlow(
-  input: AutomationStudioRepairRerunInput
-): Promise<{ flow: AutomationStudioFlowArtifact } | { declinedCode: string }> {
-  if (!input.subflowId) {
-    try {
-      return { flow: await input.ports.getFlow(input.projectId, input.session.flowId) };
-    } catch {
-      return { declinedCode: UNREADABLE.flow };
-    }
-  }
-  let selectedSubflow: AutomationStudioFlowSubflow | null;
-  try {
-    selectedSubflow = await input.ports.getFlowSubflow(input.projectId, input.session.flowId, input.subflowId);
-  } catch {
-    return { declinedCode: UNREADABLE.subflow };
-  }
-  if (!selectedSubflow?.graphFlowId) return { declinedCode: UNREADABLE.subflowAbsent };
-  let updatedFlow: AutomationStudioFlowArtifact;
-  try {
-    updatedFlow = await input.ports.getFlow(input.projectId, selectedSubflow.graphFlowId);
-  } catch {
-    return { declinedCode: UNREADABLE.graph };
-  }
-  // Ownership is never declined: a graph this parent does not own is a fault,
-  // not an absence, and running it would run somebody else's Flow.
-  if (updatedFlow.metadata?.parentFlowId !== input.session.flowId
-    || updatedFlow.metadata?.parentSubflowId !== input.subflowId) {
-    throw new Error("Adaptive retry Subflow graph ownership no longer matches the selected parent and Subflow.");
-  }
-  return { flow: updatedFlow };
-}

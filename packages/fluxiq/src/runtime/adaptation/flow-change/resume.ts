@@ -12,19 +12,25 @@
 //   something declared it, and "could not tell" is not "held".
 // - A check that passed only because the seam feeding it is inert is read as
 //   unknown, not as a pass. `records` with no declared minimum is the one such
-//   seam today: rows were captured, but nothing said how many were owed.
+//   seam today: rows were captured, but nothing said how many were owed. It keeps
+//   a code of its own, because it is the one unknown something later can answer:
+//   the run's judged result says whether those rows were the ones owed. The trial
+//   still does not vouch for them (`resumable` stays false), and only a change
+//   held for that judgement carries on past it (`../live-patch.ts`,
+//   `service/adaptations/adaptive-retry.ts`). Protected by this: a row count nobody
+//   checked never becomes a run carrying on unjudged, or a fix kept on its trial.
 // - Success alone is never enough. A changed node that ran without failing has
 //   shown nothing, so at least one evidence check must have passed.
 // - No resume point, no resumption: a run cannot continue from a place the
 //   trial could not name.
-import { AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS, type AutomationStudioChangeResumeDecision, type AutomationStudioChangeResumePoint, type AutomationStudioChangeVerdictCheck, type AutomationStudioChangeVerdictCheckStatus } from "./contracts.ts";
+import { AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED, AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS, type AutomationStudioChangeResumeDecision, type AutomationStudioChangeResumePoint, type AutomationStudioChangeVerdictCheck, type AutomationStudioChangeVerdictCheckStatus } from "./contracts.ts";
 
 /**
  * Check codes whose `passed` is not a pass for resuming: the check reads a seam
  * nothing writes yet, so what it looked at cannot answer the question asked of
  * it. Each is read as `unknown`, which is never a pass.
  */
-const INERT_CHECK_CODES: readonly string[] = Object.freeze(["records_minimum_undeclared"]);
+const INERT_CHECK_CODES: readonly string[] = Object.freeze([AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED]);
 
 export function decideAutomationStudioChangeResume(input: {
   checks: readonly AutomationStudioChangeVerdictCheck[];
@@ -33,8 +39,10 @@ export function decideAutomationStudioChangeResume(input: {
   const { checks, resumeFrom } = input;
   if (!checks.length) return { resumable: false, code: "no_checks" };
   if (checks.some((check) => resumeStatus(check) === "failed")) return { resumable: false, code: "check_failed" };
-  if (checks.some((check) => resumeStatus(check) === "unknown")) return { resumable: false, code: "check_unknown" };
+  // An unknown nothing later can answer outranks the one the judged run can.
+  if (checks.some((check) => check.status === "unknown")) return { resumable: false, code: "check_unknown" };
   if (!resumeFrom) return { resumable: false, code: "no_resume_point" };
+  if (checks.some((check) => resumeStatus(check) === "unknown")) return { resumable: false, code: AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED };
   const evidence = checks.some((check) => isEvidenceKind(check.kind) && resumeStatus(check) === "passed");
   if (!evidence) return { resumable: false, code: "no_evidence" };
   return { resumable: true };

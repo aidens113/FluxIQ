@@ -86,6 +86,46 @@ describe("the caller a re-author builds for", () => {
   });
 });
 
+// A refuted run's repair reaches a judged run only by running from its start, so where
+// that re-run would be declined neither its build nor the ladder is paid for.
+describe("a repair whose re-run would be declined", () => {
+  const DECLINED = "repair_rerun.lasting_act_may_have_landed";
+
+  it("never calls the build port or the ladder, and records the declined re-run", async () => {
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
+    const port = deps({ generate: generate as unknown as AutomationStudioRefutedResultRepairPortDependencies["generate"], rerunPreflight: async () => ({ declined: DECLINED }) });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+    expect(generate).not.toHaveBeenCalled();
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(result?.metadata?.adaptiveRetry).toEqual({ attempted: false, notResumableCode: DECLINED });
+    expect(marker(result)).toEqual({});
+    expect(automationStudioRefutedResultRerunsFlow(result!)).toBe(false);
+  });
+
+  it("never calls the ladder for a refutation the route refuses either", async () => {
+    const port = deps({ rerunPreflight: async () => ({ declined: DECLINED }) });
+    const refused = { ...detail, metadata: { [AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]: { attempted: true, attempts: 1, code: "core.result.other" } } } as unknown as AutomationStudioFlowRunDetail;
+    await automationStudioRefutedResultRepairPort(port)({ ...request, detail: refused });
+    expect(port.annotate).not.toHaveBeenCalled();
+  });
+
+  it("still calls the build port where the check could not read the run: not knowing stops nothing here, and the re-run answers", async () => {
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
+    await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as AutomationStudioRefutedResultRepairPortDependencies["generate"], rerunPreflight: async () => ({ unread: "session" }) }))(request);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls the build port where the re-run would go ahead, asked about this run and its Subflow", async () => {
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
+    const rerunPreflight = vi.fn(async () => ({ clear: true as const }));
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as AutomationStudioRefutedResultRepairPortDependencies["generate"], rerunPreflight }))({ ...request, subflowId: "subflow.one" });
+    expect(rerunPreflight).toHaveBeenCalledWith({ detail, subflowId: "subflow.one" });
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(result?.metadata?.adaptiveRetry).toBeUndefined();
+    expect(marker(result)).toMatchObject({ routed: true, held: true });
+  });
+});
+
 // Live run `run-murwcmx2-a1c6edf7` (t194, cause C-D): the re-author reran the
 // Flow's list read where the refuted run left the page (results page 5). The
 // build is handed where each node's first attempt started, read off the run.

@@ -14,6 +14,9 @@ type Reason = { words: RegExp; why: string; read?: string; typed?: string };
  * only; the first that matches decides.
  */
 const REASONS: readonly Reason[] = [
+  // A read whose rows its own record schema refused: nobody refused the step, and
+  // "it wasn't allowed", from `refused`, said it of one. Checked first.
+  { words: /_records_refused_/u, why: "the rows it read didn't fit the fields this Flow stores" },
   // A layer in front of the control is not the control being hidden, and a
   // dialog in the way is not a refusal: "it was hidden on the page" and "it
   // wasn't allowed" were said of a press a coupon popup covered (crossborder

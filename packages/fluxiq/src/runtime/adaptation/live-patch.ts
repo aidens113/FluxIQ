@@ -12,6 +12,7 @@ import {
 import { classifyAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "../../framework/automation-service/executor/index.ts";
 import {
+  AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED,
   AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
   automationStudioAttemptsMayHaveActedLastingly,
   automationStudioChangeValidationResult,
@@ -62,9 +63,16 @@ export type AutomationStudioRuntimePatchPreflight = {
  * what promotes it or not (`service/runtime-adaptation/judged-promotion.ts`).
  * Inserted steps take it only where nothing lasting was done in their trial:
  * running them again would repeat the act.
+ *
+ * It also marks a `verified` trial whose evidence is rows nobody said how many of
+ * were owed (`records_minimum_undeclared`), as a read's own target override's are.
+ * The rows are a real observation, so the trial is recorded as it always was, and
+ * the marker adds no pass: the run carries on through the change, and only that
+ * run's judged yes keeps it. Rows of none, or a count that cannot be read, stay
+ * unknown and earn no marker.
  */
 export type AutomationStudioRuntimePatchVerification =
-  | { status: "verified"; basis: AutomationStudioChangeVerdictEvidenceKind }
+  | { status: "verified"; basis: AutomationStudioChangeVerdictEvidenceKind; awaitsJudgedRun?: true }
   | { status: "unverifiable"; reason: "no_expectation_declared" | "expectation_empty" | "evidence_unevaluated" | "changed_node_incomplete" | "in_run_trial"; awaitsJudgedRun?: true }
   | { status: "contradicted"; reason: string }
   | { status: "not_executed"; reason: string };
@@ -85,8 +93,10 @@ export type AutomationStudioRuntimePatchExecutionResult = {
   executedTrace?: AutomationStudioGraphExecutionTrace;
   /** True only when `verification.status` is `verified`. */
   restoredExpectedState: boolean;
-  /** Whether the run takes the repaired action again: on a `verified` trial, or one that awaits its judged run; never for inserted steps. */
+  /** Whether the run takes the repaired action again: on a `verified` trial, or one that awaits its judged run; never for inserted steps, and never over what the trial did lastingly. */
   retryOriginalAction: boolean;
+  /** The trial did, or may have done, something lasting that carrying on from it would do again (`lastingActsToRepeat`). */
+  actedLastingly?: true;
   adaptation?: AutomationStudioFlowAdaptation;
   changeProposal?: AutomationStudioFlowChangeProposal;
   metadata?: JsonObject;
@@ -292,7 +302,7 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
     ...(input.expectedComparison ? { expectedComparison: input.expectedComparison } : {}),
     ...(input.verifiesState ? { verifiesState: input.verifiesState } : {})
   });
-  const actedLastingly = input.patch.kind === "temporary_action_sequence" && await automationStudioAttemptsMayHaveActedLastingly({ flow: application.flow, attempts: trial.executedTrace.attempts, resolveActionEffect: options.resolveActionEffect, subflowGraphs: options.subflowGraphs });
+  const actedLastingly = await automationStudioAttemptsMayHaveActedLastingly({ flow: application.flow, attempts: lastingActsToRepeat(input.patch, trial.executedTrace.attempts, changedNodeId), resolveActionEffect: options.resolveActionEffect, subflowGraphs: options.subflowGraphs });
   const verification = runtimePatchVerification(trial, input.expectedComparison ?? input.failedAttempt.transitionComparison, input.patch, actedLastingly);
   const restoredExpectedState = verification.status === "verified";
   const retryOriginalAction = runtimePatchRetriesOriginalAction(verification, input.patch, actedLastingly);
@@ -310,9 +320,23 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
     executedTrace: trial.executedTrace,
     restoredExpectedState,
     retryOriginalAction,
+    ...(actedLastingly ? { actedLastingly: true as const } : {}),
     adaptation,
     ...(changeProposal ? { changeProposal } : {})
   };
+}
+
+/**
+ * The attempts of a trial that carrying on would take again. The trial is the
+ * run's continuation, so it goes on past the change, and a resume starts just
+ * after the change and goes over that ground once more. Inserted steps count
+ * whole, because a judged re-run takes them again too. Any other patch's own node
+ * is not taken again: a press it re-aimed stands, and the failure it answers
+ * means the node had not done its work before.
+ */
+function lastingActsToRepeat(patch: AutomationStudioRuntimePatch, attempts: readonly AutomationStudioNodeAttemptTrace[], changedNodeId: string): readonly AutomationStudioNodeAttemptTrace[] {
+  if (patch.kind === "temporary_action_sequence") return attempts;
+  return attempts.slice(attempts.map((attempt) => attempt.nodeId).lastIndexOf(changedNodeId) + 1);
 }
 
 /** An in-run repair's patch, checked and overlaid, with the records that keep it until the run's judged end; or why it may not run. */
@@ -390,11 +414,12 @@ function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): Automa
  * the change, or one whose proof is the judged whole run it carries on into.
  * Inserted steps ran in the trial and are not taken twice: the trial's resume
  * point is after the last of them, which is the action they stand before. A trial
- * that did something lasting past them is not carried on from: that would repeat it.
+ * that did something lasting past its change is not carried on from, whichever
+ * patch it tried: that would repeat it.
  */
 function runtimePatchRetriesOriginalAction(verification: AutomationStudioRuntimePatchVerification, patch: AutomationStudioRuntimePatch, actedLastingly: boolean): boolean {
   const proved = verification.status === "verified" || (verification.status === "unverifiable" && verification.awaitsJudgedRun === true);
-  return proved && (patch.kind === "temporary_action_sequence" ? !actedLastingly : !patchRunsItsOwnSteps(patch));
+  return proved && !actedLastingly && (patch.kind === "temporary_action_sequence" || !patchRunsItsOwnSteps(patch));
 }
 
 /**
@@ -411,7 +436,11 @@ function patchRunsItsOwnSteps(patch: AutomationStudioRuntimePatch): boolean {
 function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, comparison: AutomationStudioTransitionComparison | undefined, patch: AutomationStudioRuntimePatch, actedLastingly: boolean): AutomationStudioRuntimePatchVerification {
   const { verdict } = trial;
   const [basis] = verdict.basis;
-  if (verdict.outcome === "verified" && basis) return { status: "verified", basis };
+  // A judged run from the Flow's start can vouch for a target override (t267): its trial ran the same
+  // action on a new target. So it can for inserted steps, which that run runs again, unless they said
+  // they act lastingly. Neither where the trial did something lasting past the change: carrying on repeats it.
+  const judgedRunCanVouch = !actedLastingly && (patch.kind === "temporary_target_override" || (patch.kind === "temporary_action_sequence" && !patch.consequences?.length));
+  if (verdict.outcome === "verified" && basis) return { status: "verified", basis, ...(judgedRunCanVouch && verdict.notResumableCode === AUTOMATION_STUDIO_CHANGE_RECORDS_MINIMUM_UNDECLARED ? { awaitsJudgedRun: true as const } : {}) };
   if (verdict.outcome === "contradicted") {
     const codes = verdict.checks.flatMap((check) => (check.status === "failed" && check.code ? [check.code] : []));
     return { status: "contradicted", reason: [...new Set(codes)].join(",") || "trial_contradicted" };
@@ -422,10 +451,7 @@ function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, 
   if (verdict.checks.some((check) => check.status === "unknown" && evidenceKinds.includes(check.kind))) return { status: "unverifiable", reason: "evidence_unevaluated" };
   // The verdict's `no_evidence` already means everything the marker needs: no
   // check failed or was unknown, a resume point was named, and the changed node
-  // succeeded. A target override takes it (t267): its trial ran the same action
-  // on a new target, which the judged whole run can vouch for. So do inserted
-  // steps, which that run runs again, unless their trial did something lasting.
-  const judgedRunCanVouch = patch.kind === "temporary_target_override" || (patch.kind === "temporary_action_sequence" && !patch.consequences?.length && !actedLastingly);
+  // succeeded.
   const awaitsJudgedRun = judgedRunCanVouch && verdict.outcome === "unverifiable" && verdict.notResumableCode === "no_evidence";
   return { status: "unverifiable", reason: comparison ? "expectation_empty" : "no_expectation_declared", ...(awaitsJudgedRun ? { awaitsJudgedRun: true as const } : {}) };
 }

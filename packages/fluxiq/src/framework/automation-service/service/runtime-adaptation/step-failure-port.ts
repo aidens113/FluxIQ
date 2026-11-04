@@ -38,7 +38,7 @@ import {
   type AutomationStudioFailedStepRepairPort
 } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../../../runtime/llm/build-purse/index.ts";
-import { automationStudioReauthorBuild } from "./reauthor-build.ts";
+import { automationStudioReauthorBuild, automationStudioRepairDeclinedBeforeBuild } from "./reauthor-build.ts";
 import type { AutomationStudioRefutedResultRepairPortDependencies } from "./refuted-result-port.ts";
 
 /** What the service lends the port: the same as the wrong-answer route's, less the ladder, which has already run. */
@@ -51,6 +51,8 @@ export function automationStudioStepFailureRepairPort(deps: AutomationStudioStep
     const flowId = deps.flowId();
     const decision = automationStudioStepFailureReauthorDecision({ detail: failed.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
     if (!decision.route) return undefined;
+    const declined = await automationStudioRepairDeclinedBeforeBuild(deps, { detail: failed.detail, subflowId: failed.subflowId });
+    if (declined) return { detail: declined, reauthored: false };
     const flowSpentUsd = automationStudioLlmCurrentFlowPurse()?.spentUsd();
     const fresh = automationStudioResultRepairPurse(failed.detail, deps.maxCostUsd?.(), flowSpentUsd);
     const opened = flowSpentUsd === undefined ? automationStudioResultRepairPurseCharged(fresh, ladderSpend(failed.detail)) : automationStudioResultRepairPurseAveraged(fresh, ladderSpend(failed.detail));

@@ -435,7 +435,8 @@ and nothing unjudged (`service/datasets/run-datasets.ts`, t848):
   or the answer that was judged stands.
 - **A patch's trial on a failed step** is held in memory. Its rows join the run,
   ahead of the retry's own, only if a retry takes it up; a trial that failed, or
-  one no retry took up, leaves none.
+  one no retry took up, leaves none. For a read's own target override those rows
+  are the read's whole answer, since the retry resumes just after it.
 - **An in-run repair** removes what the failing unit stored
   (`discardRecordBatches`, by batch key), the attempts it called included, since
   the unit's re-attempt stores under ids of its own. A dropped fix removes what its

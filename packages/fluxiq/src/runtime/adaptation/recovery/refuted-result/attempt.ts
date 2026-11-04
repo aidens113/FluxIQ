@@ -48,7 +48,14 @@ import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../framework/automation-service/executor/index.ts";
-import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerificationOutcome } from "../../../result-verification/index.ts";
+import type { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, AutomationStudioResultRepairDirective, AutomationStudioResultVerificationOutcome } from "../../../result-verification/index.ts";
+
+/**
+ * Core's code for a yes it did not take, on a run that stored none of the records
+ * the build declared its task owes, with nothing showing the empty answer honest
+ * (`result-verification/requested-output/`). Typed against the table it comes from.
+ */
+export const AUTOMATION_STUDIO_RESULT_REQUESTED_OUTPUT_MISSING_CODE: (typeof AUTOMATION_STUDIO_RESULT_VERDICT_CODES)["requestedOutputMissing"] = "core.result.requested_output_missing";
 
 /** The attempt id prefix, so a reader can tell this attempt from one the graph executed. */
 export const AUTOMATION_STUDIO_REFUTED_RESULT_ATTEMPT_PREFIX = "result-verification";
@@ -95,11 +102,16 @@ export type AutomationStudioRefutedResultAttemptInput = {
  * result nobody could judge -- it still fails the run, and it still must never
  * read as a pass -- but a repair planned from it would be a change to a Flow on
  * evidence that nothing was wrong with it. Only `does_not_answer`, which is a
- * judgement that the answer is wrong, becomes an attempt.
+ * judgement that the answer is wrong, becomes an attempt, and the one `unsure`
+ * that is not "nobody could judge": a run Core's record shows stored none of the
+ * records its build declared it owes. That is the evidence, and what it asks for
+ * is the step that stores them (live run `run-mveba82m-fd0616dc`: the Flow read
+ * three values one by one and kept none). The run then fails with nothing to do
+ * about it, or a re-run of the changed Flow is judged like any other.
  */
 export function automationStudioRefutedResultAttempt(input: AutomationStudioRefutedResultAttemptInput): AutomationStudioRefutedResultAttempt | undefined {
   const outcome = input.outcome;
-  if (outcome.performed !== true || outcome.verdict !== "does_not_answer") return undefined;
+  if (outcome.performed !== true || (outcome.verdict !== "does_not_answer" && outcome.code !== AUTOMATION_STUDIO_RESULT_REQUESTED_OUTPUT_MISSING_CODE)) return undefined;
   // Parsed rather than trusted, as everywhere else a failure record is read:
   // the verdict reaches here through the same contract a domain's record does.
   const failure = parseAutomationStudioFailureRecord(outcome.failure);

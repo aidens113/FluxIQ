@@ -20,9 +20,12 @@
 // nothing is asked of a model. The conditions, all of which must hold:
 //
 // - the run failed, at a step whose failure record parses;
-// - that failure is target-level (`step-failure-target.ts`);
+// - that failure is one a re-author answers (`failure-target.ts`): target-level,
+//   or a read whose every row its own schema refused;
 // - the ladder ran -- it reached a model (`llmGate.invoked`) -- and executed
-//   no patch and made no adaptation;
+//   no patch and made no adaptation. For refused rows, a patch whose trial was
+//   contradicted does not count: a wait reads the same rows, and that is all it
+//   showed. Its adaptation is rejected, so nothing of it stands;
 // - it stopped for none of the reasons that must end a repair: a question for
 //   the person, or a cost or budget bound;
 // - no earlier pass of this run already re-authored it for a failed step;
@@ -35,7 +38,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../../../framework/automation-service/executor/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "../reauthor.ts";
-import { automationStudioStepFailureTarget } from "./failure-target.ts";
+import { AUTOMATION_STUDIO_RECORDS_REFUSED_CODE, automationStudioStepFailureTarget } from "./failure-target.ts";
 
 /** What a re-author for a failed step is recorded under, on its attempt's brief record. */
 const FAILED_STEP_TRIGGER = "failed_step";
@@ -105,13 +108,14 @@ export function automationStudioStepFailureReauthorDecision(input: {
   if (detail.summary.status !== "failed") return refused("run_not_failed");
   const failed = automationStudioStepFailureTarget(detail.actionAttempts);
   if (!failed) return refused("no_failed_step");
-  if (!failed.targetLevel) return refused("not_target_level");
+  if (!failed.reauthorable) return refused("not_target_level");
   const { attempt, failure } = failed;
   const metadata = detail.metadata ?? {};
   const gate = record(metadata.llmGate);
   if (gate?.invoked !== true) return refused("ladder_not_run");
   const patches = records(metadata.runtimePatchAttempts);
-  if (patches.some((patch) => patch.executed === true || typeof patch.adaptationId === "string") || record(metadata.adaptiveRetry)?.attempted === true) {
+  const standing = failure.code === AUTOMATION_STUDIO_RECORDS_REFUSED_CODE ? patches.filter((patch) => record(patch.verification)?.status !== "contradicted") : patches;
+  if (standing.some((patch) => patch.executed === true || typeof patch.adaptationId === "string") || record(metadata.adaptiveRetry)?.attempted === true) {
     return refused("ladder_patch_executed");
   }
   if (metadata.permissionRequest !== undefined || gate.patchSkippedCode === PERMISSION_REQUIRED_CODE || gate.patchHeldCode === PERMISSION_REQUIRED_CODE || (typeof gate.patchDeclined === "string" && PERSON_DECLINES.has(gate.patchDeclined))) {

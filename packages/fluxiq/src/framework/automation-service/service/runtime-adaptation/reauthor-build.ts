@@ -34,6 +34,9 @@ import {
   type AutomationStudioResultRepairPurse
 } from "../../../../runtime/adaptation/recovery/refuted-result/index.ts";
 import { AutomationStudioProjectStoreUnavailableError } from "../../../persistence/automation/index.ts";
+import { emitAutomationStudioActivity } from "../../../../runtime/automation-activity/index.ts";
+import { automationStudioRunDetailWithDeclinedAdaptiveRetry } from "../adaptations/index.ts";
+import type { AutomationStudioRerunPreflight } from "./rerun/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
 
 /** What a re-author build borrows from the service: the run's caller, and the build and its review. */
@@ -63,7 +66,28 @@ export type AutomationStudioReauthorBuildDependencies = {
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   /** Rejects a held edit an earlier attempt of this run left waiting, which this attempt replaces. */
   reject(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
+  /**
+   * Whether a re-run from the Flow's start would be declined (`./rerun/preflight.ts`),
+   * asked before anything is paid for whose only use is that re-run. Absent, the
+   * re-run answers for itself, after the build.
+   */
+  rerunPreflight?: ((request: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }) => Promise<AutomationStudioRerunPreflight>) | undefined;
 };
+
+/**
+ * The run, recording that its repair stopped before it spent anything, or nothing
+ * where the re-run it would lead to could go ahead. It is recorded as the declined
+ * re-run it would have been, the one record a reader of an ending already reads
+ * (`automation-activity/wording/run-ending.ts`). No re-author marker is written: no
+ * re-author was attempted, and one with nothing held would read as a repair that
+ * looked and changed nothing.
+ */
+export async function automationStudioRepairDeclinedBeforeBuild(deps: Pick<AutomationStudioReauthorBuildDependencies, "rerunPreflight">, request: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }): Promise<AutomationStudioFlowRunDetail | undefined> {
+  const preflight = await deps.rerunPreflight?.(request);
+  if (!preflight || !("declined" in preflight)) return undefined;
+  emitAutomationStudioActivity({ phase: "repairing", label: "Not repairing the Flow: running it again would repeat what this run already did", detail: { kind: "step", title: "Result repair not started", status: "failed" } });
+  return automationStudioRunDetailWithDeclinedAdaptiveRetry(request.detail, preflight.declined);
+}
 
 /** What one build answered: its adaptation and that it is held, or the failure it ended under. */
 export type AutomationStudioReauthorBuilt = Awaited<ReturnType<typeof automationStudioReauthorRefutedResult>>;

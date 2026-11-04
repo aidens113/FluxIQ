@@ -113,6 +113,31 @@ describe("decideAutomationStudioAdaptiveRetry", () => {
       expect(decide({ notResumableCode: undefined })).toEqual({ declined: { notResumableCode: "resume_decision_missing" } });
     });
   });
+
+  // A trial verified by rows nobody said how many of were owed: the judged run says, and only a patch held for it carries on.
+  describe("a verified trial whose rows await the judged run", () => {
+    const awaiting = { resumable: false, notResumableCode: "records_minimum_undeclared", verification: { status: "verified", basis: "records", awaitsJudgedRun: true } };
+    const decide = (overrides: Record<string, unknown>) => decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt({ ...awaiting, ...overrides })] });
+
+    it("resumes at the node the trial reached", () => {
+      expect(decide({})).toEqual({ resume: { nodeId: "end", route: "success" } });
+    });
+
+    it("is refused where the patch did not say it awaits that run, as a kind nothing judges does not", () => {
+      expect(decide({ verification: { status: "verified", basis: "records" } })).toEqual({ declined: { notResumableCode: "records_minimum_undeclared" } });
+      expect(decide({ verification: undefined })).toEqual({ declined: { notResumableCode: "records_minimum_undeclared" } });
+    });
+
+    it("does not read across: rows await a verified trial, and any other unknown is never awaited past", () => {
+      expect(decide({ verification: { status: "unverifiable", reason: "no_expectation_declared", awaitsJudgedRun: true } })).toEqual({ declined: { notResumableCode: "records_minimum_undeclared" } });
+      expect(decide({ notResumableCode: "check_unknown" })).toEqual({ declined: { notResumableCode: "check_unknown" } });
+      expect(decide({ notResumableCode: "check_failed" })).toEqual({ declined: { notResumableCode: "check_failed" } });
+    });
+
+    it("is not asked at all where the trial did something lasting past the change", () => {
+      expect(decide({ retryOriginalAction: false, actedLastingly: true })).toBeNull();
+    });
+  });
 });
 
 describe("automationStudioVerificationAwaitsJudgedRun", () => {

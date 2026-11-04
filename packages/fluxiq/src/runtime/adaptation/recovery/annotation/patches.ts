@@ -207,6 +207,8 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       verification: tested.verification,
       restoredExpectedState: tested.restoredExpectedState,
       retryOriginalAction: tested.retryOriginalAction,
+      // A re-run from the start reads this: what a trial did is on no pass's trace.
+      actedLastingly: tested.actedLastingly,
       // The trial's own answer to whether the run may carry on, and from where.
       // The retry is the only caller, it runs long after the trial is over, and
       // this receipt is the only copy of the verdict it can still see.

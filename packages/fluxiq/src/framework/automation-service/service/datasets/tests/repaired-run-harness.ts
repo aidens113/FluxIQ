@@ -72,6 +72,10 @@ export type RepairedRunScript = {
   reauthor?: (request: AutomationStudioLlmTaskRequest, decision: number) => JsonObject;
   /** A step that says it lastingly acts, before the read: by a declared consequence, or by an explicit mark. */
   lastingStep?: boolean | "marked";
+  /** The diagnosis says no patch would help, so the ladder ends having written none. */
+  diagnosisWantsNoPatch?: boolean;
+  /** A step after the read that says it lastingly acts, so a trial starting at the read runs it. */
+  lastingAfterRead?: boolean;
   /** Leaves out the opening press, for a re-author: it would have to carry that step too. */
   noOpen?: boolean;
   /** The press the ladder's target override aims anew, which fails until it is aimed. Absent, the patch names the read. */
@@ -154,7 +158,7 @@ export async function startRepairedRun(script: RepairedRunScript, dataDir: strin
           : { kind: "temporary_action_sequence", targetNodeId: "read", steps: [{ definitionId: PRESS_ID, parameters: { control: script.patchControl ?? "narrow" } }], consequences: [], reason: "Narrow the list before reading it." };
         return { response: { kind: "runtime_patch", summary: "Read the narrowed list.", riskLevel: "low", patches: [patch] }, usage };
       }
-      return { response: { kind: "diagnosis", summary: "The list is not narrowed.", diagnosis: { explorationNeeded: false, patchNeeded: true } }, usage };
+      return { response: { kind: "diagnosis", summary: "The list is not narrowed.", diagnosis: { explorationNeeded: false, patchNeeded: script.diagnosisWantsNoPatch !== true } }, usage };
     }
   };
   const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
@@ -172,7 +176,9 @@ export async function startRepairedRun(script: RepairedRunScript, dataDir: strin
   const service = new AutomationStudioService({
     dataDir,
     seedFixture: false,
-    llmProviderResolver: (async () => ({ provider, tokenLimits: { ...defaults.tokenLimits }, timeoutMs: defaults.timeoutMs, maxEstimatedCostUsd: defaults.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd })),
+    // No token limits: with them this unpriced mock is reserved a call's worst case at the default model's rates in
+    // force now, and at peak hours that reaches the whole ceiling. A second call was then refused, and the tests failed by the clock.
+    llmProviderResolver: (async () => ({ provider, timeoutMs: defaults.timeoutMs, maxEstimatedCostUsd: defaults.maxEstimatedCostUsd, maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd })),
     llmEvidenceRuntime: runtime
   }).bindIoRuntime(io, DOMAIN).bindNativeNodeRuntime(nativeRuntime(page, script));
   services.add(service);
@@ -198,7 +204,8 @@ export async function startRepairedRun(script: RepairedRunScript, dataDir: strin
   const steps: AutomationStudioFlowNode[] = [
     ...(script.lastingStep ? [{ id: "order", definitionId: PRESS_ID, parameterValues: { control: "order" }, metadata: script.lastingStep === "marked" ? { effect: "mutate" } : { declaredConsequences: ["create_new"] } }] : []),
     ...(script.noOpen ? [] : [{ id: "open", definitionId: PRESS_ID, parameterValues: { control: "open" } }]),
-    { id: "read", definitionId: READ_ID, parameterValues: { recordOutput: RECORD_OUTPUT } }
+    { id: "read", definitionId: READ_ID, parameterValues: { recordOutput: RECORD_OUTPUT } },
+    ...(script.lastingAfterRead ? [{ id: "confirm", definitionId: PRESS_ID, parameterValues: { control: "confirm" }, metadata: { effect: "mutate" } }] : [])
   ];
   const line = ["start", ...steps.map((step) => step.id), "end"];
   await service.saveFlow({

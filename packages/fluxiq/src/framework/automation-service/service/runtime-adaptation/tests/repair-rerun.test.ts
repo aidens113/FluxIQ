@@ -248,6 +248,13 @@ describe("a re-run and a runtime patch still waiting for its judged run", () => 
     expect(written).toEqual([]);
   });
 
+  // What the check before a later repair's build reads: this pass's word, in its own graph's terms.
+  it("leaves what a pass did on the session it writes, so a later check does not re-read it against the stored Flow", async () => {
+    const { result, session, written } = await rerun({ dispatcher: (effect) => ({ status: "success", route: "success", outputs: { ok: JSON.stringify(effect.payload ?? null).length > 0 } }) });
+    expect(result?.session?.status).toBe("succeeded");
+    expect(written[0]?.metadata?.repairRerunPasses).toEqual({ firstPassAttempts: session.trace?.attempts.length, lasting: false });
+  });
+
   it("declines a re-run from the start that would change nothing", async () => {
     const { result, written } = await rerun({ reauthored: false, adaptations: [], detailMetadata: {} });
 

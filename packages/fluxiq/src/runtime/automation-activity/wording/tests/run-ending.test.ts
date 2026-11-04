@@ -152,6 +152,34 @@ describe("a refutation that rests on the judges' word alone (t785, run-mvskodlp-
   });
 });
 
+describe("a run that failed at a step", () => {
+  const rowsRefused = (latest: Record<string, unknown>, attempt: Record<string, unknown> = {}) => ({ resultReauthor: { routed: true, ...latest, attempts: [{ brief: { trigger: "failed_step", failureCode: "record_output.records_refused" }, ...attempt }] } });
+
+  it("says nothing more for an ordinary failed step, whatever its repair came to", () => {
+    expect(automationStudioActivityRunEnding({})).toBeUndefined();
+    expect(automationStudioActivityRunEnding({ resultReauthor: { routed: true, attempts: [{ brief: { trigger: "failed_step", failureCode: "web.target.not_found" } }] } })).toBeUndefined();
+  });
+
+  it("says a fix was not run where running it would repeat what the run did", () => {
+    expect(automationStudioActivityRunEnding({ adaptiveRetry: { attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" } })).toBe("a step failed, and the fix wasn't run: that would repeat what this run already did.");
+  });
+
+  it("says plainly that the rows did not fit and the repair found no way, when it found none", () => {
+    expect(automationStudioActivityRunEnding(rowsRefused({ code: "flow_bootstrap.not_doable" }, { ending: { kind: "not_doable" } }))).toBe("every row it read was refused by the fields this Flow stores, and the repair found no way to read them that fits.");
+  });
+
+  it("says what stopped a repair that did not finish, and that a fixed Flow failed too", () => {
+    expect(automationStudioActivityRunEnding(rowsRefused({ code: "flow_bootstrap.provider_timeout" }))).toBe("every row it read was refused by the fields this Flow stores, and the fix ran out of time before it finished.");
+    expect(automationStudioActivityRunEnding(rowsRefused({ held: true }))).toBe("every row it read was refused by the fields this Flow stores, and the fixed Flow didn't finish either.");
+  });
+
+  it("fits a status line after \"Run failed: \"", () => {
+    for (const ending of [rowsRefused({}, { ending: { kind: "not_doable" } }), rowsRefused({ code: "flow_bootstrap.provider_timeout" }), { adaptiveRetry: { attempted: false, notResumableCode: "repair_rerun.lasting_act_may_have_landed" } }]) {
+      expect(`Run failed: ${automationStudioActivityRunEnding(ending)}`.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_ACTIVITY_LIMITS.label);
+    }
+  });
+});
+
 describe("a no Core reached from its computed facts (t805)", () => {
   const said = "Core counted 3 stored rows where the build declared 2.";
   const coreNo = { status: "refuted", performed: true, verdict: "does_not_answer", basis: "core_observation", code: "core.result.computed_fact_failed", observation: said, reason: `Core's own record shows it does not answer the request, so no judge was asked: ${said}` };
