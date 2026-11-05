@@ -20,6 +20,8 @@ import type { AutomationStudioProjectPartsDependencies, AutomationStudioProjectP
 import { listProjectParts, type AutomationStudioListProjectPartsInput } from "./list.ts";
 import { keepProjectPart } from "./keep.ts";
 import { saveProjectPartsOfDraft, type AutomationStudioSaveProjectPartsOfDraftInput } from "./draft-parts.ts";
+import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
+import { automationStudioDurableAdaptationsKeepingParts, automationStudioRunDetailWithPartFacts, projectPartRecordRefutedTrial, type ProjectPartPinnedRepairPorts } from "./repair/index.ts";
 import { shortlistProjectParts, type AutomationStudioProjectPartsShortlistInput } from "./shortlist.ts";
 import { runProjectPart, type AutomationStudioProjectPartRunInput, type AutomationStudioProjectPartRunRefusal, type AutomationStudioProjectPartRunResult } from "./run/index.ts";
 
@@ -62,6 +64,25 @@ export class AutomationStudioProjectParts {
   /** A graph is about to be saved, and has been: its pinned calls are refused, then known, here (`./graph-calls.ts`). */
   flowGraphCalls(): AutomationStudioSavedFlowGraph {
     return automationStudioKeepPartCallsOf(this.dependencies.pool);
+  }
+
+  /** `door` with each kept change going through the library first (`./repair/keeping-parts.ts`). */
+  keepingRepairs<Door extends Parameters<typeof automationStudioDurableAdaptationsKeepingParts>[0]>(door: Door, writers: Pick<ProjectPartPinnedRepairPorts, "patches" | "flowWriter">): Door {
+    const { pool, ports, run } = this.dependencies;
+    return automationStudioDurableAdaptationsKeepingParts(door, { ...writers, pool, library: ports, instructionBodies: ports.instructionBodies, getRuntimeSession: async (projectId, runId) => (await run?.getRuntimeSession(projectId, runId)) ?? null });
+  }
+
+  /** A run that tried a newer version was judged not to answer: said of that version alone (`./repair/refuted-trial.ts`). */
+  async refutedTrial(adaptation: AutomationStudioFlowAdaptation, runId: string): Promise<void> {
+    // The run's own record says whether this was a real no or a judge that said nothing; a record that cannot be read leaves `verdict` unset, and nothing is recorded without it.
+    let verdict: unknown;
+    await this.dependencies.run?.getRuntimeSession(adaptation.projectId, runId).then((session) => { verdict = session?.metadata?.resultVerification; }).catch(/* best-effort: nothing is recorded without the verdict */ () => undefined);
+    return projectPartRecordRefutedTrial(this.dependencies.pool, adaptation, runId, verdict);
+  }
+
+  /** A run's record, with the plain fact that it ran an older version than one that has passed elsewhere (`./repair/run-facts.ts`). */
+  withPartFacts<Detail extends AutomationStudioFlowRunDetail | null>(projectId: string, detail: Detail): Promise<Detail> {
+    return automationStudioRunDetailWithPartFacts(this.dependencies.pool, projectId, detail);
   }
 
   /** A person's run of one part, with no model, or why it was not run. */

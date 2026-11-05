@@ -232,8 +232,11 @@ export type AutomationStudioResultVerificationPorts = {
    * configuration and not a failure: the run still records its version set on
    * its own detail, so a reader can still say which version a result belongs
    * to; what is missing is only the queryable history across runs.
+   *
+   * `pinnedRan` names the saved versions the run executed as saved, which earn
+   * trust from a judged run whether or not their graph has a revision.
    */
-  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement; zeroModel?: boolean }) => Promise<unknown>) | undefined;
+  recordFlowGraphJudgements?: ((input: { projectId: string; judgement: AutomationStudioFlowGraphJudgement; zeroModel?: boolean; pinnedRan?: { judged: "yes" | "no"; versions: readonly { partId: string; version: number }[] } }) => Promise<unknown>) | undefined;
   /**
    * Judges a finished run that asked no model anything as a replay of each
    * applied change it executed, and saves what it proved

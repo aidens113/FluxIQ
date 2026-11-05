@@ -3,7 +3,7 @@ import type { AutomationStudioProjectPartCall, AutomationStudioProjectPartVersio
 export type PartRow = { part_id: string; latest_version: number; source_flow_id: string; source_subflow_id: string; created_at_ms: number; updated_at_ms: number };
 export type PartVersionRow = { part_id: string; version: number; card_json: string; shape_hash: string; snapshot_object_id: string; source_graph_flow_id: string; source_graph_revision: number | null; created_at_ms: number };
 export type PartCallRow = { caller_kind: "part_version" | "flow_graph"; caller_id: string; caller_version: number; caller_node_id: string; caller_flow_id: string | null; part_id: string; version: number };
-export type PartRunRow = { part_id: string; version: number; run_id: string; outcome: AutomationStudioProjectPartRunRecord["outcome"]; model_calls: number; finished_at_ms: number };
+export type PartRunRow = { part_id: string; version: number; run_id: string; outcome: AutomationStudioProjectPartRunRecord["outcome"]; model_calls: number; finished_at_ms: number; judged: "yes" | "no" | null };
 
 export type PartVersionSourceRow = { graph_flow_id: string; revision: number | null };
 
@@ -20,7 +20,7 @@ export function callFromRow(row: PartCallRow): AutomationStudioProjectPartCall {
 }
 
 export function runFromRow(row: PartRunRow): AutomationStudioProjectPartRunRecord {
-  return { partId: row.part_id, version: row.version, runId: row.run_id, outcome: row.outcome, modelCalls: row.model_calls, finishedAtMs: row.finished_at_ms };
+  return { partId: row.part_id, version: row.version, runId: row.run_id, outcome: row.outcome, modelCalls: row.model_calls, finishedAtMs: row.finished_at_ms, ...(row.judged ? { judged: row.judged } : {}) };
 }
 
 export function versionSourceFromRow(row: PartVersionSourceRow): AutomationStudioProjectPartVersionSource {

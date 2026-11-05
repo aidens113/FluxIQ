@@ -4,7 +4,7 @@ import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../../component
 import { emitAutomationStudioActivityThought } from "../../../runtime/activity/index.ts";
 import type { AutomationStudioAttemptRepairTrace, AutomationStudioClearedLayer, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import type { AutomationStudioFaultAssessment } from "../defensive/index.ts";
-import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
+import { automationStudioIsNewerPartRepair, automationStudioNewerPartWaits, automationStudioPartPinOf, automationStudioPinOfSubflowId, automationStudioPinnedCallStoppedSafely, automationStudioPinnedSubflowId, automationStudioWithoutPinnedCredit, type AutomationStudioInvocationOptions } from "../frames/index.ts";
 import { automationStudioIncidentHandlerRetrial, type AutomationStudioIncidentRepair, type AutomationStudioIncidentRepairRequest, type AutomationStudioInterruptionLearningRequest, type AutomationStudioRepairUnit, type AutomationStudioRunRepair } from "../lifecycle-run/index.ts";
 import { automationStudioRecordBatchKey } from "../records/index.ts";
 import { AUTOMATION_STUDIO_TARGET_GONE_CODE } from "../target-reacquire/index.ts";
@@ -43,26 +43,42 @@ type TrueFailure = {
  * A second true failure of the same incident asks nothing: a fix that was held
  * is dropped (both graphs put back) and the run ends. A run with no callback
  * never gets here past the first line, so its trace is unchanged.
+ *
+ * A newer version of a pinned part is the exception (`../frames/newer-part.ts`). It
+ * is offered as a fix like any other, by the same callback, and costs no model call.
+ * When it fails it is put back, and the callback is asked again about the attempt
+ * of the pinned version: for the next newer version, or else for a model's fix.
  */
 export async function automationStudioStepRepairIncident(
   ctx: AutomationStudioStepLoopContext,
-  failure: TrueFailure
+  stepFailure: TrueFailure
 ): Promise<Extract<AutomationStudioStepOutcome, { kind: "next" | "return" }> | undefined> {
   const { options } = ctx;
   const invocation = options.invocation;
-  const incidentId = failure.incidentId;
+  const incidentId = stepFailure.incidentId;
   if (!options.repairIncident || !invocation || !incidentId) return undefined;
-  const prior = invocation.run.lifecycle.repairs.get(incidentId);
+  let failure = stepFailure;
+  // A newer version's failure comes up from its frame under an incident of its own: the fix it was tried as is held under the one before it.
+  const heldUnder = invocation.run.newerPartTrials.get(ctx.attempts[failure.attemptIndex]?.subflowTarget?.subflowId ?? "") ?? incidentId;
+  const prior = invocation.run.lifecycle.repairs.get(heldUnder);
   if (prior) {
     if (prior.outcome === "held") {
-      dropOverlay(ctx, invocation, failure, incidentId, prior);
+      dropOverlay(ctx, invocation, failure, heldUnder, prior);
       await discardRowsOfReplaced(ctx, failure);
     }
-    return undefined;
+    if (prior.outcome !== "held" || !automationStudioIsNewerPartRepair(prior.repairId)) return undefined;
+    const pinned = await pinnedAfterNewerFailed(ctx, invocation, failure, heldUnder);
+    if (!pinned) return undefined;
+    failure = pinned;
   }
   if (!automationStudioStepRepairWillAsk(ctx, failure)) return undefined;
   const failedAttempt = ctx.attempts[failure.attemptIndex]!;
   const unit = repairUnit(ctx, invocation, failure.node, failedAttempt, incidentId);
+  if (await automationStudioNewerPartWaits({ options, invocation, attempts: ctx.attempts, failedAttempt })) {
+    // Said on the attempt only: the incident goes up to the call step, which is what asks next.
+    ctx.attempts[failure.attemptIndex] = { ...failedAttempt, repair: { unit, outcome: "none", reason: "A newer version of this saved part is tried first, so no fix was asked for here." } };
+    return undefined;
+  }
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Fixing a step", text: "Nothing in the Flow could take the run past this step, so the run waits here while the step is fixed, then tries it again where it stood.", ref: failure.node.id });
   await options.commandRun?.checkpoint();
   const answer = await ask(ctx, invocation, { unit, failedAttempt, incidentId });
@@ -201,6 +217,7 @@ function mayAsk(ctx: AutomationStudioStepLoopContext, invocation: AutomationStud
   if (ctx.attempts[failure.attemptIndex]?.failure?.code === AUTOMATION_STUDIO_TARGET_GONE_CODE) return false;
   const category = failure.fault?.category ?? ctx.attempts[failure.attemptIndex]?.failure?.category;
   if (category && PERMISSION_CATEGORIES.has(category)) return false;
+  if (automationStudioPinnedCallStoppedSafely(ctx.attempts[failure.attemptIndex])) return false;
   return !runAttempts(ctx, invocation).some(endedUncertain);
 }
 
@@ -227,7 +244,9 @@ function repairUnit(
   if (handler?.failed && handler.graphFlowId === ctx.flow.flowId) return { kind: "handler", handlerNodeId: handler.handlerNodeId };
   const subflowId = attempt.subflowTarget?.subflowId;
   const partBroke = attempt.childTrace?.status === "failed" && attempt.childTrace.failure !== undefined;
-  if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID && subflowId && partBroke) return { kind: "part", subflowId };
+  // A saved version's call step is only its pin: what is wrong is in the part, and a fix to the step would cut this caller off from it.
+  const pinnedRan = automationStudioPinOfSubflowId(subflowId) !== undefined && attempt.childTrace !== undefined;
+  if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID && subflowId && (partBroke || pinnedRan)) return { kind: "part", subflowId };
   return { kind: "node", nodeId: node.id };
 }
 
@@ -282,9 +301,15 @@ function holdOverlay(
   if (!ctx.lifecycle.overlays.has(incidentId)) ctx.lifecycle.overlays.set(incidentId, ctx.flow);
   swapGraph(ctx, invocation, answer.graph, reattempt.id);
   if (answer.partGraph) run.subflowOverrides.set(answer.partGraph.subflowId, answer.partGraph.graph);
+  if (automationStudioIsNewerPartRepair(answer.repairId)) {
+    const pin = automationStudioPartPinOf(reattempt.parameterValues?.part);
+    if (pin) run.newerPartTrials.set(automationStudioPinnedSubflowId(pin), incidentId);
+  }
   if (answer.unit.kind === "handler") automationStudioIncidentHandlerRetrial(run, incidentId, `${answer.graph.flowId}/${answer.unit.handlerNodeId}`);
   const reason = answer.reason ?? `A fix to ${unitWords(answer.unit)} was applied to this run, and the step is tried again where the run stood.`;
   record(ctx, invocation, failure, incidentId, { repairId: answer.repairId, unit: answer.unit, outcome: "held", reason, ...(answer.partGraph ? { partSubflowId: answer.partGraph.subflowId } : {}) });
+  // The version that failed here is not what the run went on with.
+  ctx.attempts[failure.attemptIndex] = automationStudioWithoutPinnedCredit(ctx.attempts[failure.attemptIndex]!);
   // The trial decides how the incident ends, as a retry's next attempt does.
   const incident = run.lifecycle.incidents.get(incidentId);
   if (incident) delete incident.ending;
@@ -300,7 +325,9 @@ function dropOverlay(ctx: AutomationStudioStepLoopContext, invocation: Automatio
   if (original) swapGraph(ctx, invocation, original, failure.node.id);
   ctx.lifecycle.overlays.delete(incidentId);
   if (prior.partSubflowId) invocation.run.subflowOverrides.delete(prior.partSubflowId);
-  const reason = "The fix was tried at the step and the step still failed, so the fix was dropped and the run ends here.";
+  const reason = automationStudioIsNewerPartRepair(prior.repairId)
+    ? "A newer version of this saved part was tried here and it failed too, so the step goes back to the version it pins."
+    : "The fix was tried at the step and the step still failed, so the fix was dropped and the run ends here.";
   record(ctx, invocation, failure, incidentId, { ...prior, outcome: "dropped", reason });
 }
 
@@ -317,6 +344,37 @@ function record(ctx: AutomationStudioStepLoopContext, invocation: AutomationStud
   invocation.run.lifecycle.repairs.set(incidentId, repair);
   const trace: AutomationStudioAttemptRepairTrace = { ...(repair.repairId ? { repairId: repair.repairId } : {}), unit: repair.unit, outcome: repair.outcome, reason: repair.reason };
   ctx.attempts[failure.attemptIndex] = { ...ctx.attempts[failure.attemptIndex]!, repair: trace };
+}
+
+/**
+ * A newer version failed where it was tried: said of it alone, its repair forgotten so the
+ * incident can be asked about again, and the failure to answer is the pinned version's own.
+ * Nothing, when it may have done something lasting: any fix here would run a part from its
+ * start and could do that a second time, so the run ends as a failed step ends it.
+ */
+async function pinnedAfterNewerFailed(ctx: AutomationStudioStepLoopContext, invocation: AutomationStudioInvocationOptions, failure: TrueFailure, incidentId: string): Promise<TrueFailure | undefined> {
+  const { run } = invocation;
+  run.lifecycle.repairs.delete(incidentId);
+  const tried = ctx.attempts[failure.attemptIndex]!;
+  const triedId = tried.subflowTarget?.subflowId;
+  const triedPin = automationStudioPinOfSubflowId(triedId);
+  ctx.attempts[failure.attemptIndex] = automationStudioWithoutPinnedCredit(tried);
+  if (triedId && triedPin) {
+    run.newerPartTrials.delete(triedId);
+    const versions = (await ctx.options.subflowGraphs?.load(triedId))?.newerParts;
+    if (!versions || await versions.failed(triedPin, tried.childTrace?.attempts ?? [], ctx.options)) return undefined;
+  }
+  const node = ctx.nodesById.get(failure.node.id) ?? failure.node;
+  const pin = automationStudioPartPinOf(node.parameterValues?.part);
+  const pinnedId = pin ? automationStudioPinnedSubflowId(pin) : undefined;
+  let attemptIndex = failure.attemptIndex;
+  for (let at = failure.attemptIndex; at >= 0 && ctx.attempts[at]!.nodeId === node.id; at -= 1) {
+    if (ctx.attempts[at]!.subflowTarget?.subflowId === pinnedId) {
+      attemptIndex = at;
+      break;
+    }
+  }
+  return { ...failure, node, attemptIndex };
 }
 
 function unitWords(unit: AutomationStudioRepairUnit): string {

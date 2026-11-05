@@ -7,9 +7,13 @@ export {
   type AutomationStudioInvocationFrame
 } from "./invocation-frame.ts";
 export type { AutomationStudioFramePath, AutomationStudioFrameStack } from "./stack.ts";
-export type { AutomationStudioInvocationOptions, AutomationStudioPartPinRefusal, AutomationStudioRunFrames, AutomationStudioSubflowGraph, AutomationStudioSubflowGraphRunner, AutomationStudioSubflowGraphSource } from "./invocation-options.ts";
+export type { AutomationStudioInvocationOptions, AutomationStudioNewerPartVersions, AutomationStudioPartPinRefusal, AutomationStudioRunFrames, AutomationStudioSubflowGraph, AutomationStudioSubflowGraphRunner, AutomationStudioSubflowGraphSource } from "./invocation-options.ts";
 // A saved part a call step pins, and the id its frame runs under.
 export { AUTOMATION_STUDIO_PART_CALL_MAX_DEPTH, automationStudioPartPinOf, automationStudioPinOfSubflowId, automationStudioPinnedSubflowId, type AutomationStudioPartPin } from "./part-pin.ts";
+// A newer version of a pinned part, tried in a run before any model is asked.
+export { AUTOMATION_STUDIO_PART_NEWER_TRIAL_KEY, automationStudioIsNewerPartRepair, automationStudioNewerPartOfAttempt, automationStudioNewerPartRepairId, automationStudioNewerPartWaits, automationStudioPinnedCallStoppedSafely, automationStudioPinsRanAsSaved, automationStudioWithoutPinnedCredit, type AutomationStudioCallAttemptProbe, type AutomationStudioInnerAttemptProbe, type AutomationStudioNewerPartOffer } from "./newer-part.ts";
+// The path of call steps by which a run reached a pinned version.
+export { automationStudioPartCallPaths, type AutomationStudioPartCallStep } from "./part-call-paths.ts";
 // The run holder, the root and child frames, and framing a graph run.
 export { automationStudioRunFrames } from "./run-holder.ts";
 export { automationStudioRootInvocation, runAutomationStudioGraphInFrame } from "./graph-frame.ts";

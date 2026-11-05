@@ -57,6 +57,8 @@ export type AutomationStudioProjectPartRunRecord = {
   outcome: AutomationStudioProjectPartRunOutcome;
   modelCalls: number;
   finishedAtMs: number;
+  /** The verdict of a judged run that executed this version as saved: yes it answers, no it does not. Absent for a run nobody judged. */
+  judged?: "yes" | "no" | null;
 };
 
 /** What one write of a version takes. The store assigns the version, so the card is given without one. */

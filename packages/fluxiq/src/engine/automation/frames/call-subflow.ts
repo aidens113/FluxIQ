@@ -76,7 +76,8 @@ export async function automationStudioCallSubflow(request: {
   if (!loaded && call.pin) return refused("missing_router_or_subflow_target", "executor.call_subflow.part_version_missing", `Version ${call.pin.version} of saved part ${call.pin.partId} is not in this project's library, so it was not run.`);
   // A part an in-run repair replaced runs as fixed for the rest of the run (C6 step 8).
   const override = loaded ? invocation?.run.subflowOverrides.get(loaded.subflowId) : undefined;
-  const target = loaded && override ? { ...loaded, graph: override } : loaded;
+  // A runner runs the artifact where there is one (`composite-execution/owner.ts`), so the artifact carries the fix too; its interface stays the part's contract.
+  const target = loaded && override ? { ...loaded, graph: override, ...(loaded.artifact ? { artifact: { ...loaded.artifact, nodes: override.nodes, edges: override.edges } } : {}) } : loaded;
   if (!target) return refused("missing_router_or_subflow_target", "executor.call_subflow.unknown", `Subflow ${named} could not be run: it is not a Subflow of this automation.`);
   const runSubflow = invocation?.run.runSubflow;
   if (!runSubflow) return refused("missing_router_or_subflow_target", "executor.call_subflow.no_runner", `Subflow ${named} could not be run: this run has no way to run a Subflow.`);
@@ -105,12 +106,21 @@ export async function automationStudioCallSubflow(request: {
     };
   }
   const handedBack = crossed.childTrace.checkpointRoute;
+  // A saved version that ran with a fix in it is not the version as saved, so a judged end does not stand for it (`./newer-part.ts`). A Flow's own Subflow goes on as it always has.
+  const graphRevision = pinnedId && target.subflowId === pinnedId && (override || crossed.childTrace.attempts.some(heldAFix)) ? null : target.graphRevision;
+  // A newer version that finished has been tried: a later failure of it, on the next row, is its own.
+  if (!failed && !handedBack) invocation?.run.newerPartTrials.delete(target.subflowId);
   const message = handedBack ? `Subflow ${named} handed the run back to checkpoint "${handedBack.checkpointId}".` : crossed.childTrace.message ? `Subflow ${named} failed: ${crossed.childTrace.message}` : `Subflow ${named} failed.`;
   return {
     result: failed ? { ...crossed.result, message } : crossed.result,
     childTrace: crossed.childTrace,
-    subflowTarget: { subflowId: target.subflowId, graphFlowId: target.graph.flowId, graphRevision: target.graphRevision }
+    subflowTarget: { subflowId: target.subflowId, graphFlowId: target.graph.flowId, graphRevision }
   };
+}
+
+/** An attempt whose fix the frame kept, here or in a frame it called. */
+function heldAFix(attempt: AutomationStudioNodeAttemptTrace): boolean {
+  return attempt.repair?.outcome === "held" || (attempt.childTrace?.attempts.some(heldAFix) ?? false);
 }
 
 /** Why a pinned part's frame does not start, though its version may be there. */

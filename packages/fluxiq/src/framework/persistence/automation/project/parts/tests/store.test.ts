@@ -174,6 +174,8 @@ describe("AutomationStudioProjectPartStore", () => {
     expect(await store.listCallsTo({ partId: "part.one", version: 1 })).toEqual([{ callerKind: "flow_graph", callerId: "flow.main.graph", callerVersion: 0, callerNodeId: "call.1", callerFlowId: "flow.main", partId: "part.one", version: 1 }]);
     await store.recordRun({ partId: "part.one", version: 1, runId: "run.1", outcome: "succeeded", modelCalls: 0, finishedAtMs: 10 });
     expect(await store.listRuns({ partId: "part.one", version: 1 })).toEqual([{ partId: "part.one", version: 1, runId: "run.1", outcome: "succeeded", modelCalls: 0, finishedAtMs: 10 }]);
+    await store.recordRun({ partId: "part.one", version: 1, runId: "run.2", outcome: "failed", modelCalls: 1, finishedAtMs: 20, judged: "no" });
+    expect((await store.listRuns({ partId: "part.one", version: 1 })).map((run) => [run.runId, run.judged ?? null]), "a judged run keeps its verdict").toEqual([["run.1", null], ["run.2", "no"]]);
     await store.close();
     await pool.closeAll();
   });

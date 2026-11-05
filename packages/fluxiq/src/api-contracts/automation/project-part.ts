@@ -48,13 +48,23 @@ export type ProjectPartCallNode = { partId: string; version: number; name: strin
 
 export type ProjectPartVersionEntry = { version: number; createdAtMs: number; trust: AutomationStudioSubflowCard["trust"] };
 
+/** A version newer than the one a caller pins, with the same interface and nothing against it. Nothing moves the caller to it but its own judged run. */
+export type ProjectPartCallerNewer = {
+  version: number;
+  /** It has passed a judged run. */
+  passedElsewhere: boolean;
+  /** The same, in words a person reads. */
+  said: string;
+};
+
 /**
  * Who calls the part, each by the version it pins. A Flow's graph calls the part
  * at `version`; another part's version (`callerVersion`) calls it at `version`.
+ * `newer` tells the caller a newer version is there.
  */
 export type ProjectPartCaller =
-  | { kind: "flow"; flowId: string; nodeId: string; version: number }
-  | { kind: "part"; partId: string; callerVersion: number; nodeId: string; version: number };
+  | { kind: "flow"; flowId: string; nodeId: string; version: number; newer?: ProjectPartCallerNewer }
+  | { kind: "part"; partId: string; callerVersion: number; nodeId: string; version: number; newer?: ProjectPartCallerNewer };
 
 export type GetProjectPartResponse = {
   card: AutomationStudioSubflowCard;

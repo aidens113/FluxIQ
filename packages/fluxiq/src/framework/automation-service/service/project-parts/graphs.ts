@@ -5,6 +5,7 @@
 import type { AutomationStudioPartPin, AutomationStudioPartPinRefusal } from "../../../../engine/automation/frames/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
 import type { AutomationStudioPinnedPartGraphs } from "../runtime-session/index.ts";
+import { projectPartNewerVersionsOfRun } from "./repair/index.ts";
 import { projectPartRunGraphOf, projectPartRunKey, readProjectPartRunClosure, type ProjectPartRunClosure } from "./run/index.ts";
 import { withProjectPartStores } from "./stores.ts";
 
@@ -22,10 +23,13 @@ export function automationStudioPinnedPartGraphs(input: { pool: AutomationStudio
     closures.set(key, known);
     return known;
   };
+  const newer = projectPartNewerVersionsOfRun({ pool: input.pool, projectId: input.projectId, canRun: async (pin) => (await closureOf(pin))?.kind === "found" });
   return {
     load: async (pin) => {
       const closure = await closureOf(pin);
-      return closure?.kind === "found" ? projectPartRunGraphOf({ projectId: input.projectId, parentFlowId: input.parentFlowId, entry: closure.root }).target : undefined;
+      if (closure?.kind !== "found") return undefined;
+      const { target } = projectPartRunGraphOf({ projectId: input.projectId, parentFlowId: input.parentFlowId, entry: closure.root });
+      return { ...target, newerParts: newer.of(pin, target.graph) };
     },
     refusal: async (pin) => {
       const closure = await closureOf(pin);

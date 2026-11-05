@@ -9,7 +9,11 @@ export function partTrustEvidenceFromJudgements(rows: readonly Pick<AutomationSt
   return rows.map((row) => ({ result: row.status, zeroModel: row.zeroModel, atMs: row.decidedAtMs }));
 }
 
-/** A part run, as evidence: it succeeded or failed by its own end check, and a stop proves nothing. */
-export function partTrustEvidenceFromRuns(rows: readonly Pick<AutomationStudioProjectPartRunRecord, "outcome" | "modelCalls" | "finishedAtMs">[]): AutomationStudioPartTrustEvidence[] {
-  return rows.map((row) => ({ result: row.outcome === "succeeded" ? "confirmed" : row.outcome === "failed" ? "refuted" : "unverified", zeroModel: row.modelCalls === 0, atMs: row.finishedAtMs }));
+/**
+ * A part run, as evidence: it succeeded or failed by its own end check, and a stop proves nothing.
+ * A run a judged Flow run left its verdict on (`judged`) is that verdict: yes is confirmed, no is
+ * refuted, and a yes at zero model calls is a replay, as a judgement row's is.
+ */
+export function partTrustEvidenceFromRuns(rows: readonly Pick<AutomationStudioProjectPartRunRecord, "outcome" | "modelCalls" | "finishedAtMs" | "judged">[]): AutomationStudioPartTrustEvidence[] {
+  return rows.map((row) => ({ result: row.judged === "yes" ? "confirmed" : row.judged === "no" ? "refuted" : row.outcome === "succeeded" ? "confirmed" : row.outcome === "failed" ? "refuted" : "unverified", zeroModel: row.modelCalls === 0, atMs: row.finishedAtMs }));
 }

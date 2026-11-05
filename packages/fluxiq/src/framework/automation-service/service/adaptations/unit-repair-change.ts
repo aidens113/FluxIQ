@@ -81,7 +81,21 @@ export function automationStudioGraphWithUnitRepair<TGraph extends UnitRepairGra
   if (!overlay.applied) throw refused(`could not be written (${overlay.reason}): ${overlay.message}`);
   const written = overlay.partGraph ?? overlay.flow;
   const nodes = automationScope && overlay.changedUnit.kind === "handler" ? withAutomationScope(written.nodes, overlay.changedUnit.nodeId) : written.nodes;
-  return { ...graph, nodes, edges: written.edges, updatedAt: input.now };
+  return { ...graph, nodes: withDeclaredConsequences(nodes, patch, adaptation.sourceRunId ?? adaptation.adaptationId), edges: written.edges, updatedAt: input.now };
+}
+
+/**
+ * The steps this repair wrote, saying what the repair said they lastingly do, where it said
+ * and they do not: a saved step's word is what a run's lasting-act check and the library's
+ * card read, and a step with none cannot be kept as a part. In memory for the run, a fix's
+ * steps are held to its gate instead, which is why this is written only here.
+ */
+function withDeclaredConsequences(nodes: AutomationStudioFlowDocument["nodes"], patch: UnitRepairChange, runId: string): AutomationStudioFlowDocument["nodes"] {
+  const declared = isJsonRecord(patch.metadata) ? patch.metadata.declaredConsequences : undefined;
+  if (!Array.isArray(declared)) return nodes;
+  return nodes.map((node) => (node.metadata?.runtimePatchRunId === runId && node.metadata.declaredConsequences === undefined
+    ? { ...node, metadata: { ...node.metadata, declaredConsequences: structuredClone(declared) } }
+    : node));
 }
 
 /** The graph as the overlay reads it: its nodes and edges are what a repair changes and what its guards compare. */

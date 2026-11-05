@@ -12,7 +12,7 @@
 // nothing later could tell apart from a run that was never judged -- which is
 // the one distinction this whole table exists to hold.
 import type { AutomationStudioFlowGraphJudgement } from "../../../runtime/flow-authoring/version/index.ts";
-import { AutomationStudioProjectFlowGraphJudgementStore, type AutomationStudioProjectDatabasePool } from "../../persistence/automation/index.ts";
+import { AutomationStudioProjectFlowGraphJudgementStore, AutomationStudioProjectPartStore, type AutomationStudioProjectDatabasePool } from "../../persistence/automation/index.ts";
 
 export async function recordAutomationStudioFlowGraphJudgements(input: {
   pool: AutomationStudioProjectDatabasePool;
@@ -20,7 +20,24 @@ export async function recordAutomationStudioFlowGraphJudgements(input: {
   judgement: AutomationStudioFlowGraphJudgement;
   /** The run asked no model anything (`askedNoModel` in `run-record.ts`): a confirmed one is a replay for the parts it ran. Omitted means it did. */
   zeroModel?: boolean | undefined;
+  /** The saved versions the run executed as saved, with the verdict worth counting. It is left on each one's own run row, so a version with no graph revision earns it too. */
+  pinnedRan?: { judged: "yes" | "no"; versions: readonly { partId: string; version: number }[] } | undefined;
 }): Promise<void> {
+  if (input.judgement.versions.length) await recordGraphJudgements(input);
+  if (input.pinnedRan?.versions.length) await recordPartRunVerdicts(input.pool, input.projectId, input.judgement, input.zeroModel === true, input.pinnedRan);
+}
+
+/** A judged yes or no on the run row of each saved version the run ran as saved. */
+async function recordPartRunVerdicts(pool: AutomationStudioProjectDatabasePool, projectId: string, judgement: AutomationStudioFlowGraphJudgement, zeroModel: boolean, ran: { judged: "yes" | "no"; versions: readonly { partId: string; version: number }[] }): Promise<void> {
+  const store = await AutomationStudioProjectPartStore.open({ pool, projectId });
+  try {
+    for (const pin of ran.versions) await store.recordRun({ partId: pin.partId, version: pin.version, runId: judgement.runId, outcome: ran.judged === "yes" ? "succeeded" : "failed", modelCalls: zeroModel ? 0 : 1, finishedAtMs: judgement.decidedAtMs, judged: ran.judged });
+  } finally {
+    await store.close();
+  }
+}
+
+async function recordGraphJudgements(input: Parameters<typeof recordAutomationStudioFlowGraphJudgements>[0]): Promise<void> {
   const store = await AutomationStudioProjectFlowGraphJudgementStore.open({ pool: input.pool, projectId: input.projectId });
   try {
     await store.record({

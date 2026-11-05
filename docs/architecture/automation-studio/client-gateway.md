@@ -390,6 +390,12 @@ stop a run, and use its automation and recording controls:
   (`flows.write`, `authoring`; narrowed to `projectId`, `attemptId` and `addUsd`, so a token
   never names a Flow, a mode, a grant or a session). It spends the approving person's own
   key through the same generation the chat's build uses, and answers at once
+- Automation Studio, the subflow library: `list-project-parts` and `get-project-part`
+  (`programs.read`, `read`), `save-project-part` (`flows.write`, `authoring`; narrowed to
+  `projectId`, `flowId`, `subflowId`, `name` and `purpose`) and `run-project-part`
+  (`runtime.control`, `authoring`; narrowed to `projectId`, `partId`, `version`, `inputs`,
+  `permittedConsequences`, `acknowledgedRepeat` and `newRunId`). See
+  [The subflow library](subflow-library.md)
 - Automation Studio, recording controls: `get-recording-capture-policy`
   (`programs.read`, `read`; not narrowed or projected, below)
 - Secret Keys: `snapshot`, projected (below)

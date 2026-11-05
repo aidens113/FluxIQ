@@ -2966,6 +2966,12 @@ labelled, read-only compatibility paths. Migration to a canonical Flow is an
 explicit operation; normal Flow editing must not silently mutate a legacy
 source.
 
+## The subflow library
+
+A project's saved, versioned subflows: searched, run at no model call, and called
+by a pinned version from any Flow in the project. See
+[The subflow library](automation-studio/subflow-library.md).
+
 ## Published Flow composition
 
 Publishing a Flow creates a digest-backed immutable snapshot of its graph,

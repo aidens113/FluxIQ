@@ -19,6 +19,7 @@ import { AutomationStudioProjectPartStore, type AutomationStudioProjectPartVersi
 import { projectPartCallBound } from "./call-bounds.ts";
 import { projectPartCallOrder, projectPartCallTargets, projectPartPinnedCalls } from "./call-order.ts";
 import { projectPartIdOf, projectPartKeyOf } from "./part-id.ts";
+import { projectPartLineOf } from "./part-interface.ts";
 import type { AutomationStudioAppliedFlowPart, AutomationStudioSaveProjectPartsInput, AutomationStudioSaveProjectPartsResult } from "./types.ts";
 
 const UNPROVEN = { tier: "unproven", counts: { judgedYes: 0, zeroModelRuns: 0, failures: 0 } } as const;
@@ -39,7 +40,8 @@ export async function saveProjectPartsOfAppliedFlow(input: AutomationStudioSaveP
         result.skipped.push({ subflowId, reason: "part.primary_not_explicit" });
         continue;
       }
-      const partId = projectPartIdOf(input.flowId, projectPartKeyOf(entry));
+      // A part that now takes or hands back something else is a line of its own (`./part-interface.ts`).
+      const partId = await projectPartLineOf(store, projectPartIdOf(input.flowId, projectPartKeyOf(entry)), entry.graphFlow.interface);
       const callees: Record<string, AutomationStudioPartCallee> = {};
       for (const target of projectPartCallTargets(entry)) {
         const callee = kept.get(target.subflowId);

@@ -6,6 +6,7 @@ import type { GetProjectPartRequest, GetProjectPartResponse, ProjectPartCaller, 
 import { automationStudioPartSteps, type AutomationStudioPartGraph } from "../../../../runtime/project-parts/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../persistence/automation/index.ts";
 import type { AutomationStudioProjectPartsRefusal } from "./library-types.ts";
+import { projectPartNewerStanding, projectPartNewerWords } from "./repair/index.ts";
 import { projectPartStepOf, type ProjectPartStepCallee } from "./step-words.ts";
 import { withProjectPartStores, type AutomationStudioProjectPartStores } from "./stores.ts";
 
@@ -109,5 +110,15 @@ async function callersOf(stores: AutomationStudioProjectPartStores, partId: stri
     flows.set(flowId, caller);
     callers.push(caller);
   }
-  return callers;
+  return await callersTold(stores, partId, callers);
+}
+
+/** Each caller, told of a newer version than the one it pins, where there is one. It moves nobody. */
+async function callersTold(stores: AutomationStudioProjectPartStores, partId: string, callers: readonly ProjectPartCaller[]): Promise<ProjectPartCaller[]> {
+  const told: ProjectPartCaller[] = [];
+  for (const caller of callers) {
+    const newer = await projectPartNewerStanding(stores, { partId, version: caller.version });
+    told.push(newer ? { ...caller, newer: { version: newer.version, passedElsewhere: newer.passed, said: projectPartNewerWords({ name: newer.name, pinned: caller.version, newer: newer.version, passed: newer.passed }) } } : caller);
+  }
+  return told;
 }

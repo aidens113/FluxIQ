@@ -20,7 +20,8 @@
 //   version, at which node. A Flow's graph is held by its own id, and by the id of
 //   the Flow it belongs to (`caller_flow_id`), which is the Flow a person opened.
 // - `project_part_runs`: what each run of a version came to. Written by the
-//   runner, later.
+//   runner, and by a judged run that executed a pinned version as saved, which
+//   leaves its verdict in `judged` (`yes` or `no`; null for a run nobody judged).
 // - `project_parts_fts`: words a person can search -- name, purpose, port names.
 //   The newest version of a part is the one indexed. Never a fixed value, a
 //   target or anything off a page.
@@ -99,6 +100,7 @@ export const AUTOMATION_STUDIO_PROJECT_PARTS_MIGRATION: AutomationStudioSchemaMi
       outcome text not null check (outcome in ('succeeded', 'failed', 'stopped')),
       model_calls integer not null check (model_calls >= 0),
       finished_at_ms integer not null,
+      judged text check (judged is null or judged in ('yes', 'no')),
       primary key (part_id, version, run_id)
     )`,
     "create index project_part_runs_version_idx on project_part_runs (part_id, version, finished_at_ms)",

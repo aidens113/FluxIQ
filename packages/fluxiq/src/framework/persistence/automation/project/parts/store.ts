@@ -219,8 +219,8 @@ export class AutomationStudioProjectPartStore {
   /** What a run of a version came to. The runner writes it; a run id is recorded once per version. */
   async recordRun(run: AutomationStudioProjectPartRunRecord): Promise<void> {
     await this.lease.database.run(
-      "insert or replace into project_part_runs (part_id, version, run_id, outcome, model_calls, finished_at_ms) values (?, ?, ?, ?, ?, ?)",
-      [requiredId(run.partId, "part"), Math.trunc(run.version), requiredId(run.runId, "run"), run.outcome, Math.max(0, Math.trunc(run.modelCalls)), Math.trunc(run.finishedAtMs)]
+      "insert or replace into project_part_runs (part_id, version, run_id, outcome, model_calls, finished_at_ms, judged) values (?, ?, ?, ?, ?, ?, ?)",
+      [requiredId(run.partId, "part"), Math.trunc(run.version), requiredId(run.runId, "run"), run.outcome, Math.max(0, Math.trunc(run.modelCalls)), Math.trunc(run.finishedAtMs), run.judged ?? null]
     );
   }
 

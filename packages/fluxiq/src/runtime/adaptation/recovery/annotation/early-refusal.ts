@@ -7,6 +7,9 @@
 //   incident. Its record from the run is already on the detail
 //   (`../../service/runtime-adaptation/context.ts`) and stands as the run's;
 //   a fault that stopped that recovery is thrown again instead.
+// - A call to a saved part that stopped at a permission gate or an item gone, read from the
+//   call attempt's own child trace (the call step's failure carries no category): no fix and
+//   no other version grants the one or brings back the other, and the run asked no model.
 // - A run that ended at an authored stop -- an End whose result is `failed` --
 //   ended where its author wrote that it should, with its own reason, and a
 //   deliberate stop is never a model call (C6, "What counts as a true failure").
@@ -18,6 +21,7 @@
 // and is held to neither of the first two.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioPinnedCallStoppedSafely, type AutomationStudioCallAttemptProbe } from "../../../../engine/automation/frames/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmRunBudgetDiagnostic } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../../../framework/automation-service/service.ts";
@@ -32,7 +36,7 @@ export function automationStudioRecoveryEarlyRefusal(input: {
   inRun: boolean;
   /** The recovery was entered from a refuted result. */
   refutedResult: boolean;
-  failedTraceAttempt?: { nodeId: string; definitionId?: string; status: string; repair?: unknown; framePath?: readonly string[] | undefined } | undefined;
+  failedTraceAttempt?: ({ nodeId: string; definitionId?: string; status: string; repair?: unknown; framePath?: readonly string[] | undefined } & AutomationStudioCallAttemptProbe) | undefined;
   /** A person asked the model into this run, so it is held to its own budget rather than the training settings'. */
   explicitRunBudget: boolean;
   costLeftUsd?: number | undefined;
@@ -47,6 +51,9 @@ export function automationStudioRecoveryEarlyRefusal(input: {
     if (fault !== undefined) throw fault;
     if (detail.metadata?.llmGate) return detail;
     return refused(detail, { code: "llm.gate.repaired_in_run" }, "The run already asked for a fix to this failure at the failing step, so no model was asked again.");
+  }
+  if (!input.inRun && !input.refutedResult && automationStudioPinnedCallStoppedSafely(attempt)) {
+    return refused(detail, { code: "llm.gate.stopped_safely" }, "A saved part this Flow calls stopped at a permission gate or an item that is gone, which no fix grants or brings back, so no model was asked.");
   }
   if (!input.inRun && !input.refutedResult && isDeliberateStop(attempt ?? automationStudioUnresolvedFailedAttempt(detail.actionAttempts ?? []))) {
     return refused(detail, { code: "llm.gate.deliberate_stop" }, "The Flow stopped where it was written to stop, with its own reason, so no model was asked.");
