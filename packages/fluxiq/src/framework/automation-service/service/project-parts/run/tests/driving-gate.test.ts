@@ -1,7 +1,7 @@
 // @fluxiq-test-group real-sql
 // Covers `../driving-gate.ts`: a part is refused while another run drives the project, a build's
 // own call is not, and a build refused by another run gets an ordinary tool answer.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunProjectPartResponse } from "../../../../../../api-contracts/automation.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioHostResourceAcquireResult, AutomationStudioHostResourcePort } from "../../../../../../runtime/automation-host/index.ts";
@@ -62,13 +62,38 @@ describe("a part run while another run drives the project", () => {
     expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ status: "succeeded" });
   });
 
-  it("refuses when the project's runs cannot be read: nothing says the page is free", async () => {
-    const partId = await open();
-    harness.otherRuns.list = async () => {
-      throw new Error("the store is away");
+  describe("when the project's runs cannot be read", () => {
+    const logged = () => vi.spyOn(console, "error").mockImplementation(() => undefined);
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+    const unreadable = () => {
+      harness.otherRuns.list = async () => {
+        throw new Error("the store is away");
+      };
     };
-    expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ code: "part.run_in_progress" });
-    untouched();
+
+    it("refuses as unavailable in plain words, with the store's own message only in the log: nothing says the page is free, and nothing says a run has it", async () => {
+      const log = logged();
+      const partId = await open();
+      unreadable();
+      const answer = await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED }) as { code: string; message: string };
+      expect(answer).toMatchObject({ ok: false, code: "parts.unavailable", message: expect.stringContaining("could not check whether another run is using this page") });
+      expect(JSON.stringify(answer)).not.toContain("the store is away");
+      expect(answer.message).not.toBe(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("the store is away"));
+      untouched();
+    });
+
+    it("lets go of the host under a lease", async () => {
+      logged();
+      const port = hostOfOne();
+      const partId = await open(port);
+      unreadable();
+      expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ code: "parts.unavailable" });
+      untouched();
+      expect(automationStudioProjectHostLeaseScope(port).scheduler.snapshot().held).toEqual([]);
+    });
   });
 
   it("refuses a person while a build holds the host, and runs once the build has let it go", async () => {
@@ -150,6 +175,24 @@ describe("a part run while another run drives the project", () => {
         effectApplied: false, targetsUnchanged: true, resultCode: "part.run_in_progress"
       });
       untouched();
+    });
+
+    it("a build whose project's runs cannot be read gets an ordinary tool answer that names no other run and no store, and nothing happens", async () => {
+      const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      try {
+        const port = hostOfOne();
+        const partId = await open(port);
+        harness.otherRuns.list = async () => {
+          throw new Error("the store is away");
+        };
+        const result = await callTool(port, partId);
+        expect(result).toMatchObject({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "parts.unavailable" }, effectApplied: false, targetsUnchanged: true, resultCode: "parts.unavailable" });
+        expect(JSON.stringify(result)).not.toContain("the store is away");
+        expect(JSON.stringify(result)).not.toContain("Another run");
+        untouched();
+      } finally {
+        log.mockRestore();
+      }
     });
   });
 });

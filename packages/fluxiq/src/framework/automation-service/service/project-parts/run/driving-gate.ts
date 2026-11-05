@@ -15,7 +15,10 @@
 // the only thing that can see it. Every active session counts here, not only adaptive ones:
 // any of them may be driving the page. For a build, a session under a lease of its own kind
 // does not count: it is this build's own, or on a resource that shares nothing with this one
-// (`AutomationStudioHostResourcePort`'s obligation). A listing that fails refuses, as there.
+// (`AutomationStudioHostResourcePort`'s obligation). A listing that fails refuses the part as
+// `parts.unavailable`, as there: nothing can say the page is free, and nothing says another run
+// has it either. The person reads that it could not be checked, the store's own message goes to
+// the log, and the listing is read before the gate, whose every remaining refusal does mean a run.
 //
 // The session itself is written later, once the guard has passed, since a refused part leaves
 // none. What stops two parts passing together in between is the lease.
@@ -31,6 +34,7 @@ import { admitAutomationStudioRuntimeSession, AUTOMATION_STUDIO_PAGE_HELD_MESSAG
 import type { AutomationStudioProjectPartRunRefusal } from "./types.ts";
 
 const PROJECT_PART_RUN_IN_PROGRESS: AutomationStudioProjectPartRunRefusal = { ok: false, code: "part.run_in_progress", message: AUTOMATION_STUDIO_PAGE_HELD_MESSAGE };
+const PROJECT_PART_PAGE_UNCHECKED: AutomationStudioProjectPartRunRefusal = { ok: false, code: "parts.unavailable", message: "FluxIQ could not check whether another run is using this page, so this part was not run and nothing changed. Try again." };
 
 /** How long a port is given to grant a lease nothing holds, past which it is not going to. */
 const LEASE_ASK_MS = 1_000;
@@ -54,7 +58,7 @@ export async function projectPartWhileDriving<T>(input: {
   caller: AutomationStudioPartCaller;
   work(): Promise<T>;
 }): Promise<T | AutomationStudioProjectPartRunRefusal> {
-  const guarded = async (): Promise<T | AutomationStudioProjectPartRunRefusal> => (await sessionsLeaveThePage(input.ports, input.projectId, input.caller)) ? await input.work() : PROJECT_PART_RUN_IN_PROGRESS;
+  const guarded = async (): Promise<T | AutomationStudioProjectPartRunRefusal> => (await sessionsRefusal(input.ports, input.projectId, input.caller)) ?? await input.work();
   if (!input.hostResources || (input.caller === "build" && AutomationStudioHostLeaseScope.current())) return await guarded();
   const scope = automationStudioProjectHostLeaseScope(input.hostResources);
   const { held, waiting } = scope.scheduler.snapshot();
@@ -76,16 +80,24 @@ export async function projectPartWhileDriving<T>(input: {
   }
 }
 
-async function sessionsLeaveThePage(ports: AutomationStudioProjectPartDrivingPorts, projectId: string, caller: AutomationStudioPartCaller): Promise<boolean> {
+/** Why the project's sessions keep this part from the page, or null when they leave it free. */
+async function sessionsRefusal(ports: AutomationStudioProjectPartDrivingPorts, projectId: string, caller: AutomationStudioPartCaller): Promise<AutomationStudioProjectPartRunRefusal | null> {
+  let listed: AutomationStudioRuntimeSession[];
+  try {
+    listed = await ports.listRuntimeSessions(projectId);
+  } catch (error) {
+    console.error(`A part was refused because project ${projectId}'s runs could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    return PROJECT_PART_PAGE_UNCHECKED;
+  }
   try {
     await admitAutomationStudioRuntimeSession({
       admissions: ports.admissions,
-      listRuntimeSessions: async (project) => (await ports.listRuntimeSessions(project)).filter((session) => caller === "person" || !underABuildsLease(session)).map(countsAsAdmitted),
+      listRuntimeSessions: async () => listed.filter((session) => caller === "person" || !underABuildsLease(session)).map(countsAsAdmitted),
       startRuntimeSession: async () => NOTHING_STARTED
     }, projectId, true);
-    return true;
+    return null;
   } catch {
-    return false;
+    return PROJECT_PART_RUN_IN_PROGRESS;
   }
 }
 

@@ -70,6 +70,11 @@ source) plus SQLite full text over name, purpose and port names. There are no em
 model already in the loop covers paraphrase. `get-project-part` adds step labels in plain words,
 the calls tree, versions, and callers with their pin and whether a newer version passed.
 
+All four library routes (`list-project-parts`, `get-project-part`, `save-project-part`,
+`run-project-part`) assert the project's domain first and refuse a request naming another one.
+A paired client's token route already checks this, so the routes matter for any other caller.
+`service.projectParts` asserts nothing: a build and an attempt call it from inside their project.
+
 **The shortlist.** The free opening look of a project build (`project.read_task`) or an
 answer-first attempt gains `knownParts`, up to 5 cards, site first and then text, with no added
 model call. An unproven part with lasting acts is never offered, nor is one whose lasting
@@ -82,7 +87,8 @@ project with nothing to offer gets no extra tool and not one more byte in a requ
 same site; every start condition true (`unknown` fails); required inputs present; lasting classes
 within what was asked. A person running a part with lasting acts is told it will do them again,
 and the run needs `acknowledgedRepeat`. Refusals are closed codes in plain words, with nothing
-done.
+done. A project's runs that cannot be listed are refused as `parts.unavailable`, in plain words,
+with the store's own message in the log, because saying another run has the page would be untrue.
 
 A stop point on the run's control gate is asked before every step in every frame, because a
 state route or an `on failed` route can reach a lasting step by an edge an inserted check node

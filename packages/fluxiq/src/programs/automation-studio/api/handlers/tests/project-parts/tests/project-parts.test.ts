@@ -4,12 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../../../_shared/api.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../../../api-contracts/automation.ts";
+import { AutomationStudioService } from "../../../../../../../framework/automation-service/index.ts";
 import { cacheActor } from "../../test-actor.ts";
 import { registerAutomationStudioApi } from "../../../index.ts";
 
 function setup(projectParts: Record<string, unknown>) {
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioApi(registry, { projectParts } as any);
+  registerAutomationStudioApi(registry, { projectParts, assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined) } as any);
   const call = (endpoint: string, payload: unknown, permissions = ["programs.read"]) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: { ...cacheActor("user.parts"), permissions }, payload } as any);
   return { registry, call };
 }
@@ -73,5 +74,46 @@ describe("project parts endpoints", () => {
     const { call } = setup({ list: vi.fn().mockResolvedValue(refusal), get: vi.fn().mockResolvedValue({ ...refusal, code: "parts.not_found" }) });
     expect(await call(AUTOMATION_STUDIO_ENDPOINTS.listProjectParts, { projectId: "p" })).toEqual({ ok: true, payload: { refused: true, code: "parts.unavailable", message: refusal.message } });
     expect(await call(AUTOMATION_STUDIO_ENDPOINTS.getProjectPart, { projectId: "p", partId: "x" })).toMatchObject({ ok: true, payload: { refused: true, code: "parts.not_found" } });
+  });
+
+  describe("a caller from another domain, on a real project", () => {
+    const REFUSED = "Automation Studio project is unavailable in this domain scope.";
+    const PERMISSIONS = ["programs.read", "flows.write", "runtime.control"];
+    const ROUTES = [
+      [AUTOMATION_STUDIO_ENDPOINTS.listProjectParts, "list", {}],
+      [AUTOMATION_STUDIO_ENDPOINTS.getProjectPart, "get", { partId: "part.a" }],
+      [AUTOMATION_STUDIO_ENDPOINTS.saveProjectPart, "save", { flowId: "flow.a", subflowId: "subflow.a" }],
+      [AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, "run", { partId: "part.a" }]
+    ] as const;
+
+    /** The real domain check over a real project in `web-automation`; only the library is a stand-in, so what it was asked is seen. */
+    async function aProject() {
+      const service = new AutomationStudioService({ seedFixture: false });
+      const { id: projectId } = await service.createProject({ name: "Parts", domainId: "web-automation" });
+      const library = { list: vi.fn().mockResolvedValue({ parts: [] }), get: vi.fn().mockResolvedValue({ steps: [] }), save: vi.fn().mockResolvedValue({ saved: true }), run: vi.fn().mockResolvedValue({ runId: "r" }) };
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioApi(registry, new Proxy(service, { get: (target, property) => (property === "projectParts" ? library : Reflect.get(target, property, target)) }));
+      const call = (endpoint: string, domainId: string | null | undefined, payload: unknown) => registry.call({ programId: "automation-studio", endpoint, scope: domainId === undefined ? {} : { domainId }, actor: { ...cacheActor("user.parts"), permissions: PERMISSIONS }, payload } as any);
+      return { projectId, library, call };
+    }
+
+    it.each(ROUTES)("%s is refused before the library hears of it, and answers the project's own domain", async (endpoint, method, fields) => {
+      const { projectId, library, call } = await aProject();
+      for (const domainId of ["another-domain", null, undefined]) {
+        expect(await call(endpoint, domainId, { projectId, ...fields })).toMatchObject({ ok: false, error: REFUSED });
+      }
+      expect(library[method]).not.toHaveBeenCalled();
+      expect(await call(endpoint, "web-automation", { projectId, ...fields })).toMatchObject({ ok: true });
+      expect(library[method]).toHaveBeenCalledTimes(1);
+    });
+
+    it("goes on with exactly the id it asserted, and refuses one it cannot read", async () => {
+      const { projectId, library, call } = await aProject();
+      await call(AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, "web-automation", { projectId: ` ${projectId} `, partId: "part.a" });
+      expect(library.run).toHaveBeenCalledWith(expect.objectContaining({ projectId }));
+      library.run.mockClear();
+      expect(await call(AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, "web-automation", { projectId: 7, partId: "part.a" })).toMatchObject({ ok: false });
+      expect(library.run).not.toHaveBeenCalled();
+    });
   });
 });

@@ -3,7 +3,7 @@ import type { AutomationStudioRuntimeSession } from "../../../../../flows/author
 import type { AutomationStudioHostResourcePort } from "../../../../../runtime/automation-host/index.ts";
 import { automationStudioProjectHostLeaseScope } from "../../../../../runtime/project-agents/index.ts";
 import { AUTOMATION_STUDIO_PAGE_HELD_MESSAGE, admitAutomationStudioRuntimeSession } from "../admission.ts";
-import { automationStudioPageHeldReader } from "../page-held.ts";
+import { AUTOMATION_STUDIO_PAGE_CHECK_FAILED_MESSAGE, automationStudioPageHeldReader } from "../page-held.ts";
 
 function hostOfOne(): AutomationStudioHostResourcePort {
   let epoch = 0;
@@ -92,10 +92,19 @@ describe("a plain run's start while another run holds the page", () => {
     await expect(scope.run({ role: "builder", briefId: "brief.1" }, async () => await admit(false))).resolves.toBe(started);
   });
 
-  it("is refused when the sessions cannot be listed", async () => {
-    const { admit, ports } = setup({ sessions: async () => { throw new Error("the store is away"); } });
-    await expect(admit(false)).rejects.toThrow(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
-    expect(ports.startRuntimeSession).not.toHaveBeenCalled();
+  it.each([false, true])("is refused in plain words when the sessions cannot be listed, with the store's own message in the log (adaptive: %s)", async (adaptive) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const { admit, ports } = setup({ sessions: async () => { throw new Error("the store is away"); } });
+      const refusal = await admit(adaptive).then(() => null, (error: Error) => error.message);
+      expect(refusal).toBe(AUTOMATION_STUDIO_PAGE_CHECK_FAILED_MESSAGE);
+      expect(refusal).not.toContain("the store is away");
+      expect(refusal).not.toBe(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("the store is away"));
+      expect(ports.startRuntimeSession).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("with no port given, asks nothing and behaves as before", async () => {

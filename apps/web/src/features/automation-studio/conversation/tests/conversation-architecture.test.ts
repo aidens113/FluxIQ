@@ -84,7 +84,7 @@ describe("a turn reaches the person without a push channel", () => {
 
   it("mounts the prompt globally, and stands down where the overlay already is", () => {
     const layout = source("../../../../app/layout.tsx");
-    expect(layout).toContain("<GlobalClientGatewayPairing />");
+    expect(layout).toContain("<GlobalClientGatewayPairing asksTotp={auth?.user.totpEnabled === true} />");
     expect(layout).toContain("<GlobalConversationPrompt />");
     const prompt = source("../../../../app/GlobalConversationPrompt.tsx");
     expect(prompt).toContain('const STUDIO_ROUTE = "/programs/automation-studio";');
