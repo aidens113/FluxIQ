@@ -1833,7 +1833,7 @@ describes how it reaches the node.
 
 Subflows are persisted as Flow-owned behavior units with route tags,
 input/output mapping, graph reference, local instruction IDs, proposal-mode
-override, and stability metrics. New subflows receive an isolated graph Flow by
+override. (A `stability` block once sat here; nothing ever updated it, and it is retired. How far a saved part has been proven is derived from its runs, in the project library: `runtime/project-parts/trust`.) New subflows receive an isolated graph Flow by
 default so editing a subflow does not mutate the parent Flow/router graph. The
 Subflows workspace is only a paginated directory; selecting a row resolves the
 subflow's graphFlowId and opens that graph in the normal Flow editor. Backing
@@ -2965,6 +2965,12 @@ Existing Task and Routine artifacts may still be exposed through explicitly
 labelled, read-only compatibility paths. Migration to a canonical Flow is an
 explicit operation; normal Flow editing must not silently mutate a legacy
 source.
+
+## The subflow library
+
+A project's saved, versioned subflows: searched, run at no model call, and called
+by a pinned version from any Flow in the project. See
+[The subflow library](automation-studio/subflow-library.md).
 
 ## Published Flow composition
 

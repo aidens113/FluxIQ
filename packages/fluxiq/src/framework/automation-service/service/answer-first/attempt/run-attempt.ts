@@ -39,6 +39,7 @@ import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/inde
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
+import { automationStudioAnswerFirstKnownParts } from "../../project-parts/index.ts";
 import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiveAttemptsOf } from "../interrupted/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
@@ -61,7 +62,9 @@ import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
 
-export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
+export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
+  // The library is offered here, once, before anything runs: no part that can be offered leaves `given` as it is (`../../project-parts/known-parts.ts`).
+  const input = await automationStudioAnswerFirstKnownParts(given);
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
   const held = automationStudioAnswerFirstCarryOnScope.getStore();
   const hold = held && !held.opened && held.projectId === input.projectId && held.flowId === input.flowId ? held : undefined;
@@ -130,6 +133,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => ({ ...current, acts: { attemptId, flowId, data } })));
   };
   const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist, asked: () => asked(run.claim) });
+  input.partActs?.use(record);
   const tried = automationStudioLlmLoopAttemptRecord(carried?.tried);
   const session = await automationStudioAnswerFirstSession({ openSession: stores.openSession, writeSession: stores.writeSession, runId, attemptId });
   let sessionEnded = false;

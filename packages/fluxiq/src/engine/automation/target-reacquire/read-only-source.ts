@@ -8,9 +8,11 @@ import type { AutomationStudioResolvedActionEffect } from "../../../components/a
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioNodeMutates } from "../defensive/index.ts";
 
 /**
- * Whether `node` is read-only: it carries Core's neutral `effect: "observe"`
- * (on its metadata, or on its parameters where a domain puts it), or it
- * declares a record output (`recordOutput`, `recordsPath`) -- the rule
+ * Whether `node` is read-only: its execution's trusted floor says it only
+ * observes (`actionEffect`, which is what a plain list read has: most carry no
+ * record output), or it carries Core's neutral `effect: "observe"` (on its
+ * metadata, or on its parameters where a domain puts it), or it declares a
+ * record output (`recordOutput`, `recordsPath`) -- the rule
  * `../defensive/node-side-effect.ts` already applies to a read whose rows are
  * carried out, which reading again cannot press -- and nothing marks it as
  * acting on the world, and the step it was built from declared no lasting
@@ -18,7 +20,7 @@ import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioN
  * cannot tell a read from a press.
  */
 export function automationStudioReacquireSourceReadOnly(node: AutomationStudioFlowNode, actionEffect?: AutomationStudioResolvedActionEffect): boolean {
-  const observes = node.metadata?.effect === "observe" || node.parameterValues?.effect === "observe";
+  const observes = actionEffect?.effectClass === "observe" || node.metadata?.effect === "observe" || node.parameterValues?.effect === "observe";
   const readsRecords = [node.parameterValues?.recordOutput, node.metadata?.recordOutput, node.metadata?.recordsPath].some((declared) => declared !== undefined && declared !== null);
   if (!(observes || readsRecords) || automationStudioNodeMutates(node, actionEffect)) return false;
   const declared = node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];

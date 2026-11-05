@@ -1,0 +1,45 @@
+# w9: a plain Flow run is refused at its start while another run holds the page
+
+## Outcome
+Done, with two follow-ups for the lead (below): two tests in a file I do not own now fail, and one extension file outside the owned list was changed because item 4 found a defect.
+
+## What changed and why (Core, packages/fluxiq/src)
+- `framework/automation-service/service/runtime-session/admission.ts`: new optional port `pageHeld?(projectId)`. Asked for adaptive and non-adaptive runs alike, before anything else, when there is a project. If held it throws `Error(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE)`. New exported constant `AUTOMATION_STUDIO_PAGE_HELD_MESSAGE` (the words of `part.run_in_progress`). No port: byte-for-byte as before.
+- `runtime-session/page-held.ts` (new): `automationStudioPageHeldReader({ hostResources, listRuntimeSessions })`. Not held when `AutomationStudioHostLeaseScope.current()` is set. Held when the scheduler (`automationStudioProjectHostLeaseScope(hostResources).scheduler`) reports `held.length >= capacity`, or an active (queued/running/waiting) session carries `metadata.partRun`. No `hostResources`: sessions only. A listing that throws reads as held (refuses).
+- `runtime-session/index.ts`: one added line `export * from "./page-held.ts"` (the audit forbids deep imports, so the barrel line was needed; not in the owned list).
+- `project-parts/run/driving-gate.ts`: `PROJECT_PART_RUN_IN_PROGRESS.message` now reads the constant; header paragraph "What this does not stop" rewritten to say it is now refused.
+- `service.ts`: line 2466 gains `pageHeld: automationStudioPageHeldReader({ hostResources: this.hostRuntime?.hostResources, listRuntimeSessions: ... })` on the same line; the import on line 224 gains one name (also needed, same line count). File is still 4304 lines (`wc -l`).
+- Item 5: `RunProjectPartRefusal.code` (api-contracts/automation/project-part.ts:123) gains `part.call_cycle` and `part.call_too_deep`. `run-part.ts` answers them with those codes (own `ok:false, code, message`); `callBound` removed from `run/types.ts` since nothing else read it (grep: only `project-parts/tests/pinned-calls.test.ts`).
+- Tests: new `runtime-session/tests/page-held.test.ts` (7 tests: refused while a lease is held, for plain and adaptive, no session written; allowed after release; refused while a partRun session is active and allowed once it ended; a plain active session does not refuse; inside a lease scope not refused; failed listing refuses; no port unchanged). `driving-gate.test.ts` now asserts the part's message equals the shared constant (same words).
+
+## Item 2: every path into the gate, and why each is safe
+- `admitAutomationStudioRuntimeSession` has exactly one non-test caller: `service.ts:2466` inside `runRuntimeSession` (service.ts:2433). (`driving-gate.ts:81` calls it with no `pageHeld`, so it is unchanged.)
+- `runRuntimeSession` has exactly one non-test caller: `run-requests/run-session.ts:75`, reached only from the `run-runtime-session` endpoint handler (`programs/automation-studio/api/handlers/runtime-execution.ts:61`). grep for `.runRuntimeSession` and `runRuntimeSession:` found nothing else in src.
+- Build, trial, subflow trial, entry preparation, answer-first: none calls `runRuntimeSession` or the admission function. They write sessions through `startRuntimeSession` / `build-trial-admission.ts` and run under the build's lease. So none is refused by this port. Even if one did reach it, a call from inside the build's lease scope reads `AutomationStudioHostLeaseScope.current()` and is not held.
+- One behaviour change to know about: a person's plain run (or an adaptive "Run" from the extension) started while a BUILD holds the project's lease is now refused at its start in the same words. Before, it started and its commands were refused `host_lease.missing`. I judge this intended ("another run holds the page"), but it is not special-cased.
+- A parked (`waiting`) part-run session counts as held until it ends (same as the part gate's active statuses).
+
+## Item 4: how a person sees it
+The refusal is a thrown `Error`; `programs/_shared/api.ts:209-218` turns a handler throw into `{ ok:false, error: <message> }` (plain message, no code, no stack). `run-session.ts` rethrows non-requirement errors, so it takes that path. The extension background `callCoreProgram` (core-api.ts:~250) keeps `error` as the message; the relay returns it. The panel's `panelRequest` (panel/state/request.ts:45) then passed it through `errorSentence`, which mapped any unknown text to "Something went wrong." with the words only as the tooltip. That was wrong for this refusal, so I changed it: `apps/extension/src/panel/copy/error-copy.ts` returns the text as written when it starts with "Another run is using this project's page right now", and `copy/tests/copy.test.ts` asserts it. The Run notice (`panel/automations/controller.ts:337`) uses `result.sentence`, so it now shows the words. Oddity: the words say "this part was not run", read for a plain Flow run; the brief asked for the same words, so I kept them.
+Not exercised: the panel UI itself (no test drives the Automations Run button against a held page); I read the path and ran the `errorSentence` unit assertion only by edit, see Not verified.
+
+## Commands run and observed results
+- `pnpm.cmd exec vitest run src/framework/automation-service/service/runtime-session src/framework/automation-service/service/project-parts/run --minWorkers 1 --maxWorkers 2` -> `Test Files 26 passed (26)`, `Tests 224 passed (224)` (this was before a test-only type fix to page-held.test.ts and the packing fix; not re-run after).
+- `pnpm.cmd --filter fluxiq check` -> first runs failed on my own test file (exactOptionalPropertyTypes in `page-held.test.ts`), fixed; later runs failed only on the other worker's `bootstrap/verification/candidate-graphs.ts(32,33)`; the final run printed no `error TS` lines.
+- `node scripts/structure-audit.mjs` -> first showed my statement-packing in page-held.test.ts line 49 (fixed) plus the other worker's `draft-routing.ts` 805 lines; the final run printed no FAIL and no "violation" line.
+- `pnpm.cmd run build` (fluxiq) failed repeatedly on the other worker's candidate-graphs errors, succeeded on the 4th attempt (BUILD_OK).
+- `pnpm.cmd --filter @fluxiq-web-extension/extension build` -> exit 0 (needed: my error-copy edit made the e2e artifact stale, first spec run failed `environment.stale`).
+- Spec: `pnpm.cmd run test:content e2e/content/tests/part-run/tests/part-run-job-board.spec.ts --headed --workers=1`, after the rebuild:
+  - `2 passed (5.0m)`; `ok 1 ... a saved part runs at zero model calls ... (1.3m)`; `ok 2 ... a part presses on each row it read ... (3.1m)`.
+  - The proof (added to the second test, after the part's own second-part refusal): `{"partRunSecond":{"code":"part.run_in_progress","message":"Another run is using this project's page right now, so this part was not run and nothing changed. Try again when that run has ended.","commands":[],"ms":27}}` and `{"plainRunDuringPart":{"message":"<the same words>","thrown":true,"commands":[],"newSessions":[],"whole":[<before>,<identical after>],"providerCalls":0,"ms":161}}`, then `{"plainRunAfterPart":{"status":"succeeded","clicks":4}}`.
+  - Asserted in the spec: the plain run throws, with message equal to the part's refusal message; no new non-part session; no site command beyond reads; the fixture's state string identical before and after; zero provider calls; after the part ended and the board was reset, the same plain run `succeeded` and the board's saved list equals start plus the three intended rows (and `providerCalls` still 0).
+- Screenshot read: `apps/extension/e2e/test-results/content/artifacts/part-run-tests-part-run-jo-89b86-part-refused-while-one-runs/after-plain-run-my-jobs.png`: My jobs shows "5 saved jobs" (2 baseline plus the 3 intended), all hearted, toast "Run finished".
+
+## Not verified
+- The `copy.test.ts` change was not run (no narrow runner found: the extension `test` script runs the whole extension suite). The panel's Run notice showing the words was read, not driven.
+- No live panel/Automations-tab click against a held page; the spec calls the service directly, as the lead asked.
+- I did not run `page-held.test.ts` and the run/ directory again after the last two test-only edits (tsc and audit are clean after them). The spec ran after them.
+
+## Open questions or contradictions found
+1. `framework/automation-service/service/project-parts/tests/pinned-calls.test.ts` (not mine) lines 101 and 119 still expect `code: "part.calls_not_available", callBound: ...`; I ran it: 2 tests fail ("a cycle is refused at the run", "depth is refused at the run"). They need `code: "part.call_cycle"` / `"part.call_too_deep"` and no `callBound`. Also `runtime/llm/node-tools/run/part.ts` is being edited by another worker; I did not check whether it maps these codes.
+2. The working tree has other workers' edits in `project-parts/run/` (build-tool.ts, index.ts, outcome.ts, settled-calls.ts, step-gate.ts, and run/tests/row-across-call.test.ts), not mine.

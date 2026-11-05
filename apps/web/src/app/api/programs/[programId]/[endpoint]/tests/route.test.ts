@@ -57,6 +57,10 @@ const ALLOWLISTED = [
   "review-recording-flow-proposal",
   "remove-recording-entry",
   "get-recording-capture-policy",
+  "list-project-parts",
+  "get-project-part",
+  "save-project-part",
+  "run-project-part",
 ];
 
 const CLASSIFICATIONS: Record<string, string> = {
@@ -85,6 +89,10 @@ const CLASSIFICATIONS: Record<string, string> = {
   "review-recording-flow-proposal": "authoring",
   "remove-recording-entry": "authoring",
   "get-recording-capture-policy": "read",
+  "list-project-parts": "read",
+  "get-project-part": "read",
+  "save-project-part": "authoring",
+  "run-project-part": "authoring",
 };
 
 /** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */
@@ -195,7 +203,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : { projectId: "project-1", flowId: "flow-1" };
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);

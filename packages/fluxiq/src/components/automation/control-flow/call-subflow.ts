@@ -5,8 +5,9 @@ export const AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID = "builtin.control.cal
 
 /**
  * Runs a sibling Subflow of the same automation as one step, at its latest
- * revision, and goes on by `success`, `failed`, or `error.<id>` for an error
- * the Subflow declares and `errors` binds.
+ * revision, or a saved part of the project's library at the version `part` pins,
+ * and goes on by `success`, `failed`, or `error.<id>` for an error the Subflow
+ * declares and `errors` binds.
  *
  * The executor runs it, as a frame of its own
  * (`runtime/executor/frames/call-subflow.ts`), across the same typed boundary
@@ -31,7 +32,8 @@ export const callSubflowNode = defineBuiltinNode({
     { id: "failed", label: "Failed", valueType: "any" }
   ],
   parameters: [
-    { id: "subflowId", label: "Subflow to run", description: "The Subflow of this automation this step runs.", valueType: "string", required: true, ui: { control: "text", placeholder: "Subflow id" } },
+    { id: "subflowId", label: "Subflow to run", description: "The Subflow of this automation this step runs. Left out, the step runs the saved part it names.", valueType: "string", ui: { control: "text", placeholder: "Subflow id" } },
+    { id: "part", label: "Saved part to run", description: "A saved part of this project and the version of it this step runs, as partId and version. That version stays what the step runs when the part gets a newer one.", valueType: "object" },
     { id: "inputs", label: "Values to pass in", description: "Each of the Subflow's inputs, by its id, and the value it is given: written as is, or bound to a value here, which is read when the step runs.", valueType: "object", defaultValue: {} },
     { id: "outputs", label: "Values to bring back", description: "Each of the Subflow's outputs, by its id, and the name it is kept under here.", valueType: "object", defaultValue: {} },
     { id: "errors", label: "Errors to route", description: "Each error the Subflow declares, by its id, and the name its message is kept under here; the step then goes on by error.<id>.", valueType: "object", defaultValue: {} }

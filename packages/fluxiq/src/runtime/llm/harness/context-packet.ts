@@ -86,7 +86,7 @@ export type AutomationStudioLlmContextPacket = {
   relevantRuns?: JsonObject[];
   relevantAdaptations?: JsonObject[];
   reusableContext?: AutomationStudioReusableLlmContextPacket;
-  subflows?: Array<Pick<AutomationStudioFlowSubflow, "subflowId" | "name" | "role" | "status" | "routeTags" | "stability">>;
+  subflows?: Array<Pick<AutomationStudioFlowSubflow, "subflowId" | "name" | "role" | "status" | "routeTags">>;
   availableActions?: JsonObject[];
   flowBootstrap?: ReturnType<typeof buildAutomationStudioFlowBootstrapContext>;
   evidenceLoop?: {
@@ -593,8 +593,7 @@ function compactSubflowForLlm(subflow: AutomationStudioFlowSubflow): NonNullable
     name: subflow.name,
     role: subflow.role,
     status: subflow.status,
-    ...(subflow.routeTags?.length ? { routeTags: subflow.routeTags } : {}),
-    ...(subflow.stability ? { stability: subflow.stability } : {})
+    ...(subflow.routeTags?.length ? { routeTags: subflow.routeTags } : {})
   };
 }
 

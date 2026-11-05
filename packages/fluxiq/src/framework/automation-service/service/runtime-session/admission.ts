@@ -5,9 +5,20 @@ export type AutomationStudioRuntimeSessionAdmissionPorts = {
   /** Projects whose adaptive run is between its admission check and its session's first write. */
   admissions: Set<string>;
   listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]>;
+  /**
+   * Whether another run holds the project's page (`./page-held.ts`). Asked of every run with a
+   * project, adaptive or not, before its session is written. Absent, nothing is asked.
+   */
+  pageHeld?(projectId: string): Promise<boolean>;
   /** Writes the new run's `queued` session. */
   startRuntimeSession(): Promise<AutomationStudioRuntimeSession>;
 };
+
+/**
+ * What a run is told when another holds the project's page. A part run answers with the same
+ * words (`../project-parts/run/driving-gate.ts`), so a person reads one sentence either way.
+ */
+export const AUTOMATION_STUDIO_PAGE_HELD_MESSAGE = "Another run is using this project's page right now, so this part was not run and nothing changed. Try again when that run has ended.";
 
 const ACTIVE_STATUSES: ReadonlySet<AutomationStudioRuntimeSession["status"]> = new Set(["queued", "running", "waiting"]);
 
@@ -23,6 +34,7 @@ export async function admitAutomationStudioRuntimeSession(
   projectId: string | null | undefined,
   adaptive: boolean
 ): Promise<AutomationStudioRuntimeSession> {
+  if (projectId && ports.pageHeld && await ports.pageHeld(projectId)) throw new Error(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
   if (!projectId || !adaptive) return await ports.startRuntimeSession();
   if (ports.admissions.has(projectId)) throw new Error("Only one adaptive runtime run can be admitted per project at a time.");
   ports.admissions.add(projectId);

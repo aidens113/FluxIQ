@@ -18,6 +18,7 @@ export function automationStudioRunFrames(runSubflow?: AutomationStudioSubflowGr
     nextInvocationId: () => `invocation-${(issued += 1)}`,
     lifecycle: automationStudioLifecycleRunState(),
     subflowOverrides: new Map(),
+    newerPartTrials: new Map(),
     ...(runSubflow ? { runSubflow } : {})
   };
 }

@@ -140,3 +140,27 @@ describe("the route signatures a draft step recorded", () => {
     expect(JSON.stringify(assembled.locator)).not.toContain("#control-");
   });
 });
+
+// A step that ran a saved part stays one pinned call step (`../draft-routing.ts`, `llm/node-tools/draft-step.ts`).
+describe("a draft step that ran a saved part", () => {
+  const withCalls = new AutomationStudioNodeRegistry();
+  for (const definition of webDomainNodeDefinitionsFixture()) withCalls.register(definition);
+  const CALL = "builtin.control.call-subflow";
+  const ran: AutomationStudioFlowDraftStep = { position: 1, iteration: 1, callId: "call.1", toolId: "core.run_part", actionId: CALL, input: {}, effect: "mutate", effectApplied: true, disposition: "kept" };
+  const writePart = (): AutomationStudioFlowDraftWrittenStep => ({ description: CALL, node: CALL, entries: [{ key: "part", value: JSON.stringify({ partId: "part.a", version: 3 }) }, { key: "inputs", value: JSON.stringify({ words: "x" }) }] });
+
+  it("assembles to one call step holding the pin and the values, with no Subflow named", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({ steps: [ran], write: writePart, registry: withCalls, resolution, summary: "Run the part" });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const nodes = assembled.plan!.subflows[0]!.nodes;
+    expect(nodes.map((node) => node.definitionId)).toEqual([CALL]);
+    expect(nodes[0]!.parameters).toMatchObject({ part: { partId: "part.a", version: 3 }, inputs: { words: "x" } });
+    expect(nodes[0]!.parameters).not.toHaveProperty("subflowId");
+  });
+
+  it("the same step from any other tool is still refused: a written step does not name the grammar's own node", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({ steps: [{ ...ran, toolId: "core.run_node" }], write: writePart, registry: withCalls, resolution, summary: "Run the part" });
+    expect(assembled.plan).toBeUndefined();
+    expect(assembled.issues.map((issue) => issue.code)).toContain("flow_script.unknown_node");
+  });
+});

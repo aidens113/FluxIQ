@@ -150,7 +150,14 @@ export type AutomationStudioLlmInRunRepairStep = {
 };
 
 /** One port of a part's interface, by name and type. */
-export type AutomationStudioLlmInRunRepairPort = { id: string; name?: string; valueType?: string; required?: true };
+export type AutomationStudioLlmInRunRepairPort = {
+  id: string;
+  name?: string;
+  valueType?: string;
+  required?: true;
+  /** An output read from a step: that step's key, which a replacement must leave on a step. */
+  fromStepKey?: string;
+};
 
 /**
  * What the unit promised, as the model is shown it. Authored data only, screened

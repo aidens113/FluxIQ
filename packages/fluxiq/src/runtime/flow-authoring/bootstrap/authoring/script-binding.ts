@@ -16,6 +16,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, isAutomationNodeParameterStateBinding, type AutomationNodeParameter } from "../../../../framework/automation-service/nodes/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME, AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD } from "../../draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SCRIPT_ROW_INPUT } from "../script-statements/index.ts";
 import { authoringNestedValue, authoringParameterValue } from "./values.ts";
 
 /** What a value written as a binding can name: this block's labelled steps by node key, whether a label is another block's, and a part's inputs. */
@@ -28,6 +29,8 @@ export type AuthoringScriptBindingScope = {
 
 /** A row's field, as the draft's own `{"$row": ...}` form names it (`../../flow-draft/binding-forms.ts`). */
 const ROW_FORM = /^\$row\.(.*)$/u;
+/** The whole row a pass is on, which a step hands to a part that takes it (`../script-statements/called-parts.ts`). */
+const WHOLE_ROW = "$row";
 /** A Flow input with the value the build tests it with, as the draft's `{"$input": ..., "test": ...}` form names one. */
 const INPUT_FORM = /^\$input\.([^\s=]*)\s*(?:=\s*([\s\S]*))?$/u;
 /** An earlier step's output: `$step.<label>.<output>[.<field>]`. */
@@ -50,6 +53,7 @@ const ROW_NAME = "item";
  * so the plan is the same graph either way and the one checker reads both
  * (`./draft-bindings.ts`, `./assemble-draft.ts`):
  *
+ *   `$row`                       `{"$state":{"path":"item"}}`, the whole row a pass is on
  *   `$row.<field>`               `{"$state":{"path":"item.<field>"}}`, the field of the row a pass is on
  *   `$input.<name> = <test>`     `{"$state":{"path":"<name>","fallback":<test>}}`, a Flow input and its test value
  *   `$step.<label>.<output>...`  `{"$state":{"path":"$node.<key>.<output>..."}}`, an earlier step's output,
@@ -68,6 +72,7 @@ export function automationStudioScriptBinding(text: string, parameter: Automatio
 
 /** A value that is one binding and nothing else, read as `automationStudioScriptBinding` says. */
 function wholeBinding(written: string, parameter: AutomationNodeParameter | undefined, scope: AuthoringScriptBindingScope): { value: JsonValue } | { refused: string } | undefined {
+  if (written === WHOLE_ROW) return { value: automationStudioStateBinding(ROW_NAME) };
   const row = ROW_FORM.exec(written);
   if (row) {
     const field = row[1] ?? "";
@@ -84,6 +89,7 @@ function wholeBinding(written: string, parameter: AutomationNodeParameter | unde
     }
     if (scope.partInputs) {
       if (!scope.partInputs.has(name)) return { refused: `"$input.${name}" is not an input of this part. A part sees only what its caller gives it: declare it with \`input: ${name}\` on the part, and give it on the step that calls the part.` };
+      if (name === AUTOMATION_STUDIO_FLOW_SCRIPT_ROW_INPUT) return { refused: `"$input.${name}" cannot be read: \`input: ${name}\` is the one row of a list the caller goes through, and this part's steps stay in it by themselves. To read a value of that row, give it as an input of its own: \`input: station\`, with \`station: $row.station\` on the step that calls the part.` };
       return { value: automationStudioStateBinding(name, test === undefined || !test ? undefined : parameter ? authoringParameterValue(test, parameter) ?? test : authoringNestedValue(test)) };
     }
     if (!test) return { refused: `"$input.${name}" gives no test value: write \`$input.${name} = <the value the person gave>\`, which the build tests with and a run uses when it is given none.` };

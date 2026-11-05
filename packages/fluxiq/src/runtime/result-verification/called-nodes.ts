@@ -9,7 +9,8 @@
 // where three of five verdicts were wrong; the judged whole run of a project
 // Flow is the same shape.
 //
-// **Exact, or nothing.** Each Call Subflow attempt records the Subflow it ran,
+// **Exact, or nothing.** Each Call Subflow attempt records the Subflow it ran --
+// a saved part's pinned version is told by that id too, and the source answers it --
 // that Subflow's graph and the revision it ran at (`subflowTarget`). The graph
 // is read through the run's own Subflow source -- the one the run's Call
 // Subflow steps loaded it from, which reads each graph once per run -- and is

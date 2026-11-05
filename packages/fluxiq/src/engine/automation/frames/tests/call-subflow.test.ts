@@ -195,7 +195,7 @@ describe("Call Subflow", () => {
       ]),
       artifact: { interface: { inputs: [{ id: "query", name: "query", valueType: { kind: "unknown" } }], outputs: [
         { id: "answer", name: "answer", valueType: { kind: "unknown" }, metadata: { binding: automationNodeStateBinding("$node.s1.value") } },
-        { id: "never", name: "never", valueType: { kind: "unknown" }, metadata: { binding: automationNodeStateBinding("$node.s9.value") } }
+        { id: "never", name: "never", valueType: { kind: "unknown" }, metadata: { binding: automationNodeStateBinding("$node.s1.nothing") } }
       ] }, errors: [] } as unknown as NonNullable<AutomationStudioSubflowGraph["artifact"]>
     };
     const calling = graph("graph.calling", [
@@ -208,5 +208,27 @@ describe("Call Subflow", () => {
     const call = executed.attempts.find((attempt) => attempt.nodeId === "call")!;
     expect(call.outputs).toEqual({ answer: "q", never: null });
     expect(executed.values["call.answer"]).toBe("q");
+  });
+
+  it("fails the call, with a plain message, when a declared output names a key no node of the child carries", async () => {
+    const lost: AutomationStudioSubflowGraph = {
+      subflowId: "child", graphRevision: null,
+      graph: graph("graph.lost", [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "node.minted.s1", definitionId: "builtin.data.constant", parameterValues: { value: "x" }, metadata: { bootstrapSymbolicKey: "s1" } }
+      ]),
+      artifact: { interface: { inputs: [], outputs: [{ id: "answer", name: "answer", valueType: { kind: "unknown" }, metadata: { binding: automationNodeStateBinding("$node.s2.value") } }] }, errors: [] } as unknown as NonNullable<AutomationStudioSubflowGraph["artifact"]>
+    };
+    const calling = graph("graph.calling", [
+      { id: "start", definitionId: "builtin.control.start" },
+      { id: "call", definitionId: CALL, parameterValues: { subflowId: "child", outputs: { answer: "answer" } } }
+    ]);
+    const { saved } = await run(calling, { subflowGraphs: source({ child: lost }) });
+
+    const call = saved.attempts.find((attempt) => attempt.nodeId === "call")!;
+    expect(call.status).toBe("failed");
+    expect(call.failure?.code).toBe("executor.call_subflow.output_binding_lost");
+    expect(call.message).toContain("\"answer\"");
+    expect(call.message).toContain("\"s2\"");
   });
 });

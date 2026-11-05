@@ -72,6 +72,7 @@ import {
   automationStudioFlowBootstrapSubflowRequires, automationStudioFlowPlanRepeatOrder,
   automationStudioFlowScriptAdjacentListRepeats, automationStudioFlowScriptCalledParts,
   automationStudioFlowScriptCallStep,
+  automationStudioFlowScriptPartInputPort,
   automationStudioFlowScriptEntryPoints,
   automationStudioFlowScriptFacts,
   automationStudioFlowScriptGuardedSteps,
@@ -389,7 +390,7 @@ function partInterface(
     }
     return [{ ...port(output.name), metadata: { binding: bound.value as JsonObject } }];
   });
-  return { inputs: part.inputs.map((name) => ({ ...port(name), required: true as const })), outputs };
+  return { inputs: part.inputs.map((name) => ({ ...port(automationStudioFlowScriptPartInputPort(name)), required: true as const })), outputs };
 }
 
 /** Each block's Subflow key: `main` for the first, the block's own label or name otherwise; none for a handler's block, which is no Subflow. */

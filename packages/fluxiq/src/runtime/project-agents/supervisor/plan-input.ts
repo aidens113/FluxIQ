@@ -262,10 +262,11 @@ function coresRouter(value: unknown): value is JsonObject {
  * The names of an interface side, each a port name, none twice. A port name is the one a script's part may give the
  * same value (`../../flow-bootstrap/script-statements/part-port-name.ts`), never only the bootstrap plan reader's
  * pattern: a subflow's scope demands the plan's names, so a name the script refuses would make it unbuildable (t741).
+ * `row` is the script's word for a whole list row (`row: $row`), so no plan may ask for a value under it.
  */
 function ports(value: unknown, path: string): string[] {
   if (value === undefined) return [];
-  const names = shape.array(value, path, MAX_PORTS).map((name, index) => (typeof name === "string" && automationStudioFlowScriptPartPortName(name) ? name : shape.refuse("project.plan_port_name", `${path}.${index}`)));
+  const names = shape.array(value, path, MAX_PORTS).map((name, index) => (typeof name === "string" && automationStudioFlowScriptPartPortName(name) && name !== "row" ? name : shape.refuse("project.plan_port_name", `${path}.${index}`)));
   if (new Set(names).size !== names.length) return shape.refuse("project.duplicate", path);
   return names;
 }

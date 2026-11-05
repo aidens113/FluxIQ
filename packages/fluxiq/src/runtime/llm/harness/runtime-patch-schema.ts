@@ -73,7 +73,7 @@ const STEP_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["definitionId"],
-  properties: { definitionId: boundedStringSchema(), label: boundedStringSchema(), parameters: { type: "object" } }
+  properties: { definitionId: boundedStringSchema(), label: boundedStringSchema(), parameters: { type: "object" }, key: boundedStringSchema() }
 } as const;
 
 const INSERTED_STEPS_SCHEMA = {

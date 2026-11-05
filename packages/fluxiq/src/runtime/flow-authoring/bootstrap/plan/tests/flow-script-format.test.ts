@@ -249,3 +249,9 @@ describe("completion schema client examples", () => {
     expect(automationStudioEvidenceFlowBootstrapCompletionSchema().description).not.toContain("archive.document.inspect");
   });
 });
+
+describe("the Flow script format's row across a call", () => {
+  it("says the two lines, once, in words about no site or act", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT.split("\n").filter((line) => line.includes("`input: row`"))).toEqual(["A part that acts on one row of a list its caller goes through declares `input: row`, and the step that calls it inside `repeat over:` gives it `row: $row`: the part's presses then stay in that row, and the row is looked for again before each."]);
+  });
+});

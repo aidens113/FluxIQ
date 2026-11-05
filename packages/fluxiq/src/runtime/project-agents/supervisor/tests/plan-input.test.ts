@@ -203,10 +203,11 @@ describe("a plan's port names, held to the script's rule for a part", () => {
 
   it("refuses item as an output and as an input, at the port's path", () => {
     expect(read(planInput([subflow("find_titles", ["p1"], { outputs: ["item"] })], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.0.outputs.0" }] });
+    expect(read(planInput([subflow("find_titles", ["p1"], { inputs: ["row"] })], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.0.inputs.0" }] });
     expect(read(planInput([subflow("find_titles", ["p1"], { inputs: ["titles", "item"] })], ONE))).toEqual({ ok: false, issues: [{ code: "project.plan_port_name", path: "subflows.0.inputs.1" }] });
   });
 
-  it.each(["item", "items", "itemName", "row", "total"])("accepts %s exactly when a script's part may name it", (name) => {
+  it.each(["item", "items", "itemName", "total"])("accepts %s exactly when a script's part may name it", (name) => {
     const plan = read(planInput([subflow("find_titles", ["p1"], { outputs: [name] })], ONE)).ok;
     expect(plan).toBe(partTakes(name));
     expect(plan).toBe(name !== "item");

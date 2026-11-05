@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../nodes/index.ts";
 import { automationStudioServiceTrialEnvironment } from "../index.ts";
+import type { AutomationStudioServiceTrialCollaborators } from "../collaborators.ts";
 import { FLOW, PARENT, PROJECT, fakeCollaborators } from "./fakes.ts";
 
 const RESOLUTION = { scope: PARENT.scope, runtimeCapabilities: [], permissions: [] };
@@ -71,5 +72,32 @@ describe("a build's trial environment from the service's collaborators", () => {
     const bare = environmentOf().environment;
     expect(bare.observedStateKeys).toBeUndefined();
     expect(bare.prepareStart).toBeUndefined();
+  });
+
+  describe("the library a trial reads", () => {
+    const made = (partLibrary?: AutomationStudioServiceTrialCollaborators["partLibrary"]) => automationStudioServiceTrialEnvironment({ ...fakeCollaborators().collaborators, ...(partLibrary ? { partLibrary } : {}) }, { projectId: PROJECT, flowId: FLOW, sourceInstructionIds: ["instruction.1"], registry: new AutomationStudioNodeRegistry(), resolution: RESOLUTION }).graphOptions({ runId: "run.1", signal: new AbortController().signal });
+
+    it("is offered for a pin of this Flow, and answers nothing else: a sibling's id gets no caller-source fallback", async () => {
+      const asked: unknown[] = [];
+      const options = made((projectId, flowId) => {
+        asked.push(["for", projectId, flowId]);
+        return {
+          load: async (pin) => {
+            asked.push(["load", pin]);
+            return undefined;
+          },
+          refusal: async () => ({ code: "part.call_cycle", message: "no" })
+        };
+      });
+      expect(await options.subflowGraphs?.load("subflow.anyone")).toBeUndefined();
+      expect(asked, "the library is not asked about an id that is not a pin").toEqual([["for", PROJECT, FLOW]]);
+      expect(await options.subflowGraphs?.load("part:part.a:v2")).toBeUndefined();
+      expect(asked.at(-1)).toEqual(["load", { partId: "part.a", version: 2 }]);
+      expect(await options.subflowGraphs?.pinRefusal?.({ partId: "part.a", version: 2 })).toEqual({ code: "part.call_cycle", message: "no" });
+    });
+
+    it("a host with no library runs a trial as before", () => {
+      expect(made().subflowGraphs).toBeUndefined();
+    });
   });
 });

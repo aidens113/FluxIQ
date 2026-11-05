@@ -589,6 +589,8 @@ export function automationStudioHarnessOptionRegistry(input: {
    * a node it never asked about describes that node on the way back.
    */
   nodeDescriptions?: AutomationStudioLlmNodeDescriptions | undefined;
+  /** `core.run_part` for this build (`../node-tools/run/part.ts`). Offered only beside the library: a build that runs no node runs no part. Absent, it is not on offer. */
+  runPart?: AutomationStudioHarnessOptionBundle | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
   // Only the names the domain said it runs. A node it will refuse is not a
@@ -613,6 +615,7 @@ export function automationStudioHarnessOptionRegistry(input: {
     if (memory && runImplementation) bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
     registry.register(bundle);
     if (memory) registry.register(automationStudioLlmDescribeNodesBundle(memory));
+    if (runNode && input.runPart) registry.register(input.runPart);
   }
   return registry;
 }
