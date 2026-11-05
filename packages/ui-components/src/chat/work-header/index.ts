@@ -8,3 +8,4 @@ export { workHeaderModel, type WorkHeaderInput, type WorkHeaderModel, type WorkM
 export { askOffersStop } from "./ask-offers-stop.ts";
 export { meterOfOutcomes } from "./meter-of-outcomes.ts";
 export { savedOfOutcomes } from "./saved-of-outcomes.ts";
+export { attemptEnded } from "./attempt-ended.ts";

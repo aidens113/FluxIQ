@@ -76,7 +76,7 @@ import type { ClientGatewayActivity } from "fluxiq/ui";
 import { createRecordingAttachment } from "./attachment/index.ts";
 import { createComposer, createConversationController, createReadNotice, type ConversationController } from "./conversation/index.ts";
 import { createAnswerReader, type AnswerHost, type AnswerReader } from "./answer/index.ts";
-import { askOffersStop, createWorkHeaderView, meterOfOutcomes, savedOfOutcomes, type WorkMeter } from "./work-header/index.ts";
+import { askOffersStop, attemptEnded, createWorkHeaderView, meterOfOutcomes, savedOfOutcomes, type WorkMeter } from "./work-header/index.ts";
 import { createActivityFeed, threadRefreshWanted } from "./feed/index.ts";
 import { sameTarget } from "./same-target.ts";
 import { sameThread } from "./same-thread.ts";
@@ -524,6 +524,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     header.update({
       display,
       activity: live,
+      attemptEnded: attemptEnded(display, activity.events, reader.outcomes()),
       sending: state.sending,
       questionElsewhere: answerIn !== null && !state.turns.some((turn) => turn.ask?.status === "pending"),
       questionHere: state.turns.some((turn) => turn.ask?.status === "pending"),

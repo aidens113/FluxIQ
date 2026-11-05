@@ -137,7 +137,7 @@ describe("automationStudioDeepSeekOutputSchema offers the cells a yes cites", ()
     type Fields = { required?: string[]; properties: Record<string, { maxItems?: number; items?: { additionalProperties: boolean; required: string[] } }> };
     const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: Fields } }).properties.diagnosis;
     const offered = fieldsOf(verification);
-    expect(offered.properties.checked?.maxItems).toBe(12);
+    expect(offered.properties.checked?.maxItems).toBeUndefined();
     expect(offered.properties.checked?.items?.additionalProperties).toBe(false);
     expect(offered.properties.checked?.items?.required).toEqual(["row", "column", "value"]);
     expect(offered.required).not.toContain("checked");

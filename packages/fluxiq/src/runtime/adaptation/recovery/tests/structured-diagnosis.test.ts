@@ -3,7 +3,6 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmDiagnosisFields, AutomationStudioLlmTaskResult } from "../../../llm/index.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "../deterministic-diagnosis.ts";
 import {
-  AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH,
   buildAutomationStudioRuntimeStructuredDiagnosis,
   summarizeAutomationStudioRuntimeStructuredDiagnosis
 } from "../structured-diagnosis.ts";
@@ -83,22 +82,21 @@ describe("buildAutomationStudioRuntimeStructuredDiagnosis", () => {
     expect(diagnosis.refusals).toEqual([expect.stringContaining("so Core's \"no\" stands")]);
   });
 
-  it("refuses a field of the wrong shape, an over-long description, and records both", () => {
+  it("refuses a field of the wrong shape and records it; a long description is read whole", () => {
     const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({
       deterministic: deterministic(),
       result: diagnosisResult({
-        expected: "x".repeat(AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH + 1),
+        expected: "x".repeat(5000),
         explorationNeeded: "probably",
         stillAchievable: "maybe"
       })
     });
 
-    expect(diagnosis.expected).toBeUndefined();
+    expect(diagnosis.expected).toBe("x".repeat(5000));
     // A refused field falls back to Core's answer, not to a bare false.
     expect(diagnosis.explorationNeeded).toBe(true);
     expect(diagnosis.stillAchievable).toBe("unknown");
     expect(diagnosis.refusals).toEqual([
-      expect.stringContaining("expected: 501 characters"),
       expect.stringContaining("stillAchievable: expected yes, no or unknown"),
       expect.stringContaining("explorationNeeded: expected a boolean")
     ]);

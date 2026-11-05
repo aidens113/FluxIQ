@@ -217,7 +217,7 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   // Likewise a malformed cited cell (t810): dropped with a warning naming its place.
   if (value.checked !== undefined) {
     for (const index of automationStudioLlmWellFormedVerificationChecked(value.checked).dropped) {
-      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_checked_dropped", message: index === undefined ? "Diagnosis checked cells must be a list, and were dropped." : "A cited cell was not a row, a column and a value as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.checked` : `${path}.checked[${index}]` });
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_checked_dropped", message: index === undefined ? "Diagnosis checked cells must be a list, and were dropped." : "A cited cell was not a row, a column and a value as non-empty text, and was dropped.", path: index === undefined ? `${path}.checked` : `${path}.checked[${index}]` });
     }
   }
   for (const field of DIAGNOSIS_TEXT_FIELDS) {

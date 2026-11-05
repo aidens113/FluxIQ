@@ -93,8 +93,8 @@ const RUN_NODE_TOOL_ID = "core.run_node";
 const WRITE_KEY = "write";
 const WRITTEN_CODE = "core.run_node.written";
 
-/** How many steps one amendment decision may edit at once. */
-const MAX_AMENDMENTS_PER_DECISION = 16;
+// No limit on how many steps one amendment decision may edit: a cap that refused a sound reply
+// wasted a paid call. What bounds the draft itself (its size, a step's size) is the draft's own check.
 
 export function automationStudioLlmEvidenceCanonicalJson(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(automationStudioLlmEvidenceCanonicalJson).join(",")}]`;
@@ -395,7 +395,7 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
         type: "object", additionalProperties: false, required: ["kind", "amendments"],
         properties: {
           kind: { const: "amend_draft" },
-          amendments: { type: "array", minItems: 1, maxItems: MAX_AMENDMENTS_PER_DECISION, items: structuredClone(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA) }
+          amendments: { type: "array", minItems: 1, items: structuredClone(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA) }
         }
       }] : []),
       ...tools.map((tool, index) => ({
@@ -546,7 +546,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE = "llm_eviden
  */
 export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): string[] | undefined {
   if (isRecord(value) && value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
-    if (readAmendments(value.amendments) || !Array.isArray(value.amendments) || value.amendments.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
+    if (readAmendments(value.amendments) || !Array.isArray(value.amendments)) return undefined;
     return value.amendments.some((item) => readAmendment(item) === "rerun_needs_input") ? [AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE] : undefined;
   }
   if (!isToolCall(value)) return undefined;
@@ -618,7 +618,7 @@ function bindingRefusedCode(path: string, reason: string): string {
  * which of them landed.
  */
 function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | undefined {
-  if (!Array.isArray(value) || !value.length || value.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
+  if (!Array.isArray(value) || !value.length) return undefined;
   const read = value.map(readAmendment).filter((item): item is AutomationStudioFlowDraftAmendment => typeof item === "object");
   return read.length ? read : undefined;
 }

@@ -32,6 +32,8 @@ export type WorkHeaderInput = {
   meter?: WorkMeter;
   /** "Using what I saved from Tuesday.", while the attempt works from saved work. Shown only while working. */
   usingSaved?: string;
+  /** The attempt this display speaks of has ended (`attempt-ended.ts`): it only files its work now, so the header goes. */
+  attemptEnded?: boolean;
 };
 
 /** The header's words; null hides it. `action` labels its one button, "" for none. */
@@ -57,6 +59,7 @@ const WAITING_PREFIX = /^(waiting for you|paused)\s*:\s*/iu;
 export function workHeaderModel(input: WorkHeaderInput): WorkHeaderModel | null {
   const { display, sending } = input;
   const cost = costWords(input.meter?.usd, input.meter?.budgetUsd);
+  if (display?.working === true && input.attemptEnded === true) return null;
   if (display?.working === true) {
     const step = display.step !== null && display.step !== undefined && Number.isInteger(display.step.index) && display.step.index >= 1
       ? display.step.count >= display.step.index ? `Step ${display.step.index} of ${display.step.count}` : `Step ${display.step.index}`

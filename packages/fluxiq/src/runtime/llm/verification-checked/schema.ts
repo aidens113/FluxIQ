@@ -9,18 +9,17 @@
 // (`../deepseek/output-schema.ts`) and the reply check holds an item to it
 // (`./well-formed.ts`), so the two cannot disagree on a key or a bound.
 
-/** The shape of `diagnosis.checked` a verification is offered: at most 12, each a stored row's label, a column and the cell's value, each a bounded string. */
+/** The shape of `diagnosis.checked` a verification is offered: any number, each a stored row's label, a column and the cell's value, each a non-empty string of any length. */
 export const AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA = {
   type: "array",
-  maxItems: 12,
   items: {
     type: "object",
     additionalProperties: false,
     required: ["row", "column", "value"],
     properties: {
-      row: { type: "string", minLength: 1, maxLength: 500 },
-      column: { type: "string", minLength: 1, maxLength: 500 },
-      value: { type: "string", minLength: 1, maxLength: 500 }
+      row: { type: "string", minLength: 1 },
+      column: { type: "string", minLength: 1 },
+      value: { type: "string", minLength: 1 }
     }
   }
 } as const;
