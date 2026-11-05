@@ -117,6 +117,22 @@ describe("carry-on-task-attempt", () => {
     expect(asked[0]).toMatchObject({ projectId: lane.project.id, flowId: lane.flow.flowId, authoringMode: "answer-first", evidenceGuided: true, caller: { actorUserId: "user.person", actorSessionId: "client-gateway:session.1" } });
   });
 
+  it("a paired press runs under the person's unlocked session, as the chat's commands do, and keeps the paired one with nothing unlocked", async () => {
+    const lane = await budgetedOut();
+    const asked = stubbed(lane.service);
+    lane.service.conversations.bindUnlockedSessionResolver((userId) => (userId === "user.person" ? "session.unlocked" : null));
+    expect((await lane.call(AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt, { projectId: lane.project.id, attemptId: "attempt.1", addUsd: 0.5 })).ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(asked[0]).toMatchObject({ caller: { actorUserId: "user.person", actorSessionId: "session.unlocked" } });
+
+    const locked = await budgetedOut();
+    const lockedAsked = stubbed(locked.service);
+    locked.service.conversations.bindUnlockedSessionResolver(() => null);
+    expect((await locked.call(AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt, { projectId: locked.project.id, attemptId: "attempt.1", addUsd: 0.5 })).ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(lockedAsked[0]).toMatchObject({ caller: { actorSessionId: "client-gateway:session.1" } });
+  });
+
   it("carries on an interrupted attempt with no budget added", async () => {
     const lane = await world();
     await lane.store.save(lane.project.id, lane.flow.flowId, { attempt: lane.attempt("working"), tried: TRIED });

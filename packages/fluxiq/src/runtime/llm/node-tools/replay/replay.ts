@@ -121,6 +121,13 @@ export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step", "verify"] a
 
 export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPLAY_KINDS)[number];
 
+/**
+ * The reason a pass of a repeat answers with when its own row's control is not on the page and nothing
+ * was pressed. It sits beside whichever code the host reads the miss as (`resultReason`), which elsewhere
+ * keeps its meaning; a forward run reads it, tells the model that row and goes on (`./span.ts`).
+ */
+export const AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON = "row_control_not_found";
+
 /** The only codes a replay may answer with, and what each one means. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   /** It ran, and produced what it produced before. */

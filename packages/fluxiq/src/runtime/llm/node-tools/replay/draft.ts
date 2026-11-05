@@ -283,6 +283,8 @@ export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFl
   stoppedAt?: number;
   /** A forward run's rows, summed over the lists it walked; absent without `forward` or when no list was walked. */
   rows?: AutomationStudioFlowDraftReplayRowCounts;
+  /** A forward run's rows whose own control could not be found, by their labels (`./forward.ts`); absent when there were none. */
+  rowsNotDone?: string[];
 };
 
 /**
@@ -321,6 +323,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     return row === undefined && input.forward.stepDone(step) ? "verify" : "replay";
   };
   let rows: AutomationStudioFlowDraftReplayRowCounts | undefined;
+  const rowsNotDone: string[] = [];
   const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject, excusable?: AutomationStudioFlowDraftExcusedReason, forwarded = true): Promise<ReplayAnswer> => {
     const answer = await call(input, callId, automationStudioNodeReplayToolId(step), value, excusable);
     if (answer.readable) {
@@ -358,6 +361,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       observations.push(...span.observations);
       if (!evidence && span.evidence) evidence = span.evidence;
       if (span.rows) rows = { done: (rows?.done ?? 0) + span.rows.done, skipped: (rows?.skipped ?? 0) + span.rows.skipped, failed: (rows?.failed ?? 0) + span.rows.failed };
+      if (span.rowsNotDone) rowsNotDone.push(...span.rowsNotDone);
       if (span.stopped) stoppedAt = span.outcomes.at(-1)?.step;
       index += plan.members.length - 1;
       continue;
@@ -427,7 +431,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     // A part run is the exception: it stops where the Flow would, and leaves the target there.
     if (input.stopsAt?.(step, excused(stepId) || checks.has(stepId))) stoppedAt = step.position;
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }), ...(rows ? { rows } : {}) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }), ...(rows ? { rows } : {}), ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}) };
 }
 
 function verdictOf(

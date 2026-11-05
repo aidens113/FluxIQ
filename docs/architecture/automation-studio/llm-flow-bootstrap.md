@@ -1071,6 +1071,12 @@ that does not succeed gives its acts back.
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
 acting. It sends no reset. These calls are in the Flow's own wire form, which the state
 engine needs: against an exploration's own calls it answers too little to settle anything.
+A pass presses its row's own control or says it could not: a host answers the reason
+`row_control_not_found`, nothing lasting later in that pass is sent, its later steps that
+declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`,
+`passed: false`), and the run goes on with the next row. No other failing step goes on. The
+answer holds one look taken as the run ends, under the keys the domain declares as its view,
+so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 
 **Loop detection** is wired through `attemptRecord`, `loopSignal` and `askedRepeats`.
 `change_approach` takes a fresh round; `ask_person` waits with `stuck_in_a_loop`, keeping

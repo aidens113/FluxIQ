@@ -54,7 +54,8 @@ const FORWARD_DESCRIPTION = [
   "A list in the range is read again as the page stands, and each step runs on the rows not done yet, with exactly the arguments the Flow runs it with.",
   "A row already done is left out and nothing is sent for it; a step whose effect lasts really acts on a row not done yet.",
   "Do the first row by hand first, so a wrong loop shows after one row.",
-  "A step that does not pass stops the run there and the page is left where it stopped; the answer counts the rows done, skipped and failed."
+  "A row whose own control cannot be found has nothing done to it, is named in the answer, and the run goes on with the next row.",
+  "Any other step that does not pass stops the run there and the page is left where it stopped; the answer counts the rows done, skipped and failed, and shows the page as it then stands."
 ].join(" ");
 
 /** `core.run_flow` as the loop offers it: a fresh copy each time, so no loop can change what the next one offers. `forward` is the forward run's wording. */
@@ -92,6 +93,8 @@ type RunFlowLoop = {
   partOf?: AuthoringPartOfStep | undefined;
   /** The forward run (`../replay/forward.ts`): `core.run_flow` is then offered with the dry run off, and runs forward. */
   forward?: AutomationStudioFlowDraftReplayForward | undefined;
+  /** Which keys of a result are a view of the page, so a forward run's answer can show the page it left (`./flow-part.ts`). */
+  observedStateKeys?: readonly string[] | undefined;
 };
 
 /**
@@ -110,11 +113,14 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     && tools.some((tool) => tool.effect === "mutate" || tool.perCallEffect === true)
     && !tools.some((tool) => tool.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID);
   const executeTool = loop.executeTool;
+  // The loop's own free look, which a forward run takes again when it ends (`./flow-part.ts`).
+  const opening = Array.isArray(tools) ? tools.find((tool) => tool.initialObservation !== undefined) : undefined;
+  const look = loop.forward && opening?.initialObservation && loop.observedStateKeys?.length ? { toolId: opening.toolId, input: opening.initialObservation.input, observedStateKeys: loop.observedStateKeys } : undefined;
   return {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool(loop.forward !== undefined)] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.forward ? { forward: loop.forward } : {}) })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.forward ? { forward: loop.forward } : {}), ...(look ? { look } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
