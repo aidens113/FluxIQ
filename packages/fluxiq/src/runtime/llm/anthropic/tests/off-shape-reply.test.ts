@@ -72,10 +72,10 @@ describe("step 67: a sound decision under the wrong outer word", () => {
 });
 
 describe("what every provider already does for a decision, now on this path too", () => {
-  it("cuts a summary past its length rather than refusing the decision, and writes a missing one", async () => {
+  it("reads a long summary whole, for the chat to shorten what it shows, and writes a missing one", async () => {
     const decision = STEP_67.decision;
     const long = await provider(envelope({ kind: "evidence_tool_decision", summary: "x".repeat(241), decision })).runTask(amendingRequest()) as { response: { summary: string } };
-    expect(long.response.summary).toHaveLength(240);
+    expect(long.response.summary).toHaveLength(241);
     const none = await provider(envelope({ kind: "evidence_tool_decision", decision })).runTask(amendingRequest()) as { response: { summary: string } };
     expect(none.response.summary).toBe("amend_draft");
   });
@@ -116,8 +116,10 @@ describe("step 74: a judge's clear yes with a text past its bound", () => {
     ["a summary past its bound", { ...STEP_74, summary: "y".repeat(20_001) }],
     ["a defect's words past theirs", { ...STEP_74, diagnosis: { ...STEP_74.diagnosis, answersRequest: "no", defects: [{ kind: "other", row: "z".repeat(501), requestWords: "the cheapest" }] } }],
     ["thirteen defects", { ...STEP_74, diagnosis: { ...STEP_74.diagnosis, answersRequest: "no", defects: Array.from({ length: 13 }, (_, index) => ({ kind: "other", row: `row ${index}`, requestWords: "the cheapest" })) } }]
-  ])("passes %s on to the harness rather than refusing the call here", (_name, reply) => {
-    expect(automationStudioAnthropicTaskAnswer(reply, verification(), USAGE, 1)).toEqual(reply);
+  ])("passes %s on to the harness rather than refusing the call here, and the harness reads it as a current judge's", (_name, reply) => {
+    const answer = automationStudioAnthropicTaskAnswer(reply, verification(), USAGE, 1);
+    expect(answer).toEqual(reply);
+    expect(parseAutomationStudioLlmProviderResult({ response: answer }, "diagnosis", undefined, undefined, true).diagnostics.filter((one) => one.severity === "error")).toEqual([]);
   });
 
   it("still refuses what is not a matter of length, and says where", () => {

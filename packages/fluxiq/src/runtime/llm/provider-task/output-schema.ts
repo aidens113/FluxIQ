@@ -7,7 +7,7 @@ import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-aut
 import { AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA } from "../verification-defects/index.ts";
 import { AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA } from "../verification-checked/index.ts";
 
-/** The longest summary an evidence decision may answer with. */
+/** The length an evidence decision's summary is asked to keep to, as a line a person reads: told, never held to. The reply is read whole and the chat shortens what it shows (`../../activity/text/reason-text.ts`). */
 export const AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH = 240;
 
 const JSON_METADATA_SCHEMA = { type: "object" } as const;
@@ -37,7 +37,7 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
   required: ["kind", "summary"],
   properties: {
     kind: { const: "diagnosis" },
-    summary: { type: "string", minLength: 1, maxLength: 20_000 },
+    summary: { type: "string", minLength: 1 },
     confidence: { type: "number", minimum: 0, maximum: 1 },
     diagnosis: DIAGNOSIS_FIELDS_SCHEMA,
     metadata: JSON_METADATA_SCHEMA

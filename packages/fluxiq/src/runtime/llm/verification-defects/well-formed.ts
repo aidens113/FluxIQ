@@ -4,10 +4,9 @@
 // A defect is kept only as the schema offers it: an object with no key but
 // kind, row, column, value, step and requestWords, a kind Core knows, an
 // `act_wrong` naming its step (t766), and each text a
-// non-blank string within its bound. Legacy reads drop malformed entries and keep an explicit empty account;
-// current negative verification replies reject any malformed account. The legacy reply check warns
-// with the dropped one's place (`../harness/provider-result.ts`). Past the
-// schema's twelve, the rest are dropped the same way. Each kept defect is
+// non-blank string, however long: neither a defect's length nor how many there are makes one malformed (t869). Legacy reads
+// drop malformed entries and keep an explicit empty account; current negative verification replies reject any malformed
+// account. The legacy reply check warns with the dropped one's place (`../harness/provider-result.ts`). Each kept defect is
 // rebuilt key by key, so nothing rides in beside it. Read on the way in and
 // again on the way out (`../harness/context-packet.ts`), as every key of the
 // diagnosis channel is.
@@ -27,7 +26,7 @@ export function automationStudioLlmWellFormedVerificationDefects(value: unknown)
   const kept: AutomationStudioLlmVerificationDefect[] = [];
   const dropped: number[] = [];
   value.forEach((entry: unknown, index) => {
-    const defect = kept.length < SCHEMA.maxItems ? wellFormed(entry) : undefined;
+    const defect = wellFormed(entry);
     if (defect) kept.push(defect);
     else dropped.push(index);
   });
@@ -38,10 +37,10 @@ function wellFormed(entry: unknown): AutomationStudioLlmVerificationDefect | und
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
   const record = entry as Record<string, unknown>;
   if (Object.keys(record).some((key) => !KEYS.includes(key))) return undefined;
-  if (!KINDS.includes(record.kind) || !boundedText(record.row) || !boundedText(record.requestWords)) return undefined;
-  if (record.column !== undefined && !boundedText(record.column)) return undefined;
-  if (record.value !== undefined && (!boundedText(record.value) || !boundedText(record.column))) return undefined;
-  if (record.step !== undefined ? !boundedText(record.step) : record.kind === "act_wrong") return undefined;
+  if (!KINDS.includes(record.kind) || !hasText(record.row) || !hasText(record.requestWords)) return undefined;
+  if (record.column !== undefined && !hasText(record.column)) return undefined;
+  if (record.value !== undefined && (!hasText(record.value) || !hasText(record.column))) return undefined;
+  if (record.step !== undefined ? !hasText(record.step) : record.kind === "act_wrong") return undefined;
   return {
     kind: record.kind as AutomationStudioLlmVerificationDefect["kind"],
     row: record.row,
@@ -52,6 +51,6 @@ function wellFormed(entry: unknown): AutomationStudioLlmVerificationDefect | und
   };
 }
 
-function boundedText(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0 && value.length <= SCHEMA.items.properties.row.maxLength;
+function hasText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }

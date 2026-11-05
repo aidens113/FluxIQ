@@ -141,11 +141,8 @@ export type AutomationStudioLlmVerificationDefect = {
 /**
  * The bound on each description the model may supply.
  *
- * It is the same 500 characters the runtime's reader holds the field to, stated
- * here as well because the two checks answer different questions: this one
- * refuses the response at the boundary, and the reader's records a refusal on
- * the run. A reader that is the only bound would accept an oversized field into
- * the process first.
+ * What the model is told, and never held to here: a text past it is read whole,
+ * with a warning (`./provider-result.ts`, t665). Core never caps what a model wrote.
  */
 export const AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH = 500;
 

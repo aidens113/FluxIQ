@@ -1182,6 +1182,8 @@ The user's design (2026-11-03): "next time we try that task, we try using flow &
 
 **Anything else goes on.** A step that stopped, or a judge's no, starts the rounds from the page the run left, told the step and why, with the draft seeded from the saved steps. An engine deadline, its step bound and a child Flow's bound end the run, never the attempt. The recovery's ten minutes and a run's result check are not reached, because the run refuses any model. The step bound follows the Flow's size, and the run uses the Flow's own size setting, so a long Flow that assembles also runs.
 
+**A step that made a lasting act and left the Flow.** A model may drop one, or never add it: a draft edit is not lasting, and it may be right that the step saved the wrong thing, so the edit applies and is never refused (a refusal counts toward ending a round, however often a model that insists repeats itself). Nothing un-happens: the act stays on the record and on the result. The draft marks the step `landed` on every decision until it is put back, and says once what that means: the Flow is what runs next time, so unless another step does the same a later run will not do it, and `keep` or `add` puts it back and runs nothing (`flow-authoring/draft/landed-out.ts`). The way-to-a-page guard (`amendment/strand-check.ts`) knows nothing of acts: on paid step 67's shape it puts the navigations back and lets the acts go, which is what this tells. The saved Flow holds the step out of it, so the next attempt's draft says the same. The next attempt does not press again for it: the Flow lacks the step, and a press by hand is answered as already done wherever the record carries, after a budget-out or a Stop. After an achieved attempt a person asking again means it, so a run judged no brings the model back to press by hand, and that press is the new ask's own.
+
 **Which acts carry.** After an achieved attempt, none: a person asking again means it. After a budget-out, a Stop or a cut-off, the attempt's landed and may-have-landed acts seed the next one. A row matches an acted row across its shapes: a by-hand read, a walker pass and an engine For Each, whatever a record output renamed or dropped. A lasting act is on the persisted record as may-have-landed before it is sent, on every path. An act in doubt is refused once and told, and only a look after that opens it; what the look shows is still the model's to read, because Core reads no page. `describeCall` also answers `wouldRunWith`, the frozen parameters a call would run with, so a press by a handle no read printed is known before it is sent. What can still press twice is in `docs/working/answer-first-plan/reports/second-attempt/closing-holes.md`.
 
 **Carry on** (`carry-on/`). Adding budget, or pressing to carry on an attempt a restart cut off, continues the same attempt id, act record, steps and rows, in a new session with the found rows copied in. The ceiling is read before the purse opens, from a scope held around the generate call. It never re-runs the Flow from its start. `interrupted/` rewrites a row that is working or waiting and not live in this process as `waiting_for_person`, reason `interrupted`, and reads must go through `automationStudioAnswerFirstAttemptsRead`.
@@ -2421,7 +2423,10 @@ t665 it was clipped to the bound, and Core weighed the clipped copy: on A8
 whole reading contradicted. It used to void the whole reply: live run `run-murwcmx2`'s
 second judge call answered a clear `no` with a 581-character `changed`, and the
 refutation was recorded as unconfirmed (t194 cause C-A). The bound stays 500 in
-the instruction and the output schema. When the judge's two calls do not settle
+the instruction and the output schema, as what the model is told. A verification's
+`defects` have no such bound (t869): any number of them, each whole however long,
+and only a defect of the wrong shape (a kind Core does not know, no row, no request's
+words) keeps a current no from standing. When the judge's two calls do not settle
 (`model_disagreed`, `model_unconfirmed`) but one of them judged the test not to
 do what was asked, that call's expected, observed and advice travel on the
 unsettled verification as `unconfirmedReading`, on the build's `unknown`
@@ -2532,12 +2537,22 @@ unambiguous, the outer `kind` being the word its own inner object carries and th
 (`models/providers/anthropic/reply/own-word.ts`), and a word naming another answer stays refused; a decision is read as
 every provider's is (`automationStudioLlmEvidenceNormalizedDecisionResponse`); a length (`maxLength`, `minLength`,
 `maxItems`) is no reason to refuse a judge's answer or a decision, since the bound is what the model is told and the
-harness and each tool's input check read past it with their own codes, while other tasks keep every bound here, since
-nothing else holds them. What still does not fit is `llm.provider_output_invalid` with the account's case
+harness and each tool's input check read past it with their own codes, while other tasks keep what bounds they still have
+here (below), since nothing else holds them. What still does not fit is `llm.provider_output_invalid` with the account's case
 `content_off_shape` and its `misses`, each a path and a rule in the schema's words and never a word of the reply
 (`models/providers/anthropic/schema-misses.ts`), which the `core.decision_check` note says as "At fault: ...". The account
 reaches the step log. DeepSeek holds no such check, so it already read a long text whole, and it still refuses the
 wrong outer word, with no account.
+
+**Core never caps what a model wrote (a standing rule, t869).** No reply is refused, and nothing it says is cut, for being
+long or for listing many things: a person's display may shorten it, and the record stays whole. So a decision's summary is
+read whole and the chat shortens what it shows to whole sentences (`activity/text/reason-text.ts`); a summary, a repair's
+reason and an instruction's words have no length, and a change proposal and an instruction suggestion no count
+(`runtime/llm/harness/provider-result.ts`). The harness's walk of a reply stops only at the recursion guard, or at more
+values than the transport would read of one, which only a stand-in's object could be. A bound that stays says why:
+what an in-run repair writes into a running automation's graph (its steps, conditions, handles and ids) is bounded so a
+page's text cannot arrive inside one and become a graph write; a name or an id is one; the transport's read and a request's
+own output limit are the request's, and a reply cut there has its own reading.
 
 **An unreadable reply is asked again, never a bare ending (t211).** A reply that
 arrived and could not be read (`llm.provider_malformed_response`, a truncated

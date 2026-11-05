@@ -2,7 +2,8 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConseque
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-authoring/bootstrap/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
-import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
+import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES } from "../provider-transport/index.ts";
+import { AUTOMATION_STUDIO_JSON_MAX_DEPTH, isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
 import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../../engine/automation/lifecycle/index.ts";
@@ -96,7 +97,8 @@ function parseAutomationStudioLlmStructuredResponse(
     : kind === "no_repair"
       ? [...commonFields, "reason"]
       : [...commonFields, "patches", "riskLevel"], "response", diagnostics);
-  if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_summary", message: "LLM response summary must be a bounded string.", path: "response.summary" });
+  // Prose is read whole however long it runs (t869): a summary, a patch's reason, an instruction's words. Names and ids below keep their bound.
+  if (typeof value.summary !== "string") diagnostics.push({ severity: "error", code: "llm_output.invalid_summary", message: "LLM response summary must be a string.", path: "response.summary" });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "LLM response metadata must be a JSON object.", path: "response.metadata" });
   if (kind === "flow_bootstrap") {
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
@@ -126,17 +128,11 @@ function parseAutomationStudioLlmStructuredResponse(
     if (!isAutomationStudioNoRepairReason(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_no_repair_reason", message: "A declined repair must name one of Core's no-repair reasons.", path: "response.reason" });
   } else if (kind === "change_proposal") {
     if (!Array.isArray(value.patches)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patches", message: "Change proposal patches must be an array.", path: "response.patches" });
-    else {
-      if (value.patches.length > 100) diagnostics.push({ severity: "error", code: "llm_output.too_many_patches", message: "Change proposal response cannot contain more than 100 patches.", path: "response.patches" });
-      else value.patches.forEach((patch, index) => validateUnknownChangePatch(patch, index, diagnostics));
-    }
+    else value.patches.forEach((patch, index) => validateUnknownChangePatch(patch, index, diagnostics));
     if (!isRiskLevel(value.riskLevel)) diagnostics.push({ severity: "error", code: "llm_output.invalid_risk", message: "Change proposal riskLevel is invalid.", path: "response.riskLevel" });
   } else {
     if (!Array.isArray(value.instructions)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instructions", message: "Instruction suggestions must be an array.", path: "response.instructions" });
-    else {
-      if (value.instructions.length > 100) diagnostics.push({ severity: "error", code: "llm_output.too_many_instructions", message: "Instruction response cannot contain more than 100 suggestions.", path: "response.instructions" });
-      else value.instructions.forEach((instruction, index) => validateUnknownInstructionSuggestion(instruction, index, diagnostics));
-    }
+    else value.instructions.forEach((instruction, index) => validateUnknownInstructionSuggestion(instruction, index, diagnostics));
   }
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
   if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
@@ -215,7 +211,7 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   // nothing the model wrote.
   if (value.defects !== undefined) {
     for (const index of automationStudioLlmWellFormedVerificationDefects(value.defects).dropped) {
-      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_defect_dropped", message: index === undefined ? "Diagnosis defects must be a list, and were dropped." : "A diagnosis defect was not a kind Core knows with its row and the request's words as bounded text, or came past the twelfth, and was dropped.", path: index === undefined ? `${path}.defects` : `${path}.defects[${index}]` });
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_defect_dropped", message: index === undefined ? "Diagnosis defects must be a list, and were dropped." : "A diagnosis defect was not a kind Core knows with its row and the request's words as text, and was dropped.", path: index === undefined ? `${path}.defects` : `${path}.defects[${index}]` });
     }
   }
   // Likewise a malformed cited cell (t810): dropped with a warning naming its place.
@@ -346,8 +342,8 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
   // `runtime/flow-draft/` is where an edit that names no step is refused.
   if (value.kind === "amend_draft") {
     rejectUnexpectedFields(value, ["kind", "amendments"], path, diagnostics);
-    if (!Array.isArray(value.amendments) || !value.amendments.length || value.amendments.length > 16 || !value.amendments.every(isRecord)) {
-      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_amendment", message: "A draft amendment decision must carry between one and sixteen amendments.", path });
+    if (!Array.isArray(value.amendments) || !value.amendments.length || !value.amendments.every(isRecord)) {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_amendment", message: "A draft amendment decision must carry at least one amendment.", path });
     }
     return;
   }
@@ -371,7 +367,7 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
               : common;
   rejectUnexpectedFields(value, fields, path, diagnostics);
   if (!RUNTIME_PATCH_KINDS.includes(String(kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_runtime_patch", message: "Runtime patch kind is unsupported.", path: `${path}.kind` });
-  if (!isBoundedString(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_reason", message: "Runtime patch reason must be a bounded string.", path: `${path}.reason` });
+  if (typeof value.reason !== "string") diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_reason", message: "Runtime patch reason must be a string.", path: `${path}.reason` });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Runtime patch metadata must be a JSON object.", path: `${path}.metadata` });
   // What an acting patch says it would lastingly do: Core's classes only, since
   // a class Core does not know is one it cannot ask a person about. Absent is
@@ -406,7 +402,7 @@ function validateUnknownChangePatch(value: unknown, index: number, diagnostics: 
   rejectUnexpectedFields(value, ["kind", "targetId", "summary", "before", "after", "metadata"], path, diagnostics);
   if (!["create_subflow", "edit_subflow", "edit_router", "edit_expectation", "edit_action_target", "edit_recovery", "promote_adaptation", "edit_instruction"].includes(String(value.kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_patch_kind", message: "Change proposal patch kind is unsupported.", path: `${path}.kind` });
   if (value.targetId !== undefined && !isBoundedString(value.targetId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_target", message: "Change proposal targetId must be a bounded string.", path: `${path}.targetId` });
-  if (!isBoundedString(value.summary)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_summary", message: "Change proposal summary must be a bounded string.", path: `${path}.summary` });
+  if (typeof value.summary !== "string") diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_summary", message: "Change proposal summary must be a string.", path: `${path}.summary` });
   if (value.before !== undefined && !isJsonValue(value.before)) diagnostics.push({ severity: "error", code: "llm_output.invalid_before", message: "Change proposal before value must be JSON.", path: `${path}.before` });
   if (value.after !== undefined && !isJsonValue(value.after)) diagnostics.push({ severity: "error", code: "llm_output.invalid_after", message: "Change proposal after value must be JSON.", path: `${path}.after` });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Change proposal metadata must be a JSON object.", path: `${path}.metadata` });
@@ -419,9 +415,9 @@ function validateUnknownInstructionSuggestion(value: unknown, index: number, dia
     return;
   }
   rejectUnexpectedFields(value, ["title", "body", "scope", "tags"], path, diagnostics);
-  if (!isBoundedString(value.title) || !isBoundedString(value.body)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction", message: "Instruction title and body must be bounded strings.", path });
+  if (typeof value.title !== "string" || typeof value.body !== "string") diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction", message: "Instruction title and body must be strings.", path });
   if (value.scope !== undefined && !isJsonObject(value.scope)) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction_scope", message: "Instruction scope must be a JSON object.", path: `${path}.scope` });
-  if (value.tags !== undefined && (!Array.isArray(value.tags) || value.tags.length > 100 || !value.tags.every(isBoundedString))) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction_tags", message: "Instruction tags must be bounded strings.", path: `${path}.tags` });
+  if (value.tags !== undefined && (!Array.isArray(value.tags) || !value.tags.every((tag) => typeof tag === "string"))) diagnostics.push({ severity: "error", code: "llm_output.invalid_instruction_tags", message: "Instruction tags must be strings.", path: `${path}.tags` });
 }
 
 function parseAutomationStudioLlmUsage(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): AutomationStudioLlmUsageSummary | undefined {
@@ -483,22 +479,29 @@ function rejectUnexpectedFields(value: Record<string, unknown>, allowed: string[
   }
 }
 
+/**
+ * Whether a provider result is one a walk can finish: no cycle, nesting within the recursion guard, and no more values than a
+ * reply could hold. **It refuses nothing a model wrote (t869).** The transport reads at most
+ * `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES` of a reply and a JSON value takes at least a byte, so only an object no
+ * reply could be, a stand-in's, comes near it. It stood at 10,000 values, 1,000 in a list or an object and 20 levels, where a
+ * paid completion carrying a long table was refused whole.
+ */
 function boundedProviderResult(root: unknown): boolean {
   const stack: Array<{ value: unknown; depth: number }> = [{ value: root, depth: 0 }];
   const seen = new Set<object>();
   let visited = 0;
   while (stack.length) {
     const { value, depth } = stack.pop()!;
-    if (++visited > 10_000 || depth > 20) return false;
+    if (++visited > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES || depth > AUTOMATION_STUDIO_JSON_MAX_DEPTH) return false;
     if (value === null || typeof value !== "object") continue;
     if (seen.has(value)) return false;
     seen.add(value);
     if (Array.isArray(value)) {
-      if (value.length > 1000) return false;
+      if (value.length > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) return false;
       for (let index = 0; index < value.length; index += 1) stack.push({ value: value[index], depth: depth + 1 });
     } else {
       const keys = Object.keys(value);
-      if (keys.length > 1000) return false;
+      if (keys.length > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) return false;
       for (const key of keys) stack.push({ value: (value as Record<string, unknown>)[key], depth: depth + 1 });
     }
   }

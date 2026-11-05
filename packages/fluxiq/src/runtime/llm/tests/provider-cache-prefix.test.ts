@@ -320,10 +320,10 @@ describe("a reply that said everything but was not shaped exactly as asked", () 
     });
   });
 
-  it("cuts a summary one character too long instead of losing the decision under it", async () => {
+  it("reads a long summary whole, for the chat to shorten what it shows, and keeps the decision under it", async () => {
     const result = await runWithReply({ kind: "evidence_tool_decision", summary: "x".repeat(400), decision });
 
-    expect((result.response as { summary: string }).summary).toHaveLength(240);
+    expect((result.response as { summary: string }).summary).toHaveLength(400);
     expect((result.response as { decision: unknown }).decision).toEqual(decision);
   });
 

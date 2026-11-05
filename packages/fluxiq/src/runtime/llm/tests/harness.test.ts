@@ -504,8 +504,9 @@ describe("Automation Studio LLM harness", () => {
     expect(malformed.intervention).toMatchObject({ validation: { ok: false } });
   });
 
-  it("short-circuits million-entry and proxy provider-result bombs", async () => {
-    const million = new Array(1_000_000);
+  // Past anything a reply could hold, as the transport reads at most AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES of one: nothing a model wrote comes near it (`../harness/tests/no-cap-on-model-output.test.ts`).
+  it("short-circuits provider-result bombs no reply could be, and proxy ones", async () => {
+    const million = new Array(3_000_000);
     const bomb = await runAutomationStudioLlmHarness({ taskKind: "runtime_patch", projectId: "project.llm", flowId: "flow.checkout", instructions: [], provider: { metadata: { provider: "mock", model: "bomb" }, runTask: async () => ({ response: { kind: "runtime_patch", summary: "x", riskLevel: "low", patches: million } }) } });
     expect(bomb.ok).toBe(false);
     expect(bomb.diagnostics).toHaveLength(1);
