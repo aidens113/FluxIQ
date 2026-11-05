@@ -200,7 +200,7 @@ describe("a verification's system message, on the defects a no rests on (t752)",
   const NARROWING = "That rule is for steps that act on the site before a read, never a read's own conditions, which are judged by the rows they keep and leave out.";
   const STORES = "buildTest.stores is the answer the Flow would give (a dataset only reads flagged with workingRows fill holds working rows, not the answer):";
   // t810: the last sentence of a verification's message asks a yes to cite the cells it checked.
-  const CHECKED = "When you answer yes, list in diagnosis.checked the stored rows you checked, each as its label in row, a stored column in column and that row's own value there in value, the cell that shows the request asks for it; Core looks each up in the stored rows, and a yes citing a cell the result does not hold is not taken as a yes.";
+  const CHECKED = "When you answer yes, list in diagnosis.checked the stored rows you checked, each as its label in row (the row's value in its first stored column, such as a name or title, never its position), a stored column in column and that row's own value there in value, the cell that shows the request asks for it; Core looks each up in the stored rows, and a yes citing a cell the result does not hold is not taken as a yes.";
   const SAID = [DEFECTS, NOT_A_DEFECT, RELATION, EARLIER, CHECKED, WORKING, WORKING_SET, NARROWING];
   const verifications = ["loop_verification", "loop_verification_build_test"];
 
