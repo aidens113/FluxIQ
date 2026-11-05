@@ -1,3 +1,4 @@
+import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidateSubmissionController } from "../../flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioSiteResetChecks, AutomationStudioSiteResetProjectLedger } from "../../flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioSubflowProposal } from "../../flow-authoring/bootstrap/subflow-candidate/index.ts";
@@ -82,4 +83,9 @@ export type AutomationStudioProjectSupervisorPorts = {
   reserve?: AutomationStudioLlmBuildPurseJudging | undefined;
   finishing?: { supervisorCalls: number; resetCalls: number } | undefined;
   signal?: AbortSignal | undefined;
+  /**
+   * The saved parts of this project that may fit the build's request, read once for the build (up to five, or none): the
+   * `knownParts` of the free first look. Absent, the look has none to show and is as it always was. It never rejects: a library that cannot be read reads as none.
+   */
+  knownParts?: (() => Promise<JsonObject | undefined>) | undefined;
 };

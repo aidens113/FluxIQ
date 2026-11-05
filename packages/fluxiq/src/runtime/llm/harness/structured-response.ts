@@ -221,6 +221,13 @@ export type AutomationStudioRuntimePatchStep = {
   label?: string;
   /** The node's parameter values, as the authoring path writes a node's. */
   parameters?: JsonObject;
+  /**
+   * The key the node is read by, as `$node.<key>.<output>`, kept as its
+   * `metadata.bootstrapSymbolicKey`. Give one only to a step that must be read
+   * by that key (a Subflow's declared output names its node this way); a
+   * replaced node keeps its own key when none is given.
+   */
+  key?: string;
 };
 
 /** How many steps one repair may insert. A repair is a missing step or two, never a second Flow. */

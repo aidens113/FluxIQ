@@ -1,13 +1,20 @@
 // The Router-selected Subflow as the run's first frame (state-aware recovery
 // plan, C1): its Subflow record's mappings applied at the boundary, and the
-// automation's other Subflow graphs offered to its Call Subflow nodes.
+// automation's other Subflow graphs offered to its Call Subflow nodes, then the
+// project's library at whatever version a step pins (`library`).
 
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowDocument, AutomationStudioFlowSubflow } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
-import type { AutomationStudioSubflowGraph, AutomationStudioSubflowGraphSource } from "../../../../engine/automation/frames/index.ts";
+import { automationStudioPinOfSubflowId, type AutomationStudioPartPin, type AutomationStudioPartPinRefusal, type AutomationStudioSubflowGraph, type AutomationStudioSubflowGraphSource } from "../../../../engine/automation/frames/index.ts";
 import { automationStudioFlowGraphVersion, type AutomationStudioFlowGraphVersion } from "../../../../runtime/flow-authoring/version/index.ts";
-import { automationStudioSubflowGraphIsOwned } from "./subflow-graph-ownership.ts";
+import { automationStudioPinnedGraphIsOwned, automationStudioSubflowGraphIsOwned } from "./subflow-graph-ownership.ts";
+
+/** The project's library as a run reads it: one pinned version as a graph of this run, or why it may not run. */
+export type AutomationStudioPinnedPartGraphs = {
+  load(pin: AutomationStudioPartPin): Promise<AutomationStudioSubflowGraph | undefined>;
+  refusal(pin: AutomationStudioPartPin): Promise<AutomationStudioPartPinRefusal | undefined>;
+};
 
 /** What the run session reads back from the first frame once the run has ended. */
 export type AutomationStudioRouterSubflowFrame = {
@@ -26,7 +33,8 @@ export type AutomationStudioRouterSubflowFrame = {
  * - `currentSubflowId` names the Subflow, which is the first frame's;
  * - `subflowGraphs` offers the automation's Subflow graphs to Call Subflow
  *   nodes, each read and materialised as the selected one was (`loadGraph`) and
- *   run only when it proves it belongs to this Flow and that Subflow.
+ *   run only when it proves it belongs to this Flow and that Subflow, then the
+ *   library's version of whatever a step pins, proved the same way.
  *
  * Without a selected, owned graph it binds nothing and reads nothing back.
  */
@@ -39,6 +47,8 @@ export function automationStudioBindRouterSubflowFrame(input: {
   parentFlowId: string;
   loadGraph: (graphFlowId: string) => Promise<AutomationStudioFlowArtifact | undefined>;
   representationOf: (graph: AutomationStudioFlowArtifact) => string | undefined;
+  /** The library at the pin. Absent, a pinned step fails its call with a closed code. */
+  library?: AutomationStudioPinnedPartGraphs | undefined;
 }): AutomationStudioRouterSubflowFrame {
   const { graphOptions, selected } = input;
   if (!selected || !input.selectedIsOwned) return { withOutputs: (trace) => trace, calledVersions: () => [] };
@@ -65,11 +75,13 @@ export function automationStudioBindRouterSubflowFrame(input: {
 }
 
 // Each graph is read once per run, so every call to one Subflow runs the same revision.
-function automationStudioSubflowGraphSource(input: {
+// The Flow's own Subflows are looked in first; only an id that holds a pin reaches the library.
+export function automationStudioSubflowGraphSource(input: {
   subflows: readonly AutomationStudioFlowSubflow[];
   parentFlowId: string;
   loadGraph: (graphFlowId: string) => Promise<AutomationStudioFlowArtifact | undefined>;
   representationOf: (graph: AutomationStudioFlowArtifact) => string | undefined;
+  library?: AutomationStudioPinnedPartGraphs | undefined;
 }): AutomationStudioSubflowGraphSource {
   const loaded = new Map<string, Promise<AutomationStudioSubflowGraph | undefined>>();
   const read = async (record: AutomationStudioFlowSubflow): Promise<AutomationStudioSubflowGraph | undefined> => {
@@ -83,15 +95,21 @@ function automationStudioSubflowGraphSource(input: {
       artifact
     };
   };
+  const readPinned = async (pin: AutomationStudioPartPin): Promise<AutomationStudioSubflowGraph | undefined> => {
+    const target = await input.library?.load(pin);
+    return target && automationStudioPinnedGraphIsOwned(pin, target.artifact, input.parentFlowId) ? target : undefined;
+  };
   const load = (subflowId: string): Promise<AutomationStudioSubflowGraph | undefined> => {
     const record = input.subflows.find((subflow) => subflow.subflowId === subflowId);
-    if (!record) return Promise.resolve(undefined);
-    const known = loaded.get(subflowId) ?? read(record);
+    const pin = record ? undefined : automationStudioPinOfSubflowId(subflowId);
+    if (!record && !pin) return Promise.resolve(undefined);
+    const known = loaded.get(subflowId) ?? (record ? read(record) : readPinned(pin!));
     loaded.set(subflowId, known);
     return known;
   };
   return {
     load,
+    pinRefusal: async (pin) => await input.library?.refusal(pin),
     recovery: async () => {
       const record = input.subflows.find((subflow) => subflow.role === "recovery");
       return record ? await load(record.subflowId) : undefined;

@@ -81,6 +81,8 @@ export type AutomationStudioJudgedPromotionPorts = {
   saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation>;
   /** The apply, through review, so the promotion gates run on it as on any apply. */
   applyFlowAdaptation(input: { projectId: string; flowId: string; adaptationId: string; reason: string }): Promise<AutomationStudioFlowAdaptation>;
+  /** A patch this run ran was judged not to answer: what the library keeps of that, when the patch was a saved part's newer version. */
+  refutedPartTrial?(adaptation: AutomationStudioFlowAdaptation, runId: string): Promise<void>;
 };
 
 /**
@@ -354,6 +356,7 @@ async function settleOne(
   if (!outcome.apply) {
     const unapplied = compactJsonObject({ ...base, applied: false, notAppliedReason: outcome.reason });
     await input.ports.saveFlowAdaptation(withDecision(adaptation, unapplied));
+    if (outcome.reason === "refuted") await input.ports.refutedPartTrial?.(adaptation, input.session.runId);
     return unapplied;
   }
   // Recorded before the apply, which reads the stored adaptation and keeps its

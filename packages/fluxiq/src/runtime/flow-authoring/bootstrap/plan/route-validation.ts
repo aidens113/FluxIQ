@@ -57,7 +57,11 @@ function reachedSubflows(plan: AutomationStudioFlowBootstrapPlan, issues: Automa
       if (subflow.role === "recovery" && node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler) roots.push(subflow.key);
       if (node.definitionId !== AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow) continue;
       const called = node.parameters?.subflowId;
-      if (called === undefined) continue; // The required parameter is validated by the node's contract.
+      if (called === undefined) {
+        // A step pinning a saved part names no Subflow of this plan; a step naming neither runs nothing.
+        if (node.parameters?.part === undefined) issues.push(error("bootstrap.unknown_call_target", "Call Subflow must name a Subflow key declared in this candidate plan, or pin a saved part.", `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters.subflowId`));
+        continue;
+      }
       if (typeof called !== "string" || !declared.has(called)) {
         issues.push(error("bootstrap.unknown_call_target", "Call Subflow must name a Subflow key declared in this candidate plan.", `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters.subflowId`));
         continue;

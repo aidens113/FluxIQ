@@ -1,3 +1,4 @@
+import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioActivityEndedReason, automationStudioActivityHub, automationStudioActivityTimeLimitTold, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, type AutomationStudioActivityTimeLimitTried } from "../../../../runtime/automation-activity/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
@@ -21,6 +22,7 @@ import {
   type AutomationStudioProjectBuildRef,
   type AutomationStudioProjectSupervisorKept
 } from "../../../../runtime/project-agents/index.ts";
+import { automationStudioProjectBuildKnownParts } from "../project-parts/index.ts";
 import { automationStudioCandidateStallCode } from "../candidate-failure/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../candidate-drafts/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions, type generateAutomationStudioFlowCandidateDraft } from "../flow-bootstrap-commands/index.ts";
@@ -293,6 +295,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
       ports: {
         build: ref, record: records, instructionDigest: automationStudioProjectDigest("project.instructions.v1", sources), sources, dispatch,
         proposals: (proposal) => proposals.byRef(proposal), projectLedger: project.ledger, ...(look ? { look } : {}), submission: draft.submission,
+        knownParts: async () => await automationStudioProjectBuildKnownParts(project, { projectId: draft.submission.projectId, startLocation: draft.submission.startLocation }) as unknown as JsonObject | undefined,
         trial: { candidateId, port: draft.trial }, purse,
         reserve: { calls: AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.calls, unpriced: { ...AUTOMATION_STUDIO_PROJECT_BUILD_RESERVE.unpriced } },
         finishing: { ...AUTOMATION_STUDIO_PROJECT_BUILD_FINISHING_CALLS },

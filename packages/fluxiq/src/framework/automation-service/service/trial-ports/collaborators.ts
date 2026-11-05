@@ -4,7 +4,7 @@ import type { AutomationStudioConversations } from "../../../../runtime/conversa
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioCatalogue } from "../catalogue.ts";
 import type { AutomationStudioRunDatasets } from "../datasets/index.ts";
-import type { automationStudioRunGraphOptions } from "../runtime-session/index.ts";
+import type { AutomationStudioPinnedPartGraphs, automationStudioRunGraphOptions } from "../runtime-session/index.ts";
 
 /**
  * The Automation Studio service's collaborators a trial of a build runs with
@@ -30,4 +30,6 @@ export type AutomationStudioServiceTrialCollaborators = Readonly<{
   conversations(): Pick<AutomationStudioConversations, "available" | "parkingPort">;
   /** The bound domain's evidence runtime; undefined until a host binds one. */
   binding(): AutomationStudioLlmEvidenceRuntimeBinding | undefined;
+  /** The project's library as one Flow's trial reads it, for a step that pins a saved part (`../project-parts/graphs.ts`). */
+  partLibrary?(projectId: string, flowId: string): AutomationStudioPinnedPartGraphs;
 }>;

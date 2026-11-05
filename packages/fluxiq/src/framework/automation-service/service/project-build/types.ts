@@ -7,6 +7,7 @@ import type { AutomationStudioHostResourcePort } from "../../../../runtime/proje
 import type { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import type { AutomationStudioBuildCancellation } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
+import type { AutomationStudioProjectParts } from "../project-parts/index.ts";
 import type { AutomationStudioProjectBuildTrialEnvironment } from "./whole-trials.ts";
 
 /**
@@ -44,4 +45,6 @@ export type AutomationStudioProjectBuildPorts = {
   personAsk: { port: AutomationStudioParkingPort } | undefined;
   runHarness(request: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult>;
   trialEnvironment: AutomationStudioProjectBuildTrialEnvironment;
+  /** The project's library, where this build may run its parts (`core.run_part`, `../project-parts/run/build-tool.ts`). Absent, or with no part that can be offered (`../project-parts/known-parts.ts`), the tool is not on offer. */
+  parts?: Pick<AutomationStudioProjectParts, "runAs" | "shortlist"> | undefined;
 };

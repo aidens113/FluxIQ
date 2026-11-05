@@ -57,3 +57,15 @@ export const AUTOMATION_STUDIO_PROJECT_FLOW_GRAPH_JUDGEMENT_MIGRATION: Automatio
     "create index flow_graph_judgements_run_idx on flow_graph_judgements (run_id, flow_id)"
   ]
 };
+
+// 0026_sb -- whether a judged run asked a model anything. A confirmed run with
+// none is a replay, which is what earns a part `established`; the verdict
+// alone cannot say it. Every judgement written before this column reads as 0
+// (asked), which can only keep a part from being trusted too early.
+//
+// Its id sorts between `0026_responded_turn_decision` and `0026_staged` for the
+// reason `parts/migration.ts` gives.
+export const AUTOMATION_STUDIO_PROJECT_FLOW_GRAPH_JUDGEMENT_ZERO_MODEL_MIGRATION: AutomationStudioSchemaMigration = {
+  id: "0026_sb_flow_graph_judgement_zero_model",
+  statements: ["alter table flow_graph_judgements add column zero_model integer not null default 0 check (zero_model in (0, 1))"]
+};

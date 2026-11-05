@@ -5,6 +5,8 @@
 // this directory, so the dependency runs one way: run control knows nothing of
 // graphs, nodes or traces, only of "a place between two steps".
 
+import type { JsonValue } from "../../core/index.ts";
+
 /**
  * Where a live run stands with respect to a person.
  *
@@ -59,10 +61,35 @@ export type AutomationStudioRunControlSnapshot = {
   history: AutomationStudioRunControlEvent[];
 };
 
+/**
+ * What a look at the step's list row came to, just before the step
+ * (`engine/automation/target-reacquire/row-recheck.ts`).
+ *
+ * - `no_row`: the step is handed no list row.
+ * - `done`: the run already completed this row's act, so the step will not act.
+ * - `found`: the row stands, and is the pass's row from here on. `parameters` and
+ *   `inputs` are what the step would be given now, for a gate that asks the page
+ *   about its control on this row.
+ * - `gone`: the list was read again and the row is not in it.
+ * - `unmatched`: the fresh list does not say which row it is.
+ * - `unavailable`: the list could not be read again, or may not be: a step that
+ *   could change something is never run for this.
+ */
+export type AutomationStudioRunCheckpointRow =
+  | { outcome: "no_row" | "done" | "gone" }
+  | { outcome: "found"; parameters: Readonly<Record<string, JsonValue>>; inputs: Readonly<Record<string, JsonValue>> }
+  | { outcome: "unmatched" | "unavailable"; reason: string };
+
 /** Where the executor is when it asks whether it may go on. */
 export type AutomationStudioRunCheckpoint = {
   nodeId: string;
   step: number;
+  /**
+   * Looks at the step's list row now, if it has one. Nothing happens unless a gate
+   * calls it, so a gate that reads only the two fields above runs as it always has.
+   * It costs a read of the page, and never rejects.
+   */
+  recheckRow?(): Promise<AutomationStudioRunCheckpointRow>;
 };
 
 /**
@@ -90,4 +117,10 @@ export type AutomationStudioRunControlGate = {
    * as a plain pause.
    */
   heldBy?(): AutomationStudioRunControlHolder | null;
+  /**
+   * Whether the hold just made is the gate's own short check rather than a person's
+   * pause, read as `heldBy` is. Such a hold is not said to anybody. Optional: a gate
+   * that cannot say holds out loud.
+   */
+  heldQuietly?(): boolean;
 };

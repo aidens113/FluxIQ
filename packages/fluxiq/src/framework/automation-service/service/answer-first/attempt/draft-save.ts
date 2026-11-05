@@ -29,7 +29,10 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
       ...(input.startLocation === undefined ? {} : { startLocation: input.startLocation })
     });
     if (!verdict.ok) return { kind: "kept", why: "not_assembled", codes: verdict.codes };
-    return { kind: "saved", record: await input.stores.drafts.save(draftRecord(run, verdict.summary, verdict.buildPlan)) };
+    const record = await input.stores.drafts.save(draftRecord(run, verdict.summary, verdict.buildPlan));
+    // Its parts go to the library; a failure there is reported by name on the trace and changes nothing here (`../../project-parts/draft-parts.ts`).
+    await input.parts?.saveDraft({ projectId: input.projectId, flowId: input.flowId, candidateId: record.candidateId, buildPlan: verdict.buildPlan, instructionIds: input.instructionIds, instructionText: input.instructionText, startLocation: input.startLocation });
+    return { kind: "saved", record };
   } catch (error) {
     return { kind: "kept", why: "not_saved", codes: [error instanceof Error ? error.name : "unknown"] };
   }

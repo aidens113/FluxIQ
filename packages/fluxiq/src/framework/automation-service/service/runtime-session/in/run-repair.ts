@@ -40,12 +40,13 @@
 // its evidence.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import { automationStudioActionPermissionDenied, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../../../../runtime/action-permission-requests/index.ts";
 import { emitAutomationStudioActivityThought } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioLegacyGraphRequest } from "../../../legacy-envelope/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../../../../engine/automation/lifecycle-run/index.ts";
+import { AUTOMATION_STUDIO_PART_NEWER_TRIAL_KEY, automationStudioNewerPartOfAttempt, automationStudioNewerPartRepairId, automationStudioPinOfSubflowId, type AutomationStudioPartPin } from "../../../../../engine/automation/frames/index.ts";
 import { automationStudioLlmCurrentFlowPurse } from "../../../../../runtime/llm/build-purse/index.ts";
 import { prepareAutomationStudioInRunRepair, type AutomationStudioInRunRepairPreparation } from "../../../../../runtime/adaptation/live-patch.ts";
 import type { AutomationStudioLlmRunPurse, AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../../../../runtime/llm/index.ts";
@@ -146,10 +147,15 @@ async function repairIncident(
     ledger.record(compactJsonObject({ ...base, outcome: "none", code: refusal.code, reason: refusal.reason, ...(refusal.issueCodes?.length ? { issueCodes: [...refusal.issueCodes] } : {}), ...spent(purse, input.runId) }));
     return { kind: "none", reason: refusal.reason };
   };
+  // A newer version of a pinned part, before any model is asked and at no model call.
+  const newer = await offerNewerPart(input, ledger, request);
+  if (newer) return newer;
   if (!ledger.ask(request.incident.incidentId, at)) return { kind: "none", reason: "This incident was already asked about once in this run." };
   if (request.signal?.aborted) return refuse({ code: "model_call_failed", reason: "The run was stopped before a fix was asked for." });
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Fixing a step", text: `The step failed for good (${request.incident.origin.failureCode}); looking for a fix to it.`, max: 480 });
   const partSubflowId = request.unit.kind === "part" ? request.unit.subflowId : undefined;
+  // Replacing a part runs it from its start, so a saved version that did something lasting is not replaced: that would do it again.
+  if (partSubflowId && await pinnedPartMayHaveLanded(input, request, partSubflowId)) return refuse({ code: "lasting_act_landed", reason: "This saved part did something lasting before it failed, and running it again from its start could do that twice, so no fix was asked for." });
   const part = partSubflowId ? await partGraphFor(input, ledger, request, partSubflowId).then((graph) => ({ graph }), () => ({ unreadable: true as const })) : { graph: undefined };
   if ("unreadable" in part) return refuse({ code: "evidence_unavailable", reason: "The part that broke its contract could not be read, so no model was asked." });
   const partGraph = part.graph;
@@ -192,13 +198,84 @@ async function repairIncident(
   for (const receipt of fix.receipts) ledger.record(receipt);
   if (partSubflowId && applied.part) ledger.keepPartGraph(partSubflowId, applied.part);
   ledger.keepOverlay({ repairId, framePath: [...request.framePath], graph: applied.graph });
+  // A fix inside a saved version holds for every call to it in this run, as a replaced part's does.
+  const heldFrame = !partSubflowId && automationStudioPinOfSubflowId(request.subflowId) ? request.subflowId : undefined;
+  if (heldFrame) ledger.keepPartGraph(heldFrame, applied.graph);
   return {
     kind: "overlay",
     repairId,
     unit: applied.unit,
     graph: applied.graph,
     ...(partSubflowId && applied.part ? { partGraph: { subflowId: partSubflowId, graph: applied.part } } : {}),
+    ...(heldFrame ? { partGraph: { subflowId: heldFrame, graph: applied.graph } } : {}),
     ...(applied.summary ? { reason: applied.summary } : {})
+  };
+}
+
+/** Whether the saved version a part-level repair would replace may have done something lasting in the attempt that failed. Not a saved version: nothing is decided here. */
+async function pinnedPartMayHaveLanded(input: AutomationStudioInRunRepairBinding, request: StudioIncidentRepairRequest, subflowId: string): Promise<boolean> {
+  if (!automationStudioPinOfSubflowId(subflowId)) return false;
+  const versions = (await input.graphOptions.subflowGraphs?.load(subflowId))?.newerParts;
+  return versions ? await versions.mayHaveLanded(request.failedAttempt.childTrace?.attempts ?? [], input.graphOptions) : true;
+}
+
+/**
+ * A newer version of the saved part this call step pinned (`engine/automation/frames/newer-part.ts`):
+ * a fix like any other, at no model call. Its one change is the step's pin, so it is recorded
+ * as that step's replacement, with its review record, and held for the run's judged end. The
+ * pin moves by the path every fix takes, and only on a judged yes. Nothing to try: the normal
+ * repair runs.
+ */
+async function offerNewerPart(input: AutomationStudioInRunRepairBinding, ledger: AutomationStudioInRunRepairLedger, request: StudioIncidentRepairRequest): Promise<AutomationStudioIncidentRepair | undefined> {
+  const offer = await automationStudioNewerPartOfAttempt(input.graphOptions, request.failedAttempt);
+  const candidate = offer?.candidates[0];
+  const node = request.graph.nodes.find((held) => held.id === request.failedAttempt.nodeId);
+  if (!offer || !candidate || !node) return undefined;
+  offer.versions.taken(candidate, input.runId);
+  const prepared = prepareAutomationStudioInRunRepair({
+    projectId: input.context.projectId,
+    flowId: input.context.flowId,
+    ...(request.subflowId ? { subflowId: request.subflowId } : {}),
+    runId: input.runId,
+    flow: request.graph,
+    patch: callStepAt(node, candidate),
+    failedAttempt: request.failedAttempt,
+    policy: input.context.policy,
+    proposalMode: input.context.policy.proposalMode,
+    // The change acts on nothing itself. Each step of the version meets its gate when it runs.
+    sideEffectPermission: "permitted",
+    options: input.graphOptions
+  });
+  if (!prepared.ok) return undefined;
+  const repairId = automationStudioNewerPartRepairId(input.runId, request.incident.incidentId, candidate);
+  const base: JsonObject = { repairId, incidentId: request.incident.incidentId, nodeId: node.id, framePath: [...request.framePath], unit: { kind: "node", nodeId: node.id } };
+  const marked = { ...prepared, adaptation: { ...prepared.adaptation, metadata: { ...(prepared.adaptation.metadata ?? {}), [AUTOMATION_STUDIO_PART_NEWER_TRIAL_KEY]: { partId: candidate.partId, version: candidate.version } } } };
+  try {
+    ledger.record(await recordAutomationStudioInRunFix({ ports: input.ports, context: input.context, base, prepared: marked }));
+  } catch {
+    // A fix that could not be recorded could never be saved, so it does not run either.
+    return { kind: "none", reason: "The newer version of this saved part could not be recorded for review, so it was not used." };
+  }
+  ledger.keepOverlay({ repairId, framePath: [...request.framePath], graph: prepared.overlay.flow });
+  emitAutomationStudioActivityThought({ phase: "repairing", title: "Trying a newer version", text: "This saved part failed here, and a newer version of it is in the library. The run tries that first, before asking for a fix.", ref: node.id });
+  const heldFrame = request.subflowId && automationStudioPinOfSubflowId(request.subflowId) ? request.subflowId : undefined;
+  return {
+    kind: "overlay",
+    repairId,
+    unit: { kind: "node", nodeId: node.id },
+    graph: prepared.overlay.flow,
+    ...(heldFrame ? { partGraph: { subflowId: heldFrame, graph: prepared.overlay.flow } } : {}),
+    reason: "A newer version of this saved part is tried here before anything else. The step keeps it only if this run is judged to have worked."
+  };
+}
+
+/** The same call step at another version: only its pin differs. */
+function callStepAt(node: AutomationStudioFlowNode, pin: AutomationStudioPartPin): AutomationStudioRuntimePatch {
+  return {
+    kind: "replace_unit",
+    unit: { kind: "node", nodeId: node.id },
+    steps: [{ definitionId: node.definitionId, ...(node.label ? { label: node.label } : {}), parameters: { ...(node.parameterValues ?? {}), part: { partId: pin.partId, version: pin.version } } }],
+    reason: "A newer version of this saved part is tried here before anything else."
   };
 }
 
@@ -322,10 +399,18 @@ async function applyPatches(
     unit = changed;
     graph = result.overlay.flow;
     if (result.overlay.partGraph) part = result.overlay.partGraph;
-    prepared.push(result);
+    prepared.push(withDeclaredConsequences(result));
   }
   const summary = answer.patches.flatMap((patch) => (typeof patch.reason === "string" && patch.reason.trim() ? [patch.reason.trim()] : [])).join(" ");
   return { graph, ...(part && part !== partGraph ? { part } : {}), unit: unit ?? request.unit, prepared, ...(summary ? { summary } : {}) };
+}
+
+/** A fix says what it lastingly does for the run's gate; its record keeps that, so the steps it saves can say so, and a part holding them can be kept (`../../adaptations/unit-repair-change.ts`). */
+function withDeclaredConsequences(prepared: Applied["prepared"][number]): Applied["prepared"][number] {
+  const consequences = "consequences" in prepared.patch ? prepared.patch.consequences : undefined;
+  if (!consequences) return prepared;
+  const patch = prepared.adaptation.patch.map((change) => ({ ...change, metadata: { ...(change.metadata ?? {}), declaredConsequences: [...consequences] } }));
+  return { ...prepared, adaptation: { ...prepared.adaptation, patch } };
 }
 
 /**
@@ -378,11 +463,13 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-/** The part's graph as this run runs it: a fix of this run first, else the frame's own when it is the part, else the saved graph. Absent only when the Flow keeps no such graph; a read that fails throws. */
+/** The part's graph as this run runs it: a fix of this run first, else the frame's own when it is the part, else the version a pin names, else the saved graph. Absent only when the Flow keeps no such graph; a read that fails throws. */
 async function partGraphFor(input: AutomationStudioInRunRepairBinding, ledger: AutomationStudioInRunRepairLedger, request: StudioIncidentRepairRequest, subflowId: string): Promise<AutomationStudioFlowDocument | undefined> {
   const kept = ledger.partGraph(subflowId);
   if (kept) return kept;
   if (request.subflowId === subflowId) return request.graph;
+  const pinned = automationStudioPinOfSubflowId(subflowId) ? await input.graphOptions.subflowGraphs?.load(subflowId) : undefined;
+  if (pinned) return { ...pinned.graph, ...(pinned.artifact ? { interface: pinned.artifact.interface } : {}) } as AutomationStudioFlowDocument;
   const saved = await input.ports.subflowGraphForRecovery?.(input.context.projectId, input.context.flowId, subflowId);
   // The interface stays with the graph: it is the part's contract.
   const graph = saved ? { ...canonicalFlowDocument(saved), interface: saved.interface } : undefined;

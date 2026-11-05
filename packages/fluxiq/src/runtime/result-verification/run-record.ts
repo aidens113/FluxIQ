@@ -16,6 +16,7 @@ import {
   type AutomationStudioFlowGraphVersion,
   type AutomationStudioJudgedFlowGraphVersion
 } from "../flow-authoring/version/index.ts";
+import { automationStudioPinsRanAsSaved } from "../../engine/automation/frames/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome } from "./contracts/index.ts";
 import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
 import type { AutomationStudioRuntimeSessionVerificationInput } from "./run-outcome.ts";
@@ -99,12 +100,17 @@ export async function automationStudioResultRecordFlowGraphJudgements(
   outcome: AutomationStudioResultVerificationOutcome,
   flowVersions: readonly AutomationStudioFlowGraphVersion[],
   instructionDigest: string | null,
-  decidedAtMs: number
+  decidedAtMs: number,
+  zeroModel = false
 ): Promise<void> {
   const record = input.ports.recordFlowGraphJudgements;
   if (!record) return;
   const versions = flowVersions.filter((version): version is AutomationStudioJudgedFlowGraphVersion => typeof version.revision === "number");
-  if (!versions.length) return;
+  // The saved versions the run executed as saved, whether or not their graph has a revision: a
+  // judged run earns them trust either way, and only a verdict worth counting is handed on.
+  const judged = automationStudioRecordedVerdictIsYes(outcome) ? "yes" : automationStudioRecordedVerdictIsNo(outcome) ? "no" : undefined;
+  const pinned = judged ? automationStudioPinsRanAsSaved(input.session.trace?.attempts ?? []) : [];
+  if (!versions.length && !pinned.length) return;
   await record({
     projectId: input.projectId,
     judgement: {
@@ -114,8 +120,26 @@ export async function automationStudioResultRecordFlowGraphJudgements(
       instructionDigest,
       decidedAtMs,
       versions
-    }
+    },
+    ...(zeroModel ? { zeroModel } : {}),
+    ...(judged && pinned.length ? { pinnedRan: { judged, versions: pinned } } : {})
   });
+}
+
+/**
+ * Whether a verdict, as it is recorded on a run (`resultVerification`) or reached in memory, is a
+ * real "no": the result was judged and does not answer, by the model or by Core's own arithmetic.
+ * A judge that could not be reached, gave no verdict, could not tell, or was not settled between two
+ * checks has said nothing, and counts for nothing against what the run ran.
+ */
+export function automationStudioRecordedVerdictIsNo(recorded: unknown): boolean {
+  const verdict = recorded as { performed?: unknown; verdict?: unknown; basis?: unknown } | null | undefined;
+  return verdict?.performed === true && verdict.verdict === "does_not_answer" && (verdict.basis === "model" || verdict.basis === "core_observation");
+}
+
+function automationStudioRecordedVerdictIsYes(recorded: unknown): boolean {
+  const verdict = recorded as { performed?: unknown; verdict?: unknown } | null | undefined;
+  return verdict?.performed === true && verdict.verdict === "answers";
 }
 
 export async function automationStudioResultRecordOnRunDetail(

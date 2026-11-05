@@ -1,8 +1,9 @@
 import type { AutomationStudioFlowArtifact } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../flows/executable/graph/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import type { AutomationStudioLifecycleRunState } from "../lifecycle-run/index.ts";
 import type { AutomationStudioInvocationFrame } from "./invocation-frame.ts";
+import type { AutomationStudioPartPin } from "./part-pin.ts";
 
 /**
  * How a run executes a called Subflow graph as a frame of its own. It is handed
@@ -51,6 +52,13 @@ export type AutomationStudioRunFrames = {
    * step 8). Set only while the repair holds; never persisted.
    */
   subflowOverrides: Map<string, AutomationStudioFlowDocument>;
+  /**
+   * The saved versions this run is trying in place of an older pin that failed, by the id
+   * their frames run under, each with the incident its fix is held under (`./newer-part.ts`).
+   * While one is tried no model is asked inside it. Its failure carries an incident of its
+   * own up from its frame, so this is what says that failure is the trial's.
+   */
+  newerPartTrials: Map<string, string>;
 };
 
 /**
@@ -62,7 +70,7 @@ export type AutomationStudioInvocationOptions = {
   frame: AutomationStudioInvocationFrame;
 };
 
-/** A sibling Subflow graph of the run's automation, at the revision the run executes. */
+/** A sibling Subflow graph of the run's automation at the revision the run executes, or a saved part at the version a step pins (`./part-pin.ts`). */
 export type AutomationStudioSubflowGraph = {
   subflowId: string;
   graph: AutomationStudioFlowDocument;
@@ -75,15 +83,41 @@ export type AutomationStudioSubflowGraph = {
    * crosses its boundary.
    */
   artifact?: AutomationStudioFlowArtifact;
+  /** On a saved part's version only: what this run may try in its place when it fails (`./newer-part.ts`). */
+  newerParts?: AutomationStudioNewerPartVersions;
 };
+
+/**
+ * What the library says about the versions newer than one a run pinned, for one run. Made
+ * for each run, because what it has already tried is the run's. It fails closed: a read it
+ * cannot make offers nothing, and an act it cannot tell about may have landed.
+ */
+export type AutomationStudioNewerPartVersions = {
+  /** The versions a run may still try in this one's place, newest first: the same interface, not refuted, able to run, not tried in this run. */
+  candidates(): Promise<readonly AutomationStudioPartPin[]>;
+  /** Whether these attempts of the version may have done something lasting, so that running a version from its start could do it again. */
+  mayHaveLanded(attempts: readonly AutomationStudioNodeAttemptTrace[], options: AutomationStudioGraphExecutionOptions): Promise<boolean>;
+  /** A version is about to be tried: a run tries each once. */
+  taken(pin: AutomationStudioPartPin, runId: string): void;
+  /** A version tried here failed: said of that version alone. Answers whether it may have done something lasting, after which nothing is run from its start again. */
+  failed(pin: AutomationStudioPartPin, attempts: readonly AutomationStudioNodeAttemptTrace[], options: AutomationStudioGraphExecutionOptions): Promise<boolean>;
+};
+
+/** Why a pinned part is not run though its version may be there: its calls go round in a circle, or too deep. The code is stable. */
+export type AutomationStudioPartPinRefusal = { code: string; message: string };
 
 /**
  * Where a run finds the sibling Subflow graphs of its own automation: the
  * graphs a Call Subflow node may call, and the automation's `recovery`-role
  * Subflow graph, which holds automation-scope handlers (C4). Supplied by the
  * run session; a run without one cannot call a Subflow.
+ *
+ * `load` answers a pinned part's id as well (`./part-pin.ts`), when the source reaches
+ * the project's library; a source that does not answers nothing for it, and the call
+ * then fails with a closed code. `pinRefusal` is asked before a pinned part's frame starts.
  */
 export type AutomationStudioSubflowGraphSource = {
   load(subflowId: string): Promise<AutomationStudioSubflowGraph | undefined>;
   recovery?(): Promise<AutomationStudioSubflowGraph | undefined>;
+  pinRefusal?(pin: AutomationStudioPartPin): Promise<AutomationStudioPartPinRefusal | undefined>;
 };

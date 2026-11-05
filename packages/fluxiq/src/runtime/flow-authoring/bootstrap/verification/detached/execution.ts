@@ -113,7 +113,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
     // is therefore the number of written `on failed:` branches the graph
     // declares, so each of those can be taken once and a real failure past them
     // still stops the trial; a graph that declares none keeps zero.
-    const candidateSource = automationStudioCandidateGraphSource(topology, parent, fresh);
+    // Beside that topology only the library, and only for a step that pins a saved part: `options.subflowGraphs` is what the trial's environment reads it through.
+    const candidateSource = automationStudioCandidateGraphSource(topology, parent, fresh, options.subflowGraphs);
     const executionOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
       subflowGraphs: candidateSource,
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
@@ -129,6 +130,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
     });
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, executionOptions, input.deprecatedPublicationIds ?? []);
     returnedTrace = trace;
+    // A pinned version's steps and acts are attributed as a sibling's are.
+    candidateGraphs = [...candidateGraphs, ...candidateSource.pinnedGraphs()];
     const stillFresh = await fresh();
     const status = signal?.aborted || trace.status === "cancelled" ? "cancelled"
       : stillFresh && trace.status === "succeeded" && !trace.stopReason && trace.attempts.length > 0 ? "succeeded" : "failed";
