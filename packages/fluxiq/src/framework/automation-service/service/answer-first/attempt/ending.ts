@@ -16,7 +16,7 @@ import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts
 import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING, AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
-import { automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
+import { automationStudioAnswerFirstHeldStated, automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
 import { automationStudioAnswerFirstAttemptAs, automationStudioAnswerFirstResultAs } from "./keep.ts";
 import { automationStudioAnswerFirstPathAtEnding } from "./path.ts";
 import { automationStudioAnswerFirstRemember } from "./remember.ts";
@@ -45,7 +45,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
-  const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
+  const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, stated: draft.kind === "saved" ? draft.stated : automationStudioAnswerFirstHeldStated(run), spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
   const applied = await automationStudioAnswerFirstApplyProven(run, ending, draft.kind === "saved" ? { record: draft.record } : {});
   if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
   return {

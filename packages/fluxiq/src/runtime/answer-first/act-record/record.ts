@@ -28,7 +28,9 @@
 // the model and the judge, and left out of a result's acts and out of every refusal. A
 // repeat that looks different to the code is possible too: identity across stages is
 // `./identity/target-keys.ts`'s best reading, and the Lab's double-act oracle is what
-// catches the rest.
+// catches the rest. One whose answer says it changed something that stays is held all the
+// same in a later attempt (`heldOnRepeat`, `./seed.ts`): refused until a look, and still left
+// out of a result's acts.
 //
 // **The same act, on rows.** As the engine reads it
 // (`engine/automation/lifecycle-run/act-identity.ts`), a per-row act is the same act only
@@ -127,6 +129,7 @@ import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
 import { AutomationStudioAttemptActItems as ActItems } from "./item-names.ts";
+import { automationStudioAttemptActCarriedWords } from "./carried-words.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
@@ -174,7 +177,7 @@ export class AutomationStudioAttemptActRecord {
   /** Whether this call may be dispatched (header). `look_first` is the refusal itself: the caller says it and sends nothing, and only then does a look open the act. */
   admit(call: AutomationStudioAttemptActCall): AutomationStudioAttemptActAdmission {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    const matching = this.sameActs(call, identity).filter((entry) => !entry.undeclared);
+    const matching = this.sameActs(call, identity).filter(refusable);
     const landed = matching.find((entry) => entry.state === "landed" && !hasRoom(entry, identity));
     if (landed) {
       this.leftOut.refused(this.heldRows(call, identity, landed));
@@ -252,6 +255,7 @@ export class AutomationStudioAttemptActRecord {
     if (known) {
       const wasUndeclared = known.undeclared === true;
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
+      if (known.undeclared && outcome.changedState === true) known.changedState = true;
       if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
       this.landedAt(outcome.step, known);
@@ -291,7 +295,7 @@ export class AutomationStudioAttemptActRecord {
     let changed = false;
     for (const entry of this.entries) {
       if (entry.state !== "may_have_landed" || entry.lookedSince) continue;
-      if (!entry.undeclared && !this.refusedFor.has(entry)) continue;
+      if (refusable(entry) && !this.refusedFor.has(entry)) continue;
       entry.lookedSince = true;
       changed = true;
     }
@@ -359,7 +363,8 @@ export class AutomationStudioAttemptActRecord {
   private shown(entry: AutomationStudioAttemptActEntry): AutomationStudioAttemptAct {
     const act = contractAct(entry);
     const item = this.items.of(entry);
-    return item === undefined ? act : { ...act, what: automationStudioAttemptActScreenedWords({ what: act.what }, entry.classes, item).what };
+    const named = item === undefined ? act : { ...act, what: automationStudioAttemptActScreenedWords({ what: act.what }, entry.classes, item).what };
+    return entry.carried ? { ...named, what: automationStudioAttemptActCarriedWords(named.what, entry.state) } : named;
   }
 
   /** The contract's shape, what a result carries: never an undeclared press. */
@@ -375,6 +380,7 @@ export class AutomationStudioAttemptActRecord {
         id: entry.id, what: whatOf(entry), where: entry.where, classes: [...entry.classes], state: entry.state,
         ...(entry.rows.length > 0 ? { onARow: true } : {}),
         ...(entry.undeclared ? { undeclared: true } : {}),
+        ...(entry.carried ? { carried: true } : {}),
         ...(entry.state === "may_have_landed" ? { lookedSince: entry.lookedSince } : {})
       }))
     };
@@ -510,12 +516,15 @@ export class AutomationStudioAttemptActRecord {
       if (entry.asked !== undefined && state === "landed") entry.landings = (entry.landings ?? 0) + 1;
       entry.state = state;
       entry.lookedSince = false;
+      // This attempt did it itself now, so it is no longer only an earlier attempt's.
+      delete entry.carried;
       this.refusedFor.delete(entry);
       // A new landing is a new thing for a run to carry (`SVC/answer-first/run-acts/store.ts`).
       entry.at = this.now();
     }
     if (!classes) return;
     delete entry.undeclared;
+    delete entry.heldOnRepeat;
     if (classes.length > 0 && entry.classes.length === 0) entry.classes = classes;
   }
 
@@ -535,6 +544,7 @@ export class AutomationStudioAttemptActRecord {
       what: words.what, where: words.where, classes, state,
       ...(only !== undefined ? { rowIdentity: only } : {}),
       ...(lasting ? {} : { undeclared: true as const }),
+      ...(!lasting && outcome.changedState === true ? { changedState: true as const } : {}),
       stage: call.stage,
       actions: [...new Set([call.actionId, ...(frozen ? [frozen.actionId] : [])])],
       keys: [...new Set([...called.keys, ...(frozen?.keys ?? [])])],
@@ -620,9 +630,14 @@ function whatOf(entry: AutomationStudioAttemptActEntry): string {
   return entry.asked !== undefined && landings > 1 ? `${entry.what} (${landings} times)` : entry.what;
 }
 
+/** Whether a refusal may rest on an entry: one that declared, or one an earlier attempt's answer says changed something that stays. */
+function refusable(entry: AutomationStudioAttemptActEntry): boolean {
+  return !entry.undeclared || entry.heldOnRepeat === true;
+}
+
 /** Whether an entry holds an act that happened or may have, and that a refusal may rest on. */
 function stands(entry: AutomationStudioAttemptActEntry): boolean {
-  return !entry.undeclared && (entry.state === "landed" || entry.state === "may_have_landed");
+  return refusable(entry) && (entry.state === "landed" || entry.state === "may_have_landed");
 }
 
 /** Whether an identity is this entry's act (header). */

@@ -170,12 +170,12 @@ describe("a model that drops a step that made a landed act", () => {
     expect(automationStudioAnswerFirstSavedStateOf(kept)).toMatchObject({ state: "partly_works", trust: "unproven" });
   });
 
-  it("a further ask after that: the Flow does not press the step it lacks, the judge's no brings the model back, it is told of the step again, and a press by hand is the further ask's own", async () => {
+  it("a Run again after that: the Flow does not press the step it lacks, the judge's no brings the model back, it is told of the step again, and a press by hand is the Run again's own", async () => {
     const { lane, target } = await siteLane(cleanups);
     await lane.attempt({ ...FLOW_OF_TWO, script: [...asked(), drop(PRESS_BIRDS), complete("Renewed the two.")] });
     const told = shownTo();
     const second = await lane.attempt({
-      ...FLOW_OF_TWO, judge: [judgedNo("One renewal asked for did not happen on this run.")],
+      ...FLOW_OF_TWO, runAgain: true, judge: [judgedNo("One renewal asked for did not happen on this run.")],
       script: [told.then(pressLoanByHand("by-hand", BIRDS)), complete("Renewed the two again.")]
     });
     expect(second.answer.attempt.status).toBe("achieved");
@@ -183,9 +183,9 @@ describe("a model that drops a step that made a landed act", () => {
     expect(target.presses.map((one) => one.subject)).toEqual([ATLAS]);
     expect(second.answer.attempt.path).toMatch(/^run_flow_then_/u);
     expect(landedIn(draftOf(told.shown[0]!))).toEqual([PRESS_BIRDS]);
-    // This is a new ask, so the press by hand is not the first attempt's act again: it lands, and the Flow holds it from here.
+    // A person's Run again, so the press by hand is not the first attempt's act again: it lands, and the Flow holds it from here.
     expect(target.library.renewals).toEqual({ [ATLAS]: 2, [BIRDS]: 2 });
-    const third = await lane.attempt({ ...FLOW_OF_TWO });
+    const third = await lane.attempt({ ...FLOW_OF_TWO, runAgain: true });
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
     expect(target.presses.slice(1).map((one) => one.subject)).toEqual([ATLAS, BIRDS]);
   });

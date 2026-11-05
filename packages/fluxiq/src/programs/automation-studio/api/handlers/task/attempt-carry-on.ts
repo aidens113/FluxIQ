@@ -18,6 +18,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type CarryOnTaskAttemptRequest } from "../
 import { automationStudioAnswerFirstCarryOn } from "../../../../../framework/automation-service/service/answer-first/carry-on/index.ts";
 import { boundedIdentifier, generateFlowBootstrapAdaptationForRequest } from "../../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
+import { registerRunTaskAgainEndpoint } from "./attempt-run-again.ts";
 
 const FIELDS: ReadonlySet<string> = new Set(["projectId", "attemptId", "addUsd", "authSessionId"]);
 
@@ -54,4 +55,6 @@ export function registerCarryOnTaskAttemptEndpoint(dependencies: AutomationStudi
       return { ok: true, payload: { attemptId: answer.attemptId, budgetUsd: answer.budgetUsd } };
     }
   });
+  // The other press of an ended attempt's answer, through the same generation.
+  registerRunTaskAgainEndpoint(dependencies, generation);
 }

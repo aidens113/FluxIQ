@@ -173,6 +173,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listConversationTaskAttempts: "list-conversation-task-attempts",
   getTaskKnownFlow: "get-task-known-flow",
   carryOnTaskAttempt: "carry-on-task-attempt",
+  runTaskAgain: "run-task-again",
   listProjectTasks: "list-project-tasks",
   renameTask: "rename-task",
   removeTask: "remove-task",

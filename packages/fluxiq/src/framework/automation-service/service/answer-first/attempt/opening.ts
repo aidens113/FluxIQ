@@ -10,11 +10,14 @@
 // Flow each time. The Flow's own rows are read too, so a memory that could not be written does not
 // start the count again.
 //
-// **What it must not do again.** The act record of the task's last attempt, through
-// `automationStudioAttemptActSeed`'s table, from the task's own memory, which holds it whatever has
-// run on its Flow since. A Flow holds one record, its latest attempt's, so where the memory has
-// none the Flow's is read only when its latest row is this task's last attempt. An attempt with no
-// row yet died before its first write, and counts as unfinished.
+// **What it must not do again.** The act record of the task's last attempt, however that attempt
+// ended, through `automationStudioAttemptActSeed`'s rule, from the task's own memory, which holds it
+// whatever has run on its Flow since. A Flow holds one record, its latest attempt's, so where the
+// memory has none the Flow's is read only when its latest row is this task's last attempt.
+//
+// **A person's Run again starts with nothing carried** (`../run-again/`): that press is what means
+// "do it again". What it was spared is kept beside its record (`setAside`), since it still landed.
+// It names its own task, as a press names no page: the Flow it was found under is that task's.
 //
 // **Rows are read through the facade** (`../interrupted/`), so one a restart cut off reads as what
 // it is before anything is taken from it.
@@ -25,6 +28,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import type { AutomationStudioAnswerFirstAttemptRecord, AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstFlowRunAssemble } from "../flow-run/index.ts";
 import { automationStudioAnswerFirstRoute, type AutomationStudioAnswerFirstRoute } from "../route/index.ts";
+import type { AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import type { AutomationStudioAnswerFirstRunActStore } from "../run-acts/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstAttemptProvenance, type AutomationStudioAnswerFirstTaskMemory, type AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
@@ -40,6 +44,8 @@ export type AutomationStudioAnswerFirstOpening = {
   /** What the attempt starts its draft from. */
   steps: AutomationStudioFlowDraftStep[];
   seed?: AutomationStudioAttemptActRecordData | undefined;
+  /** What a person's Run again started without. */
+  setAside?: AutomationStudioAttemptActRecordData | undefined;
   /** This Flow already holds an act record, which from now on would read as this attempt's. */
   actsHeldHere: boolean;
   startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
@@ -48,19 +54,20 @@ export type AutomationStudioAnswerFirstOpening = {
 type Stores = { store: Pick<AutomationStudioAnswerFirstAttemptStore, "list">; acts: AutomationStudioAnswerFirstRunActStore };
 
 /** Reads what the task kept (header). */
-export async function automationStudioAnswerFirstOpening(input: AutomationStudioAnswerFirstAttemptInput, stores: Stores): Promise<AutomationStudioAnswerFirstOpening> {
+export async function automationStudioAnswerFirstOpening(input: AutomationStudioAnswerFirstAttemptInput, stores: Stores, again?: AutomationStudioAnswerFirstRunAgainHold): Promise<AutomationStudioAnswerFirstOpening> {
   const { projectId, flowId } = input;
-  const taskId = automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation });
+  const taskId = again?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const kept = await readOrNothing(() => memory.get(projectId, taskId));
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];
   const route = await routeOf(input, taskId, kept, rows);
   const here = await automationStudioAnswerFirstBestEffort(() => stores.acts.get(projectId, flowId));
+  const carried = await seedOf(projectId, kept, stores);
   return {
     taskId, memory, route,
     ordinal: ordinalOf(taskId, kept, rows),
     steps: stepsOf(route),
-    seed: await seedOf(projectId, kept, stores),
+    ...(again ? { setAside: carried } : { seed: carried }),
     // A record nobody can read is held here too: this attempt's own replaces it.
     actsHeldHere: !here.ok || here.value !== undefined,
     ...(route.kind === "build" ? {} : { startedFrom: { attemptId: route.saved.attemptId, flowId: route.saved.flowId, stepsDigest: route.saved.stepsDigest, steps: route.saved.steps.length, notes: route.notes.length, provenWhole: route.saved.provenWhole } })
@@ -91,17 +98,14 @@ function ordinalOf(taskId: string, kept: AutomationStudioAnswerFirstTaskMemory |
 
 async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores): Promise<AutomationStudioAttemptActRecordData | undefined> {
   const held = kept?.acts;
-  if (held) {
-    const rows = (await readOrNothing(() => stores.store.list(projectId, held.flowId))) ?? [];
-    return automationStudioAttemptActSeed({ status: rows.find((each) => each.attempt.attemptId === held.attemptId)?.attempt.status ?? "working", data: held.data });
-  }
+  if (held) return automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier });
   const last = kept?.attempts.at(-1);
   if (!last) return undefined;
   const rows = (await readOrNothing(() => stores.store.list(projectId, last.flowId))) ?? [];
   const row = rows.find((each) => each.attempt.attemptId === last.attemptId);
   if (row && rows.at(-1) !== row) return undefined;
   const data = await readOrNothing(() => stores.acts.get(projectId, last.flowId));
-  return data ? automationStudioAttemptActSeed({ status: row?.attempt.status ?? "working", data }) : undefined;
+  return data ? automationStudioAttemptActSeed({ data }) : undefined;
 }
 
 async function readOrNothing<T>(read: () => Promise<T | undefined>): Promise<T | undefined> {

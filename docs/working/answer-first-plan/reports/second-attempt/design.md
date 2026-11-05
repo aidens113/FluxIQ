@@ -104,11 +104,16 @@ type AutomationStudioAnswerFirstRoute =
 
 ## What carries between attempts
 
-| The attempt before it | Act record of the new attempt | Why |
+Revised by t869 (the lead's call, reported to the person, who may overrule it). The row for an achieved attempt said "empty", and a second run of a saved Flow then pressed every Save again: on a toggle site that undid them all.
+
+| How the new attempt started | Act record of the new attempt | Why |
 | --- | --- | --- |
-| achieved | empty | "next time we try that task" is a new ask, and a person asking again means it |
-| budget_out, stopped, waiting, interrupted | seeded from that attempt's acts, landed and may-have-landed | the ask was not finished, so what landed is what it would otherwise repeat |
+| the same words typed again, whatever the attempt before ended as | seeded from the task's acts, landed and may-have-landed, as a union across attempts | a person typing what they typed before wants what they asked for; a repeat is checked and reported already done, never pressed |
+| a person's press of Run again on the answer | empty; what it was spared is kept beside it and carried by the next same words | that press is what means "do it again" |
+| words of the person's own that ask again ("… again", or a yes to the chat's one question at the start) | its own: another task key | the person's words, never a model's claim |
 | carry-on of the same attempt | the same record | the same attempt |
+
+A press that declared nothing carries only where its own answer said it changed something that stays, and is then held to a look rather than pressed blind. A step on a control seen to flip is given that state (`ensureState`) beside the saved steps; a Run again leaves it off.
 
 ## The Flow run stage
 

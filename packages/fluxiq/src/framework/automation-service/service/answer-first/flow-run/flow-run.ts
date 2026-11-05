@@ -22,6 +22,10 @@
 //
 // **The page has moved only if a call went out.** So a run refused before its first step leaves the
 // attempt going to the start location, as if it had not been tried.
+//
+// **A step on a control an earlier attempt saw flip checks before it presses** (`./stated-toggles.ts`),
+// unless a person pressed Run again, which leaves `stated` off. What this run sees flip goes to the
+// same record, for the draft this attempt saves.
 
 import { createHash } from "node:crypto";
 import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
@@ -29,17 +33,19 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { automationStudioAnswerFirstRunActGate } from "../run-acts/index.ts";
+import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
+import { automationStudioAnswerFirstStampedPlan } from "./stamped-plan.ts";
 import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
 import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
 
 type Assembled = Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>;
-type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string };
+type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
 
 /** What a thrown error reads as: its words may quote a value, so none is kept. */
 const THREW = "answer_first.flow_run_threw";
@@ -82,11 +88,12 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   const startedAt = Date.now();
   const identity: AutomationStudioCandidateVerificationIdentity = { projectId: input.projectId, flowId: input.flowId, revision: 1, digest, baseDependencyDigest, requirementsDigest: NO_REQUIREMENTS };
   const start: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.flow-run`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: input.startLocation ?? null, start: "not_reset" })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
-  const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
+  const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
+  const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
   const options = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs);
   const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
     identity,
-    candidate: { revision: 1, digest, baseDependencyDigest, buildPlan: assembly.buildPlan },
+    candidate: { revision: 1, digest, baseDependencyDigest, buildPlan },
     parentFlow,
     currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
     registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
@@ -95,6 +102,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   }));
   // A press whose answer the engine then failed on its checks may not have taken: without this it reads as landed, and a repair's retry is told it already happened.
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
+  ports.permissions.exploredToggles?.trial(executed.trace?.attempts ?? [], executed.graph);
   return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph };
 }
 

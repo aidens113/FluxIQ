@@ -31,9 +31,10 @@
 //   already in its state, or     nothing.
 //   nothing acted
 //
-// So a toggle whose step said nothing of what it does is pressed as often as its Flow says: that is
-// the limit of a Flow that hides its act, which the Lab's site oracle reads. A press that declares
-// or claims is never sent twice, whatever else it matches.
+// So a toggle whose step said nothing of what it does is pressed as often as its Flow says within one
+// run, and its answer's own word that it flipped goes with it (`changedState`), which is what holds it
+// to a look in a later attempt (`runtime/answer-first/act-record/seed.ts`). A press that declares or
+// claims is never sent twice, whatever else it matches.
 //
 // **What it does not hold.** A step with no floor that declared nothing: what a node answers there
 // does not tell a press from a read, and calling every read in a Flow a press would say something
@@ -109,7 +110,7 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
     if (!step.plainPress) return;
     const said = automationStudioAnswerFirstRunActNodeAnswer(result);
     if (said.uncertain) heldInDoubt(step);
-    else if (said.applied) record.settled(step.call, { effectApplied: true, words: step.words, ...named(step) });
+    else if (said.applied) record.settled(step.call, { effectApplied: true, words: step.words, ...named(step), ...(said.flipped ? { changedState: true } : {}) });
   };
   const close = (answer: AutomationStudioAnswerFirstRunActNodeAnswerRead = LOST) => {
     if (open) settle(open.step, answer);

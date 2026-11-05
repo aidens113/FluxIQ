@@ -82,7 +82,7 @@ describe("a later attempt at the same task", () => {
       if (nodeId === RENEW_CARD) looksBeforeThePress = lane.seen.length - from;
       return undefined;
     };
-    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], startLocation });
+    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], startLocation, runAgain: true });
     expect(second.answer.attempt.path).toBe("run_flow");
     expect(looksBeforeThePress).toBeGreaterThan(0);
     const after = lane.seen.slice(from + looksBeforeThePress);
@@ -140,7 +140,7 @@ describe("a later attempt at the same task", () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(cardAttempt);
     lane.target.over = ({ nodeId }) => nodeId === RENEW_CARD ? { status: "failed", route: "failed", message: "Page says: Nothing to see on Elm Street 4", failure: { category: "target_not_found", code: "library.no_button", retryable: false } } : undefined;
-    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [FORWARD(CARD_STEP), complete("Renewed the card.")] });
+    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true, script: [FORWARD(CARD_STEP), complete("Renewed the card.")] });
     const { answer } = second;
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: CARD_STEP });
     expect(answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
@@ -213,7 +213,7 @@ describe("a later attempt at the same task", () => {
       lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
       return new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ status: "failed", route: "failed", message: "Stopped.", failure: { category: "action_failed", code: "library.stopped", retryable: false } }), { once: true }));
     };
-    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
+    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true });
     expect(stopping).toBe(true);
     expect(second.decisions).toHaveLength(0);
     expect(second.answer.attempt).toMatchObject({ status: "stopped_by_person", path: "run_flow" });
@@ -226,21 +226,30 @@ describe("a later attempt at the same task", () => {
     const flow = await lane.service.getFlow(lane.projectId, "flow.loans");
     await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...flow!, executionDefaults: { timeoutMs: 400 } } });
     lane.target.over = ({ nodeId, signal }) => nodeId === RENEW_CARD ? new Promise((resolve) => signal?.addEventListener("abort", () => resolve({ status: "failed", route: "failed", message: "Gave up.", failure: { category: "action_failed", code: "library.gave_up", retryable: false } }), { once: true })) : undefined;
-    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [complete("Listed, and the card may have been renewed.")] });
+    const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true, script: [complete("Listed, and the card may have been renewed.")] });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: CARD_STEP });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
   });
 });
 
 describe("what carries between attempts", () => {
-  it("the attempt before it achieved: the act record starts empty, because a person asking again means it", async () => {
+  it("the attempt before it achieved: what landed is carried, so the same words again press nothing and say it is already done", async () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(cardAttempt);
     expect(lane.target.library.renewals.card).toBe(1);
     const second = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"] });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
+    expect(lane.target.library.renewals.card).toBe(1);
+    expect(second.answer.result?.acts).toEqual([expect.objectContaining({ state: "landed", what: expect.stringMatching(/^Already done earlier: /u) })]);
+  });
+
+  it("a person's Run again: the act record starts empty, because that press is what means do it again", async () => {
+    const lane = await laterAttempts(cleanups);
+    await lane.attempt(cardAttempt);
+    const again = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true });
+    expect(again.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", attemptId: again.pressed });
     expect(lane.target.library.renewals.card).toBe(2);
-    expect(second.answer.result?.acts).toHaveLength(1);
+    expect(again.answer.result?.acts).toEqual([expect.objectContaining({ state: "landed", what: expect.not.stringMatching(/^Already done/u) })]);
   });
 
   it("the attempt before it ran out: what landed is carried and never pressed again, and the round is told", async () => {
@@ -268,13 +277,16 @@ describe("what carries between attempts", () => {
     expect(third.answer.attempt.ordinal).toBe(2);
   });
 
-  it("an attempt that presses nothing leaves no earlier attempt's acts to read as its own", async () => {
+  it("an attempt that presses nothing leaves no earlier attempt's acts to read as its own: carried, they say so, and after a Run again there are none", async () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(cardAttempt);
     expect((await lane.actsOn())?.acts).toHaveLength(1);
     lane.target.page = "elsewhere";
     lane.target.over = ({ nodeId }) => nodeId === RENEW_CARD ? { status: "failed", route: "failed", message: "No.", failure: { category: "target_not_found", code: "library.no_button", retryable: false } } : undefined;
-    await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [] });
+    const same = await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], script: [] });
+    expect((await lane.actsOn())?.acts).toEqual([expect.objectContaining({ carried: true })]);
+    expect(same.answer.result?.acts).toEqual([expect.objectContaining({ what: expect.stringMatching(/^Already done earlier: /u) })]);
+    await lane.attempt({ instruction: CARD_TASK, permittedConsequences: ["modify_existing"], runAgain: true, script: [] });
     expect((await lane.actsOn())?.acts).toEqual([]);
   });
 });

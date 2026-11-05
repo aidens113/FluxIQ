@@ -148,7 +148,7 @@ describe("what an act keeps of it", () => {
   it("a press that dies before its answer is known by the frozen form and the words' row, on a seed for the next attempt", async () => {
     const before = withRows();
     await before.begun(byHandle({ words: `Renew ${ATLAS.title}`, parameters: { selector: "#loan-atlas .renew", element: { label: "Renew" } } }), WORDS);
-    const seed = automationStudioAttemptActSeed({ status: "stopped_by_person", data: before.data() })!;
+    const seed = automationStudioAttemptActSeed({ data: before.data() })!;
     const fresh = new AutomationStudioAttemptActRecord({ seed });
     expect(fresh.rowDone(ATLAS)).toBe(true);
     expect(fresh.rowDone(BIRDS)).toBe(false);

@@ -88,7 +88,7 @@ describe("a process that died", () => {
     const dying = new AutomationStudioAttemptActRecord({ persist: async (data) => { written.push(data); } });
     await dying.begun(press(), WORDS);
     const data = written.at(-1)!;
-    for (const fresh of [readBack(data), new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ status: "budget_out", data })! })]) {
+    for (const fresh of [readBack(data), new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ data })! })]) {
       fresh.looked();
       expect(fresh.admit(press()).kind).toBe("look_first");
       fresh.looked();
@@ -112,7 +112,7 @@ describe("a process that died", () => {
     record.admit(press());
     record.looked();
     expect(readBack(record.data()).admit(press()).kind).toBe("run");
-    const seed = automationStudioAttemptActSeed({ status: "budget_out", data: record.data() })!;
+    const seed = automationStudioAttemptActSeed({ data: record.data() })!;
     expect(new AutomationStudioAttemptActRecord({ seed }).admit(press()).kind).toBe("look_first");
   });
 });

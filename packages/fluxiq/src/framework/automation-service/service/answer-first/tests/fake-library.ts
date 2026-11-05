@@ -53,6 +53,8 @@ export type FakeLibrary = {
   renewedUntil?: string;
   /** The address a read says it read, as a real domain's does. Absent, a read says none. */
   address?: string;
+  /** Whether the account's hold shelf is on: a control a press flips each time, and a toggle site's Save in small. */
+  onHold?: boolean;
 };
 
 export function fakeLibrary(titles: readonly string[] = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]): FakeLibrary {

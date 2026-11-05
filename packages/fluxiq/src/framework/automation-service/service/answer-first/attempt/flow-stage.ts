@@ -17,11 +17,15 @@
 //
 // **A carried-on attempt never comes here**: the Flow is never run again from its start.
 //
+// **A person's Run again runs it with no state checked first** (`../run-again/`): the steps as they
+// were written, since what Core added to them is its bias against repeating, and that press says repeat.
+//
 // **The row is written once the first step goes out**, so a process that dies mid-run leaves an
 // attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
 
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
+import type { AutomationStudioAnswerFirstSavedFlow } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
@@ -36,13 +40,13 @@ const WHOLE_RUN = "The saved Flow ran from its start to its end.";
 export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { route } = run;
   if (route.kind !== "use" || run.prior || run.input.creation.purse.ceilingUsd <= 0) return undefined;
-  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved));
+  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, run.askedAgain ? { steps: route.saved.steps, stepsDigest: route.saved.stepsDigest } : route.saved));
   if (staged.ok) return staged.value;
   run.path = run.flowRun?.wentOut ? "run_flow_then_repair" : "explore";
   return undefined;
 }
 
-async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string }): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated">): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { input } = run;
   if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
   const sentBefore = run.liveSteps;
@@ -55,7 +59,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: { steps:
     },
     arrived: () => { run.arrived = true; },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input)
-  }, { steps: saved.steps, stepsDigest: saved.stepsDigest });
+  }, saved);
   const flowRun: FlowRun = { outcome, wentOut: run.liveSteps > sentBefore };
   run.flowRun = flowRun;
   if (run.arrived) run.options = input.continuingOptions();

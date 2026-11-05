@@ -65,6 +65,8 @@ export type AutomationStudioAttemptActOutcome = {
   pageTitle?: string;
   /** The Flow step that made it, in a real run: what `doubted` names it by. */
   step?: string;
+  /** Its answer says it changed something that stays, not only what is in view: its own control flipped, or a line of the page it stayed on now reads otherwise (`../seed.ts`). */
+  changedState?: boolean;
 };
 
 /** Where a call's answer left the page: what ties a later by-hand act to a row. */
@@ -74,6 +76,12 @@ export type AutomationStudioAttemptActPlaceNote = { location?: string; url?: str
 export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   /** A press with an effect that declared nothing: shown to the model and the judge, left out of a result's acts and of refusals (D6's disclosed limit). */
   undeclared?: true;
+  /** A press that declared nothing whose answer says it changed something that stays, not only what is in view (`./seed.ts`). */
+  changedState?: true;
+  /** Such a press, carried into a later attempt: there it is refused until a look, as a declared act that may have landed is (`./seed.ts`). */
+  heldOnRepeat?: true;
+  /** Made by an earlier attempt at this task: said as already done, not as this attempt's own (`./seed.ts`). Goes when this attempt does it itself. */
+  carried?: true;
   stage: AutomationStudioAttemptActStage;
   /** The names its action answers to. */
   actions: string[];

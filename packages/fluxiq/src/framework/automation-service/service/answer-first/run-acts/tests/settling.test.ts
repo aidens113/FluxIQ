@@ -237,7 +237,7 @@ describe("nothing lasting is done twice", () => {
   it("across a by-hand act in an earlier attempt, seeded by the helper, and through a second run of the same attempt", async () => {
     const before = writing();
     before.record.settled({ ...SAME_PRESS, row: BY_HAND }, { effectApplied: true, words: WORDS });
-    const seed = automationStudioAttemptActSeed({ status: "budget_out", data: before.record.data() })!;
+    const seed = automationStudioAttemptActSeed({ data: before.record.data() })!;
     const record = new AutomationStudioAttemptActRecord({ seed });
     const rows = [{ book: "Old Roads", borrower: "Ann Lee" }, { book: "Fen Country", borrower: "Ann Lee" }];
     const first = counted(rows);

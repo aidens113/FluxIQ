@@ -7,7 +7,7 @@
 
 import type { AutomationStudioTaskResultLabel } from "@fluxiq/contracts/automation";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
+import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStatedToggle, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -17,7 +17,7 @@ const BUDGET_GONE = "The budget ran out before the result was confirmed.";
 const NEEDS_A_PERSON = "It needed a person to clear a check on the page.";
 const STUCK_NO_ONE_TO_ASK = "It kept getting stuck and there was nobody to ask whether to keep going.";
 
-type Ended = { label: AutomationStudioTaskResultLabel; candidateId: string | undefined; spend: { calls: number; usd: number }; atMs: number };
+type Ended = { label: AutomationStudioTaskResultLabel; candidateId: string | undefined; stated: readonly AutomationStudioAnswerFirstStatedToggle[]; spend: { calls: number; usd: number }; atMs: number };
 
 /** Writes it. A failure costs this record and nothing else: the caller says part of it was not written. */
 export async function automationStudioAnswerFirstRemember(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding, ended: Ended): Promise<{ ok: boolean }> {
@@ -29,10 +29,11 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
     const stepsDigest = automationStudioAnswerFirstStepsDigest(proposed);
     const next: AutomationStudioAnswerFirstSavedFlow = {
       attemptId: run.attemptId, flowId, ...(ended.candidateId === undefined ? {} : { candidateId: ended.candidateId }),
-      steps, stepsDigest, label: ended.label, provenWhole: wholeRunYes(run), savedAtMs: ended.atMs, spend: ended.spend
+      steps, stepsDigest, label: ended.label, provenWhole: wholeRunYes(run), savedAtMs: ended.atMs, spend: ended.spend,
+      ...(ended.stated.length > 0 ? { stated: [...ended.stated] } : {})
     };
     const note = noteOf(run, ending, ended.atMs);
-    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: originsOf(run) };
+    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: originsOf(run) };
     return await run.memory.update(projectId, run.taskId, (current) => {
       const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run) });
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);

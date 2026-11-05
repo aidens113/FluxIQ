@@ -21,6 +21,10 @@
 //   frozen target (`../row-ties.ts`, `../identity/target-keys.ts`). `evidence.actedOnItem`, where a domain says
 //   it, is that item's whole words and none of its control's, and is what a row is found by: a sentence's words are cut
 //   short, and its control's name fits every row with a column repeating it.
+// - `evidence.toggle` or `outputs.toggle`: the press flipped its own control. `draft.changed` with a line that reads
+//   otherwise or a number that rose: it changed a line of the page it stayed on. Either says something changed that stays,
+//   and not only what is in view (`../seed.ts`). A line that only appeared or went is what a menu or a dialog opening
+//   does too, and a page it moved to says nothing here at all, so neither counts. Read for a call that declared nothing.
 // - `evidence.read.title`: the title of the page the call was pressed on. `evidence.location` is where it left the page,
 //   so a press that moves on still names the page it was made on. The page's own words, for the act's line alone.
 
@@ -48,6 +52,8 @@ export type AutomationStudioAttemptActAnswerRead = {
   pageTitle?: string;
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
+  /** The answer says something changed that stays (header). */
+  changedState: boolean;
   /** The rows it read, one list per place the answer holds them: the same read's rows there may be written differently, and two rows of one list are never one row. */
   reads: JsonObject[][];
 };
@@ -73,6 +79,7 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
     ...(typeof pageTitle === "string" ? { pageTitle } : {}),
     pageUnchanged: evidence?.pageChanged === false,
+    changedState: record(evidence?.toggle) !== undefined || record(result?.outputs?.toggle) !== undefined || (result?.draft?.changed ?? []).some((line) => line.how === "reads" || line.how === "rose"),
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
     reads: refused || result?.failure !== undefined ? [] : [rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)].filter((rows) => rows.length > 0)
   };

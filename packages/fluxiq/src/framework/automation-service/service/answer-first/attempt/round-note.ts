@@ -19,6 +19,7 @@ const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and th
 const THE_PAGE = "The page is where it left it. Fix that step, then run forward. Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
 const STARTED_OVER = "Your latest read of this list replaced what an earlier read of it held, so the rows kept are that read's alone. To add to the list instead, read it again with writeMode append under the same datasetId.";
 const FEWER = "The latest read held fewer rows than an earlier one. The rows kept are the latest read's: read again if the earlier count was right.";
+const EARLIER_ACTS = "The acts marked carried were done by an earlier attempt at this same request. Asking in the same words is not asking for them again: do not press them again. Check on the page that they stand, and answer with what stands.";
 const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothing starts over and the Flow does not run again from its start: the acts, the rows kept and the draft here stand. Look at the page as it is, and do what is left.";
 
 /** The note for a round: what the keep-going table said of the last one (`base`), and what the attempt holds. Nothing where there is nothing to tell. */
@@ -47,6 +48,7 @@ function broughtWith(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const notes = run.route.notes.map(({ worked, failed, quirks }) => ({ ...(worked ? { worked } : {}), ...(failed ? { failed } : {}), ...(quirks ? { quirks } : {}) }));
   return {
     ...(run.prior ? { carriedOn: true, standing: CARRIED_ON } : {}),
+    ...(run.record.data().acts.some((act) => act.carried) ? { earlierActs: EARLIER_ACTS } : {}),
     ...(flowRun ? { flowRun } : {}),
     ...(run.route.kind === "build" && run.route.related ? { draftStart: RELATED_DRAFT } : {}),
     ...(notes.length ? { notes: { whose: NOTES_ARE, words: notes } } : {})

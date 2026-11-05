@@ -38,6 +38,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure" } | undefined;
   /** A round has made a decision since the saved Flow's run (`./path.ts`). */
   decidedAfterRun: boolean;
+  /** A person pressed Run again (`../run-again/`): its record started empty, and its run presses what the Flow says with no state checked first. */
+  askedAgain: boolean;
   /** A carry-on's: what the attempt had when the person pressed. Absent on an attempt's first segment. */
   prior?: AutomationStudioAnswerFirstAttemptPrior | undefined;
   /** The highest step position a forward run passed. */

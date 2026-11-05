@@ -15,7 +15,7 @@ import { AutomationStudioService } from "../../../service.ts";
 import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
-import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
+import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
 import { libraryTarget, libraryTargetNodes, LOANS_OUTPUT, type LibraryTarget } from "./fake-library-engine.ts";
 import { fakeLibraryBinding, LOOK_TOOL, READ_LOANS, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
 
@@ -43,6 +43,8 @@ export type LaterAttemptOptions = {
   keepLooking?: boolean;
   /** The resolver's other extras, for a host whose limits refuse before any model call. */
   resolver?: { timeoutMs?: number };
+  /** Started by a person's press of Run again on the task's answer (`../run-again/`), not by the words typed again. */
+  runAgain?: boolean;
 };
 
 /** A Core that restarted: a new service over what an earlier lane left, on the same library. */
@@ -118,16 +120,27 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     const firstRequest = requests.length;
     const resolvedBefore = resolved;
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
-    const answered = await service.generateFlowBootstrapAdaptation({
+    const generate = async (startLocation = given.startLocation) => await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-      permittedConsequences: given.permittedConsequences ?? [], ...(given.startLocation ? { startLocation: given.startLocation } : {})
+      permittedConsequences: given.permittedConsequences ?? [], ...(startLocation ? { startLocation } : {})
     });
+    let pressed: string | undefined;
+    const answered = given.runAgain ? await (async () => {
+      const taskId = taskIds.get(given.instruction ?? TASK);
+      if (!taskId) throw new Error("Run again needs an attempt at the task first");
+      const press = await automationStudioAnswerFirstRunAgain(service, stores, { projectId: project.id, taskId, goalWords: async () => given.instruction ?? TASK }, async ({ startLocation }) => await generate(startLocation));
+      if (!press.ok) throw new Error(`Run again was refused: ${press.say}`);
+      pressed = press.attemptId;
+      return await press.finished;
+    })() : await generate();
     clearTimeout(guard);
     if (answered.status !== "answered") throw new Error(`expected an answer, got ${answered.status}`);
     const asked = requests.slice(firstRequest);
     if (answered.attempt?.taskId) taskIds.set(given.instruction ?? TASK, answered.attempt.taskId);
     return {
       answer: answered, flowId, ranOut,
+      /** The attempt a press of Run again was answered with, at once. */
+      pressed,
       /** How many times anything asked for a provider: a run's recovery or its result check would ask again. */
       providersResolved: resolved - resolvedBefore,
       /** Every request the model saw in this attempt, whatever its kind. */

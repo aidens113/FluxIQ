@@ -33,8 +33,14 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 const CARD_STEP = 2;
 const LOOK_FIRST = "attempt.act_look_first";
 const ALREADY_DONE = "attempt.act_already_done";
+// Most proofs here are of a saved Flow's run that presses again after an achieved attempt, so that attempt is a person's Run
+// again: since t869 the same words carry what landed and never reach the press. After a Stop or a cut-off the same words stay.
 const card = { instruction: CARD_TASK, ...PERMITTED };
+/** A person's Run again on the card task: the press that means do it again, with an empty act record. */
+const pressedCard = { ...card, runAgain: true };
 const loans = { instruction: LOAN_TASK, ...PERMITTED };
+/** A person's Run again on the loans task. */
+const pressedLoans = { ...loans, runAgain: true };
 const look = (callId = "look") => toolCall(callId, LOOK_TOOL, {});
 const failed = (failure: JsonObject, message = "Page says: something went wrong on Elm Street 4") => ({ status: "failed" as const, route: "failed", message, failure: { category: "action_failed", code: "library.press_failed", ...failure } as AutomationStudioFailureRecord });
 const shortRuns = async (lane: Lane) => {
@@ -80,7 +86,7 @@ describe("(a) the press failed before it acted", () => {
       calls += 1;
       return calls === 1 ? failed({ retryable: true, effect: "unacted", stage: "dispatch" }) : undefined;
     });
-    const second = await lane.attempt(card);
+    const second = await lane.attempt(pressedCard);
     expect(calls).toBe(2);
     expect(target.presses).toHaveLength(1);
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
@@ -97,7 +103,7 @@ describe("(a) the press failed before it acted", () => {
       at.push(Date.now());
       return failed({ retryable: true, effect: "unacted", stage: "dispatch" });
     });
-    const second = await lane.attempt({ ...card, script: [pressCardByHand("again", ON_THE_CARD, {}), complete("Renewed the card.")] });
+    const second = await lane.attempt({ ...pressedCard, script: [pressCardByHand("again", ON_THE_CARD, {}), complete("Renewed the card.")] });
     expect(at).toHaveLength(4);
     expect(at.at(-1)! - at[0]!).toBeGreaterThanOrEqual(3_200);
     expect(target.presses).toEqual([]);
@@ -128,7 +134,7 @@ describe("(b) the press landed and the answer is an error or was thrown: the cla
         return answer();
       });
       const said = lane.said.length;
-      const second = await lane.attempt({ ...card, script: [complete("The page shows it renewed.")] });
+      const second = await lane.attempt({ ...pressedCard, script: [complete("The page shows it renewed.")] });
       // Never asked again: the engine stopped first, so the gate was never reached a second time.
       expect(calls).toBe(1);
       expect(lane.said.slice(said).some((line) => /Outcome uncertain/u.test(line))).toBe(uncertain);
@@ -151,7 +157,7 @@ describe("(b) the press landed and the answer is an error or was thrown: the cla
       return failed({ retryable: true });
     });
     const told = shownTo();
-    const second = await lane.attempt({ ...card, judge: [judgedNo("The card was not renewed.")], script: [told.then(pressCardByHand("refused", ON_THE_CARD, {})), look("sees.nothing"), pressCardByHand("by.hand", ON_THE_CARD, {}), complete("Renewed the card.")] });
+    const second = await lane.attempt({ ...pressedCard, judge: [judgedNo("The card was not renewed.")], script: [told.then(pressCardByHand("refused", ON_THE_CARD, {})), look("sees.nothing"), pressCardByHand("by.hand", ON_THE_CARD, {}), complete("Renewed the card.")] });
     // The retry reached the gate, which answered it without sending: the node's door was reached once. It is "too little", on the safe side.
     expect(calls).toBe(1);
     expect(target.presses).toEqual([]);
@@ -173,7 +179,7 @@ describe("(b) the press landed and the answer is an error or was thrown: the cla
       pressCard(target);
       return failed({ retryable: true, effect: "unacted" });
     });
-    await lane.attempt(card);
+    await lane.attempt(pressedCard);
     expect(calls).toBe(2);
     expect(target.library.renewals.card).toBe(3);
   });
@@ -192,7 +198,7 @@ describe("a press whose step declared nothing", () => {
     });
     site.blind = true;
     const told = shownTo();
-    const second = await lane.attempt({ ...card, script: [
+    const second = await lane.attempt({ ...pressedCard, script: [
       runNode("again", RENEW_CARD, { control: ON_THE_CARD }, [], {}),
       told.then(() => {
         site.blind = false;
@@ -217,7 +223,7 @@ describe("a press whose step declared nothing", () => {
       pressCard(target);
       return failed({ retryable: true });
     });
-    await lane.attempt(card);
+    await lane.attempt(pressedCard);
     expect(calls).toBe(2);
     expect(target.library.renewals.card).toBe(3);
   });
@@ -239,7 +245,7 @@ describe("(c) the press landed and the answer is lost to the run's deadline", ()
     });
     site.blind = true;
     const told = shownTo();
-    const second = await lane.attempt({ ...card, script: [
+    const second = await lane.attempt({ ...pressedCard, script: [
       told.then(runNode("blind", RENEW_CARD, { control: ON_THE_CARD }, ["modify_existing"], {})),
       told.then(() => {
         site.blind = false;
@@ -268,7 +274,7 @@ describe("(c) the press landed and the answer is lost to the run's deadline", ()
     // Sent, and the page never took it.
     over(({ nodeId }) => nodeId === RENEW_CARD ? new Promise(() => undefined) : undefined);
     const told = shownTo();
-    const second = await lane.attempt({ ...card, script: [
+    const second = await lane.attempt({ ...pressedCard, script: [
       told.then(pressCardByHand("refused", ON_THE_CARD, {})),
       told.then(look("sees.nothing")),
       pressCardByHand("once", ON_THE_CARD, {}),
@@ -300,7 +306,7 @@ describe("what a look can and cannot do", () => {
   it("the round's own opening look opens nothing: a careless model's first press is refused and sent nowhere, and one that then reads the page and stops presses nothing", async () => {
     const { lane, target } = await landedAndLost();
     const told = shownTo();
-    const second = await lane.attempt({ ...card, script: [
+    const second = await lane.attempt({ ...pressedCard, script: [
       told.then(pressCardByHand("careless", ON_THE_CARD, {})),
       told.then(look("reads.it")),
       told.then(complete("The page shows it renewed."))
@@ -318,7 +324,7 @@ describe("what a look can and cannot do", () => {
   it("known limit: a look after the refusal opens it, and from there pressing is the model's own reading, since Core does not read what a look shows", async () => {
     const { lane, target } = await landedAndLost();
     const told = shownTo();
-    await lane.attempt({ ...card, script: [
+    await lane.attempt({ ...pressedCard, script: [
       pressCardByHand("careless", ON_THE_CARD, {}),
       look("reads.it"),
       told.then(pressCardByHand("all.the.same", ON_THE_CARD, {})),
@@ -340,7 +346,7 @@ describe("what a look can and cannot do", () => {
       return new Promise(() => undefined);
     });
     const from = target.library.calls.length;
-    await lane.attempt({ ...loans, script: [look("first"), look("second"), forwardFrom(READ_STEP), complete("Renewed every loan.")] });
+    await lane.attempt({ ...pressedLoans, script: [look("first"), look("second"), forwardFrom(READ_STEP), complete("Renewed every loan.")] });
     expect(passesIn(lane, from)).not.toContain(BIRDS);
     expect(target.library.renewals[BIRDS]).toBe(2);
   });
@@ -356,7 +362,7 @@ describe("what a look can and cannot do", () => {
       reached();
       return new Promise(() => undefined);
     });
-    const abandoned = lane.attempt(card);
+    const abandoned = lane.attempt(pressedCard);
     await pressed;
     const restarted = await siteLane(cleanups, { site, restart: lane.restart() });
     const told = shownTo();
@@ -386,7 +392,7 @@ describe("(d) a verification failure after an answered press", () => {
     });
     site.blind = true;
     const told = shownTo();
-    const second = await lane.attempt({ ...card, script: [
+    const second = await lane.attempt({ ...pressedCard, script: [
       told.then(pressCardByHand("blind", ON_THE_CARD, {})),
       told.then(() => {
         site.blind = false;
@@ -424,7 +430,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
       if (what.includes("deadline")) await shortRuns(lane);
       over(onBirds(lane, answer));
       const from = target.library.calls.length;
-      const second = await lane.attempt({ ...loans, script: [forwardFrom(READ_STEP), complete("Renewed every loan.")] });
+      const second = await lane.attempt({ ...pressedLoans, script: [forwardFrom(READ_STEP), complete("Renewed every loan.")] });
       expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: LOAN_STEP });
       expect(target.presses.map((one) => one.subject)).toEqual([ATLAS, BIRDS]);
       expect(passesIn(lane, from)).toEqual([CLOCKS, DUNES]);
@@ -444,7 +450,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
       return runNode(callId, RENEW_LOAN, { target: { handle } }, ["modify_existing"], {});
     };
     const told = shownTo();
-    const second = await lane.attempt({ ...loans, script: [
+    const second = await lane.attempt({ ...pressedLoans, script: [
       forwardFrom(READ_STEP),
       byHandle(ATLAS, "atlas.again"),
       told.then(byHandle(BIRDS, "birds.refused")),
@@ -470,7 +476,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
     site.blind = true;
     const from = target.library.calls.length;
     const told = shownTo();
-    const second = await lane.attempt({ ...loans, script: [
+    const second = await lane.attempt({ ...pressedLoans, script: [
       birds("blind"),
       told.then(() => {
         site.blind = false;
@@ -494,7 +500,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
     await lane.attempt(honestFirstAttempt());
     over((request) => request.nodeId === RENEW_LOAN && itemOf(request) === BIRDS ? failed({ retryable: false, category: "target_not_found", effect: "unacted" }) : undefined);
     const told = shownTo();
-    await lane.attempt({ ...loans, script: [runNode("atlas", RENEW_LOAN, { title: ATLAS, control: RENEW }, ["modify_existing"], {}), told.then(complete("Done."))] });
+    await lane.attempt({ ...pressedLoans, script: [runNode("atlas", RENEW_LOAN, { title: ATLAS, control: RENEW }, ["modify_existing"], {}), told.then(complete("Done."))] });
     expect(told.shown[0]).toContain(ALREADY_DONE);
     expect(target.library.renewals[ATLAS]).toBe(2);
   });
@@ -509,7 +515,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
       site.handles.set("t12", title);
       site.says = (call) => (call.value.parameters as { target?: { handle?: string } } | undefined)?.target?.handle === "t12" ? says(call) : undefined;
       const told = shownTo();
-      await lane.attempt({ ...loans, script: [runNode("by.hand", RENEW_LOAN, { target: { handle: "t12" } }, ["modify_existing"], {}), told.then(complete("Done."))] });
+      await lane.attempt({ ...pressedLoans, script: [runNode("by.hand", RENEW_LOAN, { target: { handle: "t12" } }, ["modify_existing"], {}), told.then(complete("Done."))] });
       return { told, target };
     };
 
@@ -577,7 +583,7 @@ describe("(f) a Flow run cut off by a Stop mid-press, then a new ask with the sa
       lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
       return answerAtTheStop(signal);
     });
-    const stopped = await lane.attempt(card);
+    const stopped = await lane.attempt(pressedCard);
     expect(stopped.answer.attempt.status).toBe("stopped_by_person");
     expect(target.library.renewals.card).toBe(2);
     over();
@@ -591,7 +597,7 @@ describe("(f) a Flow run cut off by a Stop mid-press, then a new ask with the sa
     expect((await lane.kept(CARD_TASK))?.best?.provenWhole).toBe(false);
   });
 
-  it("not pressed twice, on a repeat: the row done and the one in doubt stay as they are, and the rest go", async () => {
+  it("not pressed twice, on a repeat: after a Run again a Stop cut short, the same words press nothing, since what the first attempt landed and what the Run again landed both stand", async () => {
     const { lane, target, over } = await siteLane(cleanups);
     await lane.attempt(honestFirstAttempt());
     over((request) => {
@@ -600,14 +606,15 @@ describe("(f) a Flow run cut off by a Stop mid-press, then a new ask with the sa
       lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
       return answerAtTheStop(request.signal);
     });
-    const stopped = await lane.attempt(loans);
+    const stopped = await lane.attempt(pressedLoans);
     expect(stopped.answer.attempt.status).toBe("stopped_by_person");
     over();
     const after = await lane.attempt(loans);
-    expect(target.presses.map((one) => one.subject)).toEqual([...TITLES]);
-    expect(target.library.renewals).toEqual(onceEach(TITLES, 2));
+    // The Run again's two presses, and nothing since: the first attempt's rows carry through the union (`runtime/answer-first/act-record/seed.ts`).
+    expect(target.presses.map((one) => one.subject)).toEqual([ATLAS, BIRDS]);
+    expect(target.library.renewals).toEqual({ ...onceEach(), [ATLAS]: 2, [BIRDS]: 2 });
     expect(after.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
-    expect(DUNES).toBe(target.presses.at(-1)?.subject);
+    expect(DUNES).not.toBe(target.presses.at(-1)?.subject);
   });
 
   it("not pressed twice when the process dies mid-press: what is on the record was written before it was sent", async () => {
@@ -622,7 +629,7 @@ describe("(f) a Flow run cut off by a Stop mid-press, then a new ask with the sa
       return new Promise(() => undefined);
     });
     // Nobody stops it: as a killed process leaves one, it writes nothing more.
-    const abandoned = lane.attempt(card);
+    const abandoned = lane.attempt(pressedCard);
     await pressed;
     const restarted = await siteLane(cleanups, { site, restart: lane.restart() });
     const after = await restarted.lane.attempt({ ...card, script: [complete("Renewed.")] });

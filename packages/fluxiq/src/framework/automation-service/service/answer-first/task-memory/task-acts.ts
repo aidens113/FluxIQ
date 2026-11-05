@@ -9,4 +9,6 @@ export type AutomationStudioAnswerFirstTaskActs = {
   attemptId: string;
   flowId: string;
   data: AutomationStudioAttemptActRecordData;
+  /** What a person's Run again started without: what the task had landed before the press, which a later attempt still carries (`runtime/answer-first/act-record/seed.ts`). */
+  earlier?: AutomationStudioAttemptActRecordData;
 };

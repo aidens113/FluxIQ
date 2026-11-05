@@ -240,7 +240,12 @@ function withReadableFlowBases(memory: AutomationStudioAnswerFirstTaskMemory): A
 function withReadableActs(memory: AutomationStudioAnswerFirstTaskMemory): AutomationStudioAnswerFirstTaskMemory {
   if (memory.acts === undefined) return memory;
   const data = typeof memory.acts === "object" && memory.acts !== null ? parseAutomationStudioAttemptActRecordData(memory.acts.data) : undefined;
-  if (data?.ok && typeof memory.acts.attemptId === "string" && typeof memory.acts.flowId === "string") return { ...memory, acts: { ...memory.acts, data: data.data } };
+  if (data?.ok && typeof memory.acts.attemptId === "string" && typeof memory.acts.flowId === "string") {
+    // What a Run again set aside goes the same way: unreadable, it is left off, and what the press itself did still stands.
+    const { earlier: _earlier, ...acts } = memory.acts;
+    const earlier = memory.acts.earlier === undefined ? undefined : parseAutomationStudioAttemptActRecordData(memory.acts.earlier);
+    return { ...memory, acts: { ...acts, data: data.data, ...(earlier?.ok ? { earlier: earlier.data } : {}) } };
+  }
   const { acts: _unreadable, ...rest } = memory;
   return rest;
 }

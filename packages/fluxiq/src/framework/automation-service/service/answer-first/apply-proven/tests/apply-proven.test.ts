@@ -23,6 +23,8 @@ afterEach(async () => {
 const PART_NOT_WRITTEN = "Part of the record was not written";
 const firstAttempt = { script: [readLoans(), complete("Listed.")] };
 const again = { instruction: LOAN_TASK, ...PERMITTED };
+/** A person's Run again: the press that means do it again, with an empty act record (t869). */
+const pressedAgain = { ...again, runAgain: true };
 const LENGTHEN = "Extend";
 /** The press written again under a renamed control, and made the repeat the old one was. */
 const repaired = () => ({
@@ -92,7 +94,7 @@ describe("a whole run judged yes with no model", () => {
   it("a person's first \"run it\" of the applied Flow does not press what the attempt just pressed, and their second does", async () => {
     const { lane, target } = await appliedLane(cleanups);
     await lane.attempt(cardFirstAttempt());
-    const second = await lane.attempt({ instruction: CARD_TASK, ...PERMITTED });
+    const second = await lane.attempt({ instruction: CARD_TASK, ...PERMITTED, runAgain: true });
     expect(second.answer.attempt.path).toBe("run_flow");
     expect(await stepsInTheFlow(lane)).toContain(RENEW_CARD);
     expect(target.library.renewals.card).toBe(2);
@@ -121,8 +123,8 @@ describe("what is no edit of a person's", () => {
     await personRuns(lane);
     expect(await lane.service.getLlmExecutionDependencyDigest(lane.projectId, FLOW)).toBe(digest);
     made.site.loanControl = LENGTHEN;
-    await lane.attempt(repaired());
-    await lane.attempt(again);
+    await lane.attempt({ ...repaired(), runAgain: true });
+    await lane.attempt(pressedAgain);
     expect((await changesOn(lane)).map((change) => change.status)).toEqual(["applied", "applied"]);
     expect((await graphOf(lane))?.nodes.find((node) => node.definitionId === RENEW_LOAN)?.parameterValues).toMatchObject({ control: LENGTHEN });
   });
@@ -162,8 +164,8 @@ describe("a person's own edit", () => {
     await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...graph, description: "The person's own words on this graph." } });
     const edited = await flowAsItStands(lane);
     made.site.loanControl = LENGTHEN;
-    await lane.attempt(repaired());
-    const fourth = await lane.attempt(again);
+    await lane.attempt({ ...repaired(), runAgain: true });
+    const fourth = await lane.attempt(pressedAgain);
     expect(fourth.decisions).toHaveLength(0);
     expect(fourth.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
     expect(await flowAsItStands(lane)).toBe(edited);
@@ -204,16 +206,16 @@ describe("nothing is applied", () => {
     const made = await appliedLane(cleanups);
     const { lane, target } = made;
     await lane.attempt(honestFirstAttempt());
-    await lane.attempt(again);
+    await lane.attempt(pressedAgain);
     const earlier = (await graphOf(lane))!;
     expect(earlier.nodes.length).toBeGreaterThan(0);
     made.site.loanControl = LENGTHEN;
-    const third = await lane.attempt(repaired());
+    const third = await lane.attempt({ ...repaired(), runAgain: true });
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
     expect(await changesOn(lane)).toHaveLength(1);
     expect((await graphOf(lane))?.nodes.find((node) => node.definitionId === RENEW_LOAN)?.parameterValues).not.toMatchObject({ control: LENGTHEN });
 
-    const fourth = await lane.attempt(again);
+    const fourth = await lane.attempt(pressedAgain);
     expect(fourth.decisions).toHaveLength(0);
     expect(fourth.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 4 });
     expect(target.library.renewals).toEqual(onceEach(TITLES, 4));

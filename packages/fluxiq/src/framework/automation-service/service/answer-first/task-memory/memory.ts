@@ -11,6 +11,8 @@ export type AutomationStudioAnswerFirstTaskMemory = {
   title?: string;
   /** The Flow the task lives under, latest. */
   flowId: string;
+  /** Where the task starts, as it was asked: part of what it is (`../task-key/`), and what a person's Run again starts it from, since a press names no page. */
+  startLocation?: string;
   best?: AutomationStudioAnswerFirstSavedFlow;
   latest?: AutomationStudioAnswerFirstSavedFlow;
   /** Newest last, the last 10. */

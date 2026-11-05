@@ -5,6 +5,7 @@ export { automationStudioAnswerFirstProjectTasks, type AutomationStudioAnswerFir
 export type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 export type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
 export type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
+export type { AutomationStudioAnswerFirstStatedToggle } from "./stated-toggle.ts";
 export { automationStudioAnswerFirstKeptState } from "./kept-state.ts";
 export { automationStudioAnswerFirstSavedStateOf } from "./saved-state.ts";
 export { automationStudioAnswerFirstScreenedNote } from "./screened-note.ts";
