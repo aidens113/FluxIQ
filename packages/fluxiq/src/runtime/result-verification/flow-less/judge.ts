@@ -4,11 +4,11 @@
 // read, the acts it did, the model's words, the end view and the witnesses, and asks
 // whether what the person asked for was got.
 //
-// **Exactly one model call, and it is said so.** Today's judge asks up to four times
+// **One model call, asked again only for a refuted citation.** Today's judge asks up to four times
 // because a yes there finishes a build and a no fails a run. Here a yes labels a
 // result "checked once" (D9, t296: one yes once finished a build on wrong rows), and a
 // no or an unsure goes back to the model with its reason, which keeps looking. So
-// nothing here asks again. A transport fault the provider's retry policy retries
+// nothing here asks again, except that a yes whose citations Core refutes is asked again, within the same check, with Core's sentences and what a valid citation is, until the same refuted citations come back (then it is unsure). A transport fault the provider's retry policy retries
 // inside the call (`../../llm/provider-retry/`) is one question still: no answer came
 // back to be weighed.
 //
@@ -32,6 +32,7 @@ import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
+import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
@@ -42,6 +43,7 @@ const NO_BALANCE = "The model service says the account has no balance left, so t
 const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it was not judged.";
 /** The most of the check's own words a result keeps: a result's words are bounded, and one over the bound is left off whole. */
 const READING_MOST = 450;
+const WITHHELD_SENTENCE = "(withheld)";
 const NO_ANSWER = "The check answered without saying whether this is what was asked for, so it was not judged.";
 
 /** The harness's refusals of a call by what its purse or run budget holds: a request too large for the model is another matter. */
@@ -74,37 +76,54 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;
   const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? automationStudioResultVerificationDeadlineMs(input.timeoutMs), input.personHeldMs, () => expiry.abort());
-  const bounded = await automationStudioResultVerificationWithinDeadline({
-    deadlineMs: 0,
-    signal,
-    judge: () => input.run({
-      taskKind: "loop_verification",
-      projectId: input.projectId,
-      flowId: input.flowId,
-      ...(input.runId ? { runId: input.runId } : {}),
-      instructions: [asked(input)],
-      resultSummary: sent,
-      deniedEvidenceKeys: input.deniedEvidenceKeys,
-      provider: input.provider,
-      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-      signal,
-      metadata: { source: SOURCE, expectedOutput: "diagnosis" }
-    })
-  }).finally(disarm);
-  if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
-  if (!bounded.settled || expiry.signal.aborted) {
-    if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
-    return unanswered(read, expiry.signal.aborted ? "llm.provider_timeout" : undefined);
+  // A yes whose citations Core refutes is asked again, within this one check and its one deadline, until the refuted citations repeat.
+  const tried = new Set<string>();
+  let sentNow: AutomationStudioRunResultSummary = sent;
+  try {
+    for (;;) {
+      const bounded = await automationStudioResultVerificationWithinDeadline({
+        deadlineMs: 0,
+        signal,
+        judge: () => input.run({
+          taskKind: "loop_verification",
+          projectId: input.projectId,
+          flowId: input.flowId,
+          ...(input.runId ? { runId: input.runId } : {}),
+          instructions: [asked(input)],
+          resultSummary: sentNow,
+          deniedEvidenceKeys: input.deniedEvidenceKeys,
+          provider: input.provider,
+          ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+          signal,
+          metadata: { source: SOURCE, expectedOutput: "diagnosis" }
+        })
+      });
+      if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
+      if (!bounded.settled || expiry.signal.aborted) {
+        if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
+        return unanswered(read, expiry.signal.aborted ? "llm.provider_timeout" : undefined);
+      }
+      const got = reading(bounded.value, read, input.summary);
+      if (!got.refuted) return got.judgement;
+      const key = [...got.refuted].sort().join("|");
+      if (tried.has(key)) return got.judgement;
+      tried.add(key);
+      sentNow = automationStudioFlowLessCitationNotice(sent, got.refuted);
+    }
+  } finally {
+    disarm();
   }
-  return reading(bounded.value, read, input.summary);
 }
 
-function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRunResultSummary, summary: AutomationStudioFlowLessSummary): AutomationStudioFlowLessJudgement {
+/** A judgement, and where it is an unsure for citations Core refuted, Core's sentences for them (the re-ask's grounds). */
+type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonly string[] };
+
+function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRunResultSummary, summary: AutomationStudioFlowLessSummary): Reading {
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   if (!response) {
     const code = result.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code;
-    if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true };
-    return code !== undefined && PURSE_CODES.has(code) ? { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } : unanswered(read, code);
+    if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { judgement: { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true } };
+    return { judgement: code !== undefined && PURSE_CODES.has(code) ? { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } : unanswered(read, code) };
   }
   // A reply cut off after its verdict is read from its whole fields alone (`../verify.ts`, t653).
   const cut = response.truncatedAfterVerdict === true;
@@ -114,15 +133,27 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
     ...(response.summary && !cut ? { summaryText: response.summary } : {}),
     basis: "model"
   });
-  if (verdict.basis === "model_silent") return { verdict: "not_judged", reason: NO_ANSWER, unanswered: true };
-  if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return unanswered(read, "llm.provider_output_truncated");
-  if (verdict.verdict === "answers") return { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) };
+  if (verdict.basis === "model_silent") return { judgement: { verdict: "not_judged", reason: NO_ANSWER, unanswered: true } };
+  if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return { judgement: unanswered(read, "llm.provider_output_truncated") };
+  if (verdict.verdict === "answers") return { judgement: { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) } };
   if (verdict.verdict === "does_not_answer") {
     const said = readingWords(verdict.repair?.judgement);
-    return { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said) };
+    return { judgement: { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said) } };
   }
-  if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) return { verdict: "unsure", reason: "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.", checkedWhat: meantToCheck(summary) };
-  return { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) };
+  if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) {
+    const refuted = verdict.yesCitations?.refuted ?? [];
+    return { judgement: { verdict: "unsure", reason: "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.", checkedWhat: meantToCheck(summary) }, ...(refuted.length ? { refuted } : {}) };
+  }
+  return { judgement: { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) } };
+}
+
+/** What a valid citation is, said to the judge again after one Core could not match. Generic: no site, task or product is named. */
+const CITATION_RULE = "A citation names a row by its label (its value in the first stored column, such as a name or title, or its 1-based position among the stored rows), then a stored column, then that row's own value in that column, written as the rows hold it. Cite only cells the stored rows contain, or cite nothing.";
+
+/** The summary sent again with Core's sentences for each citation it could not match and what a valid one is (the re-ask of `automationStudioFlowLessJudge`). */
+function automationStudioFlowLessCitationNotice(sent: AutomationStudioRunResultSummary, refuted: readonly string[]): AutomationStudioRunResultSummary {
+  const sentences = refuted.map((sentence) => automationStudioFlowLessScreenedWords(sentence).text ?? WITHHELD_SENTENCE);
+  return { ...sent, citationsNotMatched: { note: "Your last reply cited cells Core could not match in the stored rows. Judge again, citing only cells the stored rows hold.", notMatched: sentences, validCitation: CITATION_RULE } } as unknown as AutomationStudioRunResultSummary;
 }
 
 /** A call that gave nothing, in the reader's words for what happened to it, by its code. */
