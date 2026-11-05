@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { EncryptedSecretValueRecord, EncryptedSecretValueRecordV2, SecretKeyRecord } from "../types.ts";
+import type { SecretKeyProvedKeys } from "./unlocks/index.ts";
 import type { HeldKeys } from "./held-keys.ts";
 import type { SecretKeyStore } from "./key-store.ts";
 import type { SealUpgrades } from "./seal-upgrades.ts";
@@ -12,6 +13,8 @@ export type SecretKeyCredentialChange = {
 };
 
 export type SecretKeyCredentialChangeInput = {
+  /** The session making the change: what keeps the person's keys through it. */
+  actorSessionId?: string | undefined;
   userId: string;
   currentPassword: string;
   nextPassword: string;
@@ -32,6 +35,7 @@ type PreparedSeal = {
 };
 
 type PendingChange = {
+  actorSessionId: string | undefined;
   userId: string;
   seals: PreparedSeal[];
   expiryTimer: ReturnType<typeof setTimeout>;
@@ -66,8 +70,10 @@ export class CredentialChanges {
   private readonly sealer: SecretValueSealer;
   private readonly heldKeys: HeldKeys;
   private readonly upgrades: SealUpgrades;
+  private readonly onCommitted: ((userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined) => Promise<void>) | undefined;
 
-  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; upgrades: SealUpgrades }) {
+  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; upgrades: SealUpgrades; onCommitted?: (userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined) => Promise<void> }) {
+    this.onCommitted = options.onCommitted;
     this.store = options.store;
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
@@ -95,7 +101,7 @@ export class CredentialChanges {
     const changeId = `secret-credential-change:${randomUUID()}`;
     const expiryTimer = setTimeout(() => this.forget(changeId), CREDENTIAL_CHANGE_TTL_MS);
     expiryTimer.unref?.();
-    this.pending.set(changeId, { userId: input.userId, seals: written, expiryTimer });
+    this.pending.set(changeId, { actorSessionId: input.actorSessionId, userId: input.userId, seals: written, expiryTimer });
     return { changeId, resealedKeyCount: written.length };
   }
 
@@ -111,19 +117,28 @@ export class CredentialChanges {
     if (!change) throw new Error("Secret key credential change is unavailable");
     const committed: string[] = [];
     const writes: string[] = [];
+    // The person proved their current password for this change, so what it re-sealed stays with the session making it, and everything else of theirs locks (`CredentialUnlocks.passwordChanged`).
+    const proved = new Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>();
     for (const { recordId, opened, pending, key } of change.seals) {
       const current = this.store.get(recordId);
       if (current?.sealed === pending) {
         // Already promoted by an unlock or reveal with the new password.
         this.heldKeys.replaceKey(recordId, key, change.userId);
         committed.push(recordId);
+        proved.set(recordId, { keyUpdatedAtMs: current.updatedAtMs, decryptionKey: Buffer.from(key) });
       } else if (current?.pendingSealed === pending && this.upgrades.descendsFrom(current.sealed, opened)) {
         this.store.set({ ...current, sealed: pending, pendingSealed: undefined });
         this.heldKeys.replaceKey(recordId, key, change.userId);
         committed.push(recordId);
         writes.push(recordId);
+        proved.set(recordId, { keyUpdatedAtMs: current.updatedAtMs, decryptionKey: Buffer.from(key) });
       }
       key.fill(0);
+    }
+    try {
+      await this.onCommitted?.(change.userId, proved, change.actorSessionId);
+    } finally {
+      for (const key of proved.values()) key.decryptionKey.fill(0);
     }
     await Promise.all(writes.map((recordId) => this.store.persist(recordId)));
     return { changeId, resealedKeyCount: committed.length };

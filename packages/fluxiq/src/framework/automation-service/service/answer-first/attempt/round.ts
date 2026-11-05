@@ -25,7 +25,7 @@ import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
+import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 /** The loop's guard stopped the round: it holds the rows the round wrote, as a failure would. */

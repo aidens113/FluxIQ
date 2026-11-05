@@ -9,6 +9,43 @@ import { SQLiteRepository, createRecord } from "../sqlite-repository.ts";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
 async function root() { const value = await mkdtemp(path.join(os.tmpdir(), "fluxiq-readonly-")); roots.push(value); return value; }
+it("overwrites what it deletes when asked to, so a forgotten row does not linger in the file", async () => {
+  const directory = await root();
+  const marker = "DUMMYMARKERVALUE".repeat(40);
+  const repository = new SQLiteRepository({ rootDir: directory, kind: "secure.store", layoutVersion: 2, secureDelete: true });
+  await repository.put(createRecord({ id: "one", kind: repository.kind, data: { value: marker } }));
+  await repository.put(createRecord({ id: "two", kind: repository.kind, data: { value: "kept" } }));
+  await checkpoint(directory);
+  await repository.delete("one", {});
+  await deleteJournal(directory);
+  const files = await readdir(directory);
+  for (const file of files) expect((await readFile(path.join(directory, file))).includes(marker)).toBe(false);
+});
+
+it("leaves a deleted row in no file, with another connection to the same database open", async () => {
+  const directory = await root();
+  const marker = "DUMMYMARKERVALUE".repeat(40);
+  const repository = new SQLiteRepository({ rootDir: directory, kind: "secure.store", layoutVersion: 2, secureDelete: true });
+  await repository.put(createRecord({ id: "two", kind: repository.kind, data: { value: "kept" } }));
+  const other = new sqlite3.Database(path.toNamespacedPath(path.join(directory, "global.sqlite")));
+  try {
+    await new Promise<void>((resolve, reject) => other.get("select count(*) from sqlite_master", (error) => error ? reject(error) : resolve()));
+    await repository.put(createRecord({ id: "one", kind: repository.kind, data: { value: marker } }));
+    await repository.delete("one", {});
+    for (const file of await readdir(directory)) expect((await readFile(path.join(directory, file))).includes(marker), file).toBe(false);
+    await expect(repository.get("two")).resolves.toMatchObject({ data: { value: "kept" } });
+  } finally {
+    await new Promise<void>((resolve) => other.close(() => resolve()));
+  }
+});
+
+async function checkpoint(directory: string) {
+  await new Promise<void>((resolve, reject) => {
+    const db = new sqlite3.Database(path.toNamespacedPath(path.join(directory, "global.sqlite")));
+    db.exec("pragma wal_checkpoint(FULL)", error => db.close(closeError => error || closeError ? reject(error ?? closeError) : resolve()));
+  });
+}
+
 async function deleteJournal(directory: string) {
   await new Promise<void>((resolve, reject) => {
     const db = new sqlite3.Database(path.toNamespacedPath(path.join(directory, "global.sqlite")));

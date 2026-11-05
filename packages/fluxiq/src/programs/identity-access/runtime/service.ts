@@ -23,7 +23,7 @@ import { runCredentialChange } from "./run-credential-change.ts";
 import { digestSessionId } from "./session-digest.ts";
 import { IdentityTwoFactorResetError } from "./two-factor-reset-error.ts";
 import { withCredentialStatus } from "./with-credential-status.ts";
-import { deleteStoredSessions, IdentitySessionRevocations, resolveSessionRevocation } from "./sessions/index.ts";
+import { deleteStoredSessions, IdentityCredentialAttempts, IdentitySessionRevocations, resolveSessionRevocation } from "./sessions/index.ts";
 import {
   credentialMetadata,
   identityRecord,
@@ -41,6 +41,8 @@ import type {
   IdentitySessionRevocationListener,
   IdentitySessionRevoker,
   IdentitySessionTarget,
+  IdentitySetPasswordAuthorized,
+  IdentityUserUpdate,
   Role,
   Session,
   User,
@@ -75,6 +77,7 @@ export class IdentityAccessService {
   private readonly credentialChangeSubscribers: readonly IdentityCredentialChangeSubscriber[];
   /** Raw ids of the sessions this process saw, in memory only, and who is told when one is revoked. */
   private readonly revocations: IdentitySessionRevocations;
+  private readonly credentialAttempts = new IdentityCredentialAttempts();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -85,7 +88,7 @@ export class IdentityAccessService {
     this.repository = options.repository;
     this.kdf = createCredentialKdf(options.passwordKdf);
     this.credentialChangeSubscribers = [...(options.credentialChangeSubscribers ?? [])];
-    this.revocations = new IdentitySessionRevocations(options.sessionRevocationSubscribers);
+    this.revocations = new IdentitySessionRevocations(options.sessionRevocationSubscribers, options.sessionEndSubscribers);
   }
 
   /** Tells `listener` the raw id of every session revoked from now on (see `IdentitySessionRevocationListener`); returns its unsubscribe. */
@@ -120,8 +123,8 @@ export class IdentityAccessService {
     const existing = this.users.get(id);
     // Credentials of an existing account change only through setPassword, setPasswordAuthorized, resetPassword, setPin, and
     // setPinAuthorized, so the credential-change port and its subscribers are never bypassed.
-    if (existing && (params.password || params.pin)) {
-      throw new Error("An existing account's password or PIN cannot be changed here; use a password or PIN change");
+    if ((existing || this.credentials.has(id) || this.encryptedCredentials.has(id)) && (params.password || params.pin)) {
+      throw new Error("An existing account's or stored credential's password or PIN cannot be changed here; use a password or PIN change");
     }
     const user: User = {
       id,
@@ -140,14 +143,7 @@ export class IdentityAccessService {
     return user;
   }
 
-  async updateUser(params: {
-    id: string;
-    username?: string;
-    displayName?: string;
-    roleId?: string;
-    enabled?: boolean;
-    nowMs?: number;
-  }): Promise<User> {
+  async updateUser(params: IdentityUserUpdate): Promise<User> {
     await this.load();
     const existing = this.users.get(params.id);
     if (!existing) throw new Error(`Unknown user: ${params.id}`);
@@ -166,6 +162,8 @@ export class IdentityAccessService {
     };
     this.users.set(next.id, next);
     await this.persist();
+    // Disabling takes the person's keys with it, in memory and in every browser, as provisioning's disable does.
+    if (existing.enabled && !next.enabled) await this.revokeUserSessions(next.id);
     return next;
   }
 
@@ -208,14 +206,7 @@ export class IdentityAccessService {
     return this.changePassword({ changeId: randomUUID(), userId, actorUserId: undefined, currentPassword: undefined, newPassword: password }, true);
   }
 
-  async setPasswordAuthorized(params: {
-    userId: string;
-    password: string;
-    sessionId: string | undefined;
-    authorizationPassword: string | undefined;
-    authorizationPin: string | undefined;
-    authorizationTotp: string | undefined;
-  }): Promise<UserCredential> {
+  async setPasswordAuthorized(params: IdentitySetPasswordAuthorized): Promise<UserCredential> {
     const actor = await this.authorizeCredentialRotation({
       targetUserId: params.userId,
       sessionId: params.sessionId,
@@ -231,13 +222,17 @@ export class IdentityAccessService {
       if (selfService || !(error instanceof Error) || error.message !== "Credential recheck required") throw error;
       resetSealedCredential = true;
     }
-    return this.changePassword({
+    const changed = await this.changePassword({
       changeId: randomUUID(),
       userId: params.userId,
       actorUserId: actor.id,
+      actorSessionId: params.sessionId,
       currentPassword: selfService ? params.authorizationPassword : undefined,
       newPassword: params.password
     }, resetSealedCredential);
+    // Someone else's password: their sessions end, as provisioning's reset does. Their own: every session but the one that made it.
+    await this.revokeUserSessions(params.userId, selfService ? params.sessionId : undefined);
+    return changed;
   }
 
   async setPin(userId: string, pin: string): Promise<UserCredential> {
@@ -383,13 +378,14 @@ export class IdentityAccessService {
     return { session: { id: sessionId, userId: stored.userId, expiresAtMs: stored.expiresAtMs }, user: withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id)), role };
   }
 
-  async authorizeSessionCredentials(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined; totp: string | undefined }): Promise<User> {
+  async authorizeSessionCredentials(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined; totp: string | undefined; requirePin?: boolean }): Promise<User> {
     const context = await this.validateSession(params.sessionId);
     if (!context) throw new Error("Authentication required");
-    await this.verifyCredentialGate(context.user.id, {
+    await this.verifyCredentialGate(context.user.id, context.session.id, {
       password: params.password ?? "",
       pin: params.pin ?? "",
-      totp: params.totp
+      totp: params.totp,
+      requirePin: params.requirePin ?? true
     });
     return context.user;
   }
@@ -397,7 +393,7 @@ export class IdentityAccessService {
   async authorizeSessionPasswordPin(params: { sessionId: string | undefined; password: string | undefined; pin: string | undefined }): Promise<User> {
     const context = await this.validateSession(params.sessionId);
     if (!context) throw new Error("Authentication required");
-    await this.verifyCredentialGate(context.user.id, {
+    await this.verifyCredentialGate(context.user.id, context.session.id, {
       password: params.password ?? "",
       pin: params.pin ?? "",
       requireTotp: false
@@ -435,20 +431,23 @@ export class IdentityAccessService {
   async revokeSession(target: IdentitySessionTarget, revoker?: IdentitySessionRevoker): Promise<boolean> {
     await this.load();
     const revocation = resolveSessionRevocation(this.sessions, target, revoker);
+    const endFailures = await this.revocations.ending([revocation.digest], revocation.revoker);
     const removed = await deleteStoredSessions(this.sessions, this.repository, [revocation.digest]);
     await this.persist();
-    await this.revocations.revoked([revocation.digest], revocation.revoker, revocation.presented);
+    await this.revocations.revoked([revocation.digest], revocation.revoker, revocation.presented, endFailures);
     return removed > 0;
   }
 
-  /** Revokes every session of `userId`, stored here or by another process, and tells listeners each raw id this process saw. */
-  async revokeUserSessions(userId: string): Promise<number> {
+  /** Revokes every session of `userId` but `keepSessionId`, stored here or by another process, and tells listeners each raw id this process saw. */
+  async revokeUserSessions(userId: string, keepSessionId?: string): Promise<number> {
     await this.load();
     await this.reloadFromStore();
-    const digests = [...this.sessions.values()].filter((session) => session.userId === userId).map((session) => session.digest);
+    const kept = keepSessionId === undefined ? undefined : digestSessionId(keepSessionId);
+    const digests = [...this.sessions.values()].filter((session) => session.userId === userId && session.digest !== kept).map((session) => session.digest);
+    const endFailures = await this.revocations.ending(digests, { userId, administrator: false }, kept === undefined ? userId : undefined);
     const removed = await deleteStoredSessions(this.sessions, this.repository, digests);
     await this.persist();
-    await this.revocations.revoked(digests, { userId, administrator: false });
+    await this.revocations.revoked(digests, { userId, administrator: false, ...(kept === undefined ? {} : { passwordChanged: true }) }, undefined, endFailures);
     return removed;
   }
 
@@ -686,12 +685,14 @@ export class IdentityAccessService {
     });
   }
 
-  private async verifyCredentialGate(userId: string, params: { password: string; pin: string; totp?: string | undefined; requireTotp?: boolean }): Promise<void> {
-    const credential = await this.unlockCredential(userId, params.password);
-    const pinOk = credential.pinHash ? await this.verifyPin(userId, credential, params.pin) : true;
-    const requireTotp = params.requireTotp ?? true;
-    const totpOk = requireTotp && credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
-    if (!pinOk || !totpOk) throw new Error(INVALID_CREDENTIALS);
+  private verifyCredentialGate(userId: string, sessionId: string, params: { password: string; pin: string; totp?: string | undefined; requireTotp?: boolean; requirePin?: boolean }): Promise<void> {
+    return this.credentialAttempts.guard(sessionId, async () => {
+      const credential = await this.unlockCredential(userId, params.password);
+      const pinOk = (params.requirePin ?? true) && credential.pinHash ? await this.verifyPin(userId, credential, params.pin) : true;
+      const requireTotp = params.requireTotp ?? true;
+      const totpOk = requireTotp && credential.totpSecret ? verifyTotp(credential.totpSecret, params.totp ?? "") : true;
+      if (!pinOk || !totpOk) throw new Error(INVALID_CREDENTIALS);
+    });
   }
 
   /**

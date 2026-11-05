@@ -29,7 +29,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_APPLY_CHANGE: AutomationStudioConver
     reauthorizes: false
   },
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
+    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     const adaptationId = automationStudioConversationCommandText(args, "adaptationId");
     if (!flowId || !adaptationId) return progress.failed("the confirmation did not say which change to apply");

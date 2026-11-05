@@ -5,6 +5,7 @@ import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MOD
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmResolutionWithinFlowSettings } from "../runtime/llm/flow-execution-limits/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../runtime/llm/index.ts";
 import { AutomationStudioSecretsLockedError } from "../runtime/llm/deepseek/index.ts";
+import { automationStudioPersonWaitClock } from "../runtime/models/secrets/index.ts";
 import { IdentityAccessService } from "../programs/identity-access/index.ts";
 import { SecretKeysService } from "../programs/secret-keys/index.ts";
 import { DIAGNOSIS, envelope, jsonReply, textFor } from "../runtime/llm/anthropic/tests/fixtures.ts";
@@ -18,6 +19,70 @@ const PASSWORD_A = "dummy-password-a";
 // their unlocked session, and fails only when that key cannot be released.
 
 afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
+
+describe("a task whose person's key locks mid-way", () => {
+  it("waits for the person before its attempt, tells the host, and carries on when they unlock", async () => {
+    const service = new SecretKeysService({ passwordKdf: WEAK_KDF });
+    const key = await service.createKey({ name: "DeepSeek", value: "dummy-wait-key", authorizationPassword: PASSWORD_A, createdBy: "user.wait" });
+    const events: string[] = [];
+    const seen: string[] = [];
+    const resolve = createAutomationStudioSessionKeyProviderResolver({
+      ports: service,
+      flowSecretKeyId: () => key.id,
+      fetchImpl: (async (_url: unknown, init: { headers?: Record<string, string> }) => {
+        seen.push(new Headers(init.headers).get("authorization") ?? "");
+        return responseEnvelope({ kind: "diagnosis", summary: "Fine." });
+      }) as unknown as typeof fetch,
+      onKeyWait: ({ phase, status, waitingFor }) => void events.push(`${phase}:${status}:${waitingFor}`)
+    });
+    const resolution = resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: "user.wait", actorSessionId: "session.wait" } });
+    const provider = resolution!.provider;
+    expect(provider.whenReady).toBeTypeOf("function");
+    let ready = false;
+    const waiting = provider.whenReady!(request()).then(() => {
+      ready = true;
+    });
+    await vi.waitFor(() => expect(events).toEqual(["waiting:waiting_for_person:model_key_locked"]));
+    expect(ready).toBe(false);
+    expect(seen).toEqual([]);
+    // The wait is on the record for the limits on this Flow's work, and on nobody else's.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(automationStudioPersonWaitClock.heldMs({ projectId: "project.one", flowId: "flow.one" })).toBeGreaterThan(0);
+    expect(automationStudioPersonWaitClock.heldMs({ projectId: "project.one", flowId: "flow.other" })).toBe(0);
+
+    await service.unlockSession({ sessionId: "session.wait", userId: "user.wait", authorizationPassword: PASSWORD_A, expiresAtMs: Date.now() + 60_000 });
+    await waiting;
+    expect(events.at(-1)).toBe("resumed:waiting_for_person:model_key_locked");
+    await expect(provider.runTask(request())).resolves.toBeDefined();
+    expect(seen).toEqual(["Bearer dummy-wait-key"]);
+    service.close();
+  });
+});
+
+describe("a task whose key locks, as its own provider says", () => {
+  it("tells what listens to this provider when a call starts and stops waiting, and on a Stop too", async () => {
+    const service = new SecretKeysService({ passwordKdf: WEAK_KDF });
+    const key = await service.createKey({ name: "DeepSeek", value: "dummy-wait-key", authorizationPassword: PASSWORD_A, createdBy: "user.hold" });
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: service, flowSecretKeyId: () => key.id });
+    const provider = resolve({ projectId: "project.hold", flowId: "flow.hold", caller: { actorUserId: "user.hold", actorSessionId: "session.hold" } })!.provider;
+    const heard: string[] = [];
+    const stop = provider.observeHolds!((state) => void heard.push(state));
+    const waiting = provider.whenReady!(request());
+    await vi.waitFor(() => expect(heard).toEqual(["started"]));
+    await service.unlockSession({ sessionId: "session.hold", userId: "user.hold", authorizationPassword: PASSWORD_A, expiresAtMs: Date.now() + 60_000 });
+    await waiting;
+    expect(heard).toEqual(["started", "ended"]);
+    service.revokeSessionUnlock("session.hold", { userId: "user.hold", administrator: false });
+    const aborted = new AbortController();
+    const stopped = provider.whenReady!(request(), { signal: aborted.signal });
+    await vi.waitFor(() => expect(heard).toEqual(["started", "ended", "started"]));
+    aborted.abort();
+    await stopped;
+    expect(heard).toEqual(["started", "ended", "started", "ended"]);
+    stop();
+    service.close();
+  });
+});
 
 describe("session-key provider resolver", () => {
   it("makes a model call with no grant, on the caller's own key, released to their session", async () => {
@@ -194,7 +259,7 @@ describe("session-key provider resolver, unlock resolved per call", () => {
     keys.revokeSessionUnlock("sess.A-other", { userId: "user.A", administrator: false });
     const failure = await provider.runTask(request({ requestId: "request.three", idempotencyKey: "idempotency.three" })).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(AutomationStudioSecretsLockedError);
-    expect(failure).toMatchObject({ code: "secrets.locked", message: "Sign in at app.example.test to unlock your model key" });
+    expect(failure).toMatchObject({ code: "secrets.locked", message: "Unlock your model key: open app.example.test and enter your password once" });
     expect(bearers).toEqual(["Bearer fake-key-A", "Bearer fake-key-A"]);
   });
 

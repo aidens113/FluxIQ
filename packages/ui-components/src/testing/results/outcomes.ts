@@ -323,6 +323,11 @@ function waitingForPerson(): ChatTaskOutcome {
   return waiting("person_only_check", "sign-in", fakeNoLoopsCaught());
 }
 
+/** Waiting for the person to unlock their model key: a setup step with one action. Not an ending. */
+function waitingForModelKey(): ChatTaskOutcome {
+  return waiting("model_key_locked", "key", fakeNoLoopsCaught());
+}
+
 /** Waiting on a press of Allow for a dangerous act. Not an ending. */
 function waitingForPermission(): ChatTaskOutcome {
   return waiting("permission", "order", fakeNoLoopsCaught());
@@ -393,6 +398,7 @@ export function fakeTaskOutcomes() {
     working: working(),
     waitingForPerson: waitingForPerson(),
     waitingForPermission: waitingForPermission(),
+    waitingForModelKey: waitingForModelKey(),
     stuckInALoop: stuckInALoop(),
     interruptedByRestart: interruptedByRestart(),
     stoppedByPerson: stoppedByPerson()

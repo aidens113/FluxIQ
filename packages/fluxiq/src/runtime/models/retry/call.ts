@@ -82,6 +82,8 @@ async function callWithRetries<Request extends ModelRequest>(input: AutomationSt
   const attempts: AutomationStudioLlmProviderRetryAttempt[] = [];
   let waitedMs = 0;
   let addedMs = 0;
+  // Time spent waiting for the person is no part of what a retry may spend.
+  let heldMs = 0;
   const account = (stop: AutomationStudioLlmProviderRetryStop): AutomationStudioLlmProviderRetryAccount => ({
     attempts: Object.freeze([...attempts]),
     retries: Math.max(0, attempts.length - (stop === "answered" ? 0 : 1)),
@@ -90,6 +92,11 @@ async function callWithRetries<Request extends ModelRequest>(input: AutomationSt
     stop
   });
   for (let attempt = 1; ; attempt += 1) {
+    if (input.provider.whenReady) {
+      const heldFrom = input.now();
+      await input.provider.whenReady(input.request, input.signal ? { signal: input.signal } : {});
+      heldMs += elapsedSince(heldFrom, input.now);
+    }
     const attemptStartedAt = input.now();
     try {
       const result = await runProviderWithEnforcedDeadline(input.provider, input.request, input.signal);
@@ -108,7 +115,7 @@ async function callWithRetries<Request extends ModelRequest>(input: AutomationSt
         code: failure.code,
         cancelled: input.signal?.aborted === true,
         attempt,
-        elapsedMs: elapsedSince(startedAt, input.now),
+        elapsedMs: Math.max(0, elapsedSince(startedAt, input.now) - heldMs),
         timeoutMs: input.request.timeoutMs,
         runAddedMs: input.runId ? ledger.addedMs(input.runId) : 0,
         ...(Number.isFinite(maxAttempts) ? { maxAttempts } : {}),

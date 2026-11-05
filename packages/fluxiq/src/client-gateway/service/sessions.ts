@@ -118,7 +118,7 @@ export class ClientGatewaySessionRegistry {
 
   /** The session view callers outside the gateway are allowed to see. */
   toPublic(session: InternalSession): ClientGatewaySession {
-    const { socket: _socket, outbound: _outbound, pendingPairingCode: _pendingPairingCode, channelScope: _channelScope, peer: _peer, ...publicSession } = session;
+    const { socket: _socket, outbound: _outbound, pendingPairingCode: _pendingPairingCode, channelScope: _channelScope, sentCredentialHash: _sentCredentialHash, peer: _peer, ...publicSession } = session;
     return { ...publicSession };
   }
 

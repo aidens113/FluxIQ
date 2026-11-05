@@ -34,7 +34,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_DISCARD_CHANGE: AutomationStudioConv
     reauthorizes: false
   },
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
+    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     const adaptationId = automationStudioConversationCommandText(args, "adaptationId");
     if (!flowId || !adaptationId) return progress.failed("the question did not say which change it was about");

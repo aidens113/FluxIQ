@@ -1,3 +1,4 @@
+import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import type { AutomationStudioCandidateAuthoringResult } from "../../flow-authoring/bootstrap/authoring-result/index.ts";
 // What a conversation command is, what it runs against, and what it answers.
 //
@@ -68,8 +69,14 @@ export type AutomationStudioConversationCommandContext = {
    * against the request's actor, so it travels as `authSessionId`.
    */
   sessionId: string;
-  /** True for a paired client whose person has no unlocked session: a build or run will find the key locked. */
+  /** True for a paired client with no unlock of its own: a build or run will find the key locked. */
   keyLocked: boolean;
+  /** True when the person has a model key and this caller cannot open it: a command that needs the model shows a setup step and does not start (`./execute.ts`). */
+  keyNeedsUnlock?: boolean | undefined;
+  /** Why, for the words a person reads. */
+  keyLockReason?: ModelKeyLockReason | null | undefined;
+  /** The person read why: a first-start explanation is not said a second time. */
+  noteKeySetupStepTold?: (() => void) | undefined;
   /**
    * True when a paired client -- the browser extension -- asked. Its calls run
    * under the person's unlocked session, so the endpoints cannot see it; a run
@@ -158,6 +165,8 @@ export type AutomationStudioConversationCommand = {
   capability: AutomationStudioPanelCapability;
   /** True for work that takes minutes: it runs after the request has answered, and its result arrives as a turn. */
   background: boolean;
+  /** True for work that cannot begin without the person's model key. A run is not: it plays its saved steps and needs the model only to repair one. */
+  needsModelKey?: boolean | undefined;
   /**
    * The thread's first reply when the chat chooses this command: what will be
    * done, for the person, in plain words and without the command's title

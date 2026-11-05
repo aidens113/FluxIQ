@@ -10,6 +10,7 @@ import {
   type DatabaseManagerStoreRequest
 } from "./contracts.ts";
 import type { DatabaseManagerService } from "../runtime/service.ts";
+import { isOwnerWrittenDatabaseRecord, isSensitiveDatabaseKind } from "../sensitive-stores.ts";
 import type { RepositoryScope } from "../../../framework/persistence/repository/types.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 
@@ -41,7 +42,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     resource: endpointResource.program(),
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
-      if (!payload?.kind || !isSensitiveStore(payload.kind)) return { ok: false, error: "A sensitive store kind is required" };
+      if (!payload?.kind || !isSensitiveDatabaseKind(payload.kind)) return { ok: false, error: "A sensitive store kind is required" };
       // A grant is issued only against a fresh credential recheck, never against an earlier grant, so no grant can renew itself past its expiry.
       const authorization = await recheckSessionCredentials(identityAccess, payload);
       if (!authorization.ok) return authorization;
@@ -101,6 +102,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
       const scope = payload.scope ?? request.scope;
       const authorization = await authorizeSensitiveStore(identityAccess, payload, scope, sensitiveGrants, request.actor?.userId);
       if (!authorization.ok) return authorization;
+      if (isOwnerWrittenDatabaseRecord(payload.kind, payload.id, payload.data)) return { ok: false, error: "This is written only by the program that owns it." };
       if (!isJsonObject(payload.data)) return { ok: false, error: "data must be a JSON object" };
       return { ok: true, payload: await service.putRecord(payload.kind, payload.id, payload.data, scope) };
     }
@@ -119,6 +121,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
       const scope = payload.scope ?? request.scope;
       const authorization = await authorizeSensitiveStore(identityAccess, payload, scope, sensitiveGrants, request.actor?.userId);
       if (!authorization.ok) return authorization;
+      if (isOwnerWrittenDatabaseRecord(payload.kind, payload.id)) return { ok: false, error: "This is written only by the program that owns it." };
       return { ok: true, payload: { deleted: await service.deleteRecord(payload.kind, payload.id, scope) } };
     }
   });
@@ -141,7 +144,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
 // Reads and writes on a sensitive store pass the same gate: a live grant issued to this actor
 // for this store and the scope the operation acts on, or a fresh credential recheck.
 async function authorizeSensitiveStore(identityAccess: IdentityAccessService | undefined, payload: DatabaseManagerStoreRequest, scope: RepositoryScope, grants: Map<string, SensitiveStoreGrant>, actorUserId?: string): Promise<SensitiveStoreAuthorization> {
-  if (!isSensitiveStore(payload.kind)) return { ok: true };
+  if (!isSensitiveDatabaseKind(payload.kind)) return { ok: true };
   const now = Date.now();
   sweepExpiredGrants(grants, now);
   const grant = payload.grantId ? grants.get(payload.grantId) : undefined;
@@ -170,11 +173,6 @@ async function recheckSessionCredentials(identityAccess: IdentityAccessService |
 
 function sweepExpiredGrants(grants: Map<string, SensitiveStoreGrant>, now: number): void {
   for (const [id, grant] of grants) if (grant.expiresAtMs <= now) grants.delete(id);
-}
-
-function isSensitiveStore(kind: string): boolean {
-  const key = kind.trim().toLowerCase();
-  return key === "identity.users" || key === "secret.keys";
 }
 
 function sensitiveGrantStoreKey(kind: string, scope: RepositoryScope): string {

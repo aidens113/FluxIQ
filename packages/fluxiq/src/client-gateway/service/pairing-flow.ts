@@ -1,6 +1,7 @@
 import type { ClientGatewayPairingChallenge, ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import type { ClientGatewayCredentialCustodian } from "./credential-custody.ts";
 import { clientGatewayPeerAuditFields } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import { declaredDomainId } from "./declared-domain.ts";
@@ -11,7 +12,9 @@ import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
 import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
+import { clientGatewayCredentialHolder } from "./lifecycle.ts";
 
+import type { ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
 /**
@@ -35,6 +38,7 @@ type PairingFlowCollaborators = {
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
+  custody: ClientGatewayCredentialCustodian;
 };
 
 /**
@@ -53,6 +57,7 @@ export class ClientGatewayPairingFlow {
   private readonly events: ClientGatewayEventBus;
   private readonly facade: ClientGatewayFacadePorts;
   private readonly trace: ClientGatewayTraceTap;
+  private readonly custody: ClientGatewayCredentialCustodian;
 
   constructor(collaborators: PairingFlowCollaborators) {
     this.config = collaborators.config;
@@ -64,6 +69,7 @@ export class ClientGatewayPairingFlow {
     this.events = collaborators.events;
     this.facade = collaborators.facade;
     this.trace = collaborators.trace;
+    this.custody = collaborators.custody;
   }
 
   create(input: {
@@ -94,7 +100,7 @@ export class ClientGatewayPairingFlow {
     return pairing;
   }
 
-  async approve(pairingCode: string, input: { approvedByUserId: string }): Promise<ClientGatewaySession | null> {
+  async approve(pairingCode: string, input: { approvedByUserId: string; approvedBySessionId?: string | undefined }): Promise<ClientGatewaySession | null> {
     await this.facade.ready();
     this.pairings.pruneExpired();
     const pairing = this.pairings.get(pairingCode);
@@ -104,7 +110,7 @@ export class ClientGatewayPairingFlow {
     if (!pairing || pairing.consumedAt || !pairing.requestedBySessionId) return null;
     const approvedByUserId = input.approvedByUserId.trim();
     if (!approvedByUserId) throw new Error("Approving operator is required.");
-    return this.complete(pairing.requestedBySessionId, pairingCode, approvedByUserId);
+    return this.complete(pairing.requestedBySessionId, pairingCode, approvedByUserId, input.approvedBySessionId);
   }
 
   dismiss(pairingCode: string): boolean {
@@ -168,7 +174,7 @@ export class ClientGatewayPairingFlow {
     this.audit.record("pairing.client_submit_rejected", "Client-side pairing submission was rejected.", { sessionId, pairingCode });
   }
 
-  private async complete(sessionId: string, pairingCode: string, approvedByUserId: string): Promise<ClientGatewaySession | null> {
+  private async complete(sessionId: string, pairingCode: string, approvedByUserId: string, approvedBySessionId?: string): Promise<ClientGatewaySession | null> {
     this.pairings.pruneExpired();
     const pairing = this.pairings.get(pairingCode);
     if (!pairing || pairing.consumedAt) return null;
@@ -195,6 +201,7 @@ export class ClientGatewayPairingFlow {
       await this.trustedClients.revoke(trustedClient, "pairing session ended before approval completed");
       throw lateRefusal;
     }
+    await this.endEarlierTrust(trustedClient);
     const now = trustedClient.approvedAt;
     pairing.consumedAt = now;
     pairing.sessionId = sessionId;
@@ -205,6 +212,9 @@ export class ClientGatewayPairingFlow {
     if (pairing.projectId !== undefined) session.projectId = pairing.projectId;
     session.pairedAt = now;
     this.trace.lifecycle({ sessionId, clientId: session.clientId }, "pairing.approved", { trustedClientId: trustedClient.trustedClientId, projectId: pairing.projectId ?? null });
+    // Before the token leaves: this browser's first request finds what the person who approved it can open.
+    await this.custody.issued({ holder: clientGatewayCredentialHolder(trustedClient), credential: token, approvedBySessionId });
+    session.sentCredentialHash = this.trustedClients.hashToken(token);
     await this.transport.send(sessionId, this.transport.message("server.session_ready", {
       sessionId,
       token,
@@ -220,6 +230,22 @@ export class ClientGatewayPairingFlow {
     });
     await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
     return this.sessions.toPublic(session);
+  }
+
+  /**
+   * The person approved this client id again, so a trust they gave it before is not this browser's
+   * any more, and anyone still holding its credential is out. Only their own: a client id is
+   * whatever a client says, so nobody ends another person's trust by saying theirs.
+   */
+  private async endEarlierTrust(approved: ClientGatewayTrustedClient): Promise<void> {
+    for (const earlier of this.trustedClients.list()) {
+      if (earlier.trustedClientId === approved.trustedClientId || earlier.clientId !== approved.clientId || earlier.approvedByUserId !== approved.approvedByUserId || !this.trustedClients.isActive(earlier)) continue;
+      try {
+        await this.facade.revokeTrustedClient(earlier.trustedClientId, "the same browser was approved again");
+      } catch (error) {
+        this.audit.record("trust.revoke_failed", "An earlier trust of a browser approved again could not be ended; it still ends on any copy of its credential being used.", { trustedClientId: earlier.trustedClientId, error: error instanceof Error ? error.name : "unknown" });
+      }
+    }
   }
 
   /** Why a session cannot take this approval now, or nothing when it is waiting for it. */

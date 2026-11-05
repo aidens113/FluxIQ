@@ -22,7 +22,7 @@ import { automationStudioAnswerFirstBackoff, automationStudioAnswerFirstNext, ty
 import { automationStudioAnswerFirstPreModelStep, type AutomationStudioAnswerFirstPreModelStep } from "../../../../../runtime/answer-first/pre-model/index.ts";
 import { automationStudioActivityAskPort } from "../../../../../runtime/automation-activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
+import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRound } from "./round.ts";
 import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";

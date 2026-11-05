@@ -21,6 +21,7 @@ import { currentAutomationStudioConversation } from "./context/index.ts";
 import {
   automationStudioConversationEffectiveCaller,
   type AutomationStudioConversationEffectiveCaller,
+  type AutomationStudioConversationKeyUnlockCheck,
   type AutomationStudioConversationUnlockedSessionResolver
 } from "./commands/index.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubject, AutomationStudioConversationThread } from "./thread.ts";
@@ -159,6 +160,8 @@ export class AutomationStudioConversations {
    * session, where the key is locked.
    */
   private unlockedSession: AutomationStudioConversationUnlockedSessionResolver | null = null;
+  private keyUnlockCheck: AutomationStudioConversationKeyUnlockCheck | null = null;
+  private keyStepToldTo: ((userId: string) => void) | null = null;
 
   constructor(
     private readonly pool: AutomationStudioProjectDatabasePool | undefined,
@@ -290,15 +293,22 @@ export class AutomationStudioConversations {
     );
   }
 
-  /** Connects the lookup of a person's unlocked session, for paired callers. Null disconnects it. */
-  bindUnlockedSessionResolver(resolver: AutomationStudioConversationUnlockedSessionResolver | null): this {
+  /** Connects the lookup of a person's unlocked session, for paired callers, and whether their key needs unlocking. Null disconnects it. */
+  bindUnlockedSessionResolver(resolver: AutomationStudioConversationUnlockedSessionResolver | null, keyUnlockCheck: AutomationStudioConversationKeyUnlockCheck | null = null, keyStepTold: ((userId: string) => void) | null = null): this {
     this.unlockedSession = resolver;
+    this.keyUnlockCheck = keyUnlockCheck;
+    this.keyStepToldTo = keyStepTold;
     return this;
+  }
+
+  /** The person read why their key needs their password once: it is not said a second time. */
+  noteKeySetupStepTold(userId: string): void {
+    this.keyStepToldTo?.(userId);
   }
 
   /** The session a request's model calls and commands run under: the actor's own, or a paired client's person's unlocked one. */
   callerFor(actor: { userId: string; sessionId: string }): AutomationStudioConversationEffectiveCaller {
-    return automationStudioConversationEffectiveCaller(actor, this.unlockedSession);
+    return automationStudioConversationEffectiveCaller(actor, this.unlockedSession, this.keyUnlockCheck);
   }
 
   /** The thread's asks still waiting for an answer, oldest first, from its most recent turns. */

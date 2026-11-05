@@ -13,7 +13,7 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 const SOURCE_OF_PATH: Readonly<Record<AutomationStudioTaskAttemptPath, AutomationStudioTaskResultSource>> = { explore: "exploration", run_flow: "flow", run_flow_then_repair: "both", run_flow_then_explore: "both" };
 
 /** The attempt as it stands, by status. */
-export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" }): AutomationStudioTaskAttempt {
+export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" | "model_key_locked" }): AutomationStudioTaskAttempt {
   const now = Date.now();
   const ended = status.status === "achieved" || status.status === "budget_out" || status.status === "stopped_by_person";
   const purse = run.input.creation.purse;

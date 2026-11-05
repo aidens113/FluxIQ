@@ -447,3 +447,13 @@ describe("FluxIQClientGatewayConnection heartbeat", () => {
     h.connection.closeClient();
   });
 });
+
+describe("FluxIQClientGatewayConnection credential", () => {
+  it("says it stored a new credential only once it has, so Core never ends the old one too soon", async () => {
+    let acknowledgedAtWrite = -1;
+    const h = harness({ overrides: { tokenStorage: { read: () => undefined, write: () => { acknowledgedAtWrite = FakeSocket.latest().credentialsAcknowledged; } } } });
+    await connectReady(h);
+    expect(acknowledgedAtWrite).toBe(0);
+    expect(FakeSocket.latest().credentialsAcknowledged).toBe(1);
+  });
+});

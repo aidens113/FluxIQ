@@ -2,10 +2,18 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
-import { updateFlowSettingsForRequest, withFlowSizeSettings } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
+import { updateFlowSettingsForRequest, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";
 import type { ProgramApiRequest } from "../../../_shared/api.ts";
+
+/** A saved Flow carries its metadata whole, so an authorization in it is replaced by what is stored, or dropped. */
+async function withoutClientCheckAuthorization<TFlow extends { flowId: string; metadata?: Record<string, any> }>(service: AutomationStudioService, projectId: string, flow: TFlow): Promise<TFlow> {
+  if (flow.metadata?.trainingModeSettings?.resultCheck?.authorization === undefined) return flow;
+  const exists = (await service.listFlows(projectId)).some((entry) => entry.flow.flowId === flow.flowId);
+  const stored = exists ? await service.getFlow(projectId, flow.flowId) : undefined;
+  return { ...flow, metadata: withStoredCheckAuthorization(flow.metadata, stored?.metadata) };
+}
 
 function payloadObject(request: ProgramApiRequest): Record<string, unknown> {
   return request.payload !== null && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
@@ -118,7 +126,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<SaveFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
       if (!payload.flow || typeof payload.flow !== "object") return { ok: false, error: "Flow object is required." };
-      return { ok: true, payload: { flow: await service.saveFlow({ projectId: String(payload.projectId ?? ""), flow: payload.flow, ...(typeof payload.expectedUpdatedAt === "number" ? { expectedUpdatedAt: payload.expectedUpdatedAt } : {}) }) } };
+      return { ok: true, payload: { flow: await service.saveFlow({ projectId: String(payload.projectId ?? ""), flow: await withoutClientCheckAuthorization(service, String(payload.projectId ?? ""), payload.flow), ...(typeof payload.expectedUpdatedAt === "number" ? { expectedUpdatedAt: payload.expectedUpdatedAt } : {}) }) } };
     }
   });
   registry.register({
