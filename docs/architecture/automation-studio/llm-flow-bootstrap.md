@@ -1081,13 +1081,29 @@ that does not succeed gives its acts back.
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
 acting. It sends no reset. These calls are in the Flow's own wire form, which the state
 engine needs: against an exploration's own calls it answers too little to settle anything.
-A pass presses its row's own control or says it could not: a host answers the reason
-`row_control_not_found`, nothing lasting later in that pass is sent, its later steps that
-declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`,
-`passed: false`), and the run goes on with the next row. A pass whose step answers
+A forward run walks a whole repeat and its list, whatever range it was asked for
+(`node-tools/replay/forward-range.ts`, t869): a model asks for "the loop" by its first step, and a range that starts inside
+a repeat or leaves its list out would otherwise have no rows to walk. A list before the range is read just before the
+repeat, on its own page; one in the range that answers `core.replay.unreproducible` is read once more, there. A repeat
+whose list answers no rows sends nothing of itself, and the run stops at its first step and says so (`core.replay.no_rows`),
+since a lasting step with no row acts on whatever page stands there. A repeat over a check that does not hold runs zero
+times and the run goes on.
+A step that does not pass on a row ends that row's pass and no other: nothing lasting later in that pass is sent, its later
+steps that declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`, `passed: false`), and
+the run goes on with the next row. The reason `row_control_not_found` says nothing was done to it; any other failure is
+named apart (`rowsStepFailed`), since something may have been. A row whose lasting step landed and whose way back alone
+failed is done, and is not named. A row the record refuses partway (`answeredDone`, the act gate's already-done and
+look-first answers) closes its pass the same way and counts as skipped; known at the pass's start, the pass sends nothing. A
+step outside a repeat that fails still stops the run there, so a Flow that cannot run at all answers what ran and what did
+not, as a tool answer and never as a task ending.
+How the next pass reaches the list: by the loop's own way back when the last pass ran it and it worked. Otherwise a pass's
+first step, in a repeat of more than one step, carries `reach: true`, and the host moves to the step's `from` if the page
+is not there. That is a move and nothing else: no reset, and an attempt still refuses `replay: "reset"`. A host that does
+not know the key runs the step where the page stands, which answers for itself.
+A pass whose step answers
 `row_left_behind` (a link not shown to be the row's went as page-level) is told the same way
 at its next lasting step, unless a step between them answers `row_own_control`. A saved Flow's
-run gate holds the same, from the resolution's `passRow`, failing that step instead. No other failing step goes on. The
+run gate holds that, from the resolution's `passRow`, failing that step instead. The
 answer holds one look taken as the run ends, under the keys the domain declares as its view,
 so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 

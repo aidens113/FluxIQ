@@ -51,6 +51,8 @@ export type FakeLibrary = {
   shapes?: Record<string, (loan: { title: string; due: string }) => JsonObject>;
   /** A renewal moves the loan's due date to this, as a real site's row changes under the act that landed on it. */
   renewedUntil?: string;
+  /** The address a read says it read, as a real domain's does. Absent, a read says none. */
+  address?: string;
 };
 
 export function fakeLibrary(titles: readonly string[] = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]): FakeLibrary {
@@ -97,7 +99,7 @@ async function answerOf(library: FakeLibrary, fault: FakeLibraryFault | undefine
   const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
   if (value.write === true) return { ...answer({ written: true }, { ...draft, written: true, effect: nodeId === READ_LOANS ? "observe" : "mutate" }), resultCode: "core.run_node.written" };
   const rows = (): JsonObject[] => library.loans.map((loan) => library.shapes?.[String(ran.parameters.shape)]?.(loan) ?? { ...loan });
-  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows() }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
+  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows(), ...(library.address === undefined ? {} : { url: library.address }) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
   const declared = ran.consequences;
   if (declared.length && permission) {
     const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });

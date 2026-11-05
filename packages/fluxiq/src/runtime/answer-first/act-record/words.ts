@@ -21,10 +21,15 @@ const CLASS_WORDS: ReadonlyArray<[AutomationStudioAttemptActClass, string]> = [
 const NO_CLASS_WORDS = "Pressed a control that changed the page";
 const WHERE_WORDS = "On the site";
 
-/** The words of an act: each as given, or the generic line where the parser refuses it or nothing was given (header). */
-export function automationStudioAttemptActScreenedWords(words: { what?: string | undefined; where?: string | undefined }, classes: readonly string[]): { what: string; where: string } {
+/**
+ * The words of an act: each as given, or the generic line where the parser refuses it or nothing was given (header).
+ * `item` is the few words of the listing the act was on (`./item-words.ts`): said after what was done, and left off
+ * as a whole where the parser refuses the line with it, so the act is never worse for naming its item.
+ */
+export function automationStudioAttemptActScreenedWords(words: { what?: string | undefined; where?: string | undefined }, classes: readonly string[], item?: string | undefined): { what: string; where: string } {
+  const what = accepted(words.what, "what") ?? CLASS_WORDS.find(([known]) => classes.includes(known))?.[1] ?? NO_CLASS_WORDS;
   return {
-    what: accepted(words.what, "what") ?? CLASS_WORDS.find(([known]) => classes.includes(known))?.[1] ?? NO_CLASS_WORDS,
+    what: (item === undefined ? undefined : accepted(`${what}: ${item}`, "what")) ?? what,
     where: accepted(words.where, "where") ?? WHERE_WORDS
   };
 }

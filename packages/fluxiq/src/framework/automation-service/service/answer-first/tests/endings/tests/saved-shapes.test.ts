@@ -47,13 +47,17 @@ describe("the saved-run shapes", () => {
     expect(decisions(attempt).map((request) => JSON.stringify(request.context.evidenceLoop?.evidence ?? [])).join("\n")).toContain("answer_first.same_evidence");
   });
 
-  it("the same refused evidence again and again spends no judge call, and the purse bounds what it does spend", async () => {
+  // With a person to ask it stops spending and asks (`./refused-completion.test.ts`): only with nobody to ask does the purse bound it.
+  it("the same refused evidence again and again spends no judge call, and with nobody to ask the purse bounds what it does spend", async () => {
     const attempt = await scriptedAttempt({
       judge: [judgedNo("Not it.")],
       usage: USAGE,
       resolver: { maxTotalEstimatedCostUsd: 0.4 },
       wrapProvider: (provider) => ({ ...provider, estimateCostUsd: () => 0.02 }),
-      before: noWaiting(),
+      before: (service) => {
+        noWaiting()(service);
+        Object.defineProperty(service.conversations, "available", { value: false });
+      },
       keepLooking: true,
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), ...Array.from({ length: 200 }, () => complete("It is done."))]
     }, cleanups);

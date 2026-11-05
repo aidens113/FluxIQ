@@ -1,0 +1,13 @@
+/** What a read says of itself (`./read-evidence.ts`). */
+export type AutomationStudioAnswerFirstReadEvidence = {
+  /** The name the model gave this list. */
+  named?: string;
+  /** Whether the model said this read replaces what the list held, or adds to it. */
+  says?: "append" | "replace";
+  /** The model marked it a working read, for a loop or a sum, never the answer. */
+  lookUp: boolean;
+  /** The address it read, without what only turns the page. */
+  list?: string;
+  /** Where in the list it read, where the call or the address says so. */
+  place?: string;
+};

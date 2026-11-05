@@ -104,7 +104,7 @@ import type { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY } from "../../../result
 import type { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import { screenAutomationStudioLlmEvidence } from "../../harness/index.ts";
 import { automationStudioLlmStepLogScope } from "../../step-log/index.ts";
-import type { AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY, type AutomationStudioFlowDraftReplayForward, type AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
 import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
   AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
@@ -233,7 +233,7 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
   if (!first || routing?.kind !== "repeat") return undefined;
   // A do-while names no earlier step: it is planned from its routing alone, and never reaches the plans over one (see the header).
   if (automationStudioFlowDraftRepeatIsWhile(routing)) {
-    const members = spanMembers(input.steps, input.run, input.index, routing.through);
+    const members = automationStudioFlowDraftReplaySpanMembers(input.steps, input.run, input.index, routing.through);
     // A run that stops before the span's last step -- the steps a rerun's put-back does again before that very step --
     // has nothing that could end the loop: it is not run as one (see the header).
     if (automationStudioFlowDraftStepId(members.at(-1)!) !== routing.through) return undefined;
@@ -247,7 +247,7 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
   if (!node) return undefined;
   // A list that did not replay gave no rows, and a check that did not hold runs the span zero times: neither is a loop to run.
   if (automationStudioNodeReplayStatus(asked.answer.result.resultCode, "replay") !== "replayed") return undefined;
-  const members = spanMembers(input.steps, input.run, input.index, routing.through);
+  const members = automationStudioFlowDraftReplaySpanMembers(input.steps, input.run, input.index, routing.through);
   const port = node.outputs.find((output) => output.type === "array")?.id;
   // A check is asked again on every pass, so the assembler puts it right before the span.
   if (port === undefined) return input.run[input.index - 1] === over ? { kind: "while", members, over } : undefined;
@@ -288,7 +288,7 @@ function rowLabels(evidence: JsonValue): readonly string[] | undefined {
  * those of them this walk runs, contiguous from `index`. Just the first when
  * `through` does not come after it.
  */
-function spanMembers(steps: readonly AutomationStudioFlowDraftStep[], run: readonly AutomationStudioFlowDraftStep[], index: number, through: string): AutomationStudioFlowDraftStep[] {
+export function automationStudioFlowDraftReplaySpanMembers(steps: readonly AutomationStudioFlowDraftStep[], run: readonly AutomationStudioFlowDraftStep[], index: number, through: string): AutomationStudioFlowDraftStep[] {
   const first = run[index]!;
   const start = steps.indexOf(first);
   const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
@@ -380,7 +380,7 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   /** What the steps before the span really produced in this test, as run state (see the header). */
   earlier?: Record<string, JsonValue> | undefined;
   /** A forward run's questions (`./forward.ts`): a list's row already done is left out whole. Absent, every row runs, as always. */
-  forward?: Pick<AutomationStudioFlowDraftReplayForward, "rowDone" | "passed"> | undefined;
+  forward?: Pick<AutomationStudioFlowDraftReplayForward, "rowDone" | "passed" | "answeredDone"> | undefined;
 };
 
 /** What a span answered: an outcome per member that ran, what the calls showed, the first page that did not pass, and whether the walk stops. */
@@ -391,8 +391,10 @@ export type AutomationStudioFlowDraftReplaySpanRunResult = {
   stopped: boolean;
   /** A forward run's list: the rows done, left out as already done, and failed on. Absent without `forward`, and for a repeat of no list. */
   rows?: AutomationStudioFlowDraftReplayRowCounts;
-  /** A forward run's rows whose own control could not be found, by their labels (`./forward.ts`). Absent when there were none. */
+  /** A forward run's rows a step failed on, by their labels (`./forward.ts`). Absent when there were none. */
   rowsNotDone?: string[];
+  /** Those of `rowsNotDone` where a step failed for another reason than finding the row's own control, so something may have been done to them. */
+  rowsStepFailed?: string[];
 };
 
 /** Run a planned span, pass by pass (see the header). */
@@ -409,6 +411,9 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   let skipped = 0;
   let rowsFailed = 0;
   const rowsNotDone: string[] = [];
+  const rowsStepFailed: string[] = [];
+  // Whether the last pass may have left the page somewhere the next cannot start from (`./forward.ts`).
+  let elsewhere = false;
   const observe = (step: AutomationStudioFlowDraftStep, callId: string, answer: AutomationStudioFlowDraftReplayAnswer, status: AutomationStudioFlowDraftReplayPass["status"], pass: number, mode: AutomationStudioFlowDraftReplayMode): void => {
     if (!answer.readable) return;
     // The rows this pass's read stored, beside its evidence and never in it (see the observation's type).
@@ -427,7 +432,11 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   // One pass of every member, on `row` for a list: `stopped` when the walk
   // stops, `ended` when a do-while's last member ended the loop, `failed` when
   // a member did not pass, else `passed`.
-  const runPass = async (pass: number, row?: JsonObject): Promise<"stopped" | "ended" | "failed" | "passed" | "no_more" | "row_missing"> => {
+  const runPass = async (pass: number, row?: JsonObject): Promise<"stopped" | "ended" | "failed" | "passed" | "no_more" | "row_missing" | "step_failed" | "held_done"> => {
+    // A forward pass on a row: a step that does not pass closes this pass, and no other (`./forward.ts`).
+    const ownPass = row !== undefined && input.forward !== undefined;
+    // A lasting step of this pass that landed.
+    let landed = false;
     // What the members before this one produced on this pass, and nothing of the pass before.
     const produced = new Map<string, JsonObject>();
     let ended = false;
@@ -437,17 +446,23 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     // A step of this pass went as a page-level link, and none since has found its row again (`./forward.ts`).
     let leftBehind = false;
     const comeBack = async (after: number, earlier: Record<string, JsonValue>): Promise<void> => {
+      // A first step that did not pass moved nothing, so the page is where the pass found it.
+      if (after === 0) return;
+      let cameBack = false;
       // No lasting act is sent after this, and a pass that got past its first step still comes back (`./forward.ts`).
-      for (const later of after === 0 ? [] : plan.members.slice(after + 1).filter(declaresNothing)) {
+      for (const later of plan.members.slice(after + 1).filter(declaresNothing)) {
         const back = automationStudioFlowDraftReplayPassCall(later, "replay", { item: row!, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf?.(later.actionId)) }, input.nodeOf?.(later.actionId), earlier, input.definitionOf?.(later.actionId), input.partOf);
-        if (back && "value" in back) await sendPass(pass, `${input.callIdOf(later)}.pass.${pass}`, later, back.value);
+        const answer = back && "value" in back ? await sendPass(pass, `${input.callIdOf(later)}.pass.${pass}`, later, back.value) : undefined;
+        cameBack = later === plan.members.at(-1) && answer?.readable === true && automationStudioNodeReplayStatus(answer.result.resultCode, "replay") === "replayed";
       }
+      elsewhere = !cameBack;
     };
     for (const [at, member] of plan.members.entries()) {
       const mode = input.modeOf(member, row);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
       const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf);
+      if (ownPass && at === 0 && elsewhere && built && "value" in built) built.value[AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY] = true;
       if (leftBehind && !declaresNothing(member)) {
         passes.get(member)!.push({ pass, status: "failed", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.unreproducible });
         await comeBack(at, earlier);
@@ -456,6 +471,8 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       let answered: AutomationStudioFlowDraftReplayPass;
       // A forward pass on a row, whose own control the host could not find (`./forward.ts`).
       let rowMissing = false;
+      // The record refused this step as already done (`./forward.ts`).
+      let heldDone = false;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {
         const callId = `${input.callIdOf(member)}.pass.${pass}`;
@@ -470,7 +487,8 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
           if (answer.result.resultReason === AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON) leftBehind = true;
           else if (answer.result.resultReason === AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON) leftBehind = false;
         }
-        const status = rowMissing ? "failed" : ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
+        heldDone = ownPass && answer.readable && input.forward?.answeredDone?.(answer.result.resultCode) === true;
+        const status = rowMissing ? "failed" : ends || heldDone ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass, mode);
         if (answer.readable) input.forward?.passed?.(member, row, answer.result);
@@ -478,15 +496,25 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         if (outputs) produced.set(automationStudioFlowDraftStepId(member), outputs);
       }
       passes.get(member)!.push(answered);
+      if (heldDone) {
+        await comeBack(at, earlier);
+        return "held_done";
+      }
       if (rowMissing) {
         await comeBack(at, earlier);
-        return "row_missing";
+        return landed && declaresNothing(member) ? "passed" : "row_missing";
       }
       if (answered.status !== "replayed") {
         failed = true;
+        if (ownPass && !noMore) {
+          await comeBack(at, earlier);
+          return landed && declaresNothing(member) ? "passed" : "step_failed";
+        }
         if (input.stops?.(member)) return "stopped";
-      }
+      } else if (mode === "replay" && !declaresNothing(member)) landed = true;
     }
+    // A span of one step did not set out to leave its list; one of more is back only by a last step that moves and leaves nothing (`./forward.ts`).
+    if (ownPass) elsewhere = plan.members.length > 1 && !declaresNothing(plan.members.at(-1)!);
     return noMore ? "no_more" : failed ? "failed" : ended ? "ended" : "passed";
   };
   if (plan.kind === "list") {
@@ -499,9 +527,15 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         continue;
       }
       const ran = await runPass(count, row);
-      if (ran === "row_missing") {
+      if (ran === "held_done") {
+        skipped += 1;
+        continue;
+      }
+      if (ran === "row_missing" || ran === "step_failed") {
+        const named = plan.labels?.[count - 1] ?? `row ${count}`;
         rowsFailed += 1;
-        rowsNotDone.push(plan.labels?.[count - 1] ?? `row ${count}`);
+        rowsNotDone.push(named);
+        if (ran === "step_failed") rowsStepFailed.push(named);
         continue;
       }
       if (ran === "stopped" || ran === "failed") rowsFailed += 1;
@@ -550,7 +584,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     if ((stopped || rowsNotDone.length > 0) && !list.length) continue;
     outcomes.push(memberOutcome(member, list, input.modeOf(member), overBound, input.withheldBy));
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}), stopped, ...(input.forward && plan.kind === "list" ? { rows: { done: rowsDone, skipped, failed: rowsFailed } } : {}), ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), stopped, ...(input.forward && plan.kind === "list" ? { rows: { done: rowsDone, skipped, failed: rowsFailed } } : {}), ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}), ...(rowsStepFailed.length > 0 ? { rowsStepFailed } : {}) };
 }
 
 /** Whether a step says, in what it ran with, that it leaves nothing behind. One that says nothing has not said so. */

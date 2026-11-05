@@ -2,6 +2,7 @@ export * from "./contracts.ts";
 export * from "./gate/index.ts";
 export * from "./identity/index.ts";
 export * from "./mergers/index.ts";
+export * from "./item-words.ts";
 export * from "./record-data.ts";
 export * from "./record.ts";
 export * from "./row-ties.ts";

@@ -6,9 +6,8 @@ import { validateAutomationStudioLlmTaskRequest, automationStudioLlmTaskOutputSc
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest } from "./request.ts";
-import { automationStudioAnthropicMatchesSchema } from "../../models/providers/anthropic/index.ts";
+import { automationStudioAnthropicMatchesSchema, automationStudioAnthropicReadReply } from "../../models/providers/anthropic/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
-import { isRecord } from "../provider-transport/index.ts";
 
 export type AutomationStudioAnthropicProviderOptions = {
   secretReference: AutomationStudioLlmSecretReference;
@@ -68,14 +67,8 @@ function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudi
 }
 
 function parseAnswer(text: string, usage: AutomationStudioLlmUsageSummary, request: AutomationStudioLlmTaskRequest, jsonText: boolean): AutomationStudioLlmStructuredResponse {
-  let structured: unknown;
-  try {
-    structured = JSON.parse(text);
-    if (jsonText) {
-      if (!isRecord(structured) || Object.keys(structured).length !== 1 || typeof structured.result_json !== "string") throw new Error("Invalid transport envelope.");
-      structured = JSON.parse(structured.result_json);
-    }
-  } catch { throw automationStudioAnthropicPaidFailure("llm.provider_malformed_response", usage); }
+  // A reply that cannot be read says which case it was; the loop asks again with that.
+  const structured = automationStudioAnthropicReadReply(text, jsonText, "end_turn", usage);
   if (usage.inputTokens! > request.tokenLimits.maxInputTokens || usage.totalTokens! > request.tokenLimits.maxTotalTokens) throw automationStudioAnthropicPaidFailure("llm.provider_usage_limit_exceeded", usage);
   if (!automationStudioAnthropicMatchesSchema(structured, automationStudioLlmTaskOutputSchema(request))) throw automationStudioAnthropicPaidFailure("llm.provider_output_invalid", usage);
   // The unchanged original schema is checked here; Core's harness applies its

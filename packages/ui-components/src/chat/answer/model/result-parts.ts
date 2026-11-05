@@ -11,10 +11,19 @@ import { siteWords, skippedWords } from "../words/index.ts";
 
 type ResultParts = Pick<AnswerModel, "check" | "rows" | "text" | "siteTitle" | "siteLines" | "checked" | "missing" | "skipped" | "canExport">;
 
+/** The count line an older check wrote for every verdict ("5 rows, 3 acts on the site, once against what was asked for."): it says what was looked at, which is no account of what failed. */
+const COUNTS_ONLY = /, once against what was asked for\.$|^nothing to show, once against what was asked for\.$/u;
+
+/**
+ * What the check said, under the label its verdict gives it: what was checked on a yes, what failed on a no and what it
+ * was meant to settle on an unsure. A check that was never made, or whose words are only the count of what it looked at, says nothing here.
+ */
 function checkedLine(result: ChatTaskResult): string | undefined {
   if (result.checkedWhat === undefined) return undefined;
-  if (effectiveLabel(result) === "refuted") return `What failed: ${result.checkedWhat}`;
-  return effectiveLabel(result) === "unverified" ? `Meant to check: ${result.checkedWhat}` : `Checked: ${result.checkedWhat}`;
+  const label = effectiveLabel(result);
+  if (label === "confirmed") return `Checked: ${result.checkedWhat}`;
+  if (COUNTS_ONLY.test(result.checkedWhat)) return undefined;
+  return label === "refuted" ? `What failed: ${result.checkedWhat}` : `Meant to check: ${result.checkedWhat}`;
 }
 
 /** The parts of a result that holds something to show. */

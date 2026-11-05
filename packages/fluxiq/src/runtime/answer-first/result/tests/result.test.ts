@@ -170,6 +170,15 @@ describe("the words on a result", () => {
   });
 });
 
+describe("the check's words on a result that was not confirmed", () => {
+  it("keeps what a no said, whole, as what failed, with the acts that name their items", () => {
+    const said = "The order is wrong: the bowls come before the mugs. Asked for: cheapest first. Sort the list by price, lowest first.";
+    const named = { ...LANDED, what: "Save: Speckled mug, 300ml" };
+    const result = automationStudioAnswerFirstResult({ attemptId: "attempt.1", label: "refuted", timesChecked: 3, acts: [named], rows: rows(), checkedWhat: said, missingWhat: "The budget ran out before this was confirmed." });
+    expect(result).toMatchObject({ label: "refuted", checkedWhat: said, missingWhat: "The budget ran out before this was confirmed.", acts: [{ what: "Save: Speckled mug, 300ml" }] });
+  });
+});
+
 describe("the acts on a result", () => {
   it("keep an act whose words the contract refuses, in plainer words", () => {
     const result = automationStudioAnswerFirstResult({ ...confirmed, acts: [{ ...LANDED, what: "Pressed <button>Book</button>" }] });

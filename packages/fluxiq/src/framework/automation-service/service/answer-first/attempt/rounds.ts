@@ -22,6 +22,7 @@ import { automationStudioAnswerFirstBackoff, automationStudioAnswerFirstNext, ty
 import { automationStudioAnswerFirstPreModelStep, type AutomationStudioAnswerFirstPreModelStep } from "../../../../../runtime/answer-first/pre-model/index.ts";
 import { automationStudioActivityAskPort } from "../../../../../runtime/automation-activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRound } from "./round.ts";
@@ -66,15 +67,28 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
       await wait(run, next.waitMs);
       continue;
     }
-    if (run.askPerson && await askedToStop(run)) return "stopped_by_person";
+    const asked = run.askPerson;
+    if (asked && await askedToStop(run)) return "stopped_by_person";
     idleRounds = purse.spentCalls() === spentBefore ? idleRounds + 1 : 0;
     if (idleRounds > 0) await wait(run, automationStudioAnswerFirstBackoff(idleRounds - 1).waitMs);
     if (stopped(run)) return "stopped_by_person";
     automationStudioAnswerFirstSay("Carrying on", next.why);
     // A fresh round is no longer a repair of the step the Flow stopped at (`./path.ts`).
     if (run.path === "run_flow_then_repair") run.path = "run_flow_then_explore";
-    note = automationStudioAnswerFirstRoundNote(run, next.note);
+    note = automationStudioAnswerFirstRoundNote(run, { ...next.note, ...refusedAgainNote(run, asked) });
   }
+}
+
+/** What a fresh round is told when its completion was refused over the same evidence: what would change that, and what the result holds. It says a person's answer only where the person was asked about this. */
+function refusedAgainNote(run: AutomationStudioAnswerFirstAttemptRun, asked: boolean): JsonObject {
+  const { refusedAgain, held } = run.completion.state;
+  if (refusedAgain === 0) return {};
+  return {
+    completionRefused: {
+      words: AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.freshRound(asked),
+      ...(held ? { resultHolds: automationStudioAnswerFirstResultHolds(held, run.input.binding?.deniedEvidenceKeys ?? []) } : {})
+    }
+  };
 }
 
 /** A round that threw a refusal made before any model call, and what the table says it becomes (`../../../../../runtime/answer-first/pre-model/`). */
@@ -102,7 +116,8 @@ async function askedToStop(run: AutomationStudioAnswerFirstAttemptRun): Promise<
   await automationStudioAnswerFirstKeep(run);
   const { personAsk, cancellation } = run.input;
   const port = personAsk ? automationStudioActivityAskPort(automationStudioAnswerFirstUnboundedPort(personAsk.port, (_state, waited) => { run.waitedMs += waited; }), "building") : undefined;
-  const answer = await automationStudioAnswerFirstAskStuck(port, cancellation.signal());
+  const answer = await automationStudioAnswerFirstAskStuck(port, cancellation.signal(), run.askWords);
+  run.askWords = undefined;
   run.waitingFor = undefined;
   return answer === "stop";
 }

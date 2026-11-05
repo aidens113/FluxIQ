@@ -112,7 +112,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       else if (block.type !== "thinking" && block.type !== "redacted_thinking") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic returned an unsupported content block.");
     }
     const text = content.join("");
-    if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.");
+    if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.", false, undefined, undefined, undefined, undefined, { case: "content_empty", finishReason: "end_turn", contentChars: 0, ...(paid ? { usage: paid } : {}) }, undefined, paid);
     if (!paid) throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "Anthropic returned invalid token usage.");
     // The paid account exists before schema validation can refuse the answer.
     const answer = input.readAnswer(text, paid);
@@ -125,7 +125,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
   } catch (error) {
     const failure = controller.signal.aborted ? signalFailure(input.signal, timedOut)
       : error instanceof AutomationStudioLlmProviderError ? error : new AutomationStudioLlmProviderError("llm.provider_network_error", "Anthropic request failed at the network boundary.", true);
-    const accounted = paid ? withPaid(failure, paid) : failure;
+    const accounted = withPaid(failure, paid);
     step?.failed(accounted);
     throw accounted;
   } finally {
@@ -139,8 +139,11 @@ export function automationStudioAnthropicPaidFailure(code: "llm.provider_output_
   return withPaid(new AutomationStudioLlmProviderError(code, "Anthropic returned an unusable answer."), usage);
 }
 
-function withPaid(error: AutomationStudioLlmProviderError, paid: AutomationStudioLlmUsageSummary): AutomationStudioLlmProviderError {
-  return new AutomationStudioLlmProviderError(error.code, error.message, error.retryable, error.status, error.provenance, error.responseBody, error.refusal, error.reply, error.inputSize, paid);
+/** The failure with what the call cost, and, for a reply of a shape Core could not read, a case where the adapter named none. */
+function withPaid(error: AutomationStudioLlmProviderError, paid: AutomationStudioLlmUsageSummary | undefined): AutomationStudioLlmProviderError {
+  const reply = error.reply ?? (error.code === "llm.provider_malformed_response" ? { case: "envelope_shape" as const, ...(paid ? { usage: paid } : {}) } : undefined);
+  if (!paid && !reply) return error;
+  return new AutomationStudioLlmProviderError(error.code, error.message, error.retryable, error.status, error.provenance, error.responseBody, error.refusal, reply, error.inputSize, paid ?? error.paid);
 }
 function signalFailure(signal: AbortSignal | undefined, timedOut: boolean): AutomationStudioLlmProviderError {
   const timeout = timedOut || automationStudioLlmSignalTimedOut(signal);

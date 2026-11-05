@@ -51,6 +51,8 @@ const ALREADY_DONE_SAID = "This act already happened in this task, so it was not
 const ROW_UNCLEAR_CODE = "attempt.act_row_unclear";
 const ROW_UNCLEAR_SAID = "This may be a row that is already done: more than one row fits it and nothing yet tells them apart, so it was not done again, since doing it twice cannot be taken back. Pressing it again will not help. Read something that tells these rows apart and act on the one you mean, or say what you have and what you could not tell.";
 const LOOK_FIRST_SAID = "This act may already have happened, so it was not done again. Look at the page where its effect would show: if it is there, count it as done; if it is not, it may be tried again.";
+/** The refusals that say a call's act is held done or maybe done, which a forward run counts as a row left out (`./forward.ts`). */
+export const AUTOMATION_STUDIO_ATTEMPT_ACT_HELD_CODES: ReadonlySet<string> = new Set([ALREADY_DONE_CODE, ROW_UNCLEAR_CODE, LOOK_FIRST_CODE]);
 /** A look-first refusal's one resend, read by the repeat guard (`S/runtime/llm/repeat-guard/resend-admission.ts`). */
 const RESEND_ONCE: AutomationStudioLlmEvidenceResendInvitation = "accepted_once";
 const NOT_RECORDED_CODE = "attempt.act_not_recorded";
