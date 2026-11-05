@@ -30,8 +30,9 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
  *   workspace FRN; the filter then shows only what `OwnData` allows. Nothing
  *   else is granted on the workspace FRN: an unfiltered list across the
  *   workspace, and an action on no specific resource, are denied.
- * - `SelfService`: the `iam` actions that change only the caller's own
- *   credentials, on `user/${fluxiq:PrincipalId}`. Not `iam:CreateUser`,
+ * - `SelfService`: the actions that change only the caller's own credentials,
+ *   and a person's own unlock of their own keys with their own password, on
+ *   `user/${fluxiq:PrincipalId}`. Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
  *   also names browser management (covered by `OwnData` on the caller's own
  *   `gateway` browsers) and a deletion request, which has no action yet.
@@ -58,16 +59,10 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Resource: IAM_WORKSPACE_PATTERNS.workspace
   },
   {
-    // A person's own unlock, with their own password, of their own keys: it names no resource to own.
-    Sid: "OwnUnlock",
-    Effect: "Allow",
-    Action: ["secrets:Unlock"],
-    Resource: IAM_WORKSPACE_PATTERNS.workspace
-  },
-  {
     Sid: "SelfService",
     Effect: "Allow",
     Action: [
+      "secrets:Unlock",
       "iam:SetPassword",
       "iam:SetPin",
       "iam:BeginTotp",

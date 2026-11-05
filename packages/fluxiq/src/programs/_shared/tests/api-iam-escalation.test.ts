@@ -90,6 +90,13 @@ describe("FluxIQUserAccess under service, over the live registry", () => {
     expect(targets.length).toBeGreaterThan(0);
     expect(reached).toEqual([]);
   });
+
+  it("lets a user call their own unlock, whose handler keeps it to their own keys (secret-keys/api/tests/unlock-cross-user.test.ts)", async () => {
+    const unlock = endpoints.find((endpoint) => actionOf(endpoint) === "secrets:Unlock");
+    expect(unlock, "secret-keys/unlock is registered").toBeDefined();
+    if (unlock === undefined) return;
+    expect(outcomeOf(await callAs(bob, unlock, NO_ID_PAYLOAD))).toBe("allow");
+  });
 });
 
 function workspaceWide(endpoint: ProgramApiEndpointSummary): boolean {

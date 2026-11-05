@@ -150,7 +150,7 @@ describe("the reads a run's start makes", () => {
     const { projectId, flowId } = await adaptiveFlow(service);
     vi.spyOn(service, "listRuntimeSessions").mockRejectedValueOnce(new Error("sessions unreadable"));
 
-    await expect(service.runRuntimeSession({ projectId, flowId })).rejects.toThrow("sessions unreadable");
+    await expect(service.runRuntimeSession({ projectId, flowId })).rejects.toThrow("FluxIQ could not check whether another run is using this page");
 
     await expect(service.listRuntimeSessions(projectId)).resolves.toEqual([]);
   });

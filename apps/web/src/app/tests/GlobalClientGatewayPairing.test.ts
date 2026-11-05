@@ -51,7 +51,7 @@ describe("Global client pairing dismissal", () => {
   it("mounts the poller only for authenticated users allowed to control runtime", () => {
     const layout = readFileSync(new URL("../layout.tsx", import.meta.url), "utf8");
     expect(layout).toContain('auth?.role.permissions.includes("runtime.control")');
-    expect(layout).toContain("pairingEligible ? <GlobalClientGatewayPairing /> : null");
+    expect(layout).toContain("pairingEligible ? <GlobalClientGatewayPairing asksTotp={auth?.user.totpEnabled === true} /> : null");
   });
 
   // t707 C2: when the browser left while the person read the code, the panel

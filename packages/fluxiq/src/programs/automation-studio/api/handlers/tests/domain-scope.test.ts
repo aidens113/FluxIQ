@@ -43,8 +43,13 @@ import { registerAutomationStudioApi } from "../index.ts";
 /**
  * Every endpoint that refuses a project outside the request's domain scope:
  * the six run-dataset endpoints, the seven reusable LLM context endpoints, the
- * six conversation endpoints and the two task-attempt reads, whose results hold
- * rows. Each one returns, deletes or counts content captured from somewhere else.
+ * six conversation endpoints, the task-attempt endpoints, whose results hold
+ * rows, and a project's tasks: their list shows each task's latest result, and
+ * a rename or removal changes what a task remembers of that page content, as
+ * `put-reusable-llm-context` and `append-turn` do; and a project's library of
+ * saved parts: a run hands back values a part read from a page, a card names its
+ * sites and purpose in the words of whoever saved it, and a save keeps one. Each
+ * one returns, changes, deletes or counts content captured from somewhere else.
  *
  * A thread is on the list because it holds free text and some of that text
  * came out of a domain -- the control named on a permission ask, the sentence
@@ -78,7 +83,14 @@ const DOMAIN_SCOPED = [
   AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt,
   AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts,
   AUTOMATION_STUDIO_ENDPOINTS.getTaskKnownFlow,
-  AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt
+  AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt,
+  AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks,
+  AUTOMATION_STUDIO_ENDPOINTS.renameTask,
+  AUTOMATION_STUDIO_ENDPOINTS.removeTask,
+  AUTOMATION_STUDIO_ENDPOINTS.listProjectParts,
+  AUTOMATION_STUDIO_ENDPOINTS.getProjectPart,
+  AUTOMATION_STUDIO_ENDPOINTS.saveProjectPart,
+  AUTOMATION_STUDIO_ENDPOINTS.runProjectPart
 ].sort();
 
 const DOMAIN_REFUSED = "Automation Studio project is unavailable in this domain scope.";
