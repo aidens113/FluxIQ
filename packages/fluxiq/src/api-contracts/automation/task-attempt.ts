@@ -34,6 +34,32 @@ export type ListConversationTaskAttemptsRequest = { projectId: string; conversat
 
 export type ListConversationTaskAttemptsResponse = { outcomes: AutomationStudioTaskOutcome[] };
 
+/** One task in a project's list: its latest attempt, and where it can be opened from. `title` is the person's own name for it, or its Flow's name. */
+export type AutomationStudioProjectTask = {
+  taskId: string;
+  flowId: string;
+  title?: string;
+  /** The thread that holds the task's Flow now, for "open in chat". Absent where none is noted. */
+  conversationId?: string;
+  attemptCount: number;
+  latest: AutomationStudioTaskOutcome;
+};
+
+/** `list-project-tasks`: a project's tasks, newest attempt first. A task whose latest attempt cannot be found is left out; a file Core cannot read is refused, never an empty list. */
+export type ListProjectTasksRequest = { projectId: string; limit?: number; cursor?: string };
+
+export type ListProjectTasksResponse = { tasks: AutomationStudioProjectTask[]; nextCursor: string | null };
+
+/** `rename-task`: the task's own name only. A task Core does not hold is refused. Never touches a Flow, a saved part or a result. */
+export type RenameTaskRequest = { projectId: string; taskId: string; title: string };
+
+export type RenameTaskResponse = { taskId: string; title: string };
+
+/** `remove-task`: forgets the task's memory entry (its notes, the steps it remembers and its attempt index) and nothing else. Its Flow, saved parts, results and attempt rows stay. */
+export type RemoveTaskRequest = { projectId: string; taskId: string };
+
+export type RemoveTaskResponse = { taskId: string; removed: true };
+
 /** `get-task-known-flow`: the Flow an identical task already lives under, for the chat to reuse. No `flowId` where there is none, or it is gone. */
 export type GetTaskKnownFlowRequest = { projectId: string; instructionText: string; startLocation?: string };
 

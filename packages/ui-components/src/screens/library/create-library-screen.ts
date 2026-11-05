@@ -86,7 +86,7 @@ export function createLibraryScreen(options: LibraryScreenOptions): LibraryScree
       else if (entry.kind === "detail") {
         view = detailView(
           { card, detail: reading?.detail, loading: reading?.loading ?? false, problem: reading?.problem, names: names() },
-          { back, run: () => go({ kind: "run", partId: entry.partId }, "run"), ask: () => host.askAbout(`About my “${card.name}” subflow: `), retry: () => void readDetail(entry.partId), open: (partId, key) => openPart(partId, key) },
+          { back, run: () => go({ kind: "run", partId: entry.partId }, "run"), ask: () => host.askAbout(`About my “${card.name}” subflow: `), retry: () => void readDetail(entry.partId), open: (partId, key) => openPart(partId, key), ...(host.openFlow === undefined ? {} : { openFlow: (flow) => host.openFlow?.(flow) }) },
           context
         );
       } else {

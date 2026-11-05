@@ -58,6 +58,11 @@ export class AutomationStudioAnswerFirstAttemptLocator {
     return held;
   }
 
+  /** The thread that holds a Flow now (the latest to note it), or none. Throws as `flowOfAttempt` does. */
+  async conversationOfFlow(projectId: string, flowId: string): Promise<string | undefined> {
+    return (await this.read(projectId))?.threads.filter((thread) => thread.flowId === flowId).at(-1)?.conversationId;
+  }
+
   /** Notes which Flow an attempt is on. It writes once per attempt: an attempt's row is saved many times. */
   async noteAttempt(projectId: string, attemptId: string, flowId: string): Promise<void> {
     const key = JSON.stringify([projectId, attemptId]);

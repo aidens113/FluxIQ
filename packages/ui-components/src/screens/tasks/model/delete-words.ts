@@ -6,7 +6,7 @@ export type DeleteWords = { question: string; goes: string; stays: string };
 export function deleteWords(title: string): DeleteWords {
   return {
     question: `Delete “${title}”?`,
-    goes: "This removes the task from your list, with its attempts and the steps shown for them.",
-    stays: "Any automation or subflow it saved stays, and so does anything it did on the site. Nothing it did there is undone."
+    goes: "This removes the task from your list, and what it remembers for next time.",
+    stays: "Any automation or subflow it saved stays, and so do the chat and anything it did on the site. Nothing it did there is undone."
   };
 }

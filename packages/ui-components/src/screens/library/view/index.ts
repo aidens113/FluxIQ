@@ -6,6 +6,7 @@ export { lines } from "./lines.ts";
 export { listView, LIBRARY_EMPTY, type LibraryListModel } from "./list-view.ts";
 export { pendingView } from "./pending-view.ts";
 export * from "./run/index.ts";
+export { saveThis } from "./save-this.ts";
 export { stepsPart } from "./steps-part.ts";
 export { treeList } from "./tree-list.ts";
 export { treeRow } from "./tree-row.ts";

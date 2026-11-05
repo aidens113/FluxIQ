@@ -41,5 +41,7 @@ export type DetailsState = {
   renaming?: RenameState;
   deleting?: DeleteState;
   carrying: boolean;
+  /** "Save this" for the task's Flow, once a subflow worth keeping is known. Built once so a press and what it said stay across redraws. */
+  keep?: HTMLElement;
   note?: { text: string; tone: "info" | "error" };
 };

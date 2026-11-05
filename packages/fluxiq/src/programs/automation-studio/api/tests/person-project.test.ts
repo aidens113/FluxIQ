@@ -13,6 +13,7 @@ import { createGlobalProgramRuntime, type GlobalProgramRuntime } from "../../../
 import type { ProgramApiActor } from "../../../_shared/api.ts";
 import { fixedPolicySource } from "../../../_shared/tests/iam-registry-fixtures.ts";
 import { automationStudioPersonProject } from "../person-project.ts";
+import { automationStudioProjectName } from "../project-name.ts";
 
 const DOMAIN = "example";
 const OPERATOR_PERMISSIONS = ["programs.read", "programs.write", "runtime.control", "flows.write"] as ProgramApiActor["permissions"];
@@ -108,6 +109,14 @@ describe.each([
     const reader: ProgramApiActor = { ...ALICE, permissions: ["programs.read"] as ProgramApiActor["permissions"] };
     await expect(project(reader, true)).resolves.toBeNull();
     await expect(allProjects()).resolves.toEqual([]);
+  });
+
+  it("says what a project is called, and nothing for one that is not there or when no domain is declared", async () => {
+    const own = await made(ALICE, "  Company website ");
+    const name = (projectId: string, domainId: string | null = DOMAIN) => automationStudioProjectName({ registry: runtime.api, actor: ALICE, domainId, projectId });
+    await expect(name(own)).resolves.toBe("Company website");
+    await expect(name("project.missing")).resolves.toBeNull();
+    await expect(name(own, null)).resolves.toBeNull();
   });
 
   it("with no domain declared, is none", async () => {

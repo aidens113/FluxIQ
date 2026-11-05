@@ -67,6 +67,10 @@ describe("a paired client on the program route", () => {
         "export-run-dataset",
         "get-task-attempt",
         "list-conversation-task-attempts",
+        "list-flow-subflows",
+        "list-project-tasks",
+        "rename-task",
+        "remove-task",
         "carry-on-task-attempt",
         "run-runtime-session",
         "generate-recording-proposal",
@@ -166,6 +170,16 @@ describe("a paired client on the program route", () => {
       expect(narrow({ projectId: "p", attemptId: "attempt.1", addUsd: 1, [field]: "x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's carry-on may not carry ${field}.` });
     }
     expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+  });
+
+  it("renames or forgets a task by project, task and name only, so nothing else of Core can be reached through it", () => {
+    const rename = (payload: unknown) => narrowPairedClientRequest("automation-studio", "rename-task", payload);
+    const remove = (payload: unknown) => narrowPairedClientRequest("automation-studio", "remove-task", payload);
+    expect(rename({ projectId: "p", taskId: "t", title: "Loans" })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t", title: "Loans" } });
+    expect(remove({ projectId: "p", taskId: "t" })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t" } });
+    expect(rename({ projectId: "p", taskId: "t", title: "x", flowId: "f" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(remove({ projectId: "p", taskId: "t", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(remove(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 
   it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {

@@ -50,8 +50,14 @@ export type SubflowStep = { label: string; lastingClasses: SubflowLastingClass[]
 /** A subflow another one calls, with what that calls in turn. */
 export type SubflowCallNode = { partId: string; version: number; name: string; calls: SubflowCallNode[] };
 
-/** Who uses a subflow: an automation, or another subflow. */
-export type SubflowCaller = { kind: "flow" } | { kind: "part"; partId: string };
+/** A newer version of a subflow than the one a caller pins: Core's own words for it, and whether it has passed a run elsewhere. */
+export type SubflowCallerNewer = { passed: boolean; said: string };
+
+/**
+ * Who uses a subflow: an automation, or another subflow. An automation is the Flow it opens (`flowId`) and its `name`
+ * when the client could read one; `newer` is set when a newer version of this subflow exists.
+ */
+export type SubflowCaller = { kind: "flow"; flowId?: string; name?: string; newer?: SubflowCallerNewer } | { kind: "part"; partId: string };
 
 /** One subflow opened: its card with what the person reads beside it. */
 export type SubflowDetail = { card: SubflowCard; steps: SubflowStep[]; calls: SubflowCallNode[]; callers: SubflowCaller[] };
@@ -69,6 +75,9 @@ export type SubflowListing = { refused: false; parts: SubflowCard[]; nextCursor:
 
 /** One subflow opened, or why it cannot be. */
 export type SubflowReading = { refused: false; detail: SubflowDetail };
+
+/** Saving a subflow of a Flow into the library: kept, or why not in Core's words. */
+export type SubflowSaveOutcome = { saved: true; partId: string; version: number; status: "created" | "new_version" | "existing" } | { saved: false; code: string; message: string };
 
 /** Where a run stopped: the step in a person's words, and why. */
 export type SubflowRunStop = { stepLabel: string; reason: string };
