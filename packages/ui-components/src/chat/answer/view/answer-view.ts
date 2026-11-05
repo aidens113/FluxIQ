@@ -4,7 +4,7 @@
 //   [ columns | first 5 rows ]                      Show all 10 · CSV · JSON
 //   On the site: I recorded no changes
 //   Checked: ...      From: pages on site · time · cost
-//   Saved so next time is quicker.        [Run again] [What I did]
+//   Saved for next time.        [Run again] [What I did]
 //
 // The element lives as long as the attempt. The card inside is redrawn only when what it
 // says changes (the model, or what the last press said), so a re-read that changes nothing

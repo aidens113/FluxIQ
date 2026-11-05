@@ -19,7 +19,8 @@
 //      changed it. A fit is a field a row can be told by, whole enough, found in the other row's
 //      words, or a shared address. A field more than one row of a read holds ("Pending" on every
 //      row) tells no row from another, unless the row has nothing else, or the other has: a row
-//      all of whose values lie in this one may be this one, whatever this one's list shares. A row
+//      all of whose values lie in this one may be this one, whatever this one's list shares. (A row
+//      saying only its control's own name is held as no row at all, `./record.ts`.) A row
 //      that fits nothing in an earlier list can still be found by elimination, since two rows of a
 //      list are never one: rows of both lists that plainly match are set aside, and a row left over in the later list
 //      is any row left over in the earlier one with most of its words the same. Where more than one

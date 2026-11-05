@@ -117,6 +117,34 @@ describe("a repeat that opens each row by its whole link and renews it there", (
     expect(attempt.answered.status).toBe("answered");
   });
 
+  it("a pass's link that went as page-level, so nothing says it is on its row: its renew never lands, the row is told, and the next row is done", async () => {
+    const library = fakeLibrary();
+    const cards: Cards = { at: "list", missing: [], renewOnly: [], opened: [], backs: 0 };
+    const pageLevel = cardsFault(cards);
+    const attempt = await scriptedAttempt({
+      library, instruction: "Renew every loan on my library account.", permittedConsequences: ["modify_existing"],
+      fault: (call, held) => {
+        const answer = pageLevel(call, held);
+        return answer && call.value.replay === "step" && (call.value.parameters as JsonObject).title === OPEN && (call.value.item as JsonObject | undefined)?.title === "Birds of the Coast" ? { ...answer, resultReason: "row_left_behind" } : answer;
+      },
+      script: [
+        runNode("read", READ_LOANS),
+        runNode("first", RENEW_LOAN, { title: "Atlas of Rivers" }, CONSEQUENCES),
+        toolCall("flow-read", "core.run_node", { node: READ_LOANS, parameters: {}, consequences: [], write: true }),
+        toolCall("flow-open", "core.run_node", { node: RENEW_LOAN, parameters: { title: OPEN }, consequences: [], write: true }),
+        toolCall("flow-renew", "core.run_node", { node: RENEW_LOAN, parameters: { title: RENEW }, consequences: CONSEQUENCES, write: true }),
+        toolCall("flow-back", "core.run_node", { node: RENEW_CARD, parameters: {}, consequences: [], write: true }),
+        { kind: "amend_draft", amendments: [{ step: 5, change: "repeat", through: 7, over: 4 }] },
+        toolCall("forward", "core.run_flow", { from: 4 }),
+        complete("Renewed what could be renewed.")
+      ]
+    }, cleanups);
+    expect(library.renewals).toEqual({ "Atlas of Rivers": 1, Clockmaking: 1 });
+    const asked = attempt.requests.filter((request) => request.taskKind === "evidence_tool_decision").at(-1);
+    expect(asked?.context.evidenceLoop?.evidence.find((entry) => entry.callId === "forward")?.value).toMatchObject({ passed: false, rowsNotDone: ["Birds of the Coast"] });
+    expect(attempt.answered.status).toBe("answered");
+  });
+
   it("the view the model reads next is the page as it stands, not the one from before the run", async () => {
     const { view, library } = await renewEveryCard();
     const top = view?.groups?.find((group) => group.group === "top");

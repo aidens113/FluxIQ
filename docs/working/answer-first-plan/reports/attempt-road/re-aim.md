@@ -178,7 +178,97 @@ No oracle, fixture or guidance was changed. The tool description says genericall
 - **A saved Flow's repeat, or a part's, in a browser.** Their aim is the same code on the same wire form, proven by stub page and by engine test separately. Nothing runs the real engine, the real node and the real resolver together on one page.
 - **How long a row that cannot be found takes on a real page.** Each attempt under the default retries waits for its target, and I did not measure it.
 
+## Follow-up, on the merged tree (Core `059fc3d7c`, with t870 and t865)
+
+### What t870's clause did before I touched it
+
+**It did what the lead feared.** In `same-row.ts`, `fitOf`, "a row whose values all lie in another may be that row" held every row carrying a press's word done. Before any change, my probe (`act-record/tests/thin-press.test.ts`) gave `[true, true, true]` for Ada, Ben and Cyd, where only one row was ever pressed, in three cases:
+- A press carried a row `{ action: "Accept" }`, after the read.
+- The same press, before the read.
+- The same press, then a Flow's read of other columns.
+
+**A second route gave the same result, and it was not the clause.** A by-hand press's sentence names its control: `through its "Accept"`. `row-ties.ts` `ofWords` fits that word to a column repeating it on every row, so all rows tie. That sentence case is the one a real by-hand press reaches, and it predates t870.
+
+**The clause cannot simply go.** With it removed, two t870 tests fail, both in `identical-rows`:
+- "a run's act in a shape that fits two"
+- "a press with the act's own key"
+
+The first holds `{ title }` done on both rows of a list. That has the same shape as `{ action: "Accept" }`, so values alone cannot tell them apart. No t870 test was edited, and the clause stays. What differs is whether the row's word is the control's own name.
+
+### What changed for the same-row rule
+
+- **A row that says only its control's own name names no row** (`record.ts` `identityOf`, `identity/target-keys.ts`). `{ city: "Leeds" }` still ties, as t870's test wants.
+- **A press now carries its item's whole words** (`actedOnItem`, from `structure/item-row.ts` and `press-effect/acted-on.ts`). The record finds the row by those, with no control's name in them (`gate/read-answer.ts`). The sentence the model reads is unchanged. A read of a column past the sentence's first two lines used to share no word with the press, and this closes that gap.
+- **A press on a row nothing names keeps the list it was pressed on** (`listBefore`, `record.ts` `tieByChange`). The next read says which row it was: rows that read differently are held, and rows that read the same were not pressed. A read of another shape says nothing, and the one after it is asked.
+
+**Both sides hold wherever anything shows which row it was.** Two limits remain, each pinned by a test:
+- **A press that leaves no mark on any read, and whose item has no words a read kept.** No row is held, so its row may be pressed again. This is the one place the two wishes truly conflict. I let the never-pressed rows go, since the alternative stops an "accept each" task. It is the lead's call if it should go the other way.
+- **A host that sends only a sentence, with no `actedOnItem`.** Its words still fit every row, so all are held and told, as before. The web domain sends it wherever an item is known.
+
+### The title-link case (open item 3)
+
+A plain navigation link may still go. When a pass's link goes as page-level, its resolution now says so (`passRow: "page-level-link"`, written in `pass-row/aim.ts`, kept as a closed word in `client/gateway-mapping.ts`). From there:
+- **Forward run** (`replay/span.ts`): the pass's next lasting step is not sent, the row is named in `rowsNotDone`, its steps that declare nothing still run, and the next row goes on.
+- **A later step can take it back.** If a step between them answers that it found its row (`row_own_control`), the lasting step lands. So a pass of "Back to results, open the card, Save" still works.
+- **Saved Flow** (`run-acts/run-gate.ts`, under `settle`): the lasting step fails with nothing sent, code `answer_first.row_left_behind`, and the run answers that step as failing. It stops there, as any failing step does.
+
+Proven by stub page (`pass-row/tests/whole-row-link.test.ts`), by Core through the real service, and by an engine test whose dispatcher answers the word by hand.
+
+**Unproven in a browser.** No scripted task draws this page shape cheaply. Only stub answers exercise how a dispatch's answer holds the word on the saved-Flow road; the gate reads both places it may sit.
+
+### `record.ts` `matches`
+
+**It can occur in the browser, so I fixed it.** A row with two controls that have no words, such as icon buttons with a class and no name, read as one act, so the second was refused as already done. Now two fingerprints whose keys differ and that share no words are two controls.
+
+A form that names no element (a handle, a Flow's `{ control }`) still counts as one act, so one press by hand and in a loop stays one. Pinned in `thin-press.test.ts`: the two "two controls" tests fail with the rule out.
+
+"Add 3" presses three times and refuses a fourth, on no row and by hand on a list's item, with the rule in or out. A count on a call that carries its row stays one per row, as the record's header says.
+
+### Browser runs on the merged tree
+
+Every line ends `NOT LIVE, stand-ins: model, spend.` Evidence is under `test-runs/attempts/`. All seven score `repeatedActs: []`, `missingActs: []`, `unaskedChanges: []`.
+
+| Form | Exit | Result line | Evidence |
+| --- | --- | --- | --- |
+| accept, plain | 0 | `answer right. Ended achieved, 3 rows stored, 3 shown, 14 live steps, 13 calls, $0.5106, 34 s.` | `run-mw326tb7-6360e2ec` |
+| accept, reshape | 0 | `answer right. Ended achieved, 3 rows stored, 3 shown, 16 live steps, 15 calls, $0.6085, 36 s.` | `run-mw328o4u-05ba1ae7` |
+| accept, **thin** (new) | 0 | `answer right. Ended achieved, 3 rows stored, 3 shown, 14 live steps, 13 calls, $0.5089, 33 s.` | `run-mw324xck-1c0a5aa4` |
+| toggle, plain | 0 | `answer right. Ended achieved, 5 rows stored, 5 shown, 25 live steps, 22 calls, $1.0692, 60 s.` | `run-mw32aq7d-f33e4c52` |
+| toggle, reshape | 0 | `answer right. Ended achieved, 5 rows stored, 5 shown, 27 live steps, 23 calls, $1.1365, 60 s.` | `run-mw32d7rl-85421447` |
+| toggle, row-link | 0 | `answer right. Ended achieved, 5 rows stored, 5 shown, 27 live steps, 22 calls, $1.0707, 61 s.` | `run-mw32fmhy-e956ef40` |
+| company-website-apprentices | 0 | `answer right. Ended achieved, 4 rows stored, 4 shown, 10 live steps, 11 calls, $0.4034, 28 s.` | `run-mw32i185-80d4247e` |
+
+- **Site record:** all three accept forms show each of the three invitations accepted once. All three toggle forms show three listings +1 with no `unsaved`.
+- **The thin form** reads only the message column. The forward run answered `Rows: 2 done, 1 skipped as already done, 0 failed.`: the row pressed by hand was left out, and the other two were pressed once each. I did not run this form with the fix out, so I cannot say how it behaved before.
+- **Discarded runs:** my first queue overlapped with one I had thought was stopped, so two Labs shared log files. I killed both, and no run above came from them. All seven are from one clean rebuild and one queue, with no source change after it.
+
+### Follow-up checks
+
+```text
+vitest by path (--minWorkers 1 --maxWorkers 2): node-tools/tests, node-tools/run/tests, answer-first/act-record,
+  answer-first/tests/{row-identity,whole-row-link,whole-row-link-flow-run,later-attempt,attempt,carry-on},
+  answer-first/flow-run/tests, answer-first/run-acts/tests, candidate-trial/tests/target-on-page, flow-authoring/draft/scheduled-candidate
+                                                      Test Files 60 passed (60); Tests 835 passed (835)
+pnpm.cmd --filter fluxiq check                        exit 0
+extension, domain and test-runner check               exit 0 each
+Core: node scripts/structure-audit.mjs                passed (514 warning(s), 1097 baselined)
+Extension: node scripts/structure-audit.mjs           passed (241 warning(s), 552 baselined)
+extension: test-extension.mjs (pass-row and neighbours)   # tests 139, pass 139, fail 0
+domain: test-domain.mjs other-record row-scope host-runtime-repeat acted-on   # tests 25, pass 25, fail 0
+node --test on both scripts' dist tests               # tests 17, pass 17, fail 0
+Win32_Process filtered on t869 (node, chrome, msedge) after the runs   0 left over
+```
+
+**Taken out and seen to fail** (each restored, `cmp` clean):
+- **Control-name rule, with the fingerprint line, out of `record.ts`, and left-behind out of `span.ts`:** seven tests across `thin-press`, `forward-run-rows` and `whole-row-link`.
+- **The fingerprint line alone:** the two "two controls" tests.
+
+The `actedOnItem` and `tieByChange` changes had no separate take-out run. Their tests are the ones that failed in the first probe's form or were written with the change.
+
 ## Open questions and contradictions
+
+Item 3 below was closed by the follow-up above: the title link may go, but no later lasting step of that pass lands. Item 1 stands. For a part (item 2), `passRow` is not read on its road, so a part's later lasting step after a page-level link is not stopped; t866 owns that seam.
+
 
 1. **A saved Flow stops at a row it cannot do; it does not go on.** The engine's For Each fails there: `reachedEnd: false` and a named failing step. By `flow-run.ts` that is an answer the attempt carries on from, so it is not a new task ending, and my refusal adds no new way to end. But the rest of the rows wait for the next attempt. The go-on rule is a forward-run rule today. The seam, if you want it on the engine, is the For Each's failed route.
 2. **A part stops too.** t866's `row-across-call.test.ts` pins "stops at a row that is gone" and "its own control is not: stops", with nothing pressed. It names the step, not the row. That is t866's to reconcile with the rule.

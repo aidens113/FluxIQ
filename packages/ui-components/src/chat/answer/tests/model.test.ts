@@ -6,6 +6,7 @@ import { test } from "vitest";
 import { fakeTaskOutcomes } from "../../../testing/index.ts";
 import type { ChatTaskOutcome } from "../../ports/index.ts";
 import { answerModel, type AnswerModel, type AnswerModelOptions } from "../model/index.ts";
+import { actWords, savedWords } from "../words/index.ts";
 
 // The first attempts began at 1_800_000_000_000; "now" is a day and a minute later, so a first attempt saved yesterday and a second saved today.
 const NOW = 1_800_000_000_000 + 86_400_000 + 60_000;
@@ -39,7 +40,7 @@ test("rows, confirmed: found N of N, a tick, the first five rows, no changes rec
   assert.equal(model.siteTitle, "On the site: I recorded no changes");
   assert.equal(model.checked, "Checked: Right columns, cheapest first, no duplicates");
   assert.equal(model.from, "From: 3 results pages on shop.example · 3m 14s · $1.12");
-  assert.equal(model.saved, "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.");
+  assert.equal(model.saved, "Saved yesterday: the steps. They have not run on their own yet, so next time I will try them and fix what fails.");
   assert.equal(model.canExport, true);
   assert.equal(model.canRunAgain, true);
   assert.equal(model.compared, undefined);
@@ -130,7 +131,7 @@ test("budget out is the one failing shape: the budget, what I got (not confirmed
   assert.equal(model.lead, "It spent $5.00 of $5.00.");
   assert.equal(model.gotLine, "What I got: 3 rows.");
   assert.equal(model.check?.mark, "none");
-  assert.equal(model.saved, "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.");
+  assert.equal(model.saved, "Saved yesterday: the steps. They have not run on their own yet, so next time I will try them and fix what fails.");
   assert.deepEqual(model.addBudget, { addUsd: 5, words: "Add $5.00 and carry on" });
   assert.equal(modelOf(fakeTaskOutcomes().rowsRefuted).check?.mark, "cross", "a refuted result is shown as failed, not hidden");
 });
@@ -288,9 +289,21 @@ test("rows skipped as already done are said once, plainly, only above zero", () 
     if (count !== undefined) outcome.result!.skippedAsDone = count;
     return outcome;
   };
-  assert.equal(modelOf(withSkipped(1)).skipped, "Skipped 1 as already done");
-  assert.equal(modelOf(withSkipped(2)).skipped, "Skipped 2 as already done");
+  assert.equal(modelOf(withSkipped(1)).skipped, "Left out 1 that looked already done");
+  assert.equal(modelOf(withSkipped(2)).skipped, "Left out 2 that looked already done");
   assert.equal(modelOf(withSkipped(undefined)).skipped, undefined);
   assert.equal(modelOf(withSkipped(0)).skipped, undefined, "a count of none says nothing");
   assert.equal(modelOf(withSkipped(2)).check?.mark, "tick", "the skip does not change the check");
+});
+
+test("an act the record can place no better does not repeat the heading it sits under", () => {
+  const act = { id: "act.1", what: "Accept", where: "On the site", classes: ["modify_existing" as const], state: "landed" as const };
+  assert.equal(actWords(act), "Accept.");
+  assert.equal(actWords({ ...act, where: "On the saved list" }), "Accept (On the saved list).");
+});
+
+test("steps with a failed check against their recording are said to only partly work, and unproven ones to have not run", () => {
+  const saved = { state: "partly_works" as const, trust: "unproven" as const, flowId: "flow-1", savedAtMs: 0 };
+  assert.match(savedWords(saved, 0), /have not run on their own yet/u);
+  assert.match(savedWords({ ...saved, simulation: "failed" }, 0), /only partly work/u);
 });

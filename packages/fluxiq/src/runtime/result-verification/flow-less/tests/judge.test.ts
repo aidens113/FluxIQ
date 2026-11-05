@@ -64,7 +64,7 @@ describe("the Flow-less judge's answer", () => {
   it("says yes on a yes, in one call of the verification kind", async () => {
     const { provider, seen } = scripted(YES);
     const judged = await judge(provider);
-    expect(judged).toMatchObject({ verdict: "yes", checkedWhat: "Checked once against what was asked for: 2 rows, 1 act on the site, the model's own answer." });
+    expect(judged).toMatchObject({ verdict: "yes", checkedWhat: "2 rows, 1 act on the site, the model's own answer, once against what was asked for." });
     expect(judged.unanswered).toBeUndefined();
     expect(seen).toHaveLength(1);
     expect(seen[0]?.taskKind).toBe("loop_verification");
@@ -104,7 +104,7 @@ describe("the Flow-less judge's answer", () => {
 
   it("takes a yes with no rows at all: a request carried out is judged on what was done", async () => {
     const { provider, seen } = scripted(YES);
-    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "Checked once against what was asked for: 1 act on the site." });
+    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "1 act on the site, once against what was asked for." });
     expect(seen[0]?.context.resultSummary?.recordSets).toEqual([]);
   });
 

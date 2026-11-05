@@ -2,9 +2,12 @@
 
 import type { ChatAttemptAct } from "../../ports/index.ts";
 
+/** The heading these lines sit under (`./site-words.ts`), and the record's word for an act it can place no better. */
+const SITE_HEADING = "On the site";
+
 /** What the act did, and where it stands: landed, may have happened, undone or never done. */
 export function actWords(act: ChatAttemptAct): string {
-  const where = act.where === "" ? "" : ` (${act.where})`;
+  const where = act.where === "" || act.where === SITE_HEADING ? "" : ` (${act.where})`;
   const undo = act.undo === undefined ? "" : ` To undo it: ${act.undo.how}.`;
   if (act.state === "landed") return `${act.what}${where}.${undo}`;
   if (act.state === "may_have_landed") return `This may have happened, look to be sure: ${act.what}${where}.${undo}`;

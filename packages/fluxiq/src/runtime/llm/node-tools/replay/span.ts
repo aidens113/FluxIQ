@@ -109,6 +109,8 @@ import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
   AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
   AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON,
+  AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON,
+  AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON,
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayStepCall,
   automationStudioNodeReplayToolId,
@@ -432,11 +434,25 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     let failed = false;
     // A member other than a do-while's last that answered `ended`: the list has no more pages, so no pass after this one can move it (see the header).
     let noMore = false;
+    // A step of this pass went as a page-level link, and none since has found its row again (`./forward.ts`).
+    let leftBehind = false;
+    const comeBack = async (after: number, earlier: Record<string, JsonValue>): Promise<void> => {
+      // No lasting act is sent after this, and a pass that got past its first step still comes back (`./forward.ts`).
+      for (const later of after === 0 ? [] : plan.members.slice(after + 1).filter(declaresNothing)) {
+        const back = automationStudioFlowDraftReplayPassCall(later, "replay", { item: row!, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf?.(later.actionId)) }, input.nodeOf?.(later.actionId), earlier, input.definitionOf?.(later.actionId), input.partOf);
+        if (back && "value" in back) await sendPass(pass, `${input.callIdOf(later)}.pass.${pass}`, later, back.value);
+      }
+    };
     for (const [at, member] of plan.members.entries()) {
       const mode = input.modeOf(member, row);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
       const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf);
+      if (leftBehind && !declaresNothing(member)) {
+        passes.get(member)!.push({ pass, status: "failed", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.unreproducible });
+        await comeBack(at, earlier);
+        return "row_missing";
+      }
       let answered: AutomationStudioFlowDraftReplayPass;
       // A forward pass on a row, whose own control the host could not find (`./forward.ts`).
       let rowMissing = false;
@@ -450,6 +466,10 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         if (ends) ended = true;
         else if (answeredEnded) noMore = true;
         rowMissing = row !== undefined && input.forward !== undefined && answer.readable && answer.result.resultReason === AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON;
+        if (row !== undefined && input.forward !== undefined && answer.readable) {
+          if (answer.result.resultReason === AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON) leftBehind = true;
+          else if (answer.result.resultReason === AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON) leftBehind = false;
+        }
         const status = rowMissing ? "failed" : ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass, mode);
@@ -459,11 +479,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       }
       passes.get(member)!.push(answered);
       if (rowMissing) {
-        // No lasting act is sent after this, and a pass that got past its first step still comes back (`./forward.ts`).
-        for (const later of at === 0 ? [] : plan.members.slice(at + 1).filter(declaresNothing)) {
-          const back = automationStudioFlowDraftReplayPassCall(later, "replay", { item: row!, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf?.(later.actionId)) }, input.nodeOf?.(later.actionId), earlier, input.definitionOf?.(later.actionId), input.partOf);
-          if (back && "value" in back) await sendPass(pass, `${input.callIdOf(later)}.pass.${pass}`, later, back.value);
-        }
+        await comeBack(at, earlier);
         return "row_missing";
       }
       if (answered.status !== "replayed") {

@@ -128,6 +128,14 @@ export type AutomationStudioNodeReplayKind = (typeof AUTOMATION_STUDIO_NODE_REPL
  */
 export const AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON = "row_control_not_found";
 
+/**
+ * Said by a pass's step that ran: what it pressed is not shown to be its row's and moved the page, so nothing says the
+ * pass still stands on its row. A forward run lets no later lasting step of that pass land (`./span.ts`). A later step
+ * answering `AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON` found its row again, and that takes it back.
+ */
+export const AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON = "row_left_behind";
+export const AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON = "row_own_control";
+
 /** The only codes a replay may answer with, and what each one means. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   /** It ran, and produced what it produced before. */

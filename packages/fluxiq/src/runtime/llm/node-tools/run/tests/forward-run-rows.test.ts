@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { runAutomationStudioFlowDraftPart, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON as ROW_MISSING, type AutomationStudioFlowDraftReplayNode } from "../../replay/index.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON as ROW_MISSING, AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON as LEFT_BEHIND, AUTOMATION_STUDIO_NODE_REPLAY_ROW_OWN_CONTROL_REASON as OWN, type AutomationStudioFlowDraftReplayNode } from "../../replay/index.ts";
 
 const REPLAYED = "core.replay.replayed";
 const NODES: Record<string, AutomationStudioFlowDraftReplayNode> = {
@@ -108,6 +108,48 @@ describe("a row whose own control cannot be found", () => {
     const result = await run(executor, {}, false);
     expect(result.evidence).toMatchObject({ passed: true });
     expect((result.evidence as JsonObject).rowsNotDone).toBeUndefined();
+  });
+});
+
+describe("a pass whose step went as a page-level link, so nothing says it stands on its row", () => {
+  const ran = (answers: Record<string, Answer>, withForward = true) => {
+    const executor = host(answers);
+    return { executor, result: run(executor, {}, withForward) };
+  };
+
+  it("its next lasting step is not sent, the row is told as one not found, its steps that declare nothing still run, and the next row goes on", async () => {
+    const { executor, result } = ran({ "fw.2.pass.2": { resultReason: LEFT_BEHIND } });
+    const { evidence, resultCode } = await result;
+    expect(executor.calls.filter((call) => call.callId.endsWith(".pass.2")).map((call) => call.callId)).toEqual(["fw.2.pass.2", "fw.4.pass.2"]);
+    expect(executor.calls.filter((call) => call.callId.endsWith(".pass.3")).map((call) => call.callId)).toEqual(["fw.2.pass.3", "fw.3.pass.3", "fw.4.pass.3"]);
+    expect(resultCode).toBe("core.run_flow.ran");
+    expect(evidence).toMatchObject({ passed: false, rows: { done: 2, failed: 1 }, rowsNotDone: ["Ben"] });
+  });
+
+  it("a step between them that found its row takes it back: the lasting step lands", async () => {
+    const steps = [step(1, "node.list"), step(2, "node.press", { routing: { kind: "repeat", over: "d1", through: "d4" } }), step(3, "node.press"), step(4, "node.press", {}, ["modify_existing"])];
+    const executor = host({ "fw.2.pass.2": { resultReason: LEFT_BEHIND }, "fw.3.pass.2": { resultReason: OWN } });
+    const result = await runAutomationStudioFlowDraftPart({ steps, value: { from: 1 }, callId: "fw", executeTool: executor.executeTool, nodeOf: (id) => NODES[id], forward });
+    expect(executor.calls.some((call) => call.callId === "fw.4.pass.2")).toBe(true);
+    expect(result.evidence).toMatchObject({ passed: true, rows: { done: 3, failed: 0 } });
+  });
+
+  it("a pass with no lasting step after it is done as ever", async () => {
+    const executor = host({ "fw.4.pass.2": { resultReason: LEFT_BEHIND } });
+    expect((await run(executor)).evidence).toMatchObject({ passed: true, rows: { done: 3 } });
+  });
+
+  it("the next row starts knowing nothing of it", async () => {
+    const { executor, result } = ran({ "fw.2.pass.1": { resultReason: LEFT_BEHIND } });
+    await result;
+    expect(executor.calls.some((call) => call.callId === "fw.3.pass.1")).toBe(false);
+    expect(executor.calls.some((call) => call.callId === "fw.3.pass.2")).toBe(true);
+  });
+
+  it("a run that is no forward run is as it was", async () => {
+    const { executor, result } = ran({ "fw.2.pass.2": { resultReason: LEFT_BEHIND } }, false);
+    await result;
+    expect(executor.calls.some((call) => call.callId === "fw.3.pass.2")).toBe(true);
   });
 });
 

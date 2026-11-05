@@ -33,7 +33,7 @@ test("each saved state names when and what, and only a copy that worked says it 
   const lines = states.map((state) => savedWords(state, NOW));
   assert.deepEqual(lines, [
     "Saved yesterday: the steps. They worked last time.",
-    "Saved yesterday: the steps. They only partly work, so next time I will fix what changed.",
+    "Saved yesterday: the steps. They have not run on their own yet, so next time I will try them and fix what fails.",
     "Saved yesterday: notes only. I could not save steps, so next time I will start from what I learned.",
     "Saved yesterday: the steps, but they need you before they can run on their own.",
     "Saved yesterday, but it needs you before it can run on its own."

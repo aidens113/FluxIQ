@@ -81,6 +81,10 @@ export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   handleKeys: string[];
   /** Every row it may be on. More than one only where a sentence could not tell them apart. */
   rows: string[];
+  /** The rows of the newest read when it was made, where it is on a row of a list and nothing says which: the next read says, by what it changed (`../record.ts`). */
+  listBefore?: string[];
+  /** It was named by a fingerprint: two such acts whose keys differ are two controls, words or none. */
+  fingerprinted?: true;
   /** Digests of its control's words, which tell two acts on one row apart. */
   controls?: string[];
   /** A Flow step it is known by (`step:` or `node:`), where a source named only that. */

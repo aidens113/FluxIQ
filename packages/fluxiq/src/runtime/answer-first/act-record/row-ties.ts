@@ -168,6 +168,12 @@ export class AutomationStudioAttemptActRowTies {
     return [held.row, ...automationStudioAttemptActSameRows(held, this.rows)];
   }
 
+  /** The rows of the newest read. */
+  newestRead(): string[] {
+    const newest = this.rows.reduce((most, row) => Math.max(most, ...(row.reads ?? [])), 0);
+    return this.rows.filter((row) => row.reads?.includes(newest)).map((row) => row.row);
+  }
+
   /** The rows that printed `handle`. */
   ofHandle(handle: string): string[] {
     return this.rows.filter((row) => row.handles.includes(handle)).map((row) => row.row);

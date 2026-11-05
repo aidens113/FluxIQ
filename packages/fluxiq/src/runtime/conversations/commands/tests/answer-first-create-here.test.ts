@@ -62,7 +62,7 @@ describe("flow.createHere in answer-first mode", () => {
 
   it("tells the person what it will do in this mode's words, and nothing of a test run", () => {
     expect(AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability.summary).not.toMatch(/test-run/u);
-    expect(AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce?.({ place: "this page" } as unknown as Parameters<NonNullable<typeof AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce>>[0])).toBe("I'll do this on this page and show you the result here. I'll save how I did it, so next time is quicker.");
+    expect(AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce?.({ place: "this page" } as unknown as Parameters<NonNullable<typeof AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.announce>>[0])).toBe("I'll do this on this page and show you the result here. I'll save how I did it for next time.");
   });
 
   it("says what a person must do before it can start, as a setup step and not a failure", async () => {

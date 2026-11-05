@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationNodeExecutionResult } from "../../../nodes/index.ts";
 import { automationStudioAnswerFirstFlowRun } from "../flow-run/index.ts";
-import { flowRunFixture, libraryTarget, LOANS_OUTPUT, savedStep, type FlowRunFixture } from "./fake-library-engine.ts";
+import { flowRunFixture, libraryTarget, LOANS_OUTPUT, READ_BY_OUTPUT, RENEW_BY_OUTPUT, savedStep, withOutputDoor, type FlowRunFixture } from "./fake-library-engine.ts";
 import { READ_LOANS, RENEW_LOAN } from "./fake-library.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -31,6 +31,58 @@ const notFound: AutomationNodeExecutionResult = {
   status: "failed", route: "failed", message: "The row's own control was not on the page.",
   failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "target_resolution", effect: "unacted" }
 };
+
+describe("a saved Flow's pass whose step went as a page-level link", () => {
+  const steps = () => [
+    savedStep(1, READ_BY_OUTPUT, { recordOutput: { ...LOANS_OUTPUT, recordsPath: "rows" } }, { label: "the list of loans" }),
+    savedStep(2, RENEW_BY_OUTPUT, { control: "the row's link" }, { consequences: [], routing: { kind: "repeat", through: "saved.3", over: "saved.1" }, label: "Open it" }),
+    savedStep(3, RENEW_BY_OUTPUT, { control: "Renew" }, { consequences: ["modify_existing"], label: "Renew" })
+  ];
+
+  it("its lasting step is never sent: the run answers that step as failing, and nothing is on the record", async () => {
+    const target = libraryTarget();
+    const door = withOutputDoor(target);
+    const fixture = await flowRunFixture({
+      target,
+      engine: (engine) => {
+        const doored = door(engine);
+        return { ...doored, graphOptions: (input) => {
+          const options = doored.graphOptions(input);
+          const send = options.effectDispatcher!;
+          return { ...options, effectDispatcher: async (effect, context) => {
+            const answer = await send(effect, context);
+            return (effect.payload as { outputId?: string }).outputId === "library.renew" ? { ...answer, outputs: { result: { result: { resolution: { strategy: "selector", passRow: "page-level-link" } } } } } : answer;
+          } };
+        } };
+      }
+    }, cleanups);
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps: steps(), stepsDigest: "digest" });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: false, failing: { position: 3, code: "answer_first.row_left_behind" } });
+    expect(pressed(fixture)).toEqual(["Atlas of Rivers"]);
+    expect(fixture.record.data().acts.filter((act) => !act.undeclared)).toEqual([]);
+  });
+
+  it("where the page placed the step on its row, every row is done, each once", async () => {
+    const target = libraryTarget();
+    const door = withOutputDoor(target);
+    const fixture = await flowRunFixture({
+      target,
+      engine: (engine) => {
+        const doored = door(engine);
+        return { ...doored, graphOptions: (input) => {
+          const options = doored.graphOptions(input);
+          const send = options.effectDispatcher!;
+          return { ...options, effectDispatcher: async (effect, context) => {
+            const answer = await send(effect, context);
+            return (effect.payload as { outputId?: string }).outputId === "library.renew" ? { ...answer, outputs: { result: { result: { resolution: { strategy: "selector", passRow: "own" } } } } } : answer;
+          } };
+        } };
+      }
+    }, cleanups);
+    expect(await automationStudioAnswerFirstFlowRun(fixture.ports, { steps: steps(), stepsDigest: "digest" })).toMatchObject({ kind: "ran", reachedEnd: true });
+    expect(target.library.renewals).toEqual({ "Atlas of Rivers": 2, "Birds of the Coast": 2, Clockmaking: 2 });
+  });
+});
 
 describe("a saved Flow's repeat over a whole-row link", () => {
   it("hands every step of every pass its own row, each row once", async () => {

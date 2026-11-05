@@ -16,7 +16,9 @@
 // - `draft.effect`: whether the call looked or changed. A call that only reads is never
 //   an act whatever it declared (`domain/.../permission.ts`, `run-mueozmp8-348a2057`).
 // - `evidence.actedOn`, `evidence.location`, `draft.ranWith`, `outputs`: the row and the
-//   frozen target (`../row-ties.ts`, `../identity/target-keys.ts`).
+//   frozen target (`../row-ties.ts`, `../identity/target-keys.ts`). `evidence.actedOnItem`, where a domain says
+//   it, is that item's whole words and none of its control's, and is what a row is found by: a sentence's words are cut
+//   short, and its control's name fits every row with a column repeating it.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
@@ -59,7 +61,7 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   return {
     applied, uncertain, observe, looked,
     ...(parameters ? { ranWith: { ...(actionId ? { actionId } : {}), parameters } } : {}),
-    ...(typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
+    ...(typeof evidence?.actedOnItem === "string" ? { actedOn: evidence.actedOnItem } : typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
     pageUnchanged: evidence?.pageChanged === false,
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).

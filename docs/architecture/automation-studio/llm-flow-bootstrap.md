@@ -1077,7 +1077,10 @@ engine needs: against an exploration's own calls it answers too little to settle
 A pass presses its row's own control or says it could not: a host answers the reason
 `row_control_not_found`, nothing lasting later in that pass is sent, its later steps that
 declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`,
-`passed: false`), and the run goes on with the next row. No other failing step goes on. The
+`passed: false`), and the run goes on with the next row. A pass whose step answers
+`row_left_behind` (a link not shown to be the row's went as page-level) is told the same way
+at its next lasting step, unless a step between them answers `row_own_control`. A saved Flow's
+run gate holds the same, from the resolution's `passRow`, failing that step instead. No other failing step goes on. The
 answer holds one look taken as the run ends, under the keys the domain declares as its view,
 so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 
