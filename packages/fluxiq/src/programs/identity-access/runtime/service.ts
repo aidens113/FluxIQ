@@ -123,8 +123,8 @@ export class IdentityAccessService {
     const existing = this.users.get(id);
     // Credentials of an existing account change only through setPassword, setPasswordAuthorized, resetPassword, setPin, and
     // setPinAuthorized, so the credential-change port and its subscribers are never bypassed.
-    if (existing && (params.password || params.pin)) {
-      throw new Error("An existing account's password or PIN cannot be changed here; use a password or PIN change");
+    if ((existing || this.credentials.has(id) || this.encryptedCredentials.has(id)) && (params.password || params.pin)) {
+      throw new Error("An existing account's or stored credential's password or PIN cannot be changed here; use a password or PIN change");
     }
     const user: User = {
       id,

@@ -332,6 +332,74 @@ describe("a lock with a store that fails", () => {
   });
 });
 
+describe("a browser nobody has unlocked, as other things happen to the person", () => {
+  async function pairedWithoutProof() {
+    const repos = repositories();
+    const { service, keyId } = await withKey(repos);
+    const holder = browser("unproved");
+    await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    return { repos, service, keyId, holder };
+  }
+
+  async function stillNeverUnlocked(service: SecretKeysService, holder: SecretKeyCredentialHolder): Promise<void> {
+    const [listed] = await service.credentialUnlocks.lockedClientsFor(USER);
+    expect(listed).toMatchObject({ holderId: holder.holderId, neverUnlocked: true });
+    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], undefined)).resolves.toEqual(new Set());
+    const ticket = service.credentialUnlocks.unlockTicketFor(holder.holderId);
+    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], ticket)).resolves.toEqual(new Set([holder.holderId]));
+  }
+
+  it("is still not offered after a password change, and cannot be lifted without its ticket", async () => {
+    const { service, holder } = await pairedWithoutProof();
+    const { changeId } = await service.prepareCredentialChange({ userId: USER, currentPassword: PASSWORD, nextPassword: "dummy-password-next", actorSessionId: SESSION });
+    await service.commitCredentialChange(changeId);
+    await stillNeverUnlocked(service, holder);
+  });
+
+  it.each(["sessions_ended", "password_reset", "administrator", "signed_out"] as const)("is still not offered after being locked for %s", async (reason) => {
+    const { service, holder } = await pairedWithoutProof();
+    await service.credentialUnlocks.lock(holder.holderId, reason);
+    await stillNeverUnlocked(service, holder);
+  });
+
+  it("is still not offered after every session of the person ends, and across a restart", async () => {
+    const { repos, service, holder } = await pairedWithoutProof();
+    await service.credentialUnlocks.lockPerson(USER, "sessions_ended");
+    service.close();
+    const restarted = boot(repos);
+    await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+    await stillNeverUnlocked(restarted, holder);
+  });
+
+  it("a browser that was unlocked once can say why it locked, and be chosen", async () => {
+    const { service, holder } = await pairedWithoutProof();
+    await signIn(service, SESSION, [holder.holderId]);
+    await service.credentialUnlocks.lock(holder.holderId, "signed_out");
+    const [listed] = await service.credentialUnlocks.lockedClientsFor(USER);
+    expect(listed?.neverUnlocked).toBeUndefined();
+    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], undefined)).resolves.toEqual(new Set([holder.holderId]));
+  });
+});
+
+describe("work from a session that ended, as a password changes", () => {
+  it("falls back until the person's own password changes, and is told apart from what ended after it", async () => {
+    const { service } = await withKey(repositories());
+    const unlocks = service.credentialUnlocks;
+    expect(unlocks.mayFallBack(USER, "still-live")).toBe(true);
+    expect(unlocks.mayFallBack(USER, undefined)).toBe(true);
+    unlocks.noteSessionEnded("ended-first", false);
+    expect(unlocks.mayFallBack(USER, "ended-first")).toBe(true);
+    await unlocks.passwordChanged("user.other", new Map(), undefined);
+    expect(unlocks.mayFallBack(USER, "ended-first")).toBe(true);
+    await unlocks.passwordChanged(USER, new Map(), undefined);
+    expect(unlocks.mayFallBack(USER, "ended-first")).toBe(false);
+    unlocks.noteSessionEnded("ended-after", false);
+    expect(unlocks.mayFallBack(USER, "ended-after")).toBe(true);
+    unlocks.noteSessionEnded("ended-by-a-change", true);
+    expect(unlocks.mayFallBack(USER, "ended-by-a-change")).toBe(false);
+  });
+});
+
 describe("a proof that opened nothing", () => {
   it("lifts no lock from someone whose keys it could not open", async () => {
     const repos = repositories();

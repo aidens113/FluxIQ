@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   approvePairing: async (_code: string, _input: { approvedByUserId: string }): Promise<unknown> => null,
   authorizeSessionCredentials: async (_input: Record<string, unknown>): Promise<unknown> => ({}),
-  unlockSession: async (_input: Record<string, unknown>): Promise<unknown> => ({})
+  unlockSession: async (_input: Record<string, unknown>): Promise<unknown> => ({}),
+  stillLocked: [] as string[]
 }));
 
 vi.mock("../../../../../lib/auth", () => ({
@@ -15,7 +16,7 @@ vi.mock("../../../../../lib/auth", () => ({
 vi.mock("../../../../../lib/fluxiq", async () => {
   const { GlobalProgramApiRegistry } = await import("fluxiq");
   const api = new GlobalProgramApiRegistry();
-  return { getFluxIQ: () => ({ programs: { api, identityAccess: { authorizeSessionCredentials: (input: Record<string, unknown>) => fixture.authorizeSessionCredentials(input) }, secretKeys: { unlockSession: (input: Record<string, unknown>) => fixture.unlockSession(input) }, clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } }) };
+  return { getFluxIQ: () => ({ programs: { api, identityAccess: { authorizeSessionCredentials: (input: Record<string, unknown>) => fixture.authorizeSessionCredentials(input) }, secretKeys: { unlockSession: (input: Record<string, unknown>) => fixture.unlockSession(input), credentialUnlocks: { lockedClientsFor: async () => fixture.stillLocked.map((holderId) => ({ holderId, label: "Chrome" })) } }, clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } }) };
 });
 
 import { POST } from "../route";
@@ -68,6 +69,7 @@ describe("POST /api/client-gateway/approve-pairing", () => {
     beforeEach(() => {
       unlocks = [];
       approvals = 0;
+      fixture.stillLocked = [];
       fixture.approvePairing = async () => {
         approvals += 1;
         return approved;
@@ -101,6 +103,12 @@ describe("POST /api/client-gateway/approve-pairing", () => {
       expect(unlocks).toEqual([]);
       const text = await response.text();
       expect(text).not.toContain("dummy-wrong");
+    });
+
+    it("says it is unlocked only when it is: a password that opened nothing lifted nothing", async () => {
+      fixture.stillLocked = ["paired-client:trusted.1"];
+      const response = await approve("123456", { password: "dummy-password" });
+      expect(await response.json()).toMatchObject({ ok: true, payload: { unlocked: false } });
     });
 
     it("the browser stays paired when its unlock cannot be written: it shows the setup step instead", async () => {

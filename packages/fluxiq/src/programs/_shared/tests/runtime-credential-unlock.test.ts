@@ -360,6 +360,77 @@ describe("a person's model key across a Core restart, through the real wiring", 
     }
   });
 
+  it("work from a session signed out before a password change draws on nothing either; without a change it still may", async () => {
+    const paths = pathsAt(root);
+    const runtime = boot(paths);
+    try {
+      const login = await signIn(runtime);
+      const earlier = await runtime.identityAccess.authenticate({ username: "admin", password: PASSWORD });
+      await runtime.secretKeys.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: login.user.id, actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs } });
+      const work = { userId: login.user.id, sessionId: earlier.session.id };
+      await runtime.identityAccess.revokeSession(earlier.session.id);
+      expect(runtime.automationStudio.conversations.callerFor(work).keyNeedsUnlock).toBe(false);
+      await runtime.identityAccess.setPasswordAuthorized({ userId: login.user.id, password: "dummy-admin-password-2", sessionId: login.session.id, authorizationPassword: PASSWORD, authorizationPin: undefined, authorizationTotp: undefined });
+      expect(runtime.automationStudio.conversations.callerFor(work).keyNeedsUnlock).toBe(true);
+    } finally {
+      shutDown(runtime);
+    }
+  });
+
+  it("what approve answers from: a browser a proof lifted no longer reads as locked; one its password opened nothing for still does", async () => {
+    const paths = pathsAt(root);
+    const runtime = boot(paths);
+    try {
+      const login = await signIn(runtime);
+      await runtime.secretKeys.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: login.user.id, actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs } });
+      const approver = { userId: login.user.id, sessionId: login.session.id, expiresAtMs: login.session.expiresAtMs };
+      const opensNothing = await pair(runtime, approver, { proved: false });
+      await expect(runtime.secretKeys.unlockSession({ ...approver, authorizationPassword: "dummy-opens-nothing", unlockClients: [opensNothing.holderId], passwordVerified: true })).resolves.toMatchObject({ unlockedKeyCount: 0 });
+      expect((await runtime.secretKeys.credentialUnlocks.lockedClientsFor(login.user.id)).map((client) => client.holderId)).toContain(opensNothing.holderId);
+      await runtime.secretKeys.unlockSession({ ...approver, authorizationPassword: PASSWORD, unlockClients: [opensNothing.holderId], passwordVerified: true });
+      expect((await runtime.secretKeys.credentialUnlocks.lockedClientsFor(login.user.id)).map((client) => client.holderId)).not.toContain(opensNothing.holderId);
+    } finally {
+      shutDown(runtime);
+    }
+  });
+
+  it("an account's row deleted through the data tools cannot then be made again over the credential still stored", async () => {
+    const paths = pathsAt(root);
+    const runtime = boot(paths);
+    try {
+      const admin = await runtime.identityAccess.authenticate({ username: "admin", password: PASSWORD });
+      const actor = { sessionId: admin.session.id, userId: admin.user.id, roleId: admin.role.id, permissions: [...admin.role.permissions, "data.manage" as const] };
+      const proof = { authSessionId: admin.session.id, authorizationPassword: PASSWORD };
+      await runtime.identityAccess.upsertUser({ id: "user.person", username: "person", displayName: "Person", roleId: "admin", password: "dummy-person-password" });
+      const removed = await runtime.api.call({ programId: "database-manager", endpoint: "delete-record", scope: {}, actor, payload: { kind: "identity.users", id: "user:user.person", ...proof } });
+      expect(removed.ok, removed.error).toBe(true);
+      await runtime.identityAccess.revokeUserSessions("user.person");
+      const made = runtime.api.call({ programId: "identity-access", endpoint: "create-user", scope: {}, actor, payload: { id: "user.person", username: "person", displayName: "Person", roleId: "admin", password: "dummy-chosen-password", ...proof } });
+      await expect(made).resolves.toMatchObject({ ok: false, error: expect.stringContaining("stored credential") });
+      await expect(runtime.identityAccess.authenticate({ username: "person", password: "dummy-chosen-password" })).rejects.toThrow();
+    } finally {
+      shutDown(runtime);
+    }
+  });
+
+  it("a browser paired on a cookie alone stays off the offer through a password change, by the real endpoints", async () => {
+    const paths = pathsAt(root);
+    const runtime = boot(paths);
+    try {
+      const login = await signIn(runtime);
+      await runtime.secretKeys.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: login.user.id, actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs } });
+      const paired = await pair(runtime, { userId: login.user.id, sessionId: login.session.id, expiresAtMs: login.session.expiresAtMs }, { proved: false });
+      const fresh = "dummy-admin-password-2";
+      await runtime.identityAccess.setPasswordAuthorized({ userId: login.user.id, password: fresh, sessionId: login.session.id, authorizationPassword: PASSWORD, authorizationPin: undefined, authorizationTotp: undefined });
+      expect((await runtime.secretKeys.credentialUnlocks.lockedClientsFor(login.user.id))[0]).toMatchObject({ holderId: paired.holderId, neverUnlocked: true });
+      const answer = await runtime.api.call({ programId: "secret-keys", endpoint: "unlock", scope: {}, actor: { sessionId: login.session.id, userId: login.user.id, roleId: login.role.id, permissions: login.role.permissions }, payload: { authSessionId: login.session.id, authorizationPassword: fresh, clientIds: [paired.holderId] } }) as { payload?: { stillLocked?: string[] } };
+      expect(answer.payload?.stillLocked).toEqual([paired.holderId]);
+      expect(await keyReleasedTo(runtime, paired.gatewaySessionId, login.user.id, "any")).toBeNull();
+    } finally {
+      shutDown(runtime);
+    }
+  });
+
   it("a browser approved with no password pairs fine, shows the setup step, and one unlock naming it is the only ask", async () => {
     const paths = pathsAt(root);
     const first = boot(paths);

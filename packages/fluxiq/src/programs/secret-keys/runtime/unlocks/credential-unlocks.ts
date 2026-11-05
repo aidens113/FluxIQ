@@ -61,6 +61,9 @@ type OpenedGeneration = { generation: "current" | "pending"; boxes: Readonly<Rec
  * `verified` may re-key a record the credential cannot open (a restored store, a
  * rotation whose write failed), which leaves the holder locked and opens nothing.
  */
+/** More than anything still running could have started from. Past it, the oldest is forgotten. */
+const SESSIONS_ENDED_REMEMBERED = 50_000;
+
 export class CredentialUnlocks {
   private readonly records = new Map<string, SecretKeyCredentialUnlockRecord>();
   private readonly people = new Map<string, SecretKeyUnlockPersonRecord>();
@@ -81,7 +84,10 @@ export class CredentialUnlocks {
   private readonly proofsRunning = new Map<string, number>();
   private readonly unlockTickets: SecretKeyUnlockTickets;
   /** Sessions ended by their person's password change. Work one of them started may not fall back on the person's other unlocks. */
-  private readonly endedByPasswordChange = new Set<string>();
+  // The order sessions ended and passwords changed in, as this process saw them. -1: ended by a change itself.
+  private readonly sessionsEnded = new Map<string, number>();
+  private readonly passwordsChanged = new Map<string, number>();
+  private endings = 0;
   /** Locks in memory whose write the store refused. */
   private readonly locksUnwritten = new Set<string>();
   private loading: Promise<void> | undefined;
@@ -124,14 +130,17 @@ export class CredentialUnlocks {
     };
   }
 
-  /** This session ended because its person changed their password. Remembered for this process, which is as long as anything it started can run. */
-  noteEndedByPasswordChange(sessionId: string): void {
-    this.endedByPasswordChange.add(sessionId);
+  /** A session ended, and whether a password change ended it. Remembered for this process, which is as long as anything it started can run. */
+  noteSessionEnded(sessionId: string, byPasswordChange: boolean): void {
+    this.endings += 1;
+    this.sessionsEnded.set(sessionId, byPasswordChange ? -1 : this.endings);
+    if (this.sessionsEnded.size > SESSIONS_ENDED_REMEMBERED) this.sessionsEnded.delete(this.sessionsEnded.keys().next().value ?? sessionId);
   }
 
   /** Whether work started from this session may still use another unlock of the person's. A plain sign-out may; a password change, which often means they suspect someone, may not. */
-  mayFallBack(sessionId: string | undefined): boolean {
-    return sessionId === undefined || !this.endedByPasswordChange.has(sessionId);
+  mayFallBack(userId: string, sessionId: string | undefined): boolean {
+    const ended = sessionId === undefined ? undefined : this.sessionsEnded.get(sessionId);
+    return ended === undefined || ended > (this.passwordsChanged.get(userId) ?? -1);
   }
 
   /** The id a paired client's unlock is held under in this process. Random, so no one can name another person's. */
@@ -284,7 +293,9 @@ export class CredentialUnlocks {
     const record = this.records.get(holderId);
     if (!record) return;
     const nowMs = this.now();
-    const next: SecretKeyCredentialUnlockRecord = { ...record, boxes: {}, lockedAtMs: nowMs, lockReason: reason, updatedAtMs: nowMs };
+    // "Never unlocked" outlives every later lock: it is what keeps a browser nobody proved off the offer.
+    const lockReason = record.lockReason === "first_unlock" ? "first_unlock" : reason;
+    const next: SecretKeyCredentialUnlockRecord = { ...record, boxes: {}, lockedAtMs: nowMs, lockReason, updatedAtMs: nowMs };
     if (next.pending) next.pending = { ...next.pending, boxes: {} };
     this.records.set(holderId, next);
     // What the person was told has happened, so one the store refused is tried again on each next presentation.
@@ -406,6 +417,8 @@ export class CredentialUnlocks {
    * elsewhere waits, as any locked key does.
    */
   async passwordChanged(userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined): Promise<void> {
+    this.endings += 1;
+    this.passwordsChanged.set(userId, this.endings);
     await this.load();
     const digest = actorSessionId === undefined ? undefined : secretKeySessionDigest(actorSessionId);
     const kept = (record: SecretKeyCredentialUnlockRecord): boolean => digest !== undefined && (record.holderId === secretKeyPanelHolderId(digest) || (record.holderKind === "paired-client" && record.lockedAtMs === undefined && record.approvingSessionDigest === digest));

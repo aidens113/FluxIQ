@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../lib/fluxiq";
 import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor } from "../../../../lib/app-route-iam";
-import { projectForPairedClient } from "../../../../lib/paired-client-project";
+import { automationStudioPersonProject } from "fluxiq/automation-studio";
 
 const ROUTE = appRouteIamContract("GET", "/api/client-gateway/snapshot");
 
@@ -18,8 +18,9 @@ export async function GET(request: NextRequest) {
     const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor);
     if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
     const webRuntime = getFluxIQWebRuntimeStatus(clientSession.operatorUserId);
-    const declaredDomain = typeof clientSession.metadata?.domainId === "string" ? clientSession.metadata.domainId : null;
-    const activeProjectId = webRuntime.automationStudio.activeProjectId ?? await projectForPairedClient(fluxiq.programs.automationStudio, declaredDomain);
+    const domainId = typeof clientSession.metadata?.domainId === "string" ? clientSession.metadata.domainId : null;
+    // A read: this person's own latest, or none. A browser with none asks `first-project` to make one.
+    const activeProjectId = webRuntime.automationStudio.activeProjectId ?? await automationStudioPersonProject({ registry: fluxiq.programs.api, actor, domainId });
     return NextResponse.json({
       ok: true,
       payload: {

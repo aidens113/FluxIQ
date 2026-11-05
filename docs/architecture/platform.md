@@ -851,7 +851,11 @@ the preferred one. If it was signed out, a panel caller's resolver tries
 `unlockedSessionFor(userId)` for another live panel unlock of the same person. A
 paired browser uses its own unlock and falls back to nothing, so a lock on that
 browser holds while the person is signed in elsewhere (`fallbackUnlockFor`, bound in
-`createGlobalProgramRuntime`). When nothing can open the key, the call waits for
+`createGlobalProgramRuntime`). A session a password change ended, or one that ended before
+the change, falls back on nothing either: that is what a person does when they suspect
+someone, and it covers a session signed out first. The order is held in this process, as long as
+anything started there can run; a session that only expired was never told about, so it is not
+in it. When nothing can open the key, the call waits for
 the person (below); only where nothing can wake it does it throw
 `AutomationStudioSecretsLockedError`, which carries the contract code
 `secrets.locked` and the message for the instance host. The DeepSeek adapter turns
@@ -882,7 +886,9 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   a lasting holder. The person's password at its approval
   (`/api/client-gateway/approve-pairing`, optional) lifts it at once; otherwise it pairs
   fine and shows the one-time Unlock step. A browser paired before this existed gets
-  the same step.
+  the same step. A browser nobody has proved for keeps that mark through every later lock, a
+  password change or a disable among them, so it never reaches the panel's offer: only its
+  own step lifts it.
 - **Only a holder the host vouches for is boxed to** (`SecretKeyHolderVouch`, bound in
   `createGlobalProgramRuntime`): a paired row must be an active trusted client of that
   person, a panel row a live session of theirs. A stored row alone proves nothing, and
@@ -891,6 +897,8 @@ paired browser (its gateway credential) or a signed-in panel session (its cookie
   recheck, written only by its owner, recheck or not, and so are the rows of `identity.users`
   that prove who a person is (`credential`, `session`), by their id or by what they say
   they are. Its deletes overwrite the row (`secure_delete`) and checkpoint the write-ahead log.
+  A `user` row can be written, but an account made again over a credential still stored
+  takes no password or PIN (`upsertUser`): a credential changes only through a change that locks.
 - A lift does not stand on a password that opened nothing when the person has sealed keys
   and no recorded reset: that password is not theirs to prove with.
 - A paired unlock is held in memory under a random per-process handle, never its public

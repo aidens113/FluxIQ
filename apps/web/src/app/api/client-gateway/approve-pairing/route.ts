@@ -18,11 +18,12 @@ function pairingRefusal(error: unknown): { code: string; message: string } | nul
   return typeof code === "string" && code.startsWith("pairing.") ? { code, message: error.message } : null;
 }
 
-/** The browser is paired whatever this does: one that could not be unlocked here shows the Unlock step. */
+/** The browser is paired whatever this does: one that could not be unlocked here shows the Unlock step. Says it is unlocked only when it no longer reads as locked. */
 async function unlockApprovedClient(fluxiq: ReturnType<typeof getFluxIQ>, auth: NonNullable<Awaited<ReturnType<typeof requireFluxIQUser>>>, password: string, trustedClientId: string): Promise<boolean> {
   try {
     await fluxiq.programs.secretKeys.unlockSession({ sessionId: auth.session.id, userId: auth.user.id, authorizationPassword: password, expiresAtMs: auth.session.expiresAtMs, unlockClients: [secretKeyPairedHolderId(trustedClientId)], passwordVerified: true });
-    return true;
+    const stillLocked = await fluxiq.programs.secretKeys.credentialUnlocks.lockedClientsFor(auth.user.id);
+    return !stillLocked.some((client) => client.holderId === secretKeyPairedHolderId(trustedClientId));
   } catch (error) {
     console.warn("FluxIQ paired a browser but could not unlock it at approval.", error instanceof Error ? error.name : "non_error");
     return false;

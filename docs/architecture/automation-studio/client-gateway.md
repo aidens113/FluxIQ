@@ -416,7 +416,13 @@ the domain the client declared when they approved it (`domainId`, null for
 none), with no project (`client-gateway/service/pairing-flow.ts`,
 `trusted-clients.ts`). A session's `projectId` is its current context, the
 project a recording started under; it moves, and is not restored from the
-trust record on reconnect. The extension follows the project the person has
+trust record on reconnect. With none open in the panel, a paired browser works
+in that person's own latest project in its domain, chosen by the owner the registry
+recorded and never another person's (`programs/automation-studio/api/person-project.ts`,
+read by the bearer snapshot, which makes nothing). A browser with no project at all asks
+`POST /api/client-gateway/first-project`, which makes a first one through the registry,
+so `studio:CreateProject` is checked and the owner recorded; a refusal leaves it with none.
+The extension follows the project the person has
 open in the web panel and names a project explicitly when the person picks one
 in its panel. Core has no per-person project either: every project belongs to
 a domain, and any person whose role holds an endpoint's permission reaches it.

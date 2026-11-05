@@ -86,6 +86,10 @@ describe("secret-keys endpoints", () => {
       expect((await runtime.secretKeys.snapshotFor({ userId: login.user.id, sessionId: login.session.id }) as { unlockTicket?: string }).unlockTicket).toBeUndefined();
       expect((await runtime.secretKeys.snapshotFor({ userId: login.user.id, sessionId: null, holderId: holder.holderId }) as { unlockTicket?: string }).unlockTicket).toBeDefined();
       await runtime.secretKeys.credentialUnlocks.lock(holder.holderId, "signed_out");
+      // Another lock is not an unlock: it is still the browser nobody has unlocked.
+      expect(runtime.secretKeys.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeDefined();
+      await runtime.secretKeys.unlockSession({ sessionId: login.session.id, userId: login.user.id, authorizationPassword: "admin", expiresAtMs: login.session.expiresAtMs, unlockClients: [holder.holderId], passwordVerified: true });
+      await runtime.secretKeys.credentialUnlocks.lock(holder.holderId, "signed_out");
       expect(runtime.secretKeys.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeUndefined();
       runtime.secretKeys.close();
     });
