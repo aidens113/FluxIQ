@@ -27,7 +27,7 @@ import { registerRouterEndpoints } from "./router.ts";
 import { registerLlmGenerationEndpoints } from "./llm-generation.ts";
 import { registerRuntimeExecutionEndpoints } from "./runtime-execution.ts";
 import { registerRunControlEndpoints } from "./run-control.ts";
-import { registerTaskAttemptEndpoints, registerTaskKnownFlowEndpoint } from "./task/index.ts";
+import { registerProjectTaskEndpoints, registerTaskAttemptEndpoints, registerTaskKnownFlowEndpoint } from "./task/index.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 import { registerRuntimeIdentityEndpoint } from "./diagnostics/index.ts";
 import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";
@@ -50,6 +50,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerRunEndpoints(dependencies);
   registerRunDatasetEndpoints(dependencies);
   registerTaskAttemptEndpoints(dependencies);
+  registerProjectTaskEndpoints(dependencies);
   registerTaskKnownFlowEndpoint(dependencies);
   // The conversation endpoints take their own dependency record: the registry, the narrow service surface they use, and what checks an answer's PIN.
   registerAutomationStudioConversationEndpoints({ registry, service, identityAccess });

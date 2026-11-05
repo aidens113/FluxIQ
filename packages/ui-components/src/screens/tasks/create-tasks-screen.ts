@@ -12,7 +12,7 @@ import type { ChatResultsPort, ChatTaskOutcome } from "../../chat/ports/index.ts
 import { createElement } from "../../dom/index.ts";
 import { ownWaitingWords, taskActions, waitingReason } from "./model/index.ts";
 import type { TaskSummary, TasksMemory, TasksPort } from "./port.ts";
-import { detailsView, focusedKey, focusKey, listView, type DetailsHost, type DetailsState, type ListHost, type ListState, type StepsState } from "./view/index.ts";
+import { detailsView, focusedKey, focusKey, keepView, listView, type DetailsHost, type DetailsState, type ListHost, type ListState, type StepsState } from "./view/index.ts";
 
 export type TasksScreenOptions = {
   port: TasksPort;
@@ -158,6 +158,19 @@ export function createTasksScreen(options: TasksScreenOptions): TasksScreen {
     draw();
   }
 
+  /** "Save this" where the task's Flow has one subflow worth keeping; nothing where it has none, or only notes were kept, or it cannot be read. Asked once per open task. */
+  async function loadKeep(task: TaskSummary): Promise<void> {
+    const taskId = details?.taskId;
+    if (port.subflowToKeep === undefined || port.keepSubflow === undefined || task.flowId === undefined || details === undefined || details.keep !== undefined) return;
+    if (task.latest.saved?.state === "notes_only") return;
+    const found = await port.subflowToKeep({ projectId: task.projectId, flowId: task.flowId });
+    if (!found.ok || found.value === undefined || details?.taskId !== taskId || details.keep !== undefined) return;
+    const view = keepView(port, { projectId: task.projectId, flowId: task.flowId, ...found.value });
+    if (view === undefined) return;
+    updateDetails({ keep: view });
+    draw();
+  }
+
   async function loadDetails(): Promise<void> {
     const projectId = options.projectId();
     const taskId = details?.taskId;
@@ -176,6 +189,7 @@ export function createTasksScreen(options: TasksScreenOptions): TasksScreen {
     list = { ...list, tasks: list.tasks.map((task) => (task.taskId === taskId ? reply.value.task : task)) };
     draw();
     const latest = reply.value.attempts[0]?.attempt.attemptId ?? reply.value.task.latest.attempt.attemptId;
+    void loadKeep(reply.value.task);
     const known = new Set([latest, ...details.steps.keys()]);
     for (const attemptId of known) void loadSteps(attemptId, false);
   }

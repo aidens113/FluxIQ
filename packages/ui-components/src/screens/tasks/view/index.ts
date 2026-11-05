@@ -5,6 +5,7 @@ export { taskButton, type TaskButtonOptions } from "./button.ts";
 export { confirmDeleteView, type ConfirmDeleteHost } from "./confirm-delete.ts";
 export { detailsView, type DetailsHost } from "./details.ts";
 export { focusedKey, focusKey } from "./focus.ts";
+export { keepView } from "./keep-view.ts";
 export { listView, type ListHost } from "./list.ts";
 export { rowView } from "./row.ts";
 export type { DeleteState, DetailsState, ListState, RenameState, StepsState } from "./state.ts";

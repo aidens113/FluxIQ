@@ -3,7 +3,7 @@
 // failed `ChatResult`, and a refusal is an ordinary value with a closed code (`types.ts`).
 
 import type { ChatResult } from "../../chat/ports/index.ts";
-import type { SubflowListing, SubflowReading, SubflowRefusal, SubflowRunOutcome } from "./types.ts";
+import type { SubflowListing, SubflowReading, SubflowRefusal, SubflowRunOutcome, SubflowSaveOutcome } from "./types.ts";
 
 export type SubflowListQuery = { projectId: string; text?: string; limit?: number; cursor?: string | null };
 
@@ -21,9 +21,14 @@ export type SubflowRunQuery = {
   acknowledgedRepeat?: boolean;
 };
 
+/** Keeps one subflow of a Flow in the library. `name` and `purpose` are the person's own words, left out when they gave none. */
+export type SubflowSaveQuery = { projectId: string; flowId: string; subflowId: string; name?: string; purpose?: string };
+
 /** The library a client supplies. */
 export type SubflowLibraryPort = {
   list(query: SubflowListQuery): Promise<ChatResult<SubflowListing | SubflowRefusal>>;
   read(query: SubflowReadQuery): Promise<ChatResult<SubflowReading | SubflowRefusal>>;
   run(query: SubflowRunQuery): Promise<ChatResult<SubflowRunOutcome | SubflowRefusal>>;
+  /** Absent: a client cannot save a subflow, and no "Save this" is drawn. */
+  save?(query: SubflowSaveQuery): Promise<ChatResult<SubflowSaveOutcome | SubflowRefusal>>;
 };

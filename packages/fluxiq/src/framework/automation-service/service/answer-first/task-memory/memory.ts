@@ -7,6 +7,8 @@ import type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";
 /** Everything kept for one task. */
 export type AutomationStudioAnswerFirstTaskMemory = {
   taskId: string;
+  /** The person's own name for the task, set by renaming it. Absent: the task is told by its Flow's name. */
+  title?: string;
   /** The Flow the task lives under, latest. */
   flowId: string;
   best?: AutomationStudioAnswerFirstSavedFlow;

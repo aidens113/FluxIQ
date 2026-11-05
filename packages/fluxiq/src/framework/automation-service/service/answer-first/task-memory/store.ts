@@ -8,7 +8,8 @@
 // **Notes are screened when written**, each at most 600 characters, a note with nothing left
 // dropped. Notes keep the last 10, attempts the last 100. With no data root it lives in memory.
 
-import { rename } from "node:fs/promises";
+import { readdir, rename, rm } from "node:fs/promises";
+import path from "node:path";
 import { parseAutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { safeSegment, ProgramJsonStore, ProgramStateReadError } from "../../../../persistence/program-state/storage.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -61,6 +62,48 @@ export class AutomationStudioAnswerFirstTaskMemoryStore {
       await this.writeIndex(index);
     });
     return structuredClone(kept);
+  }
+
+  /** Every task the project holds memory of, by what is on disk (or in memory with no data root). One that cannot be read is left out. */
+  async list(projectId: string): Promise<AutomationStudioAnswerFirstTaskMemory[]> {
+    if (!this.paths.root) return [...this.memory.values()].filter((held) => held.projectId === projectId).map((held) => structuredClone(held.memory));
+    const folder = path.dirname(this.indexFile(projectId));
+    let names: string[];
+    try {
+      names = await readdir(folder);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    const found: AutomationStudioAnswerFirstTaskMemory[] = [];
+    for (const name of names.filter((each) => each.endsWith(".json") && each !== INDEX_FILE).sort()) {
+      const value = await this.readFile(path.join(folder, name));
+      const taskId = (value?.memory as { taskId?: unknown } | undefined)?.taskId;
+      const held = value && typeof taskId === "string" ? readHeld(value, projectId, taskId) : undefined;
+      if (held) found.push(held.memory);
+    }
+    return found;
+  }
+
+  /**
+   * Forgets one task's memory entry and the index lines that name its attempts, and nothing else: the attempts
+   * stay in their Flow's rows, so a thread still tells them, and no Flow, saved part or result is touched.
+   * Answers whether there was an entry.
+   */
+  async remove(projectId: string, taskId: string): Promise<boolean> {
+    const existed = await this.queued(JSON.stringify([projectId, taskId]), async () => {
+      const held = await this.readTask(projectId, taskId);
+      if (this.paths.root) await rm(this.taskFile(projectId, taskId), { force: true });
+      else this.memory.delete(JSON.stringify([projectId, taskId]));
+      return held !== undefined;
+    });
+    await this.queued(JSON.stringify([projectId]), async () => {
+      const index = await this.readIndexOrSetAside(projectId);
+      if (!index) return;
+      const kept = index.attempts.filter((attempt) => attempt.taskId !== taskId);
+      if (kept.length !== index.attempts.length) await this.writeIndex({ ...index, attempts: kept });
+    });
+    return existed;
   }
 
   /** Which task and Flow an attempt belongs to, or none. */

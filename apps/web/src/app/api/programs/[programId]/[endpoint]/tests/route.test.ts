@@ -51,6 +51,10 @@ const ALLOWLISTED = [
   "export-run-dataset",
   "get-task-attempt",
   "list-conversation-task-attempts",
+  "list-flow-subflows",
+  "list-project-tasks",
+  "rename-task",
+  "remove-task",
   "carry-on-task-attempt",
   "run-runtime-session",
   "generate-recording-proposal",
@@ -83,6 +87,10 @@ const CLASSIFICATIONS: Record<string, string> = {
   "export-run-dataset": "read",
   "get-task-attempt": "read",
   "list-conversation-task-attempts": "read",
+  "list-flow-subflows": "read",
+  "list-project-tasks": "read",
+  "rename-task": "authoring",
+  "remove-task": "authoring",
   "carry-on-task-attempt": "authoring",
   "run-runtime-session": "authoring",
   "generate-recording-proposal": "authoring",
@@ -203,7 +211,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "remove-task" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);

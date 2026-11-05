@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireFluxIQUser } from "../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../lib/fluxiq";
 import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor } from "../../../../lib/app-route-iam";
-import { automationStudioPersonProject } from "fluxiq/automation-studio";
+import { automationStudioPersonProject, automationStudioProjectName } from "fluxiq/automation-studio";
 
 const ROUTE = appRouteIamContract("GET", "/api/client-gateway/snapshot");
 
@@ -21,11 +21,13 @@ export async function GET(request: NextRequest) {
     const domainId = typeof clientSession.metadata?.domainId === "string" ? clientSession.metadata.domainId : null;
     // A read: this person's own latest, or none. A browser with none asks `first-project` to make one.
     const activeProjectId = webRuntime.automationStudio.activeProjectId ?? await automationStudioPersonProject({ registry: fluxiq.programs.api, actor, domainId });
+    // What the project is called, for the client to say in words. Additive: a client that ignores it reads what it always did.
+    const activeProjectName = activeProjectId ? await automationStudioProjectName({ registry: fluxiq.programs.api, actor, domainId, projectId: activeProjectId }) : null;
     return NextResponse.json({
       ok: true,
       payload: {
         ...fluxiq.programs.clientGateway.snapshot(),
-        webRuntime: { ...webRuntime, automationStudio: { ...webRuntime.automationStudio, activeProjectId } }
+        webRuntime: { ...webRuntime, automationStudio: { ...webRuntime.automationStudio, activeProjectId, activeProjectName } }
       }
     });
   }

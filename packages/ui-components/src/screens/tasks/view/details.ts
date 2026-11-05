@@ -81,6 +81,7 @@ export function detailsView(state: DetailsState, host: DetailsHost): HTMLElement
   body.push(...summary(latest, state));
   const row = actionRow(actions, state, host);
   if (row !== undefined) body.push(row);
+  if (state.keep !== undefined) body.push(state.keep);
   if (state.status === "failed") {
     body.push(createElement("div", { className: "tasks-notice", attrs: { role: "status" } }, [
       createElement("p", { className: "tasks-notice-text", text: state.error ?? "This task could not be refreshed just now." }),

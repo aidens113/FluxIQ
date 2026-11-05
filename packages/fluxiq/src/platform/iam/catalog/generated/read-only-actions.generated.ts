@@ -89,6 +89,7 @@ export const IAM_READ_ONLY_ACTIONS: readonly string[] = Object.freeze([
   "studio:ListProjectHierarchyChildren",
   "studio:ListProjectParts",
   "studio:ListProjectProblems",
+  "studio:ListProjectTasks",
   "studio:ListProjectUiCacheStats",
   "studio:ListPublishedFlowNodes",
   "studio:ListRecordingDomains",
