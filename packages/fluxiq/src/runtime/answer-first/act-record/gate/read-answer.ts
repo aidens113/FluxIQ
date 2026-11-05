@@ -13,6 +13,8 @@
 // - `failure.effect: "ambiguous"`: the contract's word for an outcome not known.
 // - `evidence.ok === false` or `evidence.status === "no_effect"`: the call refused itself,
 //   or a press changed nothing, whatever `effectApplied` says.
+// - `evidence.skipped === "already_in_state"`: the page said the press was not made, its control
+//   already showing the state asked for. Nothing was done, and nothing goes on the record (t869).
 // - `draft.effect`: whether the call looked or changed. A call that only reads is never
 //   an act whatever it declared (`domain/.../permission.ts`, `run-mueozmp8-348a2057`).
 // - `evidence.actedOn`, `evidence.location`, `draft.ranWith`, `outputs`: the row and the
@@ -27,6 +29,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../ll
 
 /** The reason a domain answers an act Core left uncertain with. */
 const UNCERTAIN_REASON = "outcome_uncertain";
+const ALREADY_IN_STATE = "already_in_state";
 /** The key a domain's read keeps its rows under when its binding names none (`domain/.../tools.ts`, `readRowsKey`). */
 const DEFAULT_READ_ROWS_KEY = "read.extracted";
 
@@ -56,7 +59,7 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   const refused = evidence?.ok === false || evidence?.status === "no_effect";
   const effect = result?.draft?.effect;
   const uncertain = result?.resultReason === UNCERTAIN_REASON || evidence?.reason === UNCERTAIN_REASON || typeof evidence?.effectUncertain === "string" || result?.failure?.effect === "ambiguous";
-  const applied = result ? result.effectApplied === true && !refused : effect !== "observe";
+  const applied = result ? result.effectApplied === true && !refused && evidence?.skipped !== ALREADY_IN_STATE : effect !== "observe";
   const observe = effect === "observe";
   const looked = !refused && !uncertain && result?.failure === undefined && (observe || (effect === undefined && !applied));
   const ranWith = result?.draft?.ranWith;

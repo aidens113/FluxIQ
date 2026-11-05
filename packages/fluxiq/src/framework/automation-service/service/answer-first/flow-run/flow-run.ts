@@ -29,6 +29,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { automationStudioAnswerFirstRunActGate } from "../run-acts/index.ts";
+import { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
@@ -58,7 +59,7 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved.stepsDigest, watch, signal);
+    const ended = await run(ports, assembly, saved, watch, signal);
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
   } catch (error) {
@@ -73,14 +74,16 @@ function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assem
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, digest: string, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
   const { input, runId } = ports;
+  const digest = saved.stepsDigest;
   const engine = ports.engine();
   const [parentFlow, baseDependencyDigest, snapshots, deprecatedPublicationIds] = await Promise.all([engine.parentFlow(), engine.currentBaseDigest(), engine.snapshots(), engine.deprecatedPublicationIds()]);
   const startedAt = Date.now();
   const identity: AutomationStudioCandidateVerificationIdentity = { projectId: input.projectId, flowId: input.flowId, revision: 1, digest, baseDependencyDigest, requirementsDigest: NO_REQUIREMENTS };
   const start: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.flow-run`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: input.startLocation ?? null, start: "not_reset" })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
-  const options = gatedOptions(ports, assembly, engine, watch, signal, startedAt);
+  const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
+  const options = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs);
   const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
     identity,
     candidate: { revision: 1, digest, baseDependencyDigest, buildPlan: assembly.buildPlan },
@@ -99,10 +102,10 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * The options a real run gets, with what is this attempt's: its rows to its sink, its acts through
  * its record, and no parking port, so a step that asks stops the run and asks nobody (`./permission.ts`).
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined, referenceNow: number): AutomationStudioGraphExecutionOptions {
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined, referenceNow: number, claimedActs: ReadonlySet<string>): AutomationStudioGraphExecutionOptions {
   const { parking: _nobodyIsAsked, ...given } = engine.graphOptions({ runId: ports.runId, signal: signal ?? new AbortController().signal });
   const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch) };
-  return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
+  return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
 }
 
 function isCancellation(error: unknown): boolean {

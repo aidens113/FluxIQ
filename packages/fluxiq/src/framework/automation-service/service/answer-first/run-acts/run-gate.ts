@@ -41,7 +41,10 @@
 // the record's rule is that nothing a model says raises a count. The refused passes read
 // success and go on; the judge then sees too little, says no, and rounds look for another
 // way. The engine's own ledger counts each do-while pass as a new act, and it may: it has no
-// by-hand press or earlier attempt to compare with, and this gate does.
+// by-hand press or earlier attempt to compare with, and this gate does. This is of a step that
+// says it lasts (`./settling.ts`). A plain press with nothing declared or claimed is pressed each
+// pass the Flow says, and so is a second step pressing the same plain control: a next page, an
+// Apply a page swallowed the first time (t869).
 //
 // **A row left behind (t869).** The page says when a pass's press went as a page-level link, so that nothing says the
 // pass still stands on its row. Under `settle`, that pass's next lasting step fails as a target not found, with nothing
@@ -83,9 +86,14 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
   definitions?: () => ReadonlyArray<{ id: string; outputAction?: { fixedOutputId?: string; allowedOutputIds?: string[] } }>;
   /** Record what this run does into `record` as it happens, and compare each pass with that too (header). */
   settle?: boolean;
+  /** The plan keys whose draft step claims a lasting act the person asked for (`../flow-run/act-claims.ts`): such a press lasts, whatever it declared. */
+  claimedActs?: ReadonlySet<string> | undefined;
 }): AutomationStudioGraphExecutionOptions {
-  const { record } = input;
-  const settling = input.settle === true ? automationStudioAnswerFirstRunActSettling(record) : undefined;
+  const { record, claimedActs } = input;
+  const settling = input.settle === true ? automationStudioAnswerFirstRunActSettling(record, { claimsAct: (node) => {
+    const key = node.metadata?.[SYMBOLIC_KEY_METADATA];
+    return typeof key === "string" && claimedActs?.has(key) === true;
+  } }) : undefined;
   const counted = settling ? { counted: true } : {};
   /** The attempt just answered without dispatching, whose effect check is answered `seen` (header). */
   let skipped = false;
@@ -110,7 +118,7 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
       if (settling) {
         const step = settling.stepOf({ node: request.node, actionId: request.node.definitionId, parameters, row, floor: options.resolveActionEffect?.(request.node, request.node.parameterValues) });
         passing = row === undefined ? undefined : JSON.stringify(row);
-        if (step.lasting && passing !== undefined && passing === leftBehind) {
+        if ((step.lasting || step.plainPress) && passing !== undefined && passing === leftBehind) {
           admitted = 0;
           return { result: rowLeftBehind() };
         }

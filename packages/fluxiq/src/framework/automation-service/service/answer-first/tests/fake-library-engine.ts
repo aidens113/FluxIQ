@@ -27,6 +27,8 @@ export const OPEN_ACCOUNT = "domain.library.open_account";
 /** The same read and press through the door a web step really uses: the node answers, and what it does goes out as an output. */
 export const READ_BY_OUTPUT = "domain.library.read_loans_by_output";
 export const RENEW_BY_OUTPUT = "domain.library.renew_loan_by_output";
+/** A press with a `failed` way out, which the optional shape needs: a prompt's way out, say. */
+export const CLOSE_PROMPT = "domain.library.close_prompt";
 const READ_OUTPUT = "library.read";
 const RENEW_OUTPUT = "library.renew";
 const PACKAGE = { packageId: "library.package", packageVersion: "1.0.0" };
@@ -42,9 +44,10 @@ const node = (id: string, label: string, over: Partial<AutomationStudioNodeDefin
 
 const NODES: AutomationStudioNodeDefinition[] = [
   node(OPEN_ACCOUNT, "Open the account", { parameters: [{ id: "url", label: "Address", valueType: "string", required: false }] }),
-  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }, { id: "retry", label: "Retry", valueType: "object", required: false }] }),
+  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }, { id: "retry", label: "Retry", valueType: "object", required: false }, { id: "list", label: "The list", valueType: "object", required: false }] }),
   node(RENEW_LOAN, "Renew loan", { inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "title", label: "Title", valueType: "string", required: false }] }),
   node(RENEW_CARD, "Renew card", { parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "expectedState", label: "Expected state", valueType: "object", required: false }] }),
+  node(CLOSE_PROMPT, "Close the prompt", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "failed", label: "Failed", valueType: "any" }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }] }),
   node(READ_BY_OUTPUT, "Read loans", { outputAction: { fixedOutputId: READ_OUTPUT }, outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }] }),
   node(RENEW_BY_OUTPUT, "Renew loan", { outputAction: { fixedOutputId: RENEW_OUTPUT }, inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }] })
 ];
@@ -95,6 +98,10 @@ export function libraryTargetNodes(target: LibraryTarget): AutomationStudioNativ
       })(),
       [RENEW_LOAN]: ({ signal, inputs, parameters }) => overOr(RENEW_LOAN, signal, () => pressLoan(target, inputs, parameters), { parameters, inputs })(),
       [RENEW_CARD]: ({ signal, parameters }) => overOr(RENEW_CARD, signal, () => pressCard(target), { parameters })(),
+      [CLOSE_PROMPT]: ({ signal, parameters }) => overOr(CLOSE_PROMPT, signal, () => {
+        target.presses.push({ node: CLOSE_PROMPT, subject: "prompt" });
+        return success();
+      }, { parameters })(),
       [READ_BY_OUTPUT]: ({ parameters }) => ({ ...success(), effects: [{ type: "policy.output.dispatch", payload: { outputId: READ_OUTPUT, parameters: {}, recordOutput: parameters.recordOutput as JsonValue } }] }),
       [RENEW_BY_OUTPUT]: ({ inputs }) => ({ ...success(), effects: [{ type: "policy.output.dispatch", payload: { outputId: RENEW_OUTPUT, parameters: { title: String((inputs.item as JsonObject | undefined)?.title ?? "a loan") } } }] })
     } }

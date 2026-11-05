@@ -49,7 +49,7 @@ export type LaterAttemptOptions = {
 export type LaterAttemptsRestart = { dataDir: string; projectId: string; target: LibraryTarget; flows: readonly string[] };
 
 /** One service and one library, to run attempts on one after another. */
-export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]> } = {}) {
+export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]>; domain?: (binding: AutomationStudioLlmEvidenceRuntimeBinding) => Partial<AutomationStudioLlmEvidenceRuntimeBinding> } = {}) {
   const dataDir = options.restart?.dataDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
   const target = options.restart?.target ?? libraryTarget(options.titles);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number; timeoutMs?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
@@ -65,7 +65,8 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: USAGE };
   });
   const provider = { ...scripted, estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => current.costUsd ?? scripted.estimateCostUsd?.(tokens) ?? 0 };
-  const binding = fakeLibraryBinding(target.library, options.fault);
+  const faked = fakeLibraryBinding(target.library, options.fault);
+  const binding = { ...faked, ...options.domain?.(faked) };
   /** Every by-hand call that reached the target, and where it was told to start from. */
   const seen: { toolId: string; startLocation: string | undefined }[] = [];
   const service = new AutomationStudioService({

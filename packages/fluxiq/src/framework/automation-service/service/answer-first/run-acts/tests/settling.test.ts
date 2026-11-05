@@ -165,12 +165,7 @@ describe("what it records", () => {
     expect(AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY).toBe("declaredConsequences");
   });
 
-  it("a node a floor says commits, or marked destructive, though it names no class", async () => {
-    const byFloor = counted();
-    const floored = writing();
-    await runAutomationStudioGraph(repeating(2, pressNode("press", {})), settling({ ...byFloor.options, resolveActionEffect: () => ({ effectClass: "commit", permissionConsequences: [] }) }, floored.record));
-    expect(byFloor.presses).toHaveLength(1);
-    expect(floored.record.acts()).toEqual([expect.objectContaining({ state: "landed", classes: [] })]);
+  it("a node marked destructive, though it names no class", async () => {
     const marked = counted();
     const destructive = writing();
     await runAutomationStudioGraph(repeating(2, pressNode("press", { destructive: true })), settling(marked.options, destructive.record));

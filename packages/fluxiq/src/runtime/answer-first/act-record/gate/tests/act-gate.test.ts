@@ -39,6 +39,15 @@ function gated(answers: Array<Answer | Error>) {
   return { record, dispatched, execute };
 }
 
+describe("a press the page says it did not make", () => {
+  it("puts nothing on the record, whatever it declared, since its control already showed the state asked for", async () => {
+    const { execute, record } = gated([pressed({}, { skipped: "already_in_state" }), pressed({}, { skipped: "already_in_state" })]);
+    await execute(pressCall());
+    await execute(pressCall("c2", "t8", []));
+    expect(record.data().acts).toEqual([]);
+  });
+});
+
 describe("before dispatch", () => {
   it("answers an identical landed repeat as what happened, in generic words, known by its act and not as a refusal of the page, and sends nothing", async () => {
     const { execute, dispatched, record } = gated([pressed()]);
