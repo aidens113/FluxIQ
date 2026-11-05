@@ -19,6 +19,8 @@
 //   frozen target (`../row-ties.ts`, `../identity/target-keys.ts`). `evidence.actedOnItem`, where a domain says
 //   it, is that item's whole words and none of its control's, and is what a row is found by: a sentence's words are cut
 //   short, and its control's name fits every row with a column repeating it.
+// - `evidence.read.title`: the title of the page the call was pressed on. `evidence.location` is where it left the page,
+//   so a press that moves on still names the page it was made on. The page's own words, for the act's line alone.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
@@ -39,6 +41,8 @@ export type AutomationStudioAttemptActAnswerRead = {
   ranWith?: { actionId?: string; parameters?: JsonObject };
   actedOn?: string;
   location?: string;
+  /** The title of the page the call was made on: `location` says where it left the page, and this where it stood (`../item-names.ts`). */
+  pageTitle?: string;
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
   /** The rows it read, one list per place the answer holds them: the same read's rows there may be written differently, and two rows of one list are never one row. */
@@ -58,11 +62,13 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   const ranWith = result?.draft?.ranWith;
   const parameters = record(ranWith?.parameters);
   const actionId = typeof ranWith?.node === "string" ? ranWith.node : result?.draft?.actionId;
+  const pageTitle = record(evidence?.read)?.title;
   return {
     applied, uncertain, observe, looked,
     ...(parameters ? { ranWith: { ...(actionId ? { actionId } : {}), parameters } } : {}),
     ...(typeof evidence?.actedOnItem === "string" ? { actedOn: evidence.actedOnItem } : typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
+    ...(typeof pageTitle === "string" ? { pageTitle } : {}),
     pageUnchanged: evidence?.pageChanged === false,
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
     reads: refused || result?.failure !== undefined ? [] : [rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)].filter((rows) => rows.length > 0)

@@ -23,13 +23,14 @@ const WHERE_WORDS = "On the site";
 
 /**
  * The words of an act: each as given, or the generic line where the parser refuses it or nothing was given (header).
- * `item` is the few words of the listing the act was on (`./item-words.ts`): said after what was done, and left off
- * as a whole where the parser refuses the line with it, so the act is never worse for naming its item.
+ * `item` is the few words of the listing the act was on (`./item-names.ts`): said after what was done, and left off
+ * as a whole where the parser refuses the line with it, or where it only says the same again ("Save: Save"), so the
+ * act is never worse for naming its item.
  */
 export function automationStudioAttemptActScreenedWords(words: { what?: string | undefined; where?: string | undefined }, classes: readonly string[], item?: string | undefined): { what: string; where: string } {
   const what = accepted(words.what, "what") ?? CLASS_WORDS.find(([known]) => classes.includes(known))?.[1] ?? NO_CLASS_WORDS;
   return {
-    what: (item === undefined ? undefined : accepted(`${what}: ${item}`, "what")) ?? what,
+    what: (item === undefined || item.trim().toLowerCase() === what.toLowerCase() ? undefined : accepted(`${what}: ${item}`, "what")) ?? what,
     where: accepted(words.where, "where") ?? WHERE_WORDS
   };
 }

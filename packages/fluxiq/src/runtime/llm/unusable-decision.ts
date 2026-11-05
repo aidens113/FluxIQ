@@ -292,15 +292,18 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
     // Said only where a tool call could have been the answer.
     const nesting = reply && BRACKET_CASES.has(reply.case) && (!input.offers || input.offers.tools) ? ` ${TOOL_CALL_NESTING_INSTRUCTION}` : "";
+    // Where it did not fit, in the schema's words and never its own, read back through the account's bounds at this model boundary.
+    const misses = automationStudioLlmProviderReplyAccount(reply)?.misses ?? [];
+    const atFault = misses.length > 0 ? ` At fault: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}.` : "";
     return {
       ok: false,
       code: "llm_evidence_loop.reply_unreadable",
       issueCodes,
-      unreadable: { ...(reply ? { case: reply.case } : {}), said },
+      unreadable: { ...(reply ? { case: reply.case } : {}), said, ...(misses.length > 0 ? { misses } : {}) },
       unreadableInARow: inARow,
       maxUnreadableInARow: maxInARow,
       accepted: acceptedDecision(input.offers),
-      instruction: `Your previous reply could not be read: ${said}. ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
+      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
     };
   }
   return {

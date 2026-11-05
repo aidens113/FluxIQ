@@ -302,6 +302,13 @@ test("an act the record can place no better does not repeat the heading it sits 
   assert.equal(actWords({ ...act, where: "On the saved list" }), "Accept (On the saved list).");
 });
 
+test("an act's line names its item as the record says it, and words that end themselves take no second stop", () => {
+  const act = { id: "act.1", what: "Save: Speckled mug, 300ml", where: "On the site", classes: ["modify_existing" as const], state: "landed" as const };
+  assert.equal(actWords(act), "Save: Speckled mug, 300ml.");
+  assert.equal(actWords({ ...act, what: "Save: Speckled mug with a very long name..." }), "Save: Speckled mug with a very long name...");
+  assert.equal(actWords({ ...act, what: "Save: Speckled mug...", state: "may_have_landed" }), "This may have happened, look to be sure: Save: Speckled mug...");
+});
+
 test("steps with a failed check against their recording are said to only partly work, and unproven ones to have not run", () => {
   const saved = { state: "partly_works" as const, trust: "unproven" as const, flowId: "flow-1", savedAtMs: 0 };
   assert.match(savedWords(saved, 0), /have not run on their own yet/u);

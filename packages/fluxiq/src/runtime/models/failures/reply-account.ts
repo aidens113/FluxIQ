@@ -35,6 +35,8 @@ import type { AutomationStudioLlmUsageSummary } from "../contracts/index.ts";
  * - `content_invalid`: the brackets count out and match, nothing but closers
  *   trails, and it still does not parse -- a bad escape, an unescaped quote, a
  *   trailing comma, an unquoted key.
+ * - `content_off_shape`: it is sound JSON and does not fit the schema asked for.
+ *   `misses` says where and why, in the schema's words alone.
  */
 const REPLY_CASES = [
   "media_type",
@@ -49,7 +51,8 @@ const REPLY_CASES = [
   "content_unclosed",
   "content_trailing",
   "content_mismatched",
-  "content_invalid"
+  "content_invalid",
+  "content_off_shape"
 ] as const;
 
 export type AutomationStudioLlmProviderReplyCase = (typeof REPLY_CASES)[number];
@@ -63,9 +66,15 @@ export type AutomationStudioLlmProviderReplyAccount = {
   contentChars?: number;
   /** What the provider reported the call cost, where its usage was well formed. The call was paid for either way. */
   usage?: AutomationStudioLlmUsageSummary;
+  /** On `content_off_shape`: each place the reply parts from the schema, by path and rule, and never a word of what it said. */
+  misses?: Array<{ path: string; rule: string }>;
 };
 
 const FINISH_REASON = /^[a-z0-9_.:-]{1,40}$/i;
+/** A path of keys and places, and a rule in the schema's words: what `misses` may hold, whatever built it. */
+const MISS_PATH = /^[\w$.[\]?-]{1,200}$/u;
+const MISS_RULE = /^(?:must|is|does|fits) [\w ,"'.:-]{1,200}$/u;
+const MOST_MISSES = 8;
 const USAGE_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInputTokens", "cacheMissInputTokens"] as const;
 
 /**
@@ -79,12 +88,22 @@ export function automationStudioLlmProviderReplyAccount(value: unknown): Automat
   const record = value as Record<string, unknown>;
   if (!REPLY_CASES.includes(record.case as AutomationStudioLlmProviderReplyCase)) return undefined;
   const usage = boundedUsage(record.usage);
+  const misses = boundedMisses(record.misses);
   return {
     case: record.case as AutomationStudioLlmProviderReplyCase,
     ...(typeof record.finishReason === "string" && FINISH_REASON.test(record.finishReason) ? { finishReason: record.finishReason } : {}),
     ...(Number.isSafeInteger(record.contentChars) && (record.contentChars as number) >= 0 ? { contentChars: record.contentChars as number } : {}),
-    ...(usage ? { usage } : {})
+    ...(usage ? { usage } : {}),
+    ...(misses.length > 0 ? { misses } : {})
   };
+}
+
+function boundedMisses(value: unknown): Array<{ path: string; rule: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((miss: unknown) => {
+    const { path, rule } = (miss ?? {}) as { path?: unknown; rule?: unknown };
+    return typeof path === "string" && typeof rule === "string" && MISS_PATH.test(path) && MISS_RULE.test(rule) ? [{ path, rule }] : [];
+  }).slice(0, MOST_MISSES);
 }
 
 function boundedUsage(value: unknown): AutomationStudioLlmUsageSummary | undefined {

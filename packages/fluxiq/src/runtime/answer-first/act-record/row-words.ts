@@ -1,8 +1,9 @@
-// The item a row stands for, in its own few words, for an act that came with the row and not with a sentence
-// naming its item. A forward run presses once per row of a list (`item` on its call), and its answer need not say
-// which item it pressed, so "Save. Save. Save." would name no listing. The row is what a real read returned, never
-// a word the model wrote, and the line is only what a person reads: it is put through the same word check as every
-// other line of an act (`./words.ts`), held in memory beside the entry and never persisted (`./record.ts`).
+// The item a row stands for, in its own few words, for an act that came with the row, or that was tied to it, and not
+// with a sentence naming its item (`./item-names.ts`). A forward run presses once per row of a list (`item` on its call),
+// and its answer need not say which item it pressed; a press by hand on a row's own page came with no row at all, and is
+// tied to one by the page it was made on. "Save. Save. Save." names no listing. The row is what a real read returned,
+// never a word the model wrote, and the line is only what a person reads: it is put through the same word check as every
+// other line of an act (`./words.ts`), held in memory beside the entry and never persisted (`./item-names.ts`).
 //
 // The first text cell of the row with a word in it, in the row's own order: what a read lists first is what names an
 // item. A cell a read minted (`$`-named, a handle, an address or a link) is page plumbing, never a person's words.

@@ -57,7 +57,8 @@ const CASE_SAID: Readonly<Record<AutomationStudioLlmProviderReplyCase, string>> 
   content_unclosed: "the JSON object never closed: it stopped part-way through",
   content_trailing: "there was more text after the JSON object",
   content_mismatched: "its brackets did not match: one closed the wrong kind, or there was one too many or too few",
-  content_invalid: "the JSON did not parse: a bad escape, an unescaped quote, a trailing comma or an unquoted key"
+  content_invalid: "the JSON did not parse: a bad escape, an unescaped quote, a trailing comma or an unquoted key",
+  content_off_shape: "it was JSON, but it did not fit the answer asked for"
 });
 
 /** The same, for the provider codes that carry no case of their own. */

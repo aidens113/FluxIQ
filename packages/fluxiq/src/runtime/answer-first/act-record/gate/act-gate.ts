@@ -106,7 +106,7 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
       if (recordable(read.act, said)) record.settled(read.act, {
         // A press may only say what it pressed once it has answered, so words still blank are asked for again with the answer in hand.
         effectApplied: said.applied, uncertain: said.uncertain, words: begunWords?.what ? begunWords : wordsFor(input.wordsOf?.(call, answer)),
-        ...(said.ranWith ? { ranWith: said.ranWith } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {})
+        ...(said.ranWith ? { ranWith: said.ranWith } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {}), ...(said.pageTitle !== undefined ? { pageTitle: said.pageTitle } : {})
       });
       const url = read.act.parameters.url;
       record.notePlace({ ...(said.location !== undefined ? { location: said.location } : {}), ...(typeof url === "string" ? { url } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {}) });

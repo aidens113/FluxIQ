@@ -61,6 +61,8 @@ export type AutomationStudioAttemptActOutcome = {
   ranWith?: { actionId?: string; parameters?: JsonObject };
   /** The caller's sentence naming the item of a list the act was on, when it said one. Hashed before it is kept. */
   actedOn?: string;
+  /** The title of the page it was pressed on, where its answer holds one: what its line says of a press on an item's own page (`./item-names.ts`). Never kept past this attempt's memory. */
+  pageTitle?: string;
   /** The Flow step that made it, in a real run: what `doubted` names it by. */
   step?: string;
 };

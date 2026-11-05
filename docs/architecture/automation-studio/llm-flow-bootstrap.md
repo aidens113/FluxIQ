@@ -1088,6 +1088,17 @@ carries the record (`service/answer-first/run-acts/`) and does not press what la
 saying so; a later run acts normally, because a person asking again means it. A first run
 that does not succeed gives its acts back.
 
+**An act's line names its item** ("Save: Round pine dining table, 90cm"), by hand or forward alike, in the words a
+read or a page said and never a word the model wrote (`act-record/item-names.ts`). In order: the answer's own sentence
+naming the item, or the row the call came with; the row the act is tied to, by its own first text cell, which is how a press
+on a row's own page is named once a read has listed that page (a row tied late names it too, and a row that fits several
+with different words names none); the title of the page it was pressed on, up to the site's name, for a press before any
+such read; and last the control's name. Every one goes through the person-words check, which refuses a credential's shape.
+These words live in the attempt's memory: what is persisted beside a Flow holds no page text, so a record read back after a
+restart says the plain line for what it did before, until a read of the same rows names it again. The attempt's own result
+does store the lines, beside the rows it read. The word before the colon is the control's as the step names it, so a Flow
+step written on a control already reading "Saved" says "Saved:" where a press by hand said "Save:".
+
 **Forward runs.** With `forwardRun` on the loop input, `core.run_flow` runs what the model
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
 acting. It sends no reset. These calls are in the Flow's own wire form, which the state
@@ -2513,6 +2524,20 @@ receives its progress instead of publishing the former bare
 and repaired; an empty Flow explores again while budget remains. Unreadable
 replies have their own counter, described below. A completion the check accepts
 is tested before its Flow can be persisted.
+
+**A paid reply is kept where Core can keep it, on Anthropic's JSON-text path too.** That transport sends one string, so
+only Core holds a reply to the schema, and that check came before everything Core does to keep an answer
+(`runtime/llm/anthropic/task-answer.ts`). In order: a word no model can choose is put right where the reply makes it
+unambiguous, the outer `kind` being the word its own inner object carries and that object fitting its place
+(`models/providers/anthropic/reply/own-word.ts`), and a word naming another answer stays refused; a decision is read as
+every provider's is (`automationStudioLlmEvidenceNormalizedDecisionResponse`); a length (`maxLength`, `minLength`,
+`maxItems`) is no reason to refuse a judge's answer or a decision, since the bound is what the model is told and the
+harness and each tool's input check read past it with their own codes, while other tasks keep every bound here, since
+nothing else holds them. What still does not fit is `llm.provider_output_invalid` with the account's case
+`content_off_shape` and its `misses`, each a path and a rule in the schema's words and never a word of the reply
+(`models/providers/anthropic/schema-misses.ts`), which the `core.decision_check` note says as "At fault: ...". The account
+reaches the step log. DeepSeek holds no such check, so it already read a long text whole, and it still refuses the
+wrong outer word, with no account.
 
 **An unreadable reply is asked again, never a bare ending (t211).** A reply that
 arrived and could not be read (`llm.provider_malformed_response`, a truncated

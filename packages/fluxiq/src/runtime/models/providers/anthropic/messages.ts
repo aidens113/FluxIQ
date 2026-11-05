@@ -1,7 +1,7 @@
 import type { ModelTransportObservation, ModelTransportObserver } from "../../transport/index.ts";
 import { automationStudioAnthropicReplyContainsCredential } from "./credential-screen.ts";
 import type { AutomationStudioLlmUsageSummary } from "../../contracts/index.ts";
-import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, AutomationStudioLlmProviderError, automationStudioLlmSignalTimedOut } from "../../failures/index.ts";
+import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, AutomationStudioLlmProviderError, automationStudioLlmSignalTimedOut, type AutomationStudioLlmProviderReplyAccount } from "../../failures/index.ts";
 import { readAutomationStudioProviderBoundedResponse, readAutomationStudioProviderRefusal, raceAutomationStudioProviderSignal, automationStudioProviderBalanceExhausted } from "../../transport/index.ts";
 import type { AutomationStudioAnthropicModel } from "../../catalog/index.ts";
 import { isRecord } from "../../transport/index.ts";
@@ -144,8 +144,8 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
   }
 }
 
-export function automationStudioAnthropicPaidFailure(code: "llm.provider_output_invalid" | "llm.provider_malformed_response" | "llm.provider_usage_limit_exceeded", usage: AutomationStudioLlmUsageSummary): AutomationStudioLlmProviderError {
-  return withPaid(new AutomationStudioLlmProviderError(code, "Anthropic returned an unusable answer."), usage);
+export function automationStudioAnthropicPaidFailure(code: "llm.provider_output_invalid" | "llm.provider_malformed_response" | "llm.provider_usage_limit_exceeded", usage: AutomationStudioLlmUsageSummary, reply?: AutomationStudioLlmProviderReplyAccount): AutomationStudioLlmProviderError {
+  return withPaid(new AutomationStudioLlmProviderError(code, "Anthropic returned an unusable answer.", false, undefined, undefined, undefined, undefined, reply), usage);
 }
 
 /** The failure with what the call cost, and, for a reply of a shape Core could not read, a case where the adapter named none. */

@@ -237,7 +237,9 @@ describe("persistence", () => {
     expect(written.at(-1)).toEqual(record.data());
 
     const fresh = new AutomationStudioAttemptActRecord({ seed: JSON.parse(JSON.stringify(written.at(-1))) as AutomationStudioAttemptActRecordData });
-    expect(fresh.acts()).toEqual(record.acts());
+    // The same acts, but for the row's words on the line, which stay in this process's memory (`../item-names.ts`).
+    expect(record.acts()[0]!.what).toBe("Made a thing: Oak");
+    expect(fresh.acts()).toEqual(record.acts().map((act) => ({ ...act, what: "Made a thing" })));
     expect(fresh.admit(call()).kind).toBe("already_done");
     expect(fresh.admit(call({ parameters: { target: { handle: "t21" } } })).kind).toBe("already_done");
     expect(fresh.rowDone({ name: "Oak", rowHandle: "t99" })).toBe(true);

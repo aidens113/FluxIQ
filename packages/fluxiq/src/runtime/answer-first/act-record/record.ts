@@ -126,8 +126,7 @@ import { automationStudioLlmStepLogNote } from "../../llm/step-log/index.ts";
 import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
-import { automationStudioAttemptActItemWords } from "./item-words.ts";
-import { automationStudioAttemptActRowWords } from "./row-words.ts";
+import { AutomationStudioAttemptActItems as ActItems } from "./item-names.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
@@ -156,8 +155,8 @@ export class AutomationStudioAttemptActRecord {
   private readonly landedBySteps = new Map<string, AutomationStudioAttemptActEntry>();
   /** Acts a call was refused for since they became may-have-landed, the only ones a look opens. In memory only (header). */
   private readonly refusedFor = new Set<AutomationStudioAttemptActEntry>();
-  /** The few words of the listing an act was on (`./item-words.ts`), said on the act a person reads and kept out of what is persisted: the record holds no page text. In memory only. */
-  private readonly itemsOf = new WeakMap<AutomationStudioAttemptActEntry, string>();
+  /** The few words of the listing an act was on (`./item-names.ts`), said on the act a person reads and kept out of what is persisted: the record holds no page text. In memory only. */
+  private readonly items = new ActItems();
   /** Rows left out as held done, for `rowsHeldDone`, and which rows a read returned twice, for the words of a refusal. In memory only (header). */
   private readonly leftOut = new RowsLeftOut();
 
@@ -254,15 +253,14 @@ export class AutomationStudioAttemptActRecord {
       const wasUndeclared = known.undeclared === true;
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
       if (wasUndeclared && lasting) this.readCount(known, call, called);
+      this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
       this.landedAt(outcome.step, known);
       this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
       return this.shown(known);
     }
     const entry = this.newEntry(call, outcome, called, frozen, state, lasting);
-    // The sentence naming the item, else the row the call came with (a forward run presses once per row of a list): in memory, never persisted.
-    const item = automationStudioAttemptActItemWords(outcome.actedOn) ?? automationStudioAttemptActRowWords(call.row);
-    if (item !== undefined) this.itemsOf.set(entry, item);
+    this.items.noteAct(entry, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);
@@ -332,6 +330,7 @@ export class AutomationStudioAttemptActRecord {
   /** Remembers the rows of one read, so a by-hand press by a handle one printed counts for that row, and two rows alike in this one list are known from one row said in two lists. */
   noteReadRows(rows: readonly JsonObject[]): void {
     if (rows.length === 0) return;
+    for (const row of rows) this.items.noteRow(row);
     const read = this.ties.note(rows, this.actedRows());
     this.leftOut.noteList(read);
     // An act made before the read that lists its row, however that read writes it (header of `./row-ties.ts`).
@@ -359,7 +358,7 @@ export class AutomationStudioAttemptActRecord {
   /** An act as a person reads it: the contract's shape, with the listing it was on where its answer said which. */
   private shown(entry: AutomationStudioAttemptActEntry): AutomationStudioAttemptAct {
     const act = contractAct(entry);
-    const item = this.itemsOf.get(entry);
+    const item = this.items.of(entry);
     return item === undefined ? act : { ...act, what: automationStudioAttemptActScreenedWords({ what: act.what }, entry.classes, item).what };
   }
 
@@ -407,6 +406,7 @@ export class AutomationStudioAttemptActRecord {
 
   /** Holds the row an act is on, so the same row in another shape is known. It is no read: a read's list is what `./same-row.ts` reads a difference by. */
   private noteActedRow(row: JsonObject): void {
+    this.items.noteRow(row);
     this.ties.noteActed(row, this.actedRows());
   }
 

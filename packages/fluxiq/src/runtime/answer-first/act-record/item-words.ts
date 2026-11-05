@@ -6,6 +6,9 @@
 // 90cm" does. The row's own words are hashed in the record and kept nowhere in the clear for ties
 // (`./row-ties.ts`); this is only the short line a person reads, put through the same word check as
 // every other line of an act (`./words.ts`), and never anything the model wrote.
+//
+// Only a press inside a list says this: a press on an item's own page has no list item to name, and
+// `./item-names.ts` says what stands in for it.
 
 import { automationStudioAttemptActCutItemWords } from "./cut-words.ts";
 
