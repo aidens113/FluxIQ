@@ -1,3 +1,4 @@
+import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
 import { automationStudioSessionKeyProvider } from "../../models/secrets/index.ts";
 // Releasing the configured key for one unattended verification call.
 //
@@ -44,6 +45,8 @@ export async function revealAutomationStudioResultCheckSecret(input: {
   if (input.request.projectId !== scope.projectId || input.request.flowId !== scope.flowId) {
     throw new Error("Result check scope mismatch.");
   }
+  // A browser's own unlock pays only for what that browser asks for. A standing authorization never draws on one.
+  if (scope.unlockSessionId.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX)) throw new Error("A result check cannot draw on a paired browser's unlock.");
   const key = await input.ports.getKeySummary(scope.keyId);
   if (!key || !key.enabled || key.kind !== "llm") throw new Error("The key a result check was authorized against is unavailable.");
   if (input.providerId && automationStudioSessionKeyProvider(key) !== input.providerId || input.model && key.metadata?.model && key.metadata.model !== input.model) throw new Error("The result-check key does not match the selected provider and model.");

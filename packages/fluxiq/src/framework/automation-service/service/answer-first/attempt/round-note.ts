@@ -16,7 +16,7 @@ const RELATED_DRAFT = "The draft holds steps saved under another task on this Fl
 const DECLINED = "A person said no to a lasting act in the saved Flow, so it did not run. Its steps are your draft: look for another way to get the result without that act.";
 const NOT_ASSEMBLED = "The saved steps could not be made into a Flow on this site as it stands, so they did not run. They are your draft: fix what no longer fits.";
 const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and that was not accepted as the result yet.";
-const THE_PAGE = "The page is where it left it. Fix that step, then run forward.";
+const THE_PAGE = "The page is where it left it. Fix that step, then run forward. Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
 const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothing starts over and the Flow does not run again from its start: the acts, the rows kept and the draft here stand. Look at the page as it is, and do what is left.";
 
 /** The note for a round: what the keep-going table said of the last one (`base`), and what the attempt holds. Nothing where there is nothing to tell. */

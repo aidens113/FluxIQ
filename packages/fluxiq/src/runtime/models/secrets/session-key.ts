@@ -17,6 +17,16 @@ export type AutomationStudioSessionKeyPorts = {
    * cannot release the key falls back to it; never another user's session.
    */
   unlockedSessionFor?(userId: string): string | null;
+  /**
+   * In place of `unlockedSessionFor`, when the host decides by caller: a paired
+   * browser's unlock is its own and it falls back to nothing, so a lock on it holds
+   * while the person is signed in elsewhere.
+   */
+  fallbackUnlockFor?(userId: string, callerSessionId: string | null): string | null;
+  /** Whether this person's own unlock holds this key now. No key material. Present with `whenUnlockChanges`, a locked key waits rather than failing (`./locked-wait.ts`). */
+  sessionHoldsKey?(input: { sessionId: string; userId: string; id: string }): Promise<boolean>;
+  /** Resolves when something this person holds changes, or when `signal` aborts. */
+  whenUnlockChanges?(userId: string, signal?: AbortSignal): Promise<void>;
   /** `secrets:UseKey` for this person on this key. Absent allows. */
   authorizeUseKey?(userId: string, keyId: string): Promise<boolean>;
 };
@@ -47,8 +57,7 @@ export async function releaseAutomationStudioSessionProviderKey(
   const label = automationStudioLlmProviderLabel(options.provider);
   const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
   if (!candidates.length) throw new Error(`There is no enabled ${label} key of yours in Secret Keys.`);
-  const fallback = ports.unlockedSessionFor?.(caller.userId) ?? null;
-  const sessions = [...new Set([caller.sessionId, fallback].filter((sessionId): sessionId is string => Boolean(sessionId)))];
+  const sessions = callerSessions(ports, caller);
   let denied = 0;
   let refusal: unknown;
   for (const key of candidates) {
@@ -74,6 +83,43 @@ export async function releaseAutomationStudioSessionProviderKey(
   }
   if (denied === candidates.length) throw new Error("Your permissions do not allow your model key to be used here (secrets:UseKey).");
   throw new AutomationStudioSecretsLockedError({ instanceHost: options.instanceHost, cause: refusal });
+}
+
+/**
+ * True when this call would meet `secrets.locked`: there is a key it may use, and
+ * no unlock it may use holds it. False when releasing it would succeed, and when
+ * the refusal would be something else (no such key, `secrets:UseKey`), which the
+ * release says in its own words. A selection that throws is not a lock.
+ */
+export async function automationStudioSessionKeyLocked(
+  ports: AutomationStudioSessionKeyPorts,
+  caller: { userId: string; sessionId: string | null },
+  options: AutomationStudioSessionKeyOptions & { provider: AutomationStudioLlmProviderId; model?: string }
+): Promise<boolean> {
+  if (!ports.sessionHoldsKey) return false;
+  let candidates: AutomationStudioSessionKeySummary[];
+  try {
+    const { keys } = await ports.snapshot();
+    candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
+  } catch {
+    return false;
+  }
+  const sessions = callerSessions(ports, caller);
+  let usable = false;
+  for (const key of candidates) {
+    if (ports.authorizeUseKey && !(await ports.authorizeUseKey(caller.userId, key.id))) continue;
+    usable = true;
+    for (const sessionId of sessions) {
+      if (await ports.sessionHoldsKey({ sessionId, userId: caller.userId, id: key.id })) return false;
+    }
+  }
+  return usable;
+}
+
+/** The unlocks this call may use: the one it names, then whatever the host lets it fall back to. */
+function callerSessions(ports: AutomationStudioSessionKeyPorts, caller: { userId: string; sessionId: string | null }): string[] {
+  const fallback = (ports.fallbackUnlockFor ? ports.fallbackUnlockFor(caller.userId, caller.sessionId) : ports.unlockedSessionFor?.(caller.userId)) ?? null;
+  return [...new Set([caller.sessionId, fallback].filter((sessionId): sessionId is string => Boolean(sessionId)))];
 }
 
 export function automationStudioSessionKeyProvider(key: AutomationStudioSessionKeySummary): AutomationStudioLlmProviderId | undefined {

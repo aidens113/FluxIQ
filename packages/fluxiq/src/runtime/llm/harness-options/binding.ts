@@ -147,11 +147,20 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
   /**
    * What a call names, in words a person reads: the control its handle names
    * on the page the domain last showed, and the words it types or looks for --
-   * never a value this domain screens as sensitive. For the chat alone
-   * (`../../activity/observer.ts`); nothing decides anything by it. Absent, the
-   * chat says the call's verb alone ("Typing into the page").
+   * never a value this domain screens as sensitive. For the chat
+   * (`../../activity/observer.ts`), and for an attempt's act record to know a
+   * lasting act again before it is sent (`../../answer-first/act-record/`). Absent,
+   * the chat says the call's verb alone ("Typing into the page").
+   *
+   * `wouldRunWith` is the frozen parameters a call that names its target by a
+   * handle would run with, as its answer's `draft.ranWith.parameters` will say:
+   * opaque to Core, and read only by shape
+   * (`../../answer-first/act-record/identity/target-keys.ts`). Absent where the
+   * domain cannot resolve the handle, or the call names none. It never goes to
+   * the chat or the model. Asked for every call: it must be cheap, and an answer
+   * that throws reads as none.
    */
-  describeCall?(input: { projectId: string; flowId: string; toolId: string; value: JsonObject }): { target?: string | undefined; text?: string | undefined } | undefined;
+  describeCall?(input: { projectId: string; flowId: string; toolId: string; value: JsonObject }): { target?: string | undefined; text?: string | undefined; wouldRunWith?: JsonObject | undefined } | undefined;
   /**
    * Keys that may never appear in the failure evidence or the reusable context
    * this domain produces, because for its medium they carry raw payload or

@@ -63,7 +63,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK: AutomationStudioConversa
     reauthorizes: false
   },
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, false);
+    const progress = automationStudioConversationCommandProgress(TITLE, null);
     const words = automationStudioConversationCommandText(args, "answer");
     if (!words) return progress.failed("I was not told what the answer is");
     const meant = await askMeant(context.host, context.projectId, context.conversationId, automationStudioConversationCommandText(args, "askId"));

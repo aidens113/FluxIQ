@@ -540,6 +540,78 @@ describe("IdentityAccessService credential-change port", () => {
   });
 });
 
+describe("IdentityAccessService password attempts at a recheck", () => {
+  it("are limited per person, on the signed-in recheck, so a stolen session cannot guess for ever", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    const identity = createService(repository);
+    const login = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const attempt = (password: string) => identity.authorizeSessionCredentials({ sessionId: login.session.id, password, pin: undefined, totp: undefined, requirePin: false });
+    for (let guess = 0; guess < 8; guess += 1) await expect(attempt(WRONG_PASSWORD)).rejects.toThrow(INVALID);
+    await expect(attempt(PASSWORD)).rejects.toThrow("Too many password attempts");
+  });
+});
+
+describe("IdentityAccessService a password change", () => {
+  async function twoSessions() {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    const identity = createService(repository);
+    const own = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const other = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    const change = (password: string) => identity.setPasswordAuthorized({ userId: "user.one", password: NEW_PASSWORD, sessionId: own.session.id, authorizationPassword: password, authorizationPin: undefined, authorizationTotp: undefined });
+    return { identity, own, other, change };
+  }
+
+  it("ends every other session of theirs and keeps the one that made it", async () => {
+    const { identity, own, other, change } = await twoSessions();
+    await change(PASSWORD);
+    await expect(identity.validateSession(other.session.id)).resolves.toBeNull();
+    await expect(identity.validateSession(own.session.id)).resolves.toMatchObject({ user: { id: "user.one" } });
+  });
+
+  it("is not held back by wrong guesses made on another session", async () => {
+    const { identity, other, change } = await twoSessions();
+    for (let guess = 0; guess < 9; guess += 1) {
+      await expect(identity.authorizeSessionCredentials({ sessionId: other.session.id, password: WRONG_PASSWORD, pin: undefined, totp: undefined, requirePin: false })).rejects.toThrow();
+    }
+    await expect(identity.authorizeSessionCredentials({ sessionId: other.session.id, password: PASSWORD, pin: undefined, totp: undefined, requirePin: false })).rejects.toThrow("Too many password attempts");
+    await expect(change(PASSWORD)).resolves.toBeDefined();
+  });
+});
+
+describe("IdentityAccessService ending a session", () => {
+  it("tells what is keyed by digest while the session is still stored, so a crash between the two leaves a lock", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    let storedWhenTold: boolean | undefined;
+    const digests: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionEndSubscribers: [async (end) => {
+      digests.push(...end.digests);
+      storedWhenTold = [...repository.records.values()].some((record) => JSON.stringify(record).includes(end.digests[0] ?? "absent"));
+    }] });
+    const login = await identity.authenticate({ username: "user-one", password: PASSWORD });
+    await identity.revokeSession(login.session.id);
+    expect(digests).toEqual([digestSessionId(login.session.id)]);
+    expect(storedWhenTold).toBe(true);
+    await expect(identity.validateSession(login.session.id)).resolves.toBeNull();
+  });
+
+  it("disabling a person ends their sessions, which is what takes their keys with it", async () => {
+    const repository = new MemoryIdentityRepository();
+    await createService(repository).upsertUser({ id: "user.one", username: "user-one", displayName: "User One", roleId: "admin", password: PASSWORD });
+    await createService(repository).upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "admin", password: PASSWORD });
+    const ended: string[] = [];
+    const identity = new IdentityAccessService({ repository, passwordKdf: countingKdf().passwordKdf, sessionEndSubscribers: [async (end) => { ended.push(end.wholeUserId ?? "none"); }] });
+    await identity.authenticate({ username: "user-one", password: PASSWORD });
+    await identity.updateUser({ id: "user.one", enabled: false });
+    expect(ended).toEqual(["user.one"]);
+    ended.length = 0;
+    await identity.updateUser({ id: "user.two", displayName: "Renamed" });
+    expect(ended).toEqual([]);
+  });
+});
+
 describe("IdentityAccessService resetPassword", () => {
   it("replaces a credential sealed before a restart without the old password, where setPassword still refuses", async () => {
     const repository = new MemoryIdentityRepository();

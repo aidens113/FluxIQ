@@ -198,7 +198,7 @@ async function createWorld(options: { unlocked: string | null }) {
     llmEvidenceRuntime: binding
   });
   service.bindNativeNodeRuntime(nativeRuntime());
-  service.conversations.bindUnlockedSessionResolver((userId) => (userId === PAIRED.userId ? options.unlocked : null));
+  service.conversations.bindUnlockedSessionResolver((userId) => (userId === PAIRED.userId ? options.unlocked : null), ({ sessionId }) => (options.unlocked === null || sessionId !== options.unlocked ? "unknown" : null));
   let chatAnswer: unknown = { reply: "Nothing to do." };
   service.conversations.bindModel({ name: "scripted", decide: async () => chatAnswer });
   const registry = new GlobalProgramApiRegistry();
@@ -501,23 +501,18 @@ describe("the extension's chat, end to end in Core", () => {
     expect(ask?.answer?.kind).toBe("grant");
   });
 
-  it("says the key is locked, and how far it got, when the person has no unlocked session", async () => {
+  it("a locked key is a setup step before the task: nothing starts, nothing is spent, and it says the one thing to do", async () => {
     world = await createWorld({ unlocked: null });
     world.scriptBuild(SEARCH_THEN_COMPLETE);
 
     const response = await world.say("Find the kettles on this page", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
-    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "done" });
     await automationStudioConversationCommandWork.idle();
-    const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
-    // Why it stopped, opening the answer, and never the command's name (t378).
-    expect(result?.text).toMatch(/^The build failed: /u);
-    expect(result?.text).not.toContain("Create an automation here");
-    // How far it got: the Flow it made, empty, never "created" as work done after a failed build.
-    expect(result?.text).toMatch(/The Flow "[^"]+" has no steps yet, but it keeps your instruction, so you can build it again\./u);
-    expect(result?.text).not.toMatch(/Before that I created the Flow/u);
-    expect(result?.text).toMatch(/model key is locked/u);
-    // How to unlock it: Secret Keys has no unlock control, signing in again is what unlocks (t707).
-    expect(result?.text).toMatch(/sign out of FluxIQ and sign in again/u);
+    const said = JSON.stringify((await world.thread()).turns);
+    expect(said).toMatch(/model key is locked/u);
+    // How to unlock it: one step, in FluxIQ.
+    expect(said).toMatch(/enter your password once/u);
+    expect(said).toMatch(/Nothing has started and nothing was spent/u);
   });
 
   describe("with a recording attached to the message, in project authoring mode", () => {

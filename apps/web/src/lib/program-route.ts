@@ -140,7 +140,7 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "run-project-part",
   ]),
   "secret-keys": Object.freeze([
-    // Whether an LLM key is configured, `read`. Projected: kind, provider and enabled only, nothing that names or identifies a key.
+    // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, unlocked and why not only, nothing that names or identifies a key.
     "snapshot",
   ]),
 });
@@ -393,7 +393,8 @@ function forbidden(error: string): PairedClientRequestNarrowing {
 /**
  * What a paired client is answered, where the endpoint's full answer holds
  * more than a token should read. The secret-keys snapshot is cut to whether a
- * key of each kind and provider exists and is enabled: never its id, name,
+ * key of each kind and provider exists, is enabled, and opens for this client:
+ * never its id, name,
  * scope, description, dates or metadata (where a fingerprint or hint would
  * live), and never a value, which the snapshot does not hold either. Every
  * other answer passes unchanged.
@@ -406,12 +407,16 @@ export function projectPairedClientResponse<TResponse extends { ok: boolean; pay
   return {
     ...response,
     payload: {
+      // What starts this browser's own unlock, when nobody has unlocked it yet. No use without its person's password.
+      ...(typeof payloadRecord(response.payload)?.unlockTicket === "string" ? { unlockTicket: payloadRecord(response.payload)?.unlockTicket } : {}),
       keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {
             kind: typeof summary.kind === "string" ? summary.kind : null,
             provider: typeof summary.provider === "string" ? summary.provider : null,
             enabled: summary.enabled === true,
+            ...(typeof summary.unlocked === "boolean" ? { unlocked: summary.unlocked } : {}),
+            ...(typeof summary.lockedBecause === "string" ? { lockedBecause: summary.lockedBecause } : {}),
           };
         }),
     },

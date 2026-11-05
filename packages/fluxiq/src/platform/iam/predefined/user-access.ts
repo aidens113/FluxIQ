@@ -58,6 +58,13 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Resource: IAM_WORKSPACE_PATTERNS.workspace
   },
   {
+    // A person's own unlock, with their own password, of their own keys: it names no resource to own.
+    Sid: "OwnUnlock",
+    Effect: "Allow",
+    Action: ["secrets:Unlock"],
+    Resource: IAM_WORKSPACE_PATTERNS.workspace
+  },
+  {
     Sid: "SelfService",
     Effect: "Allow",
     Action: [

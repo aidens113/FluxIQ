@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
+import { isSensitiveDatabaseKind } from "../sensitive-stores.ts";
 import { ProgramJsonStore, programDataFile } from "../../../framework/persistence/program-state/storage.ts";
 import type {
   DatabaseManagerSnapshot,
@@ -167,11 +168,6 @@ function hasDatabaseList(value: Repository): value is Repository & { databases()
 async function repositoryRecordCount(repository: Repository, scope: RepositoryScope): Promise<number> {
   if (repository.listPage) return (await repository.listPage(scope, { limit: 1, offset: 0 })).total;
   return (await repository.list(scope)).length;
-}
-
-function isSensitiveDatabaseKind(kind: string): boolean {
-  const key = kind.trim().toLocaleLowerCase();
-  return key === "identity.users" || key === "secret.keys";
 }
 
 function clampPageInteger(value: unknown, min: number, max: number, fallback: number): number {

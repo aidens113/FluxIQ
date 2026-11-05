@@ -93,6 +93,20 @@ describe("add budget and carry on", () => {
     expect(await lane.memory.attemptLocation(lane.projectId, before.attemptId)).toEqual({ taskId: before.taskId, flowId: "flow.loans" });
   });
 
+  it("a row it had already left out as done stays on the result after a press", async () => {
+    const lane = await laterAttempts(cleanups, { titles: TITLES });
+    await lane.attempt({ ...TIGHT, script: [readLoans(), press(ATLAS), press(BIRDS)] });
+    const second = await lane.attempt({ ...TIGHT, judge: [judgedNo("Two loans were not renewed.")], script: [] });
+    expect(second.answer.attempt.status).toBe("budget_out");
+    expect(second.answer.result?.skippedAsDone).toBe(2);
+    const pressed = await carryOn(lane, second.answer.attempt.attemptId, 0.4, { ...PERMITTED, costUsd: 0.04, script: [press(CLOCKS), press(DUNES), complete("All renewed.")] });
+    if (!pressed.ok) throw new Error(pressed.refused);
+    const carried = await pressed.finished;
+    expect(carried.answer.attempt.status).toBe("achieved");
+    expect(carried.answer.result?.skippedAsDone).toBe(2);
+    expect(lane.target.library.renewals).toEqual(Object.fromEntries(TITLES.map((title) => [title, 1])));
+  });
+
   it("the round is told it was carried on and what stands, from what the attempt tried before", async () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
     const first = await lane.attempt({ ...TIGHT, script: [readLoans(), press(ATLAS), press(BIRDS)] });

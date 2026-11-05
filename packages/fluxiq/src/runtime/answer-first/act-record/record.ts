@@ -8,8 +8,8 @@
 // **What it refuses (`admit`).** A call that is the same act as one a call declared:
 //
 //   landed            refused as done, no dispatch.
-//   may_have_landed   refused until an observation ran after it (`looked`): the retry
-//                     is then not blind. Its state stays until a call settles it.
+//   may_have_landed   refused until an observation ran after a refusal (`looked`, below):
+//                     the retry is then not blind. Its state stays until a call settles it.
 //   anything else     runs.
 //
 // The repeat is refused whatever the repeat itself declared: a model told an act is done
@@ -44,7 +44,9 @@
 // call carries answers to its own digest and to those of the rows held that are the same row, an act
 // keeps them all while its id and its `rowIdentity` stay the row's own, and every check about a row
 // reads them all. A row that fits several is done if any of them is an acted one: it may be that
-// row, and a row wrongly held not done is an act done twice.
+// row, and a row wrongly held not done is an act done twice. A by-hand press by a handle a read
+// printed is on the row as that read held it, so it is read the same way: a run's For Each may have
+// pressed that row in the shape its record output left it.
 //
 // **Begun before it is sent (`begun`).** A lasting call goes on the record as
 // `may_have_landed`, and that write is awaited, before anything is dispatched, so a process
@@ -52,6 +54,47 @@
 // answer then says replaces that: `settled` first puts the record back as it stood and then
 // reads the answer as if the call had only just been made, so an act's id, rows and count
 // come out exactly as they would without it. A write that fails sends nothing.
+//
+// **A look lifts a hold only after a refusal (t870).** A round looks at the page before its
+// model decides anything, and a carried-on attempt starts with such a look too, so counting those
+// let a careless press through on a page that said it had landed. So the first press after an act
+// became may-have-landed is always refused, whatever looks came before, and that refusal tells the
+// model; only a look after it opens the act (`admit`, `looked`). This costs a press and a look
+// more, only for an act in doubt. After that, whether to press is the model's reading of the page:
+// Core does not read what a look shows. A forward run leaves a held row out whatever was looked at.
+//
+// Who was refused is kept in memory, on purpose. A restart between the refusal and the look loses
+// it, so the next model is refused once more, never let through: it has seen no refusal itself, and
+// its carried-on round's opening look must not open the act for it.
+//
+// **Before it is sent (`foreseen`, t870).** A by-hand press by a handle says nothing the record can
+// know it by, so the domain says what it would be, and this is read beside the call's own identity.
+// It only adds to what is refused, in the order an answer's own ties are read:
+//
+//   words that fit a row   the same act on that row, by its values in any shape, unless the
+//                          controls' words differ: what `actedOn` ties after an answer.
+//   the row's own page     the same, only where its key or control's words also agree.
+//   on no row              the frozen form's keys: an act on no row by its address or whole
+//                          fingerprint, an act on a row by its address alone. A row's control
+//                          has the same fingerprint on every row, so that says nothing here.
+//
+// Neither form counts across pages: the same control on another page is another act ("Save" on
+// two items), when both pages are known. Where one is not, it is held the same, as above. An act
+// that was begun and never answered is known by the frozen form too, and by the words' row.
+//
+// **Rows nobody can tell apart (t870).** A press whose row fits several is refused while it may be
+// the one done, since doing it twice is what nobody can take back, and it says so (`rowsUnclear`):
+// the plain "already done" would be untrue of a row that may never have been pressed. One thing lets
+// it go, the act's own answer: where the sentence naming what it acted on (`actedOnWords`) fits one
+// row, now that a read has told them apart, and the press is on another row known to be another.
+// Nothing else says which. How many landings against how many rows fit says how many are left, not
+// which, so it would press one of them twice as easily as not. A frozen address could differ only
+// because the press changed the control. So a row a run acted on in a shape that fits two, whose
+// answer named no item, stays held on both, and the loop ladder asks the person. A press by a call
+// that has the act's own key stays refused whatever the words say: one control is one control.
+//
+// **Rows left out (`rowsHeldDone`).** How many rows this attempt left out because they were held done
+// (`./rows-left-out.ts`). In memory, as it says what this attempt did.
 //
 // **A count across a real run (`carried`, `counted`).** A run that settles into this record
 // compares each pass with what it did itself, so a person's "add 3" must still press three
@@ -72,16 +115,19 @@ import type {
 import { automationStudioAttemptActId, automationStudioAttemptActRowIdentity, automationStudioAttemptActTargetKeys, type AutomationStudioAttemptActTargetKeys } from "./identity/index.ts";
 import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
+import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
-const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Look at the page before retrying one that may have landed.";
+const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Look at the page for one that may have landed: if its effect is there, it is done. A first try at it again is refused and says to look, and only a look after that lets it go.";
 
-/** `rows` are every row this call's row answers to, its own first; `ownRow` is that row's own digest, which an act made by this call is named by. */
-type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; ownRow?: string };
+/** `rows` are every row this call answers to, in every shape; `named` are those it says it is on itself (its row's own digest, or the rows that printed its handle), which an act made by this call is named by. */
+type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; named: string[] };
 type ForRun = { actionId: string; parameters: JsonObject; row?: JsonObject | undefined; steps?: readonly string[] | undefined; counted?: boolean };
 /** A lasting call on the record and not yet answered: its entry, and what that entry was before, where it was there. */
 type Begun = { entry: AutomationStudioAttemptActEntry; before?: AutomationStudioAttemptActEntry };
+/** What a call's `foreseen` says, read: the frozen form's keys, the rows its words fit (`named`, as found, and `namedSame`, in every shape acted on), and those of the page in hand. */
+type Foreseen = { actionId: string; frozen: AutomationStudioAttemptActTargetKeys | undefined; named: string[]; namedSame: ReadonlySet<string>; onPage: ReadonlySet<string> };
 
 export class AutomationStudioAttemptActRecord {
   private readonly entries: AutomationStudioAttemptActEntry[];
@@ -96,6 +142,10 @@ export class AutomationStudioAttemptActRecord {
   private readonly open = new Map<AutomationStudioAttemptActCall, Begun>();
   /** The act a run's step last settled as landed, by the step's name, for `doubted`. In memory only: it is about the run under way. */
   private readonly landedBySteps = new Map<string, AutomationStudioAttemptActEntry>();
+  /** Acts a call was refused for since they became may-have-landed, the only ones a look opens. In memory only (header). */
+  private readonly refusedFor = new Set<AutomationStudioAttemptActEntry>();
+  /** Rows left out as held done, for `rowsHeldDone`, and which rows a read returned twice, for the words of a refusal. In memory only (header). */
+  private readonly leftOut = new RowsLeftOut();
 
   constructor(options: { seed?: AutomationStudioAttemptActRecordData; persist?: (data: AutomationStudioAttemptActRecordData) => Promise<void>; now?: () => number; asked?: (call: AutomationStudioAttemptActCall) => number | undefined } = {}) {
     const seed = options.seed === undefined ? undefined : parseAutomationStudioAttemptActRecordData(options.seed);
@@ -108,14 +158,24 @@ export class AutomationStudioAttemptActRecord {
     this.asked = options.asked;
   }
 
-  /** Whether this call may be dispatched (header). */
+  /** Whether this call may be dispatched (header). `look_first` is the refusal itself: the caller says it and sends nothing, and only then does a look open the act. */
   admit(call: AutomationStudioAttemptActCall): AutomationStudioAttemptActAdmission {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    const matching = this.matching(identity).filter((entry) => !entry.undeclared);
+    const matching = this.sameActs(call, identity).filter((entry) => !entry.undeclared);
     const landed = matching.find((entry) => entry.state === "landed" && !hasRoom(entry, identity));
-    if (landed) return { kind: "already_done", act: contractAct(landed) };
-    const blind = matching.find((entry) => entry.state === "may_have_landed" && !entry.lookedSince);
-    return blind ? { kind: "look_first", act: contractAct(blind) } : { kind: "run" };
+    if (landed) {
+      this.leftOut.refused(this.heldRows(call, identity, landed));
+      return { kind: "already_done", act: contractAct(landed), ...(this.rowsUnclear(call, identity, landed) ? { rowsUnclear: true as const } : {}) };
+    }
+    const blind = matching.filter((entry) => entry.state === "may_have_landed" && !entry.lookedSince);
+    for (const entry of blind) this.refusedFor.add(entry);
+    if (blind[0]) this.leftOut.refused(this.heldRows(call, identity, blind[0]));
+    return blind[0] ? { kind: "look_first", act: contractAct(blind[0]) } : { kind: "run" };
+  }
+
+  /** How many distinct rows this attempt left out because the record held them done (header). */
+  rowsHeldDone(): number {
+    return this.leftOut.count(this.ties);
   }
 
   /** Whether this call declares a lasting act, so that it must be begun before it is sent. */
@@ -131,12 +191,13 @@ export class AutomationStudioAttemptActRecord {
     if (!declaresLasting(call)) return "not_lasting";
     const called = this.identityOf(call.actionId, call.parameters, call.row);
     if (call.row !== undefined) this.noteActedRow(call.row);
-    const known = this.matching(called)[0];
+    const frozen = this.foreseenForm(call);
+    const known = this.sameActs(call, called)[0];
     if (known) {
       this.open.set(call, { entry: known, before: structuredClone(known) });
-      this.absorb(known, undefined, called, declaredClasses(call), "may_have_landed");
+      this.absorb(known, frozen, called, declaredClasses(call), "may_have_landed");
     } else {
-      const entry = this.newEntry(call, { effectApplied: false, uncertain: true, words: { what: words.what ?? "", where: words.where ?? "" } }, called, undefined, "may_have_landed", true);
+      const entry = this.newEntry(call, { effectApplied: false, uncertain: true, words: { what: words.what ?? "", where: words.where ?? "" } }, called, frozen, "may_have_landed", true);
       this.readCount(entry, call, called);
       this.entries.push(entry);
       this.open.set(call, { entry });
@@ -164,14 +225,18 @@ export class AutomationStudioAttemptActRecord {
       return undefined;
     }
     if (call.row !== undefined) this.noteActedRow(call.row);
-    const frozen = outcome.ranWith?.parameters ? this.identityOf(outcome.ranWith.actionId ?? call.actionId, outcome.ranWith.parameters, call.row) : undefined;
+    const ran = outcome.ranWith?.parameters ? this.identityOf(outcome.ranWith.actionId ?? call.actionId, outcome.ranWith.parameters, call.row) : undefined;
+    // It answers to the place and fingerprint it was foreseen in too: what the press ran with may hold more than the look it came from did, and the next press may come from such a look.
+    const foreseenForm = this.foreseenForm(call);
+    const frozen = ran ? { ...ran, keys: [...ran.keys, ...(foreseenForm?.placeKeys ?? [])] } : foreseenForm;
     const state = lasting && !uncertain ? "landed" : "may_have_landed";
-    const known = this.matching(called).find((entry) => lasting || entry.undeclared);
+    const known = this.sameActs(call, called).find((entry) => lasting || entry.undeclared);
     if (known) {
       const wasUndeclared = known.undeclared === true;
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
       if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.landedAt(outcome.step, known);
+      this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
       return contractAct(known);
     }
@@ -179,6 +244,7 @@ export class AutomationStudioAttemptActRecord {
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);
+    this.leftOut.ranOn(entry.rows, this.ties);
     void this.changed();
     return contractAct(entry);
   }
@@ -195,15 +261,17 @@ export class AutomationStudioAttemptActRecord {
     if (entry.asked !== undefined) entry.landings = Math.max(0, (entry.landings ?? 0) - 1);
     entry.state = "may_have_landed";
     entry.lookedSince = false;
+    this.refusedFor.delete(entry);
     entry.at = this.now();
     void this.changed();
   }
 
-  /** An observation ran: anything that may have landed may now be retried, not blind. */
+  /** An observation ran: an act a call was refused for may now be retried, not blind (header). One nothing refuses, since it declared nothing, is only shown as looked at. */
   looked(): void {
     let changed = false;
     for (const entry of this.entries) {
       if (entry.state !== "may_have_landed" || entry.lookedSince) continue;
+      if (!entry.undeclared && !this.refusedFor.has(entry)) continue;
       entry.lookedSince = true;
       changed = true;
     }
@@ -212,15 +280,20 @@ export class AutomationStudioAttemptActRecord {
 
   /** Whether this row already took a lasting act (never by position or handle), in any shape it reached the record in (header). */
   rowDone(row: JsonObject): boolean {
-    if (!this.entries.some((entry) => stands(entry) && entry.rows.length > 0)) return false;
-    const rows = this.ties.sameAs(row);
-    return this.entries.some((entry) => stands(entry) && entry.rows.some((held) => rows.includes(held)));
+    const identity = automationStudioAttemptActRowIdentity(row);
+    if (identity === undefined || !this.entries.some((entry) => stands(entry) && entry.rows.length > 0)) return false;
+    const same = new Set(this.ties.sameAs(row));
+    const done = this.entries.some((entry) => stands(entry) && entry.rows.some((held) => same.has(held)) && !this.namesAnotherRow(entry, [identity]));
+    if (done) this.leftOut.passedOver(identity);
+    return done;
   }
 
   /** Whether a step's non-row lasting act already landed. A may-have-landed one counts: a step so held is checked, never sent again. */
   stepDone(call: Pick<AutomationStudioAttemptActCall, "actionId" | "parameters" | "row">): boolean {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    return this.matching(identity).some((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
+    const found = this.matching(identity).find((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
+    if (found) this.leftOut.refused(found.rows);
+    return found !== undefined;
   }
 
   /** The act a real run must not do again (`SVC/answer-first/run-acts/`), read by the Flow node's own action, parameters, row and step names. `counted`: one whose count has room may run (header). */
@@ -229,13 +302,16 @@ export class AutomationStudioAttemptActRecord {
     const steps = new Set(call.steps ?? []);
     const room = (entry: AutomationStudioAttemptActEntry) => call.counted === true && entry.state === "landed" && hasRoom(entry, identity);
     const found = this.entries.find((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || (entry.steps ?? []).some((step) => steps.has(step))));
+    if (found) for (const row of identity.rows.slice(0, 1)) this.leftOut.passedOver(row);
+    if (found && identity.rows.length === 0) this.leftOut.refused(found.rows);
     return found ? contractAct(found) : undefined;
   }
 
-  /** Remembers which row a handle printed in a read belongs to, so a by-hand press on it counts for that row. */
+  /** Remembers the rows of one read, so a by-hand press by a handle one printed counts for that row, and two rows alike in this one list are known from one row said in two lists. */
   noteReadRows(rows: readonly JsonObject[]): void {
     if (rows.length === 0) return;
     const read = this.ties.note(rows, this.actedRows());
+    this.leftOut.noteList(read);
     // An act made before the read that lists its row, however that read writes it (header of `./row-ties.ts`).
     for (const entry of this.entries) {
       if (entry.rows.length === 0) this.tieLate(entry);
@@ -288,8 +364,9 @@ export class AutomationStudioAttemptActRecord {
   private identityOf(actionId: string, parameters: JsonObject, row: JsonObject | undefined): Identity {
     const target = automationStudioAttemptActTargetKeys(actionId, parameters);
     const ownRow = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
-    if (ownRow !== undefined) return { ...target, actionId, ownRow, rows: this.ties.sameAs(row!) };
-    return { ...target, actionId, rows: target.handle !== undefined ? this.ties.ofHandle(target.handle) : [] };
+    if (ownRow !== undefined) return { ...target, actionId, named: [ownRow], rows: this.ties.sameAs(row!) };
+    const printed = target.handle !== undefined ? this.ties.ofHandle(target.handle) : [];
+    return { ...target, actionId, named: printed, rows: [...new Set([...printed, ...this.ties.sameAsPrinted(printed, this.actedRows())])] };
   }
 
   /** Every row an act is on, the only rows another shape of a row can be done by. */
@@ -327,6 +404,62 @@ export class AutomationStudioAttemptActRecord {
     return this.entries.filter((entry) => matches(entry, identity));
   }
 
+  /** Every act this call is the same act as, by its own identity and by what the domain says it would be (header). */
+  private sameActs(call: AutomationStudioAttemptActCall, identity: Identity): AutomationStudioAttemptActEntry[] {
+    const foreseen = this.foreseenOf(call);
+    const own = this.matching(identity);
+    const found = foreseen ? [...new Set([...own, ...this.entries.filter((entry) => matchesForeseen(entry, foreseen, this.place?.path))])] : own;
+    const pressed = this.pressedRows(call, identity);
+    const itsKeys = identity.rows.length > 0 || call.row !== undefined ? [] : [...identity.keys, ...(foreseen?.frozen?.keys ?? []), ...(foreseen?.frozen?.placeKeys ?? [])];
+    return found.filter((entry) => itsKeys.some((key) => entry.keys.includes(key)) || !this.namesAnotherRow(entry, pressed));
+  }
+
+  /** The rows a call is on, as far as it says: its own, a handle's a read printed, or those its foreseen words fit. */
+  private pressedRows(call: AutomationStudioAttemptActCall, identity: Identity): string[] {
+    return identity.named.length > 0 ? identity.named : this.foreseenOf(call)?.named ?? [];
+  }
+
+  /** Whether the act's own answer says it was on one row, and this press is on another known to be another (header). */
+  private namesAnotherRow(entry: AutomationStudioAttemptActEntry, pressed: readonly string[]): boolean {
+    const [row] = pressed;
+    if (row === undefined || pressed.length > 1 || entry.rows.includes(row) || !entry.actedOnWords) return false;
+    const said = this.ties.ofWords(entry.actedOnWords);
+    return said.length === 1 && said[0] !== row && this.ties.toldApart(said[0]!, row);
+  }
+
+  /** Whether several rows fit this call and it may not be the one done, as far as anything says (header). */
+  private rowsUnclear(call: AutomationStudioAttemptActCall, identity: Identity, entry: AutomationStudioAttemptActEntry): boolean {
+    const pressed = this.pressedRows(call, identity);
+    if (pressed.length === 0) return false;
+    if (pressed.length > 1 || this.leftOut.isSeveral(pressed[0]!)) return true;
+    const said = entry.actedOnWords ? this.ties.ofWords(entry.actedOnWords) : [];
+    if (said.length === 1 && said[0] === pressed[0]) return false;
+    return this.ties.distinct(new Set(entry.rows.flatMap((row) => this.ties.fitsOf(row)))) > 1;
+  }
+
+  /** The rows a refused call left out: those it says it is on, else those the act it is refused for is on. */
+  private heldRows(call: AutomationStudioAttemptActCall, identity: Identity, entry: AutomationStudioAttemptActEntry): readonly string[] {
+    const pressed = this.pressedRows(call, identity);
+    return pressed.length > 0 ? pressed : entry.rows;
+  }
+
+  /** A call's `foreseen`, read; none for a call that carries its row, which says for itself what it is on. */
+  private foreseenOf(call: AutomationStudioAttemptActCall): Foreseen | undefined {
+    if (!call.foreseen || call.row !== undefined) return undefined;
+    const { words, parameters } = call.foreseen;
+    const frozen = parameters ? automationStudioAttemptActTargetKeys(call.actionId, parameters) : undefined;
+    const sentence = [words, frozen?.says].filter(Boolean).join(" ");
+    const named = sentence ? this.ties.ofControlWords(RowTies.wordsOf(sentence)) : [];
+    const acted = this.actedRows();
+    const inShapes = (rows: readonly string[]) => new Set([...rows, ...this.ties.sameAsHeld(rows, acted)]);
+    return { actionId: call.actionId, frozen, named, namedSame: inShapes(named), onPage: named.length > 0 ? new Set<string>() : inShapes(this.place?.rows ?? []) };
+  }
+
+  /** The frozen form a call is foreseen to run with, as an act will answer to it. */
+  private foreseenForm(call: AutomationStudioAttemptActCall): Identity | undefined {
+    return call.foreseen?.parameters ? this.identityOf(call.actionId, call.foreseen.parameters, call.row) : undefined;
+  }
+
   /** A declared call that answered it did nothing: what it may have done stands, and only a new look lets it try again. */
   private touchUnsettled(identity: Identity): void {
     const open = this.matching(identity).filter((entry) => entry.state === "may_have_landed" && entry.lookedSince);
@@ -345,6 +478,7 @@ export class AutomationStudioAttemptActRecord {
       if (entry.asked !== undefined && state === "landed") entry.landings = (entry.landings ?? 0) + 1;
       entry.state = state;
       entry.lookedSince = false;
+      this.refusedFor.delete(entry);
       // A new landing is a new thing for a run to carry (`SVC/answer-first/run-acts/store.ts`).
       entry.at = this.now();
     }
@@ -356,9 +490,10 @@ export class AutomationStudioAttemptActRecord {
   private newEntry(call: AutomationStudioAttemptActCall, outcome: AutomationStudioAttemptActOutcome, called: Identity, frozen: Identity | undefined, state: AutomationStudioAttemptAct["state"], lasting: boolean): AutomationStudioAttemptActEntry {
     const classes = declaredClasses(call);
     const actedOnWords = outcome.actedOn === undefined ? undefined : RowTies.wordsOf(outcome.actedOn);
-    const named = actedOnWords ? this.ties.ofWords(actedOnWords) : [];
+    const said = actedOnWords ? this.ties.ofWords(actedOnWords) : [];
+    const named = said.length > 0 ? said : this.foreseenOf(call)?.named ?? [];
     const rows = called.rows.length > 0 ? called.rows : named.length > 0 ? named : this.place?.rows ?? [];
-    const only = called.ownRow ?? (rows.length === 1 ? rows[0] : undefined);
+    const only = called.named.length === 1 ? called.named[0] : rows.length === 1 ? rows[0] : undefined;
     // The frozen form names the act from here on; a handle stops meaning anything when the build ends.
     const key = (frozen?.keys ?? called.keys)[0] ?? called.keys[0]!;
     const words = automationStudioAttemptActScreenedWords(outcome.words, classes);
@@ -377,7 +512,7 @@ export class AutomationStudioAttemptActRecord {
       lookedSince: false,
       at: this.now(),
       ...(actedOnWords ? { actedOnWords } : {}),
-      ...(rows.length === 0 && this.place?.path !== undefined ? { placePath: this.place.path } : {})
+      ...(this.place?.path !== undefined ? { placePath: this.place.path } : {})
     };
   }
 
@@ -450,6 +585,21 @@ function matches(entry: AutomationStudioAttemptActEntry, identity: Identity): bo
   if (entry.rows.length === 0) return identity.handleKeys.some((key) => entry.handleKeys.includes(key));
   if (!identity.rows.some((row) => entry.rows.includes(row)) || !entry.actions.includes(identity.actionId)) return false;
   return sameKey || !entry.controls || !identity.controls || identity.controls.some((words) => entry.controls!.includes(words));
+}
+
+/** Whether what a call is foreseen to be is this entry's act (header). */
+function matchesForeseen(entry: AutomationStudioAttemptActEntry, foreseen: Foreseen, path: string | undefined): boolean {
+  const { frozen } = foreseen;
+  const onAKey = frozen !== undefined && frozen.keys.some((key) => entry.keys.includes(key));
+  const sameWords = frozen?.controls !== undefined && entry.controls !== undefined && frozen.controls.some((words) => entry.controls!.includes(words));
+  if (entry.actions.includes(foreseen.actionId)) {
+    if (entry.rows.some((row) => foreseen.namedSame.has(row)) && (onAKey || sameWords || !entry.controls || !frozen?.controls)) return true;
+    if (entry.rows.some((row) => foreseen.onPage.has(row)) && (onAKey || sameWords)) return true;
+  }
+  if (!frozen || (entry.placePath !== undefined && path !== undefined && entry.placePath !== path)) return false;
+  // Tied to another row than this act's, it is not this act, whatever address they share.
+  if (entry.rows.length > 0 && (foreseen.namedSame.size > 0 || foreseen.onPage.size > 0)) return false;
+  return (entry.rows.length === 0 ? [...frozen.keys, ...frozen.placeKeys] : frozen.wholeKeys).some((key) => entry.keys.includes(key));
 }
 
 /** An entry as the contract's act, with nothing it does not name. */

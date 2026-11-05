@@ -6,8 +6,6 @@
 export type AutomationStudioAnswerFirstAttemptPorts = {
   /** Waits for `ms`, or until `signal` aborts, whichever is first. Never rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
-  /** How long this Flow has spent waiting for a person outside the attempt's own waits, such as a locked key: no limit counts it. Absent, nothing. */
-  personHeldMs?: ((scope: { projectId: string; flowId: string }) => number) | undefined;
 };
 
 const PORTS = new WeakMap<object, AutomationStudioAnswerFirstAttemptPorts>();

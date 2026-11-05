@@ -47,6 +47,7 @@ describe("the seed of a new attempt", () => {
   it("asks a look of its own, since the one before it looked at a page as it stood then", () => {
     const before = new AutomationStudioAttemptActRecord();
     before.settled(call(), { effectApplied: false, uncertain: true, words: WORDS });
+    expect(before.admit(call()).kind).toBe("look_first");
     before.looked();
     expect(before.admit(call()).kind).toBe("run");
     const seed = automationStudioAttemptActSeed({ status: "stopped_by_person", data: before.data() })!;

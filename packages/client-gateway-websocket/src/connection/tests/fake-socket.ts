@@ -18,6 +18,8 @@ export class FakeSocket implements FluxIQWebSocketLike {
   /** The (faked) clock when the client created this socket. */
   readonly createdAt = Date.now();
   readonly sent: ClientGatewayClientMessage[] = [];
+  /** How many times the client said it stored a credential; kept apart from what it sent for its host. */
+  credentialsAcknowledged = 0;
   private readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
   constructor(readonly url: string) {
@@ -38,7 +40,9 @@ export class FakeSocket implements FluxIQWebSocketLike {
 
   send(data: string): void {
     if (this.failSends) throw new Error("The fake socket refused the send.");
-    this.sent.push(JSON.parse(data) as ClientGatewayClientMessage);
+    const message = JSON.parse(data) as ClientGatewayClientMessage;
+    if (message.type === "client.credential_received") this.credentialsAcknowledged += 1;
+    else this.sent.push(message);
   }
 
   close(): void {

@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { SecretKeyKind, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
+import type { SecretKeyKind, SecretKeyLockedClient, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
 
 export const SECRET_KEYS_ENDPOINTS = {
   snapshot: "snapshot",
@@ -7,7 +7,8 @@ export const SECRET_KEYS_ENDPOINTS = {
   updateKey: "update-key",
   rotateKey: "rotate-key",
   revealKey: "reveal-key",
-  deleteKey: "delete-key"
+  deleteKey: "delete-key",
+  unlock: "unlock"
 } as const;
 
 export type SecretKeyAuthorizationPayload = {
@@ -54,7 +55,23 @@ export type DeleteSecretKeyRequest = SecretKeyAuthorizationPayload & {
   id: string;
 };
 
-export type SecretKeysSnapshotResponse = SecretKeysSnapshot;
+/** The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. */
+export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & {
+  /** The paired clients the person chose. */
+  clientIds?: string[];
+  /** From a browser nobody has unlocked yet, starting its own unlock (`CredentialUnlocks.unlockTicketFor`). */
+  unlockTicket?: string;
+};
+
+/** `stillLocked`: those named that this did not lift. */
+export type UnlockSecretKeysResponse = { unlockedKeyCount: number; stillLocked: string[] };
+
+export type SecretKeysSnapshotResponse = SecretKeysSnapshot & {
+  /** For a paired client only: what starts its own unlock, when nobody has unlocked it yet. */
+  unlockTicket?: string;
+  /** The caller's paired clients that are locked, to choose among. */
+  lockedClients?: SecretKeyLockedClient[];
+};
 export type SecretKeyMutationResponse = SecretKeySummary;
 export type RevealSecretKeyResponse = {
   key: SecretKeySummary;

@@ -430,7 +430,13 @@ the domain the client declared when they approved it (`domainId`, null for
 none), with no project (`client-gateway/service/pairing-flow.ts`,
 `trusted-clients.ts`). A session's `projectId` is its current context, the
 project a recording started under; it moves, and is not restored from the
-trust record on reconnect. The extension follows the project the person has
+trust record on reconnect. With none open in the panel, a paired browser works
+in that person's own latest project in its domain, chosen by the owner the registry
+recorded and never another person's (`programs/automation-studio/api/person-project.ts`,
+read by the bearer snapshot, which makes nothing). A browser with no project at all asks
+`POST /api/client-gateway/first-project`, which makes a first one through the registry,
+so `studio:CreateProject` is checked and the owner recorded; a refusal leaves it with none.
+The extension follows the project the person has
 open in the web panel and names a project explicitly when the person picks one
 in its panel. Core has no per-person project either: every project belongs to
 a domain, and any person whose role holds an endpoint's permission reaches it.
@@ -648,12 +654,14 @@ same capabilities. The ids are:
   re-run with it was judged to answer, `not_applied` otherwise), since a
   re-author is no Flow adaptation.
 - **A paired client spends its person's key.** A `client-gateway:` caller is
-  mapped to the approving person's live unlocked session
-  (`SecretKeysService.unlockedSessionFor`: the latest-expiring unlock that
-  opens at least one key). That mapping applies to the chat model and to every
-  registry call a command makes. Permissions stay the paired set. With no
-  unlocked session, a model call fails and the thread says the key is locked
-  and how far the command got.
+  mapped to that browser's own unlock, which starts locked until the person's
+  password names it and then lasts as long as its credential
+  (`docs/architecture/platform.md`, Model keys; `credentialCustody`). That
+  mapping applies to the chat model and to every registry call a command makes.
+  Permissions stay the paired set. With no unlock, a command that needs the
+  model shows a setup step instead of starting, and a task already running
+  waits for the person. `client.forget_pairing` ends the browser's trust from
+  the browser, when the person presses Forget.
   - This deliberately changes the rule above that a token never reaches the
     model. The product direction is that the extension's chat builds and runs
     automations (2026-09-30, t198).

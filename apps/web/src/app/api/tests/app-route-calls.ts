@@ -6,6 +6,8 @@
 import { POST as approvePairing } from "../client-gateway/approve-pairing/route";
 import { POST as setStudioContext } from "../client-gateway/automation-studio-context/route";
 import { POST as dismissPairing } from "../client-gateway/dismiss-pairing/route";
+import { POST as forgetPairing } from "../client-gateway/forget-pairing/route";
+import { POST as firstProject } from "../client-gateway/first-project/route";
 import { GET as gatewaySnapshot } from "../client-gateway/snapshot/route";
 import { PUT as putTraceArtifact } from "../client-gateway/trace-artifacts/[sha256]/route";
 import { GET as inspectIo } from "../framework/io/route";
@@ -31,6 +33,8 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "POST /api/client-gateway/dismiss-pairing": (caller) => dismissPairing(routeRequest(caller, "/api/client-gateway/dismiss-pairing", { method: "POST", json: { pairingCode: "123456" } })),
   "POST /api/client-gateway/automation-studio-context": (caller, target) =>
     setStudioContext(routeRequest(caller, "/api/client-gateway/automation-studio-context", { method: "POST", json: { activeProjectId: target.projectId, activeFlowId: `${target.projectId}-flow` } })),
+  "POST /api/client-gateway/first-project": (caller) => firstProject(routeRequest(caller, "/api/client-gateway/first-project", { method: "POST" })),
+  "POST /api/client-gateway/forget-pairing": (caller) => forgetPairing(routeRequest(caller, "/api/client-gateway/forget-pairing", { method: "POST" })),
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),

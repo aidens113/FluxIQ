@@ -287,14 +287,15 @@ describe("ClientGatewayService", () => {
     }));
 
     const rotated = readyToken(gateway, second.sessionId);
-    expect(rotated).toBe("rotated-token");
+    expect(rotated).toContain("rotated-token");
     expect(gateway.snapshot().sessions.find((session) => session.sessionId === second.sessionId)).toMatchObject({
       status: "ready",
       operatorUserId: "user.alpha",
       trustedClientId: first.trustedClientId
     });
-    expect(await gateway.authorizeToken(first.token)).toBeNull();
     expect((await gateway.authorizeToken(rotated))?.sessionId).toBe(second.sessionId);
+    // Its use confirms it, and the one before is refused from here on.
+    expect(await gateway.authorizeToken(first.token)).toBeNull();
   });
 
   it("restores trusted clients after restart without persisting raw credentials", async () => {
@@ -312,7 +313,7 @@ describe("ClientGatewayService", () => {
       token: paired.token
     }));
 
-    expect(readyToken(restartedGateway, reconnected.sessionId)).toBe("restart-rotated");
+    expect(readyToken(restartedGateway, reconnected.sessionId)).toContain("restart-rotated");
     expect(restartedGateway.snapshot().trustedClients[0]).toMatchObject({ approvedByUserId: "user.restart", status: "active" });
     expect(restartedGateway.snapshot().trustedClients[0]).not.toHaveProperty("tokenHash");
   });

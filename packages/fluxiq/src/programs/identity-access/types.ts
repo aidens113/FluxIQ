@@ -1,6 +1,26 @@
 import type { PasswordKdfOptions } from "../_shared/password-kdf/index.ts";
 import type { Repository } from "../database-manager/index.ts";
 
+/** A password change by someone proving themselves on a session of theirs: the person, or an administrator. */
+export type IdentitySetPasswordAuthorized = {
+  userId: string;
+  password: string;
+  sessionId: string | undefined;
+  authorizationPassword: string | undefined;
+  authorizationPin: string | undefined;
+  authorizationTotp: string | undefined;
+};
+
+/** The fields of an account an administrator may change. */
+export type IdentityUserUpdate = {
+  id: string;
+  username?: string;
+  displayName?: string;
+  roleId?: string;
+  enabled?: boolean;
+  nowMs?: number;
+};
+
 export type Permission =
   | "programs.read"
   | "programs.write"
@@ -77,6 +97,8 @@ export type IdentityCredentialChange = {
   readonly changeId: string;
   readonly userId: string;
   readonly actorUserId: string | undefined;
+  /** The session making the change, when one is: a proved change keeps only what goes through it. */
+  readonly actorSessionId?: string | undefined;
   readonly currentPassword: string | undefined;
   readonly newPassword: string;
 };
@@ -103,6 +125,8 @@ export type IdentityCredentialChangeSubscriber = {
 export type IdentitySessionRevoker = {
   userId: string | null;
   administrator: boolean;
+  /** Ended because its person changed their password: what it started has no claim on anything of theirs. */
+  passwordChanged?: boolean;
 };
 
 /** A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. */
@@ -120,6 +144,20 @@ export type IdentitySessionTarget = string | { digest: string };
  */
 export type IdentitySessionRevocationListener = (sessionId: string, revoker: IdentitySessionRevoker) => void | Promise<void>;
 
+/**
+ * A session end by digest, for what is keyed by what is stored: it needs no raw
+ * id, so it reaches a listener for a session this process never saw.
+ * `wholeUserId` says every session of that person ended together, including any
+ * `digests` does not list. Announced with the same rule as
+ * `IdentitySessionRevocationListener`.
+ */
+export type IdentitySessionEnd = {
+  digests: readonly string[];
+  wholeUserId?: string | undefined;
+  revoker: IdentitySessionRevoker;
+};
+export type IdentitySessionEndListener = (end: IdentitySessionEnd) => void | Promise<void>;
+
 export type IdentityAccessServiceOptions = {
   repository?: Repository | undefined;
   roles?: Role[] | undefined;
@@ -128,4 +166,6 @@ export type IdentityAccessServiceOptions = {
   credentialChangeSubscribers?: readonly IdentityCredentialChangeSubscriber[] | undefined;
   /** Listeners told of every session revoked; more can join later with `subscribeSessionRevocation`. */
   sessionRevocationSubscribers?: readonly IdentitySessionRevocationListener[] | undefined;
+  /** Listeners told each session end by digest (`IdentitySessionEnd`), which reaches a session this process never saw. */
+  sessionEndSubscribers?: readonly IdentitySessionEndListener[] | undefined;
 };

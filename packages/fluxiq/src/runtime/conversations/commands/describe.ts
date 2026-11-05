@@ -27,7 +27,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_DESCRIBE: AutomationStudioConversati
     reauthorizes: false
   },
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
+    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_DESCRIBE.capability, args, "instruction");
     const instruction = said?.text;
