@@ -653,8 +653,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
     try {
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
-      // Amending stays in the schema when it is not on offer, as a wrap-up's tools stay listed: the schema sits in the head, so its changing re-sends everything behind it (`loop-budget.ts`, t869). An amendment asked when it is not on offer is refused as it always was.
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, drafting && limits.maxDraftAmendments > 0, drafting && authoring);
+      // Amending stays in the schema when it is not on offer, as a wrap-up's tools stay listed: the schema sits in the head, so its changing re-sends everything behind it (`loop-budget.ts`, t869). That holds for a loop that declares a draft to build (`input.draft`), where amending is the work; a loop that declares none (a recovery's exploration) offers the vocabulary only when a step can be amended, as before, so its roughly 6,600 characters are not sent on every call. An amendment asked when it is not on offer is refused as it always was.
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, input.draft ? limits.maxDraftAmendments > 0 : canAmend, drafting && authoring);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true, input.finishingTools) : undefined;
       // Every evidence entry, and beside them the history, the draft and the
