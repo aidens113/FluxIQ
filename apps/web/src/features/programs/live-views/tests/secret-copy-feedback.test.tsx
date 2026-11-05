@@ -27,7 +27,7 @@ async function reveal() {
 }
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("window", { setTimeout, clearTimeout });
+  vi.stubGlobal("window", { setTimeout, clearTimeout, location: { hash: "", pathname: "/", search: "" }, history: { replaceState() {} } });
   api.get.mockReset().mockResolvedValue({ ok: true, payload: { keys: [key] } });
   api.post.mockReset().mockResolvedValue({ ok: true, payload: { value: "synthetic-value" } });
 });

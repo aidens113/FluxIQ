@@ -46,7 +46,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     classification: "program-gated",
     action: "secrets:Unlock",
     accessLevel: "Write",
-    resource: endpointResource.workspace(),
+    resource: endpointResource.selfUser(),
     handler: async (request) => {
       const payload = request.payload as UnlockSecretKeysRequest | undefined;
       if (!payload?.authorizationPassword) return { ok: false, error: "Your password is required." };

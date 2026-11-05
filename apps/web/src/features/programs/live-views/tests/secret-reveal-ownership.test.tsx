@@ -15,7 +15,7 @@ const button = (name: string) => view.root.findAllByType("button").find(n => lab
 function deferred() { let resolve!: (v: any) => void; const promise = new Promise<any>(done => { resolve = done; }); return { promise, resolve }; }
 async function mount() { await act(async () => { view = create(<SecretKeysLive currentUser={user} />); }); }
 function begin() { act(() => button("Reveal temporarily").props.onClick()); act(() => view.root.findAllByType("input").find(n => n.props.type === "password")!.props.onChange({ target: { value: "synthetic-proof" } })); }
-beforeEach(() => { vi.useFakeTimers(); vi.stubGlobal("window", { setTimeout, clearTimeout, dispatchEvent() {} }); owner.api = { get: vi.fn().mockResolvedValue({ ok: true, payload: { keys: [key] } }), post: vi.fn().mockResolvedValue({ ok: true, payload: { value: "synthetic-revealed" } }) }; owner.automation = { get: vi.fn(), post: vi.fn() }; });
+beforeEach(() => { vi.useFakeTimers(); vi.stubGlobal("window", { setTimeout, clearTimeout, dispatchEvent() {}, location: { hash: "", pathname: "/", search: "" }, history: { replaceState() {} } }); owner.api = { get: vi.fn().mockResolvedValue({ ok: true, payload: { keys: [key] } }), post: vi.fn().mockResolvedValue({ ok: true, payload: { value: "synthetic-revealed" } }) }; owner.automation = { get: vi.fn(), post: vi.fn() }; });
 afterEach(() => { if (view) act(() => view.unmount()); vi.useRealTimers(); vi.unstubAllGlobals(); });
 it("actual actor replacement hides revealed content and obsolete callbacks cannot request", async () => {
  await mount(); begin(); await act(async () => button("Reveal for 30 seconds").props.onClick()); const oldBegin = button("Reveal temporarily").props.onClick;

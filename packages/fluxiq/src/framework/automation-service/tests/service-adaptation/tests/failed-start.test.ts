@@ -140,7 +140,7 @@ describe("the reads a run's start makes", () => {
     await expect(service.runRuntimeSession({ projectId, flowId, idempotencyKey: "key.one" })).resolves.toMatchObject({ runId: first.runId });
     vi.spyOn(service, "listRuntimeSessions").mockRejectedValueOnce(new Error("sessions unreadable"));
 
-    await expect(service.runRuntimeSession({ projectId, flowId, idempotencyKey: "key.one" })).rejects.toThrow("sessions unreadable");
+    await expect(service.runRuntimeSession({ projectId, flowId, idempotencyKey: "key.one" })).rejects.toThrow("FluxIQ could not check whether another run is using this page");
 
     await expect(service.listRuntimeSessions(projectId)).resolves.toEqual([expect.objectContaining({ runId: first.runId })]);
   });

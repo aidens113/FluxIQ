@@ -620,20 +620,20 @@ it("reports a client action that arrives after its recording was finalized", asy
     expect(discardAudit(gateway)).toEqual([]);
   });
 
-
   it("keeps in-process recording ownership across a trusted-client reconnect", async () => {
-    const tokens = ["continuity-token", "continuity-rotated"];
-    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000, createToken: () => tokens.shift() ?? "unused" });
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
     const automationStudio = new AutomationStudioService({ seedFixture: false });
     const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio });
     const first = gateway.connect();
     await gateway.receive(first.sessionId, clientMessage("client.hello", { clientId: "worker.continuity", clientType: "worker", name: "Continuity worker" }));
     await gateway.approvePairing(gateway.snapshot().pairings[0]?.pairingCode ?? "", { approvedByUserId: "user.continuity" });
     await bridge.startRecording({ description: "Shows the steps the automation repeats.", sessionId: first.sessionId, recordingId: "recording.continuity" });
+    // The credential the client was sent at pairing, which is what it presents coming back.
+    const credential = (gateway.outbound(first.sessionId).filter((message) => message.type === "server.session_ready").at(-1)?.payload as { token: string }).token;
     gateway.disconnect(first.sessionId);
 
     const second = gateway.connect();
-    await gateway.receive(second.sessionId, clientMessage("client.hello", { clientId: "worker.continuity", clientType: "worker", token: "continuity-token" }));
+    await gateway.receive(second.sessionId, clientMessage("client.hello", { clientId: "worker.continuity", clientType: "worker", token: credential }));
     const action = bridge.executeAction(second.sessionId, { actionType: "continuity.action" });
     const command = gateway.outbound(second.sessionId).find((message) => message.type === "server.execute_action");
     await gateway.receive(second.sessionId, clientMessage("client.action_result", { commandId: command?.payload.commandId ?? "", status: "succeeded" }));
