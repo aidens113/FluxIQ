@@ -86,6 +86,8 @@ export type AutomationStudioTaskResult = {
   checkedWhat?: string;
   /** What is missing from a partial result, in a person's words. */
   missingWhat?: string;
+  /** How many rows the act record held as already done, so the attempt left them alone: a whole number of at least 1, absent when there were none, so a person can see a row was skipped. */
+  skippedAsDone?: number;
   from?: AutomationStudioTaskResultFrom[];
 };
 
@@ -93,7 +95,7 @@ export type AutomationStudioTaskResultParseResult =
   | { ok: true; result: AutomationStudioTaskResult }
   | { ok: false; issues: string[] };
 
-const RESULT_KEYS: ReadonlySet<string> = new Set(["attemptId", "kind", "label", "timesChecked", "source", "rows", "acts", "answerText", "checkedWhat", "missingWhat", "from"]);
+const RESULT_KEYS: ReadonlySet<string> = new Set(["attemptId", "kind", "label", "timesChecked", "source", "rows", "acts", "answerText", "checkedWhat", "missingWhat", "skippedAsDone", "from"]);
 const ROWS_KEYS: ReadonlySet<string> = new Set(["runId", "datasetId", "totalRows", "truncated", "columns", "previewRows"]);
 const COLUMN_KEYS: ReadonlySet<string> = new Set(["id", "label"]);
 const ANSWER_KEYS: ReadonlySet<string> = new Set(["text", "author"]);
@@ -133,6 +135,7 @@ function readResult(value: unknown, issues: Set<string>): AutomationStudioTaskRe
   if (answerText === null) issues.add("task_result.invalid_answer_text");
   if (checkedWhat !== undefined && !isPersonWords(checkedWhat)) issues.add("task_result.invalid_checked_what");
   if (missingWhat !== undefined && !isPersonWords(missingWhat)) issues.add("task_result.invalid_missing_what");
+  if (value.skippedAsDone !== undefined && !isSkippedCount(value.skippedAsDone)) issues.add("task_result.invalid_skipped_as_done");
   if (from === null) issues.add("task_result.invalid_from");
   if ((label === "confirmed" || label === "refuted") && timesChecked === 0) issues.add("task_result.label_needs_a_check");
   if (kind === "rows" && value.rows === undefined) issues.add("task_result.rows_kind_needs_rows");
@@ -146,8 +149,14 @@ function readResult(value: unknown, issues: Set<string>): AutomationStudioTaskRe
   if (answerText !== undefined) result.answerText = answerText;
   if (typeof checkedWhat === "string") result.checkedWhat = checkedWhat;
   if (typeof missingWhat === "string") result.missingWhat = missingWhat;
+  if (isSkippedCount(value.skippedAsDone)) result.skippedAsDone = value.skippedAsDone;
   if (from !== undefined) result.from = from;
   return result;
+}
+
+/** A count of skipped rows: whole, and at least one, because a result with none says nothing. */
+function isSkippedCount(value: unknown): value is number {
+  return isCount(value) && value >= 1;
 }
 
 function readActs(value: unknown, issues: Set<string>): AutomationStudioAttemptAct[] | null {

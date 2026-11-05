@@ -187,11 +187,11 @@ describe("what an act keeps of it", () => {
 });
 
 describe("what it still gets wrong", () => {
-  it("known limit, too much: two rows whose words cannot be told apart. The one not pressed is held done by hand too, so a judge's no does not bring it back by this press", () => {
+  it("known limit, too much: two rows whose words cannot be told apart. The one not pressed is held done by hand too, so a judge's no does not bring it back by this press: it says so, and the ladder asks (`./identical-rows.test.ts`)", () => {
     const second = { title: ATLAS.title, due: "2026-12-01" };
     const record = withRows([ATLAS, second, BIRDS]);
     landed(record, { actionId: "press", parameters: { control: "Renew" }, consequences: ["modify_existing"], stage: "run", row: ATLAS });
-    expect(record.admit(byHandle({ words: `Renew ${ATLAS.title}` })).kind).toBe("already_done");
+    expect(record.admit(byHandle({ words: `Renew ${ATLAS.title}` }))).toEqual(expect.objectContaining({ kind: "already_done", rowsUnclear: true }));
   });
 
   it("known limit, too much: the same whole fingerprint for another item on one address, where nothing else tells them apart", () => {

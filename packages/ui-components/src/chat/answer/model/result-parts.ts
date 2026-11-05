@@ -7,9 +7,9 @@ import type { AnswerModel } from "./answer-types.ts";
 import { checkWords } from "./check-words.ts";
 import { effectiveLabel } from "./effective-label.ts";
 import { rowsModel } from "./rows-model.ts";
-import { siteWords } from "../words/index.ts";
+import { siteWords, skippedWords } from "../words/index.ts";
 
-type ResultParts = Pick<AnswerModel, "check" | "rows" | "text" | "siteTitle" | "siteLines" | "checked" | "missing" | "canExport">;
+type ResultParts = Pick<AnswerModel, "check" | "rows" | "text" | "siteTitle" | "siteLines" | "checked" | "missing" | "skipped" | "canExport">;
 
 function checkedLine(result: ChatTaskResult): string | undefined {
   if (result.checkedWhat === undefined) return undefined;
@@ -26,12 +26,16 @@ export function resultParts(result: ChatTaskResult): ResultParts {
   const checked = checkedLine(result);
   if (checked !== undefined) parts.checked = checked;
   if (result.missingWhat !== undefined) parts.missing = `Missing: ${result.missingWhat}`;
+  const skipped = skippedWords(result.skippedAsDone);
+  if (skipped !== undefined) parts.skipped = skipped;
   return parts;
 }
 
-/** What shows of a result that holds nothing: only what is missing. */
+/** What shows of a result that holds nothing: what is missing, and any rows skipped. */
 export function emptyParts(result: ChatTaskResult | undefined): ResultParts {
   const parts: ResultParts = { siteLines: [], canExport: false };
   if (result?.missingWhat !== undefined) parts.missing = `Missing: ${result.missingWhat}`;
+  const skipped = skippedWords(result?.skippedAsDone);
+  if (skipped !== undefined) parts.skipped = skipped;
   return parts;
 }

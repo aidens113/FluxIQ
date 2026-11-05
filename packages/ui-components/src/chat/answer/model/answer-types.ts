@@ -43,6 +43,8 @@ export type AnswerModel = {
   siteLines: string[];
   checked?: string;
   missing?: string;
+  /** "Skipped 2 as already done": a plain line, drawn only when rows were skipped. */
+  skipped?: string;
   from?: string;
   compared?: string;
   saved?: string;

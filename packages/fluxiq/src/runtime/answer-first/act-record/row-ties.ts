@@ -115,6 +115,28 @@ export class AutomationStudioAttemptActRowTies {
     return this.rows.filter((held) => among.has(held.row) && named.some((values) => sameRow(values, valuesOf(held)))).map((held) => held.row);
   }
 
+  /** Whether two held rows are known to be two: each is held, and neither's values fit the other's. One not held cannot be said to differ. */
+  toldApart(one: string, other: string): boolean {
+    const [first, second] = [one, other].map((row) => this.rows.find((held) => held.row === row));
+    return first !== undefined && second !== undefined && !sameRow(valuesOf(first), valuesOf(second));
+  }
+
+  /** Every held row `row` may be, itself among them, in any shape. */
+  fitsOf(row: string): string[] {
+    const held = this.rows.find((each) => each.row === row);
+    if (!held) return [row];
+    const values = valuesOf(held);
+    return this.rows.filter((each) => each.row === row || sameRow(values, valuesOf(each))).map((each) => each.row);
+  }
+
+  /** How many rows these are, one row in several shapes counted once. A row not held counts as its own. */
+  distinct(rows: ReadonlySet<string>): number {
+    const held = this.rows.filter((row) => rows.has(row.row));
+    const kept: ReadonlyMap<string, boolean>[] = [];
+    for (const values of held.map(valuesOf).sort((a, b) => b.size - a.size)) if (!kept.some((other) => sameRow(values, other))) kept.push(values);
+    return kept.length + rows.size - held.length;
+  }
+
   /** The rows that printed `handle`. */
   ofHandle(handle: string): string[] {
     return this.rows.filter((row) => row.handles.includes(handle)).map((row) => row.row);

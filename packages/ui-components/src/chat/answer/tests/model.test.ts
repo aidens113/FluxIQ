@@ -272,3 +272,16 @@ test("a run that finished and was never judged (not a contract status) is told a
   assert.equal(model.check?.mark, "none");
   assert.equal(model.canRunAgain, true);
 });
+
+test("rows skipped as already done are said once, plainly, only above zero", () => {
+  const withSkipped = (count: number | undefined): ChatTaskOutcome => {
+    const outcome = fakeTaskOutcomes().rowsChecked;
+    if (count !== undefined) outcome.result!.skippedAsDone = count;
+    return outcome;
+  };
+  assert.equal(modelOf(withSkipped(1)).skipped, "Skipped 1 as already done");
+  assert.equal(modelOf(withSkipped(2)).skipped, "Skipped 2 as already done");
+  assert.equal(modelOf(withSkipped(undefined)).skipped, undefined);
+  assert.equal(modelOf(withSkipped(0)).skipped, undefined, "a count of none says nothing");
+  assert.equal(modelOf(withSkipped(2)).check?.mark, "tick", "the skip does not change the check");
+});

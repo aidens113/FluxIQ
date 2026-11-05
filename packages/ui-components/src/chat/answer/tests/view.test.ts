@@ -269,3 +269,15 @@ test("no results port: the answer still shows, with no export or Run again", asy
     assert.equal(root.byClass("answer-row").length, 5);
   });
 });
+
+test("rows skipped as already done draw one plain line, with no tick of its own and no failed mark", async () => {
+  await withFakeDocument(() => {
+    const skipped = fakeTaskOutcomes().rowsChecked;
+    skipped.result!.skippedAsDone = 2;
+    const { root } = draw(skipped, { results: createFakeChatResultsPort() });
+    assert.deepEqual(root.byClass("answer-line").filter((line) => line.getAttribute("data-line") === "skipped").map((line) => line.textContent), ["Skipped 2 as already done"]);
+    assert.equal(root.byClass("answer-mark").length, 1, "only the check's own tick");
+    const plain = draw(fakeTaskOutcomes().rowsChecked, { results: createFakeChatResultsPort() }).root;
+    assert.equal(plain.byClass("answer-line").some((line) => line.getAttribute("data-line") === "skipped"), false);
+  });
+});

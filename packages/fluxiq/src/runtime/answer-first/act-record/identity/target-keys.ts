@@ -54,6 +54,8 @@ export type AutomationStudioAttemptActTargetKeys = {
   controls?: string[];
   /** The key that names it by what the call holds beside its fingerprint: an address and inputs. A subset of `keys`. Empty where it has only a fingerprint or a handle, or where its address counts places. */
   wholeKeys: string[];
+  /** The key of an address that counts places and the fingerprint beside it, together: a position alone names nothing, and the two as one are this form exactly. Kept apart from `keys`, for an act to answer to the form it was foreseen in (`../record.ts`, "Before it is sent"). */
+  placeKeys: string[];
   /** Every word its fingerprint says, at any depth, for comparing with a row's (`../row-ties.ts`). Page words: never kept. */
   says?: string;
 };
@@ -74,6 +76,7 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
   const handleKeys = handle !== undefined ? [key({ inputs }, handle)] : [];
   // With only a handle, what is left is its inputs, and those are no target at all.
   const byWhole = handle === undefined && !(fingerprint && counted) && (Object.keys(rest).length > 0 || !fingerprint) ? [key({ rest })] : [];
+  const placeKeys = handle === undefined && fingerprint && counted ? [key({ element: fingerprint, rest })] : [];
   const controls = named ? controlWords(named) : [];
   const says = named ? wordsIn(named).join(" ") : "";
   return {
@@ -82,6 +85,7 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
     ...(handle !== undefined ? { handle } : {}),
     ...(controls.length > 0 ? { controls } : {}),
     wholeKeys: byWhole,
+    placeKeys,
     ...(says ? { says } : {})
   };
 }

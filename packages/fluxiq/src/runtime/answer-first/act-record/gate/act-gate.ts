@@ -4,7 +4,14 @@
 //
 //   before dispatch   `foresee` asks what the domain says the call would be, and `admit`
 //                     reads that beside the call. A refusal dispatches nothing. `already_done`
-//                     is told as a result, not a failure: it happened, carry on. `look_first`
+//                     is told as a result, not a failure: it happened, carry on. So a call the
+//                     model made by hand answers it without `ok: false`, which says the page
+//                     refused it, and names the act as what it really ran as (`ranWith`): the
+//                     same act is one call to loop detection, whatever handle it was asked by
+//                     (`S/runtime/llm/repeat-guard/loop-detection/`), and three in a row would
+//                     otherwise only stall the round, which never asks the person. A forward
+//                     pass answers as ever: a walker reads that, and leaves the row out.
+//                     Where several rows fit, it says what would help instead. `look_first`
 //                     says to look where its effect would show, and only a look after that
 //                     opens the act: one before it, the round's own opening look among them,
 //                     does not (`../record.ts`). That refusal invites its own resend
@@ -28,6 +35,7 @@
 //
 // Refusals here are worded for any site, and say nothing of this one's.
 
+import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceResendInvitation } from "../../../llm/repeat-guard/index.ts";
@@ -40,6 +48,8 @@ import { automationStudioAttemptActCallRead } from "./read-call.ts";
 const ALREADY_DONE_CODE = "attempt.act_already_done";
 const LOOK_FIRST_CODE = "attempt.act_look_first";
 const ALREADY_DONE_SAID = "This act already happened in this task, so it was not done again. Count it as done and carry on with what is left.";
+const ROW_UNCLEAR_CODE = "attempt.act_row_unclear";
+const ROW_UNCLEAR_SAID = "This may be a row that is already done: more than one row fits it and nothing yet tells them apart, so it was not done again, since doing it twice cannot be taken back. Pressing it again will not help. Read something that tells these rows apart and act on the one you mean, or say what you have and what you could not tell.";
 const LOOK_FIRST_SAID = "This act may already have happened, so it was not done again. Look at the page where its effect would show: if it is there, count it as done; if it is not, it may be tried again.";
 /** A look-first refusal's one resend, read by the repeat guard (`S/runtime/llm/repeat-guard/resend-admission.ts`). */
 const RESEND_ONCE: AutomationStudioLlmEvidenceResendInvitation = "accepted_once";
@@ -70,7 +80,8 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
       const foreseen = input.foresee?.(call);
       if (foreseen) read.act.foreseen = foreseen;
       const admission = record.admit(read.act);
-      if (admission.kind === "already_done") return refusal(ALREADY_DONE_CODE, ALREADY_DONE_SAID, admission.act);
+      if (admission.kind === "already_done" && read.act.stage !== "exploration") return refusal(ALREADY_DONE_CODE, ALREADY_DONE_SAID, admission.act);
+      if (admission.kind === "already_done") return alreadyDone(read.act.actionId, admission);
       if (admission.kind === "look_first") return refusal(LOOK_FIRST_CODE, LOOK_FIRST_SAID, admission.act, { diagnostics: { resend: RESEND_ONCE } });
       if (record.lasting(read.act)) {
         begunWords = wordsFor(input.wordsOf?.(call, undefined));
@@ -87,7 +98,7 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
     if (read.kind === "pass") return answer;
     const said = automationStudioAttemptActAnswerRead(answer, input.readRowsKey);
     if (read.kind === "act" && begunWords && !recordable(read.act, said)) record.withdrawn(read.act);
-    record.noteReadRows(said.rows);
+    record.noteReadRows(said.rows, said.listed);
     if (read.kind === "look" ? said.looked || !said.applied : said.looked) record.looked();
     if (read.kind === "act") {
       if (recordable(read.act, said)) record.settled(read.act, {
@@ -127,6 +138,19 @@ function notRecorded(): AutomationStudioLlmEvidenceToolExecutionResult {
     effectApplied: false,
     targetsUnchanged: true,
     resultCode: NOT_RECORDED_CODE
+  };
+}
+
+/** A by-hand call of an act already done: no dispatch, nothing changed, and said as what happened (header). */
+function alreadyDone(actionId: string, { act, rowsUnclear }: { act: AutomationStudioAttemptAct; rowsUnclear?: true }): AutomationStudioLlmEvidenceToolExecutionResult {
+  const code = rowsUnclear ? ROW_UNCLEAR_CODE : ALREADY_DONE_CODE;
+  return {
+    kind: "llm_evidence_tool_execution",
+    evidence: { code, instruction: rowsUnclear ? ROW_UNCLEAR_SAID : ALREADY_DONE_SAID, act: { what: act.what, where: act.where, state: act.state } },
+    effectApplied: false,
+    targetsUnchanged: true,
+    resultCode: code,
+    draft: { actionId, effect: "mutate", proposes: false, ranWith: { act: act.id } }
   };
 }
 

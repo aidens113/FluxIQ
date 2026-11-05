@@ -188,3 +188,21 @@ describe("a record it cannot make", () => {
     expect(() => automationStudioAnswerFirstResult({ ...unverified, attemptId: "not an id" })).toThrow(AutomationStudioAnswerFirstEndingError);
   });
 });
+
+describe("rows the record held as already done", () => {
+  it("are on the result as a count, when at least one", () => {
+    expect(automationStudioAnswerFirstResult({ ...unverified, skippedAsDone: 2 })).toMatchObject({ skippedAsDone: 2 });
+    expect(automationStudioAnswerFirstResult({ ...confirmed, rows: rows(), skippedAsDone: 1 })).toMatchObject({ kind: "rows", skippedAsDone: 1 });
+  });
+
+  it("are left off when none, and the count is never zero on a record", () => {
+    expect(automationStudioAnswerFirstResult({ ...unverified })).not.toHaveProperty("skippedAsDone");
+    expect(automationStudioAnswerFirstResult({ ...unverified, skippedAsDone: 0 })).not.toHaveProperty("skippedAsDone");
+    expect(automationStudioAnswerFirstResult({ ...unverified, skippedAsDone: -1 })).not.toHaveProperty("skippedAsDone");
+    expect(automationStudioAnswerFirstResult({ ...unverified, skippedAsDone: 1.5 })).not.toHaveProperty("skippedAsDone");
+  });
+
+  it("go through the contract's parser with the rest", () => {
+    expect(parseAutomationStudioTaskResult(automationStudioAnswerFirstResult({ ...unverified, skippedAsDone: 3 })).ok).toBe(true);
+  });
+});

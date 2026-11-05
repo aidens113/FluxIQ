@@ -81,6 +81,20 @@
 // two items), when both pages are known. Where one is not, it is held the same, as above. An act
 // that was begun and never answered is known by the frozen form too, and by the words' row.
 //
+// **Rows nobody can tell apart (t870).** A press whose row fits several is refused while it may be
+// the one done, since doing it twice is what nobody can take back, and it says so (`rowsUnclear`):
+// the plain "already done" would be untrue of a row that may never have been pressed. One thing lets
+// it go, the act's own answer: where the sentence naming what it acted on (`actedOnWords`) fits one
+// row, now that a read has told them apart, and the press is on another row known to be another.
+// Nothing else says which. How many landings against how many rows fit says how many are left, not
+// which, so it would press one of them twice as easily as not. A frozen address could differ only
+// because the press changed the control. So a row a run acted on in a shape that fits two, whose
+// answer named no item, stays held on both, and the loop ladder asks the person. A press by a call
+// that has the act's own key stays refused whatever the words say: one control is one control.
+//
+// **Rows left out (`rowsHeldDone`).** How many rows this attempt left out because they were held done
+// (`./rows-left-out.ts`). In memory, as it says what this attempt did.
+//
 // **A count across a real run (`carried`, `counted`).** A run that settles into this record
 // compares each pass with what it did itself, so a person's "add 3" must still press three
 // times: it may pass while the count has room. A run that only carries acts from an attempt
@@ -100,6 +114,7 @@ import type {
 import { automationStudioAttemptActId, automationStudioAttemptActRowIdentity, automationStudioAttemptActTargetKeys, type AutomationStudioAttemptActTargetKeys } from "./identity/index.ts";
 import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
+import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
@@ -128,6 +143,8 @@ export class AutomationStudioAttemptActRecord {
   private readonly landedBySteps = new Map<string, AutomationStudioAttemptActEntry>();
   /** Acts a call was refused for since they became may-have-landed, the only ones a look opens. In memory only (header). */
   private readonly refusedFor = new Set<AutomationStudioAttemptActEntry>();
+  /** Rows left out as held done, for `rowsHeldDone`, and which rows a read returned twice, for the words of a refusal. In memory only (header). */
+  private readonly leftOut = new RowsLeftOut();
 
   constructor(options: { seed?: AutomationStudioAttemptActRecordData; persist?: (data: AutomationStudioAttemptActRecordData) => Promise<void>; now?: () => number; asked?: (call: AutomationStudioAttemptActCall) => number | undefined } = {}) {
     const seed = options.seed === undefined ? undefined : parseAutomationStudioAttemptActRecordData(options.seed);
@@ -145,10 +162,19 @@ export class AutomationStudioAttemptActRecord {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
     const matching = this.sameActs(call, identity).filter((entry) => !entry.undeclared);
     const landed = matching.find((entry) => entry.state === "landed" && !hasRoom(entry, identity));
-    if (landed) return { kind: "already_done", act: contractAct(landed) };
+    if (landed) {
+      this.leftOut.refused(this.heldRows(call, identity, landed));
+      return { kind: "already_done", act: contractAct(landed), ...(this.rowsUnclear(call, identity, landed) ? { rowsUnclear: true as const } : {}) };
+    }
     const blind = matching.filter((entry) => entry.state === "may_have_landed" && !entry.lookedSince);
     for (const entry of blind) this.refusedFor.add(entry);
+    if (blind[0]) this.leftOut.refused(this.heldRows(call, identity, blind[0]));
     return blind[0] ? { kind: "look_first", act: contractAct(blind[0]) } : { kind: "run" };
+  }
+
+  /** How many distinct rows this attempt left out because the record held them done (header). */
+  rowsHeldDone(): number {
+    return this.leftOut.count(this.ties);
   }
 
   /** Whether this call declares a lasting act, so that it must be begun before it is sent. */
@@ -198,7 +224,10 @@ export class AutomationStudioAttemptActRecord {
       return undefined;
     }
     if (call.row !== undefined) this.noteActedRow(call.row);
-    const frozen = outcome.ranWith?.parameters ? this.identityOf(outcome.ranWith.actionId ?? call.actionId, outcome.ranWith.parameters, call.row) : this.foreseenForm(call);
+    const ran = outcome.ranWith?.parameters ? this.identityOf(outcome.ranWith.actionId ?? call.actionId, outcome.ranWith.parameters, call.row) : undefined;
+    // It answers to the place and fingerprint it was foreseen in too: what the press ran with may hold more than the look it came from did, and the next press may come from such a look.
+    const foreseenForm = this.foreseenForm(call);
+    const frozen = ran ? { ...ran, keys: [...ran.keys, ...(foreseenForm?.placeKeys ?? [])] } : foreseenForm;
     const state = lasting && !uncertain ? "landed" : "may_have_landed";
     const known = this.sameActs(call, called).find((entry) => lasting || entry.undeclared);
     if (known) {
@@ -206,6 +235,7 @@ export class AutomationStudioAttemptActRecord {
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
       if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.landedAt(outcome.step, known);
+      this.leftOut.ranOn(known.rows);
       void this.changed();
       return contractAct(known);
     }
@@ -213,6 +243,7 @@ export class AutomationStudioAttemptActRecord {
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);
+    this.leftOut.ranOn(entry.rows);
     void this.changed();
     return contractAct(entry);
   }
@@ -251,13 +282,17 @@ export class AutomationStudioAttemptActRecord {
     const identity = automationStudioAttemptActRowIdentity(row);
     if (identity === undefined) return false;
     const same = new Set([identity, ...this.ties.sameAs(row, this.actedRows())]);
-    return this.entries.some((entry) => stands(entry) && entry.rows.some((held) => same.has(held)));
+    const done = this.entries.some((entry) => stands(entry) && entry.rows.some((held) => same.has(held)) && !this.namesAnotherRow(entry, [identity]));
+    if (done) this.leftOut.passedOver(identity);
+    return done;
   }
 
   /** Whether a step's non-row lasting act already landed. A may-have-landed one counts: a step so held is checked, never sent again. */
   stepDone(call: Pick<AutomationStudioAttemptActCall, "actionId" | "parameters" | "row">): boolean {
     const identity = this.identityOf(call.actionId, call.parameters, call.row);
-    return this.matching(identity).some((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
+    const found = this.matching(identity).find((entry) => stands(entry) && !(entry.state === "landed" && hasRoom(entry, identity)));
+    if (found) this.leftOut.refused(found.rows);
+    return found !== undefined;
   }
 
   /** The act a real run must not do again (`SVC/answer-first/run-acts/`), read by the Flow node's own action, parameters, row and step names. `counted`: one whose count has room may run (header). */
@@ -266,13 +301,16 @@ export class AutomationStudioAttemptActRecord {
     const steps = new Set(call.steps ?? []);
     const room = (entry: AutomationStudioAttemptActEntry) => call.counted === true && entry.state === "landed" && hasRoom(entry, identity);
     const found = this.entries.find((entry) => stands(entry) && !room(entry) && (matches(entry, identity) || (entry.steps ?? []).some((step) => steps.has(step))));
+    if (found) for (const row of identity.rows.slice(0, 1)) this.leftOut.passedOver(row);
+    if (found && identity.rows.length === 0) this.leftOut.refused(found.rows);
     return found ? contractAct(found) : undefined;
   }
 
-  /** Remembers which row a handle printed in a read belongs to, so a by-hand press on it counts for that row. */
-  noteReadRows(rows: readonly JsonObject[]): void {
+  /** Remembers which row a handle printed in a read belongs to, so a by-hand press on it counts for that row. `oneList`: the rows as one list held them, where an answer carries them twice, to know two rows that are alike from one row said twice. */
+  noteReadRows(rows: readonly JsonObject[], oneList: readonly JsonObject[] = rows): void {
     if (rows.length === 0) return;
     this.ties.note(rows, this.actedRows());
+    this.leftOut.noteList(oneList.map(automationStudioAttemptActRowIdentity).filter((identity) => identity !== undefined));
     // An act made before the read that lists its row (header of `./row-ties.ts`).
     for (const entry of this.entries) if (entry.rows.length === 0) this.tieLate(entry);
     void this.changed();
@@ -367,7 +405,39 @@ export class AutomationStudioAttemptActRecord {
   private sameActs(call: AutomationStudioAttemptActCall, identity: Identity): AutomationStudioAttemptActEntry[] {
     const foreseen = this.foreseenOf(call);
     const own = this.matching(identity);
-    return foreseen ? [...new Set([...own, ...this.entries.filter((entry) => matchesForeseen(entry, foreseen, this.place?.path))])] : own;
+    const found = foreseen ? [...new Set([...own, ...this.entries.filter((entry) => matchesForeseen(entry, foreseen, this.place?.path))])] : own;
+    const pressed = this.pressedRows(call, identity);
+    const itsKeys = identity.rows.length > 0 || call.row !== undefined ? [] : [...identity.keys, ...(foreseen?.frozen?.keys ?? []), ...(foreseen?.frozen?.placeKeys ?? [])];
+    return found.filter((entry) => itsKeys.some((key) => entry.keys.includes(key)) || !this.namesAnotherRow(entry, pressed));
+  }
+
+  /** The rows a call is on, as far as it says: its own, a handle's a read printed, or those its foreseen words fit. */
+  private pressedRows(call: AutomationStudioAttemptActCall, identity: Identity): string[] {
+    return identity.rows.length > 0 ? identity.rows : this.foreseenOf(call)?.named ?? [];
+  }
+
+  /** Whether the act's own answer says it was on one row, and this press is on another known to be another (header). */
+  private namesAnotherRow(entry: AutomationStudioAttemptActEntry, pressed: readonly string[]): boolean {
+    const [row] = pressed;
+    if (row === undefined || pressed.length > 1 || entry.rows.includes(row) || !entry.actedOnWords) return false;
+    const said = this.ties.ofWords(entry.actedOnWords);
+    return said.length === 1 && said[0] !== row && this.ties.toldApart(said[0]!, row);
+  }
+
+  /** Whether several rows fit this call and it may not be the one done, as far as anything says (header). */
+  private rowsUnclear(call: AutomationStudioAttemptActCall, identity: Identity, entry: AutomationStudioAttemptActEntry): boolean {
+    const pressed = this.pressedRows(call, identity);
+    if (pressed.length === 0) return false;
+    if (pressed.length > 1 || this.leftOut.isSeveral(pressed[0]!)) return true;
+    const said = entry.actedOnWords ? this.ties.ofWords(entry.actedOnWords) : [];
+    if (said.length === 1 && said[0] === pressed[0]) return false;
+    return this.ties.distinct(new Set(entry.rows.flatMap((row) => this.ties.fitsOf(row)))) > 1;
+  }
+
+  /** The rows a refused call left out: those it says it is on, else those the act it is refused for is on. */
+  private heldRows(call: AutomationStudioAttemptActCall, identity: Identity, entry: AutomationStudioAttemptActEntry): readonly string[] {
+    const pressed = this.pressedRows(call, identity);
+    return pressed.length > 0 ? pressed : entry.rows;
   }
 
   /** A call's `foreseen`, read; none for a call that carries its row, which says for itself what it is on. */
@@ -526,7 +596,7 @@ function matchesForeseen(entry: AutomationStudioAttemptActEntry, foreseen: Fores
   if (!frozen || (entry.placePath !== undefined && path !== undefined && entry.placePath !== path)) return false;
   // Tied to another row than this act's, it is not this act, whatever address they share.
   if (entry.rows.length > 0 && (foreseen.namedSame.size > 0 || foreseen.onPage.size > 0)) return false;
-  return (entry.rows.length === 0 ? frozen.keys : frozen.wholeKeys).some((key) => entry.keys.includes(key));
+  return (entry.rows.length === 0 ? [...frozen.keys, ...frozen.placeKeys] : frozen.wholeKeys).some((key) => entry.keys.includes(key));
 }
 
 /** An entry as the contract's act, with nothing it does not name. */

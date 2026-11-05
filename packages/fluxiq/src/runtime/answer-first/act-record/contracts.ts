@@ -42,8 +42,8 @@ export type AutomationStudioAttemptActCall = {
 
 export type AutomationStudioAttemptActAdmission =
   | { kind: "run" }
-  /** Identical and landed: refuse, no dispatch. */
-  | { kind: "already_done"; act: AutomationStudioAttemptAct }
+  /** Identical and landed: refuse, no dispatch. `rowsUnclear`: several rows fit, and which this call is on cannot be told from the one done (`./record.ts`, "Rows nobody can tell apart"), so what would help is another thing to say. */
+  | { kind: "already_done"; act: AutomationStudioAttemptAct; rowsUnclear?: true }
   /** May have landed and no look since it was last refused: refuse, no dispatch. Saying this is the refusal (`./record.ts`, "A look lifts a hold"). */
   | { kind: "look_first"; act: AutomationStudioAttemptAct };
 

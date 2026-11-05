@@ -40,6 +40,8 @@ export type AutomationStudioAttemptActAnswerRead = {
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
   rows: JsonObject[];
+  /** The same rows as one list holds them: an answer may carry each twice, shown and under an output. */
+  listed: JsonObject[];
 };
 
 /** What the gate reads of an answer (header). A bare JSON answer is a tool's own and says nothing about its effect. */
@@ -55,14 +57,18 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   const ranWith = result?.draft?.ranWith;
   const parameters = record(ranWith?.parameters);
   const actionId = typeof ranWith?.node === "string" ? ranWith.node : result?.draft?.actionId;
+  // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
+  const keptNothing = refused || result?.failure !== undefined;
+  const shown = keptNothing ? [] : rowsAt(evidence, readRowsKey);
+  const carried = keptNothing ? [] : rowsIn(result?.outputs);
   return {
     applied, uncertain, observe, looked,
     ...(parameters ? { ranWith: { ...(actionId ? { actionId } : {}), parameters } } : {}),
     ...(typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
     pageUnchanged: evidence?.pageChanged === false,
-    // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
-    rows: refused || result?.failure !== undefined ? [] : [...rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)]
+    rows: [...shown, ...carried],
+    listed: shown.length > 0 ? shown : carried
   };
 }
 
