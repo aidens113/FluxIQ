@@ -390,7 +390,41 @@ test("a key added after the chat read it missing lifts the line on the next poll
       assert.equal(key.hidden, true, "the key is there now: the line is gone");
       vi.advanceTimersByTime(4_000);
       await settle();
-      assert.equal(asked, first + 1, "never asked again once a key is enabled");
+      assert.equal(asked, first + 1, "not on every poll once a key is enabled");
+    } finally {
+      chat.setActive(false);
+      vi.useRealTimers();
+    }
+  });
+});
+
+test("a key that locks while the chat is open shows the step without reopening, and it lifts the same way", async () => {
+  await withFakeDocument(async () => {
+    const core = targetCore([]);
+    let unlocked = true;
+    const request = async <T>(message: TestMessage): Promise<ChatResult<T>> => {
+      if (message.type !== TEST_MESSAGES.panelModelReadiness) return core.request<T>(message);
+      return { ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "DeepSeek", enabled: true, unlocked, ...(unlocked ? {} : { lockedBecause: "signed_out" }) }] } } } as unknown as ChatResult<T>;
+    };
+    vi.useFakeTimers({ toFake: ["setInterval", "Date"] });
+    const chat = createChatWidget(messageTransport(request), { openControl: opener });
+    try {
+      chat.render(CONNECTED);
+      chat.setActive(true);
+      await settle();
+      await settle();
+      const key = fake(chat.element).byClass("chat-key-line")[0]!;
+      assert.equal(key.hidden, true, "it opens: nothing to say");
+      unlocked = false;
+      vi.advanceTimersByTime(16_000);
+      await settle();
+      await settle();
+      assert.equal(key.hidden, false, "locked since: the step shows by itself");
+      unlocked = true;
+      vi.advanceTimersByTime(4_000);
+      await settle();
+      await settle();
+      assert.equal(key.hidden, true, "unlocked again: gone by itself");
     } finally {
       chat.setActive(false);
       vi.useRealTimers();

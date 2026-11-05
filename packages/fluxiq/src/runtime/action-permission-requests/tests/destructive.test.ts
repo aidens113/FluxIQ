@@ -180,7 +180,7 @@ describe("a destructive act the instruction did not ask for", () => {
           { consequence: "create_new", instructionId: "instruction.basket", quote: "add both to the basket" }
         ]
       },
-      sentence: "The Flow would press \"Place order\" (button) each time it runs. That would spend, refund or move money, and that always needs your permission, even when your instruction asks for it."
+      sentence: "FluxIQ needs to press \"Place order\" each time this runs."
     });
   });
 

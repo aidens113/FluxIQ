@@ -2,5 +2,6 @@
 // framework, holding its endpoints, view state and metadata. The automation runtime
 // itself is `fluxiq/automation`.
 export * from "./api/handlers.ts";
+export { automationStudioPersonProject } from "./api/index.ts";
 export * from "./metadata.ts";
 export * from "./ui/index.ts";

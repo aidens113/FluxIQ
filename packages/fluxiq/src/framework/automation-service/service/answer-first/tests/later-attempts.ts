@@ -10,7 +10,7 @@ import path from "node:path";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioActivityHub } from "../../../../../runtime/activity/index.ts";
-import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
@@ -49,11 +49,12 @@ export type LaterAttemptOptions = {
 export type LaterAttemptsRestart = { dataDir: string; projectId: string; target: LibraryTarget; flows: readonly string[] };
 
 /** One service and one library, to run attempts on one after another. */
-export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart } = {}) {
+export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]> } = {}) {
   const dataDir = options.restart?.dataDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
   const target = options.restart?.target ?? libraryTarget(options.titles);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number; timeoutMs?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  let resolved = 0;
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
@@ -68,8 +69,11 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   /** Every by-hand call that reached the target, and where it was told to start from. */
   const seen: { toolId: string; startLocation: string | undefined }[] = [];
   const service = new AutomationStudioService({
-    dataDir, llmProviderResolver: () => ({ provider, ...current.resolver }),
-    llmEvidenceRuntime: { ...binding, executeTool: async (call) => {
+    dataDir, llmProviderResolver: () => {
+      resolved += 1;
+      return { provider, ...current.resolver };
+    },
+    llmEvidenceRuntime: { ...binding, ...(options.describe ? { describeCall: options.describe } : {}), executeTool: async (call) => {
       seen.push({ toolId: call.toolId, startLocation: call.startLocation });
       return await binding.executeTool(call);
     } }
@@ -98,7 +102,9 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
       flows.add(flowId);
     }
     const now = Date.now();
-    await service.saveFlowInstruction(project.id, {
+    // The same goal keeps the Flow's digest, as the chat's own save does (`../../flow-bootstrap-commands/save-goal.ts`): a new time here would read as a person changing the Flow, and a proven Flow would never be applied.
+    const held = await service.getFlowInstruction(project.id, "instruction.task").catch(() => undefined);
+    if (held?.body !== (given.instruction ?? TASK) || (held?.scope as { flowId?: string } | undefined)?.flowId !== flowId) await service.saveFlowInstruction(project.id, {
       schemaVersion: "0.1", instructionId: "instruction.task", title: "The task", body: given.instruction ?? TASK,
       scope: { kind: "flow", projectId: project.id, flowId }, priority: 100, status: "active", requirement: "required", tags: ["generation"], createdAt: now, updatedAt: now
     });
@@ -109,6 +115,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
       service.buildCancellation.cancel(project.id, flowId);
     };
     const firstRequest = requests.length;
+    const resolvedBefore = resolved;
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
     const answered = await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
@@ -120,6 +127,10 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     if (answered.attempt?.taskId) taskIds.set(given.instruction ?? TASK, answered.attempt.taskId);
     return {
       answer: answered, flowId, ranOut,
+      /** How many times anything asked for a provider: a run's recovery or its result check would ask again. */
+      providersResolved: resolved - resolvedBefore,
+      /** Every request the model saw in this attempt, whatever its kind. */
+      asked,
       decisions: asked.filter((request) => request.taskKind === "evidence_tool_decision" && request.metadata?.source !== "instructionAuthority"),
       judgeCalls: asked.filter((request) => request.taskKind === "loop_verification")
     };

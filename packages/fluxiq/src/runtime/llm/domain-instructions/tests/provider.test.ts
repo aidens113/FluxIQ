@@ -29,6 +29,21 @@ function recordingProvider(): { provider: AutomationStudioLlmProvider; ran: Auto
   };
 }
 
+describe("what a provider says of its waits", () => {
+  it("passes through the wrapper, so an attempt hears it whichever it holds", () => {
+    const { provider } = recordingProvider();
+    const heard: string[] = [];
+    let told: ((state: "started" | "ended", heldMs: number) => void) | undefined;
+    const wrapped = automationStudioLlmProviderWithDomainInstructions({ ...provider, observeHolds: (listener) => {
+      told = listener;
+      return () => undefined;
+    } }, INSTRUCTIONS);
+    wrapped.observeHolds?.((state) => void heard.push(state));
+    told?.("started", 0);
+    expect(heard).toEqual(["started"]);
+  });
+});
+
 describe("automationStudioLlmProviderWithDomainInstructions", () => {
   it("stamps the instructions on every request run and measured, and leaves the caller's request alone", async () => {
     const { provider, ran, measured } = recordingProvider();

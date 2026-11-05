@@ -60,6 +60,7 @@ const fluxiq = {
     },
     clientGateway: {
       ready: async () => undefined,
+      access: { forgetByCredential: async () => true },
       authorizeToken: async (token: string) => {
         const person = personOf("token-", token);
         return person ? { sessionId: `gateway-${person.id}`, clientId: `client-${person.id}`, trustedClientId: `trusted-${person.id}`, operatorUserId: person.id, projectId: null, metadata: { domainId: "web-automation" } } : null;
@@ -100,7 +101,7 @@ const fluxiq = {
 export function fluxiqModuleMock() {
   return {
     getFluxIQ: () => fluxiq,
-    getFluxIQWebRuntimeStatus: () => ({}),
+    getFluxIQWebRuntimeStatus: () => ({ automationStudio: { activeProjectId: "project-active" } }),
     setAutomationStudioWebContext: () => undefined,
     reloadFluxIQWebInstance: async () => fluxiq
   };

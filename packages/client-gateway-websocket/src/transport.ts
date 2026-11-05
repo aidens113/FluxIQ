@@ -162,6 +162,14 @@ export class FluxIQClientGatewayWebSocketClient {
       this.sessionId = message.payload.sessionId;
       this.token = message.payload.token;
       await this.options.tokenStorage?.write(message.payload.token);
+      // Only now is the new credential safe, so only now may Core let the one before it end. The socket may be gone already; Core then learns from the next use.
+      if (message.payload.token) {
+        try {
+          await this.send("client.credential_received", {});
+        } catch (error) {
+          console.warn("FluxIQ could not tell Core it stored its new credential; its next use will.", error instanceof Error ? error.name : "non_error");
+        }
+      }
       this.emit({ type: "session_ready", message });
       return;
     }

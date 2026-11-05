@@ -7,6 +7,7 @@
 export * from "./attempt-act.ts";
 export * from "./attempt-result-check.ts";
 export * from "./limits.ts";
+export * from "./model-key-lock.ts";
 export * from "./loops-caught.ts";
 export * from "./saved-state.ts";
 export * from "./subflow-card.ts";

@@ -26,7 +26,10 @@ export type ClientGatewayServiceOptions = {
    * is still running is waited on before it is asked again. 5,000 ms.
    */
   reconcileAnswerMs?: number;
+  /** How long a client's trust lasts from its last use. 60 days. */
   trustedClientTtlMs?: number;
+  /** How long a credential stays valid while its replacement is unconfirmed (`./trusted-clients.ts`). 14 days. */
+  credentialConfirmGraceMs?: number;
   /**
    * Caps on pairing challenges still waiting for approval
    * (`./security/pairing-limits.ts`): `total` 1,000 and `perAddress` off by
@@ -41,6 +44,8 @@ export type ClientGatewayServiceOptions = {
   /** How many audit entries the ring keeps before the oldest is overwritten (`./audit-log.ts`). 10,000. */
   auditLimit?: number;
   trustedClientStore?: ClientGatewayTrustedClientStore;
+  /** Who keeps something for a client's credential, told of each moment one is handled (`./credential-custody.ts`). Unset, nothing is. */
+  credentialCustody?: import("./credential-custody.ts").ClientGatewayCredentialCustody;
   createToken?: () => string;
   now?: () => number;
   resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;
@@ -117,6 +122,8 @@ export type InternalSession = ClientGatewaySession & {
   pendingPairingCode?: string;
   /** The channel scope this session was attached under (`./channel-scope/`); absent for a live session. */
   channelScope?: string;
+  /** The digest of the credential this session was last sent, so it can confirm that one and no other. */
+  sentCredentialHash?: string;
   /** Where the transport says the connection came from; never public, audited as its prefix only. */
   peer?: import("./security/index.ts").ClientGatewayPeer;
 };

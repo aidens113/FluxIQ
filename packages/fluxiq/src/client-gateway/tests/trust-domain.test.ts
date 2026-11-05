@@ -21,8 +21,8 @@ describe("a paired client's trust is bound to the domain it declared when approv
     const again = await hello(gateway, "extension.web", paired.token, WEB);
 
     expect(status(gateway, again)).toBe("ready");
-    expect(readyToken(gateway, again)).toBe("rotated-token");
-    expect((await gateway.authorizeToken("rotated-token"))?.sessionId).toBe(again);
+    expect(readyToken(gateway, again)).toContain("rotated-token");
+    expect((await gateway.authorizeToken(readyToken(gateway, again)))?.sessionId).toBe(again);
     expect(gateway.snapshot().trustedClients[0]?.domainId).toBe("web-automation");
   });
 
@@ -61,8 +61,8 @@ describe("a paired client's trust is bound to the domain it declared when approv
     await gateway.approvePairing(pairing?.pairingCode ?? "", { approvedByUserId: "user.alpha" });
 
     expect(status(gateway, switched)).toBe("ready");
-    expect(readyToken(gateway, switched)).toBe("desktop-token");
-    expect((await gateway.authorizeToken("desktop-token"))?.metadata).toMatchObject(DESKTOP);
+    expect(readyToken(gateway, switched)).toContain("desktop-token");
+    expect((await gateway.authorizeToken(readyToken(gateway, switched)))?.metadata).toMatchObject(DESKTOP);
     expect(gateway.snapshot().trustedClients.map((client) => client.domainId)).toEqual(["web-automation", "desktop-automation"]);
   });
 

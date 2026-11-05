@@ -18,6 +18,13 @@
 // what their answers say (`runtime/answer-first/act-record/gate/act-gate.ts`), but what a node
 // answers here does not tell a press from a read, and calling every read in a Flow a press
 // would say something false to a judge. The run's own step outcomes say what it ran.
+//
+// **Except where the target itself says an act was made.** A failure stating `effect: "ambiguous"`
+// is the producer saying it acted and only the answer is missing, and its statement outranks what the
+// step declared, since a model under-declares (`engine/automation/defensive/lasting-act.ts`). The
+// engine then refuses to repeat it and stops, and without this the record would know nothing of it, so
+// a repair's by-hand press would go straight through: the act done twice. It goes on the record as
+// may have landed, when the answer comes. It cannot be begun first: nothing says so until then.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeExecutionResult, AutomationStudioResolvedActionEffect } from "../../../../../components/automation/index.ts";
@@ -57,10 +64,17 @@ export type AutomationStudioAnswerFirstRunActSettling = {
 export function automationStudioAnswerFirstRunActSettling(record: AutomationStudioAttemptActRecord): AutomationStudioAnswerFirstRunActSettling {
   let open: Open | undefined;
   let running: Node | undefined;
+  /** A step that declared nothing, whose outputs are still to send. */
+  let quiet: AutomationStudioAnswerFirstRunActStep | undefined;
 
   const settle = (step: AutomationStudioAnswerFirstRunActStep, answer: AutomationStudioAnswerFirstRunActNodeAnswerRead) => {
     if (!step.lasting) return;
     record.settled(step.call, { effectApplied: answer.applied, uncertain: answer.uncertain, words: step.words, ...(step.step !== undefined ? { step: step.step } : {}) });
+  };
+  /** A step that declared nothing, and whose target says it acted (header). */
+  const heldByTarget = (step: AutomationStudioAnswerFirstRunActStep, result: Sent) => {
+    if (result?.status !== "failed" || result.failure?.effect !== "ambiguous") return;
+    record.settled({ ...step.call, instructedAct: LASTS_WITHOUT_CLASS }, { effectApplied: false, uncertain: true, words: step.words, ...(step.step !== undefined ? { step: step.step } : {}) });
   };
   const close = (answer: AutomationStudioAnswerFirstRunActNodeAnswerRead = LOST) => {
     if (open) settle(open.step, answer);
@@ -94,7 +108,11 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
       settle(step, LOST);
     },
     nodeAnswered(step, result, left) {
-      if (!step.lasting) return;
+      if (!step.lasting) {
+        quiet = left > 0 ? step : undefined;
+        heldByTarget(step, result);
+        return;
+      }
       if (!result) {
         record.withdrawn(step.call);
         return;
@@ -104,7 +122,11 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
     },
     async outputSent(send) {
       const held = open;
-      if (!held) return await send();
+      if (!held) {
+        const answer = await send();
+        if (quiet) heldByTarget(quiet, answer);
+        return answer;
+      }
       let answer: Sent;
       try {
         answer = await send();
@@ -126,7 +148,8 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
         settle(step, LOST);
         throw error;
       }
-      settle(step, automationStudioAnswerFirstRunActNodeAnswer(answer));
+      if (step.lasting) settle(step, automationStudioAnswerFirstRunActNodeAnswer(answer));
+      else heldByTarget(step, answer);
       return answer;
     }
   };

@@ -53,7 +53,7 @@ import { automationStudioAnswerFirstFlowStage } from "./flow-stage.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRecordOpening } from "./opening-row.ts";
 import { automationStudioAnswerFirstOpening } from "./opening.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
+import { automationStudioAnswerFirstUnboundedPort, automationStudioAnswerFirstWatchKeyWaits } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "./ports.ts";
 import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
 import { automationStudioAnswerFirstRounds, type AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
@@ -68,9 +68,13 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
   const attemptId = hold?.attemptId ?? `attempt.${randomUUID()}`;
   const live = automationStudioAnswerFirstLiveAttemptsOf(input.owner);
   live.claim(attemptId);
+  let opening: AutomationStudioAnswerFirstAttemptRun | undefined;
   try {
     const run = await opened(input, attemptId, hold);
+    opening = run;
     automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
+    // On the row before anything is sent, so the first round shows as working and a Core that dies in it leaves something to read as cut off. A carry-on's press has already written its own.
+    if (!hold) await automationStudioAnswerFirstKeep(run);
     // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
     const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => stagedThenRounds(run));
     if (ending === "setup_needed") {
@@ -81,6 +85,7 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
     automationStudioAnswerFirstHoldAnswer(input.request, answer);
     return answer;
   } finally {
+    opening?.keyWaits?.stop();
     live.release(attemptId);
   }
 }
@@ -94,7 +99,11 @@ async function stagedThenRounds(run: AutomationStudioAnswerFirstAttemptRun): Pro
 /** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. A carry-on tried nothing either: its press hands the row back as it was (`../carry-on/carry-on.ts`). */
 async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun, hold: AutomationStudioAnswerFirstCarryOnHold | undefined): Promise<void> {
   if (hold) hold.opened = false;
-  else await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
+  else {
+    await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
+    // The row written at the opening: nothing was tried, so it must not outlive this as an attempt that was cut off.
+    await automationStudioAnswerFirstBestEffort(() => run.store.remove(run.input.projectId, run.input.flowId, run.attemptId));
+  }
   try {
     await run.session.end("cancelled");
   } catch {
@@ -158,7 +167,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     say: automationStudioAnswerFirstSay,
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),
     judge: (summary) => automationStudioFlowLessJudge({
-      personHeldMs: () => run.waitedMs + (run.ports.personHeldMs?.({ projectId, flowId }) ?? 0),
+      personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       ...(cancellation.signal() ? { signal: cancellation.signal() } : {}),
@@ -186,7 +195,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     ...ground,
     ask: ground.ask ? {
       ...ground.ask,
-      // Any wait at all makes the gate wait; the port takes the clock off it (`./person-wait.ts`).
+      // Any wait at all makes the gate wait; the port takes the clock off it (`../person-waits/person-wait.ts`).
       timeoutMs: AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS,
       port: automationStudioAnswerFirstUnboundedPort(ground.ask.port, (state, waited) => {
         run.waitingFor = state === "started" ? "permission" : undefined;
@@ -211,6 +220,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   if (opening.seed || opening.actsHeldHere) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
   if (carried) await carriedOn(run, carried);
   else await automationStudioAnswerFirstRecordOpening(run);
+  run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });
   return run;
 }
 

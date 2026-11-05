@@ -1,3 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
+import type { SecretKeyCredentialHolderKind } from "../types.ts";
+
+/** The longest delay `setTimeout` can count: anything longer fires at once. A 30-day credential is longer. */
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
 export type SecretRevealAuthorizationMetadata = {
   authorizationId: string;
   keyId: string;
@@ -19,6 +26,8 @@ export type HeldSessionUnlock = {
   sessionId: string;
   userId: string;
   expiresAtMs: number;
+  /** Set when it came from a stored credential unlock (`./unlocks/`). A paired client's unlock is its own: no other caller falls back to it. */
+  credentialHolder?: SecretKeyCredentialHolderKind | undefined;
   decryptionKeys: Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>;
   expiryTimer: ReturnType<typeof setTimeout>;
 };
@@ -38,10 +47,38 @@ export type HeldSessionUnlock = {
 export class HeldKeys {
   private readonly authorizations = new Map<string, HeldRevealAuthorization>();
   private readonly sessions = new Map<string, HeldSessionUnlock>();
+  private readonly changeWaiters = new Map<string, Set<() => void>>();
+  private readonly pairedHandles = new Map<string, string>();
+  private readonly pairedHolders = new Map<string, string>();
+
+  /**
+   * The id a paired client's unlock is held under: random, per process, and kept here
+   * so it outlives an evicted service with the keys it names. A trusted client's id is
+   * public, and whoever can name a held unlock can ask to draw on it.
+   */
+  pairedHandle(holderId: string): string {
+    let handle = this.pairedHandles.get(holderId);
+    if (!handle) {
+      handle = `${PAIRED_CLIENT_UNLOCK_PREFIX}${randomUUID()}`;
+      this.pairedHandles.set(holderId, handle);
+      this.pairedHolders.set(handle, holderId);
+    }
+    return handle;
+  }
+
+  /** The stored holder a held handle stands for. */
+  pairedHolderOf(handle: string): string | undefined {
+    return this.pairedHolders.get(handle);
+  }
 
   /** An unreferenced timer that revokes `sessionId`'s unlock after `delayMs`. */
   sessionExpiryTimer(sessionId: string, delayMs: number): ReturnType<typeof setTimeout> {
-    const timer = setTimeout(() => this.revokeSession(sessionId), delayMs);
+    // Past what one timer can count, it counts the rest in stretches: a 60-day credential's unlock stays held for its whole life.
+    const timer = setTimeout(() => {
+      const unlock = delayMs > MAX_TIMER_DELAY_MS ? this.sessions.get(sessionId) : undefined;
+      if (unlock) unlock.expiryTimer = this.sessionExpiryTimer(sessionId, delayMs - MAX_TIMER_DELAY_MS);
+      else this.revokeSession(sessionId);
+    }, Math.min(delayMs, MAX_TIMER_DELAY_MS));
     timer.unref?.();
     return timer;
   }
@@ -61,13 +98,49 @@ export class HeldKeys {
     return this.sessions.get(sessionId);
   }
 
-  /** The sessions held for one user, as ids, expiries and how many keys each opens; no key material. */
+  /** The sessions held for one user, as ids, expiries and how many keys each opens; no key material. A paired client's own unlock is not among them. */
   sessionsFor(userId: string): Array<{ sessionId: string; expiresAtMs: number; keyCount: number }> {
     const held: Array<{ sessionId: string; expiresAtMs: number; keyCount: number }> = [];
     for (const unlock of this.sessions.values()) {
-      if (unlock.userId === userId) held.push({ sessionId: unlock.sessionId, expiresAtMs: unlock.expiresAtMs, keyCount: unlock.decryptionKeys.size });
+      if (unlock.userId === userId && unlock.credentialHolder !== "paired-client") held.push({ sessionId: unlock.sessionId, expiresAtMs: unlock.expiresAtMs, keyCount: unlock.decryptionKeys.size });
     }
     return held;
+  }
+
+  /** One user's unexpired unlocks, with their keys, for custody's own use. */
+  liveUnlocksFor(userId: string, nowMs: number): HeldSessionUnlock[] {
+    return [...this.sessions.values()].filter((unlock) => unlock.userId === userId && unlock.expiresAtMs > nowMs);
+  }
+
+  /** Resolves when something this person holds changes, or when `signal` aborts. */
+  whenChanged(userId: string, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const waiters = this.changeWaiters.get(userId) ?? new Set<() => void>();
+      const settle = () => {
+        waiters.delete(settle);
+        if (waiters.size === 0 && this.changeWaiters.get(userId) === waiters) this.changeWaiters.delete(userId);
+        signal?.removeEventListener("abort", settle);
+        resolve();
+      };
+      waiters.add(settle);
+      this.changeWaiters.set(userId, waiters);
+      signal?.addEventListener("abort", settle, { once: true });
+    });
+  }
+
+  /** Wakes everything waiting on this person's keys, so it looks again. */
+  notifyChanged(userId: string): void {
+    for (const settle of [...(this.changeWaiters.get(userId) ?? [])]) settle();
+  }
+
+  /** A held unlock's life slid: what it holds is untouched, so a call in flight is not cut. */
+  extendSession(sessionId: string, expiresAtMs: number, delayMs: number): void {
+    const unlock = this.sessions.get(sessionId);
+    if (!unlock) return;
+    clearTimeout(unlock.expiryTimer);
+    unlock.expiresAtMs = expiresAtMs;
+    unlock.expiryTimer = this.sessionExpiryTimer(sessionId, delayMs);
   }
 
   holdAuthorization(authorization: HeldRevealAuthorization): void {

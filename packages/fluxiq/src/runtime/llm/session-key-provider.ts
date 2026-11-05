@@ -13,8 +13,10 @@
 // work started from. When that session has logged out, expired or been revoked
 // by an administrator, the call uses the person's live unlock in this workspace
 // (`unlockedSessionFor`), so a build or run keeps going while any unlock of
-// theirs lives, and fails with the typed `secrets.locked` error
-// (`AutomationStudioSecretsLockedError`) on the first call after none does.
+// theirs lives. When none does, the call waits for the person before its attempt
+// starts its clock, and carries on when they unlock (`whenReady`,
+// `../models/secrets/locked-wait.ts`). Only where nothing can wake it does a call
+// fail with the typed `secrets.locked` error (`AutomationStudioSecretsLockedError`).
 // The key is the Flow's own `llmSecretKeyId` when it names one, read from the
 // call's metadata or the host's `flowSecretKeyId` lookup; otherwise the
 // caller's own newest DeepSeek key.
@@ -26,7 +28,7 @@
 
 import { resolveAutomationStudioLlmBuildCallLimit } from "../../flows/authoring/model/index.ts";
 import { AutomationStudioSecretsLockedError } from "./deepseek/index.ts";
-import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
+import { automationStudioPersonWaitClock, releaseAutomationStudioSessionProviderKey, waitWhileAutomationStudioSessionKeyLocked, type AutomationStudioLockedKeyWaitEvent, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding, isAutomationStudioAnthropicModel } from "./models/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 // Read at module evaluation, so from the leaf that imports no value rather than
@@ -84,6 +86,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
   fetchImpl?: typeof fetch;
   instanceHost?: string;
   flowSecretKeyId?: (scope: { projectId: string; flowId: string }) => Promise<string | undefined> | string | undefined;
+  /** Told when a task begins waiting for the person to unlock their key, and when it carries on; where it may say so. */
+  onKeyWait?: (event: AutomationStudioLockedKeyWaitEvent & { projectId: string; flowId: string; userId: string; sessionId: string | null }) => void | Promise<void>;
 }): (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | undefined {
   return (input) => {
     const caller = input.caller;
@@ -124,8 +128,39 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
         return secret;
       }
     });
+    const holdListeners = new Set<(state: "started" | "ended", heldMs: number) => void>();
     const provider: AutomationStudioLlmProvider = {
       ...adapter,
+      observeHolds: (listener) => {
+        holdListeners.add(listener);
+        return () => holdListeners.delete(listener);
+      },
+      whenReady: async (request, execution) => {
+        const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
+        // What a limit on this Flow's work should not count (`../models/secrets/person-wait-clock.ts`).
+        let endHold: (() => void) | undefined;
+        let heldSince: number | undefined;
+        try {
+          await waitWhileAutomationStudioSessionKeyLocked(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
+            provider: providerId, model,
+            ...(flowKeyId ? { flowKeyId } : {}),
+            ...(execution?.signal ? { signal: execution.signal } : {}),
+            onWait: (event) => {
+              if (event.phase === "waiting") {
+                endHold = automationStudioPersonWaitClock.begin({ projectId: input.projectId, flowId: input.flowId });
+                heldSince = Date.now();
+                for (const listener of holdListeners) listener("started", 0);
+              }
+              return options.onKeyWait?.({ ...event, projectId: input.projectId, flowId: input.flowId, userId: caller.actorUserId, sessionId: caller.actorSessionId });
+            }
+          });
+        } finally {
+          endHold?.();
+          // Ended by an unlock or by a Stop, what listened hears it.
+          if (heldSince !== undefined) for (const listener of holdListeners) listener("ended", Date.now() - heldSince);
+        }
+        void request;
+      },
       runTask: async (request, execution) => {
         try {
           return await adapter.runTask(request, execution);

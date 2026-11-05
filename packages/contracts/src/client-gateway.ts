@@ -588,6 +588,13 @@ export type ClientGatewayTrustedClient = {
   clientType: ClientGatewayClientType;
   name: string;
   tokenHash: string;
+  /** The credential before this one, until the new one is confirmed in use, within `previousValidUntil`: the reply carrying the new one can be lost. */
+  previousTokenHash?: string;
+  previousValidUntil?: number;
+  /** Signs this client's credentials, so Core can tell one it issued from one merely naming this client. Never leaves Core. */
+  reuseKey?: string;
+  /** When this client last moved on from a credential: a request sent with the old one may still be arriving. */
+  lastMovedOnAt?: number;
   approvedByUserId: string;
   /**
    * The domain the client declared (`client.hello` `metadata.domainId`) when
@@ -605,7 +612,7 @@ export type ClientGatewayTrustedClient = {
   revocationReason?: string;
 };
 
-export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash"> & {
+export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "reuseKey"> & {
   status: "active" | "expired" | "revoked";
 };
 
@@ -676,6 +683,10 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.snapshot", ClientGatewaySnapshot>
   | ClientGatewayEnvelope<"client.action_result", ClientGatewayReportedActionResult>
   | ClientGatewayEnvelope<"client.reconcile_result", ClientGatewayReconcileAnswer>
+  // The person pressed Forget in this browser: its trust ends. An older Core ignores it, and the browser still drops its credential.
+  | ClientGatewayEnvelope<"client.forget_pairing", Record<string, never>>
+  // The client stored the credential in its last `server.session_ready`, so the one before it may end now. An older Core ignores it, and the next use of the new one says the same.
+  | ClientGatewayEnvelope<"client.credential_received", Record<string, never>>
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewayServerMessage =

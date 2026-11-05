@@ -2,7 +2,8 @@
 // the last look at the site, the act record flushed so the first real run sees every act, the
 // session ended and its rows processed and read back, the draft saved best-effort, the attempt
 // and its result checked against each other, both stored, and then what the task keeps of it
-// (`./remember.ts`).
+// (`./remember.ts`). Last, with the result safe, a Flow a whole run proved goes into the person's Flow
+// (`../apply-proven/`).
 //
 // **Nothing past the rounds may lose the result.** Each step here is either one that cannot
 // throw or is held so a failure says so and goes on: the person's answer is what this returns.
@@ -11,6 +12,7 @@
 
 import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer-first/result/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
+import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
@@ -42,7 +44,8 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
   const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
-  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
+  const applied = await automationStudioAnswerFirstApplyProven(run, ending, draft.kind === "saved" ? { record: draft.record } : {});
+  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
   return {
     projectId: input.projectId,
     flowId: input.flowId,

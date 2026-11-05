@@ -3,9 +3,10 @@
 // in this workspace holds the key the call needs -- after a restart, an
 // eviction, a sign-out or an administrator's session revoke. It replaces the
 // raw "Secret key session unlock is unavailable" on every release path
-// (`session-key.ts`), before a build and mid-build alike, and carries the
-// contract's `secrets.locked` code so a client can offer to re-unlock rather
-// than read a sentence.
+// (`session-key.ts`), and carries the contract's `secrets.locked` code so a
+// client can offer to re-unlock rather than read a sentence. A call made for a
+// person waits for them first (`locked-wait.ts`), so a build meets this only where
+// nothing can wake it.
 
 import { SECRETS_LOCKED_ERROR_CODE, secretsLockedMessage, type SecretsLockedError } from "@fluxiq/contracts/platform";
 

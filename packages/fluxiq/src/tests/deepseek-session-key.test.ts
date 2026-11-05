@@ -122,7 +122,7 @@ describe("releaseAutomationStudioSessionDeepSeekKey", () => {
     expect(isSecretsLockedError(failure)).toBe(true);
     expect(failure).toMatchObject({ code: SECRETS_LOCKED_ERROR_CODE, message: secretsLockedMessage("app.example.test") });
     const defaultHost = await releaseAutomationStudioSessionDeepSeekKey(service, { userId: "user.A", sessionId: "sess.A" }).catch((error: unknown) => error);
-    expect(defaultHost).toMatchObject({ message: "Sign in at the FluxIQ panel to unlock your model key" });
+    expect(defaultHost).toMatchObject({ message: "Unlock your model key: open the FluxIQ panel and enter your password once" });
     expect(String((defaultHost as Error).message)).not.toContain("Secret key session unlock is unavailable");
   });
 

@@ -33,6 +33,7 @@ import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswer
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
 import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
+import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
 
@@ -79,14 +80,15 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   const startedAt = Date.now();
   const identity: AutomationStudioCandidateVerificationIdentity = { projectId: input.projectId, flowId: input.flowId, revision: 1, digest, baseDependencyDigest, requirementsDigest: NO_REQUIREMENTS };
   const start: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.flow-run`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: input.startLocation ?? null, start: "not_reset" })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
-  const options = gatedOptions(ports, engine, watch, signal, startedAt);
+  const options = gatedOptions(ports, assembly, engine, watch, signal, startedAt);
   const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
     identity,
     candidate: { revision: 1, digest, baseDependencyDigest, buildPlan: assembly.buildPlan },
     parentFlow,
     currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
     registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
-    sourceInstructionIds: [...input.instructionIds], runId, start, options
+    sourceInstructionIds: [...input.instructionIds], runId, start, options,
+    ...(input.size ? { size: input.size } : {})
   }));
   // A press whose answer the engine then failed on its checks may not have taken: without this it reads as landed, and a repair's retry is told it already happened.
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
@@ -97,9 +99,9 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * The options a real run gets, with what is this attempt's: its rows to its sink, its acts through
  * its record, and no parking port, so a step that asks stops the run and asks nobody (`./permission.ts`).
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined, referenceNow: number): AutomationStudioGraphExecutionOptions {
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined, referenceNow: number): AutomationStudioGraphExecutionOptions {
   const { parking: _nobodyIsAsked, ...given } = engine.graphOptions({ runId: ports.runId, signal: signal ?? new AbortController().signal });
-  const own: AutomationStudioGraphExecutionOptions = { ...given, referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch) };
+  const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch) };
   return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
 }
 

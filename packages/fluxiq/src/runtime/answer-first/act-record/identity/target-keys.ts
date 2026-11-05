@@ -52,6 +52,12 @@ export type AutomationStudioAttemptActTargetKeys = {
   handle?: string;
   /** Digests of the words its fingerprint holds, which tell two controls of one row apart. */
   controls?: string[];
+  /** The key that names it by what the call holds beside its fingerprint: an address and inputs. A subset of `keys`. Empty where it has only a fingerprint or a handle, or where its address counts places. */
+  wholeKeys: string[];
+  /** The key of an address that counts places and the fingerprint beside it, together: a position alone names nothing, and the two as one are this form exactly. Kept apart from `keys`, for an act to answer to the form it was foreseen in (`../record.ts`, "Before it is sent"). */
+  placeKeys: string[];
+  /** Every word its fingerprint says, at any depth, for comparing with a row's (`../row-ties.ts`). Page words: never kept. */
+  says?: string;
 };
 
 /** The target keys of `actionId` sent `parameters`, each its own digest (header). */
@@ -70,12 +76,17 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
   const handleKeys = handle !== undefined ? [key({ inputs }, handle)] : [];
   // With only a handle, what is left is its inputs, and those are no target at all.
   const byWhole = handle === undefined && !(fingerprint && counted) && (Object.keys(rest).length > 0 || !fingerprint) ? [key({ rest })] : [];
+  const placeKeys = handle === undefined && fingerprint && counted ? [key({ element: fingerprint, rest })] : [];
   const controls = named ? controlWords(named) : [];
+  const says = named ? wordsIn(named).join(" ") : "";
   return {
     keys: [...byFingerprint, ...byWhole, ...handleKeys],
     handleKeys,
     ...(handle !== undefined ? { handle } : {}),
-    ...(controls.length > 0 ? { controls } : {})
+    ...(controls.length > 0 ? { controls } : {}),
+    wholeKeys: byWhole,
+    placeKeys,
+    ...(says ? { says } : {})
   };
 }
 
@@ -103,6 +114,22 @@ function controlWords(named: JsonObject): string[] {
     words.add(automationStudioAttemptActDigest(value.trim().toLowerCase().replace(/\s+/gu, " ")));
   }
   return [...words];
+}
+
+/** Every string a fingerprint holds in words, nested ones too: a control a page repeats holds the words of the row it sits in. */
+function wordsIn(named: JsonObject): string[] {
+  const words: string[] = [];
+  const walk = (value: JsonValue | undefined): void => {
+    if (typeof value === "string") {
+      if (!automationStudioAttemptActIsAddress(value) && LETTER.test(value)) words.push(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(walk);
+    } else if (value && typeof value === "object") {
+      for (const [key, item] of Object.entries(value)) if (!POSITIONAL_FIELD.test(key) && !STRUCTURAL_FIELD.test(key)) walk(item);
+    }
+  };
+  walk(named);
+  return words;
 }
 
 function text(value: JsonValue | undefined): string | undefined {

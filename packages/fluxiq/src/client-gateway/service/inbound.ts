@@ -118,6 +118,15 @@ export class ClientGatewayInbound {
       session.capabilities = message.payload.capabilities;
       return "accepted";
     }
+    if (message.type === "client.credential_received") {
+      await this.lifecycle.credentialReceived(session);
+      return "credential_confirmed";
+    }
+    if (message.type === "client.forget_pairing") {
+      // The person pressed Forget in this browser: its trust ends here, and what its credential kept with it.
+      if (session.trustedClientId) await this.facade.revokeTrustedClient(session.trustedClientId, "forgotten by its person");
+      return "pairing_forgotten";
+    }
     if (message.type === "client.state_update") {
       session.stateUpdate = message.payload;
       await this.emit(delivery, { type: "client.state_update", session: this.sessions.toPublic(session), message });

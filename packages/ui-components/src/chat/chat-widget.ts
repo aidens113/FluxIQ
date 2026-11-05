@@ -85,7 +85,7 @@ import { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
 import type { ChatHostStatus, ChatOpenControl, ChatRunPort, ChatTransport } from "./ports/index.ts";
 import { readBeatMs } from "./read-beat.ts";
 import { createChatThreads, type ChatThreads } from "./threads/index.ts";
-import { readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
+import { modelReadinessLockReason, readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
 import { activityForTarget, buildChatStream, CHAT_STEP_MESSAGE_LIMIT, createTurnClock, followedRunTarget, threadKey, type QuestionTarget } from "./stream/index.ts";
 import type { ChatTarget } from "./target.ts";
 import { CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
@@ -109,6 +109,8 @@ import type { ChatWidget, ChatWidgetOptions } from "./widget/index.ts";
 export type { ChatWidget, ChatWidgetOptions };
 
 const THREAD_REFRESH_DEBOUNCE_MS = 300;
+/** How often an empty chat that read its key as fine reads it again, so a lock shows without reopening. */
+const READY_RECHECK_MS = 15_000;
 
 /** Creates the chat, talking to FluxIQ through `transport`. */
 export function createChatWidget(transport: ChatTransport, options: ChatWidgetOptions = {}): ChatWidget {
@@ -171,6 +173,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   const keyOpener = options.openControl?.({ label: "Open FluxIQ", look: "small", purpose: "model-key", canOpen: () => owner.current() && actionsAllowed() });
   let readiness: ModelReadiness = "unknown";
   let readinessAsk: object | null = null;
+  let readinessAskedAtMs = 0;
   // The read of the keys on its way, if any, so typing never queues one per key press.
   let readinessReading: object | null = null;
   let empty = createEmptyState(() => undefined);
@@ -199,7 +202,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   // and come back. Turning to the composer is when the line matters, so the
   // keys are read again then, not only on the next poll (round 5: a build
   // began under "FluxIQ needs a model key" and then ran with one).
-  const recheckReadiness = (): void => { if (readiness === "missing" && readinessAsk !== null && readinessReading === null) askReadiness(); };
+  const recheckReadiness = (): void => { if ((readiness === "missing" || modelReadinessLockReason(readiness) !== null) && readinessAsk !== null && readinessReading === null) askReadiness(); };
   composer.element.addEventListener("focusin", recheckReadiness);
   composer.element.addEventListener("input", recheckReadiness);
   const main = createElement("div", { className: "chat-main" }, [scroller, jump]);
@@ -375,7 +378,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // line: R4a's start card said no key was set while the build ran with
       // one (`run-mv2nlh9l-52e476da`, moment 1). Asked again only while the
       // empty latest chat is on screen and still says the key is missing.
-      if (readiness === "missing" && readinessAsk !== null) askReadiness();
+      // A key that was fine can lock while the chat is open (a sign-out elsewhere): the step must show without reopening, so that is read too, less often.
+      if (readinessAsk !== null && (readiness === "missing" || modelReadinessLockReason(readiness) !== null || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
     }, readBeatMs(background, owner.transport.changes !== undefined));
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {
@@ -585,6 +589,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   function askReadiness(): void {
     const ask = {};
     readinessAsk = ask;
+    readinessAskedAtMs = Date.now();
     const captured = owner;
     readinessReading = ask;
     void readModelReadiness(captured.transport.models).then((next) => {

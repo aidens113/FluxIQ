@@ -1,6 +1,7 @@
 export * from "./activity-action/index.ts";
 export * from "./activity-status/index.ts";
 export * from "./person-facing/index.ts";
+export { MODEL_KEY_LOCK_REASONS, modelKeyLockedWords, readModelKeyLockReason, type ModelKeyLockReason } from "@fluxiq/contracts/automation";
 export type SurfaceTone = "neutral" | "info" | "success" | "warning" | "danger";
 const fluxiqStatusTones: Record<Exclude<SurfaceTone, "neutral">, ReadonlySet<string>> = {
   info: new Set(["busy", "draft", "llm", "custom", "pending", "proposed", "queued", "recording", "running", "scheduled", "syncing"]),

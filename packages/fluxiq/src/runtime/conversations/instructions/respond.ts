@@ -13,7 +13,7 @@
 //   paraphrased request was taken as, and when Core had to match the words
 //   itself because the model could not be used;
 // - for the capabilities that delete something or move money, and only those,
-//   a confirmation the person answers in the thread with their PIN. The
+//   a confirmation the person answers in the thread. The
 //   invocation it would run travels on the turn as a `panel-capability`
 //   attachment, so the panel that sees the confirmation granted knows exactly
 //   what to run without a second store. The reference is base64url JSON: a
@@ -91,7 +91,7 @@ export async function respondToAutomationStudioConversationTurn(input: Automatio
   }
   const consequences = invocation.consequences.filter(isAutomationStudioActionConsequence);
   const askId = `${AUTOMATION_STUDIO_PANEL_COMMAND_ASK_PREFIX}${randomUUID()}`;
-  const text = `${lead}You asked me to "${invocation.title}"${target}. That would ${joined(consequences)}, and it cannot be undone, so confirm it here with your PIN, or cancel.${readingNotes(invocation)}`;
+  const text = `${lead}You asked me to "${invocation.title}"${target}. That would ${joined(consequences)}, and it cannot be undone, so confirm it here, or cancel.${readingNotes(invocation)}`;
   const turn = await input.host.appendAutomationTurn({
     ...base,
     text: withProblem(text, input.interpretation),

@@ -40,12 +40,13 @@ function gated(answers: Array<Answer | Error>) {
 }
 
 describe("before dispatch", () => {
-  it("refuses an identical landed repeat with a result in generic words, and sends nothing", async () => {
+  it("answers an identical landed repeat as what happened, in generic words, known by its act and not as a refusal of the page, and sends nothing", async () => {
     const { execute, dispatched, record } = gated([pressed()]);
     await execute(pressCall());
     const again = await execute(pressCall("c2")) as Answer;
     expect(dispatched).toHaveLength(1);
-    expect(again).toMatchObject({ kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, resultCode: "attempt.act_already_done", evidence: { ok: false, code: "attempt.act_already_done" } });
+    expect(again).toMatchObject({ kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, resultCode: "attempt.act_already_done", evidence: { code: "attempt.act_already_done" }, draft: { effect: "mutate", proposes: false, ranWith: { act: record.acts()[0]!.id } } });
+    expect((again.evidence as { ok?: boolean }).ok).toBeUndefined();
     expect(JSON.stringify(again.evidence)).toMatch(/already happened/u);
     expect(record.acts()).toHaveLength(1);
   });

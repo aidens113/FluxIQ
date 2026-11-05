@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { FLUXIQ_SESSION_COOKIE } from "../../../../../lib/auth";
+import { FLUXIQ_SESSION_COOKIE, presentPanelSession } from "../../../../../lib/auth";
 import { getFluxIQ, getFluxIQWebRuntimeStatus } from "../../../../../lib/fluxiq";
 import {
   isPairedClientClassification,
@@ -85,6 +85,7 @@ async function authenticate(request: Request, fluxiq: FluxIQ, programId: string,
   const sessionId = await readSessionId();
   const auth = sessionId ? await fluxiq.programs.identityAccess.validateSession(sessionId) : null;
   if (sessionId && auth) {
+    await presentPanelSession(fluxiq, sessionId, auth);
     return {
       kind: "person",
       sessionId,

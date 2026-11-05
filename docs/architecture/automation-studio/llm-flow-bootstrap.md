@@ -1048,7 +1048,10 @@ digest of its own fields or by being the same row as one the record holds, under
 shown either row, per earlier read, the row whose telling words best fit is that row, whatever
 its columns are called, and rows that fit equally are all held; a kept value may differ there,
 because the press itself may have changed it. A field most of a read shares tells no row apart,
-and a bare number only decides between rows that already fit. A row that fits nothing in an
+unless a row has nothing else: a row all of whose values lie in another may be that one, whatever
+the other's read shares. A bare number only decides between rows that already fit. A press by a
+handle a read printed names one row exactly, so against a row no read has shown it is the same
+act only where every value of the one with fewer lies in the other. A row that fits nothing in an
 earlier list is that list's row by elimination: rows of both lists that plainly match are set
 aside, and a row left over in the later list is any row left over in the earlier one with most
 of its words the same. Where more than one is left over, nothing can say which is which, so all
@@ -1116,6 +1119,26 @@ attempt row, and the attempt says so.
 is never refused for that, and stays out of a result's acts. An act's identity between a
 real read's rows and a run's For Each item is unproven until live runs. Fixtures and
 guidance use a library's loans, of no kind of site the Lab measures.
+
+### Later attempts at the same task
+
+The user's design (2026-11-03): "next time we try that task, we try using flow & do same build/repair/use flow, return final result, etc. Over time it should improve significantly." `service/answer-first/` holds it beside the first attempt.
+
+**Which task this is.** `task-key/` digests the instruction, with whitespace normalised and case kept, and the start location's origin. Only this exact key may run a saved Flow. Other words on the same Flow are another task, which may start from those steps but never runs them on its own.
+
+**What is kept.** `task-memory/`, one file per task under the project's directory, because the chat makes a new blank Flow for each ask: the best Flow beside the latest, the attempt's notes (written by the model in its completion, screened, shown only to that task's later attempts as its own earlier words), the task's act record, and each attempt's provenance, with whether each step was saved or worked out and what the run did with it. The best Flow is kept by `automationStudioAnswerFirstBetterFlow`: a confirmed Flow is replaced only by one confirmed after it broke live.
+
+**The route** (`route/`): nothing saved builds; saved steps that assemble are used; saved steps that do not assemble seed the draft and nothing runs.
+
+**The run** (`flow-run/`): the saved steps are assembled now, against the current binding, and run live on the engine (`runAutomationStudioDetachedCandidate`) with no model, no reset, and no question once it has begun. The walker behind `core.run_flow` is not the Flow: it follows no route and retries nothing, so it stays what a repair goes forward with. Permission for what the Flow declares is asked once before the run. A whole run goes to one Flow-less judge call, and a yes ends the attempt with no exploration decision at all.
+
+**Anything else goes on.** A step that stopped, or a judge's no, starts the rounds from the page the run left, told the step and why, with the draft seeded from the saved steps. An engine deadline, its step bound and a child Flow's bound end the run, never the attempt. The recovery's ten minutes and a run's result check are not reached, because the run refuses any model. The step bound follows the Flow's size, and the run uses the Flow's own size setting, so a long Flow that assembles also runs.
+
+**Which acts carry.** After an achieved attempt, none: a person asking again means it. After a budget-out, a Stop or a cut-off, the attempt's landed and may-have-landed acts seed the next one. A row matches an acted row across its shapes: a by-hand read, a walker pass and an engine For Each, whatever a record output renamed or dropped. A lasting act is on the persisted record as may-have-landed before it is sent, on every path. An act in doubt is refused once and told, and only a look after that opens it; what the look shows is still the model's to read, because Core reads no page. `describeCall` also answers `wouldRunWith`, the frozen parameters a call would run with, so a press by a handle no read printed is known before it is sent. What can still press twice is in `docs/working/answer-first-plan/reports/second-attempt/closing-holes.md`.
+
+**Carry on** (`carry-on/`). Adding budget, or pressing to carry on an attempt a restart cut off, continues the same attempt id, act record, steps and rows, in a new session with the found rows copied in. The ceiling is read before the purse opens, from a scope held around the generate call. It never re-runs the Flow from its start. `interrupted/` rewrites a row that is working or waiting and not live in this process as `waiting_for_person`, reason `interrupted`, and reads must go through `automationStudioAnswerFirstAttemptsRead`.
+
+**A proven Flow is applied** (`apply-proven/`). A whole run, judged yes, with no model decision is applied to the person's Flow through the existing create, approve and apply path, with no question. If the Flow's digest has moved since the steps were last known against it, a person changed it: it stays a draft, and the route keeps using the saved steps.
 
 ### Reading an attempt back
 
