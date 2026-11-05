@@ -49,6 +49,9 @@ const ALLOWLISTED = [
   "get-flow-run-detail",
   "list-flow-adaptations",
   "export-run-dataset",
+  "get-task-attempt",
+  "list-conversation-task-attempts",
+  "carry-on-task-attempt",
   "run-runtime-session",
   "generate-recording-proposal",
   "review-recording-flow-proposal",
@@ -78,6 +81,9 @@ const CLASSIFICATIONS: Record<string, string> = {
   "get-flow-run-detail": "read",
   "list-flow-adaptations": "read",
   "export-run-dataset": "read",
+  "get-task-attempt": "read",
+  "list-conversation-task-attempts": "read",
+  "carry-on-task-attempt": "authoring",
   "run-runtime-session": "authoring",
   "generate-recording-proposal": "authoring",
   "review-recording-flow-proposal": "authoring",
@@ -196,7 +202,8 @@ describe("a paired client's bearer token", () => {
   });
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
-    const body = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : { projectId: "project-1", flowId: "flow-1" };
+    // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
+    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : { projectId: "project-1", flowId: "flow-1" };
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -215,6 +222,14 @@ describe("a paired client's bearer token", () => {
       payload: forwardedPayload(endpoint, body),
     });
     expect(await response.json()).toEqual({ ok: true, payload: { conversation: { id: "c1" } } });
+  });
+
+  it("refuses a carry-on that names a Flow, a mode or a grant, and Core is never called", async () => {
+    for (const extra of [{ flowId: "flow-1" }, { authoringMode: "candidate" }, { permittedConsequences: ["delete"] }]) {
+      const response = await POST(tokenRequest("carry-on-task-attempt", { body: { projectId: "project-1", attemptId: "attempt-1", addUsd: 1, ...extra } }), params("carry-on-task-attempt"));
+      expect(response.status).toBe(403);
+    }
+    expect(call).not.toHaveBeenCalled();
   });
 
   it("is refused on every other Automation Studio endpoint, by GET and POST, without the token being looked up", async () => {

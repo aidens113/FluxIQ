@@ -7,7 +7,7 @@ export type AutomationStudioAnswerFirstAttemptRecord = {
   /** Absent only until there is one; a budget-out or an achieved attempt has one. */
   result?: AutomationStudioTaskResult;
   tried: AutomationStudioTriedRecord;
-  /** The steps the attempt wrote, where they could not be assembled into a saved draft, and what a carry-on seeds from. */
+  /** The steps the attempt wrote, always kept with the attempt, whether or not they could be assembled into a saved draft: what a carry-on seeds from. */
   steps?: readonly AutomationStudioFlowDraftStep[];
   /** The draft saved through the candidate store, where it could be assembled. */
   candidateId?: string;

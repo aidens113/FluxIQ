@@ -57,3 +57,17 @@ test("between a send and the first activity it says the message is on its way; w
   assert.equal(workHeaderModel({ display: display({ working: false, outcome: "done" }), sending: false }), null, "settled work has no header");
   assert.equal(workHeaderModel({ display: null, sending: false, stopOffered: true })!.label, "Working");
 });
+
+test("while it works from what was saved, the header says so beside what it is doing, and only while working", () => {
+  const using = "Using what I saved from Tuesday.";
+  assert.equal(workHeaderModel({ display: display(), sending: false, usingSaved: using })!.saved, using);
+  assert.equal(workHeaderModel({ display: display(), sending: false })!.saved, "");
+  assert.equal(workHeaderModel({ display: display({ working: false, outcome: "waiting", headline: "Waiting for you: confirm" }), sending: false, usingSaved: using })!.saved, "");
+  assert.equal(workHeaderModel({ display: null, sending: true, usingSaved: using })!.saved, "");
+});
+
+test("a question on screen is only pointed at: the question says what to do", () => {
+  const waiting = display({ outcome: "waiting", working: false, headline: "Waiting for you: a question in the FluxIQ panel" });
+  assert.equal(workHeaderModel({ display: waiting, sending: false, questionHere: true })?.now, "The question is above.");
+  assert.equal(workHeaderModel({ display: waiting, sending: false })?.now, "A question in the FluxIQ panel");
+});

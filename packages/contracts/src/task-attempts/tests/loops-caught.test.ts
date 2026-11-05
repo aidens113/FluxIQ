@@ -17,6 +17,15 @@ describe("loops caught", () => {
     expect(read?.near_repeat).not.toBe(caught.near_repeat);
   });
 
+  it("reads a record written before same_act existed, with zero for it", () => {
+    const { same_act: _same_act, ...old } = automationStudioTaskAttemptNoLoopsCaught();
+    old.cycle = { steered: 1, refused: 0, changeApproach: 0, askPerson: 0 };
+    const read = readAutomationStudioTaskAttemptLoopsCaught(old);
+    expect(read?.same_act).toEqual({ steered: 0, refused: 0, changeApproach: 0, askPerson: 0 });
+    expect(read?.cycle.steered).toBe(1);
+    expect(readAutomationStudioTaskAttemptLoopsCaught({ ...old, same_act: { steered: 1.5, refused: 0, changeApproach: 0, askPerson: 0 } })).toBeNull();
+  });
+
   it("refuses an unknown pattern, a missing pattern, an unknown count and a count that is not whole", () => {
     const whole = automationStudioTaskAttemptNoLoopsCaught();
     expect(readAutomationStudioTaskAttemptLoopsCaught({ ...whole, stuck: whole.cycle })).toBeNull();

@@ -22,10 +22,10 @@ import { automationStudioAnswerFirstBackoff, automationStudioAnswerFirstNext, ty
 import { automationStudioAnswerFirstPreModelStep, type AutomationStudioAnswerFirstPreModelStep } from "../../../../../runtime/answer-first/pre-model/index.ts";
 import { automationStudioActivityAskPort } from "../../../../../runtime/automation-activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
-import { automationStudioAnswerFirstToldTried } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRound } from "./round.ts";
+import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstAskStuck } from "./stuck-ask.ts";
@@ -37,11 +37,11 @@ export type AutomationStudioAnswerFirstRoundsEnding = "achieved" | "budget_out" 
 const REFUSED_ROUNDS_BEFORE_SETUP = 3;
 
 /** The rounds, to their ending; or `setup_needed`, with `run.setupRefusal` set, where no model call was ever made. */
-export async function automationStudioAnswerFirstRounds(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | "setup_needed"> {
+export async function automationStudioAnswerFirstRounds(run: AutomationStudioAnswerFirstAttemptRun, firstNote?: JsonObject): Promise<AutomationStudioAnswerFirstRoundsEnding | "setup_needed"> {
   const { input } = run;
   const purse = input.creation.purse;
   if (purse.ceilingUsd <= 0) return "budget_out";
-  let note: JsonObject | undefined;
+  let note = firstNote;
   let idleRounds = 0;
   for (let ordinal = 1; ; ordinal += 1) {
     const spentBefore = purse.spentCalls();
@@ -53,7 +53,8 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
     if (run.personEnded === "unreachable") return "waiting_for_check";
     const refused = refusedBeforeModel(end);
     if (refused?.step.does === "resolve" && refused.step.by === "budget_out") return "budget_out";
-    if (refused && purse.spentCalls() === 0 && (refused.step.does === "setup" || idleRounds + 1 >= REFUSED_ROUNDS_BEFORE_SETUP)) {
+    // A saved Flow's run has acted on the site, so what it did is kept and told, as anything spent would be.
+    if (refused && !run.flowRun?.wentOut && purse.spentCalls() === 0 && (refused.step.does === "setup" || idleRounds + 1 >= REFUSED_ROUNDS_BEFORE_SETUP)) {
       run.setupRefusal = refused.error;
       return "setup_needed";
     }
@@ -70,7 +71,9 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
     if (idleRounds > 0) await wait(run, automationStudioAnswerFirstBackoff(idleRounds - 1).waitMs);
     if (stopped(run)) return "stopped_by_person";
     automationStudioAnswerFirstSay("Carrying on", next.why);
-    note = await freshNote(run, next.note);
+    // A fresh round is no longer a repair of the step the Flow stopped at (`./path.ts`).
+    if (run.path === "run_flow_then_repair") run.path = "run_flow_then_explore";
+    note = automationStudioAnswerFirstRoundNote(run, next.note);
   }
 }
 
@@ -102,17 +105,4 @@ async function askedToStop(run: AutomationStudioAnswerFirstAttemptRun): Promise<
   const answer = await automationStudioAnswerFirstAskStuck(port, cancellation.signal());
   run.waitingFor = undefined;
   return answer === "stop";
-}
-
-/** What a fresh round is told, in Core's words and counts: nothing a page or a model wrote but the check's screened reason. */
-async function freshNote(run: AutomationStudioAnswerFirstAttemptRun, note: JsonObject): Promise<JsonObject> {
-  const rows = run.sink.summary();
-  const refused = run.completion.state.refused;
-  return {
-    ...note,
-    acts: run.record.forModel(),
-    tried: automationStudioAnswerFirstToldTried(run.tried.data()),
-    rowsKept: { totalRows: rows.totalRows, columns: rows.columns.map((column) => column.id) },
-    ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason } } : {})
-  };
 }

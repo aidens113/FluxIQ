@@ -1,3 +1,4 @@
+import { activityActionAskNamesPermission } from "./ask-names-permission.ts";
 import { activityActionCheckSubject } from "./check-subject.ts";
 import { activityActionCheckWhy } from "./check-why.ts";
 import { ACTIVITY_ACTION_CONTROL_NOUNS } from "./control-nouns.ts";
@@ -224,7 +225,8 @@ function actOf(event: ActivityActionEvent, detail: Detail, code: string | undefi
   // A wait on the person before the repair phase: the row that settles one is
   // said in the phase the work returns to, which may be `repairing`.
   if (event.phase === "waiting_permission" || detail.kind === "ask") {
-    return { kind: PERSON_TITLE.test(detail.title) || (code !== undefined && PERSON_CODE.test(code)) ? "person_check" : "permission" };
+    if (PERSON_TITLE.test(detail.title) || (code !== undefined && PERSON_CODE.test(code))) return { kind: "person_check" };
+    return { kind: activityActionAskNamesPermission(detail.title) ? "permission" : "question" };
   }
   if (event.phase === "repairing") return { kind: "repair" };
   if (code !== undefined && PERSON_CODE.test(code)) return { kind: "person_check" };

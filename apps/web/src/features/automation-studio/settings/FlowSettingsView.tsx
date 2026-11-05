@@ -10,6 +10,7 @@ import { JsonToggle } from "../runtime";
 import { readSettingsSection, settingsConcurrentRevisionAction, settingsDraftIsDirty } from "./settings-model";
 import { useSettingsCommands, type SettingsCommands } from "./settings-host";
 import { SettingsSectionLayout, type SettingsSectionDefinition } from "./SettingsSectionLayout";
+import { applyFlowSettingsField } from "./draft-field";
 import { FLOW_LLM_HARD_MAX_TOKENS, FLOW_LLM_DIAGNOSIS_MAX_COST_USD, FLOW_LLM_PROVIDERS, FLOW_SETTINGS_DEFAULT_VALUES, applyFlowAdaptationMode, applyFlowAdaptationPreset, applyFlowTrainingMode, buildFlowSettingsSavePayload, flowAdaptationErrors, flowEffectiveSettings, flowGeneralRuntimeErrors, flowLimitsInterfaceErrors, flowLlmProvider, flowLlmSettingsErrors, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail, flowSettingsMetadata, normalizedProviderLabel, type FlowPortSettingsDraft, type FlowSettingsDraft } from "./flow-settings-model";
 import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-check-model";
 import { flowSettingsNotPersisted } from "./persistence-check";
@@ -171,7 +172,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const limitsInterfaceErrors = flowLimitsInterfaceErrors(draft);
   const settingsErrors = [...generalRuntimeErrors, ...resultCheckErrors, ...llmSettingsErrors, ...adaptationErrors, ...limitsInterfaceErrors];
   const settingsPending = settingsLoading;
-  const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const updateDraft = <K extends keyof FlowSettingsDraft>(key: K, value: FlowSettingsDraft[K]) => setDraft((current) => applyFlowSettingsField(current, key, value));
   // Saving Flow settings is ordinary editing. Core registers `updateFlowSettings`
   // as `authoring`, and its API registry PIN-checks only `destructive`
   // endpoints, so the dialog that used to sit in front of this button asked the

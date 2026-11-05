@@ -82,10 +82,11 @@
 // long as it is on screen and never moves. Every word comes from `stepWords`
 // or Core's shared reading of the action, never a raw id.
 
-import { activityActionKey, activityActionSkipped } from "fluxiq/ui";
+import { activityActionKey, activityActionSkipped, opensActivityAttempt } from "fluxiq/ui";
 import { activityAgent, isInternalStep, isModelThought, projectCard, stepRecovery, stepSkip, type ActivityAgent, type ClientGatewayActivity } from "fluxiq/ui";
 import { actionCard, type ActionCard } from "./action-card.ts";
 import { foldRepeatedCards } from "./card-repeats.ts";
+import { notATest } from "./not-a-test.ts";
 import { foldRetriedCards } from "./retried.ts";
 import { calmSupersededFailures } from "./superseded.ts";
 import { foldDoneAgain } from "./done-again.ts";
@@ -124,6 +125,10 @@ export type StepMessage = {
   lane?: string;
   /** On a `project` message: the card of the supervisor's work, in words. */
   project?: ProjectWords;
+  /** Set only where the records prove it, in an attempt that used saved work (`../saved-marks.ts`): a saved step played, or a step worked out again. */
+  origin?: "saved" | "again";
+  /** Set on the first message of an attempt that used saved work: "Using what I saved from Tuesday." */
+  usingSaved?: string;
 };
 
 /** Where a card lives: its message and its place among the message's cards. */
@@ -207,6 +212,8 @@ function skippedStep(event: ClientGatewayActivity, node: string | undefined): st
 export function stepMessages(events: readonly ClientGatewayActivity[], limit: number): StepMessage[] {
   const drafts: StepMessage[] = [];
   const units = new Map<string, Unit>();
+  /** The units that are an answer-first attempt: they do the task, and test no Flow (`./not-a-test.ts`). */
+  const attempts = new Set<string>();
   const project = projectMessages();
   let lastAt = Number.NEGATIVE_INFINITY;
 
@@ -226,6 +233,10 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
     return drafts.length - 1;
   };
   const cardKey = (event: ClientGatewayActivity): string => `action:${event.activityId}#${event.sequence}`;
+  const cardOf = (event: ClientGatewayActivity, key: string): ActionCard | null => {
+    const card = actionCard(event, key);
+    return card !== null && attempts.has(event.activityId) ? notATest(card) : card;
+  };
   const cardAt = (place: Place): ActionCard => drafts[place.message]!.actions[place.card]!;
   /** Marks the card at `place` from `next` in place: its key never changes, and a kind or a name it had is kept. */
   const mark = (place: Place, next: ActionCard, sequence: number): void => {
@@ -244,6 +255,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
     const parsed = Date.parse(event.at);
     const at = Number.isFinite(parsed) ? parsed : lastAt;
     lastAt = at;
+    if (event.label !== undefined && opensActivityAttempt(event.label)) attempts.add(event.activityId);
     // A brief that waits starts once its builder speaks (`project-message.ts`).
     project.seen(event);
     const briefId = activityAgent(event)?.briefId;
@@ -314,7 +326,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
     if (detail.kind === "tool" || detail.kind === "check") {
       const identity = activityActionKey(event) ?? `${detail.kind}:${detail.title}`;
       const owner = unit.open.get(identity);
-      const met = detail.kind === "tool" ? actionCard(event, cardKey(event)) : null;
+      const met = detail.kind === "tool" ? cardOf(event, cardKey(event)) : null;
       const asked = met !== null && waitsOnPerson(met) ? joinable(unit, "ask") : undefined;
       if (met !== null && asked !== undefined) {
         // The check the ask already waits on: its card, not a second one. The
@@ -330,7 +342,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
       if (owner !== undefined) {
         const draft: StepMessage = drafts[owner.message]!;
         const before = draft.actions[owner.card];
-        const card = actionCard(event, before?.key ?? cardKey(event));
+        const card = cardOf(event, before?.key ?? cardKey(event));
         // The end keeps what the start named: a call's end is said after the
         // page moved, and a name the start gave it is not lost
         // ("Click · No thanks" became "Click · the page", t193).
@@ -342,7 +354,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
         }
         placed = owner;
       } else {
-        const card = actionCard(event, cardKey(event));
+        const card = cardOf(event, cardKey(event));
         if (detail.kind === "tool" && unit.decision !== undefined && card !== null) {
           const draft = drafts[unit.decision]!;
           draft.actions.push(card);
@@ -360,7 +372,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
     }
 
     if (detail.kind === "ask") {
-      const card = actionCard(event, cardKey(event));
+      const card = cardOf(event, cardKey(event));
       const key = activityActionKey(event);
       const known = key === null ? undefined : unit.asks.get(key);
       if (known !== undefined) {
@@ -410,7 +422,7 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
       // (U-B2, in every chat-driven Lab run). A build started anywhere else has
       // no answer in a thread, and its failure is said here.
       if (marker && event.subject.kind === "build" && (status !== "failed" || event.conversationId !== undefined)) continue;
-      const card = marker ? null : actionCard(event, cardKey(event));
+      const card = marker ? null : cardOf(event, cardKey(event));
       // A Merge joins the Flow's paths and does nothing a person could see: a
       // "Join paths" card was a step that was not one (U-A2). Core no longer
       // announces it (t174-w88); one that still does is not shown either.

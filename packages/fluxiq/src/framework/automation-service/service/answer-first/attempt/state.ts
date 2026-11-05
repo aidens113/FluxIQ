@@ -2,14 +2,18 @@
 // must survive a fresh start (the act record, the rows, what was tried, the draft) and the
 // counts its row reports. A round is thrown away; this is not.
 
-import type { AutomationStudioTaskAttemptLoopsCaught } from "@fluxiq/contracts/automation";
+import type { AutomationStudioTaskAttemptLoopsCaught, AutomationStudioTaskAttemptPath } from "@fluxiq/contracts/automation";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/index.ts";
+import type { AutomationStudioAnswerFirstAttemptPrior } from "../carry-on/index.ts";
 import type { AutomationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
+import type { AutomationStudioAnswerFirstFlowRunOutcome } from "../flow-run/index.ts";
+import type { AutomationStudioAnswerFirstRoute } from "../route/index.ts";
 import type { AutomationStudioAnswerFirstRowSink, AutomationStudioAnswerFirstSession } from "../rows/index.ts";
+import type { AutomationStudioAnswerFirstAttemptProvenance, AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 import type { AutomationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm/repeat-guard/index.ts";
@@ -20,11 +24,30 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   input: AutomationStudioAnswerFirstAttemptInput;
   ports: AutomationStudioAnswerFirstAttemptPorts;
   store: AutomationStudioAnswerFirstAttemptStore;
+  /** What the task keeps across its attempts, wherever they lived. */
+  memory: AutomationStudioAnswerFirstTaskMemoryStore;
   taskId: string;
+  /** Where this attempt started from, and the notes it brought. */
+  route: AutomationStudioAnswerFirstRoute;
+  startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
+  /** The steps it started its draft from. */
+  startedWith: readonly AutomationStudioFlowDraftStep[];
+  /** How it is going at the task, as its row says. Settled at the ending (`./path.ts`). */
+  path: AutomationStudioTaskAttemptPath;
+  /** The saved Flow's run, where one was tried: what came of it, whether anything really went out, and what the judge said of a whole run. */
+  flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure" } | undefined;
+  /** A round has made a decision since the saved Flow's run (`./path.ts`). */
+  decidedAfterRun: boolean;
+  /** A carry-on's: what the attempt had when the person pressed. Absent on an attempt's first segment. */
+  prior?: AutomationStudioAnswerFirstAttemptPrior | undefined;
+  /** The highest step position a forward run passed. */
+  forwardReached: number;
   attemptId: string;
   ordinal: number;
   runId: string;
   startedAtMs: number;
+  /** When this segment began: the gap before a person's press is no time spent working. */
+  segmentStartedAtMs: number;
   record: AutomationStudioAttemptActRecord;
   /** One per attempt, handed to every round (t859): what was tried and how, across fresh rounds. */
   tried: AutomationStudioLlmLoopAttemptRecord;

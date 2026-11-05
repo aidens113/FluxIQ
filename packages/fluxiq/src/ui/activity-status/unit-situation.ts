@@ -42,6 +42,7 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "../activity-action/index.ts";
+import { opensActivityAttempt } from "./attempt/index.ts";
 
 /** A supervisor's card opening or closing a brief, when `event` is one. */
 function projectCardOf(event: ClientGatewayActivity): { kind: "brief"; brief: string } | { kind: "return" } | undefined {
@@ -64,6 +65,8 @@ export type UnitState = {
   readonly resetting: boolean;
   /** The result check could not confirm the result (or could not run): a run that ends now has not been shown to have worked. */
   readonly unconfirmed: boolean;
+  /** The unit is an answer-first attempt: it did the task and built no Flow, so no headline may say one was (`attempt-words.ts`). */
+  readonly attempt: boolean;
 };
 
 export class UnitSituation {
@@ -74,6 +77,7 @@ export class UnitSituation {
   private paused = false;
   private resetting = false;
   private unconfirmed = false;
+  private attempt = false;
 
   /** A new brief began elsewhere in the unit: whatever repair this one was in is over (t753). */
   endRepair(): void {
@@ -96,7 +100,9 @@ export class UnitSituation {
       this.paused = false;
       this.resetting = false;
       this.unconfirmed = false;
+      this.attempt = false;
     }
+    if (opensActivityAttempt(event.label)) this.attempt = true;
     const continued = this.paused && event.phase === "running";
     this.paused = event.phase === "paused";
     // A brief's card opens new work, which a repair before it does not reach
@@ -121,7 +127,7 @@ export class UnitSituation {
     const reported = asksForPerson(event);
     if (reported) this.check = true;
     else if (runMovedOn || continued || pageActionSucceeded(event) || isSettledAsk(event)) this.check = false;
-    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported, resetting: this.resetting, unconfirmed: this.unconfirmed };
+    return { repairing: this.repairing, rebuilding: this.rebuilding, check: this.check, checkReportedNow: reported, resetting: this.resetting, unconfirmed: this.unconfirmed, attempt: this.attempt };
   }
 }
 

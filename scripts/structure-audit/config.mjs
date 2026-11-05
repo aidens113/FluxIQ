@@ -155,6 +155,7 @@ export const CONFIG = {
       "packages/fluxiq/src/runtime/action-permission-requests/client/index.ts",
       "packages/fluxiq/src/framework/automation-service/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
+      "packages/contracts/src/automation.ts",
       "packages/client-gateway-websocket/src/index.ts",
       "packages/fluxiq/src/ui/index.ts",
       "packages/ui-components/src/index.ts",

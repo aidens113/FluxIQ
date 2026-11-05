@@ -8,8 +8,8 @@ import type { AutomationStudioAttemptActEntry, AutomationStudioAttemptActNotedRo
 const RECORD_KEYS: ReadonlySet<string> = new Set(["kind", "schemaVersion", "acts", "rows", "place"]);
 const ENTRY_KEYS: ReadonlySet<string> = new Set(["id", "what", "where", "classes", "state", "rowIdentity", "undo", "undeclared", "stage", "actions", "keys", "handleKeys", "rows", "controls", "steps", "lookedSince", "at", "actedOnWords", "placePath", "asked", "landings"]);
 const CONTRACT_KEYS: ReadonlySet<string> = new Set(["id", "what", "where", "classes", "state", "rowIdentity", "undo"]);
-const ROW_KEYS: ReadonlySet<string> = new Set(["row", "handles", "fields", "paths"]);
-const FIELD_KEYS: ReadonlySet<string> = new Set(["words", "lettered"]);
+const ROW_KEYS: ReadonlySet<string> = new Set(["row", "handles", "fields", "paths", "commonPaths", "reads"]);
+const FIELD_KEYS: ReadonlySet<string> = new Set(["words", "lettered", "common"]);
 const PLACE_KEYS: ReadonlySet<string> = new Set(["rows", "path"]);
 const STAGES: ReadonlySet<unknown> = new Set(["exploration", "forward", "trial", "run"]);
 
@@ -47,7 +47,9 @@ function entryRead(value: unknown, issues: Set<string>): value is AutomationStud
 
 function rowRead(value: unknown): value is AutomationStudioAttemptActNotedRow {
   return isRecord(value) && onlyKeys(value, ROW_KEYS) && typeof value.row === "string" && strings(value.handles) && strings(value.paths)
-    && Array.isArray(value.fields) && value.fields.every((field) => isRecord(field) && onlyKeys(field, FIELD_KEYS) && strings(field.words) && strings(field.lettered));
+    && (value.commonPaths === undefined || strings(value.commonPaths))
+    && (value.reads === undefined || (Array.isArray(value.reads) && value.reads.every((read) => Number.isSafeInteger(read))))
+    && Array.isArray(value.fields) && value.fields.every((field) => isRecord(field) && onlyKeys(field, FIELD_KEYS) && strings(field.words) && strings(field.lettered) && (field.common === undefined || field.common === true));
 }
 
 function placeRead(value: unknown): boolean {

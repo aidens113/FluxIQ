@@ -24,7 +24,7 @@ export type AutomationStudioAnswerFirstAttemptInput = {
   /** The service, as the key of its per-service stores and ports (`../attempt-store/store-of.ts`, `./ports.ts`). */
   owner: object;
   stores: {
-    paths: Pick<AutomationStudioProjectPaths, "root">;
+    paths: Pick<AutomationStudioProjectPaths, "root" | "projectFile">;
     flows: Pick<AutomationStudioFlowPaths, "flowDirectory">;
     projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">;
     drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save">;

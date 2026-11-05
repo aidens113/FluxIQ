@@ -12,7 +12,7 @@ function buttons(model: AnswerModel, state: AnswerState, host: AnswerHost, handl
   const made: HTMLElement[] = [];
   if (model.addBudget !== undefined) made.push(answerButton(model.addBudget.words, "add-budget", handlers.addBudget, { tone: "primary", disabled: state.busy === "budget" }));
   if (model.stuckActions) {
-    if (host.onKeepGoing !== undefined) made.push(answerButton("Keep going", "keep-going", handlers.keepGoing, { tone: "primary" }));
+    if (host.onKeepGoing !== undefined) made.push(answerButton("Keep going", "keep-going", handlers.keepGoing, { tone: "primary", disabled: state.busy === "budget" }));
     if (host.onTellMore !== undefined) made.push(answerButton("Tell it more", "tell-more", handlers.tellMore));
     if (host.onStop !== undefined) made.push(answerButton("Stop", "stop", handlers.stop));
   }

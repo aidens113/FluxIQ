@@ -58,7 +58,7 @@ test("a card for each kind: Core's icon in an aria-hidden mark, Core's name, the
     const events = ONE_OF_EACH.map(([, make], index) => make(index + 1));
     view.render(buildChatStream([], events), controls, "build-1");
     const shown = cards(fake(view.element));
-    assert.deepEqual(shown.map((card) => card.getAttribute("data-kind")), ONE_OF_EACH.map(([kind]) => kind).filter((kind) => kind !== "person_check"), "a robot check draws no card: the question in the thread is the one telling");
+    assert.deepEqual(shown.map((card) => card.getAttribute("data-kind")), ONE_OF_EACH.map(([kind]) => kind).filter((kind) => kind !== "person_check" && kind !== "permission"), "a robot check or a permission draws no card: the question in the thread is the one telling");
     for (const card of shown) {
       const kind = card.getAttribute("data-kind") as ActivityActionKind;
       const mark = card.byClass("chat-card-mark")[0]!;
@@ -80,7 +80,6 @@ test("a card for each kind: Core's icon in an aria-hidden mark, Core's name, the
     assert.deepEqual(read("test"), [undefined, "Didn't work: it didn't do the same when the test tried it again", "failed", "Test run: Didn't work: it didn't do the same when the test tried it again"]);
     // t193 (run-muqiojz4-04a7a8fc, 00019): a real run's result check read "Test run · Working on it".
     assert.deepEqual(read("result_check"), [undefined, "Passed: the result was judged to answer the request.", "done", "Check result: Passed: the result was judged to answer the request."]);
-    assert.deepEqual(read("permission"), [undefined, "Waiting for you", "waiting", "Permission: Waiting for you"]);
     assert.deepEqual(read("repair"), ["Accept cookies", "Done", "done", "Repair, Accept cookies: Done"]);
     assert.deepEqual(read("other"), [undefined, "Done", "done", "Action: Done"]);
     for (const message of fake(view.element).byClass("chat-step-msg")) {

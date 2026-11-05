@@ -44,6 +44,8 @@ export type AnswerModel = {
   checked?: string;
   missing?: string;
   from?: string;
+  /** How it went by its path: whether it used what was saved. Absent on an attempt that explored. */
+  how?: string;
   compared?: string;
   saved?: string;
   canRunAgain: boolean;
@@ -53,4 +55,6 @@ export type AnswerModel = {
   addBudget?: AnswerAddBudget;
   /** Keep going, Tell it more, Stop: offered when it is stuck in a loop. */
   stuckActions: boolean;
+  /** Keep going carries the attempt on where it stopped, with no budget added: its Core restarted while it worked. Stuck in a loop sends a message instead. */
+  keepGoingCarriesOn: boolean;
 };

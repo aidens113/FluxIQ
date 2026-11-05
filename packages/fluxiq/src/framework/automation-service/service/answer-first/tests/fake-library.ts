@@ -34,7 +34,7 @@ const node = (id: string, label: string, over: Partial<AutomationStudioNodeDefin
 });
 
 const NODES: AutomationStudioNodeDefinition[] = [
-  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [] }),
+  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "shape", label: "Shape", valueType: "string", required: false }] }),
   node(RENEW_LOAN, "Renew loan", { inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }] }),
   node(RENEW_CARD, "Renew card", { parameters: [] })
 ];
@@ -47,6 +47,10 @@ export type FakeLibrary = {
   calls: { toolId: string; value: JsonObject }[];
   /** What a look shows beyond the renewal count: move it to change the page by itself. */
   shelf: string;
+  /** How a read given `shape` writes each row: a Flow's own columns, where its read is not the read that explored. */
+  shapes?: Record<string, (loan: { title: string; due: string }) => JsonObject>;
+  /** A renewal moves the loan's due date to this, as a real site's row changes under the act that landed on it. */
+  renewedUntil?: string;
 };
 
 export function fakeLibrary(titles: readonly string[] = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]): FakeLibrary {
@@ -58,7 +62,7 @@ function isReset(value: JsonObject): boolean {
 }
 
 /** A call the target answers its own way, or throws on: nothing, and it answers as a library does. */
-export type FakeLibraryFault = (call: { toolId: string; value: JsonObject }, library: FakeLibrary) => AutomationStudioLlmEvidenceToolExecutionResult | undefined;
+export type FakeLibraryFault = (call: { toolId: string; value: JsonObject }, library: FakeLibrary) => AutomationStudioLlmEvidenceToolExecutionResult | Promise<AutomationStudioLlmEvidenceToolExecutionResult> | undefined;
 
 /** The domain: a free look, and a library of three nodes that act on the state above. */
 export function fakeLibraryBinding(library: FakeLibrary, fault?: FakeLibraryFault): AutomationStudioLlmEvidenceRuntimeBinding {
@@ -91,16 +95,26 @@ async function answerOf(library: FakeLibrary, fault: FakeLibraryFault | undefine
   if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", evidence: { page: page(library) }, effectApplied: false, resultCode: "core.replay.verified" };
   if (isReset(value)) return { kind: "llm_evidence_tool_execution", evidence: { reset: true }, effectApplied: false, resultCode: "core.replay.replayed" };
   const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
-  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: library.loans.map((loan) => ({ ...loan })) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: library.loans.map((loan) => ({ ...loan })) }, ...code };
+  if (value.write === true) return { ...answer({ written: true }, { ...draft, written: true, effect: nodeId === READ_LOANS ? "observe" : "mutate" }), resultCode: "core.run_node.written" };
+  const rows = (): JsonObject[] => library.loans.map((loan) => library.shapes?.[String(ran.parameters.shape)]?.(loan) ?? { ...loan });
+  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows() }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
   const declared = ran.consequences;
   if (declared.length && permission) {
     const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });
     if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required", declined: verdict.declined === true }, effectApplied: false, resultCode: "permission_required", draft: { ...draft, effect: "mutate" } };
   }
   const row = (value.item ?? {}) as JsonObject;
-  const subject = nodeId === RENEW_CARD ? "card" : String(row.title ?? ran.parameters.title ?? "");
+  const subject = nodeId === RENEW_CARD ? "card" : loanTitle(library, String(row.title ?? ran.parameters.title ?? ""));
   library.renewals[subject] = (library.renewals[subject] ?? 0) + 1;
+  const renewed = library.renewedUntil === undefined ? undefined : library.loans.find((loan) => loan.title === subject);
+  if (renewed) renewed.due = library.renewedUntil!;
   return { ...answer({ ok: true, actedOn: subject, pageChanged: true, page: page(library) }, { ...draft, effect: "mutate" }, true), ...code };
+}
+
+/** The loan a press names, however a Flow's row wrote its title: cut short, or in another case. */
+function loanTitle(library: FakeLibrary, named: string): string {
+  const said = named.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, "").trim();
+  return library.loans.find((loan) => loan.title === named)?.title ?? library.loans.find((loan) => said.length > 0 && (loan.title.toLowerCase().startsWith(said) || said.includes(loan.title.toLowerCase())))?.title ?? named;
 }
 
 function stateOf(library: FakeLibrary): string {

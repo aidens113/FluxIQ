@@ -12,6 +12,7 @@ import { activityEvent, eventTime } from "../../../tests/activity-fixture.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "fluxiq/ui";
 import { cardWords } from "../card-words.ts";
 import { stepMessages, type StepMessage } from "../messages.ts";
+import { withoutAskCards } from "../without-ask-cards.ts";
 
 type Detail = NonNullable<ClientGatewayActivity["detail"]>;
 
@@ -237,6 +238,14 @@ test("a question is a card under the reasoning before it, as in the Core panel, 
   // the shared classifier with no value listed here.
   const stopped = stepMessages([waitFor(1, CHECK, "person-needed.1"), settle(2, CHECK, "person-needed.1", "cancelled", "failed", "The work stopped before this was answered.", "failed")], 100);
   assert.deepEqual(cardsOf(stopped).map(([, kind, outcome, why]) => [kind, outcome, why]), [["person_check", "failed", "the work stopped first"]]);
+});
+
+test("a text question is no permission: its card is a question's, and no question has a card beside it", () => {
+  const OPEN = "Asked a question (open)";
+  const events = [thought(1, QUOTE, "It needs to know which one."), waitFor(2, OPEN, "ask.open"), waitFor(3, PERMISSION, "request-3")];
+  const messages = stepMessages(events, 100);
+  assert.deepEqual(cardsOf(messages).map(([, kind]) => kind), ["question", "permission"]);
+  assert.deepEqual(withoutAskCards(messages).flatMap((message) => message.actions), [], "the thread tells each question once");
 });
 
 test("nothing after a question settles it: later tools, steps, notes and a failed end leave it waiting", () => {

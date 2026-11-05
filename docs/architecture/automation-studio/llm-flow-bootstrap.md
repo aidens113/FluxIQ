@@ -1043,7 +1043,24 @@ opened as a trial's is and marked `explorationAttempt`. A model never writes one
 build record, the trial ledger and a run's completed acts into the contract's shape. It
 is persisted per Flow (`attempt-acts.json`) and carried across rounds. An identical
 landed act is refused, a may-have-landed act only after a look, and a row is done by the
-digest of its own fields. The person may ask for an act several times in their own words
+digest of its own fields or by being the same row as one the record holds, under one rule
+(`act-record/same-row.ts`). Two rows of one read are never the same row. Where a read has
+shown either row, per earlier read, the row whose telling words best fit is that row, whatever
+its columns are called, and rows that fit equally are all held; a kept value may differ there,
+because the press itself may have changed it. A field most of a read shares tells no row apart,
+and a bare number only decides between rows that already fit. A row that fits nothing in an
+earlier list is that list's row by elimination: rows of both lists that plainly match are set
+aside, and a row left over in the later list is any row left over in the earlier one with most
+of its words the same. Where more than one is left over, nothing can say which is which, so all
+are held: the answer is "cannot tell", and a lasting act is refused on it rather than guessed. Where no read has
+shown either,
+as with two rows only a run carried, every value of the row with fewer must lie in the other,
+one of them a word or an address. A later read is also held against the sentence that named a
+by-hand press. The bias is deliberate: a row wrongly held done is left out and counted as
+skipped, which a judge's no brings back; a row wrongly held not done is an act done twice. A
+row sharing no word with any read or that sentence is a new row. An act keeps the digests of
+its row's other shapes, and a row an act is on is never dropped from the rows held.
+The person may ask for an act several times in their own words
 (`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
 and "thrice". A model's words never lift the rule. The first Flow run after an attempt
 carries the record (`service/answer-first/run-acts/`) and does not press what landed,
@@ -1061,9 +1078,21 @@ the best result and the draft, then resumes.
 
 **Money.** One purse per attempt, with no creation record, at $5 by default
 (`runtime/answer-first/attempt-purse/`). It is held to an explicit Flow limit, a
-Lab-scoped ceiling and the resolver's total, and a judge call is kept back. A Flow limit of
-exactly $0.25 is read as the old default, not a choice. A refused call ends with the best
-result so far and the draft.
+Lab-scoped ceiling and the resolver's total, and a judge call is kept back. New Flows store
+$0.25 as a default, so a limit counts only when a person chose it: a Flow's
+`adaptationPolicySettings` carries `maxEstimatedCostUsdPerRunChosen: true` when a settings
+save changed the limit's value or named that field (the form resends every field, so a save
+of another setting does not mark it), and any stored value other than $0.25 (an older Flow's,
+or the Lab's test-scoped ceiling) counts too. A stored $0.25 with no marker reads as $5; a
+chosen $0.25 holds (`attempt-purse/explicit-limit.ts`). Other modes read the stored value as
+it is. A refused call ends with the best result so far and the draft.
+
+**Eviction.** A waiting attempt may hold no project database and its gateway session may
+have gone, so a per-service count of attempts entered and not ended
+(`service/answer-first/attempt-in-flight/`, bumped around the whole attempt in
+`flow-bootstrap-requests/generate.ts`) is reported as
+`GlobalProgramRuntimeActivity.taskAttemptsInFlight`, and the web workspace manager's
+`instanceBusy` includes it, with tracing on or off.
 
 **The clocks.** The build's nine minutes are taken off this path's rounds, so a wait of
 any length costs a round nothing. The one clock left on it is the judge's deadline, which
@@ -1081,6 +1110,65 @@ attempt row, and the attempt says so.
 is never refused for that, and stays out of a result's acts. An act's identity between a
 real read's rows and a run's For Each item is unproven until live runs. Fixtures and
 guidance use a library's loans, of no kind of site the Lab measures.
+
+### Reading an attempt back
+
+A task typed in the chat runs from a command (`runtime/conversations/commands/`:
+`flow.createHere` and `flow.explore` alike) through the registry to the generation
+endpoint, which answers `{ answered }` or `{ setupNeeded }`. The thread gets one line of how
+it stands, and a client reads the rest back by route:
+
+| Route | Request | Answer |
+| --- | --- | --- |
+| `get-task-attempt` | `{ projectId, attemptId }` | `{ outcome }`, or a refusal saying it could not find it |
+| `list-conversation-task-attempts` | `{ projectId, conversationId }` | `{ outcomes }`, oldest first, a `working` row included; none is an empty list |
+
+An outcome is `{ attempt, result?, saved?, comparedTo? }`, each record answered through the
+contract's parser and the pair checked by `checkAutomationStudioTaskAttemptResult`. `saved`
+is what the record says: a saved draft is `partly_works`, `unproven`, and no draft says
+nothing. `comparedTo` is the latest earlier attempt at the same task on this Flow that ended.
+
+Both take `programs.read`, assert the project's domain access because a result holds rows,
+and are on the paired token's allowlist (`apps/web/src/lib/program-route.ts`). A file that
+is there and cannot be read is a refusal in its own words (`task_attempt.unreadable`), never
+`task_attempt.not_found` or an empty list.
+
+**Where they are.** Attempts are kept per Flow, and these ask by attempt or by thread, so
+`service/answer-first/attempt-store/locator.ts` joins them in
+`<project>/indexes/answer-attempts.json`: an attempt's Flow, noted with the attempt's row, and
+the Flows a thread holds. The command names its thread on the generation request
+(`conversationId`), and the endpoint notes it before the attempt starts, so a thread lists
+its attempt from the first saved row. A note that cannot be written costs the thread its
+card and never the task: the answer carries `threadNotNoted`, and the thread's one line says
+where the result is. A thread holds a Flow until another thread takes it, so a saved
+Flow picked up from a new thread shows its later attempts there alone. An attempt with no
+entry stays readable by Flow (`store.get`) and is `not_found` by id. A file that does not
+read is kept aside as `.unreadable` by the next write, as the attempts file is.
+
+**A person's reads go through the interrupted view.** Both routes read a Flow's rows through
+`automationStudioAnswerFirstAttemptsRead` (`service/answer-first/interrupted/`), so a row whose
+Core died reads `waiting_for_person` for `interrupted` and never `working`; the store itself is read
+only by the attempt that writes it. `outcome-of-attempt.ts` and `outcomes-of-conversation.ts` take
+their rows as a port for that.
+
+**Provenance.** An outcome carries `provenance` (`route`, `startedFrom`, `steps`: `position`, `label`,
+`from` of `saved` or `worked_out`, `ran`) where the task's memory holds the attempt
+(`taskMemory.provenance`), in a person's words, and none where it does not. A memory that cannot be
+read costs the card its marks, never the read (`handlers/task-attempt-provenance.ts`).
+
+**The Flow a task already has.** `get-task-known-flow` `{ projectId, instructionText, startLocation? }`
+answers `{ flowId }` for the exact same task (same words, same site) once a Flow was saved for it, and `{}`
+otherwise or when that Flow is gone. It is `read`, asserts domain access, and is reached only by Core's own
+chat command (`flow.createHere`, in answer-first mode only), which reuses that Flow instead of making a
+blank one each time. It is not on a token's list, and a lookup that fails makes a new Flow: it never fails the task.
+
+**Carrying on.** `carry-on-task-attempt` `{ projectId, attemptId, addUsd }` carries a budget-out attempt
+(`addUsd` above zero) or one a restart cut off (`addUsd` zero) on as the same attempt. It spends the
+person's key, so it is `authoring` under `flows.write` (`studio:CarryOnTaskAttempt`), asserts domain access,
+is on a token's list and is narrowed to those three fields. It answers `{ attemptId, budgetUsd }` at once and
+runs `automationStudioAnswerFirstCarryOn`'s generation in the background with no new request field; its
+failure is caught and never surfaces as an unhandled rejection, and the attempt's row says how it ended. A
+refusal is Core's own sentence (`task_attempt.carry_on_refused`).
 
 ## Explicit candidate authoring
 
