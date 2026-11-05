@@ -64,6 +64,8 @@ describe("a later attempt at the same task", () => {
     const row = kept?.attempts.at(-1);
     expect(row).toMatchObject({ route: "use", ordinal: 2, startedFrom: { attemptId: first.answer.attempt.attemptId, flowId: "flow.loans", notes: 1, provenWhole: false } });
     expect(row?.steps).toEqual([expect.objectContaining({ position: READ_STEP, from: "saved", ran: "passed" })]);
+    expect(first.answer.attempt.startedFrom).toBeUndefined();
+    expect(answer.attempt.startedFrom).toEqual({ route: "use", attemptId: first.answer.attempt.attemptId, stepsDigest: kept?.best?.stepsDigest });
     const saved = automationStudioAnswerFirstSavedStateOf(kept);
     expect(saved).toMatchObject({ state: "ready", trust: "provisional", flowId: "flow.loans" });
     expect(parseAutomationStudioSavedState(saved).ok).toBe(true);

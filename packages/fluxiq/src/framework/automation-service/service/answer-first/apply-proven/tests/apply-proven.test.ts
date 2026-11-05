@@ -60,8 +60,7 @@ describe("a whole run judged yes with no model", () => {
     expect(await baseOf(lane)).toMatchObject({ flowId: FLOW, digest, applied: { adaptationId: change?.adaptationId, attemptId: second.answer.attempt.attemptId } });
     expect((await baseOf(lane))?.keptAsDraftSinceMs).toBeUndefined();
     expect(automationStudioAnswerFirstSavedStateOf(await lane.kept())).toMatchObject({ state: "ready", trust: "provisional", flowId: FLOW });
-    expect(await automationStudioAnswerFirstKnownFlow(lane.service, lane.stores, { projectId: lane.projectId, instructionText: `The task
-${TASK}` })).toBe(FLOW);
+    expect(await automationStudioAnswerFirstKnownFlow(lane.service, lane.stores, { projectId: lane.projectId, instructionText: TASK })).toBe(FLOW);
 
     const standing = await flowAsItStands(lane);
     const third = await lane.attempt({});

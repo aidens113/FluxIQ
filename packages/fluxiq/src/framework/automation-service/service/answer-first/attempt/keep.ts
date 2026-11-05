@@ -42,6 +42,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     liveSteps: run.liveSteps,
     loopsCaught: run.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(),
     ...(noRow > 0 ? { actsWithNoRow: noRow } : {}),
+    ...(run.startedFrom && run.route.kind !== "build" ? { startedFrom: { route: run.route.kind, attemptId: run.startedFrom.attemptId, stepsDigest: run.startedFrom.stepsDigest } } : {}),
     startedAtMs: run.startedAtMs,
     ...(ended ? { endedAtMs: Math.max(now, run.startedAtMs) } : {})
   };

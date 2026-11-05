@@ -1,6 +1,6 @@
 // What an attempt left saved, for the chip beside its answer. A closed set read from
 // Core, never guessed: the chip may only claim what is true. It carries ids, a closed
-// set, times and a verdict: no page address, no page text, no token.
+// set, times, a verdict and a digest of the steps: no page address, no page text, no token.
 //
 // **Trust is in the type.** `ready` means it worked last time, so a `ready` that is
 // `unproven` cannot be written, and a draft that passed only in simulation stays
@@ -8,7 +8,7 @@
 // live". Attempt 1 always ends that way when it ends with a draft (plan, D4): only a
 // later attempt's judged live run can make it `ready`.
 
-import { hasOnlyKeys, isCount, isId, isMemberOf, isPlainRecord } from "./field-checks.ts";
+import { hasOnlyKeys, isCount, isDigest, isId, isMemberOf, isPlainRecord } from "./field-checks.ts";
 import { parseTotally } from "./parse-totally.ts";
 import { AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, type AutomationStudioTaskAttemptSimulationVerdict } from "./task-attempt.ts";
 import { AUTOMATION_STUDIO_TRUST_TIERS, type AutomationStudioTrustTier } from "./trust.ts";
@@ -24,8 +24,8 @@ export const AUTOMATION_STUDIO_SAVED_STATES = Object.freeze(["ready", "partly_wo
 export type AutomationStudioSavedStateName = (typeof AUTOMATION_STUDIO_SAVED_STATES)[number];
 
 export type AutomationStudioSavedState =
-  | { state: "ready"; trust: Exclude<AutomationStudioTrustTier, "unproven">; flowId: string; savedAtMs: number; lastWorkedAtMs: number }
-  | { state: "partly_works"; trust: Exclude<AutomationStudioTrustTier, "established">; flowId: string; savedAtMs: number; simulation?: AutomationStudioTaskAttemptSimulationVerdict }
+  | { state: "ready"; trust: Exclude<AutomationStudioTrustTier, "unproven">; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string }
+  | { state: "partly_works"; trust: Exclude<AutomationStudioTrustTier, "established">; flowId: string; savedAtMs: number; simulation?: AutomationStudioTaskAttemptSimulationVerdict; stepsDigest?: string }
   | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
   | { state: "needs_you"; trust: AutomationStudioTrustTier; flowId?: string; savedAtMs: number };
 
@@ -34,8 +34,8 @@ export type AutomationStudioSavedStateParseResult =
   | { ok: false; issues: string[] };
 
 const KEYS_BY_STATE: Readonly<Record<AutomationStudioSavedStateName, ReadonlySet<string>>> = Object.freeze({
-  ready: new Set(["state", "trust", "flowId", "savedAtMs", "lastWorkedAtMs"]),
-  partly_works: new Set(["state", "trust", "flowId", "savedAtMs", "simulation"]),
+  ready: new Set(["state", "trust", "flowId", "savedAtMs", "lastWorkedAtMs", "stepsDigest"]),
+  partly_works: new Set(["state", "trust", "flowId", "savedAtMs", "simulation", "stepsDigest"]),
   notes_only: new Set(["state", "trust", "savedAtMs"]),
   needs_you: new Set(["state", "trust", "flowId", "savedAtMs"])
 });
@@ -56,7 +56,7 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
     issues.add("saved_state.not_object");
     return null;
   }
-  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation } = value;
+  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation, stepsDigest } = value;
   if (!isMemberOf(AUTOMATION_STUDIO_SAVED_STATES, state)) {
     issues.add("saved_state.invalid_state");
     return null;
@@ -66,18 +66,19 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
   if (!isCount(savedAtMs)) issues.add("saved_state.invalid_saved_at");
   if (flowId !== undefined && !isId(flowId)) issues.add("saved_state.invalid_flow_id");
   if ((state === "ready" || state === "partly_works") && flowId === undefined) issues.add("saved_state.needs_flow");
+  if (stepsDigest !== undefined && !isDigest(stepsDigest)) issues.add("saved_state.invalid_steps_digest");
   if (issues.size > 0 || !isMemberOf(AUTOMATION_STUDIO_TRUST_TIERS, trust) || !isCount(savedAtMs)) return null;
   if (state === "ready") {
     if (trust === "unproven") issues.add("saved_state.ready_needs_proof");
     if (!isCount(lastWorkedAtMs)) issues.add("saved_state.invalid_last_worked_at");
     if (issues.size > 0 || trust === "unproven" || !isId(flowId) || !isCount(lastWorkedAtMs)) return null;
-    return { state, trust, flowId, savedAtMs, lastWorkedAtMs };
+    return { state, trust, flowId, savedAtMs, lastWorkedAtMs, ...(isDigest(stepsDigest) ? { stepsDigest } : {}) };
   }
   if (state === "partly_works") {
     if (trust === "established") issues.add("saved_state.partly_works_not_established");
     if (simulation !== undefined && !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation)) issues.add("saved_state.invalid_simulation");
     if (issues.size > 0 || trust === "established" || !isId(flowId)) return null;
-    return isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation) ? { state, trust, flowId, savedAtMs, simulation } : { state, trust, flowId, savedAtMs };
+    return { state, trust, flowId, savedAtMs, ...(isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation) ? { simulation } : {}), ...(isDigest(stepsDigest) ? { stepsDigest } : {}) };
   }
   if (state === "notes_only") {
     if (trust !== "unproven") {

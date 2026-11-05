@@ -3,7 +3,7 @@
 // counts, money and closed codes. Nothing here may carry a page address, page text
 // or a token.
 
-import { hasOnlyKeys, isAmount, isCount, isId, isMemberOf, isPlainRecord } from "./field-checks.ts";
+import { hasOnlyKeys, isAmount, isCount, isDigest, isId, isMemberOf, isPlainRecord } from "./field-checks.ts";
 import { parseTotally } from "./parse-totally.ts";
 import { readAutomationStudioTaskAttemptLoopsCaught, type AutomationStudioTaskAttemptLoopsCaught } from "./loops-caught.ts";
 
@@ -70,6 +70,20 @@ export type AutomationStudioTaskAttemptSimulation = {
   flags: number;
 };
 
+/**
+ * What a later attempt began from: the saved steps it found for this task, by the digest of those
+ * steps, and what it did with them (`use`: ran them; `repair`: they no longer fit together, so it
+ * was seeded with them and never ran them). Absent where it found no steps.
+ */
+export const AUTOMATION_STUDIO_TASK_ATTEMPT_ROUTES = Object.freeze(["use", "repair"] as const);
+
+export type AutomationStudioTaskAttemptStartedFrom = {
+  route: (typeof AUTOMATION_STUDIO_TASK_ATTEMPT_ROUTES)[number];
+  /** The attempt that saved them. */
+  attemptId: string;
+  stepsDigest: string;
+};
+
 /** What the attempt has spent so far, on model calls and on the clock. */
 export type AutomationStudioTaskAttemptSpend = {
   calls: number;
@@ -101,6 +115,7 @@ export type AutomationStudioTaskAttemptFields = {
   loopsCaught: AutomationStudioTaskAttemptLoopsCaught;
   /** How many lasting acts could not be tied to a row of their list, so that row may be pressed again: a known limit, measured here (never shown on a card). Absent reads as zero. */
   actsWithNoRow?: number;
+  startedFrom?: AutomationStudioTaskAttemptStartedFrom;
   /** Epoch milliseconds. */
   startedAtMs: number;
   /** Epoch milliseconds. Set on an ending, and absent while it can still go on. */
@@ -117,10 +132,11 @@ export type AutomationStudioTaskAttemptParseResult =
   | { ok: true; attempt: AutomationStudioTaskAttempt }
   | { ok: false; issues: string[] };
 
-const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "actsWithNoRow", "startedAtMs", "endedAtMs"]);
+const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "actsWithNoRow", "startedFrom", "startedAtMs", "endedAtMs"]);
 const SPEND_KEYS: ReadonlySet<string> = new Set(["calls", "inputTokens", "outputTokens", "usd", "ms"]);
 const BUDGET_KEYS: ReadonlySet<string> = new Set(["usd"]);
 const SIMULATION_KEYS: ReadonlySet<string> = new Set(["verdict", "flags"]);
+const STARTED_FROM_KEYS: ReadonlySet<string> = new Set(["route", "attemptId", "stepsDigest"]);
 const ENDINGS: ReadonlySet<AutomationStudioTaskAttemptStatus> = new Set(["achieved", "budget_out", "stopped_by_person"]);
 
 /**
@@ -148,6 +164,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   const budget = readBudget(value.budget);
   const loopsCaught = readAutomationStudioTaskAttemptLoopsCaught(value.loopsCaught);
   const simulation = value.simulation === undefined ? undefined : readSimulation(value.simulation);
+  const startedFrom = value.startedFrom === undefined ? undefined : readStartedFrom(value.startedFrom);
   if (!isId(taskId)) issues.add("task_attempt.invalid_task_id");
   if (!isId(attemptId)) issues.add("task_attempt.invalid_attempt_id");
   if (!isCount(ordinal) || ordinal < 1) issues.add("task_attempt.invalid_ordinal");
@@ -167,6 +184,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (simulation === null) issues.add("task_attempt.invalid_simulation");
   if (loopsCaught === null) issues.add("task_attempt.invalid_loops_caught");
   if (value.actsWithNoRow !== undefined && !isCount(value.actsWithNoRow)) issues.add("task_attempt.invalid_acts_with_no_row");
+  if (startedFrom === null) issues.add("task_attempt.invalid_started_from");
   if (!isCount(startedAtMs)) issues.add("task_attempt.invalid_started_at");
   if (endedAtMs !== undefined && !isCount(endedAtMs)) issues.add("task_attempt.invalid_ended_at");
   if (isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_STATUSES, status)) {
@@ -176,12 +194,13 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (isCount(startedAtMs) && isCount(endedAtMs) && endedAtMs < startedAtMs) issues.add("task_attempt.ended_before_started");
   if (issues.size > 0) return null;
   if (!isId(taskId) || !isId(attemptId) || !isCount(ordinal) || !isId(projectId) || !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_PATHS, path) || !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_STATUSES, status)) return null;
-  if (spend === null || budget === null || !isCount(liveSteps) || simulation === null || loopsCaught === null || !isCount(startedAtMs)) return null;
+  if (spend === null || budget === null || !isCount(liveSteps) || simulation === null || startedFrom === null || loopsCaught === null || !isCount(startedAtMs)) return null;
   const fields: AutomationStudioTaskAttemptFields = { taskId, attemptId, ordinal, projectId, path, spend, budget, liveSteps, loopsCaught, startedAtMs };
   if (typeof flowId === "string") fields.flowId = flowId;
   if (typeof runId === "string") fields.runId = runId;
   if (simulation !== undefined) fields.simulation = simulation;
   if (isCount(value.actsWithNoRow)) fields.actsWithNoRow = value.actsWithNoRow;
+  if (startedFrom !== undefined) fields.startedFrom = startedFrom;
   if (isCount(endedAtMs)) fields.endedAtMs = endedAtMs;
   if (status !== "waiting_for_person") return { ...fields, status };
   return isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS, waitingFor) ? { ...fields, status, waitingFor } : null;
@@ -193,6 +212,13 @@ function readSimulation(value: unknown): AutomationStudioTaskAttemptSimulation |
   if (!isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, verdict) || !isCount(flags)) return null;
   if (verdict === "not_run" && flags > 0) return null;
   return { verdict, flags };
+}
+
+function readStartedFrom(value: unknown): AutomationStudioTaskAttemptStartedFrom | null {
+  if (!isPlainRecord(value) || !hasOnlyKeys(value, STARTED_FROM_KEYS)) return null;
+  const { route, attemptId, stepsDigest } = value;
+  if (!isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_ROUTES, route) || !isId(attemptId) || !isDigest(stepsDigest)) return null;
+  return { route, attemptId, stepsDigest };
 }
 
 function readSpend(value: unknown): AutomationStudioTaskAttemptSpend | null {

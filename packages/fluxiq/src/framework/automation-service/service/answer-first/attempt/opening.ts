@@ -20,6 +20,7 @@
 // it is before anything is taken from it.
 
 import { automationStudioAttemptActSeed, type AutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioLlmStepLogNote } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord, AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstFlowRunAssemble } from "../flow-run/index.ts";
@@ -28,6 +29,7 @@ import type { AutomationStudioAnswerFirstRunActStore } from "../run-acts/index.t
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstAttemptProvenance, type AutomationStudioAnswerFirstTaskMemory, type AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
+import { automationStudioAnswerFirstTaskWords } from "./task-words.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 
 export type AutomationStudioAnswerFirstOpening = {
@@ -48,7 +50,7 @@ type Stores = { store: Pick<AutomationStudioAnswerFirstAttemptStore, "list">; ac
 /** Reads what the task kept (header). */
 export async function automationStudioAnswerFirstOpening(input: AutomationStudioAnswerFirstAttemptInput, stores: Stores): Promise<AutomationStudioAnswerFirstOpening> {
   const { projectId, flowId } = input;
-  const taskId = automationStudioAnswerFirstTaskKey({ instructionText: input.instructionText, startLocation: input.startLocation });
+  const taskId = automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const kept = await readOrNothing(() => memory.get(projectId, taskId));
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];
@@ -67,6 +69,8 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
 
 async function routeOf(input: AutomationStudioAnswerFirstAttemptInput, taskId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, rows: readonly AutomationStudioAnswerFirstAttemptRecord[]): Promise<AutomationStudioAnswerFirstRoute> {
   const assembled = kept?.best?.steps?.length ? await automationStudioAnswerFirstFlowRunAssemble({ input }, kept.best.steps) : undefined;
+  // Codes belong in a step log, which a person does not read: without them nobody can say why saved steps never ran.
+  if (assembled && !assembled.ok) automationStudioLlmStepLogNote(`The saved steps did not assemble, so this attempt repairs them and does not run them: ${[...assembled.codes, ...(assembled.issues ?? [])].join(", ") || "no code given"}`);
   const related = [...rows].reverse().find((row) => row.attempt.taskId !== taskId && row.steps?.length);
   return automationStudioAnswerFirstRoute({
     memory: kept, projectId: input.projectId, flowId: input.flowId, taskId,

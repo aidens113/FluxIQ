@@ -13,7 +13,7 @@ import { checkAutomationStudioFlowBootstrapCompletion } from "../../../../../run
 import type { AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 
 export type AutomationStudioAnswerFirstFlowRunAssembly =
-  | { ok: false; codes: readonly string[] }
+  | { ok: false; codes: readonly string[]; issues?: readonly string[] }
   | {
     ok: true;
     buildPlan: AutomationStudioFlowBuildPlan;
@@ -39,7 +39,8 @@ export async function automationStudioAnswerFirstFlowRunAssemble(ports: Pick<Aut
       draftSteps: steps, routeSignaturesOf: input.routing.signaturesOf, instructionText: input.instructionText,
       ...(input.startLocation === undefined ? {} : { startLocation: input.startLocation })
     });
-    if (!verdict.ok) return { ok: false, codes: verdict.codes };
+    // What each issue is and where, and never its words, which may quote a value.
+    if (!verdict.ok) return { ok: false, codes: verdict.codes, issues: verdict.issues.map((issue) => `${issue.code} at ${issue.path}`) };
     return { ok: true, buildPlan: verdict.buildPlan, locator: verdict.locator, declared };
   } catch (error) {
     // Only the error's kind: its words may quote a value.
