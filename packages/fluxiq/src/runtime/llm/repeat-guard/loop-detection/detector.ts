@@ -48,7 +48,14 @@
 // **What it cannot see it does not judge.** A call on a page the loop cannot name,
 // that is keyed on nothing else either, says nothing either way, as with the
 // repeat guard, which records nothing with no page seen. A loop whose tools report
-// no state is watched only for the same fix and the same act.
+// no state is watched only for the same fix and the same act. On the new path only
+// (`judgesWithNoPage`), a call that did nothing and says what it stands for (`ranAs`) is
+// keyed on that, so it is judged: the act gate above the domain answers with no page, by
+// the act it refused, and a fresh round has seen none when it first asks
+// (`../../../answer-first/act-record/gate/act-gate.ts`, t870). Another mode's unpaged
+// calls are judged as they always were. Those calls are also counted by act alone, across
+// pages: a clock on the page makes every read a new state, which is no progress on the act,
+// and only a new row or an act that landed starts that count again.
 //
 // **What it never does.** It reads no words, holds no value, refuses nothing
 // itself (`./watch.ts` is the ladder) and lifts nothing the guard refuses.
@@ -98,8 +105,10 @@ export function automationStudioLlmLoopDetector(options: {
   record: AutomationStudioLlmLoopAttemptRecord;
   holds?: ((toolId: string, input: JsonObject, state: string) => boolean) | undefined;
   askedRepeats?: AutomationStudioLlmLoopAskedRepeats | undefined;
+  /** A call that did nothing and says what it stands for is judged with no page (header): the caller can act on what that leads to. */
+  judgesWithNoPage?: boolean | undefined;
 }): AutomationStudioLlmLoopDetector {
-  const { record, holds, askedRepeats } = options;
+  const { record, holds, askedRepeats, judgesWithNoPage } = options;
   const visited = new Set<string>();
   const landed = new Set<string>();
   const rowsSeen = new Set<string>();
@@ -109,6 +118,8 @@ export function automationStudioLlmLoopDetector(options: {
   const amendmentsLed = new Map<string, string>();
   // What a call as written ran as, by where it was written; and each lasting act, by what it ran as and by how it was written.
   const ranAsHere = new Map<string, string>();
+  /** Calls that did nothing and said which act they stand for, by act, whatever page they came from: a page that moves by itself is no way round one (header). */
+  const heldActs = new Map<string, { runs: number; rowsAt: number }>();
   const acts = new Map<string, { times: number; rowsAt: number; toolId: string; callId: string; asked: number | undefined }>();
   const actsWritten = new Map<string, { act: string; targetWords: string | undefined; place: string | undefined }>();
   // Where the work stands, as the last call that said left it.
@@ -221,7 +232,10 @@ export function automationStudioLlmLoopDetector(options: {
       const moved = call.stateAfter === undefined || call.stateAfter !== state;
       const look = call.effect === "observe" && call.rows === undefined;
       const newAct = call.effect === "mutate" && !call.refused && ((call.effectApplied && moved) || call.accepted === true) && !landed.has(here);
-      if (newAct) landed.add(here);
+      if (newAct) {
+        landed.add(here);
+        heldActs.clear();
+      }
       let sameAct: AutomationStudioLlmLoopFinding | undefined;
       if (call.undo === true && call.effectApplied) {
         acts.clear();
@@ -261,7 +275,9 @@ export function automationStudioLlmLoopDetector(options: {
         record.caught(key, "same_act");
         return { progressed: false, finding: sameAct };
       }
-      if (call.exempt === true || (state === undefined && call.context === undefined)) return { progressed: false, ...(sameFix ? { finding: sameFix } : {}) };
+      const standsForItself = judgesWithNoPage === true && call.ranAs !== undefined && !call.effectApplied;
+      const keyedOnNothing = state === undefined && call.context === undefined && !standsForItself;
+      if (call.exempt === true || keyedOnNothing) return { progressed: false, ...(sameFix ? { finding: sameFix } : {}) };
       counted(key, state, call.toolId);
       window.callId = call.callId;
       tokens.push({ key, state: state ?? "", toolId: call.toolId, progressed: false, callId: call.callId, look });
@@ -279,6 +295,15 @@ export function automationStudioLlmLoopDetector(options: {
       if (entry.runs >= AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT) {
         record.caught(key, "near_repeat");
         return { progressed: false, finding: nearFinding(entry) };
+      }
+      if (standsForItself) {
+        const held = heldActs.get(key);
+        const runs = held && held.rowsAt === rowsSeen.size ? held.runs + 1 : 1;
+        heldActs.set(key, { runs, rowsAt: rowsSeen.size });
+        if (runs >= AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT) {
+          record.caught(key, "near_repeat");
+          return { progressed: false, finding: { ...nearFinding(entry), repeats: runs } };
+        }
       }
       const cycled = cycle();
       if (cycled) {

@@ -1,6 +1,7 @@
 // The detector's rules over plain facts, the words it may say, and the ladder
 // run over a recording.
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../core/index.ts";
 import { personFacingTextFaults } from "../../../../../ui/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_LOOP_PATTERNS,
@@ -13,6 +14,7 @@ import {
   automationStudioLlmLoopReplay,
   automationStudioLlmLoopRowDigests,
   automationStudioLlmLoopSteerNote,
+  automationStudioLlmLoopWatch,
   type AutomationStudioLlmLoopCall,
   type AutomationStudioLlmLoopReplayEvent
 } from "../index.ts";
@@ -37,11 +39,51 @@ describe("what a call asks", () => {
     expect(automationStudioLlmLoopRowDigests({ read: { extracted: [] } })).toBeUndefined();
     expect(automationStudioLlmLoopRowDigests("plain words", "read.extracted")).toBeUndefined();
   });
+
+  it("leaves what a read mints out of a row, so the same rows read again are not new, and keeps a row that holds nothing else", () => {
+    const read = (...rows: JsonObject[]) => automationStudioLlmLoopRowDigests({ read: { extracted: rows } }, "read.extracted");
+    expect(read({ title: "Oak", $handle: "t1", evidenceRef: "e1" })).toEqual(read({ title: "Oak", $handle: "t9", evidenceRef: "e9" }));
+    expect(read({ title: "Oak", $row: 1 })).toEqual(read({ title: "Oak", $row: 2 }));
+    expect(read({ title: "Oak", $handle: "t1" })).not.toEqual(read({ title: "Elm", $handle: "t1" }));
+    expect(read({ handle: "@oak" })).not.toEqual(read({ handle: "@elm" }));
+  });
 });
 
 describe("the detector", () => {
   it("does not call one failure a repeat", () => {
     expect(detector().ran(press(1)).finding).toBeUndefined();
+  });
+
+  describe("a call that did nothing, with no page, and says what it stands for", () => {
+    const refusedBy = (index: number, act = "act.one"): AutomationStudioLlmLoopCall => ({ callId: `c${index}`, toolId: "press", input: { target: { handle: `t${index}` } }, ranAs: { act }, effect: "mutate", effectApplied: false, refused: false });
+
+    it("is the same call however it was asked, where the caller can act on what that leads to", () => {
+      const watching = automationStudioLlmLoopDetector({ record: automationStudioLlmLoopAttemptRecord(), judgesWithNoPage: true });
+      expect(watching.ran(refusedBy(1)).finding).toBeUndefined();
+      expect(watching.ran(refusedBy(2)).finding?.pattern).toBe("near_repeat");
+      expect(watching.ran(refusedBy(3, "act.two")).finding).toBeUndefined();
+    });
+
+    it("is judged as it always was in another mode: not at all", () => {
+      const watching = detector();
+      for (const index of [1, 2, 3, 4]) expect(watching.ran(refusedBy(index))).toEqual({ progressed: false });
+    });
+
+    it("the ladder judges it only on the path that can answer what it leads to", () => {
+      const onTheNewPath = automationStudioLlmLoopWatch({ refuseActs: true });
+      onTheNewPath.ran(refusedBy(1));
+      expect(onTheNewPath.ran(refusedBy(2))?.pattern).toBe("near_repeat");
+      const elsewhere = automationStudioLlmLoopWatch();
+      for (const index of [1, 2, 3, 4]) expect(elsewhere.ran(refusedBy(index))).toBeUndefined();
+      expect(elsewhere.tally().steered).toBe(0);
+    });
+
+    it("a call that landed says nothing either way, on the new path too", () => {
+      const watching = automationStudioLlmLoopDetector({ record: automationStudioLlmLoopAttemptRecord(), judgesWithNoPage: true });
+      const landed = (index: number) => ({ ...refusedBy(index), effectApplied: true });
+      expect(watching.ran(landed(1)).finding).toBeUndefined();
+      expect(watching.ran(landed(2)).finding).toBeUndefined();
+    });
   });
 
   it("drops a near repeat the repeat guard has lifted, so an identical call runs again from nothing", () => {

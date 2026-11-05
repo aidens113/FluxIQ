@@ -18,9 +18,10 @@
 //      the row it came from is already told from the rest of its list, and the press may have
 //      changed it. A fit is a field a row can be told by, whole enough, found in the other row's
 //      words, or a shared address. A field more than one row of a read holds ("Pending" on every
-//      row) tells no row from another, unless the row has nothing else. A row that fits nothing in
-//      an earlier list can still be found by elimination, since two rows of a list are never one:
-//      rows of both lists that plainly match are set aside, and a row left over in the later list
+//      row) tells no row from another, unless the row has nothing else, or the other has: a row
+//      all of whose values lie in this one may be this one, whatever this one's list shares. A row
+//      that fits nothing in an earlier list can still be found by elimination, since two rows of a
+//      list are never one: rows of both lists that plainly match are set aside, and a row left over in the later list
 //      is any row left over in the earlier one with most of its words the same. Where more than one
 //      is left over, nothing can say which is which, so all of them are held: the answer is "cannot
 //      tell", and a lasting act is refused on it rather than guessed.
@@ -115,14 +116,20 @@ function sameRow(one: ReadonlyMap<string, boolean>, other: ReadonlyMap<string, b
   return proven;
 }
 
+/** Whether every value of the row with fewer lies in the other, whatever either's list says (header, 4). A handle a read printed asks this of a row no read has shown (`./row-ties.ts`). */
+export function automationStudioAttemptActSameValues(one: NotedRow, other: NotedRow): boolean {
+  return sameRow(valuesOf(one), valuesOf(other));
+}
+
 /** How well `row` fits `carried`: 0 where it does not (header, 3). Bare numbers count towards which fits best, never towards whether one fits. */
 function fitOf(carried: NotedRow, row: NotedRow): number {
   const fromCarried = tellingFields(carried);
   const carriedWords = wordsOf(fromCarried);
   const rowWords = wordsOf(row.fields);
   const addresses = tellingPaths(carried).filter((path) => tellingPaths(row).includes(path)).length;
-  if (addresses === 0 && !fromCarried.some((field) => fieldFits(field, rowWords)) && !tellingFields(row).some((field) => fieldFits(field, carriedWords))) return 0;
-  return [...carriedWords].filter((word) => rowWords.has(word)).length + addresses * SHARED_ADDRESS_WEIGHT;
+  if (addresses > 0 || fromCarried.some((field) => fieldFits(field, rowWords)) || tellingFields(row).some((field) => fieldFits(field, carriedWords))) return [...carriedWords].filter((word) => rowWords.has(word)).length + addresses * SHARED_ADDRESS_WEIGHT;
+  // What tells `carried` is not in `row`, and all `row` says is in `carried`: `row` has nothing else to be told by.
+  return automationStudioAttemptActSameValues(carried, row) ? Math.max(1, [...wordsOf(carried.fields)].filter((word) => rowWords.has(word)).length) : 0;
 }
 
 /** The fields a row can be told by: all of them where nothing else tells it (header, 3). */

@@ -17,6 +17,28 @@ describe("runtime action permission request contract", () => {
   });
 });
 
+describe("the sentence a person reads", () => {
+  const said = (over: Partial<Parameters<typeof automationStudioActionPermissionSentence>[0]>) => automationStudioActionPermissionSentence({ stage: "authoring", kind: "exploration_step", verb: "press", controlName: "Renew card", controlKind: "button", missing: ["move_money", "delete"], ...over });
+
+  it("names what it would press, once, with no build words and no list of what that does", () => {
+    expect(said({})).toBe('FluxIQ needs to press "Renew card".');
+    for (const stage of ["authoring", "recovery"] as const) for (const kind of ["exploration_step", "flow_step"] as const) {
+      const sentence = said({ stage, kind });
+      expect(sentence).not.toMatch(/Flow|build|(button)|money|remove/iu);
+      expect(sentence.startsWith(stage === "recovery" ? "To fix the step that failed, FluxIQ needs to press" : "FluxIQ needs to press")).toBe(true);
+    }
+  });
+
+  it("says each time this runs only where that is what is being agreed to", () => {
+    expect(said({ kind: "flow_step" })).toBe('FluxIQ needs to press "Renew card" each time this runs.');
+    expect(said({ kind: "exploration_step" })).not.toContain("each time");
+  });
+
+  it("still says when it cannot name the control", () => {
+    expect(said({ controlName: null })).toBe("FluxIQ needs to press a control it cannot name here.");
+  });
+});
+
 function permissionRequest(): AutomationStudioActionPermissionRequest {
   const sentence = automationStudioActionPermissionSentence({
     stage: "authoring",

@@ -3,6 +3,7 @@
 // instruction authority, the purse), and the service's own stores by what they do.
 
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioAnswerFirstFlowWriter } from "../apply-proven/index.ts";
 import type { AutomationStudioFlowCandidateDraftStore } from "../../candidate-drafts/index.ts";
 import type { AutomationStudioBuildRouting } from "../../../route-state/index.ts";
 import type { AutomationStudioRunDatasets } from "../../datasets/index.ts";
@@ -20,8 +21,8 @@ import type { AutomationStudioParkingPort } from "../../../../../runtime/automat
 export type AutomationStudioAnswerFirstAttemptInput = {
   /** The generate call's own input: what the answer is held under for a Stop (`./stop-answer.ts`). */
   request: object;
-  /** The service, as the key of its per-service stores and ports (`../attempt-store/store-of.ts`, `./ports.ts`). */
-  owner: object;
+  /** The service, as the key of its per-service stores and ports (`../attempt-store/store-of.ts`, `./ports.ts`), and by what applying a proven Flow calls on it (`../apply-proven/flow-writer.ts`). */
+  owner: AutomationStudioAnswerFirstFlowWriter;
   stores: {
     paths: Pick<AutomationStudioProjectPaths, "root" | "projectFile">;
     flows: Pick<AutomationStudioFlowPaths, "flowDirectory">;

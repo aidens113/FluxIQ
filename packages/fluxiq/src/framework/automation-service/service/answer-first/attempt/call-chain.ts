@@ -13,6 +13,11 @@
 // model's `amend_draft` rerun of a step on another page would (`../../../../../runtime/llm/node-tools/step-place.ts`),
 // taking the page away from what the attempt did. It is refused here, before anything is sent, and
 // the rerun then runs nothing and says so.
+//
+// **What the domain says of a call is asked for here (`describe`).** A person's words for an act,
+// and what the call would be before it is sent, which the act gate reads beside the call (t870:
+// a by-hand press by a handle says nothing else). It is asked for every call, so an answer that
+// throws or has another shape is no answer, and never stops the call.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
@@ -33,7 +38,7 @@ export function automationStudioAnswerFirstCallChain(input: {
   sink: Pick<AutomationStudioAnswerFirstRowSink, "fromCall">;
   witnesses: Pick<AutomationStudioAnswerFirstWitnesses, "beforeFirstLastingAct">;
   readRowsKey: string | undefined;
-  describe: ((call: { toolId: string; value: JsonObject }) => { target?: string | undefined } | undefined) | undefined;
+  describe: ((call: { toolId: string; value: JsonObject }) => { target?: string | undefined; wouldRunWith?: JsonObject | undefined } | undefined) | undefined;
   /** One call reached the domain. */
   stepped(): void;
   /** A call was answered and not refused: the page has got to where the work starts. */
@@ -46,13 +51,29 @@ export function automationStudioAnswerFirstCallChain(input: {
     if (isExecution(answer)) await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer);
     return answer;
   };
+  const described = (call: { toolId: string; value: JsonObject }) => {
+    try {
+      return { said: input.describe?.(call) };
+    } catch {
+      return { threw: true as const };
+    }
+  };
   const gated = automationStudioAttemptActGate({
     record: input.record,
     executeTool: stored,
     ...(input.readRowsKey ? { readRowsKey: input.readRowsKey } : {}),
-    wordsOf: (call) => {
-      const target = input.describe?.(call)?.target;
+    wordsOf: (call, answer) => {
+      const about = described(call);
+      const named = "said" in about ? about.said?.target : undefined;
+      // A press by hand may name no handle the build was shown: then what it pressed is in its own answer (`draft.control`), and that is what a person reads, not a line for its class.
+      const target = typeof named === "string" && named ? named : isExecution(answer as JsonValue) ? (answer as AutomationStudioLlmEvidenceToolExecutionResult).draft?.control : undefined;
       return target ? { what: target } : undefined;
+    },
+    foresee: (call) => {
+      const about = described(call);
+      if (!("said" in about) || typeof about.said !== "object" || about.said === null) return undefined;
+      const { target, wouldRunWith } = about.said;
+      return { ...(typeof target === "string" ? { words: target } : {}), ...(isObject(wouldRunWith) ? { parameters: wouldRunWith } : {}) };
     }
   });
   return async (call) => {
@@ -68,6 +89,10 @@ function declaresLasting(value: JsonObject): boolean {
   const nested = value.parameters;
   const inner = typeof nested === "object" && nested !== null && !Array.isArray(nested) ? nested.consequences : undefined;
   return automationStudioFlowDraftDeclaresLasting(value.consequences) || automationStudioFlowDraftDeclaresLasting(inner);
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function refusedAnswer(answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): boolean {

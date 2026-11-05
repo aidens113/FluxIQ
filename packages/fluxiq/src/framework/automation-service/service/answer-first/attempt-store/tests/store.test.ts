@@ -39,6 +39,15 @@ describe("the attempt store", () => {
     await expect(again.get("project.1", "flow.1", "attempt.none")).resolves.toBeUndefined();
   });
 
+  it("takes back one attempt by its id, leaves the others, and does nothing for one it does not hold", async () => {
+    const { store } = await onDisk();
+    await store.save("project.1", "flow.1", record("attempt.one"));
+    await store.save("project.1", "flow.1", record("attempt.two"));
+    await store.remove("project.1", "flow.1", "attempt.one");
+    await store.remove("project.1", "flow.1", "attempt.never");
+    expect((await store.list("project.1", "flow.1")).map((each) => each.attempt.attemptId)).toEqual(["attempt.two"]);
+  });
+
   it("lives in memory with no data root", async () => {
     const store = new AutomationStudioAnswerFirstAttemptStore({ root: undefined }, { flowDirectory: () => "" }, PROJECTS);
     await store.save("project.1", "flow.1", record("attempt.1"));

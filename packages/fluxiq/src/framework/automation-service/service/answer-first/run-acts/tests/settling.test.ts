@@ -530,3 +530,40 @@ describe("a step the engine judged after its answer", () => {
     expect(record.admit(SAME_PRESS).kind).toBe("run");
   });
 });
+
+describe("a step that declared nothing", () => {
+  const quiet = pressNode("press", {});
+  const output = { type: "policy.output.dispatch", payload: { outputId: "library.press.output", parameters: {} } };
+
+  it("is held by the target's own word that it acted, at the node's door", async () => {
+    const { options } = counted([], () => failedAs("ambiguous"));
+    const { record } = writing();
+    await runAutomationStudioGraph(oneStep(quiet), settling(options, record));
+    expect(record.acts()).toEqual([expect.objectContaining({ state: "may_have_landed", classes: [] })]);
+    expect(record.admit({ ...SAME_PRESS, consequences: [] }).kind).toBe("look_first");
+    record.looked();
+    expect(record.admit({ ...SAME_PRESS, consequences: [] }).kind).toBe("run");
+  });
+
+  it("is held by it at the output door a web step uses too", async () => {
+    const { options } = counted([], () => ({ status: "success", route: "success", outputs: {}, effects: [output] }));
+    const { record } = writing();
+    const sent: unknown[] = [];
+    const answered = await runAutomationStudioGraph(oneStep(quiet), settling({ ...options, effectDispatcher: async (effect) => {
+      sent.push(effect);
+      return failedAs("ambiguous");
+    } }, record));
+    expect(sent).toHaveLength(1);
+    expect(answered.status).toBe("failed");
+    expect(record.acts()).toEqual([expect.objectContaining({ state: "may_have_landed" })]);
+  });
+
+  it("is nothing on the record where its failure says nothing of an act, or says none was made, and when it worked", async () => {
+    for (const answer of [failedAs(undefined), failedAs("unacted"), { status: "success", route: "success", outputs: {} } as Result]) {
+      const { options } = counted([], () => answer);
+      const { record } = writing();
+      await runAutomationStudioGraph(oneStep(quiet), settling(options, record));
+      expect(record.acts()).toEqual([]);
+    }
+  });
+});

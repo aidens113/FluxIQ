@@ -56,7 +56,9 @@ export function automationStudioAnswerFirstResultAs(run: AutomationStudioAnswerF
     acts: run.record.acts(),
     ...(state.answerText !== undefined ? { answerText: state.answerText } : {}),
     ...(state.checkedWhat !== undefined ? { checkedWhat: state.checkedWhat } : {}),
-    ...(missingWhat !== undefined ? { missingWhat } : {})
+    ...(missingWhat !== undefined ? { missingWhat } : {}),
+    // Not added: the same row left out again in a later segment is one row. The larger is what is known at the least.
+    skippedAsDone: Math.max(run.prior?.skippedAsDone ?? 0, run.record.rowsHeldDone())
   });
   return { ...result, source: SOURCE_OF_PATH[run.path] };
 }

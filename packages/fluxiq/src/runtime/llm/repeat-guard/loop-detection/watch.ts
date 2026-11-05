@@ -77,7 +77,7 @@ export function automationStudioLlmLoopWatch(options: {
   askedRepeats?: AutomationStudioLlmLoopAskedRepeats | undefined;
 } = {}): AutomationStudioLlmLoopWatch {
   const record = options.record ?? automationStudioLlmLoopAttemptRecord();
-  const detector = automationStudioLlmLoopDetector({ record, holds: options.holds, askedRepeats: options.askedRepeats });
+  const detector = automationStudioLlmLoopDetector({ record, holds: options.holds, askedRepeats: options.askedRepeats, judgesWithNoPage: options.refuseActs });
   const caught = Object.fromEntries(AUTOMATION_STUDIO_LLM_LOOP_PATTERNS.map((pattern) => [pattern, 0])) as Record<AutomationStudioLlmLoopPattern, number>;
   const tally = { steered: 0, refused: 0, changeApproach: 0, askPerson: 0 };
   // `clear`: nothing standing. `steered`: told, and it has not yet been seen whether that worked. `refusing`: it did not.
@@ -160,6 +160,8 @@ export function automationStudioLlmLoopWatch(options: {
       if (!guardStanding) caught.exact_repeat += 1;
       guardStanding = true;
       tally.refused += 1;
+      // Refused again while an incident is being refused: another way round it, as a further finding is (t870: a read asked again between two repeats).
+      if (rung === "refusing") strikes += 1;
     },
     answered(toolId, input, context, state) {
       detector.unrun(toolId, input, context, state, true);

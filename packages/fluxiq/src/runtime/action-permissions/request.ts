@@ -19,7 +19,6 @@
 // anything a model request had not already taken out.
 
 import {
-  AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES,
   automationStudioConsequencesInOrder,
   isAutomationStudioActionConsequence,
   type AutomationStudioActionConsequence
@@ -107,21 +106,13 @@ export function automationStudioActionPermissionSentence(input: {
   missing: readonly AutomationStudioActionConsequence[];
 }): string {
   const target = input.controlName === null ? "a control it cannot name here" : `"${input.controlName}"`;
-  const kind = input.controlKind === null ? "" : ` (${input.controlKind})`;
-  const phrases = automationStudioConsequencesInOrder(input.missing).map((consequence) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[consequence]);
-  const would = phrases.length > 1 ? `${phrases.slice(0, -1).join(", ")} and ${phrases.at(-1)}` : phrases[0] ?? "";
-  // Written for the person who answers it, in the panel's chat (lane t195's
-  // run `run-muny5y17-a927214b` showed it there beside Allow / Don't allow): what
-  // FluxIQ would press, what that would do, and why it is asking at all.
-  const why = `That would ${would}, and that always needs your permission, even when your instruction asks for it.`;
-  if (input.kind === "flow_step" && input.stage === "recovery") {
-    return `To fix the step that failed, the Flow would ${input.verb} ${target}${kind} each time it runs. ${why}`;
-  }
-  if (input.kind === "flow_step") {
-    return `The Flow would ${input.verb} ${target}${kind} each time it runs. ${why}`;
-  }
-  const doing = input.stage === "authoring" ? "to build this Flow" : "to recover the step that failed";
-  return `FluxIQ needs to ${input.verb} ${target}${kind} ${doing}. ${why}`;
+  // What FluxIQ would press, in a person's words, and no more. Every client lists what that would do
+  // from the request's own `missing` right beside this, so saying it here only said it twice, and a
+  // person is never told about a build. "Each time this runs" stays where it is true, because that
+  // is what they are agreeing to.
+  const recurring = input.kind === "flow_step" ? " each time this runs" : "";
+  const fixing = input.stage === "recovery" ? "To fix the step that failed, " : "";
+  return `${fixing}FluxIQ needs to ${input.verb} ${target}${recurring}.`;
 }
 
 /**

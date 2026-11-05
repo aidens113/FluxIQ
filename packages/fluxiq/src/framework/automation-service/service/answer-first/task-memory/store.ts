@@ -22,6 +22,7 @@ import type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";
 const KEPT_NOTES = 10;
 const KEPT_ATTEMPTS = 100;
 const KEPT_INDEX = 2000;
+const KEPT_FLOW_BASES = 20;
 const FOLDER = "task-memory";
 const INDEX_FILE = "attempt-index.json";
 
@@ -171,7 +172,7 @@ function tidy(memory: AutomationStudioAnswerFirstTaskMemory, taskId: string): Au
     const words = automationStudioAnswerFirstScreenedNote(note);
     if (words) notes.push({ attemptId: note.attemptId, atMs: note.atMs, from: note.from, ...words });
   }
-  return { ...memory, taskId, notes: notes.slice(-KEPT_NOTES), attempts: (memory.attempts ?? []).slice(-KEPT_ATTEMPTS) };
+  return { ...memory, taskId, notes: notes.slice(-KEPT_NOTES), attempts: (memory.attempts ?? []).slice(-KEPT_ATTEMPTS), ...(memory.flowBases ? { flowBases: memory.flowBases.slice(-KEPT_FLOW_BASES) } : {}) };
 }
 
 function readHeld(value: JsonObject, projectId: string, taskId: string): Held | undefined {
@@ -181,7 +182,15 @@ function readHeld(value: JsonObject, projectId: string, taskId: string): Held | 
   for (const flow of [memory.best, memory.latest]) {
     if (flow !== undefined && (typeof flow !== "object" || flow === null || !Array.isArray(flow.steps) || typeof flow.flowId !== "string" || typeof flow.stepsDigest !== "string")) return undefined;
   }
-  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: withReadableActs(memory as AutomationStudioAnswerFirstTaskMemory) };
+  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: withReadableFlowBases(withReadableActs(memory as AutomationStudioAnswerFirstTaskMemory)) };
+}
+
+/** A base that does not read is left off and the rest stands: a Flow with none is looked at afresh, and only a blank one gets a base again, so nothing of a person's can be replaced for it. */
+function withReadableFlowBases(memory: AutomationStudioAnswerFirstTaskMemory): AutomationStudioAnswerFirstTaskMemory {
+  if (memory.flowBases === undefined) return memory;
+  const { flowBases, ...rest } = memory;
+  if (!Array.isArray(flowBases)) return rest;
+  return { ...rest, flowBases: flowBases.filter((base) => typeof base === "object" && base !== null && typeof base.flowId === "string" && (base.digest === undefined || typeof base.digest === "string")) };
 }
 
 /** Acts that do not read are left off and the rest of the memory stands: the driver then falls back on the Flow's own record, or refuses. */
