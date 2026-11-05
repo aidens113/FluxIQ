@@ -1,9 +1,9 @@
 # Answer First
 
 Status: Active
-Status detail: Steps approved by the user on 2026-11-03, with the hard rule that a task ends only with its result or its budget gone. Lanes starting; no paid run yet.
+Status detail: Most lanes are on `dev`; the attempt-2 road is on lane t869 awaiting its browser proofs. Four paid runs, $6.13. The product default flips after proof.
 Created: 2026-11-03
-Last updated: 2026-11-03
+Last updated: 2026-11-05
 Owner: Senior supervisor agent
 Scope: One live exploration that reaches the person's result, a best-attempt Flow improved in simulation with the exact recorded inputs, the same loop on every later attempt, a searchable and runnable nested subflow library, and the extension and @fluxiq/ui-components experience for all of it. The web panel is out of scope until the user reopens it.
 Paired document: `docs/working/answer-first-plan.md` in FluxIQWebExtension (the Lab's scores and the extension's phases)
@@ -26,22 +26,29 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 - "i want built in agent call loop detection. If an agent keeps doing the same thing over and over that needs to be detected and steered/stopped"
 - On the tester: "It likely needs imprvovement/full development, i have no idea if its even really been built."
 
-**State.** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". t856 (taking the PIN back out of the middle of a Flow), the truth pass and the engine go/no-go are starting. No paid run has happened or is planned before the Exploration lane reaches it.
+**State (2026-11-05).** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". The discovery's findings, which describe the product before this work, are in [discovery](./answer-first-plan/reports/discovery.md) and the three studies.
 
-**What the studies established:**
+**On `dev` (Core c93fdc757, Extension adc6a56a8, `fluxiq` 0.39.1), and not yet on `main`:** the state engine and the exploration path; the attempt road through the real chat (attempt, answer, saved state, carry-on, wait reasons); the second attempt; the extension screens with the task list, rename, remove and "Save this"; the subflow library with pinned calls and repair isolation; the model key unlock; loop detection; the prompt-cache fix and the first paid run's repairs; and the fixes the full sweeps found (t873, t874). The product default is still `project`. It flips to `answer-first` (`authoring-mode.ts:48`) only after the proof below.
 
-1. **The product's output is a Flow, not an answer.** A correct run ends with "Run finished", and the rows are about four presses away as a CSV.
-2. **No path can end with a result today.** A build can only name a plan, a recovery can only return a patch, and rows read while exploring are never stored. A passing trial does the work and then drops it.
-3. **Saved drafts are not reused in the default mode,** though the chat model is told they are.
-4. **Lasting acts live in four unconnected records.** Closing that is the highest-consequence work here.
-5. **The live runs of 2026-10-31 and 2026-11-03 ran `legacy`, not the product's default `project`.**
-6. **Today 0 of 43 of a Flow's acts equal exploration's calls byte for byte.** Most of the difference is mechanical: safe normalisation reaches 37 of 63 non-snapshot commands. The other 26 are real differences: another row, read, target or URL.
-7. **All 26 inconclusive offline checks were real changes, not capture failures.** 11 were a changed filter, which runs in the extension today, and all 34 rows of the six final reads were already in exploration's rows, so those can be computed with no page.
-8. **A state rule answers 141 of 173 commands where the strict cursor answers 6, but a first crude prototype agreed with live too rarely** (URL 51 of 74, act status 8 of 17, against a Flow's own 73 of 77 and 110 of 125). That is why the Engine lane starts with a go/no-go.
-9. **Nesting already runs, but nothing can be shared, searched or run alone.** Every subflow belongs to one Flow, and a saved one records no purpose, site or start.
-10. **The extension tells the story of building a Flow, not of doing the task.** Failure is the common case (2 of 14 Lab runs since 2026-10-30) and reads worst.
+**On the open lane t869 (`task/t869-attempt-road`, pushed, not on `dev`):**
+- The Lab: every realistic task's final facts are read independently of the page a run ends on; `--attempts 2` runs attempts 1 and 2 from one chat with no reseed, and judges attempt 2's change.
+- A saved read survives a restart and another Flow. A plain press is told from a lasting one, so a repeated Apply is no longer held back. A control already in state reads as not pressed. A remembered prompt no longer stops a saved Flow.
+- No limit is left on what a model writes. A dropped act is marked `landed` on the draft. The controls line carries its headings.
+- **The same words again** carry every act any earlier attempt landed or may have, so a repeat is not pressed. **Run again** starts empty and keeps `ensureState`. A repeat asked for in words is asked about once, at the start. This is the lead's call of 2026-11-05, reported to the user, who may overrule it; it is not the user's rule.
+- In progress: finishing a stopped Run again by carry-on; a task key that ignores case and trailing punctuation; heading words never satisfying a saved condition; a Core restart between Lab attempts; the toast's closing row; the docs. Then provider-free browser proofs of every attempt-2 form, then landing.
 
-**Blockers.** None. The user answered questions 4 and 6 and the tester question. The lead is going ahead on its own recommendations for questions 1, 2, 3 and 5, and the user can overrule any of them.
+**Paid runs, all Anthropic, all `local-classifieds` or `company-website`, $6.13 in all:**
+
+| Run | Task | Model | Result | Cost |
+| --- | --- | --- | --- | --- |
+| run-mw37qofs-6116e1b1 | company-website-apprentices | Sonnet 5.5 | Passed | $0.42 |
+| run-mw37vz9n-a77a02c2 | local-classifieds-save-dining-tables | Sonnet 5.5 | Budget out, saves right, cache at 31% | $4.84 |
+| run-mw3if5xt-a2bc72ae | same | Sonnet 5.5 | Task right; the Lab's own final check was wrong, since fixed; recorded as failed | $0.79 |
+| run-mw3itjcy-ce4429f7 | same | Haiku 5.5 | Passed, 81% from cache | $0.08 |
+
+**Next.** Land t869 after its browser proofs; the full sweep on 2026-11-06, then promote both repositories to `main` if it passes; then the breadth round, one task per realistic site with attempts 1 and 2, announced before it runs.
+
+**Blockers.** None. **Waiting on the user:** which model the next paid round uses (the lead recommends Haiku 5.5, with Sonnet 5.5 only where Haiku fails); the GitHub deletion of merged task branches; whether to add a first-time PIN for dangerous acts at the start of a chat (the lead recommends not yet). The lead went ahead on questions 1, 2, 3 and 5, and the user can overrule any of them.
 
 ## The Loop
 
@@ -324,6 +331,13 @@ The user agreed on 2026-11-03. `AGENTS.md` carries the new rules now, and memory
 - Changed: this document, its paired document and `answer-first-plan/reports/`. No source.
 - Validation: lead checked `authoringMode` in `lab-runs/2026-11-03/*/snapshots/flow-lane.json` -> `legacy` on all three, and `AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT` -> `project`. The studies' measured figures are theirs; each lists what it verified, measured and inferred.
 - Outcome: plan shown to the user for review.
+
+### 2026-11-05 - Paid runs, the cost fix, and the attempt-2 road on t869
+
+- Agent: lead; lane supervisor of t869 and its workers.
+- Changed: on `dev`, the cache fix and the first paid run's repairs (t869, third part) and the sweep fixes (t873, t874). On t869 only: the two-attempt Lab command, the four saved-Flow defects, no caps on model output, dropped acts marked `landed`, headings on the controls line, the same-words rule and Run again. Reports in `answer-first-plan/reports/attempt-road/`.
+- Validation: lead, on t869 after merging `dev` c93fdc757: `pnpm.cmd exec vitest run src/task-attempts` -> `Tests 95 passed (95)`; `pnpm.cmd exec vitest run src/framework/automation-service/service/answer-first src/runtime/answer-first src/runtime/llm/evidence-loop/tests src/runtime/models/providers/anthropic` -> `Tests 1368 passed (1368)`; `node scripts/structure-audit.mjs` -> `passed (529 warning(s), 1097 baselined)`. The later batches' figures are the lane's, in its reports, and are re-run by the lead before landing. Paid spend from `lab-slots/spend-ledger.jsonl` and each run's `attempt.json`: $0.4213, $4.8391, $0.7938 and $0.0766.
+- Outcome: the cache fix took the toggle task from $4.84 to $0.79 on Sonnet 5.5 and $0.08 on Haiku 5.5. t869 is not landed.
 
 ## Open Questions
 
