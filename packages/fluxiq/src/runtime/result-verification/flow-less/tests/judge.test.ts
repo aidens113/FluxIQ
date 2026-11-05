@@ -76,8 +76,20 @@ describe("the Flow-less judge's answer", () => {
     expect(judged.verdict).toBe("no");
     expect(judged.reason).toContain("The date told is not the one booked.");
     expect(judged.reason).toContain("The first free Tuesday.");
-    expect(judged.checkedWhat).toBeDefined();
+    // What the card says under "What failed": the check's own words, never a count and never "once".
+    expect(judged.checkedWhat).toContain("The date told is not the one booked.");
+    expect(judged.checkedWhat).not.toMatch(/once against|\d+ rows?/u);
     expect(seen).toHaveLength(1);
+  });
+
+  it("cuts the words of a long no to what a result may hold", async () => {
+    const long = await judge(scripted({ answer: { answersRequest: "no", observed: "The order is wrong. ".repeat(60), expected: "Cheapest first.", changed: "Sort it.", defects: [{ kind: "other", row: "13 May", requestWords: "first free Tuesday" }] } }).provider);
+    expect(long.checkedWhat!.length).toBeLessThanOrEqual(450);
+  });
+
+  it("says what an unsure was meant to settle", async () => {
+    const judged = await judge(scripted(UNSURE).provider);
+    expect(judged.checkedWhat).toBe("whether 2 rows, 1 act on the site, the model's own answer came to what was asked for.");
   });
 
   it("says unsure on an unknown, with what it doubted, in one call", async () => {

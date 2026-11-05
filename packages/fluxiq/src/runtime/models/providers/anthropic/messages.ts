@@ -5,7 +5,7 @@ import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, AutomationStudioLlmProviderError,
 import { readAutomationStudioProviderBoundedResponse, readAutomationStudioProviderRefusal, raceAutomationStudioProviderSignal, automationStudioProviderBalanceExhausted } from "../../transport/index.ts";
 import type { AutomationStudioAnthropicModel } from "../../catalog/index.ts";
 import { isRecord } from "../../transport/index.ts";
-import { automationStudioAnthropicUsage } from "./pricing.ts";
+import { automationStudioAnthropicCacheWriteTokens, automationStudioAnthropicUsage } from "./pricing.ts";
 import { readAutomationStudioAnthropicStream } from "./stream.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 
@@ -112,20 +112,29 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       else if (block.type !== "thinking" && block.type !== "redacted_thinking") throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic returned an unsupported content block.");
     }
     const text = content.join("");
-    if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.");
+    if (!text.trim()) step?.reply(raw, response.status);
+    if (!text.trim()) throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Anthropic returned no answer.", false, undefined, undefined, undefined, undefined, { case: "content_empty", finishReason: "end_turn", contentChars: 0, ...(paid ? { usage: paid } : {}) }, undefined, paid);
     if (!paid) throw new AutomationStudioLlmProviderError("llm.provider_usage_invalid", "Anthropic returned invalid token usage.");
     // The paid account exists before schema validation can refuse the answer.
-    const answer = input.readAnswer(text, paid);
+    let answer: T;
+    try {
+      answer = input.readAnswer(text, paid);
+    } catch (error) {
+      // An answer Core cannot read is the one a person most needs to see, so its raw reply is kept,
+      // through the step log's own screen, once it has passed the credential check above. It is
+      // never kept where the credential is in the text, however it was encoded in the envelope.
+      if (!text.includes(key)) step?.reply(raw, response.status);
+      throw error;
+    }
     if (automationStudioAnthropicReplyContainsCredential(answer, key)) throw new AutomationStudioLlmProviderError("llm.provider_output_invalid", "Anthropic answer contained the configured credential.");
-    // Logging comes last: JSON-text transport can reveal a credential only
-    // after its inner answer is decoded, and an unusable answer stays unlogged.
+    // Logging comes last: JSON-text transport can reveal a credential only after its inner answer is decoded.
     step?.reply(raw, response.status);
-    step?.succeeded(answer, paid);
+    step?.succeeded(answer, { ...paid, cacheWriteInputTokens: automationStudioAnthropicCacheWriteTokens(isRecord(envelope) ? envelope.usage : undefined) });
     return { response: answer, usage: paid };
   } catch (error) {
     const failure = controller.signal.aborted ? signalFailure(input.signal, timedOut)
       : error instanceof AutomationStudioLlmProviderError ? error : new AutomationStudioLlmProviderError("llm.provider_network_error", "Anthropic request failed at the network boundary.", true);
-    const accounted = paid ? withPaid(failure, paid) : failure;
+    const accounted = withPaid(failure, paid);
     step?.failed(accounted);
     throw accounted;
   } finally {
@@ -139,8 +148,11 @@ export function automationStudioAnthropicPaidFailure(code: "llm.provider_output_
   return withPaid(new AutomationStudioLlmProviderError(code, "Anthropic returned an unusable answer."), usage);
 }
 
-function withPaid(error: AutomationStudioLlmProviderError, paid: AutomationStudioLlmUsageSummary): AutomationStudioLlmProviderError {
-  return new AutomationStudioLlmProviderError(error.code, error.message, error.retryable, error.status, error.provenance, error.responseBody, error.refusal, error.reply, error.inputSize, paid);
+/** The failure with what the call cost, and, for a reply of a shape Core could not read, a case where the adapter named none. */
+function withPaid(error: AutomationStudioLlmProviderError, paid: AutomationStudioLlmUsageSummary | undefined): AutomationStudioLlmProviderError {
+  const reply = error.reply ?? (error.code === "llm.provider_malformed_response" ? { case: "envelope_shape" as const, ...(paid ? { usage: paid } : {}) } : undefined);
+  if (!paid && !reply) return error;
+  return new AutomationStudioLlmProviderError(error.code, error.message, error.retryable, error.status, error.provenance, error.responseBody, error.refusal, reply, error.inputSize, paid ?? error.paid);
 }
 function signalFailure(signal: AbortSignal | undefined, timedOut: boolean): AutomationStudioLlmProviderError {
   const timeout = timedOut || automationStudioLlmSignalTimedOut(signal);

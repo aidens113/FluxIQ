@@ -40,6 +40,19 @@ async function open(): Promise<AutomationStudioRunDatasets> {
   return new AutomationStudioRunDatasets(projects, pool);
 }
 
+/** A sink over the real datasets, the session open: nothing processed until a test says so. */
+function sinkOf(datasets: AutomationStudioRunDatasets) {
+  return automationStudioAnswerFirstRowSink({
+    runId: RUN,
+    readRowsKey: READ_ROWS_KEY,
+    onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN),
+    reader: {
+      listDatasets: () => datasets.listRunDatasetsForVerification({ projectId: PROJECT, runId: RUN }),
+      getPage: (page) => datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: page.datasetId, limit: page.limit, ...(page.cursor !== undefined ? { cursor: page.cursor } : {}) })
+    }
+  });
+}
+
 describe("automationStudioAnswerFirstRowSink over the real run datasets", () => {
   it("adds two pages of one read into one dataset and reads back the processed answer", async () => {
     const datasets = await open();
@@ -65,6 +78,39 @@ describe("automationStudioAnswerFirstRowSink over the real run datasets", () => 
     expect(back).toMatchObject({ datasetId: stored[0]!.datasetId, totalRows: 3, truncated: false, columns: [{ id: "title" }, { id: "price" }] });
     expect(back.rows).toEqual([item(1), item(2), item(3)]);
     expect(back.rows).toEqual(sink.summary().rows);
+  });
+
+  it("a re-read is what the store holds, in that order, and processing keeps it", async () => {
+    const datasets = await open();
+    const sink = sinkOf(datasets);
+    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2), item(3)]));
+    await sink.fromCall(call("call.2"), liveAnswer([item(3), item(1)]));
+    const judged = await sink.readBack();
+    expect(judged).toMatchObject({ fromStore: true, totalRows: 2, rows: [item(3), item(1)], fewerThanEarlier: { earlierRows: 3 } });
+    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
+    expect(await sink.readBack()).toMatchObject({ fromStore: true, totalRows: 2, rows: judged.rows, fewerThanEarlier: { earlierRows: 3 } });
+  });
+
+  it("a row changed in place on one of two pages is one row, in its place, in the store too", async () => {
+    const datasets = await open();
+    const sink = sinkOf(datasets);
+    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)]));
+    await sink.fromCall(call("call.2"), liveAnswer([item(3)]));
+    await sink.fromCall(call("call.3"), liveAnswer([{ ...item(1), price: 90 }, item(2)]));
+    expect((await sink.readBack()).rows).toEqual([{ ...item(1), price: 90 }, item(2), item(3)]);
+    expect(sink.summary().rows).toEqual((await sink.readBack()).rows);
+  });
+
+  it("a run's declared sort reaches the judge, with the attempt still open, as it will reach the person", async () => {
+    const datasets = await open();
+    const sink = sinkOf(datasets);
+    const schema = { schemaVersion: "0.1" as const, fields: [{ id: "title", label: "Title", valueType: "string" as const }, { id: "price", label: "Price", valueType: "number" as const }] };
+    await sink.recordBatch({ nodeId: "node.read", attemptId: "a", batchKey: "a", datasetId: "shelves", writeMode: "append", schema, rows: [item(2), item(1), item(3)], invalidCount: 0, truncated: false, process: { sort: [{ field: "price", order: "desc", as: "number" }] } });
+    const judged = await sink.readBack();
+    expect(judged.rows).toEqual([item(3), item(2), item(1)]);
+    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
+    expect((await sink.readBack()).rows).toEqual(judged.rows);
+    expect(sink.summary().rows).toEqual(judged.rows);
   });
 
   it("reports a store the real datasets refuse as data, and counts nothing", async () => {

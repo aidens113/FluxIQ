@@ -51,12 +51,13 @@ describe("a stall the caller can recover from", () => {
     // The loop made the retest itself, after the eighth look, with the caller's input.
     const calls = executeTool.mock.calls.map(([call]) => call);
     expect(calls.at(-1)).toMatchObject({ toolId: "retest", value: { revision: 3, digest: "d3" }, callId: "core.stall_recovery.8.retest" });
-    // The ninth decision is shown the note and, after it, the retest's answer.
+    // The ninth decision is shown the retest's answer and the note, which rides after every result (t869) and names it.
     const shown = shownAt(decide, 8);
     const note = shown.find((entry) => entry.toolId === "core.stall_recovery");
     expect(note?.value).toMatchObject({ code: "llm_evidence_loop.stall_recovered", stalledOn: ["llm_evidence_loop.searching_without_acting"], ran: { toolId: "retest" }, ranAs: "core.stall_recovery.8.retest" });
     expect(String(note?.value.instruction)).toContain("Instead of ending the build");
-    expect(shown.findIndex((entry) => entry.callId === "core.stall_recovery.8.retest")).toBeGreaterThan(shown.indexOf(note!));
+    expect(shown.findIndex((entry) => entry.callId === "core.stall_recovery.8.retest")).toBeGreaterThanOrEqual(0);
+    expect(shown.findIndex((entry) => entry.callId === "core.stall_recovery.8.retest")).toBeLessThan(shown.indexOf(note!));
   });
 
   it("runs it at the third refused repeat in a row too, and the runs start again after it", async () => {

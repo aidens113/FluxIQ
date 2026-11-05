@@ -9,4 +9,12 @@ export type AutomationStudioAnswerFirstRowsSummary = {
   truncated: boolean;
   columns: { id: string; label: string }[];
   rows: JsonObject[];
+  /**
+   * The latest read of this list holds fewer rows than an earlier one did, and how many that was.
+   * The rows are the latest read's all the same: it is what the list says now. This is so a person
+   * is told the result got smaller rather than finding it so; absent while it has not.
+   */
+  fewerThanEarlier?: { earlierRows: number };
+  /** The latest read of this list replaced what an earlier read of it held, rather than adding to it: the rows are that read's alone. Absent while it carried the list on. */
+  startedOver?: true;
 };

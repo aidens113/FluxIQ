@@ -20,6 +20,7 @@ function rowsBlock(model: AnswerModel, state: AnswerState, handlers: AnswerHandl
   }
   const blocks: HTMLElement[] = [rowsTable(rows, state.expanded)];
   if (rows.partialNotes !== undefined) blocks.push(createElement("p", { className: "answer-note", text: state.expanded ? rows.partialNotes.expanded : rows.partialNotes.collapsed }));
+  if (rows.smallerNote !== undefined) blocks.push(createElement("p", { className: "answer-note", text: rows.smallerNote }));
   if (buttons.length > 0) blocks.push(createElement("div", { className: "answer-buttons" }, buttons));
   return blocks;
 }

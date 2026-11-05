@@ -21,11 +21,13 @@ import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/au
 import { automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/index.ts";
-import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../../../runtime/llm/decision-handlers/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
+import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
+import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 /** The loop's guard stopped the round: it holds the rows the round wrote, as a failure would. */
@@ -43,6 +45,7 @@ const STALLED: AutomationStudioAnswerFirstRoundEnd = { kind: "loop", result: { o
 /** Runs one round and says how it ended. Never throws: whatever happens is the table's to read. */
 export async function automationStudioAnswerFirstRound(run: AutomationStudioAnswerFirstAttemptRun, round: { ordinal: number; note: JsonObject | undefined }): Promise<AutomationStudioAnswerFirstRoundEnd> {
   const { input } = run;
+  run.refusalEndedRound = false;
   const options = run.arrived ? input.continuingOptions() : input.harnessOptions;
   run.options = options;
   const person = automationStudioPersonNeededToolCalls({
@@ -119,6 +122,10 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
     automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
+    if (run.refusalEndedRound) {
+      run.refusalEndedRound = false;
+      return STALLED;
+    }
     return { kind: "loop", result };
   } catch (error) {
     if (!(error instanceof AutomationStudioAnswerFirstRoundStalled)) return { kind: "thrown", error };
@@ -129,11 +136,36 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   }
 }
 
-/** The completion check. A carried-on attempt's rows were copied in as a run's are, so a judge's no takes away their standing, as it does a run's: otherwise a wrong list found earlier would outrank the right one forever. */
+/**
+ * The completion check. A carried-on attempt's rows were copied in as a run's are, so a judge's no takes away their standing, as it does a run's: otherwise a wrong list found earlier would outrank the right one forever.
+ *
+ * A refusal shows the model what the result holds, and one over the same evidence climbs the ladder (`../loop-signal/completion-refused-again.ts`). **A rung that ends the round answers `ok`:** that is the one way a check hands a round back with its rows, since a throw would lose them. Nothing is accepted by it, because only `state.achieved` says a result was, and `refusalEndedRound` has the round read as one that kept repeating itself.
+ */
 async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonObject): ReturnType<AutomationStudioAnswerFirstAttemptRun["completion"]["check"]> {
   const answer = await run.completion.check(result);
-  if (run.prior && run.completion.state.refused?.verdict === "no") run.sink.runRowsRefused();
-  return answer;
+  const { state } = run.completion;
+  if (run.prior && state.refused?.verdict === "no") run.sink.runRowsRefused();
+  if (answer.ok) return answer;
+  const rung = answer.issueCodes.includes(AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE)
+    ? automationStudioAnswerFirstCompletionRefusedAgain({ times: state.refusedAgain, evidence: state.refused?.digest ?? "", iteration: run.decidedAt ?? 0, record: run.tried, caught: run.loopsCaught, say: automationStudioAnswerFirstSay })
+    : "steered";
+  if (rung === "steered") return { ...answer, feedback: { ...answer.feedback, resultHolds: resultHolds(run), [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY]: sentAgain(answer.issueCodes) } };
+  run.refusalEndedRound = true;
+  if (rung === "ask_person") {
+    run.askPerson = true;
+    run.askWords = AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.ask({ rows: state.held?.rows.totalRows ?? 0, acts: state.held?.acts ?? 0, answered: state.answerText !== undefined }, state.refused?.reason);
+  }
+  return { ok: true };
+}
+
+/** What the loop says when a refusal comes again over one draft, in place of its words for a check that reads the draft: this one never does. */
+function sentAgain(issueCodes: readonly string[]): string {
+  return issueCodes.includes(AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE) ? AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.sentAgainUnjudged : AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.sentAgain;
+}
+
+function resultHolds(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
+  const { held } = run.completion.state;
+  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.sink.summary(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? []);
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

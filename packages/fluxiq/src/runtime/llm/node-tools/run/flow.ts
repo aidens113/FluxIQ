@@ -51,11 +51,11 @@ const DESCRIPTION = [
 const FORWARD_DESCRIPTION = [
   "Run what you wrote forward, from step `from` to step `to` (or to its last step), numbered as the draft shows them, from where the page is now:",
   "nothing is reset and it never starts from the top.",
-  "A list in the range is read again as the page stands, and each step runs on the rows not done yet, with exactly the arguments the Flow runs it with.",
+  "A repeat in the range runs whole: its list is read again, on the list's own page if it was before the range, and each of its steps runs on the rows not done yet, with exactly the arguments the Flow runs it with.",
   "A row already done is left out and nothing is sent for it; a step whose effect lasts really acts on a row not done yet.",
   "Do the first row by hand first, so a wrong loop shows after one row.",
-  "A row whose own control cannot be found has nothing done to it, is named in the answer, and the run goes on with the next row.",
-  "Any other step that does not pass stops the run there and the page is left where it stopped; the answer counts the rows done, skipped and failed, and shows the page as it then stands."
+  "A step that does not pass on a row ends that row's pass: nothing lasting is sent for it after that, the row is named in the answer, and the run goes on with the next row, from the list.",
+  "A step outside a repeat that does not pass stops the run there and the page is left where it stopped; the answer counts the rows done, skipped and failed, and shows the page as it then stands."
 ].join(" ");
 
 /** `core.run_flow` as the loop offers it: a fresh copy each time, so no loop can change what the next one offers. `forward` is the forward run's wording. */

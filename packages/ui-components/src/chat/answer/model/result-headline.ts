@@ -30,9 +30,20 @@ export function resultHeadline(result: ChatTaskResult): string {
   }
 }
 
-/** What an unfinished result holds, for "What I got: ...". */
+/** "3 things", for what a result did on the site. */
+function thingsWord(count: number): string {
+  return count === 1 ? "1 thing" : `${count} things`;
+}
+
+/** What an unfinished result holds, for "What I got: ...": its rows or words, and what it did on the site, said as the record says it. */
 export function gotSummary(result: ChatTaskResult): string {
-  if (result.rows !== undefined) return rowsWord(result.rows.totalRows);
-  if (result.answerText !== undefined) return "an answer in the model's words";
-  return "work done on the site";
+  const landed = result.acts.filter((act) => act.state === "landed").length;
+  const may = result.acts.filter((act) => act.state === "may_have_landed").length;
+  const parts = [
+    ...(result.rows !== undefined ? [rowsWord(result.rows.totalRows)] : result.answerText !== undefined ? ["an answer in the model's words"] : []),
+    ...(landed > 0 ? [`${thingsWord(landed)} done on the site`] : []),
+    ...(may > 0 ? [`${thingsWord(may)} that may have happened on the site`] : [])
+  ];
+  if (parts.length === 0) return result.acts.length > 0 ? "nothing that changed the site" : "work done on the site";
+  return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }

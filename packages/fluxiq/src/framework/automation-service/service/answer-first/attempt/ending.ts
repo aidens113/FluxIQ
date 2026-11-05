@@ -13,7 +13,7 @@
 import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer-first/result/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING } from "../interrupted/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING, AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import { automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
@@ -38,8 +38,10 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const summary = ending === "achieved" ? "What the attempt did, as a Flow." : "What the attempt had done when it ended, as a Flow.";
   const draft = await automationStudioAnswerFirstSaveDraft(run, summary);
   if (draft.kind === "kept") automationStudioAnswerFirstSay("The steps were not saved as a Flow", "I could not write what I did as a Flow this time, so I kept the steps with this attempt.");
-  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
-  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: "person_only_check" as const } : { status: ending };
+  // A wait is for a check only a person can clear, or for a person to say whether a task that kept getting stuck goes on.
+  const stuck = ending === "waiting_for_check" && run.waitingFor === "stuck_in_a_loop";
+  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
+  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;

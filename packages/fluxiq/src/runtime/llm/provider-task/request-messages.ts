@@ -1,7 +1,7 @@
-import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { automationStudioFlowBootstrapCatalogNames } from "../../flow-authoring/bootstrap/plan/index.ts";
-import type { AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
+import { automationStudioLlmPlaceDescribedNodes } from "./described-nodes.ts";
+import { automationStudioLlmLiftDraftGuide } from "./draft-guide.ts";
 import { automationStudioLlmTaskOutputSchema } from "./output-schema.ts";
 import { automationStudioLlmTaskSystemPrompt } from "./system-prompt.ts";
 
@@ -92,23 +92,13 @@ export function automationStudioLlmTaskMessages(request: AutomationStudioLlmTask
  * how to read the rest, both in the constant head and never changed during a
  * build; and the full definitions of only the nodes the build asked
  * `core.describe_nodes` about or ran (`describedNodes`) -- user, 2026-10-01; a
- * run describes its node since t280.
+ * run describes its node since t280. No definition is in the head: each is on
+ * the window entry of the call that first described it (t289-G, W11), or on an
+ * entry of its own (`./described-nodes.ts`, t869).
  *
- * **A definition is shown on the window entry of the call that first described
- * it (t289-G, W11).** Until then `describedNodes` was the last thing in the
- * head, and each node described mid-build was appended there -- in front of
- * the tools and the whole window -- so the next request read both again
- * uncached: `run-murzln6g-11debe1d` C18 (about $0.008), `run-musp4h2f-72e8ed99`
- * cause 12 ("append, do not insert"). Now the call that describes a node names
- * its id under `describedNodes` on its own result
- * (`../node-tools/described-nodes-key.ts`), and `placeDescribedNodes` below
- * shows the definition there, in place of the id, on the first entry that
- * names it. That entry joined the window at its end and never changes, so a
- * describe appends to the request and alters no byte before it. A node the
- * build holds that no entry of this window names -- described by an earlier
- * round, whose window this one does not carry -- stays in the head's
- * `describedNodes`, which is therefore fixed for the length of a window. Each
- * definition appears exactly once per request either way.
+ * The draft's guidance is in the head and the rest of the draft after the window
+ * (`./draft-guide.ts`, t869). Which entries of the window change is said in one
+ * place (`../evidence-moves/evidence-that-moves.ts`).
  */
 function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop);
@@ -141,7 +131,7 @@ function providerEvidenceDecisionPayload(
   // Constant once its situations are in the window; a context that still lists them grows, and goes after it.
   const routingInFront = routing !== undefined && routing.situations.length === 0;
   const outputSchema = automationStudioLlmTaskOutputSchema(request);
-  const described = placeDescribedNodes(request.context.flowBootstrap?.describedNodes ?? [], loop.evidence);
+  const { guide, evidence } = automationStudioLlmLiftDraftGuide(automationStudioLlmPlaceDescribedNodes(request.context.flowBootstrap?.describedNodes ?? [], loop.evidence));
   return {
     taskKind: request.taskKind,
     promptVersion: request.promptVersion,
@@ -158,7 +148,7 @@ function providerEvidenceDecisionPayload(
       // explorer decides whether to press with this, not only the diagnosis.
       // Fixed for the length of a loop, so it stays in the constant head.
       ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
-      ...(request.context.flowBootstrap ? { flowBootstrap: providerEvidenceFlowBootstrap(request.context.flowBootstrap, routingInFront, described.head) } : {}),
+      ...(request.context.flowBootstrap ? { flowBootstrap: providerEvidenceFlowBootstrap(request.context.flowBootstrap, routingInFront) } : {}),
       evidenceLoop: {
         // Withdrawn only in the wrap-up and after an ignored redirect.
         tools: loop.tools.map((tool) => ({
@@ -167,10 +157,11 @@ function providerEvidenceDecisionPayload(
           ...(tool.effect ? { effect: tool.effect } : {}),
           ...(tool.repeatPolicy ? { repeatPolicy: tool.repeatPolicy } : {})
         })),
+        ...(guide ? { flowDraftGuide: guide } : {}),
         // The window, each newly described node's definition on the entry
         // that described it. Everything after it varies between one call and
         // the next, and nothing constant may follow it.
-        evidence: described.evidence,
+        evidence,
         iteration: loop.iteration
       },
       // Gains a situation whenever a call reaches a new page state.
@@ -205,11 +196,9 @@ function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskReque
 
 /**
  * What an evidence decision is shown of its catalog context: where its Flow
- * starts, every node by name, the note on reading them, the routing context
+ * starts, every node by name, the note on reading them, and the routing context
  * when it is constant (`withRouting`; one that still lists its situations rides
- * after the window instead), and last the described nodes no entry of the
- * window shows (`described`, see above), which are fixed for the length of a
- * window. The whole catalog,
+ * after the window instead). The whole catalog,
  * `catalogTruncated` and `catalogSelection` are not sent: the names list every
  * node, and a definition is one `core.describe_nodes` call away. A packet built
  * without `catalogNames` -- a request assembled by hand -- has them derived from
@@ -218,60 +207,15 @@ function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskReque
  */
 function providerEvidenceFlowBootstrap(
   context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>,
-  withRouting: boolean,
-  described: readonly AutomationStudioFlowBootstrapCatalogEntry[]
+  withRouting: boolean
 ): Record<string, unknown> {
   const { nodeCatalog, catalogNames, routing, startLocation } = context;
   return {
     ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
     nodeCatalog: catalogNames ?? automationStudioFlowBootstrapCatalogNames(nodeCatalog),
     nodeCatalogNote: AUTOMATION_STUDIO_NODE_CATALOG_NOTE,
-    ...(withRouting && routing ? { routing } : {}),
-    ...(described.length ? { describedNodes: described } : {})
+    ...(withRouting && routing ? { routing } : {})
   };
-}
-
-/**
- * The key a call's result names the nodes it newly described under, and where
- * their definitions are shown. The same name as
- * `AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY` (`../node-tools/described-nodes-key.ts`),
- * written here rather than imported so the adapter takes no edge into the
- * node tools; `../tests/provider-cache-prefix.test.ts` runs the two together.
- */
-const DESCRIBED_NODES_KEY = "describedNodes";
-
-/**
- * Each described node's definition, shown once: on the first window entry
- * whose result names it under `describedNodes` -- the call that described it --
- * in place of its id, and otherwise in the head (`head`). An id the build did
- * not describe, or one already shown, is left as written. Entries are copied,
- * never changed in place, and keep their key order, so an entry renders the same
- * bytes on every request that carries it.
- */
-function placeDescribedNodes(
-  definitions: readonly AutomationStudioFlowBootstrapCatalogEntry[],
-  evidence: ReadonlyArray<{ callId: string; toolId: string; value: JsonValue }>
-): { evidence: Array<{ callId: string; toolId: string; value: JsonValue }>; head: AutomationStudioFlowBootstrapCatalogEntry[] } {
-  const byId = new Map(definitions.map((definition) => [definition.id, definition] as const));
-  const shown = new Set<string>();
-  const showable = (id: unknown): id is string => typeof id === "string" && byId.has(id) && !shown.has(id);
-  const placed = evidence.map((entry) => {
-    const value = entry.value;
-    if (!isRecord(value)) return entry;
-    const named = value[DESCRIBED_NODES_KEY];
-    if (!Array.isArray(named) || !named.some(showable)) return entry;
-    const withDefinitions = named.map((id) => {
-      if (!showable(id)) return id;
-      shown.add(id);
-      return byId.get(id)! as unknown as JsonValue;
-    });
-    return { ...entry, value: { ...value, [DESCRIBED_NODES_KEY]: withDefinitions } };
-  });
-  return { evidence: placed, head: definitions.filter((definition) => !shown.has(definition.id)) };
-}
-
-function isRecord(value: unknown): value is JsonObject {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 /**
@@ -280,7 +224,7 @@ function isRecord(value: unknown): value is JsonObject {
  * `./tests/request-body.test.ts`.
  */
 const AUTOMATION_STUDIO_NODE_CATALOG_NOTE =
-  "nodeCatalog lists every node by id and what it does, by category. A node you run or ask core.describe_nodes about is described once, under describedNodes: on the result of the call that first did, or here if earlier. Ask before a first run only for its parameters; never ask twice.";
+  "nodeCatalog lists every node by id and what it does, by category. A node you run or ask core.describe_nodes about is described once, under describedNodes: on the result of the call that first did, or the first entry if earlier. Ask before a first run only for its parameters; never ask twice.";
 
 /**
  * What `startLocation` means, said once.

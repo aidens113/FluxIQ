@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../llm/index.ts";
-import { AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY, AUTOMATION_STUDIO_NODE_REPLAY_KEY, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioNodeReplayStepCall, automationStudioNodeReplayVerifyCall } from "../../../../llm/node-tools/replay/index.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY, AUTOMATION_STUDIO_NODE_REPLAY_KEY, AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY, AUTOMATION_STUDIO_NODE_WRITE_KEY, automationStudioNodeReplayStepCall, automationStudioNodeReplayVerifyCall } from "../../../../llm/node-tools/replay/index.ts";
 import { AutomationStudioAttemptActRecord, automationStudioAttemptActForward, automationStudioAttemptActGate } from "../../index.ts";
 
 const PRESS = "domain.output.press";
@@ -164,8 +164,14 @@ describe("replay calls", () => {
   };
   const replayed = pressed({ resultCode: "core.replay.replayed" });
 
+  it("a forward run counts as left out what this gate refused as done or maybe done, and nothing else", () => {
+    const { answeredDone } = automationStudioAttemptActForward(new AutomationStudioAttemptActRecord());
+    for (const code of ["attempt.act_already_done", "attempt.act_row_unclear", "attempt.act_look_first"]) expect(answeredDone(code)).toBe(true);
+    for (const code of ["attempt.act_not_recorded", "core.replay.failed", "core.replay.replayed", undefined]) expect(answeredDone(code)).toBe(false);
+  });
+
   it("reads the reserved keys the replay names: the gate restates them, so this fails if the two part", () => {
-    expect([AUTOMATION_STUDIO_NODE_REPLAY_KEY, AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY, AUTOMATION_STUDIO_NODE_WRITE_KEY]).toEqual(["replay", "item", "write"]);
+    expect([AUTOMATION_STUDIO_NODE_REPLAY_KEY, AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY, AUTOMATION_STUDIO_NODE_WRITE_KEY, AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY]).toEqual(["replay", "item", "write", "reach"]);
   });
 
   it("reads a forward pass as an act on its row, by the call Core really sends", async () => {

@@ -35,3 +35,19 @@ describe("the note on a failed saved step", () => {
     expect(happened(runThatFailed(undefined))).not.toMatch(/new step/u);
   });
 });
+
+describe("the note on a list that started over or got smaller", () => {
+  const withRows = (rows: object) => ({ ...runThatFailed(undefined), sink: { summary: () => ({ totalRows: 3, columns: [{ id: "title", label: "Title" }], ...rows }) } }) as unknown as AutomationStudioAnswerFirstAttemptRun;
+  const kept = (run: AutomationStudioAnswerFirstAttemptRun) => automationStudioAnswerFirstRoundNote(run, undefined)?.rowsKept as Record<string, unknown>;
+
+  it("says the latest read replaced the list, and that it got smaller, in words that name no site and no task", () => {
+    const told = kept(withRows({ startedOver: true, fewerThanEarlier: { earlierRows: 5 } }));
+    expect(String(told.startedOver)).toMatch(/replaced what an earlier read of it held/u);
+    expect(told.fewerThanEarlier).toMatchObject({ earlierRows: 5 });
+    expect(JSON.stringify(told)).not.toMatch(/library|loan|renew|card|core\./iu);
+  });
+
+  it("says nothing of either while the list carried on", () => {
+    expect(kept(withRows({}))).toEqual({ totalRows: 3, columns: ["title"] });
+  });
+});

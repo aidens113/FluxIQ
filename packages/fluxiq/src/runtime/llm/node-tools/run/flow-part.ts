@@ -31,7 +31,9 @@
 // step is in the range runs once per row its list returned here, and bindings
 // are resolved the same way (`./replay-span.ts`); one whose list step is not in
 // the range has no rows to walk and runs once, as a step the Flow does not
-// always run. A pass that does not pass stops the run as a step does.
+// always run. A pass that does not pass stops the run as a step does. A forward run
+// differs in all of this: it takes the repeat's list in, and a pass that does not
+// pass ends that pass alone (`../replay/forward.ts`).
 //
 // **Applied means a changing step acted (t195, `run-musr9pv3-f4bf6256`).** The
 // run's `effectApplied` is what its changing steps did, never a read's: a read
@@ -61,7 +63,7 @@ import { automationStudioLlmEvidenceViewGroups } from "../../decision-context/vi
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { automationStudioNodeReplayStepCall } from "../replay/replay.ts";
-import { automationStudioFlowDraftReplaySteps } from "../replay/draft.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE, automationStudioFlowDraftReplaySteps } from "../replay/draft.ts";
 import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
 
 /** What a part run needs: the draft, the model's argument, its call id and the loop's executor. */
@@ -144,6 +146,8 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   });
   const stoppedAt = done.stoppedAt;
   const rowsNotDone = done.rowsNotDone ?? [];
+  const rowsStepFailed = done.rowsStepFailed ?? [];
+  const noRows = done.outcomes.at(-1)?.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE;
   const passed = stoppedAt === undefined && rowsNotDone.length === 0;
   const seen = input.forward && input.look ? await pageAsItStands(input, input.look) : undefined;
   if (seen?.after !== undefined) after = seen.after;
@@ -155,7 +159,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     ...(shown ? { last: shown } : {}),
     ...(input.forward && done.rows ? { rows: done.rows } : {}),
     ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}),
-    instruction: input.forward ? forwardInstructionOf(range.from, to, stoppedAt, done.rows, rowsNotDone) : instructionOf(range.from, to, stoppedAt)
+    instruction: input.forward ? forwardInstructionOf(range.from, to, stoppedAt, done.rows, rowsNotDone, rowsStepFailed, noRows) : instructionOf(range.from, to, stoppedAt)
   };
   return {
     kind: "llm_evidence_tool_execution",
@@ -205,10 +209,17 @@ function instructionOf(from: number, to: number, stoppedAt: number | undefined):
  * What the model is told after a forward run: where it ran, how many rows it did and left out, and where it stopped.
  * Counts only; never that the Flow is tested or must be finished, because this is the work being done.
  */
-function forwardInstructionOf(from: number, to: number, stoppedAt: number | undefined, rows: { done: number; skipped: number; failed: number } | undefined, rowsNotDone: readonly string[]): string {
+function forwardInstructionOf(from: number, to: number, stoppedAt: number | undefined, rows: { done: number; skipped: number; failed: number } | undefined, rowsNotDone: readonly string[], rowsStepFailed: readonly string[], noRows: boolean): string {
   const part = from === to ? `Step ${from}` : `Steps ${from} to ${to}`;
   const counted = rows ? ` Rows: ${rows.done} done, ${rows.skipped} skipped as already done, ${rows.failed} failed.` : "";
-  const notDone = rowsNotDone.length > 0 ? ` These rows were not done, because each one's own control could not be found, and nothing was done to them: ${rowsNotDone.map((row) => JSON.stringify(row)).join(", ")}. See to them another way, or say in your answer that they were not done.` : "";
+  const quoted = (names: readonly string[]): string => names.map((row) => JSON.stringify(row)).join(", ");
+  const notFound = rowsNotDone.filter((row) => !rowsStepFailed.includes(row));
+  const notDone = [
+    notFound.length > 0 ? ` These rows were not done, because each one's own control could not be found, and nothing was done to them: ${quoted(notFound)}.` : "",
+    rowsStepFailed.length > 0 ? ` These rows were not finished, because a step failed on each one, so look at what the page shows for them: ${quoted(rowsStepFailed)}.` : "",
+    rowsNotDone.length > 0 ? " See to them another way, or say in your answer that they were not done." : ""
+  ].join("");
+  if (noRows) return `${part} ran forward from where the page stood and stopped at step ${stoppedAt}: the list it repeats over answered no rows, so nothing of the repeat was sent, and nothing after it. The page is where the last step left it.${counted}${notDone}`;
   if (stoppedAt !== undefined) return `${part} ran forward from where the page stood and stopped at step ${stoppedAt}: the page is where that step left it, and nothing after it was sent.${counted}${notDone}`;
   return notDone
     ? `${part} ran forward from where the page stood, on what was not done yet, and went on past the rows it could not do.${counted}${notDone}`

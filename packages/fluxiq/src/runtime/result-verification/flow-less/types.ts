@@ -54,8 +54,13 @@ export type AutomationStudioFlowLessJudgement = {
   verdict: "yes" | "no" | "unsure" | "not_judged";
   /** Screened: it goes back to a model and to the chat. */
   reason: string;
-  /** What was checked, in Core's words and counts: no page text. Set when a judge answered. */
+  /**
+   * What the check says of the result, for the card, in Core's counts or the check's own screened words, and by its
+   * verdict: on a yes what was checked, on a no what failed, on an unsure what it was meant to settle. Set when a judge answered.
+   */
   checkedWhat?: string;
   refusedByPurse?: boolean;
+  /** The model service said the account has no balance: an ending of the attempt, never a check that was merely not answered. */
+  emptyBalance?: boolean;
   unanswered?: boolean;
 };

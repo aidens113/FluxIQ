@@ -4,6 +4,7 @@
 // for recall and execution. No entry, view member or row is ranked or truncated.
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { automationStudioLlmEvidenceCurrentView } from "./decision-context/index.ts";
+import { AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS } from "./evidence-moves/index.ts";
 
 /** One evidence entry as a decision is shown it, and as the loop holds it. */
 export type AutomationStudioLlmEvidenceEntry = { callId: string; toolId: string; value: JsonValue };
@@ -17,6 +18,12 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY = "supersededBy";
  * Append one full current-view tail, then the existing current-Flow tail.
  * Undeclared data is kept whole and in its original property order; without
  * declared view keys no client view is invented. The input is never mutated.
+ *
+ * Core's passing notes (`./evidence-moves/evidence-that-moves.ts`) come after every
+ * result rather than where they arose. A newer note or a later call takes one out,
+ * and its call id renumbers, so one left among the results rewrote everything sent
+ * after it: nine of the 51 decisions of `run-mw37vz9n-a77a02c2` re-sent up to 11K
+ * characters that way. Each note names what it answers, so it reads the same.
  */
 export function automationStudioLlmEvidenceContextWindow(
   records: readonly AutomationStudioLlmEvidenceEntry[],
@@ -24,7 +31,8 @@ export function automationStudioLlmEvidenceContextWindow(
 ): AutomationStudioLlmEvidenceEntry[] {
   const { history, currentView } = automationStudioLlmEvidenceCurrentView(records, observedStateKeys);
   const current = currentFlow(records);
-  return [...history, ...(currentView ? [currentView] : []), ...(current ? [current] : [])];
+  const passing = (entry: AutomationStudioLlmEvidenceEntry): boolean => AUTOMATION_STUDIO_LLM_PASSING_NOTE_TOOL_IDS.has(entry.toolId);
+  return [...history.filter((entry) => !passing(entry)), ...history.filter(passing), ...(currentView ? [currentView] : []), ...(current ? [current] : [])];
 }
 
 /** The tool whose results carry a candidate's Flow script (`flow-bootstrap/candidate/authoring-loop.ts`). */

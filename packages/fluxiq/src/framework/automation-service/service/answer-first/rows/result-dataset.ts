@@ -1,11 +1,15 @@
 // Which dataset is the result when an exploration read more than one.
 //
-// The model never names its rows, so the rule is Core's: the result is the
-// dataset the latest rows-storing read wrote to. The latest read is the one
-// the model last chose to stand behind, and a later page of the same read is
-// the same dataset, so a read taken in pages is whole. An earlier read of
+// The rule is Core's: the result is the dataset the latest rows-storing read
+// wrote to. The latest read is the one the model last chose to stand behind. A
+// later page of the same list is the same dataset, so a list read in pages is
+// whole, and a read of the same list again replaces what it says
+// (`./list-after-read.ts`). A list is never mixed with another: each has its own
+// dataset, and the latest read's alone is the result. An earlier read of
 // something else (a look-up on the way) never replaces it, and a read that
-// stored nothing never displaces an earlier one that did.
+// stored nothing never displaces an earlier one that did. A read the model
+// marked as a working one is the result only while there is no other
+// (`./row-sink.ts`).
 //
 // **A saved Flow's run is the task's own answer so far, not one read among others.** A read after
 // it of something else (a look-up on the way to the next step) must not replace what the run found

@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
+import { automationStudioLlmEvidenceEntryMoves } from "../evidence-moves/index.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS,
   AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS,
@@ -97,16 +98,17 @@ describe("the order of a DeepSeek evidence-loop request", () => {
 
   it("keeps the whole window cached when a node is described between two calls (t289-G)", async () => {
     // The call that described a node names it under describedNodes on its own
-    // result, and its definition is shown there; a node no entry names stays in
-    // the head after the names and their note. Before t289-G every new
-    // definition was appended to the head, in front of the tools and the window.
+    // result, and its definition is shown there; a node no entry names is on the
+    // window's first entry (t869). Before t289-G every new definition was appended
+    // to the head, in front of the tools and the window.
     const [run, extract] = [nodeCatalog[1]!, nodeCatalog[0]!];
     const describing = (count: number) => evidence(count).map((entry, index) => index === 3 ? { ...entry, value: { ...(entry.value as object), describedNodes: [extract.id] } } : entry);
     const first = await userMessage(loopRequest(1, describing(3), [run]));
     const second = await userMessage(loopRequest(2, describing(4), [run, extract]));
 
     expect(first.indexOf('"nodeCatalogNote"')).toBeGreaterThan(first.indexOf('"nodeCatalog"'));
-    expect(first.slice(0, first.indexOf('"evidenceLoop"'))).toContain(JSON.stringify(run));
+    expect(first.slice(0, first.indexOf('"evidence":['))).not.toContain(JSON.stringify(run));
+    expect(first).toContain(JSON.stringify(run));
     expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
     expect(second.indexOf(JSON.stringify(extract)), "the newly described node, on the entry that described it").toBeGreaterThan(second.indexOf('"call.4"'));
     expect(occurrences(second, JSON.stringify(extract))).toBe(1);
@@ -172,19 +174,57 @@ describe("a node described in the middle of a build", () => {
     for (const id of [AND, OR]) expect(occurrences(third, JSON.stringify(build.memory.definition(id))), id).toBe(1);
   });
 
-  it("keeps in the head only the nodes described before this window began, and the head never changes after", async () => {
+  it("shows the nodes described before this window began on its first entry, and the head holds no definition at all", async () => {
     // A repair round shares the build's memory and starts a new window: what an
-    // earlier round described has no entry here, so it is shown in the head,
-    // which is constant for the length of this window.
+    // earlier round described has no entry here, so it is shown on an entry of its
+    // own, in front of the rest and constant for the length of this window (t869).
     const build = describingBuild();
     build.memory.describe([AND]);
     const first = await userMessage(packedRequest(1, [], build.memory.ids()));
     const second = await userMessage(packedRequest(2, [await build.run("call.1", OR)], build.memory.ids()));
-    const head = (message: string): string => message.slice(0, message.indexOf('"evidenceLoop"'));
+    const head = (message: string): string => message.slice(0, message.indexOf('"evidence":['));
 
-    expect(head(first)).toContain('"describedNodes"');
+    expect(head(first)).not.toContain('"describedNodes"');
     expect(head(second)).toBe(head(first));
+    expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
+    expect(first.slice(head(first).length)).toMatch(/^"evidence":\[\{"callId":"core\.described_nodes","toolId":"core\.described_nodes","value":\{"describedNodes":\[/u);
     for (const id of [AND, OR]) expect(occurrences(second, JSON.stringify(build.memory.definition(id))), id).toBe(1);
+  });
+});
+
+// t869: a look Core took for itself after an act ran the library through the
+// describing wrapper, and the node it described no entry ever named. At step 39 of
+// `run-mw37vz9n-a77a02c2` that put a definition in the head and re-sent 70K characters.
+describe("a node described by no call the window holds", () => {
+  const AND = "builtin.logic.and";
+  const OR = "builtin.logic.or";
+  const NOT = "builtin.logic.not";
+
+  it("is not described at all when Core ran it for its own look", async () => {
+    const build = describingBuild();
+    const window = [await build.run("initial.core.run_node", AND)];
+    const first = await userMessage(packedRequest(1, window, build.memory.ids()));
+    await build.run("core.attempt_look.1", OR);
+    expect(build.memory.has(OR)).toBe(false);
+    window.push(await build.run("call.1", NOT));
+    const second = await userMessage(packedRequest(2, window, build.memory.ids()));
+    expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
+    // And the model's own first run of it still describes it.
+    const answered = await build.run("call.2", OR);
+    expect(answered.value).toMatchObject({ describedNodes: [OR] });
+  });
+
+  it("rides after the window if anything else describes one, and sends nothing already sent again", async () => {
+    const build = describingBuild();
+    const window = [await build.run("initial.core.run_node", AND)];
+    const first = await userMessage(packedRequest(1, window, build.memory.ids()));
+    build.memory.describe([OR]);
+    const second = await userMessage(packedRequest(2, window, build.memory.ids()));
+    expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
+    expect(occurrences(second, JSON.stringify(build.memory.definition(OR)))).toBe(1);
+    const entries = (JSON.parse(second) as { context: { evidenceLoop: { evidence: Array<{ toolId: string }> } } }).context.evidenceLoop.evidence;
+    expect(entries.at(-1)!.toolId).toBe("core.newly_described_nodes");
+    expect(automationStudioLlmEvidenceEntryMoves({ callId: "core.newly_described_nodes", toolId: "core.newly_described_nodes" })).toBe(true);
   });
 });
 

@@ -1030,7 +1030,18 @@ A round has no time limit. Its limit on turns bounds a round and never a task.
 builds a Flow-less summary from the rows it stored, its act record, the end view and the
 witnesses, and asks one judge call (`runtime/result-verification/flow-less/`). A yes is
 `confirmed` and checked once. A no or an unsure goes back to the model with its reason.
-The same evidence is refused without a second call. The ending goes through
+A completion over the same evidence is refused without a second call, with the reason, what would
+count as new evidence and what the result holds. A refusal comes at the model in a ladder
+(`attempt/round.ts`, `loop-signal/completion-refused-again.ts`): the first repeat is steered, the
+second ends the round so the next starts fresh, and the third asks the person whether to keep going. New
+evidence starts the ladder again. With nobody to ask the attempt waits (`waiting_for_person`,
+`stuck_in_a_loop`) and spends nothing more, since a refusal is never worth a budget; a person who says keep
+going carries it on. An empty balance at the judge ends the attempt as a budget-out, as it does at a
+decision, and is never read as "not judged". **The latest read decides** what a list holds
+(`rows/list-after-read.ts`): a read carries the list on or starts it over, a read's own declared
+`process` shapes its result as a saved run's would (the stored rows stay as read), and a later read that got
+smaller is said on the card ("An earlier read of this list had 5 rows. This is the latest, with 3."). The
+ending goes through
 `checkAutomationStudioTaskAttemptResult`. The call answers `status: "answered"` however
 it ended, a budget-out included, so a task's ending is never a thrown failure. A
 pre-model refusal is a table entry (`runtime/answer-first/pre-model/`): resolved, or a
@@ -1081,13 +1092,29 @@ that does not succeed gives its acts back.
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
 acting. It sends no reset. These calls are in the Flow's own wire form, which the state
 engine needs: against an exploration's own calls it answers too little to settle anything.
-A pass presses its row's own control or says it could not: a host answers the reason
-`row_control_not_found`, nothing lasting later in that pass is sent, its later steps that
-declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`,
-`passed: false`), and the run goes on with the next row. A pass whose step answers
+A forward run walks a whole repeat and its list, whatever range it was asked for
+(`node-tools/replay/forward-range.ts`, t869): a model asks for "the loop" by its first step, and a range that starts inside
+a repeat or leaves its list out would otherwise have no rows to walk. A list before the range is read just before the
+repeat, on its own page; one in the range that answers `core.replay.unreproducible` is read once more, there. A repeat
+whose list answers no rows sends nothing of itself, and the run stops at its first step and says so (`core.replay.no_rows`),
+since a lasting step with no row acts on whatever page stands there. A repeat over a check that does not hold runs zero
+times and the run goes on.
+A step that does not pass on a row ends that row's pass and no other: nothing lasting later in that pass is sent, its later
+steps that declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`, `passed: false`), and
+the run goes on with the next row. The reason `row_control_not_found` says nothing was done to it; any other failure is
+named apart (`rowsStepFailed`), since something may have been. A row whose lasting step landed and whose way back alone
+failed is done, and is not named. A row the record refuses partway (`answeredDone`, the act gate's already-done and
+look-first answers) closes its pass the same way and counts as skipped; known at the pass's start, the pass sends nothing. A
+step outside a repeat that fails still stops the run there, so a Flow that cannot run at all answers what ran and what did
+not, as a tool answer and never as a task ending.
+How the next pass reaches the list: by the loop's own way back when the last pass ran it and it worked. Otherwise a pass's
+first step, in a repeat of more than one step, carries `reach: true`, and the host moves to the step's `from` if the page
+is not there. That is a move and nothing else: no reset, and an attempt still refuses `replay: "reset"`. A host that does
+not know the key runs the step where the page stands, which answers for itself.
+A pass whose step answers
 `row_left_behind` (a link not shown to be the row's went as page-level) is told the same way
 at its next lasting step, unless a step between them answers `row_own_control`. A saved Flow's
-run gate holds the same, from the resolution's `passRow`, failing that step instead. No other failing step goes on. The
+run gate holds that, from the resolution's `passRow`, failing that step instead. The
 answer holds one look taken as the run ends, under the keys the domain declares as its view,
 so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 
@@ -1551,10 +1578,11 @@ one decision, was resent on every decision). Its `flowBootstrap` carries:
   order they first appear in the id-sorted catalog and entries by id
   (`runtime/flow-authoring/bootstrap/plan/catalog-names.ts`);
 - `nodeCatalogNote`: one constant sentence on how to read the two fields;
-- `describedNodes`: the full catalog entries (label, description, ports,
-  parameter contracts with their authoring text, output-action contract) of
-  the nodes this build has described, in the order each was first described,
-  absent until there is one.
+- the full catalog entries (label, description, ports, parameter contracts with
+  their authoring text, output-action contract) of the nodes this build has
+  described are not in the head: each is under `describedNodes` on the entry of the
+  call that first described it, or on the window's first entry if an earlier round
+  did ([evidence-window.md](evidence-window.md), "What the prompt cache reads").
 
 `catalogTruncated` and `catalogSelection` are not sent on that payload. The
 packet still carries the whole `nodeCatalog`, `catalogSelection` included, for
@@ -1566,9 +1594,9 @@ The model reads a definition with Core's tool `core.describe_nodes`
 (`{ids}`, up to 64 per call; `runtime/llm/node-tools/describe-nodes.ts`). It
 observes only, is never a step of the Flow, and is offered only beside the
 node library (`core.run_node`). It answers with a receipt -- `described`,
-`alreadyDescribed`, `unknown`, `shownIn: "flowBootstrap.describedNodes"` --
-never the definitions, which appear in `describedNodes` from the next decision
-on, so each is shown once per request however long ago it was asked for. A
+`alreadyDescribed`, `unknown` -- never the definitions, which the next decision
+shows on that receipt in place of the ids, so each is shown once per request
+however long ago it was asked for. A
 call naming only unknown ids is refused as `describe_nodes.unknown_nodes`. The
 memory is one build's (`runtime/llm/node-tools/node-descriptions.ts`): every
 round of the build shares it, and a new build starts empty. A describe call
@@ -3074,12 +3102,11 @@ Because every decision of an evidence loop is a fresh, stateless request, the
 whole of that cache turns on the order of the user message, and
 `providerUserPayload` arranges it deliberately: the task envelope, the decision
 grammar, the person's instruction, the tool descriptions, the policy gates and
-the catalog context (the node names, their note and `describedNodes`) first,
-then the evidence window, and the iteration counter last. Everything invariant
-is therefore one contiguous prefix, and the window -- which usually only gains
-an entry between calls -- extends it. `describedNodes` is the one part of that
-head that grows: it is append-only for the length of a build, so a describe
-keeps the cached prefix through every node described before it. The order used to
+the catalog context (the node names and their note) first, then the evidence
+window, and the iteration counter last. Everything invariant is therefore one
+contiguous prefix, and the window -- which usually only gains an entry between
+calls -- extends it. Nothing in the head grows
+([evidence-window.md](evidence-window.md), "What the prompt cache reads"). The order used to
 put the counter before the tool descriptions and the catalog, which left 20,341
 identical bytes of a 50,840-byte message behind a value that changed on every
 call. A key added here must go on the correct side of that line: anything that

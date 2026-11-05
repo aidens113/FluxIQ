@@ -10,8 +10,8 @@ const KEEP_GOING = "stuck_keep_going";
 const STOP = "stuck_stop";
 const TEXT = "I keep getting stuck on this, so I have stopped spending to ask. Do you want me to keep going, or stop here with what I have?";
 
-/** How the person answered, or `keep_going` where nobody can be asked. */
-export async function automationStudioAnswerFirstAskStuck(port: AutomationStudioParkingPort | undefined, signal: AbortSignal | undefined): Promise<"keep_going" | "stop"> {
+/** How the person answered, or `keep_going` where nobody can be asked. `words` is the question where it has more to say than that the attempt is stuck: Core's words and a screened reason, never a code. */
+export async function automationStudioAnswerFirstAskStuck(port: AutomationStudioParkingPort | undefined, signal: AbortSignal | undefined, words?: string): Promise<"keep_going" | "stop"> {
   if (!port?.awaitAnswer) return "keep_going";
   const ask: AutomationStudioAsk = {
     askId: `stuck.${randomUUID()}`,
@@ -24,7 +24,7 @@ export async function automationStudioAnswerFirstAskStuck(port: AutomationStudio
     consequences: [],
     control: { name: null, kind: "stuck_in_a_loop" },
     status: "pending",
-    text: TEXT,
+    text: words ?? TEXT,
     raisedBy: { stage: "authoring" }
   };
   await port.open(ask);

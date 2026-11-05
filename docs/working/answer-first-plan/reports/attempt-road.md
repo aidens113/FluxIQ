@@ -232,3 +232,101 @@ contracts task-attempts   91 passed; ui-components ports   3 passed
 1. **Run again on an attempt's card:** t870 said it stays with its lane. I have not re-checked what it does now.
 2. **The card's Save lines do not name the row** ("Save." three times), and a hand press's wording is generic. The seam is `SVC/answer-first/attempt/call-chain.ts`, `wordsOf`, which you passed to t870.
 3. **An undeclared press** stays out of a result's acts by design, so the card can read "I recorded no changes" beside a site that changed. The sentence is now true of the record, but a person may still read it as the site. The paid runs will show how often.
+
+## The repair round, after the first two paid runs
+
+The read task passed at $0.42. The toggle task ended `budget_out` at $4.84 with its acts right: exactly three saves, no double press. Every repair below was traced to its cause first and is proven provider-free. Reports: `attempt-road/repair-{rows,refusal,saved,forward,words-and-context,cache,seams}.md`.
+
+| What the run showed | The cause | Now |
+| --- | --- | --- |
+| A later correct read did not become the result | Every read was stored as an addition. `rows/row-sink.ts:106` ignored `replace`, and `dataset-of-read.ts:21` split one list into two datasets | The latest read of a list decides rows and order. Pages merge. The judge and the person read the same |
+| `complete` refused three times, about $0.14 each, `loopsCaught` 0 | `complete` never reached the loop watch, and its words were false about what the check reads | Steered, then a fresh round, then the person with money left. The model sees what the result holds |
+| `saved: null` after real work | `saved` was read from `candidateId` alone. Its steps were kept but not read | True on every ending. A refused draft's reason is now logged |
+| Forward run stopped at the first row | No pass ever ran. `{from: 23}` left the list out of range, and a Flow's dispatch refused `dedupe` on an `intermediate` read so it held no rows | The whole repeat and its list run. A failing step ends that row's pass only |
+| Two malformed replies | **Not known: the raw text was never logged.** Truncation and a stream fault are ruled out | Common damage is repaired and billed once. The raw text is now logged, screened, so the next run answers it |
+| Card words | The counts line went in `checkedWhat` for every verdict, and act words held no item | A no shows the judge's words. "Save: <item>". The card says when a later read got smaller |
+| A balance error at the judge | Read as "not judged", so the attempt kept deciding | Ends the attempt, once |
+| The prompt cache | Markers on blocks that change every call, plus an automatic one after them | See below |
+
+**The cache.** Markers now sit on the end of the head, on the last entry before the first that moves, and one 19 entries back, so up to 38 entries can be added. The automatic marker is gone except on the panel's chat. The text sent is byte-identical on 51 of 51 logged requests. Replaying the toggle run's requests in the new shape: 50 of 50 pairs hit, 83% from cache, **an estimated $1.73 against $4.85 logged.** That assumes the model decides the same way. The old-marker replay read about 6% low against billing. **The real number comes only from the next paid run.**
+
+**I checked this on requests the new code really sent,** in the scripted runs: `run-mw3gp5f5-5800a4fd` 23 of 23 pairs, `run-mw3gjgbr-f44f0616` 21 of 21 and `run-mw3g3a3g-f868c06b` 9 of 9 each match up to the previous marker, with at most 4 markers, no top-level marker, and markers only on the head and on stable history (`core.route_state`, `core.run_node`, a structure read). The scripted model reports no cache use, so these runs print "0% of input from cache", which is true of them and says nothing about Claude.
+
+**`core.flow_draft` is not sent only on change.** It changed on 39 to 40 of 51 calls, not about 11: I diffed the logged entries, and it grew on 34 of 39 changes because each step taken by hand adds to it. Keeping an appended copy per change costs $0.36 more. Its constant guidance moved to the head instead, which takes the replay from $1.79 to $1.65. About $0.33 of what is left is the draft's steps; going lower means sending changes rather than the whole draft, which changes what the model reads. That needs a decision and is not recommended without one.
+
+**Pricing was right.** The official page says Sonnet 5.5 cache reads are $0.10 per million, and the claude-api skill's $0.20 is stale. No number changed. Haiku's tier holds, and its 100,000 line reads the whole prompt, cached parts included.
+
+### Behaviour changes to know
+
+- A stuck attempt with nobody to ask now waits (`waiting_for_person`), spending nothing, instead of running to `budget_out`.
+- A draft-loop model that ignores the budget entry in its last 3 decisions spends a decision on a tool that does not run. Tools stay listed so the head stays stable.
+- An amendment asked for before there is a step to amend is refused rather than unlisted.
+- A hand read with `dedupe` on an `intermediate` output is refused where it is written, which costs the model one call.
+- A by-hand read's declared `process` now shapes its result, as a saved run's does.
+- Existing tests that expected the old endings or forward rule were changed to the new rule (`saved-shapes`, forward-run stops, stuck endings).
+
+### The final proofs of this round
+
+All eight on the final code, each `NOT LIVE, stand-ins: model, spend`, all exit 0 and answer right:
+
+| Task | Form | Result | Evidence |
+| --- | --- | --- | --- |
+| `company-website-apprentices` | | 4 rows, 11 calls, 27 s | `run-mw3g3a3g-f868c06b` |
+| `professional-network-accept-messaged-invitations` | plain | 3 rows, 13 calls, 33 s | `run-mw3gaaom-208b1459` |
+| | reshape | 3 rows, 15 calls, 39 s | `run-mw3gc8n4-f8f153a3` |
+| | thin | 3 rows, 13 calls, 33 s | `run-mw3gel8i-132e4716` |
+| `local-classifieds-save-dining-tables` | plain | 5 rows, 22 calls, 60 s | `run-mw3ggjlv-b6ed8ed5` |
+| | reshape | 5 rows, 23 calls, 62 s | `run-mw3gjgbr-f44f0616` |
+| | row-link | 5 rows, 22 calls, 65 s | `run-mw3gm9sz-fb899698` |
+| | open-save-back, this model's own shape | 5 rows, 25 calls, 71 s | `run-mw3gp5f5-5800a4fd` |
+
+In the open-save-back and row-link runs I read, the activity is `saved pine, saved glass, saved industrial` with no `unsaved`.
+
+Also on the final code:
+
+```text
+vitest: answer-first (both), runtime/llm, runtime/models, flow-less, candidate, supervisor, project-build, deepseek-bootstrap    458 files, 4458 passed
+contracts src/task-attempts    92 passed
+ui-components chat/answer, chat/ports, chat/stream/step, testing/results    22 files, 188 passed
+test-contracts attempt-score   6 passed; test-runner shown-answer, attempt-series, answer-first-ceiling    25 passed
+pnpm.cmd run test:content part-run-job-board.spec.ts pinned-calls-job-board.spec.ts left-behind-job-board.spec.ts --headed --workers=1    5 passed (13.7m)
+pnpm.cmd run test:e2e photo-act-ledger.spec.ts --headed --workers=1    1 passed (2.2m), the site-reset scripted provider that reads the tool list
+checks and structure audits in both repositories    passed
+Sonnet and Haiku paid forms with --dry-run, stand-in key    ready, providerCallCount 0, ledger unchanged
+```
+
+### The next paid runs
+
+**Sonnet, the toggle task again:**
+
+```text
+FLUXIQ_LAB_INSTANCE=t869-live FLUXIQ_TEST_ENV_FILES=none pnpm lab attempt local-classifieds --task local-classifieds-save-dining-tables --authoring-mode answer-first --live-llm --llm-model claude-sonnet-5-5 --llm-max-cost-usd 5
+```
+
+**Haiku, the same task:**
+
+```text
+FLUXIQ_LAB_INSTANCE=t869-live FLUXIQ_TEST_ENV_FILES=none pnpm lab attempt local-classifieds --task local-classifieds-save-dining-tables --authoring-mode answer-first --live-llm --llm-model claude-haiku-5-5 --llm-max-cost-usd 1 --llm-cost-ceiling-usd 1
+```
+
+**`--llm-cost-ceiling-usd 1` is required for Haiku.** The worktree's `.env.local` holds a $5 ceiling, and a real launch refuses `--llm-max-cost-usd 1` without it. A dry run with both env-file switches off passes without it and would have hidden this; I tested it the way a real launch reads the file. With it: ready, `claude-haiku-5-5` as model and as Core's default, $1. Nothing outside the catalog names another model, so it cannot fall through. Haiku is $0.10 and $0.50 per million up to 100K prompt tokens, $0.50 and $2.50 beyond, on the whole prompt, so a late call past that line costs five times as much. A purse of $1 may simply run out; that is a result, not a defect.
+
+**What I expect from Sonnet, with low confidence on the dollars:**
+
+- A cache share around 80%, and a cost of about $1.70 to $2.50 if the model behaves as it did. Below 50% from cache means the fix did not hold on the real provider: stop and read `cacheWriteInputTokens` in `steps/*/meta.json`.
+- Three saves, one each, no `unsaved`.
+- Sorted rows on the card. If not, the raw reads in `steps/` show whether the model asked for them.
+- Either the loop forward over rows 2 and 3 or, if the model does them by hand, `actsWithNoRow` read and reported.
+- `saved` filled. A draft refusal's reason, if any, is in a step-log note.
+- Reaching `achieved` is likely but not proven: the judge's noes last time were correct and specific, and the rows they were about are what changed.
+
+**Stop it on:** a balance error; any `unsaved`; spend past about $3.50 with the three saves already landed; a loop line repeating; or a wait for a person, since nobody is coming. A malformed reply no longer needs a stop: its raw text is now logged.
+
+### Still open
+
+- **The next attempt.** A saved Flow stops at a row it cannot do, and the two-attempt, no-reseed command is the next worker, as agreed.
+- **A row wrongly left out** reaches the card only as a count.
+- **`readingWords`** still drops the judge's located defects, and its summary when `changed` is given.
+- **A rung that ends a round answers `{ ok: true }` from the check** to keep the round's rows. Nothing is accepted by it, since only `state.achieved` counts, but a direct call would read better.
+- **The fresh round's real cost** is not measured.
+- **Cost past the 45 s cut** is still not measured.

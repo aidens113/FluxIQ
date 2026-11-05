@@ -7,7 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, buildAutomationStudioLlmEvidenceLoopDecisionSchema, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioDeepSeekProvider } from "../../index.ts";
-import { automationStudioLlmStepLogScope } from "../index.ts";
+import { automationStudioLlmStepLogModelStep, automationStudioLlmStepLogScope } from "../index.ts";
 
 /** The resolved credential: not credential-shaped, so only never handing it over keeps it out of the files. */
 const SECRET = "resolved-secret-value-7f3a9c";
@@ -25,6 +25,16 @@ afterEach(() => {
   if (saved === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
   else process.env.FLUXIQ_LLM_STEP_LOG_DIR = saved;
   rmSync(directory, { recursive: true, force: true });
+});
+
+describe("what a model step records of the cache", () => {
+  it("records what the call wrote beside its hits and misses", () => {
+    const step = automationStudioLlmStepLogModelStep({ provider: "anthropic", model: "claude-sonnet-5-5", url: "https://api.anthropic.com/v1/messages", body: "{}", taskKind: "evidence_tool_decision" });
+    step!.succeeded({ kind: "evidence_tool_decision" }, { inputTokens: 170, outputTokens: 30, cacheHitInputTokens: 50, cacheMissInputTokens: 120, cacheWriteInputTokens: 20, estimatedCostUsd: 0.001 });
+    expect(json(path.join(directory, readdirSync(directory).find((name) => name.endsWith("-decide"))!, "meta.json"))).toMatchObject({
+      usage: { inputTokens: 170, outputTokens: 30, cacheHitInputTokens: 50, cacheMissInputTokens: 120, cacheWriteInputTokens: 20 }
+    });
+  });
 });
 
 describe("a model step through the DeepSeek adapter", () => {
@@ -53,7 +63,7 @@ describe("a model step through the DeepSeek adapter", () => {
       step: 1, kind: "decide", provider: "deepseek", model: AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, url: "https://api.deepseek.com/chat/completions",
       requestId: "request.step-1", attempt: 1, taskKind: "evidence_tool_decision", iteration: 2, round: 1, phase: "repair",
       status: "ok", httpStatus: 200, finishReason: "stop", error: null,
-      usage: { inputTokens: 20, outputTokens: 10, cacheHitInputTokens: 5, cacheMissInputTokens: 15 }
+      usage: { inputTokens: 20, outputTokens: 10, cacheHitInputTokens: 5, cacheMissInputTokens: 15, cacheWriteInputTokens: null }
     });
     expect(meta.costUsd).toBeGreaterThan(0);
     expect(meta.redacted).toBeUndefined();

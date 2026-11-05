@@ -324,3 +324,16 @@ test("rows skipped as already done draw one plain line, with no tick of its own 
     assert.equal(plain.byClass("answer-line").some((line) => line.getAttribute("data-line") === "skipped"), false);
   });
 });
+
+test("rows: a list that got smaller says so under the table", async () => {
+  await withFakeDocument(() => {
+    const outcome = fakeTaskOutcomes().rowsChecked;
+    const rows = outcome.result!.rows!;
+    rows.totalRows = 3;
+    rows.previewRows = rows.previewRows.slice(0, 3);
+    rows.fewerThanEarlier = { earlierRows: 5 };
+    const results = createFakeChatResultsPort({ outcomes: [outcome] });
+    const { root } = draw(outcome, { results, onWhatIDid: () => undefined });
+    assert.deepEqual(text(root, "answer-note"), ["An earlier read of this list had 5 rows. This is the latest, with 3."]);
+  });
+});

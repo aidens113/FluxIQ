@@ -2,7 +2,9 @@
 // that does not read, or an attempt and result that disagree, is a read that failed, and never a guess.
 
 import { checkAutomationStudioTaskAttemptResult, parseAutomationStudioSavedState, parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult, type AutomationStudioSavedState, type AutomationStudioTaskAttempt } from "@fluxiq/contracts/automation";
+import { automationStudioFlowDraftStepIsProposed } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioTaskOutcome } from "../../../../../api-contracts/automation.ts";
+import { automationStudioAnswerFirstKeptState } from "../task-memory/kept-state.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 
@@ -23,7 +25,8 @@ export function automationStudioAnswerFirstOutcomeOfRecord(records: readonly Aut
     outcome.result = result.result;
   }
   if (!checkAutomationStudioTaskAttemptResult(attempt, outcome.result).ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);
-  if (record.candidateId !== undefined) outcome.saved = savedOf(attempt, flowId);
+  const saved = savedOf(record, attempt, flowId);
+  if (saved) outcome.saved = saved;
   const earlier = records.slice(0, at).filter((each) => each.attempt.taskId === attempt.taskId && each.attempt.endedAtMs !== undefined).at(-1);
   if (earlier) outcome.comparedTo = attemptOf(earlier.attempt, flowId);
   return outcome;
@@ -35,7 +38,22 @@ function attemptOf(value: unknown, flowId: string): AutomationStudioTaskAttempt 
   return read.attempt;
 }
 
-function savedOf(attempt: AutomationStudioTaskAttempt, flowId: string): AutomationStudioSavedState {
+/**
+ * What the record says is kept. A draft saved through the candidate store is steps kept and unproven; steps the
+ * attempt wrote that could not be assembled into one are kept on the row all the same and read as notes, which is
+ * true of them; an attempt that wrote no step of its own has nothing saved. (Cause of t869's "Nothing saved yet":
+ * this read `candidateId` alone, so an ending whose draft did not assemble read as nothing at all.)
+ */
+function savedOf(record: AutomationStudioAnswerFirstAttemptRecord, attempt: AutomationStudioTaskAttempt, flowId: string): AutomationStudioSavedState | undefined {
+  const kept = automationStudioAnswerFirstKeptState({ steps: record.steps?.some(automationStudioFlowDraftStepIsProposed) === true, assembled: record.candidateId !== undefined });
+  if (kept === undefined) return undefined;
+  if (kept === "partly_works") return draftSavedOf(attempt, flowId);
+  const read = parseAutomationStudioSavedState({ state: "notes_only", trust: "unproven", savedAtMs: attempt.endedAtMs ?? attempt.startedAtMs });
+  if (!read.ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);
+  return read.saved;
+}
+
+function draftSavedOf(attempt: AutomationStudioTaskAttempt, flowId: string): AutomationStudioSavedState {
   const fields: Record<string, unknown> = { state: "partly_works", trust: "unproven", flowId, savedAtMs: attempt.endedAtMs ?? attempt.startedAtMs };
   if (attempt.simulation) fields.simulation = attempt.simulation.verdict;
   const read = parseAutomationStudioSavedState(fields);

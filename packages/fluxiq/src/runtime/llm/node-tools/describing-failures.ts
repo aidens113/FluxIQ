@@ -50,6 +50,15 @@
 // checking its own work, never a call the model made, and pass through. The
 // loop's opening call (the arrival or the first look) is the host's, not a
 // replay, so its node is described on the window's first entry.
+//
+// **Nor does a look Core takes for itself describe (t869).** An attempt's look
+// after an act, and a test's look at where it ended (`core.attempt_look.3`, a
+// call id in Core's own `core.` namespace, `service/end-view/look.ts`), go
+// through the library too, and their results reach no window entry. So the node
+// they ran was held as described with nothing to show it on: the wire put it in
+// the head, and `run-mw37vz9n-a77a02c2` re-sent 70K characters at step 39 for a
+// node the model never asked about. A model's call id may use `core.` too, at
+// worst leaving its node to be described by its next call.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
@@ -58,6 +67,9 @@ import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY } from "./described-nodes-key
 import type { AutomationStudioLlmNodeDescriptions } from "./node-descriptions.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_KEY } from "./replay/replay.ts";
 
+/** How a call Core makes for itself is named (header); the loop's opening call is `initial.`, and is described. */
+const CORE_CALL_PREFIX = "core.";
+
 /** `implementation` (the library's), describing the node of each call it makes and explaining each call that fails. */
 export function automationStudioLlmRunNodeDescribingFailures(
   implementation: AutomationStudioHarnessOptionImplementation,
@@ -65,7 +77,7 @@ export function automationStudioLlmRunNodeDescribingFailures(
 ): AutomationStudioHarnessOptionImplementation {
   return async (input) => {
     const node = input.value.node;
-    if (typeof node !== "string" || AUTOMATION_STUDIO_NODE_REPLAY_KEY in input.value) return implementation(input);
+    if (typeof node !== "string" || AUTOMATION_STUDIO_NODE_REPLAY_KEY in input.value || input.callId.startsWith(CORE_CALL_PREFIX)) return implementation(input);
     const definition = memory.definition(node);
     if (!definition) return implementation(input);
     const result = await implementation(input);

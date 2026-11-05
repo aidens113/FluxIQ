@@ -75,6 +75,12 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   waitedMs: number;
   /** Loop detection's last rung fired: the next thing the attempt does is ask. */
   askPerson: boolean;
+  /** What that question says, where it has more to say than that the attempt is stuck. */
+  askWords?: string | undefined;
+  /** The latest decision's number in its round, for the step log of what follows from it. */
+  decidedAt?: number | undefined;
+  /** A completion refused again ended this round (`./round.ts`): it reads as a round that kept repeating itself. */
+  refusalEndedRound?: boolean | undefined;
   /** Set by a round whose person-only check ended it. */
   personEnded?: "stopped" | "timed_out" | "unreachable" | "cancelled" | "asks_exhausted" | undefined;
   /** The refusal the rounds ended on where no model call was ever made: thrown on, to become a setup step (`../setup/`). */

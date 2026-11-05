@@ -5,6 +5,7 @@ export { actWords } from "./act-words.ts";
 export { comparedWords } from "./compared-words.ts";
 export { dayWords } from "./day-words.ts";
 export { durationWords } from "./duration-words.ts";
+export { fewerWords } from "./fewer-words.ts";
 export { fromWords } from "./from-words.ts";
 export { pathWords } from "./path-words.ts";
 export { savedWords } from "./saved-words.ts";

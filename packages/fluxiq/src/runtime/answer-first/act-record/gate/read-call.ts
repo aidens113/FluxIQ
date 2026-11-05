@@ -27,6 +27,7 @@ import type { AutomationStudioAttemptActCall } from "../contracts.ts";
 const REPLAY_KEY = "replay";
 const ITEM_KEY = "item";
 const WRITE_KEY = "write";
+const REACH_KEY = "reach";
 
 /** What a call is, for the gate. */
 export type AutomationStudioAttemptActCallRead =
@@ -35,7 +36,7 @@ export type AutomationStudioAttemptActCallRead =
   | { kind: "act"; act: AutomationStudioAttemptActCall };
 
 /** Keys of a domain's own tool that are about the call rather than what it sends. */
-const NOT_SENT: ReadonlySet<string> = new Set(["node", "consequences", "instructedAct", REPLAY_KEY, ITEM_KEY, WRITE_KEY, "from", "produced"]);
+const NOT_SENT: ReadonlySet<string> = new Set(["node", "consequences", "instructedAct", REPLAY_KEY, ITEM_KEY, WRITE_KEY, REACH_KEY, "from", "produced"]);
 
 /** What `call` is, for the gate (header). */
 export function automationStudioAttemptActCallRead(call: { toolId: string; value: JsonObject }): AutomationStudioAttemptActCallRead {

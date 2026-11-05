@@ -2,8 +2,9 @@
 // rows not yet done, from the page as it stands, and never from the top.
 //
 // The model does the first row by hand, writes the loop, and the loop does the rest. A row that already took its
-// lasting act sends nothing; a lasting step on a new row really acts; a failing pass stops there and leaves the
-// page; no reset and no re-anchor is ever sent. Without `forwardRun` the tool and its calls are today's.
+// lasting act sends nothing; a lasting step on a new row really acts; a failing pass ends there and the next row runs;
+// a step outside a repeat that fails stops the run and leaves the page; no reset and no re-anchor is ever sent. Without
+// `forwardRun` the tool and its calls are today's.
 // The llm barrel first, as `../../../decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioLlmRunFlowBinding, automationStudioLlmRunFlowTool, runAutomationStudioFlowDraftPart, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../index.ts";
@@ -113,13 +114,22 @@ describe("the forward run", () => {
     expect(result.evidence).toMatchObject({ passed: true, rows: { done: 0, skipped: 3, failed: 0 } });
   });
 
-  it("stops at a failing pass, says which step, and leaves the rest unsent", async () => {
+  it("ends a failing pass and goes on with the next row and the steps after, and names the row", async () => {
     const executor = host({ answers: { "fw.2.pass.2": "core.replay.unreproducible" } });
     const result = await runForward(draft(), executor, forwardRun(["Ada"], []));
-    expect(names(passCalls(executor.calls))).toEqual(["Ben"]);
+    expect(names(passCalls(executor.calls))).toEqual(["Ben", "Cyd"]);
+    expect(executor.calls.some((call) => call.callId === "fw.3")).toBe(true);
+    expect(result.resultCode).toBe("core.run_flow.ran");
+    expect(result.evidence).toMatchObject({ passed: false, rows: { done: 1, skipped: 1, failed: 1 } });
+  });
+
+  it("stops at a failing step outside a repeat, says which step, and leaves the rest unsent", async () => {
+    const executor = host({ answers: { "fw.1": "core.replay.failed" } });
+    const result = await runForward(draft(), executor, forwardRun(["Ada"], []));
+    expect(passCalls(executor.calls)).toEqual([]);
     expect(executor.calls.some((call) => call.callId === "fw.3")).toBe(false);
     expect(result.resultCode).toBe("core.run_flow.stopped");
-    expect(result.evidence).toMatchObject({ passed: false, stoppedAt: 2, rows: { done: 0, skipped: 1, failed: 1 } });
+    expect(result.evidence).toMatchObject({ passed: false, stoppedAt: 1 });
   });
 
   it("never sends a reset or a re-anchor", async () => {

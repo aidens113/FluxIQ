@@ -124,6 +124,16 @@ describe("parseAutomationStudioTaskResult", () => {
     expect(issuesOf(withRows({ truncated: "no" }))).toContain("task_result.invalid_truncated");
   });
 
+  it("carries the note that a later read got smaller, and refuses one that says nothing true", () => {
+    const parsed = parseAutomationStudioTaskResult(withRows({ fewerThanEarlier: { earlierRows: 12 } }));
+    expect(parsed.ok && parsed.result.rows?.fewerThanEarlier).toEqual({ earlierRows: 12 });
+    const plain = parseAutomationStudioTaskResult(ROWS);
+    expect(plain.ok && "fewerThanEarlier" in plain.result.rows!).toBe(false);
+    for (const bad of [{ earlierRows: 10 }, { earlierRows: 3 }, { earlierRows: 1.5 }, { earlierRows: "12" }, { earlierRows: 12, page: 1 }, 12, null]) {
+      expect(issuesOf(withRows({ fewerThanEarlier: bad }))).toContain("task_result.invalid_fewer_than_earlier");
+    }
+  });
+
   it("holds columns to the record schema's own rules", () => {
     expect(issuesOf(withRows({ columns: [{ id: "__proto__", label: "x" }], previewRows: [] }))).toContain("task_result.invalid_columns");
     expect(issuesOf(withRows({ columns: [{ id: "a b", label: "x" }], previewRows: [] }))).toContain("task_result.invalid_columns");

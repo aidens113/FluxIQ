@@ -3,6 +3,8 @@ export type ModelTransportUsage = {
   outputTokens?: number | undefined;
   cacheHitInputTokens?: number | undefined;
   cacheMissInputTokens?: number | undefined;
+  /** Input tokens this call wrote to the provider's cache, where the provider says. Part of `cacheMissInputTokens`. */
+  cacheWriteInputTokens?: number | undefined;
   estimatedCostUsd?: number | undefined;
 };
 

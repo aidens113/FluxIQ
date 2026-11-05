@@ -113,9 +113,11 @@ import {
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayToolId
 } from "./replay.ts";
-import type { AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
+import { AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY, type AutomationStudioFlowDraftReplayForward, type AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
+import { automationStudioFlowDraftReplayForwardRange } from "./forward-range.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE,
+  automationStudioFlowDraftReplaySpanMembers,
   automationStudioFlowDraftReplayPassCall,
   automationStudioFlowDraftReplayProduced,
   automationStudioFlowDraftReplaySpanPlan,
@@ -126,6 +128,9 @@ import {
   type AutomationStudioFlowDraftReplayNodeOf,
   type AutomationStudioFlowDraftReplayObservation
 } from "./span.ts";
+
+/** A forward run's repeat whose list answered no rows: none of it was sent, and the run stops there (`./forward.ts`). */
+export const AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE = "core.replay.no_rows";
 
 /** What the caller has to lend a replay: the executor. */
 export type AutomationStudioFlowDraftReplayInput = {
@@ -283,8 +288,10 @@ export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFl
   stoppedAt?: number;
   /** A forward run's rows, summed over the lists it walked; absent without `forward` or when no list was walked. */
   rows?: AutomationStudioFlowDraftReplayRowCounts;
-  /** A forward run's rows whose own control could not be found, by their labels (`./forward.ts`); absent when there were none. */
+  /** A forward run's rows a step failed on, by their labels (`./forward.ts`); absent when there were none. */
   rowsNotDone?: string[];
+  /** Those of `rowsNotDone` where a step failed for another reason than finding the row's own control; absent when there were none. */
+  rowsStepFailed?: string[];
 };
 
 /**
@@ -296,7 +303,9 @@ export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFl
  * Used by the replay above and by a rerun's put-back (`./step-place.ts`).
  */
 export async function automationStudioFlowDraftReplaySteps(input: AutomationStudioFlowDraftReplayStepsInput): Promise<AutomationStudioFlowDraftReplayStepsResult> {
-  const proposed = input.run;
+  // A forward run walks a whole repeat and its list, whatever range it was asked for (`./forward-range.ts`).
+  const walk = input.forward ? automationStudioFlowDraftReplayForwardRange(input.steps, input.run) : undefined;
+  const proposed = walk?.run ?? input.run;
   const outcomes: AutomationStudioFlowDraftReplayOutcome[] = [];
   const observations: AutomationStudioFlowDraftReplayResult["observations"] = [];
   let evidence: AutomationStudioFlowDraftReplayResult["evidence"];
@@ -324,6 +333,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   };
   let rows: AutomationStudioFlowDraftReplayRowCounts | undefined;
   const rowsNotDone: string[] = [];
+  const rowsStepFailed: string[] = [];
   const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject, excusable?: AutomationStudioFlowDraftExcusedReason, forwarded = true): Promise<ReplayAnswer> => {
     const answer = await call(input, callId, automationStudioNodeReplayToolId(step), value, excusable);
     if (answer.readable) {
@@ -362,14 +372,28 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       if (!evidence && span.evidence) evidence = span.evidence;
       if (span.rows) rows = { done: (rows?.done ?? 0) + span.rows.done, skipped: (rows?.skipped ?? 0) + span.rows.skipped, failed: (rows?.failed ?? 0) + span.rows.failed };
       if (span.rowsNotDone) rowsNotDone.push(...span.rowsNotDone);
+      if (span.rowsStepFailed) rowsStepFailed.push(...span.rowsStepFailed);
       if (span.stopped) stoppedAt = span.outcomes.at(-1)?.step;
       index += plan.members.length - 1;
+      continue;
+    }
+    // A forward run never sends a repeat with no row: a lasting step of it would act on whatever page stands there (`./forward.ts`).
+    if (input.forward && step.routing?.kind === "repeat" && !automationStudioFlowDraftRepeatIsWhile(step.routing)) {
+      // A check that did not hold runs the repeat zero times, as the Flow does.
+      if (checks.has(step.routing.over)) {
+        index += automationStudioFlowDraftReplaySpanMembers(input.steps, proposed, index, step.routing.through).length - 1;
+        continue;
+      }
+      outcomes.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), actionId: step.actionId, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE });
+      stoppedAt = step.position;
       continue;
     }
     const mode = modeFor(step);
     const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf);
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
+    // A list read before the range is read on its own page (`./forward-range.ts`).
+    if (value && walk?.listsBroughtIn.has(step)) value[AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY] = true;
     const callId = input.callIdOf(step);
     const toolId = automationStudioNodeReplayToolId(step);
     const stepId = automationStudioFlowDraftStepId(step);
@@ -379,7 +403,12 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       ?? (withheldBy !== undefined ? "withheld" : undefined);
     // A step with nothing to run it with is a failed step, not a skipped one.
     let ran: ReplayAnswer = value ? await send(callId, step, value, excusable) : { readable: false };
-    let status = statusOf(ran, mode);
+    // A repeat's list that says this is not its page is read once more, there (`./forward.ts`).
+    if (walk && value && !walk.listsBroughtIn.has(step) && statusOf(ran, mode) === "unreproducible" && input.steps.some((each) => each.routing?.kind === "repeat" && each.routing.over === stepId)) {
+      ran = await send(`${callId}.reached`, step, { ...value, [AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY]: true }, excusable);
+    }
+    // What the record refused as already done is what this run wanted anyway: told, and it goes on (`./forward.ts`).
+    let status: AutomationStudioFlowDraftReplayOutcome["status"] = ran.readable && input.forward?.answeredDone?.(ran.result.resultCode) ? "replayed" : statusOf(ran, mode);
     let reanchored = false;
     const previous = outcomes.at(-1);
     if (input.reanchor && value && status === "unreproducible" && withheldBy === undefined && !excused(stepId) && previous && leftUndone(previous, excused)) {
@@ -431,7 +460,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     // A part run is the exception: it stops where the Flow would, and leaves the target there.
     if (input.stopsAt?.(step, excused(stepId) || checks.has(stepId))) stoppedAt = step.position;
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }), ...(rows ? { rows } : {}), ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }), ...(rows ? { rows } : {}), ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}), ...(rowsStepFailed.length > 0 ? { rowsStepFailed } : {}) };
 }
 
 function verdictOf(

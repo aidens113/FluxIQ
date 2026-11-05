@@ -38,6 +38,7 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
   return input.routing.observing(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
     input.cancellation.checkpoint();
     input.creation.endIfReadingRefused();
+    run.decidedAt = iteration;
     const window = round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }, ...evidence] : evidence;
     const shown = input.routing.shown(window, denied);
     for (;;) {

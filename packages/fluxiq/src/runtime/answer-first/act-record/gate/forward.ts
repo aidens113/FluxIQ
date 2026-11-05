@@ -5,12 +5,14 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../record.ts";
+import { AUTOMATION_STUDIO_ATTEMPT_ACT_HELD_CODES } from "./act-gate.ts";
 
-/** `rowDone` and `stepDone` of the loop input's `forwardRun`, answered by the record. */
-export function automationStudioAttemptActForward(record: AutomationStudioAttemptActRecord): { rowDone(row: JsonObject): boolean; stepDone(step: AutomationStudioFlowDraftStep): boolean } {
+/** `rowDone`, `stepDone` and `answeredDone` of the loop input's `forwardRun`, answered by the record and its gate. */
+export function automationStudioAttemptActForward(record: AutomationStudioAttemptActRecord): { rowDone(row: JsonObject): boolean; stepDone(step: AutomationStudioFlowDraftStep): boolean; answeredDone(resultCode: string | undefined): boolean } {
   return {
     rowDone: (row) => record.rowDone(row),
-    stepDone: (step) => record.stepDone({ actionId: step.actionId, parameters: parametersOf(step) })
+    stepDone: (step) => record.stepDone({ actionId: step.actionId, parameters: parametersOf(step) }),
+    answeredDone: (resultCode) => resultCode !== undefined && AUTOMATION_STUDIO_ATTEMPT_ACT_HELD_CODES.has(resultCode)
   };
 }
 

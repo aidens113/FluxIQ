@@ -260,8 +260,9 @@ describe("Automation Studio LLM evidence loop", () => {
       executeTool: async () => ({ observed: true })
     });
     expect(result.ok).toBe(true);
-    expect((schemas[0] as { oneOf: unknown[] }).oneOf).toHaveLength(1);
-    expect((schemas[1] as { oneOf: unknown[] }).oneOf).toHaveLength(2);
+    const kinds = (schema: unknown) => (schema as { oneOf: Array<{ properties: { kind: { const: string } } }> }).oneOf.map((variant) => variant.properties.kind.const);
+    expect(kinds(schemas[0])).not.toContain("complete");
+    expect(kinds(schemas[1])).toContain("complete");
     await expect(runAutomationStudioLlmEvidenceLoop({ tools, minToolCalls: 1, decide: async () => ({ kind: "complete", result: {} }), executeTool: async () => ({}) }))
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_decision", accounting: { toolCalls: 0 } });
   });

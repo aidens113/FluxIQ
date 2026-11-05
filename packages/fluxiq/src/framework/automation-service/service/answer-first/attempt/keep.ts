@@ -68,7 +68,9 @@ export function automationStudioAnswerFirstResultAs(run: AutomationStudioAnswerF
 
 function rowsOf(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStudioAnswerFirstRowsSummary): AutomationStudioTaskResultRows | undefined {
   if (rows.datasetId === undefined) return undefined;
-  return { runId: run.runId, datasetId: rows.datasetId, totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, previewRows: rows.rows };
+  // The note that a later read got smaller, where it is still true of the rows the result holds: the contract refuses one that is not.
+  const smaller = rows.fewerThanEarlier !== undefined && rows.fewerThanEarlier.earlierRows > rows.totalRows ? { fewerThanEarlier: { earlierRows: rows.fewerThanEarlier.earlierRows } } : {};
+  return { runId: run.runId, datasetId: rows.datasetId, totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, previewRows: rows.rows, ...smaller };
 }
 
 /** Writes the attempt's row as it stands now. A store that fails costs this write and never the attempt: the next one tries again. */

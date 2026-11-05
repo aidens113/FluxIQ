@@ -61,6 +61,11 @@ export type AutomationStudioTaskResultRows = {
   columns: AutomationStudioTaskResultColumn[];
   /** The first rows, keyed by column id. At most `previewMaxRows`, and at most `totalRows`. */
   previewRows: JsonObject[];
+  /**
+   * The latest read of this list held fewer rows than an earlier one, and how many that was: a whole number above
+   * `totalRows`. The rows above are the latest read's all the same. Absent while the list has not got smaller.
+   */
+  fewerThanEarlier?: { earlierRows: number };
 };
 
 /** Where it came from, in words: "3 results pages" on "shop.example". */
@@ -96,7 +101,8 @@ export type AutomationStudioTaskResultParseResult =
   | { ok: false; issues: string[] };
 
 const RESULT_KEYS: ReadonlySet<string> = new Set(["attemptId", "kind", "label", "timesChecked", "source", "rows", "acts", "answerText", "checkedWhat", "missingWhat", "skippedAsDone", "from"]);
-const ROWS_KEYS: ReadonlySet<string> = new Set(["runId", "datasetId", "totalRows", "truncated", "columns", "previewRows"]);
+const ROWS_KEYS: ReadonlySet<string> = new Set(["runId", "datasetId", "totalRows", "truncated", "columns", "previewRows", "fewerThanEarlier"]);
+const FEWER_KEYS: ReadonlySet<string> = new Set(["earlierRows"]);
 const COLUMN_KEYS: ReadonlySet<string> = new Set(["id", "label"]);
 const ANSWER_KEYS: ReadonlySet<string> = new Set(["text", "author"]);
 const FROM_KEYS: ReadonlySet<string> = new Set(["site", "pages"]);
@@ -208,8 +214,18 @@ function readRows(value: unknown, issues: Set<string>): AutomationStudioTaskResu
   if (columns === null) issues.add("task_result.invalid_columns");
   if (previewRows === null) issues.add("task_result.invalid_preview_rows");
   else if (isCount(totalRows) && previewRows.length > totalRows) issues.add("task_result.preview_past_total");
-  if (!isId(runId) || typeof datasetId !== "string" || !isCount(totalRows) || typeof truncated !== "boolean" || columns === null || previewRows === null) return null;
-  return { runId, datasetId, totalRows, truncated, columns, previewRows };
+  const fewer = value.fewerThanEarlier === undefined ? undefined : readFewer(value.fewerThanEarlier, totalRows, issues);
+  if (!isId(runId) || typeof datasetId !== "string" || !isCount(totalRows) || typeof truncated !== "boolean" || columns === null || previewRows === null || fewer === null) return null;
+  return { runId, datasetId, totalRows, truncated, columns, previewRows, ...(fewer ? { fewerThanEarlier: fewer } : {}) };
+}
+
+/** How many rows an earlier read held: more than the result now has, or the note would say nothing true. */
+function readFewer(value: unknown, totalRows: unknown, issues: Set<string>): { earlierRows: number } | null {
+  if (!isPlainRecord(value) || !hasOnlyKeys(value, FEWER_KEYS) || !isCount(value.earlierRows) || !isCount(totalRows) || value.earlierRows <= totalRows) {
+    issues.add("task_result.invalid_fewer_than_earlier");
+    return null;
+  }
+  return { earlierRows: value.earlierRows };
 }
 
 function readColumns(value: unknown): AutomationStudioTaskResultColumn[] | null {

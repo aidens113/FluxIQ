@@ -37,7 +37,11 @@ import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgem
 
 /** Where the call's intervention says it came from. */
 const SOURCE = "answerFirstJudge";
+const BALANCE_CODE = "llm.provider_balance_exhausted";
+const NO_BALANCE = "The model service says the account has no balance left, so this was not judged.";
 const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it was not judged.";
+/** The most of the check's own words a result keeps: a result's words are bounded, and one over the bound is left off whole. */
+const READING_MOST = 450;
 const NO_ANSWER = "The check answered without saying whether this is what was asked for, so it was not judged.";
 
 /** The harness's refusals of a call by what its purse or run budget holds: a request too large for the model is another matter. */
@@ -99,6 +103,7 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   if (!response) {
     const code = result.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code;
+    if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true };
     return code !== undefined && PURSE_CODES.has(code) ? { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } : unanswered(read, code);
   }
   // A reply cut off after its verdict is read from its whole fields alone (`../verify.ts`, t653).
@@ -111,11 +116,13 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   });
   if (verdict.basis === "model_silent") return { verdict: "not_judged", reason: NO_ANSWER, unanswered: true };
   if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return unanswered(read, "llm.provider_output_truncated");
-  const checkedWhat = checked(summary);
-  if (verdict.verdict === "answers") return { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat };
-  if (verdict.verdict === "does_not_answer") return { verdict: "no", reason: readingWords(verdict.repair?.judgement) ?? "It was judged not to be what was asked for.", checkedWhat };
-  if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) return { verdict: "unsure", reason: "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.", checkedWhat };
-  return { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat };
+  if (verdict.verdict === "answers") return { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) };
+  if (verdict.verdict === "does_not_answer") {
+    const said = readingWords(verdict.repair?.judgement);
+    return { verdict: "no", reason: said ?? "It was judged not to be what was asked for.", checkedWhat: failed(summary, said) };
+  }
+  if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) return { verdict: "unsure", reason: "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.", checkedWhat: meantToCheck(summary) };
+  return { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) };
 }
 
 /** A call that gave nothing, in the reader's words for what happened to it, by its code. */
@@ -130,14 +137,40 @@ function readingWords(said: { expected?: string | undefined; observed?: string |
   return parts.length ? parts.join(" ") : undefined;
 }
 
-/** What was checked, in counts: the model's words could carry page text, which a result may not (`@fluxiq/contracts`, `task-result.ts`). */
-function checked(summary: AutomationStudioFlowLessSummary): string {
+/** What the result holds, in counts: the model's words could carry page text, which a result may not (`@fluxiq/contracts`, `task-result.ts`). */
+function held(summary: AutomationStudioFlowLessSummary): string | undefined {
   const got = [
     ...(summary.rows ? [`${summary.rows.totalRows} ${summary.rows.totalRows === 1 ? "row" : "rows"}`] : []),
     ...(summary.acts.length ? [`${summary.acts.length} ${summary.acts.length === 1 ? "act" : "acts"} on the site`] : []),
     ...(summary.answerText !== undefined ? ["the model's own answer"] : [])
   ];
-  return got.length ? `${got.join(", ")}, once against what was asked for.` : "nothing to show, once against what was asked for.";
+  return got.length ? got.join(", ") : undefined;
+}
+
+/** A result's `checkedWhat` on a yes: what was checked, once. The card says it under "Checked". */
+function checked(summary: AutomationStudioFlowLessSummary): string {
+  const got = held(summary);
+  return got ? `${got}, once against what was asked for.` : "nothing to show, once against what was asked for.";
+}
+
+/** On an unsure: what the check was meant to settle and did not. The card says it under "Meant to check". */
+function meantToCheck(summary: AutomationStudioFlowLessSummary): string {
+  const got = held(summary);
+  return got ? `whether ${got} came to what was asked for.` : "whether there was anything to show for what was asked for.";
+}
+
+/**
+ * On a no: what the check said was wrong, in its own screened words where it gave any, cut to what a result's words may
+ * hold; otherwise what it looked at. The card says it under "What failed", so counts and "once" are never what it says.
+ */
+function failed(summary: AutomationStudioFlowLessSummary, reading: string | undefined): string {
+  if (reading !== undefined) {
+    if (reading.length <= READING_MOST) return reading;
+    const cut = reading.slice(0, READING_MOST - 3);
+    return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40)).replace(/[\s,;:]+$/u, "")}...`;
+  }
+  const got = held(summary);
+  return got ? `${got} did not come to what was asked for.` : "there was nothing to show for what was asked for.";
 }
 
 /**

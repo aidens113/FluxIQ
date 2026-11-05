@@ -29,9 +29,10 @@ describe("what an evidence decision is shown of the node catalog", () => {
     const sent = userPayload(evidenceRequest({ ...catalogContext, catalogNames: automationStudioFlowBootstrapCatalogNames(catalogContext.nodeCatalog), describedNodes: described }));
     const bootstrap = sent.context.flowBootstrap as Record<string, unknown>;
 
-    expect(Object.keys(bootstrap)).toEqual(["startLocation", "startLocationNote", "nodeCatalog", "nodeCatalogNote", "describedNodes"]);
+    expect(Object.keys(bootstrap)).toEqual(["startLocation", "startLocationNote", "nodeCatalog", "nodeCatalogNote"]);
     expect(bootstrap.nodeCatalog).toEqual(automationStudioFlowBootstrapCatalogNames(catalogContext.nodeCatalog));
-    expect(bootstrap.describedNodes).toEqual(described);
+    // Described before this window began, so on its first entry: never in the head (t869).
+    expect((sent.context.evidenceLoop as { evidence: unknown[] }).evidence[0]).toEqual({ callId: "core.described_nodes", toolId: "core.described_nodes", value: { describedNodes: described } });
     const note = bootstrap.nodeCatalogNote as string;
     expect(note.length).toBeLessThanOrEqual(300);
     expect(note).toContain("core.describe_nodes");
@@ -51,26 +52,27 @@ describe("what an evidence decision is shown of the node catalog", () => {
     expect(bootstrap.nodeCatalog).toEqual(automationStudioFlowBootstrapCatalogNames(catalogContext.nodeCatalog));
   });
 
-  it("shows a definition on the window entry that names it, once, and in the head only one no entry names (t289-G)", () => {
-    const [headNode, runNode, askedNode] = [catalogContext.nodeCatalog[2]!, catalogContext.nodeCatalog[1]!, catalogContext.nodeCatalog[0]!];
+  it("shows a definition on the window entry that names it, once, and in front of the window one an earlier round described (t289-G, t869)", () => {
+    const [earlierNode, runNode, askedNode] = [catalogContext.nodeCatalog[2]!, catalogContext.nodeCatalog[1]!, catalogContext.nodeCatalog[0]!];
     const evidence = [
       { callId: "initial.core.run_node", toolId: "core.run_node", value: { ok: true, describedNodes: [runNode.id] } },
       { callId: "call.1", toolId: "core.describe_nodes", value: { ok: true, describedNodes: [askedNode.id, "web.no-such-node"] } },
       // A later entry naming a node already shown keeps the id: each definition once.
       { callId: "call.2", toolId: "core.run_node", value: { ok: false, describedNodes: [runNode.id] } }
     ];
-    const base = evidenceRequest({ ...catalogContext, describedNodes: [headNode, runNode, askedNode] });
+    const base = evidenceRequest({ ...catalogContext, describedNodes: [earlierNode, runNode, askedNode] });
     const request = { ...base, context: { ...base.context, evidenceLoop: { ...base.context.evidenceLoop!, evidence } } };
     const sent = userPayload(request).context;
 
-    expect((sent.flowBootstrap as Record<string, unknown>).describedNodes).toEqual([headNode]);
+    expect(sent.flowBootstrap as Record<string, unknown>).not.toHaveProperty("describedNodes");
     expect((sent.evidenceLoop as { evidence: unknown }).evidence).toEqual([
+      { callId: "core.described_nodes", toolId: "core.described_nodes", value: { describedNodes: [earlierNode] } },
       { ...evidence[0], value: { ok: true, describedNodes: [runNode] } },
       { ...evidence[1], value: { ok: true, describedNodes: [askedNode, "web.no-such-node"] } },
       evidence[2]
     ]);
     const wire = JSON.stringify(sent);
-    for (const node of [headNode, runNode, askedNode]) expect(wire.split(JSON.stringify(node)).length - 1, node.id).toBe(1);
+    for (const node of [earlierNode, runNode, askedNode]) expect(wire.split(JSON.stringify(node)).length - 1, node.id).toBe(1);
     // The packet itself is untouched: the checks that read it see ids, never catalog text.
     expect(request.context.evidenceLoop.evidence).toBe(evidence);
     expect(evidence[0]!.value).toEqual({ ok: true, describedNodes: [runNode.id] });

@@ -1,8 +1,9 @@
 // A forward run's row whose own control cannot be found (t869, `../../replay/forward.ts`), and the page its answer shows.
 //
 // A pass presses its row's own control or says it could not. Saying so ends that pass and no other: nothing later
-// in it is sent, the row is named in the answer, and the next row runs. The answer then holds the page as it stands,
-// since no pass's answer carries one.
+// in it is sent, the row is named in the answer, and the next row runs. Any other step that fails on a row does the
+// same (`./forward-run-reach.test.ts` for how the next row gets back to the list). The answer then holds the page as it
+// stands, since no pass's answer carries one.
 // The llm barrel first, as `../../../decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioFlowDraftPart, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../../index.ts";
@@ -94,13 +95,18 @@ describe("a row whose own control cannot be found", () => {
     expect((await run(executor)).evidence).toMatchObject({ rowsNotDone: ["row 2"] });
   });
 
-  it("every other failure of a pass still stops the run there", async () => {
+  it("any other failure of a pass ends that pass and no other, and the row is told apart: something may have been done to it", async () => {
     const executor = host({ "fw.2.pass.2": { effectApplied: false, resultCode: "core.replay.failed", resultReason: "target_ambiguous" } });
     const result = await run(executor);
-    expect(result.resultCode).toBe("core.run_flow.stopped");
-    expect(result.evidence).toMatchObject({ passed: false, stoppedAt: expect.any(Number), rows: { done: 1, failed: 1 } });
-    expect(executor.calls.some((call) => call.callId === "fw.2.pass.3")).toBe(false);
-    expect((result.evidence as JsonObject).rowsNotDone).toBeUndefined();
+    expect(result.resultCode).toBe("core.run_flow.ran");
+    expect(result.evidence).toMatchObject({ passed: false, rows: { done: 2, failed: 1 }, rowsNotDone: ["Ben"] });
+    expect((result.evidence as JsonObject).stoppedAt).toBeUndefined();
+    expect(executor.calls.some((call) => call.callId === "fw.3.pass.2")).toBe(false);
+    expect(executor.calls.some((call) => call.callId === "fw.2.pass.3")).toBe(true);
+    const instruction = String((result.evidence as JsonObject).instruction);
+    expect(instruction).toContain('"Ben"');
+    expect(instruction).not.toMatch(/nothing was done to them/u);
+    expect(instruction).not.toMatch(/target_ambiguous|core\.|reason/u);
   });
 
   it("leaves a run that is no forward run as it was: the code decides, and a remembered pass passes", async () => {
@@ -170,7 +176,7 @@ describe("the page a forward run's answer holds", () => {
   });
 
   it("is taken after a run that stopped too, the page being where the step left it", async () => {
-    const executor = host({ "fw.2.pass.2": { effectApplied: false, resultCode: "core.replay.failed" }, ...lookedAt({ page: "PAGE where it stopped" }) });
+    const executor = host({ "fw.1": { effectApplied: false, resultCode: "core.replay.failed" }, ...lookedAt({ page: "PAGE where it stopped" }) });
     const result = await run(executor, { look: LOOK });
     expect(result.evidence).toMatchObject({ stoppedAt: expect.any(Number), page: "PAGE where it stopped" });
   });

@@ -96,6 +96,10 @@ describe("the record output contract a model is shown", () => {
     }
     expect(text).not.toContain("encrypt");
     for (const key of ["datasetId", "schema", "writeMode", "schemaVersion", "fields"]) expect(condensedText).toContain(key);
+    // What a re-read does to a list is said, in words that name no site and no task.
+    expect(text).toContain("replace says this read is the list as it now stands");
+    expect(text).toContain("append says it adds to what this datasetId already holds");
+    expect(condensedText).toContain("replace: this read is the list as it now stands");
   });
 
   it("describes supported processing in full and condensed formats and delivers it without cuts", () => {

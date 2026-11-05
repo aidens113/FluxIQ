@@ -15,6 +15,8 @@ export type AutomationStudioLlmStepLogUsage = {
   outputTokens?: number | undefined;
   cacheHitInputTokens?: number | undefined;
   cacheMissInputTokens?: number | undefined;
+  /** What the call wrote to the provider's cache, where the provider says: part of `cacheMissInputTokens`, billed above an uncached token. */
+  cacheWriteInputTokens?: number | undefined;
   estimatedCostUsd?: number | undefined;
 };
 
@@ -92,7 +94,7 @@ export function automationStudioLlmStepLogModelStep(call: AutomationStudioLlmSte
         part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind(kind),
         role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: failure ? "error" : "ok", httpStatus: httpStatus ?? null,
-        usage: usage ? { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, cacheHitInputTokens: usage.cacheHitInputTokens ?? null, cacheMissInputTokens: usage.cacheMissInputTokens ?? null } : null,
+        usage: usage ? { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, cacheHitInputTokens: usage.cacheHitInputTokens ?? null, cacheMissInputTokens: usage.cacheMissInputTokens ?? null, cacheWriteInputTokens: usage.cacheWriteInputTokens ?? null } : null,
         costUsd: costUsd ?? null, finishReason: finishReason ?? null, error: failure ? { code: failure.code } : null, summary
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: undefined, summary, costUsd, role: scope?.role, briefId: scope?.briefId });

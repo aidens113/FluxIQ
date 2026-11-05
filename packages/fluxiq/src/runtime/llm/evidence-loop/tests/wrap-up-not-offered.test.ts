@@ -1,6 +1,5 @@
-// The wrap-up offers no tools, and a tool call made anyway is answered, never
-// run. A candidate's wrap-up keeps its tools listed and runs only its
-// finishing ones (t503).
+// The wrap-up keeps the tools listed (t503, t869), and a tool call it does not
+// run is answered, never run. A candidate's wrap-up runs only its finishing ones.
 //
 // The check used to be against the tools the loop could run this iteration,
 // not the ones it had offered, so a model that ignored the wrap-up's schema
@@ -18,7 +17,7 @@ describe("a tool call in the wrap-up", () => {
     const executeTool = vi.fn(async ({ value }: { value: Record<string, unknown> }) => ({ page: String(value.page) }));
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } })
-      // Three decisions left: the wrap-up, which offers no tools. Asked anyway.
+      // Three decisions left: the wrap-up, which runs no tool. Asked anyway.
       .mockResolvedValueOnce({ kind: "tool_call", callId: "call.2", toolId: "inspect", input: { page: 2 } })
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true } });
     const result = await runAutomationStudioLlmEvidenceLoop({
@@ -27,12 +26,12 @@ describe("a tool call in the wrap-up", () => {
     });
 
     expect(result).toMatchObject({ ok: true, result: { plan: true } });
-    expect(decide.mock.calls[1]![0].tools).toEqual([]);
+    expect(JSON.stringify(decide.mock.calls[1]![0].tools)).toBe(JSON.stringify(decide.mock.calls[0]![0].tools));
     // Only the call it was offered ran.
     expect(executeTool).toHaveBeenCalledTimes(1);
     expect(result.accounting.toolCalls).toBe(1);
     const answered = (decide.mock.calls[2]![0].evidence as Shown[]).find((entry) => entry.toolId === "core.request_check");
-    expect(answered?.value).toMatchObject({ ok: false, code: "llm_evidence_loop.not_offered", toolId: "inspect", instruction: expect.stringContaining("only the tools offered now can run") });
+    expect(answered?.value).toMatchObject({ ok: false, code: "llm_evidence_loop.not_offered", toolId: "inspect", instruction: expect.stringContaining("no tool runs now") });
     expect(result.trace.find((row) => row.iteration === 2)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
   });
 
@@ -163,9 +162,9 @@ describe("the answered-request note of a discovery-only loop", () => {
     expect(note({ submit: "core.submit_subflow", test: "core.test_subflow" })).toContain("under undoes, to undo it before a trial, still runs");
   });
 
-  it("leaves a draft wrap-up's words as they were", () => {
+  it("tells a draft wrap-up its tool is listed and did not run", () => {
     const said = String(automationStudioLlmEvidenceAnsweredRequestNote({ code: "llm_evidence_loop.not_offered", toolId: "inspect", answeredByCallId: "call.1", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }).instruction);
-    expect(said).toBe("The build is in its last decisions, so only the tools offered now can run and this call was not run. Finish with those: submit and test your Flow if they are offered, then complete; otherwise complete from your draft, or amend it and complete.");
+    expect(said).toBe("The build is in its last decisions, so no tool runs now: this tool is still listed, but this call was not run. Complete from your draft, or amend it and complete.");
     expect(said).not.toContain("undoes");
   });
 

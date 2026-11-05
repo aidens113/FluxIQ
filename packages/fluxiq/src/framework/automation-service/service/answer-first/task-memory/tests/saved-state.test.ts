@@ -14,9 +14,15 @@ describe("what a task's memory says is saved", () => {
     expect(parseAutomationStudioSavedState(saved).ok).toBe(true);
   });
 
-  it("steps not proven whole only partly work, even when the result was confirmed", () => {
-    const saved = automationStudioAnswerFirstSavedStateOf(memory({ best: flow({}) }));
+  it("an assembled draft not proven whole only partly works, even when the result was confirmed", () => {
+    const saved = automationStudioAnswerFirstSavedStateOf(memory({ best: flow({ candidateId: "candidate.1" }) }));
     expect(saved).toEqual({ state: "partly_works", trust: "unproven", flowId: "flow.now", savedAtMs: 100 });
+    expect(parseAutomationStudioSavedState(saved).ok).toBe(true);
+  });
+
+  it("steps that never assembled into a draft are notes only, as the attempt's own record reads them", () => {
+    const saved = automationStudioAnswerFirstSavedStateOf(memory({ best: flow({}) }));
+    expect(saved).toEqual({ state: "notes_only", trust: "unproven", savedAtMs: 100 });
     expect(parseAutomationStudioSavedState(saved).ok).toBe(true);
   });
 

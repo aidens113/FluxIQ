@@ -17,6 +17,8 @@ const DECLINED = "A person said no to a lasting act in the saved Flow, so it did
 const NOT_ASSEMBLED = "The saved steps could not be made into a Flow on this site as it stands, so they did not run. They are your draft: fix what no longer fits.";
 const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and that was not accepted as the result yet.";
 const THE_PAGE = "The page is where it left it. Fix that step, then run forward. Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
+const STARTED_OVER = "Your latest read of this list replaced what an earlier read of it held, so the rows kept are that read's alone. To add to the list instead, read it again with writeMode append under the same datasetId.";
+const FEWER = "The latest read held fewer rows than an earlier one. The rows kept are the latest read's: read again if the earlier count was right.";
 const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothing starts over and the Flow does not run again from its start: the acts, the rows kept and the draft here stand. Look at the page as it is, and do what is left.";
 
 /** The note for a round: what the keep-going table said of the last one (`base`), and what the attempt holds. Nothing where there is nothing to tell. */
@@ -30,7 +32,12 @@ export function automationStudioAnswerFirstRoundNote(run: AutomationStudioAnswer
     ...told,
     acts: run.record.forModel(),
     tried: automationStudioAnswerFirstToldTried(run.tried.data()),
-    rowsKept: { totalRows: rows.totalRows, columns: rows.columns.map((column) => column.id) },
+    rowsKept: {
+      totalRows: rows.totalRows,
+      columns: rows.columns.map((column) => column.id),
+      ...(rows.startedOver ? { startedOver: STARTED_OVER } : {}),
+      ...(rows.fewerThanEarlier ? { fewerThanEarlier: { earlierRows: rows.fewerThanEarlier.earlierRows, words: FEWER } } : {})
+    },
     ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason } } : {})
   };
 }
