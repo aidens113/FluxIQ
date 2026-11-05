@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioDomainReadings } from "../domain-readings/index.ts";
 import { ACTIVITY_ATTEMPT_WORDS, activitySaidOnce, cutAtWord } from "../../ui/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
+import { answeredEnding, emitAnsweredEnding } from "./answered-ending.ts";
+import { runWithAttemptEndingTracked } from "./attempt-ending.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 
 /**
@@ -22,7 +24,8 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
     const started = target.authoringMode === "answer-first" ? { label: ACTIVITY_ATTEMPT_WORDS.working, title: "Started" } : { label: "Building the Flow", title: "Build started" };
     emitAutomationStudioActivity({ phase: "building", label: started.label, detail: { kind: "step", title: started.title, status: "started", ...(flowId ? { ref: flowId } : {}) } });
     try {
-      const built = await fn();
+      const tracked = await runWithAttemptEndingTracked(fn);
+      const built = tracked.value;
       // A build that kept only a draft built no Flow, so it never says one is ready (G2): it ends failed, as the chat says it.
       if (endedAsDraft(built)) {
         emitAutomationStudioActivity({ phase: "failed", label: DRAFT_TITLE, detail: { kind: "step", title: DRAFT_TITLE, status: "failed", text: DRAFT_TEXT }, final: true });
@@ -30,7 +33,8 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       }
       const answered = answeredEnding(built);
       if (answered) {
-        emitAutomationStudioActivity({ phase: answered.phase, label: answered.label, detail: { kind: "step", title: answered.label, status: answered.phase === "failed" ? "failed" : "succeeded" }, final: true });
+        // The attempt said its ending when it stored its answer (`./attempt-ending.ts`): once, not again as the build returns.
+        if (!tracked.ended) emitAnsweredEnding(answered);
         return built;
       }
       // "Build finished: a Flow is proposed" said nothing to the person, and the
@@ -61,23 +65,6 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
  */
 function endedAsDraft(built: unknown): boolean {
   return Boolean(built) && typeof built === "object" && (built as { status?: unknown }).status === "draft";
-}
-
-/**
- * What the activity says at the end of an answer-first attempt, in a person's words: the
- * attempt's own status, which holds no failure but a budget gone. The answer itself is the
- * answer turn's (`../conversations/`). Absent for any other build.
- */
-function answeredEnding(built: unknown): { phase: "done" | "failed"; label: string } | undefined {
-  const ended = built && typeof built === "object" ? (built as { status?: unknown }).status : undefined;
-  if (ended === "setup_needed") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.setup };
-  if (ended !== "answered") return undefined;
-  const status = (built as { attempt?: { status?: unknown } }).attempt?.status;
-  // A budget gone is an ending the task reached, not an error, so it is not drawn as one.
-  if (status === "budget_out") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.budget };
-  if (status === "stopped_by_person") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.stopped };
-  if (status === "waiting_for_person") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.waiting };
-  return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.finished };
 }
 
 /** What the activity says of a build that kept only a draft (G2). */

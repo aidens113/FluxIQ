@@ -59,7 +59,8 @@ describe("a step on a control the attempt saw flip", () => {
     expect(fixture.target.presses).toHaveLength(1);
   });
 
-  it("with no state, as a person's Run again runs it, presses again and the switch goes back", async () => {
+  // What the state is there to stop. Every later run keeps it, a person's Run again included (`../../tests/same-words.test.ts`).
+  it("with no state known, a later run presses again and the switch goes back", async () => {
     const fixture = await flowRunFixture({}, cleanups);
     await automationStudioAnswerFirstFlowRun(fixture.ports, SAVED);
     const again = await flowRunFixture({ target: fixture.target }, cleanups);

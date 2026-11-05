@@ -24,8 +24,8 @@
 // attempt going to the start location, as if it had not been tried.
 //
 // **A step on a control an earlier attempt saw flip checks before it presses** (`./stated-toggles.ts`),
-// unless a person pressed Run again, which leaves `stated` off. What this run sees flip goes to the
-// same record, for the draft this attempt saves.
+// a person's Run again included: that press empties the act record, not the states. What this run
+// sees flip goes to the same record, for the draft this attempt saves.
 
 import { createHash } from "node:crypto";
 import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
@@ -41,6 +41,7 @@ import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
 import { automationStudioAnswerFirstStampedPlan } from "./stamped-plan.ts";
 import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
 import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
+import { automationStudioAnswerFirstFlowRunStoppedNote } from "./stopped-note.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
 
@@ -76,7 +77,9 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
 
 function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: AutomationStudioAnswerFirstFlowRunEnded, watch: AutomationStudioAnswerFirstFlowRunWatch): AutomationStudioAnswerFirstFlowRunOutcome {
   if (watch.anySent()) ports.arrived();
-  return automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, ended, watch });
+  const ran = automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, ended, watch });
+  automationStudioAnswerFirstFlowRunStoppedNote(ran, ended.trace);
+  return ran;
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */

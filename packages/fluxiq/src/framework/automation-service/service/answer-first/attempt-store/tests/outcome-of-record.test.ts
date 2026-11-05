@@ -46,6 +46,16 @@ describe("what an attempt left", () => {
     expect(outcomeOf({ path: "run_flow_then_explore" }).saved).toMatchObject({ state: "partly_works", trust: "unproven" });
   });
 
+  it("names a step that did something lasting and is out of the saved Flow, and only such a step", () => {
+    const pressed = savedStep(3, "domain.library.save", {}, { consequences: ["create_new"], label: "Save: Round pine dining table", disposition: "dropped" });
+    const looked = savedStep(4, "domain.library.read", {}, { label: "Look at the list", disposition: "dropped" });
+    const row = { ...pressed, acts: ["create_new"] };
+    const { saved } = outcomeOf({}, { steps: [...STEPS, row, looked], candidateId: "candidate.1" });
+    expect(saved).toEqual({ state: "partly_works", trust: "unproven", flowId: FLOW, savedAtMs: 2000, stepsDigest: DIGEST, leftOut: ["Save: Round pine dining table"] });
+    expect(parseAutomationStudioSavedState(saved).ok).toBe(true);
+    expect(outcomeOf({}).saved).not.toHaveProperty("leftOut");
+  });
+
   it("holds no digest for what was not saved as steps", () => {
     expect(outcomeOf({}, { steps: STEPS }).saved).toEqual({ state: "notes_only", trust: "unproven", savedAtMs: 2000 });
     expect(outcomeOf({}, {}).saved).toBeUndefined();

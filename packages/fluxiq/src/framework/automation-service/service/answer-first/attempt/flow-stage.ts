@@ -17,8 +17,10 @@
 //
 // **A carried-on attempt never comes here**: the Flow is never run again from its start.
 //
-// **A person's Run again runs it with no state checked first** (`../run-again/`): the steps as they
-// were written, since what Core added to them is its bias against repeating, and that press says repeat.
+// **A person's Run again runs it as any later attempt does, states checked first** (`../run-again/`):
+// what it changes is the act record, which starts empty, so a count's add presses again. A control
+// already in its asked-for state is checked and not pressed: a person who asked for it saved wants it
+// saved, and a press that flipped it back would answer the opposite of what they asked.
 //
 // **The row is written once the first step goes out**, so a process that dies mid-run leaves an
 // attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
@@ -40,7 +42,7 @@ const WHOLE_RUN = "The saved Flow ran from its start to its end.";
 export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { route } = run;
   if (route.kind !== "use" || run.prior || run.input.creation.purse.ceilingUsd <= 0) return undefined;
-  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, run.askedAgain ? { steps: route.saved.steps, stepsDigest: route.saved.stepsDigest } : route.saved));
+  const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved));
   if (staged.ok) return staged.value;
   run.path = run.flowRun?.wentOut ? "run_flow_then_repair" : "explore";
   return undefined;

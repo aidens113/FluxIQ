@@ -60,7 +60,8 @@ export async function resolveAutomationStudioRouterState(input: {
     ...(input.signal ? { signal: input.signal } : {})
   });
   if (!observation.ok) return { state: callerState, source: { observed: false, paths, unavailable: observation.reason } };
-  return { state: { ...callerState, ...observation.state }, source: { observed: true, paths } };
+  const observed = input.hostRuntime?.routeConditionState ? input.hostRuntime.routeConditionState(observation.state) : observation.state;
+  return { state: { ...callerState, ...observed }, source: { observed: true, paths } };
 }
 
 /**

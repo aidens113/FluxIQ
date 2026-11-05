@@ -7,6 +7,7 @@ export type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.
 export type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
 export type { AutomationStudioAnswerFirstStatedToggle } from "./stated-toggle.ts";
 export { automationStudioAnswerFirstKeptState } from "./kept-state.ts";
+export { automationStudioAnswerFirstLeftOutSteps } from "./left-out-steps.ts";
 export { automationStudioAnswerFirstSavedStateOf } from "./saved-state.ts";
 export { automationStudioAnswerFirstScreenedNote } from "./screened-note.ts";
 export type { AutomationStudioAnswerFirstStepOrigin } from "./step-origin.ts";

@@ -7,13 +7,15 @@
 //                                           by hand both refuse it, it is reported already done, and
 //                                           a round is told so.
 //   attempt 3 and later                     carried from the union, whatever the attempts between did.
-//   Run again                               an empty record: it presses again, and the next same
+//   Run again                               an empty record: a count presses again, and the next same
 //                                           words carry both what it landed and what it was spared.
+//                                           A stated control is still checked first, so a switch
+//                                           already in its asked-for state is not pressed.
 //   a new row                               not carried, so it is pressed, once.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstStepsDigest, automationStudioAnswerFirstTaskKey } from "../index.ts";
-import { renewEveryLoan } from "./fake-library-engine.ts";
+import { HOLD_SHELF, renewEveryLoan, savedStep } from "./fake-library-engine.ts";
 import { complete, RENEW_CARD, runNode } from "./fake-library.ts";
 import { judgedNo } from "./endings/support.ts";
 import { laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
@@ -25,6 +27,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(
 
 const CARD_TASK = "List every loan on my library account and renew the card.";
 const LOAN_TASK = "Renew every loan on my library account.";
+const HOLD_TASK = "Keep my loans on the hold shelf.";
 const pressCard = (callId = "card") => runNode(callId, RENEW_CARD, {}, ["modify_existing"], { add: true });
 const cardAttempt = { instruction: CARD_TASK, permittedConsequences: ["modify_existing" as const], script: [readLoans(), pressCard(), complete("Done.")] };
 const same = { instruction: CARD_TASK, permittedConsequences: ["modify_existing" as const] };
@@ -80,6 +83,25 @@ describe("a person's Run again", () => {
     const after = await lane.attempt(same);
     expect(lane.target.library.renewals.card).toBe(2);
     expect(after.answer.result?.acts).toEqual([expect.objectContaining({ what: expect.stringMatching(ALREADY) })]);
+  });
+
+  it("keeps each step's checked state: a switch already in its asked-for state is checked, not pressed, and the answer stands", async () => {
+    const lane = await laterAttempts(cleanups);
+    // The list is read and shown, as a task that saves and lists does, and then the switch: one the attempt that wrote it saw flip on.
+    const steps = [renewEveryLoan()[0]!, savedStep(2, HOLD_SHELF, { control: "Keep on hold" }, { label: "Keep on hold" })];
+    const STATED = [{ step: "saved.2", ensureState: { state: "on" } }];
+    await lane.memory.update(lane.projectId, automationStudioAnswerFirstTaskKey({ instructionText: HOLD_TASK, startLocation: undefined }), (current) => ({
+      ...current, flowId: "flow.loans", best: { attemptId: "attempt.kept", flowId: "flow.loans", steps, stepsDigest: automationStudioAnswerFirstStepsDigest(steps), label: "unverified", provenWhole: false, stated: STATED, savedAtMs: 1, spend: { calls: 1, usd: 0.01 } }
+    }));
+    const first = await lane.attempt({ instruction: HOLD_TASK });
+    expect(first.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
+    expect(lane.target.library.onHold).toBe(true);
+    const again = await lane.attempt({ instruction: HOLD_TASK, runAgain: true });
+    expect(again.answer.attempt).toMatchObject({ attemptId: again.pressed, status: "achieved", path: "run_flow", ordinal: 2 });
+    expect(again.decisions).toHaveLength(0);
+    expect(lane.target.library.onHold).toBe(true);
+    expect(lane.target.presses.filter((press) => press.node === HOLD_SHELF)).toHaveLength(1);
+    expect((await lane.kept(HOLD_TASK))?.best?.stated).toEqual(STATED);
   });
 
   it("that presses nothing still leaves what landed before it carried", async () => {

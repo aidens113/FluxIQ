@@ -29,6 +29,16 @@ describe("parseAutomationStudioSavedState", () => {
     expect(issuesOf({ ...NOTES, stepsDigest })).toEqual(["saved_state.unknown_key"]);
   });
 
+  it("carries the steps left out of a saved Flow that did something, on a state with steps, and refuses anything else there", () => {
+    const leftOut = ["Save: Round pine dining table"];
+    expect(parseAutomationStudioSavedState({ ...PARTLY, leftOut })).toEqual({ ok: true, saved: { ...PARTLY, leftOut } });
+    expect(parseAutomationStudioSavedState({ ...READY, leftOut })).toEqual({ ok: true, saved: { ...READY, leftOut } });
+    expect(parseAutomationStudioSavedState({ ...PARTLY, leftOut: [] })).toEqual({ ok: true, saved: PARTLY });
+    for (const bad of ["Save", [""], [1], ["x".repeat(201)], {}]) expect(issuesOf({ ...PARTLY, leftOut: bad })).toEqual(["saved_state.invalid_left_out"]);
+    expect(issuesOf({ ...NOTES, leftOut })).toEqual(["saved_state.unknown_key"]);
+    expect(issuesOf({ ...NEEDS, leftOut })).toEqual(["saved_state.unknown_key"]);
+  });
+
   // The chip may only claim what is true.
   it("never says ready for what no judged live run proved", () => {
     expect(issuesOf({ ...READY, trust: "unproven" })).toContain("saved_state.ready_needs_proof");
