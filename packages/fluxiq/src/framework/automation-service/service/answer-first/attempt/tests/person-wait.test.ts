@@ -2,7 +2,7 @@
 // no deadline, however the gate asks, and only the signal it hands on (a Stop) ends the wait.
 import { describe, expect, it } from "vitest";
 import { automationStudioPermissionAskOutcome, type AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "../person-wait.ts";
+import { automationStudioAnswerFirstUnboundedPort } from "../../person-waits/index.ts";
 import { automationStudioAnswerFirstAnswerOnStop, automationStudioAnswerFirstHoldAnswer } from "../stop-answer.ts";
 
 function port(answer: { kind: "grant" } | { kind: "deny" } | undefined) {

@@ -51,10 +51,9 @@ import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
 import { automationStudioAnswerFirstFinish } from "./ending.ts";
 import { automationStudioAnswerFirstFlowStage } from "./flow-stage.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
-import { automationStudioAnswerFirstWatchKeyWaits } from "./key-wait.ts";
 import { automationStudioAnswerFirstRecordOpening } from "./opening-row.ts";
 import { automationStudioAnswerFirstOpening } from "./opening.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "./person-wait.ts";
+import { automationStudioAnswerFirstUnboundedPort, automationStudioAnswerFirstWatchKeyWaits } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "./ports.ts";
 import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
 import { automationStudioAnswerFirstRounds, type AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
@@ -190,7 +189,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     ...ground,
     ask: ground.ask ? {
       ...ground.ask,
-      // Any wait at all makes the gate wait; the port takes the clock off it (`./person-wait.ts`).
+      // Any wait at all makes the gate wait; the port takes the clock off it (`../person-waits/person-wait.ts`).
       timeoutMs: AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS,
       port: automationStudioAnswerFirstUnboundedPort(ground.ask.port, (state, waited) => {
         run.waitingFor = state === "started" ? "permission" : undefined;

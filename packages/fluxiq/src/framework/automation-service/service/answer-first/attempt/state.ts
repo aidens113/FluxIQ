@@ -79,7 +79,7 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   personEnded?: "stopped" | "timed_out" | "unreachable" | "cancelled" | "asks_exhausted" | undefined;
   /** The refusal the rounds ended on where no model call was ever made: thrown on, to become a setup step (`../setup/`). */
   setupRefusal?: unknown;
-  /** This attempt's own provider's waits for a person (`./key-wait.ts`). */
+  /** This attempt's own provider's waits for a person (`../person-waits/key-wait.ts`). */
   keyWaits?: { heldMs(): number; stop(): void } | undefined;
   /** What the attempt waits for right now, for its stored row. */
   waitingFor?: "permission" | "person_only_check" | "stuck_in_a_loop" | "model_key_locked" | undefined;
