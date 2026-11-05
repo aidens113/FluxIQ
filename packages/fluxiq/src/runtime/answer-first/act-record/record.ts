@@ -67,6 +67,15 @@
 // it, so the next model is refused once more, never let through: it has seen no refusal itself, and
 // its carried-on round's opening look must not open the act for it.
 //
+// **A press on a row of a list, and nothing says which (t869).** The page says a press was on an item, and its words
+// fit no row, or a row a pass carried says only its control's own name. So no row is held done for it. The list it
+// was pressed on is kept, and the next read of the same shape says: the rows that read differently are the ones held,
+// and rows that read the same were not pressed. A read that changes none, or that shares no row with the list, says nothing,
+// and the next is asked. A press that leaves no mark on any read is a limit: no row is held, so it may be pressed again.
+//
+// That limit is counted, so it is measured before anything is done about it (`actsWithNoRow`, t869): each such act is marked once, when a read of its
+// list shows none of its rows changed, with one plain line in the step log (no page text) and a count the attempt carries.
+//
 // **Before it is sent (`foreseen`, t870).** A by-hand press by a handle says nothing the record can
 // know it by, so the domain says what it would be, and this is read beside the call's own identity.
 // It only adds to what is refused, in the order an answer's own ties are read:
@@ -112,7 +121,8 @@ import type {
   AutomationStudioAttemptActPlaceNote,
   AutomationStudioAttemptActRecordData
 } from "./contracts.ts";
-import { automationStudioAttemptActId, automationStudioAttemptActRowIdentity, automationStudioAttemptActTargetKeys, type AutomationStudioAttemptActTargetKeys } from "./identity/index.ts";
+import { automationStudioAttemptActRowSaysOnlyControl, automationStudioAttemptActId, automationStudioAttemptActRowIdentity, automationStudioAttemptActTargetKeys, type AutomationStudioAttemptActTargetKeys } from "./identity/index.ts";
+import { automationStudioLlmStepLogNote } from "../../llm/step-log/index.ts";
 import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
@@ -176,6 +186,11 @@ export class AutomationStudioAttemptActRecord {
   /** How many distinct rows this attempt left out because the record held them done (header). */
   rowsHeldDone(): number {
     return this.leftOut.count(this.ties);
+  }
+
+  /** How many acts a read of their list left with no row held (header): each is counted once, however many reads followed. It is what the attempt carries as `actsWithNoRow`. */
+  actsWithNoRow(): number {
+    return this.entries.filter((entry) => entry.unmarked === true && entry.rows.length === 0 && !entry.undeclared).length;
   }
 
   /** Whether this call declares a lasting act, so that it must be begun before it is sent. */
@@ -315,6 +330,7 @@ export class AutomationStudioAttemptActRecord {
     // An act made before the read that lists its row, however that read writes it (header of `./row-ties.ts`).
     for (const entry of this.entries) {
       if (entry.rows.length === 0) this.tieLate(entry);
+      if (entry.rows.length === 0 && entry.listBefore) this.tieByChange(entry, read);
       else if (entry.actedOnWords) entry.rows = [...new Set([...entry.rows, ...this.ties.ofWords(entry.actedOnWords, read)])];
     }
     void this.changed();
@@ -363,7 +379,8 @@ export class AutomationStudioAttemptActRecord {
 
   private identityOf(actionId: string, parameters: JsonObject, row: JsonObject | undefined): Identity {
     const target = automationStudioAttemptActTargetKeys(actionId, parameters);
-    const ownRow = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
+    // A row that says only what its control says tells no row from another, and an act on it names none (`./same-row.ts`, header, 3).
+    const ownRow = row === undefined || automationStudioAttemptActRowSaysOnlyControl(row, target.controls) ? undefined : automationStudioAttemptActRowIdentity(row);
     if (ownRow !== undefined) return { ...target, actionId, named: [ownRow], rows: this.ties.sameAs(row!) };
     const printed = target.handle !== undefined ? this.ties.ofHandle(target.handle) : [];
     return { ...target, actionId, named: printed, rows: [...new Set([...printed, ...this.ties.sameAsPrinted(printed, this.actedRows())])] };
@@ -474,6 +491,7 @@ export class AutomationStudioAttemptActRecord {
     entry.handleKeys = [...new Set([...entry.handleKeys, ...called.handleKeys])];
     const controls = [...new Set([...(entry.controls ?? []), ...(frozen?.controls ?? []), ...(called.controls ?? [])])];
     if (controls.length > 0) entry.controls = controls;
+    if (frozen?.fingerprinted || called.fingerprinted) entry.fingerprinted = true;
     if (entry.state !== "landed" || entry.asked !== undefined) {
       if (entry.asked !== undefined && state === "landed") entry.landings = (entry.landings ?? 0) + 1;
       entry.state = state;
@@ -509,6 +527,8 @@ export class AutomationStudioAttemptActRecord {
       handleKeys: called.handleKeys,
       rows,
       ...(controls ? { controls } : {}),
+      ...(frozen?.fingerprinted || called.fingerprinted ? { fingerprinted: true as const } : {}),
+      ...(lasting && rows.length === 0 && (actedOnWords || call.row !== undefined) ? { listBefore: this.ties.newestRead() } : {}),
       lookedSince: false,
       at: this.now(),
       ...(actedOnWords ? { actedOnWords } : {}),
@@ -523,6 +543,19 @@ export class AutomationStudioAttemptActRecord {
     if (asked === undefined || !Number.isSafeInteger(asked) || asked < 2) return;
     entry.asked = asked;
     entry.landings = entry.state === "landed" ? 1 : 0;
+  }
+
+  /** A press on a row nothing named, held on the rows of its list the read at hand shows changed (header). */
+  private tieByChange(entry: AutomationStudioAttemptActEntry, read: readonly string[]): void {
+    const changed = entry.listBefore!.filter((row) => !read.includes(row));
+    if (changed.length === 0 && entry.listBefore!.length > 0 && entry.unmarked !== true) {
+      entry.unmarked = true;
+      automationStudioLlmStepLogNote(`A lasting act could not be tied to a row: ${entry.actions[0] ?? "unnamed"}`);
+    }
+    if (changed.length === 0 || changed.length === entry.listBefore!.length) return;
+    entry.rows = changed;
+    if (changed.length === 1) entry.rowIdentity = changed[0]!;
+    delete entry.listBefore;
   }
 
   private tieLate(entry: AutomationStudioAttemptActEntry): void {
@@ -584,7 +617,11 @@ function matches(entry: AutomationStudioAttemptActEntry, identity: Identity): bo
   if (identity.rows.length === 0) return sameKey;
   if (entry.rows.length === 0) return identity.handleKeys.some((key) => entry.handleKeys.includes(key));
   if (!identity.rows.some((row) => entry.rows.includes(row)) || !entry.actions.includes(identity.actionId)) return false;
-  return sameKey || !entry.controls || !identity.controls || identity.controls.some((words) => entry.controls!.includes(words));
+  if (sameKey) return true;
+  // One press by hand and in a loop can run under different selectors, so a form that says nothing of its control is not two. Two fingerprints whose keys differ and that share no words are.
+  if (entry.controls && identity.controls && identity.controls.some((words) => entry.controls!.includes(words))) return true;
+  if (entry.fingerprinted === true && identity.fingerprinted === true) return false;
+  return !entry.controls || !identity.controls;
 }
 
 /** Whether what a call is foreseen to be is this entry's act (header). */

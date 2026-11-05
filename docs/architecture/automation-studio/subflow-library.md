@@ -94,7 +94,12 @@ is not on. The first no stops the run for good, so no retry gets past it. Before
    the step that read it, by identity and never position or handle (the same re-find as a stale
    target), and its own control must be visible in that row. A row that is gone is reported gone
    with no press, and the rows after it are not tried. Called from a repeat without the row, a
-   press stops unpressed (`row_not_handed`), and the model is told plainly why.
+   press stops unpressed (`row_not_handed`), and the model is told plainly why. A step that went by
+   a link the page does not show to be this row's (`resolution.passRow: "page-level-link"`) leaves the
+   page unknown, so the pass's next lasting step is not sent and the part stops there, naming the item
+   (`row_left_behind`), as a saved Flow does (`answer_first.row_left_behind`). A later step that finds
+   its row (`own`) takes this back, and steps that declare nothing lasting still run. The stop is an
+   answer the attempt carries on from, not an ending.
 4. In an attempt, the attempt's act record is asked at the door the lasting step passes, so an
    act done by hand is not done again through a part, and a part's acts are told to the record,
    so the first real run after the attempt does not repeat them.

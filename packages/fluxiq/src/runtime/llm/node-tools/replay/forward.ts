@@ -12,6 +12,18 @@
 //   stepDone  a lasting step with no row already landed: it is checked
 //             (`verify`), never sent as a step.
 //
+// **A row whose own control cannot be found (t869).** A pass presses its row's own
+// control or says it could not. The host answers that with
+// `AUTOMATION_STUDIO_NODE_REPLAY_ROW_CONTROL_NOT_FOUND_REASON`; nothing later in that pass
+// that declares a lasting act is sent, so no lasting act lands on it, the row is named to the
+// model in the answer, and the run goes on with the next row. Where such a pass had got past
+// its first step, its later steps that declare nothing are still sent: that is how a pass
+// that opened a row comes back for the next one, and an attempt has no reset to do it with
+// (`SVC/answer-first/attempt/call-chain.ts`). Any other failing step stops the run where it is.
+// A pass whose step went as a page-level link, so that nothing says it still stands on its row
+// (`AUTOMATION_STUDIO_NODE_REPLAY_ROW_LEFT_BEHIND_REASON`), is told the same way at its next lasting step, which is
+// not sent, unless a step between them found its row again.
+//
 // No reset and no re-anchor is ever sent with these, and every call still goes
 // through the loop's executor, so the permission gate sees each one.
 

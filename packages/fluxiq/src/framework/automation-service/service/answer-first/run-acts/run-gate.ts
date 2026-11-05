@@ -43,6 +43,10 @@
 // way. The engine's own ledger counts each do-while pass as a new act, and it may: it has no
 // by-hand press or earlier attempt to compare with, and this gate does.
 //
+// **A row left behind (t869).** The page says when a pass's press went as a page-level link, so that nothing says the
+// pass still stands on its row. Under `settle`, that pass's next lasting step fails as a target not found, with nothing
+// sent, and a run reads that as any failing step. A press the row placed takes it back, and so does the next row.
+//
 // **A For Each's row that is no object** (a list of plain values) is that pass's row all the
 // same under `settle`, held as `{ item: value }`, so its passes stay apart. Without `settle` a
 // row is an object only, as it always was.
@@ -60,6 +64,8 @@ const SYMBOLIC_KEY_METADATA = "bootstrapSymbolicKey";
 const POLICY_OUTPUT_EFFECT = "policy.output.dispatch";
 /** The port a loop hands its current row to (`engine/.../zero-pass-loop.ts`). */
 const ROW_PORT = "item";
+const ROW_LEFT_BEHIND_CODE = "answer_first.row_left_behind";
+const ROW_LEFT_BEHIND_SAID = "This step was not done, because the step before it went by a link not shown to be this row's, so nothing says the page is this row's.";
 const NOT_RECORDED_CODE = "answer_first.act_not_recorded";
 const NOT_RECORDED_SAID = "This step was not done, because the record of what this task did could not be saved first. Nothing was sent.";
 
@@ -85,6 +91,9 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
   let skipped = false;
   /** How many outputs an admitted native node has left to dispatch, uncompared (header). */
   let admitted = 0;
+  /** The pass whose row a page-level link left behind (header), and the pass a dispatch now answers for. */
+  let leftBehind: string | undefined;
+  let passing: string | undefined;
   const gated: AutomationStudioGraphExecutionOptions = { ...options };
   const native = options.nativeNodeExecutor;
   const dispatcher = options.effectDispatcher;
@@ -100,6 +109,11 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     if (!act) {
       if (settling) {
         const step = settling.stepOf({ node: request.node, actionId: request.node.definitionId, parameters, row, floor: options.resolveActionEffect?.(request.node, request.node.parameterValues) });
+        passing = row === undefined ? undefined : JSON.stringify(row);
+        if (step.lasting && passing !== undefined && passing === leftBehind) {
+          admitted = 0;
+          return { result: rowLeftBehind() };
+        }
         if (await settling.begin(step) === "not_written") {
           admitted = 0;
           return { result: notRecorded() };
@@ -131,6 +145,9 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
       admitted -= 1;
       if (!settling) return await dispatcher(effect, context);
       const answer = await settling.outputSent(async () => await dispatcher(effect, context));
+      const passRow = saidOfThePassRow(answer);
+      if (passRow === "page-level-link") leftBehind = passing;
+      else if (passRow === "own") leftBehind = undefined;
       // The engine sends no more of this node's outputs after one that failed.
       if (answer?.status === "failed") admitted = 0;
       return answer;
@@ -176,6 +193,17 @@ function told(ref: string, subject: string): void {
 function skippedResult(subject: string, act: AutomationStudioAttemptAct, inTheAttempt: boolean): { status: "success"; route: string; outputs: Record<string, JsonValue>; effects: []; message: string } {
   const may = act.state === "may_have_landed" ? "may already have happened" : "already happened";
   return { status: "success", route: "success", outputs: {}, effects: [], message: `Already done: ${subject}: it ${may} ${inTheAttempt ? "earlier in this task" : "while the task was being worked out"}, so this run did not do it again.` };
+}
+
+/** The closed word a dispatch's answer carries of a pass's row (`domain/src/actions/types.ts`), read as its target's measurement is, wherever the answer holds it. */
+function saidOfThePassRow(answer: AutomationNodeExecutionResult | undefined): unknown {
+  const result = recordOf(answer?.outputs?.result);
+  return (recordOf(result?.resolution) ?? recordOf(recordOf(result?.result)?.resolution))?.passRow;
+}
+
+/** The row was left behind: nothing was sent (header). */
+function rowLeftBehind(): AutomationNodeExecutionResult {
+  return { status: "failed", route: "failed", outputs: {}, effects: [], message: ROW_LEFT_BEHIND_SAID, failure: { category: "target_not_found", code: ROW_LEFT_BEHIND_CODE, retryable: false, stage: "target_resolution", effect: "unacted" } };
 }
 
 /** The step was refused before anything was sent: failed, as a thing that certainly did not happen, and may be tried again. */

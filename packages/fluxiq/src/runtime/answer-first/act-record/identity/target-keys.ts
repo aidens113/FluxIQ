@@ -50,6 +50,8 @@ export type AutomationStudioAttemptActTargetKeys = {
   /** The handle form, when the call named a handle. */
   handleKeys: string[];
   handle?: string;
+  /** It names an element by a fingerprint, words or none: two of those whose keys differ are two controls (`../record.ts`). */
+  fingerprinted?: true;
   /** Digests of the words its fingerprint holds, which tell two controls of one row apart. */
   controls?: string[];
   /** The key that names it by what the call holds beside its fingerprint: an address and inputs. A subset of `keys`. Empty where it has only a fingerprint or a handle, or where its address counts places. */
@@ -83,6 +85,7 @@ export function automationStudioAttemptActTargetKeys(actionId: string, parameter
     keys: [...byFingerprint, ...byWhole, ...handleKeys],
     handleKeys,
     ...(handle !== undefined ? { handle } : {}),
+    ...(fingerprint ? { fingerprinted: true as const } : {}),
     ...(controls.length > 0 ? { controls } : {}),
     wholeKeys: byWhole,
     placeKeys,
@@ -104,6 +107,13 @@ function stableFingerprint(named: JsonObject): JsonObject | undefined {
   for (const [key, value] of Object.entries(named)) if (!POSITIONAL_FIELD.test(key) && !(typeof value === "string" && automationStudioAttemptActIsAddress(value))) kept[key] = value;
   const fields = automationStudioAttemptActOwnFields(kept) as JsonObject;
   return Object.keys(fields).length > 0 ? fields : undefined;
+}
+
+/** Whether a row says nothing but what a control's own words say: `controls` is the target's, as `controlWords` digests them. */
+export function automationStudioAttemptActRowSaysOnlyControl(row: JsonObject, controls: readonly string[] | undefined): boolean {
+  if (!controls?.length) return false;
+  const values = Object.values(automationStudioAttemptActOwnFields(row) as JsonObject);
+  return values.length > 0 && values.every((value) => typeof value === "string" && controls.includes(automationStudioAttemptActDigest(value.trim().toLowerCase().replace(/\s+/gu, " "))));
 }
 
 /** A digest of each thing a fingerprint's fields say in words, whichever fields say it (header). */

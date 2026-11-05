@@ -8,6 +8,10 @@
 // attempt takes, with no new request fields. This route never awaits it, and a failure of it is
 // caught here, so it can never be an unhandled rejection. A refusal reaches the person as Core's own
 // sentence.
+//
+// **Whose session.** A paired client's press runs under the person's unlocked session, as every
+// command the chat runs does (`runtime/conversations/commands/caller.ts`): this changes whose key
+// pays, never what may be done. With nothing unlocked the paired session is kept, as it is there.
 
 import { endpointResource } from "../../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type CarryOnTaskAttemptRequest } from "../../../../../api-contracts/automation.ts";
@@ -39,9 +43,10 @@ export function registerCarryOnTaskAttemptEndpoint(dependencies: AutomationStudi
       if (Object.keys(payload).some((key) => !FIELDS.has(key))) return { ok: false, error: "Carrying an attempt on does not accept those request fields." };
       const addUsd = payload.addUsd;
       if (typeof addUsd !== "number" || !Number.isFinite(addUsd) || addUsd < 0) return { ok: false, error: "Carrying an attempt on needs an amount of budget that is zero or more." };
+      const sessionId = service.conversations.callerFor(actor).sessionId;
       const answer = await automationStudioAnswerFirstCarryOn(service, { paths: service.projectPaths, flows: service.flowPaths, projects: service.projects }, { projectId, attemptId, addUsd }, async ({ flowId }) => await generateFlowBootstrapAdaptationForRequest(
         { service, failedBuilds: generation.failedBuilds },
-        { actor, payload: { projectId, flowId, authSessionId: actor.sessionId, evidenceGuided: true, authoringMode: "answer-first" } }
+        { actor: { ...actor, sessionId }, payload: { projectId, flowId, authSessionId: sessionId, evidenceGuided: true, authoringMode: "answer-first" } }
       ));
       if (!answer.ok) return { ok: false, error: answer.say, errorCode: "task_attempt.carry_on_refused" };
       // Not awaited: the press is answered now, and what the attempt comes to is read back as any attempt is.

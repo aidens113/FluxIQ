@@ -1063,6 +1063,13 @@ by-hand press. The bias is deliberate: a row wrongly held done is left out and c
 skipped, which a judge's no brings back; a row wrongly held not done is an act done twice. A
 row sharing no word with any read or that sentence is a new row. An act keeps the digests of
 its row's other shapes, and a row an act is on is never dropped from the rows held.
+A press on a row of a list that nothing names, and whose list no later read shows changed, holds no
+row, so its row may be pressed again: a known limit, pinned by `act-record/tests/thin-press.test.ts`.
+It is measured, not hidden. Each such act is marked once, with one plain line in the run's step log
+(`NNNN-note`: "A lasting act could not be tied to a row" and the action's name, no page text), and the
+attempt carries the number as `actsWithNoRow` (absent reads as zero, never shown on a person's card).
+A carried-on attempt's record is seeded with what the attempt had, so it counts there too.
+`pnpm lab attempt` prints it in its result line when above zero and always in `attempt.json`.
 The person may ask for an act several times in their own words
 (`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
 and "thrice". A model's words never lift the rule. The first Flow run after an attempt
@@ -1074,6 +1081,15 @@ that does not succeed gives its acts back.
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
 acting. It sends no reset. These calls are in the Flow's own wire form, which the state
 engine needs: against an exploration's own calls it answers too little to settle anything.
+A pass presses its row's own control or says it could not: a host answers the reason
+`row_control_not_found`, nothing lasting later in that pass is sent, its later steps that
+declare nothing still run so the pass comes back, the answer names the row (`rowsNotDone`,
+`passed: false`), and the run goes on with the next row. A pass whose step answers
+`row_left_behind` (a link not shown to be the row's went as page-level) is told the same way
+at its next lasting step, unless a step between them answers `row_own_control`. A saved Flow's
+run gate holds the same, from the resolution's `passRow`, failing that step instead. No other failing step goes on. The
+answer holds one look taken as the run ends, under the keys the domain declares as its view,
+so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 
 **Loop detection** is wired through `attemptRecord`, `loopSignal` and `askedRepeats`.
 `change_approach` takes a fresh round; `ask_person` waits with `stuck_in_a_loop`, keeping

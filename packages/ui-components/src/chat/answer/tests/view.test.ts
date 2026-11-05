@@ -45,7 +45,7 @@ test("rows: headline, tick, a table with headers and the first five rows, the li
     assert.equal(root.byClass("answer-row").length, 5);
     assert.equal(root.byClass("answer-table-scroll")[0]!.getAttribute("tabindex"), "0");
     assert.deepEqual(text(root, "answer-note"), ["Showing 5 of 10 rows here. CSV and JSON have every row."]);
-    assert.deepEqual(text(root, "answer-saved"), ["Saved yesterday: the steps. They only partly work, so next time I will fix what changed."]);
+    assert.deepEqual(text(root, "answer-saved"), ["Saved yesterday: the steps. They have not run on their own yet, so next time I will try them and fix what fails."]);
     const lines = text(root, "answer-line");
     assert.ok(lines.includes("On the site: I recorded no changes"));
     assert.ok(lines.includes("Checked: Right columns, cheapest first, no duplicates"));
@@ -318,7 +318,7 @@ test("rows skipped as already done draw one plain line, with no tick of its own 
     const skipped = fakeTaskOutcomes().rowsChecked;
     skipped.result!.skippedAsDone = 2;
     const { root } = draw(skipped, { results: createFakeChatResultsPort() });
-    assert.deepEqual(root.byClass("answer-line").filter((line) => line.getAttribute("data-line") === "skipped").map((line) => line.textContent), ["Skipped 2 as already done"]);
+    assert.deepEqual(root.byClass("answer-line").filter((line) => line.getAttribute("data-line") === "skipped").map((line) => line.textContent), ["Left out 2 that looked already done"]);
     assert.equal(root.byClass("answer-mark").length, 1, "only the check's own tick");
     const plain = draw(fakeTaskOutcomes().rowsChecked, { results: createFakeChatResultsPort() }).root;
     assert.equal(plain.byClass("answer-line").some((line) => line.getAttribute("data-line") === "skipped"), false);

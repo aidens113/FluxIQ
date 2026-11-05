@@ -1,8 +1,10 @@
 // Said when the attempt left rows alone because its record held them done, so a person can see
-// a row was skipped and judge whether that was right.
+// a row was left out and judge whether that was right. It says "looked", because a row the record
+// could not tell from one already pressed is held too (`act-record/same-row.ts`), and it is not
+// known to be done.
 
-/** "Skipped 1 as already done" or "Skipped 2 as already done"; none for a count that is not above zero. */
+/** "Left out 1 that looked already done"; none for a count that is not above zero. */
 export function skippedWords(count: number | undefined): string | undefined {
   if (count === undefined || !(count > 0)) return undefined;
-  return `Skipped ${count} as already done`;
+  return `Left out ${count} that looked already done`;
 }

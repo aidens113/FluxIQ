@@ -33,6 +33,7 @@ import type { AutomationStudioProjectPartsDependencies } from "../library-types.
 import { withProjectPartStores } from "../stores.ts";
 import { readProjectPartRunClosure, type ProjectPartRunEntry } from "./closure.ts";
 import { projectPartWhileDriving } from "./driving-gate.ts";
+import { projectPartLeftBehind } from "./left-behind.ts";
 import { projectPartRunOutcome } from "./outcome.ts";
 import { readProjectPartPage } from "./page-read.ts";
 import { projectPartRecheck } from "./recheck.ts";
@@ -124,8 +125,10 @@ async function executed(
   const permission = stepPermission(input);
   const native = executor.nativeNodeRuntime;
   const classesOf = (node: AutomationStudioFlowNode) => projectPartStepClasses(node, native?.resolveActionEffect(node));
+  const leftBehind = projectPartLeftBehind();
   const gate = projectPartStepGate({
     person: run.gate,
+    leftBehind: (row) => leftBehind.stands(row),
     nodeOf: graphs.nodeOf,
     classesOf,
     permitted: new Set(input.permittedConsequences ?? []),
@@ -143,7 +146,7 @@ async function executed(
     ...(datasets.available ? { onRecordBatch: datasets.recordBatchHandler(projectId, runId) } : {}),
     ...(conversations.available ? { parking: conversations.parkingPort({ projectId, subject: { kind: "run", id: runId } }) } : {})
   });
-  const doors = input.settled || input.admit ? projectPartSettledCalls(base, { classesOf, settled: input.settled, admit: input.admit, held: (node, answer) => gate.stopFor(node, answer === "already_done" ? "act_done" : "act_may_have_landed") }) : base;
+  const doors = projectPartSettledCalls(base, { classesOf, settled: input.settled, admit: input.admit, leftBehind, held: (node, answer) => gate.stopFor(node, answer === "already_done" ? "act_done" : "act_may_have_landed") });
   const options: AutomationStudioGraphExecutionOptions = {
     ...doors, runControl: gate, subflowGraphs: graphs.source, allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], recoveryBudget: failedRouteBudget(graphs.root)
   };

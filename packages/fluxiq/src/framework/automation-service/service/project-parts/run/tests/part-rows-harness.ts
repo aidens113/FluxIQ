@@ -80,6 +80,8 @@ export type RowsPage = {
   afterPress?: (key: string) => void;
   readFails?: (reads: number) => boolean;
   pressAnswer?: (key: string, tries: number) => "landed" | "unacted" | "uncertain";
+  /** How a step whose id ends `.link` or `.own` says it found the pass's row (`resolution.passRow`), the word a page gives. Without it they say nothing. */
+  passRow?: { link?: "page-level-link" | "own"; own?: "page-level-link" | "own" };
 };
 
 export type RowsDomain = {
@@ -206,7 +208,8 @@ function nativeOf(page: RowsPage, domain: RowsDomain, moves: ReadonlySet<string>
         return said();
       }
       domain.ran.push(node.id);
-      return said();
+      const passRow = node.id.endsWith(".link") ? page.passRow?.link : node.id.endsWith(".own") ? page.passRow?.own : undefined;
+      return said(passRow ? { result: { resolution: { passRow } } } : {});
     }
   };
 }

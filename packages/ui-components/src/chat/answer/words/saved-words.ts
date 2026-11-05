@@ -18,7 +18,9 @@ export function savedWords(saved: ChatSavedState, nowMs: number = Date.now()): s
     case "ready":
       return `${on}: the steps. They worked last time.`;
     case "partly_works":
-      return `${on}: the steps. They only partly work, so next time I will fix what changed.`;
+      return saved.trust === "unproven" && saved.simulation !== "failed"
+        ? `${on}: the steps. They have not run on their own yet, so next time I will try them and fix what fails.`
+        : `${on}: the steps. They only partly work, so next time I will fix what fails.`;
     case "notes_only":
       return `${on}: notes only. I could not save steps, so next time I will start from what I learned.`;
     case "needs_you":

@@ -26,6 +26,7 @@ import type { AutomationNodeExecutionResult } from "../../../../../components/au
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY } from "../../../../../engine/automation/defensive/index.ts";
 import type { AutomationStudioFlowNode } from "../../../../../flows/executable/graph/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
+import type { ProjectPartLeftBehind } from "./left-behind.ts";
 import type { ProjectPartStepClasses } from "./step-classes.ts";
 
 const POLICY_OUTPUT_EFFECT = "policy.output.dispatch";
@@ -55,6 +56,8 @@ export function projectPartSettledCalls(options: AutomationStudioGraphExecutionO
   settled?: ProjectPartSettled | undefined;
   admit?: ProjectPartAdmit | undefined;
   held?: ((node: AutomationStudioFlowNode, answer: "already_done" | "look_first") => void) | undefined;
+  /** Told which row each step is handed and how each answered it found its row (`./left-behind.ts`). */
+  leftBehind?: ProjectPartLeftBehind | undefined;
 }): AutomationStudioGraphExecutionOptions {
   /** A lasting step's call whose output has yet to go out. */
   let awaiting: ProjectPartSettledCall | undefined;
@@ -62,6 +65,7 @@ export function projectPartSettledCalls(options: AutomationStudioGraphExecutionO
   const native = options.nativeNodeExecutor;
   if (native) watched.nativeNodeExecutor = (async (request) => {
     awaiting = undefined;
+    input.leftBehind?.passing(request.inputs[ROW_PORT]);
     const classes = input.classesOf(request.node);
     const call = classes.lasting ? projectPartStepCall(request.node, request.inputs[ROW_PORT], classes) : undefined;
     const admitted = call ? input.admit?.(call) ?? "run" : "run";
@@ -76,6 +80,7 @@ export function projectPartSettledCalls(options: AutomationStudioGraphExecutionO
       if (call) input.settled?.(call, { effectApplied: false, uncertain: true });
       throw error;
     }
+    input.leftBehind?.answered(execution?.result);
     if (!call) return execution;
     if ((execution?.result.effects ?? []).some((effect) => effect.type === POLICY_OUTPUT_EFFECT)) awaiting = call;
     else input.settled?.(call, outcomeOf(execution?.result));
@@ -84,10 +89,15 @@ export function projectPartSettledCalls(options: AutomationStudioGraphExecutionO
   const dispatcher = options.effectDispatcher;
   if (dispatcher) watched.effectDispatcher = (async (effect, context) => {
     const call = effect.type === POLICY_OUTPUT_EFFECT ? awaiting : undefined;
-    if (!call) return await dispatcher(effect, context);
+    if (!call) {
+      const answer = await dispatcher(effect, context);
+      input.leftBehind?.answered(answer);
+      return answer;
+    }
     awaiting = undefined;
     try {
       const answer = await dispatcher(effect, context);
+      input.leftBehind?.answered(answer);
       input.settled?.(call, outcomeOf(answer));
       return answer;
     } catch (error) {

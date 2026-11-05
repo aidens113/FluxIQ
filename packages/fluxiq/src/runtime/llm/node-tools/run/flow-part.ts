@@ -39,6 +39,15 @@
 // checked its press count as changing the page, so the loop's repeat guard
 // never saw it change nothing, and one passing `{from: 15, to: 16}` ran about
 // twenty times over an unchanged draft (`../repeat-guard/outcomes.ts`).
+//
+// **A forward run's answer holds the page as it stands (t869).** A pass's answer
+// carries no page, so the newest page the model held was the one from before
+// the run, while the browser stood on the last row's; a handle read from that
+// was refused `target_not_found` on a page it never named. The run ends with one
+// look, the loop's own free one, and the answer carries it under the keys the
+// domain declares as its view, so the loop's current view is this page. A look
+// that is refused or cannot be read says so (`pageNotRead`), so the view the model
+// still holds is not taken for the page as it stands.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AuthoringPartOfStep } from "../../../flow-authoring/bootstrap/record-defaults/index.ts";
@@ -48,6 +57,8 @@ import {
   automationStudioFlowDraftStepIsProposed,
   type AutomationStudioFlowDraftStep
 } from "../../../flow-authoring/draft/index.ts";
+import { automationStudioLlmEvidenceViewGroups } from "../../decision-context/view-groups.ts";
+import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { automationStudioNodeReplayStepCall } from "../replay/replay.ts";
 import { automationStudioFlowDraftReplaySteps } from "../replay/draft.ts";
@@ -75,6 +86,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
    * part run it always was.
    */
   forward?: AutomationStudioFlowDraftReplayForward | undefined;
+  /** How a forward run looks at the page once it ends (see the header): the loop's free look, and which keys of its answer are the view. */
+  look?: { toolId: string; input: JsonObject; observedStateKeys: readonly string[] } | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -130,21 +143,44 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     };
   });
   const stoppedAt = done.stoppedAt;
-  const passed = stoppedAt === undefined;
+  const rowsNotDone = done.rowsNotDone ?? [];
+  const passed = stoppedAt === undefined && rowsNotDone.length === 0;
+  const seen = input.forward && input.look ? await pageAsItStands(input, input.look) : undefined;
+  if (seen?.after !== undefined) after = seen.after;
   const evidence: JsonObject = {
+    ...seen?.view,
+    ...(seen?.read === false ? { pageNotRead: true } : {}),
     ok: true, passed, from: range.from, to, steps: ran,
     ...(stoppedAt === undefined ? {} : { stoppedAt }),
     ...(shown ? { last: shown } : {}),
     ...(input.forward && done.rows ? { rows: done.rows } : {}),
-    instruction: input.forward ? forwardInstructionOf(range.from, to, stoppedAt, done.rows) : instructionOf(range.from, to, stoppedAt)
+    ...(rowsNotDone.length > 0 ? { rowsNotDone } : {}),
+    instruction: input.forward ? forwardInstructionOf(range.from, to, stoppedAt, done.rows, rowsNotDone) : instructionOf(range.from, to, stoppedAt)
   };
   return {
     kind: "llm_evidence_tool_execution",
     evidence,
     effectApplied,
-    resultCode: passed ? "core.run_flow.ran" : "core.run_flow.stopped",
+    resultCode: stoppedAt === undefined ? "core.run_flow.ran" : "core.run_flow.stopped",
     ...(before !== undefined || after !== undefined ? { stateDigests: { ...(before !== undefined ? { before } : {}), ...(after !== undefined ? { after } : {}) } } : {})
   };
+}
+
+/** One look at the page, and what of its answer is the view (see the header); `read: false` for a look that was refused or could not be read. */
+async function pageAsItStands(input: AutomationStudioFlowDraftPartRunInput, look: NonNullable<AutomationStudioFlowDraftPartRunInput["look"]>): Promise<{ read: boolean; view?: JsonObject; after?: string }> {
+  const members = automationStudioLlmEvidenceViewGroups(look.observedStateKeys).find((group) => group.holder === undefined)?.members ?? [];
+  try {
+    const ran = await input.executeTool({ callId: `${input.callId}.look`, toolId: look.toolId, value: structuredClone(look.input), ...(input.signal ? { signal: input.signal } : {}) });
+    const answer = automationStudioLlmEvidenceParseToolExecutionResult(ran, "observe");
+    const evidence = answer?.evidence;
+    if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence) || evidence.ok === false) return { read: false };
+    const view = Object.fromEntries(Object.entries(evidence).filter(([key]) => members.includes(key)));
+    if (Object.keys(view).length === 0) return { read: false };
+    return { read: true, view, ...(answer?.stateDigests?.after !== undefined ? { after: answer.stateDigests.after } : {}) };
+  } catch (error) {
+    if (input.signal?.aborted) throw error;
+    return { read: false };
+  }
 }
 
 /** `{from, to?}` when the argument is exactly that, with whole step numbers of at least 1. */
@@ -169,12 +205,14 @@ function instructionOf(from: number, to: number, stoppedAt: number | undefined):
  * What the model is told after a forward run: where it ran, how many rows it did and left out, and where it stopped.
  * Counts only; never that the Flow is tested or must be finished, because this is the work being done.
  */
-function forwardInstructionOf(from: number, to: number, stoppedAt: number | undefined, rows: { done: number; skipped: number; failed: number } | undefined): string {
+function forwardInstructionOf(from: number, to: number, stoppedAt: number | undefined, rows: { done: number; skipped: number; failed: number } | undefined, rowsNotDone: readonly string[]): string {
   const part = from === to ? `Step ${from}` : `Steps ${from} to ${to}`;
   const counted = rows ? ` Rows: ${rows.done} done, ${rows.skipped} skipped as already done, ${rows.failed} failed.` : "";
-  return stoppedAt === undefined
-    ? `${part} ran forward from where the page stood, on what was not done yet, and passed.${counted}`
-    : `${part} ran forward from where the page stood and stopped at step ${stoppedAt}: the page is where that step left it, and nothing after it was sent.${counted}`;
+  const notDone = rowsNotDone.length > 0 ? ` These rows were not done, because each one's own control could not be found, and nothing was done to them: ${rowsNotDone.map((row) => JSON.stringify(row)).join(", ")}. See to them another way, or say in your answer that they were not done.` : "";
+  if (stoppedAt !== undefined) return `${part} ran forward from where the page stood and stopped at step ${stoppedAt}: the page is where that step left it, and nothing after it was sent.${counted}${notDone}`;
+  return notDone
+    ? `${part} ran forward from where the page stood, on what was not done yet, and went on past the rows it could not do.${counted}${notDone}`
+    : `${part} ran forward from where the page stood, on what was not done yet, and passed.${counted}`;
 }
 
 /**

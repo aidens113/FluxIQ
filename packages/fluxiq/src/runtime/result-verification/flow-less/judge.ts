@@ -137,7 +137,7 @@ function checked(summary: AutomationStudioFlowLessSummary): string {
     ...(summary.acts.length ? [`${summary.acts.length} ${summary.acts.length === 1 ? "act" : "acts"} on the site`] : []),
     ...(summary.answerText !== undefined ? ["the model's own answer"] : [])
   ];
-  return got.length ? `Checked once against what was asked for: ${got.join(", ")}.` : "Checked once against what was asked for, with nothing got to show.";
+  return got.length ? `${got.join(", ")}, once against what was asked for.` : "nothing to show, once against what was asked for.";
 }
 
 /**
