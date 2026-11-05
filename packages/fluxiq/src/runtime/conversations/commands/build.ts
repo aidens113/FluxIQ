@@ -228,7 +228,7 @@ function failedBuild(response: AutomationStudioConversationCommandCallResult): E
 }
 
 /** What an attempt answered, read through the contract: a record that does not parse is not one the chat can tell. */
-export type AutomationStudioConversationAnswered = { ok: true; status: "answered"; attempt: AutomationStudioTaskAttempt; result?: AutomationStudioTaskResult; candidateId?: string };
+export type AutomationStudioConversationAnswered = { ok: true; status: "answered"; attempt: AutomationStudioTaskAttempt; result?: AutomationStudioTaskResult; candidateId?: string; threadNotNoted?: true };
 
 /** Something a person must do before an attempt can start, in Core's words: no attempt began, and nothing failed. */
 export type AutomationStudioConversationSetupNeeded = { ok: true; status: "setup_needed"; say: string };
@@ -243,6 +243,8 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
     projectId: context.projectId,
     flowId: input.flowId,
     authSessionId: context.sessionId,
+    // Before it starts Core notes the thread that asked, which is how the thread reads the attempt back (`get-task-attempt`, `list-conversation-task-attempts`).
+    conversationId: context.conversationId,
     evidenceGuided: true,
     authoringMode: "configured",
     ...(context.startLocation ? { startLocation: context.startLocation } : {}),
@@ -256,7 +258,8 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
   const attempt = parseAutomationStudioTaskAttempt(answered?.attempt);
   const result = answered?.result === undefined ? undefined : parseAutomationStudioTaskResult(answered.result);
   if (!attempt.ok || (result && !result.ok)) return { ok: false, cause: "the task's answer could not be read", kept: false };
-  return { ok: true, status: "answered", attempt: attempt.attempt, ...(result?.ok ? { result: result.result } : {}), ...(typeof answered?.candidateId === "string" ? { candidateId: answered.candidateId } : {}) };
+  const threadNotNoted = (response.payload as { threadNotNoted?: unknown } | undefined)?.threadNotNoted === true;
+  return { ok: true, status: "answered", attempt: attempt.attempt, ...(result?.ok ? { result: result.result } : {}), ...(typeof answered?.candidateId === "string" ? { candidateId: answered.candidateId } : {}), ...(threadNotNoted ? { threadNotNoted } : {}) };
 }
 
 /**

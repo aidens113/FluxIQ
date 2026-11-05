@@ -106,6 +106,15 @@ describe("the native door", () => {
     expect(skipped).toHaveLength(1);
   });
 
+  it("presses every row but the one already done, when the Flow's own read writes the rows differently", async () => {
+    const { options, presses } = counted([{ who: "Oak" }, { who: "Elm" }]);
+    const record = recordWith({ row: OAK });
+    record.noteReadRows([OAK, ELM]);
+    const { skipped } = await ran(eachRow(), automationStudioAnswerFirstRunActGate(options, { record }));
+    expect(presses).toEqual([{ who: "Elm" }]);
+    expect(skipped).toHaveLength(1);
+  });
+
   it("presses every row where only another row's act is held", async () => {
     const { options, presses } = counted([OAK]);
     await ran(eachRow(), automationStudioAnswerFirstRunActGate(options, { record: recordWith({ row: ELM }) }));

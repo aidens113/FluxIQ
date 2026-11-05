@@ -3,6 +3,7 @@
 // settings detail the settings view redraws from.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import { withAutomationStudioCostLimitChoice } from "../flow-settings/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, automationStudioFlowSizeSettingIssue, withAutomationStudioInterventionMode } from "../../../../flows/authoring/model/index.ts";
 import { withStoredCheckAuthorization } from "./stored-check-authorization.ts";
 import type { AutomationStudioService } from "../../service.ts";
@@ -22,7 +23,7 @@ export async function updateFlowSettingsForRequest(service: Pick<AutomationStudi
     ...(patch.visibility === "private" || patch.visibility === "public" ? { visibility: patch.visibility } : {}),
     ...(patch.interface && typeof patch.interface === "object" ? { interface: patch.interface } : {}),
     ...(patch.executionDefaults && typeof patch.executionDefaults === "object" ? { executionDefaults: patch.executionDefaults } : {}),
-    metadata: withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata), metadata),
+    metadata: withAutomationStudioCostLimitChoice(withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata), metadata), current.metadata, metadata),
     ...(current.source?.mode === "code" && patch.source?.mode === "code"
       ? { source: { ...current.source, declaredDependencies: Array.isArray(patch.source.declaredDependencies) ? patch.source.declaredDependencies : current.source.declaredDependencies } }
       : {})

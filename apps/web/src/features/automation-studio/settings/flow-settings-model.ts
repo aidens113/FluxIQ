@@ -82,6 +82,8 @@ export type FlowSettingsDraft = {
   maxCostUsdPerTrainingWindow: string;
   maxAdaptationInterventionsPerRun: string;
   maxAdaptationCostUsdPerRun: string;
+  /** Set once the person edits the cost limit field in this form, so a save can say the limit was chosen even when it reads $0.25. Never read back from a stored Flow. */
+  maxAdaptationCostUsdPerRunEdited?: true;
   budgetExhaustedBehavior: "ask" | "stop";
   llmProvider: string;
   llmModel: string;
@@ -159,6 +161,9 @@ export function flowEffectiveSettings(flow: any, draft: FlowSettingsDraft): Flow
   ];
   return definitions.map((item) => ({ ...item, source: item.overridden ? "Flow override" : "Framework default", resettable: item.overridden && Object.prototype.hasOwnProperty.call(FLOW_SETTINGS_DEFAULT_VALUES, item.key) }));
 }
+/** The key Core reads as "a person chose this Flow's cost limit" (`maxEstimatedCostUsdPerRunChosen`, written in Core's `flow-settings/cost-limit-choice.ts`). */
+const COST_LIMIT_CHOSEN_KEY = "maxEstimatedCostUsdPerRunChosen";
+
 export function applyFlowTrainingMode(draft: FlowSettingsDraft, trainingMode: FlowSettingsDraft["trainingMode"]): FlowSettingsDraft {
   if (trainingMode === "normal") return { ...draft, trainingMode, allowLlmIntervention: false, allowAdaptationCreation: false, allowPromotion: false };
   return { ...draft, trainingMode, allowLlmIntervention: true, allowAdaptationCreation: true, allowPromotion: draft.adaptationProposalMode !== "manual" };
@@ -457,7 +462,9 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
     allowDeleteOrDisableBehavior: draft.allowDeleteOrDisableBehavior,
     requireApprovalForDestructiveChanges: draft.requireApprovalForDestructiveChanges,
     maxInterventionsPerRun: Number(draft.maxAdaptationInterventionsPerRun),
-    maxEstimatedCostUsdPerRun: Number(draft.maxAdaptationCostUsdPerRun)
+    maxEstimatedCostUsdPerRun: Number(draft.maxAdaptationCostUsdPerRun),
+    // Marked only when the person edited the limit: the form resends it on every save, so the value alone cannot say it was chosen. A stored marker rides in `retainedAdaptationSettings`.
+    ...(draft.maxAdaptationCostUsdPerRunEdited ? { [COST_LIMIT_CHOSEN_KEY]: true } : {})
   };
   const { timeoutMs: _oldTimeout, maxConcurrency: _oldConcurrency, authorizedDomainIds: _oldDomains, ...retainedExecutionDefaults } = flow.executionDefaults ?? {};
   const authorizedDomainIds = [...new Set(draft.authorizedDomainIds.map((item) => item.trim()).filter(Boolean))];

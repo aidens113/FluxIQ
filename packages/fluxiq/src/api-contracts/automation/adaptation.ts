@@ -116,6 +116,8 @@ function readinessStringArray(value: unknown, expected: readonly string[]): bool
 
 export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
   authSessionId: string;
+  /** The chat thread that asked. In answer-first mode it is noted, before the attempt starts, so the thread can read its attempt back; an answer holding `threadNotNoted` says it could not be. */
+  conversationId?: string;
   /**
    * The lasting consequences the build's actions may have: `move_money`,
    * `delete`, `send_or_publish`, `modify_existing`, `create_new`. Absent is

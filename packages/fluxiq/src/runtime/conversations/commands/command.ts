@@ -13,6 +13,7 @@ import type { AutomationStudioPanelCapability } from "../../../framework/automat
 import type { AutomationStudioConversationAsk } from "../ask.ts";
 import type { AutomationStudioConversationTurn } from "../turn.ts";
 import type { AutomationStudioConversationAutomationTurnRequest } from "../writer.ts";
+import type { AutomationStudioConversationAnswered } from "./build.ts";
 
 /** What one registry call came back with, in the registry's own shape. */
 export type AutomationStudioConversationCommandCallResult = {
@@ -137,6 +138,8 @@ export type AutomationStudioConversationCommandOutcome = {
   candidate?: AutomationStudioCandidateAuthoringResult;
   /** With `candidate`: the build's ending row already said how it ended, so the draft's card line says no verdict (`./build.ts`, t753). */
   candidateTold?: boolean;
+  /** What an answer-first attempt answered, read through the contract (`./build.ts`). The thread is told one line, and reads the rest back by route. */
+  answered?: Pick<AutomationStudioConversationAnswered, "attempt" | "result" | "candidateId">;
   /** Asked after the result is written, when the command's work needs a yes before it takes effect. */
   confirm?: AutomationStudioConversationCommandConfirmation;
   /**

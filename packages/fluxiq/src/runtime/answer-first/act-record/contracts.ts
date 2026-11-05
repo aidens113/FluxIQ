@@ -90,10 +90,14 @@ export type AutomationStudioAttemptActNotedRow = {
   row: string;
   /** Handles printed in the row. */
   handles: string[];
-  /** Per text field, its hashed words and those with a letter in them. */
-  fields: Array<{ words: string[]; lettered: string[] }>;
+  /** Per text field, its hashed words and those a person tells it by: a word with a letter, or a long number that is an id. `common`: a read held it on more than one row, so it tells no row from another. */
+  fields: Array<{ words: string[]; lettered: string[]; common?: true }>;
   /** Hashed paths of the addresses in the row. */
   paths: string[];
+  /** Those of `paths` a read held on more than one row. */
+  commonPaths?: string[];
+  /** The reads it was seen in, newest last and bounded: two rows of one read are never the same row (`./same-row.ts`). None for a row only an act or a run carried. */
+  reads?: number[];
 };
 
 /** What the record persists: versioned, and read strictly. */

@@ -61,7 +61,9 @@ function lastingActs(result: ChatTaskResult | undefined): boolean {
 }
 
 /** The answer turn for `outcome`; none while it is still working, or before an ended attempt has a result. */
-export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOptions): AnswerModel | undefined {
+export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions): AnswerModel | undefined {
+  // A thread can hold both kinds of outcome, so the port's one flag cannot speak for this one.
+  const options = { ...given, reportsSpend: given.reportsSpend && outcome.spendUnknown !== true };
   const start = opening(outcome, options);
   if (start === undefined) return undefined;
   const { attempt, result, saved } = outcome;
@@ -74,7 +76,8 @@ export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOption
     ...start,
     ...parts,
     canRunAgain: ended && !(attempt.status === "budget_out" && options.canAddBudget && lastingActs(result)),
-    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted")
+    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted"),
+    keepGoingCarriesOn: attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted"
   };
   const from = ended ? fromWords(attempt, result, options.reportsSpend) : undefined;
   if (from !== undefined) model.from = from;

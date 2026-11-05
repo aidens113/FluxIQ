@@ -10,6 +10,7 @@ import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBoo
 import { boundedIdentifier, flowBootstrapGenerationReadiness, generateFlowBootstrapAdaptationForRequest } from "../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { automationStudioApiTaskAttemptStore, registerCarryOnTaskAttemptEndpoint } from "./task/index.ts";
 
 export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -74,8 +75,14 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     action: "studio:GenerateFlowBootstrapAdaptation",
     accessLevel: "Write",
     resource: endpointResource.projectChild("flow", "flowId"),
-    handler: async (request) => generateFlowBootstrapAdaptationForRequest({ service, failedBuilds }, request)
+    handler: async (request) => generateFlowBootstrapAdaptationForRequest({
+      service,
+      failedBuilds,
+      noteConversation: async (projectId, conversationId, flowId) => await automationStudioApiTaskAttemptStore(service).locator.noteConversation(projectId, conversationId, flowId)
+    }, request)
   });
+  // Carrying an attempt on goes through the generation above, so it shares what the generation keeps of a failed build.
+  registerCarryOnTaskAttemptEndpoint(dependencies, { failedBuilds });
   // The diagnostic of a Flow's latest build that failed, as the request above
   // answered it. A build the chat started answers the person in words, and
   // what it spent used to be lost with the rest of its diagnostic: live run

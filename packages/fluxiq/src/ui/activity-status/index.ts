@@ -12,6 +12,7 @@ export type { ClientGatewayActivity, ClientGatewayActivityPhase } from "@fluxiq/
 export type { ActivityDisplay } from "./activity-display.ts";
 export { CandidateTrial, type TrialState } from "./candidate-trial.ts";
 export { systemActivityClock, type ActivityClock, type ActivityTimer } from "./clock.ts";
+export { ACTIVITY_ATTEMPT_WORDS, activityAttemptHeadline, opensActivityAttempt } from "./attempt/index.ts";
 export { cutAtWord } from "./cut-at-word.ts";
 export { declinedSubmission } from "./declined-submission.ts";
 export { ACTIVITY_DOUBTED_ENDING_CLOSE, ACTIVITY_DOUBTED_HEADLINE, endsOnDoubt } from "./doubted-ending.ts";

@@ -13,6 +13,7 @@ import { registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../../runtime/recording/gateway-trace/wiring/index.ts";
+import { automationStudioTaskAttemptsInFlight } from "../../framework/automation-service/service/answer-first/attempt-in-flight/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -63,12 +64,17 @@ export type GlobalProgramRuntime = {
  * - `backgroundTasksScheduled`: tasks outside the built-in `maintenance` queue
  *   that a person turned on with an interval through this runtime.
  * - `openGatewaySessions`: client gateway sessions not disconnected.
+ * - `taskAttemptsInFlight`: answer-first task attempts entered and not yet ended. An
+ *   attempt can wait a long time holding nothing (a person's answer, a provider's
+ *   backoff), with no project database open and its gateway session gone, so this is
+ *   the count that says it is still working, whether or not tracing is on.
  */
 export type GlobalProgramRuntimeActivity = {
   openProjectDatabases: number;
   backgroundTasksRunning: number;
   backgroundTasksScheduled: number;
   openGatewaySessions: number;
+  taskAttemptsInFlight: number;
 };
 
 /** How a program runtime is built; each field is optional, and absent means today's local behaviour. */
@@ -396,7 +402,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
       openProjectDatabases: AutomationStudioGatewayTraceServicePools.of(automationStudio)?.stats().openProjects ?? 0,
       backgroundTasksRunning: backgroundTasks.activity().running,
       backgroundTasksScheduled: backgroundTasks.activity().scheduled,
-      openGatewaySessions: clientGateway.snapshot().sessions.filter((session) => session.status !== "disconnected").length
+      openGatewaySessions: clientGateway.snapshot().sessions.filter((session) => session.status !== "disconnected").length,
+      taskAttemptsInFlight: automationStudioTaskAttemptsInFlight(automationStudio)
     })
   };
 }
