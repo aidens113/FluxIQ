@@ -27,6 +27,8 @@ export type WorkHeaderUpdate = Omit<WorkHeaderInput, "display"> & {
   display: ActivityDisplay | null | undefined;
   /** The raw live activity (`ChatActivityState.current`), whose `at` starts the clock. */
   activity?: ClientGatewayActivity | null;
+  /** The question on screen offers its own Stop, so the header's is put away and there is one to press. */
+  askHasStop?: boolean;
 };
 
 /** The mounted header. */
@@ -60,9 +62,10 @@ export function createWorkHeaderView(options: WorkHeaderOptions): WorkHeaderView
   const status = createElement("div", { className: "chat-work-status" }, [label, time, cost, limit]);
   const controls = createElement("div", { className: "chat-work-controls" }, [...options.controls]);
   const line = createElement("p", { className: "chat-work-now", attrs: { "aria-live": "polite" } });
+  const saved = createElement("p", { className: "chat-work-saved", hidden: true });
   const action = createElement("button", { className: "chat-work-action", hidden: true, attrs: { type: "button" } });
   action.addEventListener("click", () => options.onAction?.());
-  const element = createElement("div", { className: "chat-work-header", hidden: true, attrs: { role: "group", "aria-label": "Work in progress" } }, [status, controls, line, action]);
+  const element = createElement("div", { className: "chat-work-header", hidden: true, attrs: { role: "group", "aria-label": "Work in progress" } }, [status, controls, line, saved, action]);
   let last: WorkHeaderUpdate | null = null;
   let model: WorkHeaderModel | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -100,9 +103,12 @@ export function createWorkHeaderView(options: WorkHeaderOptions): WorkHeaderView
         return;
       }
       setAttr(element, "data-state", model.state);
+      setAttr(controls, "data-ask-has-stop", next.askHasStop === true ? "true" : "false");
       setText(label, model.label);
       setText(line, model.now);
       setHidden(line, model.now === "");
+      setText(saved, model.saved);
+      setHidden(saved, model.saved === "");
       setText(cost, model.cost);
       setHidden(cost, model.cost === "");
       setText(limit, model.limit);

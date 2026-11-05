@@ -8,7 +8,7 @@
 
 import type { ChatTaskOutcome, ChatTaskResult } from "../../ports/index.ts";
 import type { AnswerKind, AnswerModel } from "./answer-types.ts";
-import { comparedWords, fromWords, savedWords, usdWords, waitingWords } from "../words/index.ts";
+import { comparedWords, fromWords, pathWords, savedWords, usdWords, waitingWords } from "../words/index.ts";
 import { gotSummary, hasContent, resultHeadline } from "./result-headline.ts";
 import { emptyParts, resultParts } from "./result-parts.ts";
 
@@ -18,6 +18,8 @@ export type AnswerModelOptions = {
   reportsSpend: boolean;
   /** The port can raise a spent budget. */
   canAddBudget: boolean;
+  /** The time now in ms, for the day a saved line names; the real time by default. */
+  nowMs?: number;
 };
 
 type Opening = { kind: AnswerKind; headline: string; lead?: string; gotLine?: string };
@@ -59,7 +61,9 @@ function lastingActs(result: ChatTaskResult | undefined): boolean {
 }
 
 /** The answer turn for `outcome`; none while it is still working, or before an ended attempt has a result. */
-export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOptions): AnswerModel | undefined {
+export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions): AnswerModel | undefined {
+  // A thread can hold both kinds of outcome, so the port's one flag cannot speak for this one.
+  const options = { ...given, reportsSpend: given.reportsSpend && outcome.spendUnknown !== true };
   const start = opening(outcome, options);
   if (start === undefined) return undefined;
   const { attempt, result, saved } = outcome;
@@ -72,14 +76,17 @@ export function answerModel(outcome: ChatTaskOutcome, options: AnswerModelOption
     ...start,
     ...parts,
     canRunAgain: ended && !(attempt.status === "budget_out" && options.canAddBudget && lastingActs(result)),
-    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted")
+    stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted"),
+    keepGoingCarriesOn: attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted"
   };
   const from = ended ? fromWords(attempt, result, options.reportsSpend) : undefined;
   if (from !== undefined) model.from = from;
   const compared = ended ? comparedWords(attempt, outcome.comparedTo, options.reportsSpend) : undefined;
   if (compared !== undefined) model.compared = compared;
+  const how = ended ? pathWords(attempt.path, attempt.status) : undefined;
+  if (how !== undefined) model.how = how;
   if (model.canRunAgain && lastingActs(result)) model.runAgainNote = RUN_AGAIN_REPEATS;
-  if (saved !== undefined) model.saved = savedWords(saved);
+  if (saved !== undefined) model.saved = savedWords(saved, options.nowMs ?? Date.now());
   else if (attempt.status === "budget_out") model.saved = "Nothing saved yet.";
   if (attempt.status === "budget_out" && options.canAddBudget && attempt.budget.usd > 0) {
     model.addBudget = { addUsd: attempt.budget.usd, words: options.reportsSpend ? `Add ${usdWords(attempt.budget.usd)} and carry on` : "Add budget and carry on" };

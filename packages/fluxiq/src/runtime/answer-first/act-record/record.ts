@@ -38,14 +38,15 @@
 // a row's control by hand and in a loop ran under different selectors, and that must not
 // read as two acts, while a row's two different controls must.
 //
-// **One row, several shapes.** A row reaches this record as a by-hand read holds it, as a
-// walker's pass carries it, and as a Flow's For Each hands it on after a record output
-// reshaped it. A digest of its fields differs across those, so every check about a row
-// reads both: the digest, and the row's values against the acted row's
-// (`./row-ties.ts`, `sameAs`). A row that fits several held rows is done if any of them is
-// an acted one: it may be that row, and a row wrongly held not done is an act done twice. A by-hand
-// press by a handle a read printed is on the row as that read held it, so it is read the same way:
-// a run's For Each may have pressed that row in the shape its record output left it (t870).
+// **One row, several shapes (`./same-row.ts`).** A row reaches this record as a by-hand read holds
+// it, as a pass carries it, as a Flow's For Each hands it on after a record output reshaped it, and
+// as the press itself left it. A digest of its fields holds only while it reads the same. So a row a
+// call carries answers to its own digest and to those of the rows held that are the same row, an act
+// keeps them all while its id and its `rowIdentity` stay the row's own, and every check about a row
+// reads them all. A row that fits several is done if any of them is an acted one: it may be that
+// row, and a row wrongly held not done is an act done twice. A by-hand press by a handle a read
+// printed is on the row as that read held it, so it is read the same way: a run's For Each may have
+// pressed that row in the shape its record output left it.
 //
 // **Begun before it is sent (`begun`).** A lasting call goes on the record as
 // `may_have_landed`, and that write is awaited, before anything is dispatched, so a process
@@ -120,8 +121,8 @@ import { automationStudioAttemptActScreenedWords } from "./words.ts";
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
 const MODEL_RULE = "These acts already happened in this task or may have. Never repeat one: count what landed as done and carry on with what is left. Look at the page for one that may have landed: if its effect is there, it is done. A first try at it again is refused and says to look, and only a look after that lets it go.";
 
-/** `rows` are what an act made by this call is on; `sameRows` adds every acted row it is in another shape. */
-type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; sameRows: string[] };
+/** `rows` are every row this call answers to, in every shape; `named` are those it says it is on itself (its row's own digest, or the rows that printed its handle), which an act made by this call is named by. */
+type Identity = AutomationStudioAttemptActTargetKeys & { actionId: string; rows: string[]; named: string[] };
 type ForRun = { actionId: string; parameters: JsonObject; row?: JsonObject | undefined; steps?: readonly string[] | undefined; counted?: boolean };
 /** A lasting call on the record and not yet answered: its entry, and what that entry was before, where it was there. */
 type Begun = { entry: AutomationStudioAttemptActEntry; before?: AutomationStudioAttemptActEntry };
@@ -235,7 +236,7 @@ export class AutomationStudioAttemptActRecord {
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
       if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.landedAt(outcome.step, known);
-      this.leftOut.ranOn(known.rows);
+      this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
       return contractAct(known);
     }
@@ -243,7 +244,7 @@ export class AutomationStudioAttemptActRecord {
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);
-    this.leftOut.ranOn(entry.rows);
+    this.leftOut.ranOn(entry.rows, this.ties);
     void this.changed();
     return contractAct(entry);
   }
@@ -280,8 +281,8 @@ export class AutomationStudioAttemptActRecord {
   /** Whether this row already took a lasting act (never by position or handle), in any shape it reached the record in (header). */
   rowDone(row: JsonObject): boolean {
     const identity = automationStudioAttemptActRowIdentity(row);
-    if (identity === undefined) return false;
-    const same = new Set([identity, ...this.ties.sameAs(row, this.actedRows())]);
+    if (identity === undefined || !this.entries.some((entry) => stands(entry) && entry.rows.length > 0)) return false;
+    const same = new Set(this.ties.sameAs(row));
     const done = this.entries.some((entry) => stands(entry) && entry.rows.some((held) => same.has(held)) && !this.namesAnotherRow(entry, [identity]));
     if (done) this.leftOut.passedOver(identity);
     return done;
@@ -306,13 +307,16 @@ export class AutomationStudioAttemptActRecord {
     return found ? contractAct(found) : undefined;
   }
 
-  /** Remembers which row a handle printed in a read belongs to, so a by-hand press on it counts for that row. `oneList`: the rows as one list held them, where an answer carries them twice, to know two rows that are alike from one row said twice. */
-  noteReadRows(rows: readonly JsonObject[], oneList: readonly JsonObject[] = rows): void {
+  /** Remembers the rows of one read, so a by-hand press by a handle one printed counts for that row, and two rows alike in this one list are known from one row said in two lists. */
+  noteReadRows(rows: readonly JsonObject[]): void {
     if (rows.length === 0) return;
-    this.ties.note(rows, this.actedRows());
-    this.leftOut.noteList(oneList.map(automationStudioAttemptActRowIdentity).filter((identity) => identity !== undefined));
-    // An act made before the read that lists its row (header of `./row-ties.ts`).
-    for (const entry of this.entries) if (entry.rows.length === 0) this.tieLate(entry);
+    const read = this.ties.note(rows, this.actedRows());
+    this.leftOut.noteList(read);
+    // An act made before the read that lists its row, however that read writes it (header of `./row-ties.ts`).
+    for (const entry of this.entries) {
+      if (entry.rows.length === 0) this.tieLate(entry);
+      else if (entry.actedOnWords) entry.rows = [...new Set([...entry.rows, ...this.ties.ofWords(entry.actedOnWords, read)])];
+    }
     void this.changed();
   }
 
@@ -359,11 +363,10 @@ export class AutomationStudioAttemptActRecord {
 
   private identityOf(actionId: string, parameters: JsonObject, row: JsonObject | undefined): Identity {
     const target = automationStudioAttemptActTargetKeys(actionId, parameters);
-    const own = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
-    const printed = own === undefined && target.handle !== undefined ? this.ties.ofHandle(target.handle) : [];
-    const rows = own !== undefined ? [own] : printed;
-    const same = row === undefined ? this.ties.sameAsHeld(rows, this.actedRows()) : this.ties.sameAs(row, this.actedRows());
-    return { ...target, actionId, rows, sameRows: [...new Set([...rows, ...same])] };
+    const ownRow = row === undefined ? undefined : automationStudioAttemptActRowIdentity(row);
+    if (ownRow !== undefined) return { ...target, actionId, named: [ownRow], rows: this.ties.sameAs(row!) };
+    const printed = target.handle !== undefined ? this.ties.ofHandle(target.handle) : [];
+    return { ...target, actionId, named: printed, rows: [...new Set([...printed, ...this.ties.sameAsPrinted(printed, this.actedRows())])] };
   }
 
   /** Every row an act is on, the only rows another shape of a row can be done by. */
@@ -371,9 +374,9 @@ export class AutomationStudioAttemptActRecord {
     return new Set(this.entries.flatMap((entry) => entry.rows));
   }
 
-  /** Holds the row an act is on, by its values, so the same row in another shape is known. */
+  /** Holds the row an act is on, so the same row in another shape is known. It is no read: a read's list is what `./same-row.ts` reads a difference by. */
   private noteActedRow(row: JsonObject): void {
-    this.ties.note([row], this.actedRows());
+    this.ties.noteActed(row, this.actedRows());
   }
 
   /** The record as it stood before this call began: the entry gone, or as it was. Says whether there was anything to put back. */
@@ -413,7 +416,7 @@ export class AutomationStudioAttemptActRecord {
 
   /** The rows a call is on, as far as it says: its own, a handle's a read printed, or those its foreseen words fit. */
   private pressedRows(call: AutomationStudioAttemptActCall, identity: Identity): string[] {
-    return identity.rows.length > 0 ? identity.rows : this.foreseenOf(call)?.named ?? [];
+    return identity.named.length > 0 ? identity.named : this.foreseenOf(call)?.named ?? [];
   }
 
   /** Whether the act's own answer says it was on one row, and this press is on another known to be another (header). */
@@ -490,7 +493,7 @@ export class AutomationStudioAttemptActRecord {
     const said = actedOnWords ? this.ties.ofWords(actedOnWords) : [];
     const named = said.length > 0 ? said : this.foreseenOf(call)?.named ?? [];
     const rows = called.rows.length > 0 ? called.rows : named.length > 0 ? named : this.place?.rows ?? [];
-    const only = rows.length === 1 ? rows[0] : undefined;
+    const only = called.named.length === 1 ? called.named[0] : rows.length === 1 ? rows[0] : undefined;
     // The frozen form names the act from here on; a handle stops meaning anything when the build ends.
     const key = (frozen?.keys ?? called.keys)[0] ?? called.keys[0]!;
     const words = automationStudioAttemptActScreenedWords(outcome.words, classes);
@@ -580,7 +583,7 @@ function matches(entry: AutomationStudioAttemptActEntry, identity: Identity): bo
   const sameKey = identity.keys.some((key) => entry.keys.includes(key));
   if (identity.rows.length === 0) return sameKey;
   if (entry.rows.length === 0) return identity.handleKeys.some((key) => entry.handleKeys.includes(key));
-  if (!identity.sameRows.some((row) => entry.rows.includes(row)) || !entry.actions.includes(identity.actionId)) return false;
+  if (!identity.rows.some((row) => entry.rows.includes(row)) || !entry.actions.includes(identity.actionId)) return false;
   return sameKey || !entry.controls || !identity.controls || identity.controls.some((words) => entry.controls!.includes(words));
 }
 

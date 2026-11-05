@@ -17,7 +17,15 @@ describe("the count a request asks for", () => {
     ["Stamp the card thrice.", 3],
     ["Add two packs of the pencils to my basket.", 2],
     ["Order 5 of the pencils.", 5],
-    ["First list my loans, then renew the card three times.", 3]
+    ["First list my loans, then renew the card three times.", 3],
+    ["Add this 3x.", 3],
+    ["Renew the card x3.", 3],
+    ["Add x3 of this.", 3],
+    ["Add 3x of this.", 3],
+    ["Add a dozen of this to my cart.", 12],
+    ["Add 2x to my cart.", 2],
+    ["Add x20 of this.", 20],
+    ["Add a dozen of this to my cart, then renew the card.", 12]
   ])("reads %s", (request, count) => {
     expect(counts(request)).toEqual([count]);
   });
@@ -30,15 +38,37 @@ describe("the count a request asks for", () => {
     "List it three times.",
     "Do not renew the card three times.",
     "Pay three times the price.",
-    "Add a dozen of this.",
     "Add a couple of these.",
-    "Add 3x of this.",
     "Renew the card issued three years ago.",
     "Add 500 g of this.",
     "Add every book to my basket three times.",
-    "Save the three cheapest."
+    "Save the three cheapest.",
+    "Add a 3x zoom lens to my cart.",
+    "Add the 2x4 boards to my cart.",
+    "Add the 4x6 prints.",
+    "Add size 3x to my cart.",
+    "Add an x3 model to my cart.",
+    "Add this for 3x the price.",
+    "Buy the 3x magnifier.",
+    "Buy the magnifier in 3x.",
+    "A dozen eggs are listed.",
+    "List the dozen cheapest.",
+    "Add half a dozen of this.",
+    "Add a dozen or so.",
+    "Add a dozen eggs to my cart.",
+    "Add 3x.",
+    "Do not add this 3x.",
+    "The 3x zoom lens is listed 3x.",
+    "Add x1 of this."
   ])("%s stays at one", (request) => {
     expect(counts(request)).toEqual([]);
+  });
+});
+
+describe("the digits rule holds for a multiplier", () => {
+  it("reads x20 as twenty, and x1000 not at all", () => {
+    expect(counts("Add x20 of this.")).toEqual([20]);
+    expect(counts("Add x1000 of this.")).toEqual([]);
   });
 });
 

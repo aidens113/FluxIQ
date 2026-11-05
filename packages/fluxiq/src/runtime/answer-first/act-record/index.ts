@@ -6,5 +6,6 @@ export * from "./record-data.ts";
 export * from "./record.ts";
 export * from "./row-ties.ts";
 export * from "./rows-left-out.ts";
+export * from "./same-row.ts";
 export * from "./seed.ts";
 export * from "./words.ts";

@@ -65,6 +65,9 @@ describe("a paired client on the program route", () => {
         "get-flow-run-detail",
         "list-flow-adaptations",
         "export-run-dataset",
+        "get-task-attempt",
+        "list-conversation-task-attempts",
+        "carry-on-task-attempt",
         "run-runtime-session",
         "generate-recording-proposal",
         "review-recording-flow-proposal",
@@ -150,6 +153,15 @@ describe("a paired client on the program route", () => {
     expect(pairedClientDomainScope("http://localhost/x?domainId=other", session)).toBeUndefined();
     expect(pairedClientDomainScope("http://localhost/x", { sessionId: "g1" })).toEqual({ domainId: null });
     expect(pairedClientDomainScope("http://localhost/x?domainId=web-automation", { sessionId: "g1" })).toBeUndefined();
+  });
+
+  it("carries an attempt on by its id and an amount only, never a Flow, a mode, a grant or a session", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "carry-on-task-attempt", payload);
+    expect(narrow({ projectId: "p", attemptId: "attempt.1", addUsd: 0 })).toEqual({ ok: true, payload: { projectId: "p", attemptId: "attempt.1", addUsd: 0 } });
+    for (const field of ["flowId", "authoringMode", "permittedConsequences", "authSessionId", "startLocation"]) {
+      expect(narrow({ projectId: "p", attemptId: "attempt.1", addUsd: 1, [field]: "x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's carry-on may not carry ${field}.` });
+    }
+    expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 
   it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {

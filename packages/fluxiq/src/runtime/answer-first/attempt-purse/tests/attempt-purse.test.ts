@@ -12,8 +12,8 @@ describe("budget", () => {
     expect(AUTOMATION_STUDIO_ANSWER_FIRST_DEFAULT_BUDGET_USD).toBe(5);
     expect(automationStudioAnswerFirstBudgetUsd({ env: {} })).toBe(5);
   });
-  it("does not read the old $0.25 default as an explicit limit", () => {
-    expect(automationStudioAnswerFirstBudgetUsd({ flowSetting: 0.25, env: {} })).toBe(5);
+  it("holds an explicit $0.25 Flow setting, as it holds any explicit one", () => {
+    expect(automationStudioAnswerFirstBudgetUsd({ flowSetting: 0.25, env: {} })).toBe(0.25);
   });
   it("holds an explicit lower Flow setting", () => {
     expect(automationStudioAnswerFirstBudgetUsd({ flowSetting: 1, env: {} })).toBe(1);

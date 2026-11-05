@@ -31,3 +31,11 @@ describe("what an answer-first attempt's activity says", () => {
     expect(await labelsOf({ projectId: "p1" }, { status: "proposed" })).toEqual(["Building the Flow", "Your Flow is ready"]);
   });
 });
+
+it("does not draw a budget gone as an error", async () => {
+  const phases: string[] = [];
+  const stop = automationStudioActivityHub.subscribe((activity) => { phases.push(activity.phase); });
+  try { await withAutomationStudioBuildActivity({ projectId: "p1", authoringMode: "answer-first" }, async () => ({ status: "answered", attempt: { status: "budget_out" } })); }
+  finally { stop(); }
+  expect(phases).not.toContain("failed");
+});

@@ -17,7 +17,7 @@ describe("instanceBusy on a real instance", () => {
     try {
       await fluxiq.setup();
       const tasks = fluxiq.programs.backgroundTasks;
-      expect(fluxiq.programs.activity()).toEqual({ openProjectDatabases: 0, backgroundTasksRunning: 0, backgroundTasksScheduled: 0, openGatewaySessions: 0 });
+      expect(fluxiq.programs.activity()).toEqual({ openProjectDatabases: 0, backgroundTasksRunning: 0, backgroundTasksScheduled: 0, openGatewaySessions: 0, taskAttemptsInFlight: 0 });
       expect(instanceBusy(fluxiq)).toBe(false);
 
       await tasks.setEnabled("docs.rebuild", true);
@@ -46,5 +46,17 @@ describe("instanceBusy on a real instance", () => {
         if ((error as NodeJS.ErrnoException).code !== "EBUSY") throw error;
       }
     }
+  });
+});
+
+// An answer-first attempt waiting on a person holds no project database and may have lost its
+// gateway session, and trace capture may be off: only its own count says it is still working.
+describe("instanceBusy with an attempt in flight", () => {
+  const idle = { openProjectDatabases: 0, backgroundTasksRunning: 0, backgroundTasksScheduled: 0, openGatewaySessions: 0, taskAttemptsInFlight: 0 };
+  const instance = (activity: typeof idle) => ({ programs: { activity: () => activity } }) as unknown as FluxIQ;
+
+  it("is busy on the attempt count alone, and not busy once it is zero", () => {
+    expect(instanceBusy(instance(idle))).toBe(false);
+    expect(instanceBusy(instance({ ...idle, taskAttemptsInFlight: 1 }))).toBe(true);
   });
 });

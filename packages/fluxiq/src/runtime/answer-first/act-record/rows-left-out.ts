@@ -44,10 +44,10 @@ export class AutomationStudioAttemptActRowsLeftOut {
     this.held.set(row, Math.min((this.held.get(row) ?? 0) + 1, this.copies.get(row) ?? 1));
   }
 
-  /** An act ran on these rows: where that is one row, it was not left out, whatever a refusal before a look counted. */
-  ranOn(rows: readonly string[]): void {
-    const [row, other] = rows;
-    if (row !== undefined && other === undefined) this.held.delete(row);
+  /** An act ran on these rows: where that is one row, in however many shapes, it was not left out, whatever a refusal before a look counted. */
+  ranOn(rows: readonly string[], ties: AutomationStudioAttemptActRowTies): void {
+    if (this.held.size === 0 || rows.length === 0 || ties.distinct(new Set(rows)) !== 1) return;
+    for (const row of rows) this.held.delete(row);
   }
 
   /** How many rows these are, one row in several shapes counted once and each copy a read returned on its own. */

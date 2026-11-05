@@ -2,7 +2,7 @@
 //
 //   Found 10 of 10                                  [tick] Checked
 //   [ columns | first 5 rows ]                      Show all 10 · CSV · JSON
-//   On the site: nothing changed
+//   On the site: I recorded no changes
 //   Checked: ...      From: pages on site · time · cost
 //   Saved so next time is quicker.        [Run again] [What I did]
 //
@@ -66,7 +66,7 @@ export function createAnswerView(host: AnswerHost = {}): AnswerView {
   return {
     element,
     update(outcome) {
-      model = answerModel(outcome, { reportsSpend: host.results?.reportsSpend !== false, canAddBudget: typeof host.results?.addBudgetAndCarryOn === "function" });
+      model = answerModel(outcome, { reportsSpend: host.results?.reportsSpend !== false, canAddBudget: typeof host.results?.addBudgetAndCarryOn === "function", nowMs: (host.now ?? Date.now)() });
       draw();
       return model !== undefined;
     }

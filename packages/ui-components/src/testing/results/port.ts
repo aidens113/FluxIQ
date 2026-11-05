@@ -97,9 +97,12 @@ export function createFakeChatResultsPort(options: FakeChatResultsOptions = {}):
       if (failure) return failure;
       const found = allOutcomes().find((outcome) => outcome.attempt.attemptId === query.attemptId);
       if (!found) return { ok: false, sentence: "That attempt could not be found.", code: "failed" };
-      if (found.attempt.status !== "budget_out") return { ok: false, sentence: "That attempt has not run out of budget.", code: "refused" };
-      if (!Number.isFinite(query.addUsd) || query.addUsd <= 0) return { ok: false, sentence: "Add an amount above zero.", code: "invalid_request" };
-      const { endedAtMs: _endedAtMs, status: _status, ...fields } = found.attempt;
+      // One its Core's restart cut off carries on as it was, with nothing added; one that ran out needs some budget.
+      const cutOff = found.attempt.status === "waiting_for_person" && found.attempt.waitingFor === "interrupted";
+      if (found.attempt.status !== "budget_out" && !cutOff) return { ok: false, sentence: "That attempt has not run out of budget.", code: "refused" };
+      if (!Number.isFinite(query.addUsd) || query.addUsd < 0 || (!cutOff && query.addUsd === 0)) return { ok: false, sentence: "Add an amount above zero.", code: "invalid_request" };
+      const { endedAtMs: _endedAtMs, status: _status, ...rest } = found.attempt;
+      const { waitingFor: _waitingFor, ...fields } = rest as typeof rest & { waitingFor?: unknown };
       const budgetUsd = fields.budget.usd + query.addUsd;
       found.attempt = { ...fields, status: "working", budget: { usd: budgetUsd } };
       return { ok: true, value: { attemptId: query.attemptId, budgetUsd } };

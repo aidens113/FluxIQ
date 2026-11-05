@@ -28,6 +28,8 @@
 //   - A described recording can ride with a message (`attachment`): a button
 //     beside Send picks it, a chip names it, and it leaves the chip only once
 //     a send went; a failed send keeps it.
+//   - A host control (`options.action`, "Show me how") sits beside that button; the
+//     buttons then share a row under the box.
 //   - `fill` puts an example prompt in the box for the person to edit or
 //     send; it never sends by itself.
 //
@@ -89,12 +91,13 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
   const parkedControls = createElement("div", { className: "composer-draft-review", hidden: true }, [parkedNotice, adopt, clear]);
   const hint = createElement("p", { className: "composer-hint", hidden: true, attrs: { role: "status" } });
   const heldLine = createElement("p", { className: "composer-held", hidden: true, attrs: { role: "status" } });
-  const fieldParts = attachment ? [box, attachment.button, sendButton] : [box, sendButton];
+  const action = options.action;
+  const fieldParts = [box, ...(attachment ? [attachment.button] : []), ...(action ? [action] : []), sendButton];
   const element = createElement("div", { className: "composer" }, [
     ...(attachment ? [attachment.chip, attachment.menu] : []),
     unavailableLine,
     heldLine,
-    createElement("div", { className: "composer-field" }, fieldParts),
+    createElement("div", { className: action ? "composer-field composer-field-tools" : "composer-field" }, fieldParts),
     ...(maxLength === undefined || options.remainingHintBelow === undefined ? [] : [hint]),
     parkedControls
   ]);

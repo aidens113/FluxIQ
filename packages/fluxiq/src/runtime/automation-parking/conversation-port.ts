@@ -83,8 +83,10 @@ export function automationStudioConversationParkingPort(input: AutomationStudioC
         // A cancelled run is not a question that timed out, but it is a run
         // that must stop waiting. It leaves the node by the timed-out route
         // and the executor's own cancellation check ends it before the next
-        // node.
-        if (wait.signal?.aborted) return undefined;
+        // node. The question is closed on the way out, or Continue and Stop
+        // would stay under the turn with nothing waiting on them; the store
+        // decides the race here too, so an answer that landed first comes back.
+        if (wait.signal?.aborted) return await expiredOnCancel(host, input.projectId, ask.askId);
         if (wait.expiresAtMs !== undefined && now() >= wait.expiresAtMs) {
           // The store decides the race: an answer that landed first comes
           // back instead of the timeout that was about to be declared, which
@@ -139,6 +141,17 @@ function recordConsumedAnswer(askId: string, answer: AutomationStudioAskAnswer |
 export function automationStudioConversationAskInput(ask: AutomationStudioAsk): AutomationStudioConversationAskInput {
   const { status: _status, text: _text, raisedBy: _raisedBy, ...input } = ask;
   return input;
+}
+
+/**
+ * Closes the ask of a cancelled wait. A store that cannot close it must not
+ * hold the run in the wait it was cancelled out of, so the failure is dropped
+ * and the run leaves by the same route; the question stays pending then, which
+ * is what it did before it was closed at all.
+ */
+async function expiredOnCancel(host: AutomationStudioConversationParkingHost, projectId: string, askId: string): Promise<AutomationStudioAskAnswer | undefined> {
+  const [closed] = await Promise.allSettled([host.expireAsk({ projectId, askId })]);
+  return closed?.status === "fulfilled" ? settledAnswer(closed.value) : undefined;
 }
 
 function settledAnswer(ask: AutomationStudioConversationAsk | null): AutomationStudioAskAnswer | undefined {

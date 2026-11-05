@@ -5,11 +5,12 @@
 // `AUTOMATION_STUDIO_LLM_LOOP_PATTERNS` and `AutomationStudioLlmLoopsCaught` in
 // `runtime/llm/repeat-guard/loop-detection/`, which a contract cannot import
 // because they live in the runtime. That lane reports every pattern, so all of them
-// are required here.
+// are required here, except that `same_act` (added later) may be missing from a record already
+// on disk, which reads as zero.
 
 import { hasOnlyKeys, isCount, isPlainRecord } from "./field-checks.ts";
 
-export const AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS = Object.freeze(["exact_repeat", "near_repeat", "cycle", "no_progress", "same_fix"] as const);
+export const AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS = Object.freeze(["exact_repeat", "near_repeat", "cycle", "no_progress", "same_fix", "same_act"] as const);
 
 export type AutomationStudioTaskAttemptLoopPattern = (typeof AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS)[number];
 
@@ -28,15 +29,18 @@ export function automationStudioTaskAttemptNoLoopsCaught(): AutomationStudioTask
     near_repeat: noCount(),
     cycle: noCount(),
     no_progress: noCount(),
-    same_fix: noCount()
+    same_fix: noCount(),
+    same_act: noCount()
   };
 }
 
-/** A fresh copy of the counts, or null when a pattern is unknown or missing or a count is not a whole number. */
+/** A fresh copy of the counts, or null when a pattern is unknown or a count is not a whole number. */
 export function readAutomationStudioTaskAttemptLoopsCaught(value: unknown): AutomationStudioTaskAttemptLoopsCaught | null {
   if (!isPlainRecord(value) || !hasOnlyKeys(value, PATTERN_KEYS)) return null;
   const caught = automationStudioTaskAttemptNoLoopsCaught();
   for (const pattern of AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS) {
+    // `same_act` came after the first records were written: a record without it reads as zero.
+    if (pattern === "same_act" && value[pattern] === undefined) continue;
     const count = readCount(value[pattern]);
     if (count === null) return null;
     caught[pattern] = count;

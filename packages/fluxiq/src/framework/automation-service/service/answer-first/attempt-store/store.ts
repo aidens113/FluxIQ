@@ -21,6 +21,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
+import { AutomationStudioAnswerFirstAttemptLocator } from "./locator.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 
@@ -34,8 +35,12 @@ type Stored = { kind: typeof KIND; schemaVersion: 1; projectId: string; flowId: 
 export class AutomationStudioAnswerFirstAttemptStore {
   private readonly memory = new Map<string, Stored>();
   private readonly queues = new Map<string, Promise<unknown>>();
+  /** Where each attempt is, and which Flows a thread holds (`./locator.ts`). */
+  readonly locator: AutomationStudioAnswerFirstAttemptLocator;
 
-  constructor(private readonly paths: Pick<AutomationStudioProjectPaths, "root">, private readonly flows: Pick<AutomationStudioFlowPaths, "flowDirectory">, private readonly projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">) {}
+  constructor(private readonly paths: Pick<AutomationStudioProjectPaths, "root">, private readonly flows: Pick<AutomationStudioFlowPaths, "flowDirectory">, private readonly projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">) {
+    this.locator = new AutomationStudioAnswerFirstAttemptLocator(paths, projects);
+  }
 
   /** Every attempt kept for this Flow, oldest first. Throws `AutomationStudioAnswerFirstAttemptsUnreadable` where a file is there and cannot be read. */
   async list(projectId: string, flowId: string): Promise<AutomationStudioAnswerFirstAttemptRecord[]> {
@@ -60,6 +65,8 @@ export class AutomationStudioAnswerFirstAttemptStore {
       if (at >= 0) attempts[at] = structuredClone(record);
       else attempts.push(structuredClone(record));
       await this.write({ kind: KIND, schemaVersion: 1, projectId, flowId, attempts: attempts.slice(-KEPT_ATTEMPTS) });
+      // After the row, so a failure here costs the lookup by id and never the row; the caller's next save tries again.
+      await this.locator.noteAttempt(projectId, record.attempt.attemptId, flowId);
     });
   }
 

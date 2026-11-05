@@ -60,7 +60,17 @@ export function createAnswerHandlers(deps: AnswerHandlersDeps): AnswerHandlers {
       void press("budget", () => carryOn({ projectId: model.projectId, attemptId: model.attemptId, addUsd: add.addUsd }), () => "Budget added. Carrying on.", "I could not add the budget.");
     },
     whatIDid: () => host.onWhatIDid?.(deps.model()?.attemptId ?? ""),
-    keepGoing: () => host.onKeepGoing?.(deps.model()?.attemptId ?? ""),
+    keepGoing() {
+      const model = deps.model();
+      const results = host.results;
+      // An attempt its Core cut off goes on from where it stopped, and a message to the model would not carry it on. One stuck in a loop is told to carry on instead.
+      if (model?.keepGoingCarriesOn === true && results?.addBudgetAndCarryOn !== undefined) {
+        const carryOn = results.addBudgetAndCarryOn.bind(results);
+        void press("budget", () => carryOn({ projectId: model.projectId, attemptId: model.attemptId, addUsd: 0 }), () => "Carrying on.", "I could not carry it on.");
+        return;
+      }
+      host.onKeepGoing?.(model?.attemptId ?? "");
+    },
     tellMore: () => host.onTellMore?.(deps.model()?.attemptId ?? ""),
     stop: () => host.onStop?.(deps.model()?.attemptId ?? "")
   };

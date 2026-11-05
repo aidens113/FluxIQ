@@ -124,7 +124,9 @@
 // Pure apart from the injected clock: no browser API, no network.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { activityActionOf } from "../activity-action/index.ts";
 import type { ActivityDisplay } from "./activity-display.ts";
+import { activityAttemptFinished } from "./attempt/index.ts";
 import { cutAtWord } from "./cut-at-word.ts";
 import { activityWithoutHeadline } from "./headline-echo.ts";
 import { isModelThought } from "./model-thought.ts";
@@ -444,6 +446,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
   const outcome = outcomeOf(event) ?? (unit.check ? "waiting" : null);
   const working = outcome === null;
   const headline = activityHeadline(subjectKind, outcome, words, {
+    ...(unit.attempt ? { attempt: { label: event.label } } : {}),
     stopped: event.stopped === true,
     doubted: outcome === "failed" && endsOnDoubt(event.label, event.detail?.text),
     // A run pressing a failed step again is not a repair (D12), and nor is
@@ -455,7 +458,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     preparing: preparation.preparing,
     resetting: unit.resetting,
     unconfirmed: unit.unconfirmed,
-    waitingOn: event.phase === "waiting_permission" ? "answer" : event.phase === "paused" ? "paused" : "check"
+    waitingOn: event.phase === "waiting_permission" ? (activityActionOf(event)?.kind === "person_check" ? "check" : "answer") : event.phase === "paused" ? "paused" : "check"
   });
   const sameUnit = previous !== null && previous.activityId === event.activityId;
   const said = sentenceFor(event, reading, because);
@@ -482,7 +485,7 @@ function displayFor(event: ClientGatewayActivity, previous: ActivityDisplay | nu
     step: step === null ? null : { index: step.index, count: step.count },
     working,
     outcome,
-    ...(outcome === "done" && subjectKind === "run" && unit.unconfirmed ? { unconfirmed: true as const } : {}),
+    ...(outcome === "done" && ((subjectKind === "run" && unit.unconfirmed) || (unit.attempt && !activityAttemptFinished(event.label))) ? { unconfirmed: true as const } : {}),
     sequence: event.sequence,
     kind: "action"
   };

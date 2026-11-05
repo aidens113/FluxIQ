@@ -94,4 +94,31 @@ describe("two rows nothing separates, which a forward run reads as done", () => 
     expect(finished.answer.result).toMatchObject({ skippedAsDone: 2 });
     expect(parseAutomationStudioTaskResult(finished.answer.result).ok).toBe(true);
   });
+
+  it("nor can two rows the press may have become: found only by elimination, each is left out and counted", async () => {
+    const PRESSED = "Rivers Alpha";
+    const STILL_THERE = "Rivers Beta";
+    const lane = await laterAttempts(cleanups, { titles: [PRESSED, STILL_THERE, BIRDS] });
+    const { library } = lane.target;
+    for (const loan of library.loans) loan.due = "2030-02-02";
+    const shown: string[] = [];
+    const finished = await lane.attempt({ ...PERMITTED, script: [
+      readLoans(), press(PRESSED),
+      // The press changed its row past knowing, and another row came: two rows now share most of its words, and neither fits it.
+      () => {
+        library.loans.splice(0, 1, { title: "Rivers Zulu", due: "2030-02-02" }, { title: "Rivers Yankee", due: "2030-02-02" });
+        return repeatOverRows(LOAN_STEP, READ_STEP);
+      },
+      forwardFrom(READ_STEP),
+      (request: AutomationStudioLlmTaskRequest) => {
+        shown.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? []));
+        return complete("Renewed what could be told apart.");
+      }
+    ] });
+    expect(finished.answer.attempt.status).toBe("achieved");
+    expect(library.renewals).toEqual({ [PRESSED]: 1, [STILL_THERE]: 1, [BIRDS]: 1 });
+    expect(shown.join()).toMatch(/"skipped":2/u);
+    expect(finished.answer.result).toMatchObject({ skippedAsDone: 2 });
+    expect(parseAutomationStudioTaskResult(finished.answer.result).ok).toBe(true);
+  });
 });

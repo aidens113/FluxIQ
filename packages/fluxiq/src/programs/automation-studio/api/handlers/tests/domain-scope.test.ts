@@ -42,9 +42,9 @@ import { registerAutomationStudioApi } from "../index.ts";
 
 /**
  * Every endpoint that refuses a project outside the request's domain scope:
- * the six run-dataset endpoints, the seven reusable LLM context endpoints and
- * the six conversation endpoints. Each one returns, deletes or
- * counts content captured from somewhere else.
+ * the six run-dataset endpoints, the seven reusable LLM context endpoints, the
+ * six conversation endpoints and the two task-attempt reads, whose results hold
+ * rows. Each one returns, deletes or counts content captured from somewhere else.
  *
  * A thread is on the list because it holds free text and some of that text
  * came out of a domain -- the control named on a permission ask, the sentence
@@ -74,7 +74,11 @@ const DOMAIN_SCOPED = [
   AUTOMATION_STUDIO_ENDPOINTS.getConversation,
   AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment,
   AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
-  AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk
+  AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk,
+  AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt,
+  AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts,
+  AUTOMATION_STUDIO_ENDPOINTS.getTaskKnownFlow,
+  AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt
 ].sort();
 
 const DOMAIN_REFUSED = "Automation Studio project is unavailable in this domain scope.";

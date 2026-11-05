@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioDomainReadings } from "../domain-readings/index.ts";
-import { activitySaidOnce, cutAtWord } from "../../ui/index.ts";
+import { ACTIVITY_ATTEMPT_WORDS, activitySaidOnce, cutAtWord } from "../../ui/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 
@@ -19,7 +19,7 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
   const flowId = typeof target.flowId === "string" && target.flowId ? target.flowId : undefined;
   return await runWithAutomationStudioActivity({ kind: "build", id: `build-${randomUUID()}`, projectId: target.projectId, ...(flowId ? { flowId } : {}) }, async () => {
     // An answer-first attempt does the task, so it never says a Flow is being built or is ready (t861).
-    const started = target.authoringMode === "answer-first" ? { label: "Working on your task", title: "Started" } : { label: "Building the Flow", title: "Build started" };
+    const started = target.authoringMode === "answer-first" ? { label: ACTIVITY_ATTEMPT_WORDS.working, title: "Started" } : { label: "Building the Flow", title: "Build started" };
     emitAutomationStudioActivity({ phase: "building", label: started.label, detail: { kind: "step", title: started.title, status: "started", ...(flowId ? { ref: flowId } : {}) } });
     try {
       const built = await fn();
@@ -70,13 +70,14 @@ function endedAsDraft(built: unknown): boolean {
  */
 function answeredEnding(built: unknown): { phase: "done" | "failed"; label: string } | undefined {
   const ended = built && typeof built === "object" ? (built as { status?: unknown }).status : undefined;
-  if (ended === "setup_needed") return { phase: "done", label: "Before I can start" };
+  if (ended === "setup_needed") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.setup };
   if (ended !== "answered") return undefined;
   const status = (built as { attempt?: { status?: unknown } }).attempt?.status;
-  if (status === "budget_out") return { phase: "failed", label: "Reached this task's budget" };
-  if (status === "stopped_by_person") return { phase: "done", label: "Stopped" };
-  if (status === "waiting_for_person") return { phase: "done", label: "Waiting for you" };
-  return { phase: "done", label: "Finished" };
+  // A budget gone is an ending the task reached, not an error, so it is not drawn as one.
+  if (status === "budget_out") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.budget };
+  if (status === "stopped_by_person") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.stopped };
+  if (status === "waiting_for_person") return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.waiting };
+  return { phase: "done", label: ACTIVITY_ATTEMPT_WORDS.finished };
 }
 
 /** What the activity says of a build that kept only a draft (G2). */

@@ -20,9 +20,18 @@
 //   - **"N times", "twice", "thrice"**, in a clause that tells someone to do something: "renew
 //     the card three times". Not one that describes ("the book listed three times"), reads ("list
 //     it three times"), compares ("three times the price") or is negated.
+//   - **A multiplier or "a dozen"**, in a clause that starts with a verb that does something
+//     (add, put, renew, order, buy, ...): "add this 3x", "renew the card x3" (the multiplier ends
+//     the clause, after an object); "add 2x to my cart", "add x3 of this", "add a dozen of this"
+//     (it stands right after the verb, and "of", "to" or "into" follows). A product name holds
+//     these too, so a form with a determiner or "size", "model", "of", "in" before it, or with a
+//     noun after it, is not read: "a 3x zoom lens", "the 2x4 boards", "size 3x", "an x3 model",
+//     "3x the price", "buy the 3x magnifier", "a dozen eggs", "list the dozen cheapest", "a dozen
+//     or so". Only a clause that tells someone to do something is read, so a sentence that
+//     describes, reads or is negated is not.
 //
-// Digits up to three places and the number words two to twelve are read. **Any other form, "a
-// dozen", "a couple", "another two", "3x", a count in another language, stays at one.** A count
+// Digits up to three places ("x20" too) and the number words two to twelve are read. **Any other
+// form, "half a dozen", "a couple", "another two", a count in another language, stays at one.** A count
 // over every member of a set is one per row, so it gives no count here.
 
 import { automationStudioInstructedActs, type AutomationStudioInstructedAct } from "../../flow-authoring/bootstrap/instructed-acts/index.ts";
@@ -54,6 +63,12 @@ const A_PLACE = " to my basket";
 const READ_VERB = /^\s*(?:list|find|show|read|tell|give|get|look|search|check|see|count|open|view|visit|note|report|return)(?![\p{L}])/iu;
 const DESCRIBES = /(?<![\p{L}])(?:that|which|who|whose|where|when|if|was|were|is|are|been|has|have|had|listed|shown|appears?|seen)(?![\p{L}])/iu;
 const NEGATED = /(?<![\p{L}])(?:not|don't|dont|never|without|nor|no)(?![\p{L}])/iu;
+/** A verb that asks for something to be done, first in its clause, for a multiplier to be read. */
+const DO_VERB = /^\s*(?:add|put|renew|order|buy|purchase|borrow|reserve|book|stamp|press|click|send|submit|request)(?![\p{L}])/iu;
+const MULTIPLIER = new RegExp(`(?<!${EDGE})(?:(?<digits>[0-9]{1,3})x|x(?<lead>[0-9]{1,3}))(?!${EDGE})`, "giu");
+const DOZEN = /(?<![\p{L}])(?<!half\s)a dozen(?![\p{L}])/giu;
+/** A word that makes a following "3x" part of a name or a measure, not a count. */
+const MODIFIER_BEFORE = /(?:^|\s)(?:the|a|an|of|size|model|version|with|by|in|at|to|for|than|about|only|each|per|x)$/iu;
 const SENTENCE_END = /[.;!?](?=\s|$)|\n/u;
 
 /** A result with no rows: the request's words are all that is asked of it here. */
@@ -65,7 +80,7 @@ export function automationStudioAnswerFirstAskedCounts(request: string): Automat
   if (!wording) return [];
   const acts = automationStudioInstructedActs(request);
   const found: AutomationStudioAnswerFirstAskedCount[] = acts.flatMap((act) => act.plural ? [] : quantitiesOf(act).map((quantity) => ({ ...quantity, act: act.id })));
-  for (const said of [...timesOf(request), ...placelessCountsOf(request)]) {
+  for (const said of [...timesOf(request), ...placelessCountsOf(request), ...multipliedCountsOf(request)]) {
     const act = acts.find((each) => folded(each.quote).includes(folded(said.quote)));
     if (act?.plural) continue;
     found.push({ ...said, ...(act ? { act: act.id } : {}) });
@@ -103,6 +118,28 @@ function placelessCountsOf(request: string): AutomationStudioAnswerFirstAskedCou
       if (!PLACELESS_VERB.test(bare) || NEGATED.test(lastWordsBefore(sentence, clause))) continue;
       const [act] = automationStudioInstructedActs(`${bare}${A_PLACE}`);
       if (act && !act.plural) found.push(...quantitiesOf(act).map((quantity) => ({ ...quantity, quote: quantity.quote.replace(A_PLACE, "") })));
+    }
+  }
+  return found;
+}
+
+/** "3x", "x3" and "a dozen", in a clause that starts with a verb that does something. */
+function multipliedCountsOf(request: string): AutomationStudioAnswerFirstAskedCount[] {
+  const found: AutomationStudioAnswerFirstAskedCount[] = [];
+  for (const sentence of request.split(SENTENCE_END)) {
+    for (const clause of sentence.split(CLAUSE_BREAK)) {
+      const bare = clause.replace(LEADING, "").trimEnd();
+      if (!DO_VERB.test(bare) || DESCRIBES.test(bare) || NEGATED.test(bare) || NEGATED.test(lastWordsBefore(sentence, clause))) continue;
+      for (const match of [...bare.matchAll(MULTIPLIER), ...bare.matchAll(DOZEN)]) {
+        const before = bare.slice(0, match.index).trim();
+        const after = bare.slice(match.index + match[0].length);
+        const right = /^\S+$/u.test(before);
+        const digits = match.groups?.digits ?? match.groups?.lead;
+        const reads = digits === undefined
+          ? right && /^\s+of(?![\p{L}])/iu.test(after)
+          : (right && /^\s+(?:of|to|into)(?![\p{L}])/iu.test(after)) || (!right && !after.trim() && !MODIFIER_BEFORE.test(before));
+        if (reads) found.push({ count: digits === undefined ? 12 : Number(digits), quote: bare.slice(0, match.index + match[0].length).replace(/\s+/gu, " ") });
+      }
     }
   }
   return found;

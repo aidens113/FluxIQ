@@ -32,7 +32,7 @@ const BETWEEN: ReadonlySet<StepMessage["kind"]> = new Set<StepMessage["kind"]>([
 /** Messages that are only their card: emptied, nothing of them is left. */
 const ONLY_CARDS: ReadonlySet<StepMessage["kind"]> = new Set<StepMessage["kind"]>(["step", "action"]);
 /** Kinds whose card is no step on the page or the Flow that could be tried again. */
-const NOT_A_TRY: ReadonlySet<ActionCard["kind"]> = new Set<ActionCard["kind"]>(["test", "result_check", "draft", "person_check", "permission"]);
+const NOT_A_TRY: ReadonlySet<ActionCard["kind"]> = new Set<ActionCard["kind"]>(["test", "result_check", "draft", "person_check", "permission", "question"]);
 
 /** The failed card a retry would take in: where it is kept. */
 type Failed = { message: StepMessage; card: number };

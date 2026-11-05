@@ -213,6 +213,22 @@ describe("how many rows an attempt left out", () => {
     expect(record.rowsHeldDone()).toBe(1);
   });
 
+  it("two rows left over that only elimination holds done are two left out, by a forward pass and by a press, and a press says several fit", () => {
+    const copy = (code: string): JsonObject => ({ title: TITLE, code });
+    const fresh = () => {
+      const record = withRows([copy("a1"), copy("b2")]);
+      passOn(record, copy("a1"));
+      record.noteReadRows([copy("zz"), copy("yy"), copy("b2")]);
+      return record;
+    };
+    const forward = fresh();
+    expect(["zz", "yy", "b2"].map((code) => forward.rowDone(copy(code)))).toEqual([true, true, false]);
+    expect(forward.rowsHeldDone()).toBe(2);
+    const byHand = fresh();
+    for (const code of ["zz", "yy"]) expect(byHand.admit({ actionId: "press", parameters: { control: "Renew" }, consequences: ["modify_existing"], stage: "exploration", row: copy(code) })).toEqual(expect.objectContaining({ kind: "already_done", rowsUnclear: true }));
+    expect(byHand.rowsHeldDone()).toBe(2);
+  });
+
   it("a saved step with no row of its own leaves out the row its act was on, by a run, a forward run and by hand, once", () => {
     const step = { actionId: "press", parameters: { title: BIRDS.title }, consequences: ["modify_existing"], stage: "exploration" as const };
     const fresh = () => {

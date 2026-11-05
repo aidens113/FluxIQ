@@ -13,10 +13,14 @@
 // In candidate authoring mode (`./build.ts`) Core test-runs the candidate once
 // from its start; a proposal it makes from a confirmed yes is applied as a
 // legacy one is, and a draft is never applied: the answer says why.
+//
+// In answer-first mode it does the task and answers as create-here does
+// (`./answer-first/`), on the Flow the person named.
 
+import { AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY, automationStudioConversationAnswersFirst, automationStudioConversationAttemptAnnounce, automationStudioConversationAttemptOutcome } from "./answer-first/index.ts";
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAnswerFirstAttempt, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
@@ -29,6 +33,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     id: "flow.explore",
     title: TITLE,
     get summary() {
+      if (automationStudioConversationAnswersFirst()) return AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY;
       return automationStudioConversationAuthorsCandidates()
         ? "Builds a Flow that has no applied steps yet, test-runs the whole Flow once from its start, then puts the steps into that same Flow only when that test is judged to do what was asked."
         : "Builds a Flow that has no applied steps yet, or continues its compatible saved unfinished draft, then puts the completed steps into that same Flow.";
@@ -43,7 +48,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     consequences: ["modify_existing"],
     reauthorizes: false
   },
-  announce: ({ flowName, place }) => `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, ${automationStudioConversationAuthorsCandidates() ? "test-run the whole Flow once from the start, and say here when they are in, or why not" : "and say here when they are in"}.`,
+  announce: ({ flowName, place }) => automationStudioConversationAnswersFirst() ? automationStudioConversationAttemptAnnounce(place) : `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, ${automationStudioConversationAuthorsCandidates() ? "test-run the whole Flow once from the start, and say here when they are in, or why not" : "and say here when they are in"}.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
@@ -61,6 +66,12 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
       if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
       progress.carry({ instructionFrom: said.from });
       progress.landed(said.from === "person" ? "saved what it should do" : `saved what it should do, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
+    }
+
+    if (automationStudioConversationAnswersFirst()) {
+      const answered = await automationStudioConversationAnswerFirstAttempt(context, { flowId });
+      if (!answered.ok) return progress.failed(answered.cause, { ending: answered.ending, kept: answered.candidateKept, told: answered.told });
+      return automationStudioConversationAttemptOutcome(progress, answered);
     }
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });

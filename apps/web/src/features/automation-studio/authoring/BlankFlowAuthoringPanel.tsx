@@ -4,6 +4,7 @@ import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCan
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation/action-permissions";
 import { Modal } from "../../programs/shared-ui";
+import { generationAnswerLine } from "./generation-answer";
 import { AUTOMATION_LLM_PROGRESS_LABELS, blankFlowAuthoringRequest, blankFlowExplorationRequest, type BlankFlowAuthoringReadiness } from "./blank-flow-authoring-model";
 
 const WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH = 4_000;
@@ -76,6 +77,7 @@ export function BlankFlowAuthoringPanel(props: {
   const explorationRequest = useMemo(() => blankFlowExplorationRequest(props.projectId, props.flow, props.readiness), [props.flow, props.projectId, props.readiness]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [answerLine, setAnswerLine] = useState("");
   const [instruction, setInstruction] = useState("");
   const [proposal, setProposal] = useState<{ flowId: string; adaptationId: string } | null>(null);
   const [candidate, setCandidate] = useState<AutomationStudioCandidateAuthoringResult | null>(null);
@@ -94,11 +96,13 @@ export function BlankFlowAuthoringPanel(props: {
 
   useEffect(() => {
     setError("");
+    setAnswerLine("");
     setExplorationPhase("idle");
   }, [buildRequest, explorationRequest]);
 
   useEffect(() => {
     setInstruction("");
+    setAnswerLine("");
     setBusy(false);
     setProposal(null);
     setCandidate(null);
@@ -130,6 +134,7 @@ export function BlankFlowAuthoringPanel(props: {
     const generation = ++generationRef.current;
     const current = () => generationRef.current === generation;
     setError("");
+    setAnswerLine("");
     if (mode === "explore") setExplorationPhase("authorizing");
     try {
       if (mode === "explore") {
@@ -157,6 +162,15 @@ export function BlankFlowAuthoringPanel(props: {
         const draft = parseAutomationStudioCandidateAuthoringResult(generated.payload, { projectId: request.payload.projectId, flowId: request.payload.flowId });
         if (!draft) { setError("The build did not return a valid candidate draft for this Flow."); setExplorationPhase("idle"); return; }
         setCandidate(draft); setProposal(null); setExplorationPhase("idle"); return;
+      }
+      // An answer-first attempt's answer, a budget gone and a Stop included, is no proposal and no failure.
+      const answerSaid = generationAnswerLine(generated);
+      if (answerSaid !== undefined) {
+        setPermissionContinuation(null);
+        setPermissionOpen(false);
+        if (mode === "explore") setExplorationPhase("idle");
+        setAnswerLine(answerSaid);
+        return;
       }
       const adaptation = (generated.payload as { adaptation?: { status?: string; adaptationId?: string; flowId?: string } } | undefined)?.adaptation;
       if (!generated.ok || adaptation?.status !== "proposed" || typeof adaptation?.adaptationId !== "string") {
@@ -201,6 +215,7 @@ export function BlankFlowAuthoringPanel(props: {
     {proposal ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> No generated changes have been applied. Review the Router, Subflows, and actions before applying the Adaptation. <button className="button" disabled={busy || !props.onOpenAdaptation} onClick={() => props.onOpenAdaptation?.(proposal.flowId, proposal.adaptationId)} type="button">Review suggested change</button></p> : null}
     {permissionRequest && !permissionOpen ? <p className="automation-runtime-message" role="status"><strong>Flow action approval is still required.</strong> No proposal was created. <button className="button" disabled={busy} onClick={() => setPermissionOpen(true)} type="button">Review requested permissions</button></p> : null}
     {buildRequest.ok ? <div className="automation-runtime-run-command"><div><small>Or draft it from the notes already written for this automation, without opening a website.</small></div><button className="button" disabled={busy} onClick={() => void generate("build")} type="button">{busy && explorationPhase === "idle" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : "Build proposal from active instructions"}</button></div> : null}
+    {answerLine ? <p className="automation-runtime-message" role="status">{answerLine}</p> : null}
     {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
     {permissionRequest && permissionOpen ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm Flow action consequences" onClose={() => { if (!busy) setPermissionOpen(false); }}><div className="automation-modal-form">
       <p className="automation-router-modal-intro">{permissionRequest.sentence}</p>
