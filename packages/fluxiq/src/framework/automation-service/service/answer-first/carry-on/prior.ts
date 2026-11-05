@@ -13,6 +13,8 @@ export type AutomationStudioAnswerFirstAttemptPrior = {
   liveSteps: number;
   /** Each step as the task remembers it, from the attempt's last ending. */
   origins: readonly AutomationStudioAnswerFirstStepOrigin[];
+  /** The rows it had already left out as done: the record counts only what this segment leaves out, and a person's card must not forget them. */
+  skippedAsDone: number;
   /** The Flow it started from did not do the task on the site as it stood. */
   flowFailedLive: boolean;
 };

@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioAskEffect } from "../../../../../../runtime/automation-parking/index.ts";
+import { automationStudioFlowBootstrapSizeLimits } from "../../../../../../runtime/flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioAnswerFirstFlowRun } from "../index.ts";
 import { flowRunFixture, libraryTarget, LOANS_OUTPUT, OPEN_ACCOUNT, renewEveryLoan, savedStep, shownRows, type FlowRunFixture } from "../../tests/fake-library-engine.ts";
 import { READ_LOANS, RENEW_CARD, RENEW_LOAN } from "../../tests/fake-library.ts";
@@ -114,6 +115,19 @@ describe("a saved Flow's run", () => {
 });
 
 describe("what a run does not end", () => {
+  it("a Flow its own size setting let assemble runs whole: past the default hundred nodes, and past the engine's default step bound", async () => {
+    const steps = Array.from({ length: 270 }, (_, index) => savedStep(index + 1, READ_LOANS, { recordOutput: LOANS_OUTPUT }));
+    const fixture = await flowRunFixture({ size: automationStudioFlowBootstrapSizeLimits(300) }, cleanups);
+    const outcome = await ran(fixture, steps);
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true });
+    if (outcome.kind === "ran") expect(outcome.steps.filter((step) => step.ran === "passed")).toHaveLength(270);
+    expect(fixture.target.reads).toBe(270);
+    // With no raised setting the same steps never assemble, so nothing is sent and the attempt carries on.
+    const small = await flowRunFixture({}, cleanups);
+    expect(await ran(small, steps)).toMatchObject({ kind: "not_assembled" });
+    expect(small.target.reads).toBe(0);
+  });
+
   it("a step bound the engine really reaches is a failing step, not an ending", async () => {
     const fixture = await flowRunFixture({ engine: (engine) => ({ ...engine, graphOptions: (input) => ({ ...engine.graphOptions(input), maxSteps: 3 }) }) }, cleanups);
     // A straight line: each pass of a repeat raises the engine's bound (`graph-run.ts`, `withIterationAllowance`).

@@ -146,12 +146,19 @@ describe("one call that goes wrong never ends a task", () => {
           seen.push(JSON.stringify(request.context.evidenceLoop?.evidence));
           return looked();
         },
-        toolCall("card.after", "core.run_node", { node: RENEW_CARD, parameters: {}, consequences: ["modify_existing"], reason: "The page shows no renewal." }),
+        // The first press the record sees since the act came into doubt: the look before it opened nothing.
+        toolCall("card.refused", "core.run_node", { node: RENEW_CARD, parameters: {}, consequences: ["modify_existing"], reason: "The page shows no renewal." }),
+        (request) => {
+          seen.push(JSON.stringify(request.context.evidenceLoop?.evidence));
+          return looked();
+        },
+        toolCall("card.after", "core.run_node", { node: RENEW_CARD, parameters: {}, consequences: ["modify_existing"], reason: "The page still shows no renewal." }),
         complete("Renewed the card.")
       ]
     }, cleanups);
     // Refused before it was sent, by the guard or the record, whichever stands first.
     expect(seen[0]).toMatch(/attempt\.act_look_first|repeat_refused/u);
+    expect(seen[1]).toContain("attempt.act_look_first");
     const answer = expectReached(attempt);
     // Two calls reached the target: the uncertain one, and the one after the look. The blind one never did.
     expect(library.calls.filter((call) => call.value.node === RENEW_CARD)).toHaveLength(2);

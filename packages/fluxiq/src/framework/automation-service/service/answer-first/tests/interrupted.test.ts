@@ -10,7 +10,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { automationStudioAnswerFirstAttemptsRead, AutomationStudioAnswerFirstAttemptsUnreadable, automationStudioAnswerFirstCarryOn, automationStudioAnswerFirstLiveAttemptsOf } from "../index.ts";
 import { pendingAsk } from "./endings/support.ts";
-import { complete, LOOK_TOOL, READ_LOANS, RENEW_CARD, RENEW_LOAN, runNode, type FakeLibraryFault } from "./fake-library.ts";
+import { complete, LOOK_TOOL, READ_LOANS, RENEW_CARD, RENEW_LOAN, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
 import { laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
@@ -89,7 +89,7 @@ describe("a Core that restarted", () => {
     expect(states(held?.data.acts)).toEqual(["landed", "may_have_landed"]);
     expect(states((await fresh.actsOn())?.acts)).toEqual(["landed", "may_have_landed"]);
 
-    const pressed = await automationStudioAnswerFirstCarryOn(fresh.service, fresh.stores, { projectId: fresh.projectId, attemptId, addUsd: 0 }, () => fresh.attempt({ ...PERMITTED, costUsd: 0.01, script: [press(BIRDS), press(CLOCKS), press(DUNES), complete("All renewed.")] }));
+    const pressed = await automationStudioAnswerFirstCarryOn(fresh.service, fresh.stores, { projectId: fresh.projectId, attemptId, addUsd: 0 }, () => fresh.attempt({ ...PERMITTED, costUsd: 0.01, script: [press(BIRDS), toolCall("look.after.refusal", LOOK_TOOL, {}), press(BIRDS), press(CLOCKS), press(DUNES), complete("All renewed.")] }));
     if (!pressed.ok) throw new Error(pressed.refused);
     const answered = await pressed.finished;
     const after = answered.answer.attempt;
@@ -220,6 +220,18 @@ describe("what is live", () => {
     const attemptId = claim.mock.calls[0]?.[0] as string;
     expect(release).toHaveBeenCalledWith(attemptId);
     expect(live.has(attemptId)).toBe(false);
+  });
+
+  it("shows as working before its first look or model call, and dying there reads as cut off", async () => {
+    const hang = hanging((call) => call.toolId === LOOK_TOOL);
+    const old = await laterAttempts(cleanups, { titles: TITLES, fault: hang.fault });
+    const going = old.attempt({ ...PERMITTED, script: [complete("Never.")] });
+    abandon(old, hang, going);
+    await hang.hit;
+    expect((await reads(old).latest(old.projectId, "flow.loans"))?.attempt.status).toBe("working");
+
+    const fresh = await laterAttempts(cleanups, { restart: old.restart() });
+    expect((await reads(fresh).latest(fresh.projectId, "flow.loans"))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "interrupted" });
   });
 
   it("a setup refusal leaves nothing live, and no row", async () => {

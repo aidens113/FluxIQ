@@ -58,7 +58,7 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
       run.setupRefusal = refused.error;
       return "setup_needed";
     }
-    // A refusal with nothing spent has nothing to keep, and a row written now would outlive a setup step as an attempt forever working.
+    // A refusal with nothing spent has nothing new to keep, and the row from the opening is taken back if it becomes a setup step.
     if (!refused || purse.spentCalls() > 0) await automationStudioAnswerFirstKeep(run);
     if (next.kind === "backoff") {
       automationStudioAnswerFirstSay("Waiting for the model service", next.say);

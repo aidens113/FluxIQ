@@ -47,6 +47,15 @@ describe("parseAutomationStudioTaskResult", () => {
     expect(parsed.result.rows?.previewRows[1]?.price).not.toBe(ROWS.rows?.previewRows[1]?.price);
   });
 
+  it("keeps a count of rows skipped as already done, and refuses anything but a whole number from 1", () => {
+    const partial = { attemptId: "a", kind: "partial", label: "unverified", timesChecked: 0, source: "exploration", acts: [] };
+    const parsed = parseAutomationStudioTaskResult({ ...partial, skippedAsDone: 2 });
+    expect(parsed.ok && parsed.result.skippedAsDone).toBe(2);
+    const absent = parseAutomationStudioTaskResult(partial);
+    expect(absent.ok && "skippedAsDone" in absent.result).toBe(false);
+    for (const bad of [0, -1, 1.5, "2", null, Number.NaN]) expect(issuesOf({ ...partial, skippedAsDone: bad })).toEqual(["task_result.invalid_skipped_as_done"]);
+  });
+
   it("takes each kind with what it needs, and refuses a kind without it", () => {
     expect(issuesOf({ attemptId: "a", kind: "partial", label: "unverified", timesChecked: 0, source: "exploration", acts: [] })).toEqual([]);
     expect(issuesOf({ attemptId: "a", kind: "rows", label: "unverified", timesChecked: 0, source: "exploration", acts: [] })).toEqual(["task_result.rows_kind_needs_rows"]);

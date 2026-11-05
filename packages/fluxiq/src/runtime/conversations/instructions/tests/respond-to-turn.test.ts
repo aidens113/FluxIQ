@@ -153,6 +153,9 @@ describe("a person's turn, answered in the thread", () => {
     const confirmation = (await turns())[1];
     expect(confirmation?.ask).toMatchObject({ askId: answer.response?.askId, kind: "confirm", status: "pending", parks: false, consequences: ["delete"], control: { name: "Delete a Flow", kind: "panel action" } });
     expect(confirmation?.text).toContain("delete or remove something");
+    // True on every client: the extension answers with a press on the question, and nothing here may promise a PIN (plan, D13).
+    expect(confirmation?.text).toContain("confirm it here, or cancel");
+    expect(confirmation?.text).not.toMatch(/PIN/u);
     expect(confirmation?.attachment?.kind).toBe(AUTOMATION_STUDIO_PANEL_CAPABILITY_ATTACHMENT);
     // Identifier-shaped, so the panel's contract parser keeps the turn, and it decodes to exactly what would run.
     expect(confirmation?.attachment?.ref).toMatch(/^[A-Za-z0-9_-]+$/u);

@@ -43,6 +43,8 @@ export type AutomationStudioAnswerFirstResultInput = {
   answerText?: string | undefined;
   checkedWhat?: string | undefined;
   missingWhat?: string | undefined;
+  /** Rows the act record held done and the attempt left alone. Said on the result only when at least one. */
+  skippedAsDone?: number | undefined;
   from?: readonly AutomationStudioTaskResultFrom[] | undefined;
 };
 
@@ -62,6 +64,7 @@ export function automationStudioAnswerFirstResult(input: AutomationStudioAnswerF
   const words = wordsOrNothing("checkedWhat", input.checkedWhat);
   const missing = missingWords(kind, input.missingWhat, notes);
   const from = (input.from ?? []).filter((one) => automationStudioAnswerFirstResultProbe({ from: [one] }).ok).slice(0, LIMITS.listMaxEntries);
+  const skipped = input.skippedAsDone !== undefined && automationStudioAnswerFirstResultProbe({ skippedAsDone: input.skippedAsDone }).ok ? input.skippedAsDone : undefined;
   const whole = automationStudioAnswerFirstResultProbe({
     attemptId: input.attemptId,
     kind,
@@ -73,11 +76,12 @@ export function automationStudioAnswerFirstResult(input: AutomationStudioAnswerF
     ...(answer.text !== undefined ? { answerText: { text: answer.text, author: "model" } } : {}),
     ...(words !== undefined ? { checkedWhat: words } : {}),
     ...(missing !== undefined ? { missingWhat: missing } : {}),
+    ...(skipped !== undefined ? { skippedAsDone: skipped } : {}),
     ...(from.length ? { from } : {})
   });
   if (whole.ok) return whole.result;
   // The honest smaller record: what it did on the site and how often it was checked, claiming nothing.
-  const smaller = automationStudioAnswerFirstResultProbe({ attemptId: input.attemptId, timesChecked, source: SOURCE, acts: acts.acts, missingWhat: NOTHING_CONFIRMED });
+  const smaller = automationStudioAnswerFirstResultProbe({ attemptId: input.attemptId, timesChecked, source: SOURCE, acts: acts.acts, missingWhat: NOTHING_CONFIRMED, ...(skipped !== undefined ? { skippedAsDone: skipped } : {}) });
   if (smaller.ok) return smaller.result;
   throw new AutomationStudioAnswerFirstEndingError(smaller.issues);
 }

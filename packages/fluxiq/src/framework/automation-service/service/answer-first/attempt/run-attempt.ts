@@ -73,6 +73,8 @@ export async function runAutomationStudioAnswerFirstAttempt(input: AutomationStu
     const run = await opened(input, attemptId, hold);
     opening = run;
     automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
+    // On the row before anything is sent, so the first round shows as working and a Core that dies in it leaves something to read as cut off. A carry-on's press has already written its own.
+    if (!hold) await automationStudioAnswerFirstKeep(run);
     // The common path's purse is opened as a repair's, whose part it would write: this is an attempt's creation.
     const ending = await automationStudioLlmStepLogScope.within({ part: "creation" }, () => stagedThenRounds(run));
     if (ending === "setup_needed") {
@@ -97,7 +99,11 @@ async function stagedThenRounds(run: AutomationStudioAnswerFirstAttemptRun): Pro
 /** Nothing was tried, so nothing is kept of it but the session it opened, which says so. A session not written costs that record, and the person is still told what to do. A carry-on tried nothing either: its press hands the row back as it was (`../carry-on/carry-on.ts`). */
 async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun, hold: AutomationStudioAnswerFirstCarryOnHold | undefined): Promise<void> {
   if (hold) hold.opened = false;
-  else await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
+  else {
+    await automationStudioAnswerFirstBestEffort(() => run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, attempts: current.attempts.filter((each) => each.attemptId !== run.attemptId) })));
+    // The row written at the opening: nothing was tried, so it must not outlive this as an attempt that was cut off.
+    await automationStudioAnswerFirstBestEffort(() => run.store.remove(run.input.projectId, run.input.flowId, run.attemptId));
+  }
   try {
     await run.session.end("cancelled");
   } catch {

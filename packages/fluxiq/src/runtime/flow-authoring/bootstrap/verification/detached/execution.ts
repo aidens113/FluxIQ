@@ -8,7 +8,7 @@ import { automationStudioReferenceNow } from "../../../../reference-time/index.t
 import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../../../../framework/automation-service/route-state/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../../../router-runtime/index.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../../adaptation.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../../plan/index.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits, type AutomationStudioFlowBuildPlan } from "../../plan/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "../contracts.ts";
 import { automationStudioCandidateGraphSource } from "../candidate-graphs.ts";
 import { automationStudioRootInvocation } from "../../../../../engine/automation/frames/index.ts";
@@ -34,6 +34,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
   signal?: AbortSignal;
   /** A from-step run (t804): the plan key of the selected graph's node to start at (`./from-node.ts`). A caller's own `options.startNodeId` stays refused. */
   fromNodeKey?: string;
+  /** The Flow's size bounds, where they were raised: the setting's default when omitted, as for a trial. A Flow its own setting let assemble must also be let run. */
+  size?: AutomationStudioFlowBootstrapSizeLimits;
 }): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult; graph?: AutomationStudioFlowArtifact; candidateGraphs?: AutomationStudioFlowArtifact[] }> {
   // Clone owner-controlled artifacts before the first await; a mutable builder cannot swap graphs during routing.
   const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow), fromNodeKey = input.fromNodeKey;
@@ -63,7 +65,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
   if (fromNodeKey !== undefined && !automationStudioDetachedFromNodeKeyValid(fromNodeKey)) return refused("candidate.from_node_invalid");
   try {
     if (!await fresh()) return refused("candidate.execution_stale");
-    const validation = validateAutomationStudioFlowBootstrapPlan({ plan: candidate.buildPlan.plan, resolution: input.resolution, ...(input.registry ? { registry: input.registry } : {}) });
+    const validation = validateAutomationStudioFlowBootstrapPlan({ plan: candidate.buildPlan.plan, resolution: input.resolution, ...(input.registry ? { registry: input.registry } : {}), ...(input.size ? { size: input.size } : {}) });
     if (!validation.ok || !validation.validated) return refused("candidate.execution_plan_invalid");
     // The submission compiler owns corrections. Revalidation must not silently execute a corrected replacement.
     if (!isDeepStrictEqual(validation.validated.plan, candidate.buildPlan.plan) || !isDeepStrictEqual(validation.validated.subflows, candidate.buildPlan.subflows)) return refused("candidate.execution_plan_rewritten");

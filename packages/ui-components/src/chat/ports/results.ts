@@ -93,6 +93,7 @@ export type ChatTaskResult = {
   answerText?: { text: string; author: "model" };
   checkedWhat?: string;
   missingWhat?: string;
+  skippedAsDone?: number;
   from?: Array<{ site: string; pages: string }>;
 };
 

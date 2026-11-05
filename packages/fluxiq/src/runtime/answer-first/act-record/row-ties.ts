@@ -33,11 +33,17 @@
 // **Nothing here is kept in the clear.** A row's words and addresses are hashed, so what
 // is persisted beside a Flow holds no page text, and one read can still be matched
 // against a sentence that came before it.
+//
+// **Words about a control, before it is pressed (`ofControlWords`, t870).** The domain can say
+// what a call names before it is sent, and those words are read as an answer's sentence is. They
+// are about a control rather than an item, so words every row holds (a column repeating the
+// control's own name) name no row at all: held as naming all of them, one acted row would refuse
+// a press on every other.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioAttemptActNotedRow } from "./contracts.ts";
 import { automationStudioAttemptActDigest, automationStudioAttemptActRowIdentity } from "./identity/index.ts";
-import { automationStudioAttemptActSameRows } from "./same-row.ts";
+import { automationStudioAttemptActSameRows, automationStudioAttemptActSameValues } from "./same-row.ts";
 
 /** The most rows held: far past any read, and short of a record that outgrows its file. */
 const MOST_ROWS = 5_000;
@@ -111,7 +117,55 @@ export class AutomationStudioAttemptActRowTies {
   sameAs(row: JsonObject): string[] {
     const carried = notedRow(row);
     if (!carried) return [];
-    return [carried.row, ...automationStudioAttemptActSameRows(this.rows.find((known) => known.row === carried.row) ?? carried, this.rows)];
+    return this.sameOf(this.rows.find((known) => known.row === carried.row) ?? carried);
+  }
+
+  /** Which of `among` are these held rows in another shape (`./same-row.ts`). */
+  sameAsHeld(rows: readonly string[], among: ReadonlySet<string>): string[] {
+    if (among.size === 0 || rows.length === 0) return [];
+    return [...new Set(this.rows.filter((held) => rows.includes(held.row)).flatMap((held) => this.sameOf(held)))].filter((row) => among.has(row));
+  }
+
+  /** `sameAsHeld`, for a handle a read printed: that names one row exactly, so a row no read has shown is read by its values alone, and a word the two happen to share does not make a press on it a repeat. */
+  sameAsPrinted(rows: readonly string[], among: ReadonlySet<string>): string[] {
+    const printed = this.rows.filter((held) => rows.includes(held.row));
+    return this.sameAsHeld(rows, among).filter((row) => {
+      const held = this.rows.find((each) => each.row === row);
+      return held?.reads !== undefined || (held !== undefined && printed.some((named) => automationStudioAttemptActSameValues(named, held)));
+    });
+  }
+
+  /** Whether two held rows are known to be two: each is held, and neither is the other (`./same-row.ts`). One not held cannot be said to differ. */
+  toldApart(one: string, other: string): boolean {
+    const [first, second] = [one, other].map((row) => this.rows.find((held) => held.row === row));
+    return first !== undefined && second !== undefined && !this.sameOf(first).includes(second.row) && !this.sameOf(second).includes(first.row);
+  }
+
+  /** Every held row `row` may be, itself among them, in any shape (`./same-row.ts`). */
+  fitsOf(row: string): string[] {
+    const held = this.rows.find((each) => each.row === row);
+    return held ? this.sameOf(held) : [row];
+  }
+
+  /** How many rows these are, one row in several shapes counted once (`./same-row.ts`), the row that may be fewest of them first: one that may be either of two others, which stay two, is neither alone. A row not held counts as its own. */
+  distinct(rows: ReadonlySet<string>): number {
+    const held = this.rows.filter((row) => rows.has(row.row));
+    const ties = new Map(held.map((row) => [row.row, new Set<string>()]));
+    for (const row of held) {
+      for (const same of this.sameOf(row)) {
+        if (same === row.row || !ties.has(same)) continue;
+        ties.get(row.row)!.add(same);
+        ties.get(same)!.add(row.row);
+      }
+    }
+    const kept: string[] = [];
+    for (const row of [...ties.keys()].sort((a, b) => ties.get(a)!.size - ties.get(b)!.size)) if (!kept.some((other) => ties.get(row)!.has(other))) kept.push(row);
+    return kept.length + rows.size - held.length;
+  }
+
+  /** The digests a held row answers to, its own first: every question of sameness here goes through this one rule. */
+  private sameOf(held: AutomationStudioAttemptActNotedRow): string[] {
+    return [held.row, ...automationStudioAttemptActSameRows(held, this.rows)];
   }
 
   /** The rows that printed `handle`. */
@@ -141,6 +195,14 @@ export class AutomationStudioAttemptActRowTies {
       found.push(row.row);
     }
     return found;
+  }
+
+  /** `ofWords`, for words about a control: none where they fit every row and there is more than one row to tell apart (header). */
+  ofControlWords(sentence: readonly string[]): string[] {
+    const found = this.ofWords(sentence);
+    if (found.length < 2 || found.length < this.rows.length) return found;
+    const first = this.sameOf(this.rows[0]!);
+    return this.rows.every((row) => first.includes(row.row)) ? found : [];
   }
 
   data(): AutomationStudioAttemptActNotedRow[] {

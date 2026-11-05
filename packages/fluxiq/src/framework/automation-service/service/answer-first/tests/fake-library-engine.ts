@@ -42,21 +42,21 @@ const node = (id: string, label: string, over: Partial<AutomationStudioNodeDefin
 
 const NODES: AutomationStudioNodeDefinition[] = [
   node(OPEN_ACCOUNT, "Open the account", { parameters: [{ id: "url", label: "Address", valueType: "string", required: false }] }),
-  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }] }),
-  node(RENEW_LOAN, "Renew loan", { inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }] }),
-  node(RENEW_CARD, "Renew card"),
+  node(READ_LOANS, "Read loans", { outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }, { id: "retry", label: "Retry", valueType: "object", required: false }] }),
+  node(RENEW_LOAN, "Renew loan", { inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "title", label: "Title", valueType: "string", required: false }] }),
+  node(RENEW_CARD, "Renew card", { parameters: [{ id: "control", label: "Control", valueType: "string", required: false }, { id: "expectedState", label: "Expected state", valueType: "object", required: false }] }),
   node(READ_BY_OUTPUT, "Read loans", { outputAction: { fixedOutputId: READ_OUTPUT }, outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }], parameters: [{ id: "recordOutput", label: "Record output", valueType: "object", required: false }] }),
   node(RENEW_BY_OUTPUT, "Renew loan", { outputAction: { fixedOutputId: RENEW_OUTPUT }, inputs: [{ id: "in", label: "In", valueType: "any", required: false }, { id: "item", label: "Item", valueType: "any", required: false }], parameters: [{ id: "control", label: "Control", valueType: "string", required: false }] })
 ];
 
 /** A node's answer in place of its own, for a test: a failure, a wait, a question. Nothing, and it does its own work. */
-export type LibraryNodeOver = (request: { nodeId: string; press: number; signal?: AbortSignal | undefined }) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult> | undefined;
+export type LibraryNodeOver = (request: { nodeId: string; press: number; signal?: AbortSignal | undefined; parameters?: Record<string, JsonValue> | undefined; inputs?: Record<string, JsonValue> | undefined }) => AutomationNodeExecutionResult | Promise<AutomationNodeExecutionResult> | undefined;
 
 /** The library and everything the engine did to it. */
 export type LibraryTarget = {
   library: FakeLibrary;
   /** Every press that really reached the target, with the row it carried. */
-  presses: { node: string; subject: string; item?: JsonValue }[];
+  presses: { node: string; subject: string; item?: JsonValue; title?: JsonValue }[];
   reads: number;
   /** Where the page is. A read fails anywhere but the account. */
   page: "elsewhere" | "account";
@@ -76,9 +76,9 @@ export function shownRows(target: LibraryTarget): JsonObject[] {
 /** The node runtime whose implementations act on `target`. */
 export function libraryTargetNodes(target: LibraryTarget): AutomationStudioNativeNodeRuntime {
   let calls = 0;
-  const overOr = (nodeId: string, signal: AbortSignal | undefined, own: () => AutomationNodeExecutionResult) => async (): Promise<AutomationNodeExecutionResult> => {
+  const overOr = (nodeId: string, signal: AbortSignal | undefined, own: () => AutomationNodeExecutionResult, seen: { parameters?: Record<string, JsonValue>; inputs?: Record<string, JsonValue> } = {}) => async (): Promise<AutomationNodeExecutionResult> => {
     calls += 1;
-    return await target.over?.({ nodeId, press: calls, signal }) ?? own();
+    return await target.over?.({ nodeId, press: calls, signal, ...seen }) ?? own();
   };
   const success = (): AutomationNodeExecutionResult => ({ status: "success", route: "success", outputs: { success: true } });
   return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
@@ -93,22 +93,28 @@ export function libraryTargetNodes(target: LibraryTarget): AutomationStudioNativ
         target.reads += 1;
         return { ...success(), effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput as JsonValue, records: shownRows(target) } }] };
       })(),
-      [RENEW_LOAN]: ({ signal, inputs }) => overOr(RENEW_LOAN, signal, () => {
-        const item = inputs.item;
-        const subject = String((item as JsonObject | undefined)?.title ?? "a loan");
-        target.library.renewals[subject] = (target.library.renewals[subject] ?? 0) + 1;
-        target.presses.push({ node: RENEW_LOAN, subject, ...(item === undefined ? {} : { item }) });
-        return success();
-      })(),
-      [RENEW_CARD]: ({ signal }) => overOr(RENEW_CARD, signal, () => {
-        target.library.renewals.card = (target.library.renewals.card ?? 0) + 1;
-        target.presses.push({ node: RENEW_CARD, subject: "card" });
-        return success();
-      })(),
+      [RENEW_LOAN]: ({ signal, inputs, parameters }) => overOr(RENEW_LOAN, signal, () => pressLoan(target, inputs, parameters), { parameters, inputs })(),
+      [RENEW_CARD]: ({ signal, parameters }) => overOr(RENEW_CARD, signal, () => pressCard(target), { parameters })(),
       [READ_BY_OUTPUT]: ({ parameters }) => ({ ...success(), effects: [{ type: "policy.output.dispatch", payload: { outputId: READ_OUTPUT, parameters: {}, recordOutput: parameters.recordOutput as JsonValue } }] }),
       [RENEW_BY_OUTPUT]: ({ inputs }) => ({ ...success(), effects: [{ type: "policy.output.dispatch", payload: { outputId: RENEW_OUTPUT, parameters: { title: String((inputs.item as JsonObject | undefined)?.title ?? "a loan") } } }] })
     } }
   );
+}
+
+/** A press on a loan really reaching the target: the row a For Each handed it, or the title it was written with. */
+export function pressLoan(target: LibraryTarget, inputs: Record<string, JsonValue>, parameters: Record<string, JsonValue>): AutomationNodeExecutionResult {
+  const item = inputs.item;
+  const subject = String((item as JsonObject | undefined)?.title ?? parameters.title ?? "a loan");
+  target.library.renewals[subject] = (target.library.renewals[subject] ?? 0) + 1;
+  target.presses.push({ node: RENEW_LOAN, subject, ...(item === undefined ? {} : { item }), ...(parameters.title === undefined ? {} : { title: parameters.title }) });
+  return { status: "success", route: "success", outputs: { success: true } };
+}
+
+/** A press on the card really reaching the target. */
+export function pressCard(target: LibraryTarget): AutomationNodeExecutionResult {
+  target.library.renewals.card = (target.library.renewals.card ?? 0) + 1;
+  target.presses.push({ node: RENEW_CARD, subject: "card" });
+  return { status: "success", route: "success", outputs: { success: true } };
 }
 
 /** Gives the engine a dispatcher for the output door's two outputs, as a real run's IO does. */
@@ -183,6 +189,8 @@ export type FlowRunFixtureOptions = {
   startLocation?: string;
   record?: AutomationStudioAttemptActRecord;
   instruction?: string;
+  /** The Flow's size bounds, where its setting raised them. */
+  size?: AutomationStudioAnswerFirstFlowRunPorts["input"]["size"];
 };
 
 /** A real service on the fake target, and the Flow run stage's ports over it, with no model anywhere. */
@@ -226,7 +234,8 @@ export async function flowRunFixture(options: FlowRunFixtureOptions, cleanups: (
   const input: AutomationStudioAnswerFirstFlowRunPorts["input"] = {
     projectId: project.id, flowId: flow.flowId, registry, resolution, binding: { ...fakeLibraryBinding(target.library), ...options.binding },
     instructionText, instructionIds: ["instruction.task"], startLocation: options.startLocation,
-    routing: { signaturesOf: () => undefined }, cancellation: { signal: () => stop.signal }
+    routing: { signaturesOf: () => undefined }, cancellation: { signal: () => stop.signal },
+    ...(options.size ? { size: options.size } : {})
   };
   const engineOf = () => {
     const engine = automationStudioAnswerFirstFlowRunEngineOf({ ...input, owner: service });
