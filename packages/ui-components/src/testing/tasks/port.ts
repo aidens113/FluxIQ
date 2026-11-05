@@ -13,7 +13,9 @@ import type { FakeTask } from "./fixtures.ts";
 export type FakeTasksOptions = {
   tasks: readonly FakeTask[];
   /** Methods the port leaves out, to test a client that cannot carry them. */
-  without?: ReadonlyArray<"readSteps" | "carryOn" | "rename" | "remove">;
+  without?: ReadonlyArray<"readSteps" | "carryOn" | "rename" | "remove" | "subflowToKeep" | "keepSubflow">;
+  /** The subflow each Flow has worth keeping, by Flow id. A Flow not named has none, so no "Save this" is drawn for it. */
+  keepable?: Readonly<Record<string, { subflowId: string; name: string }>>;
   /** `false`: the spend is not real (`ChatResultsPort.reportsSpend`). */
   reportsSpend?: false;
 };
@@ -28,6 +30,8 @@ export type FakeTasksPort = TasksPort & {
   readonly calls: readonly FakeTasksCall[];
   /** Makes the next call to `method` (of this port or `results`) answer this failure. */
   failNext(method: string, failure: Failure): void;
+  /** The next "Save this" is refused in these words, as Core says no to one. */
+  refuseKeepNext(refusal: { code: string; message: string }): void;
   /** What the port holds now, as the list would read it. */
   snapshot(): readonly TaskSummary[];
 };
@@ -41,6 +45,7 @@ export function createFakeTasksPort(options: FakeTasksOptions): FakeTasksPort {
   const failures = new Map<string, Failure>();
   const rowsSource = createFakeChatResultsPort({ outcomes: tasks.flatMap((task) => task.attempts) });
   const without = new Set(options.without ?? []);
+  const keepRefusals: Array<{ code: string; message: string }> = [];
 
   const failing = (method: string, query: unknown): Failure | undefined => {
     calls.push({ method, query });
@@ -107,6 +112,19 @@ export function createFakeTasksPort(options: FakeTasksOptions): FakeTasksPort {
     calls,
     failNext: (method, failure) => void failures.set(method, failure),
     snapshot: () => structuredClone(newest().map(summary)),
+    refuseKeepNext: (refusal) => void keepRefusals.push(refusal),
+    async subflowToKeep(query) {
+      const failure = failing("subflowToKeep", query);
+      if (failure) return failure;
+      return { ok: true, value: options.keepable?.[query.flowId] };
+    },
+    async keepSubflow(query) {
+      const failure = failing("keepSubflow", query);
+      if (failure) return failure;
+      const refusal = keepRefusals.shift();
+      if (refusal !== undefined) return { ok: true, value: { saved: false, code: refusal.code, message: refusal.message } };
+      return { ok: true, value: { saved: true, partId: `saved-${query.subflowId}`, version: 1, status: "created" } };
+    },
     async list(query) {
       const failure = failing("list", query);
       if (failure) return failure;

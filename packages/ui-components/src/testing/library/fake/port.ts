@@ -4,13 +4,13 @@
 // act nobody permitted, are refused before anything happens. It records what it was asked.
 
 import type { ChatResult } from "../../../chat/ports/index.ts";
-import type { SubflowCard, SubflowLastingClass, SubflowLibraryPort, SubflowRefusal, SubflowRefusalCode, SubflowRunOutcome, SubflowRunStop } from "../../../screens/library/index.ts";
+import type { SubflowCard, SubflowLastingClass, SubflowLibraryPort, SubflowRefusal, SubflowRefusalCode, SubflowRunOutcome, SubflowRunStop, SubflowSaveOutcome } from "../../../screens/library/index.ts";
 import { fakeSubflowCards } from "./cards.ts";
 import { fakeSubflowDetail } from "./detail.ts";
 
 export type FakeSubflowLibraryOptions = { cards?: readonly SubflowCard[]; now?: number; pageSize?: number };
 
-type Method = "list" | "read" | "run";
+type Method = "list" | "read" | "run" | "save";
 type Failure = Extract<ChatResult<never>, { ok: false }>;
 
 export type FakeSubflowLibraryPort = SubflowLibraryPort & {
@@ -19,6 +19,8 @@ export type FakeSubflowLibraryPort = SubflowLibraryPort & {
   refuseNext(method: Method, refusal: { code: SubflowRefusalCode; message?: string; classes?: SubflowLastingClass[] }): void;
   /** The next call to `method` is a failed read. */
   failNext(method: Method, failure: Failure): void;
+  /** The next save is refused in these words, as Core says no to one (`{ saved: false }`). */
+  refuseSaveNext(refusal: { code: string; message: string }): void;
   /** The next run that is not refused stops here instead of finishing. */
   stopNext(stop: SubflowRunStop): void;
   /** The next run waits until the returned function is called, so a test can look at it while it runs. */
@@ -36,6 +38,7 @@ export function createFakeSubflowLibraryPort(options: FakeSubflowLibraryOptions 
   const failures = new Map<Method, Failure>();
   const stops: SubflowRunStop[] = [];
   const holds: Array<Promise<void>> = [];
+  const saveRefusals: Array<Extract<SubflowSaveOutcome, { saved: false }>> = [];
 
   const early = (method: Method, query: unknown): Failure | SubflowRefusal | undefined => {
     calls.push({ method, query });
@@ -56,6 +59,9 @@ export function createFakeSubflowLibraryPort(options: FakeSubflowLibraryOptions 
     },
     failNext(method, failure) {
       failures.set(method, failure);
+    },
+    refuseSaveNext(refusal) {
+      saveRefusals.push({ saved: false, code: refusal.code, message: refusal.message });
     },
     stopNext(stop) {
       stops.push(stop);
@@ -81,6 +87,13 @@ export function createFakeSubflowLibraryPort(options: FakeSubflowLibraryOptions 
       const card = cards.find((item) => item.partId === query.partId);
       if (card === undefined) return { ok: true, value: notFound };
       return { ok: true, value: { refused: false, detail: structuredClone(fakeSubflowDetail(card, cards)) } };
+    },
+    async save(query) {
+      const blocked = early("save", query);
+      if (blocked !== undefined) return answer(blocked);
+      const refusal = saveRefusals.shift();
+      if (refusal !== undefined) return { ok: true, value: refusal };
+      return { ok: true, value: { saved: true, partId: `saved-${query.subflowId}`, version: 1, status: "created" } };
     },
     async run(query) {
       const blocked = early("run", query);

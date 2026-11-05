@@ -7,6 +7,7 @@
 // and an attempt a restart cut off is `waiting_for_person` with `waitingFor: "interrupted"`.
 
 import type { ChatResult, ChatTaskOutcome } from "../../chat/ports/index.ts";
+import type { SubflowRefusal, SubflowSaveOutcome, SubflowSaveQuery } from "../library/index.ts";
 
 /** One task in the list. `title` is the person's own words, or the name they gave it. */
 export type TaskSummary = {
@@ -43,6 +44,10 @@ export type TasksPort = {
   /** Absent: nothing is marked as saved or worked out again. */
   /** Carries on an interrupted attempt. Absent: no Carry on. */
   carryOn?(query: { projectId: string; attemptId: string }): Promise<ChatResult<{ attemptId: string }>>;
+  /** The one subflow of a task's Flow worth keeping in the library, or none. Absent (or `keepSubflow` absent): no "Save this". */
+  subflowToKeep?(query: { projectId: string; flowId: string }): Promise<ChatResult<{ subflowId: string; name: string } | undefined>>;
+  /** Keeps that subflow in the library. A refusal is Core's own sentence. */
+  keepSubflow?(query: SubflowSaveQuery): Promise<ChatResult<SubflowSaveOutcome | SubflowRefusal>>;
   rename?(query: { projectId: string; taskId: string; title: string }): Promise<ChatResult<unknown>>;
   remove?(query: { projectId: string; taskId: string }): Promise<ChatResult<unknown>>;
 };

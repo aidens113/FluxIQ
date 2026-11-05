@@ -30,6 +30,6 @@ export function fakeSubflowDetail(card: SubflowCard, cards: readonly SubflowCard
   const callers: SubflowDetail["callers"] = cards
     .filter((item) => item.calls.some((call) => call.partId === card.partId))
     .map((item) => ({ kind: "part" as const, partId: item.partId }));
-  if (card.partId === "restock-notebooks") callers.push({ kind: "flow" });
+  if (card.partId === "restock-notebooks") callers.push({ kind: "flow", flowId: "flow-restock", name: "Weekly stationery order", newer: { passed: true, said: "A newer one of these steps passed a check on another page. It has not replaced this one." } });
   return { card, steps: STEPS[card.partId] ?? [{ label: "Do what it is for", lastingClasses: card.lastingClasses }], calls: callsOf(card, cards, [card.partId]), callers };
 }

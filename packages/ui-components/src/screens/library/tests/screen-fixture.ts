@@ -10,8 +10,9 @@ export const NOW = new Date(2026, 10, 4, 12).getTime();
 export function openLibrary(options: Parameters<typeof createFakeSubflowLibraryPort>[0] = {}) {
   const port = createFakeSubflowLibraryPort({ now: NOW, ...options });
   const asked: string[] = [];
-  const screen: LibraryScreen = createLibraryScreen({ port, host: { askAbout: (text) => asked.push(text) }, now: () => NOW });
-  return { port, screen, asked, cards: fakeSubflowCards(NOW) };
+  const opened: Array<{ flowId: string; name: string }> = [];
+  const screen: LibraryScreen = createLibraryScreen({ port, host: { askAbout: (text) => asked.push(text), openFlow: (flow) => opened.push(flow) }, now: () => NOW });
+  return { port, screen, asked, opened, cards: fakeSubflowCards(NOW) };
 }
 
 /** Lets reads and runs the screen started settle. */

@@ -147,7 +147,7 @@ test("a control is drawn only where the port can carry it", () => {
 test("deleting says what goes and what stays, and the day and time read in local time", () => {
   const words = deleteWords("Order the groceries");
   assert.equal(words.question, "Delete “Order the groceries”?");
-  assert.match(words.goes, /attempts/u);
+  assert.match(words.goes, /remembers for next time/u);
   assert.match(words.stays, /automation or subflow it saved stays/u);
   assert.doesNotMatch(`${words.question} ${words.goes} ${words.stays}`, BANNED);
   assert.equal(clockWords(new Date(2027, 0, 15, 9, 5).getTime()), "09:05");

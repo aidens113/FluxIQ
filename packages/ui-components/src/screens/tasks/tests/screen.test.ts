@@ -16,12 +16,12 @@ async function flush(): Promise<void> {
   for (let turn = 0; turn < 8; turn++) await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
-function mount(overrides: Partial<TasksScreenOptions> & { without?: Parameters<typeof createFakeTasksPort>[0]["without"]; chat?: boolean } = {}) {
+function mount(overrides: Partial<TasksScreenOptions> & { without?: Parameters<typeof createFakeTasksPort>[0]["without"]; chat?: boolean; keepable?: Parameters<typeof createFakeTasksPort>[0]["keepable"] } = {}) {
   const tasks = fakeTasks(NOW);
-  const port = createFakeTasksPort({ tasks: Object.values(tasks), ...(overrides.without === undefined ? {} : { without: overrides.without }) });
+  const port = createFakeTasksPort({ tasks: Object.values(tasks), ...(overrides.without === undefined ? {} : { without: overrides.without }), ...(overrides.keepable === undefined ? {} : { keepable: overrides.keepable }) });
   const timers: Timer[] = [];
   const opened: string[] = [];
-  const { without: _without, chat, ...rest } = overrides;
+  const { without: _without, keepable: _keepable, chat, ...rest } = overrides;
   const screen = createTasksScreen({
     port,
     results: port.results,
@@ -292,5 +292,40 @@ test("closing and mounting again lands on the same task, and a task that is gone
     assert.ok(keyed(lost.root, "details-retry"));
     await press(keyed(lost.root, "back"));
     assert.equal(lost.root.getAttribute("data-mode"), "list");
+  });
+});
+
+test("save this: drawn on a task whose Flow has one subflow worth keeping, kept in plain words, a refusal in Core's own sentence, and nothing where there is none", async () => {
+  await withFakeDocument(async () => {
+    const { screen, root, port } = mount({ keepable: { "flow-saved-searches": { subflowId: "sub-1", name: "Check saved searches" } } });
+    screen.setActive(true);
+    await flush();
+    await press(keyed(root, "row:task-saved-searches"));
+    assert.match(root.textContent, /Keep “Check saved searches” in your Library, so other automations can use it\./u);
+    port.refuseKeepNext({ code: "part.not_found", message: "That piece is not part of this automation any more." });
+    await press(named(root, "Save this"));
+    assert.match(root.textContent, /That piece is not part of this automation any more\./u);
+    assert.ok(!/part\.not_found/u.test(root.textContent));
+    await press(named(root, "Save this"));
+    assert.match(root.textContent, /Saved\. Find it in your Library\./u);
+    assert.deepEqual(port.calls.filter((call) => call.method === "keepSubflow").map((call) => call.query), [
+      { projectId: PROJECT, flowId: "flow-saved-searches", subflowId: "sub-1" },
+      { projectId: PROJECT, flowId: "flow-saved-searches", subflowId: "sub-1" }
+    ]);
+  });
+});
+
+test("save this: not drawn for a task whose Flow has nothing to keep, or when the port cannot save", async () => {
+  await withFakeDocument(async () => {
+    const none = mount();
+    none.screen.setActive(true);
+    await flush();
+    await press(keyed(none.root, "row:task-saved-searches"));
+    assert.equal(named(none.root, "Save this"), undefined);
+    const cannot = mount({ keepable: { "flow-saved-searches": { subflowId: "sub-1", name: "Check saved searches" } }, without: ["keepSubflow"] });
+    cannot.screen.setActive(true);
+    await flush();
+    await press(keyed(cannot.root, "row:task-saved-searches"));
+    assert.equal(named(cannot.root, "Save this"), undefined);
   });
 });

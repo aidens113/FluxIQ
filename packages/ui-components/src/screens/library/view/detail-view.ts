@@ -26,6 +26,8 @@ export type LibraryDetailHooks = {
   retry(): void;
   /** Open a subflow this one calls or is used by. */
   open(partId: string, key: string): void;
+  /** Open the automation that uses this subflow. Absent: its name is plain text. */
+  openFlow?(flow: { flowId: string; name: string }): void;
 };
 
 const capital = (words: string): string => `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
@@ -50,7 +52,7 @@ export function detailView(model: LibraryDetailModel, hooks: LibraryDetailHooks,
   if (card.fixedValues.length > 0) root.append(detailSection("Always the same", [lines(card.fixedValues.map((value) => `Always uses: ${value}`))]));
   if (card.startCheck !== undefined) root.append(detailSection("What must be true to start", [createElement("p", { text: card.startCheck.says ?? "It has to start from the right page." })]));
   root.append(stepsPart(model, hooks, context));
-  const users = usersPart(model.detail, model.names, hooks.open, context);
+  const users = usersPart(model.detail, model.names, hooks.open, context, hooks.openFlow);
   if (users !== undefined) root.append(users);
   const gone = historyWords(card, context.now());
   root.append(detailSection("How it has gone", [gone.length > 0 ? lines(gone) : createElement("p", { text: "It has not run yet." })]));

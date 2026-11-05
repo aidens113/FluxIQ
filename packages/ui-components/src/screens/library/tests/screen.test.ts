@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import { withFakeDocument } from "../../../testing/index.ts";
-import { LIBRARY_EMPTY } from "../index.ts";
+import { fake } from "../../../testing/index.ts";
+import { LIBRARY_EMPTY, saveThis } from "../index.ts";
 import { buttons, has, openLibrary, press, pressable, root, said, settle, submit, type, watchFocus } from "./screen-fixture.ts";
 
 /** No code, id, hash or version reaches a person, on any screen. */
@@ -120,6 +121,19 @@ describe("the details", () => {
       assert.match(words, /What it can do on the site.*Can change existing things/u);
       assert.match(words, /Who uses it.*Add an item to the basket/u);
       noMachineWords(words);
+    }));
+
+  test("name each automation that uses it, open it, and say when a newer version passed", () =>
+    withFakeDocument(async () => {
+      const { screen, opened } = await loaded();
+      press(screen, "Order notebooks again");
+      await settle();
+      const words = said(screen);
+      assert.match(words, /Who uses it.*1 automation uses it\.Weekly stationery order/u);
+      assert.match(words, /A newer one of these steps passed a check on another page\. It has not replaced this one\./u);
+      noMachineWords(words);
+      press(screen, "Weekly stationery order");
+      assert.deepEqual(opened, [{ flowId: "flow-restock", name: "Weekly stationery order" }]);
     }));
 
   test("show an automation as a user, a failure with its day, and how it has gone", () =>
@@ -329,5 +343,59 @@ describe("running", () => {
       assert.match(said(screen), /could not be reached, so it is not known whether this ran.FluxIQ is not reachable\. Look at the site/u);
       assert.ok(has(screen, "Try again"));
       assert.equal(buttons(screen).some((button) => button.textContent.startsWith("Allow")), false);
+    }));
+});
+
+describe("save this", () => {
+  const mount = (port: ReturnType<typeof openLibrary>["port"], query = { projectId: "p", flowId: "flow-1", subflowId: "sub-1" }) => {
+    const control = saveThis(port, query);
+    assert.ok(control);
+    return fake(control);
+  };
+
+  test("is not drawn when the client cannot save", () =>
+    withFakeDocument(async () => {
+      const { port } = openLibrary();
+      const { save: _save, ...cannot } = port;
+      assert.equal(saveThis(cannot as typeof port, { projectId: "p", flowId: "f", subflowId: "s" }), undefined);
+    }));
+
+  test("saves and says where to find it", () =>
+    withFakeDocument(async () => {
+      const { port } = openLibrary();
+      const control = mount(port);
+      const button = control.querySelectorAll("button")[0]!;
+      assert.equal(button.textContent, "Save this");
+      button.dispatch("click");
+      await settle();
+      assert.match(control.textContent, /Saved\. Find it in your Library\./u);
+      assert.deepEqual(port.calls.at(-1), { method: "save", query: { projectId: "p", flowId: "flow-1", subflowId: "sub-1" } });
+      noMachineWords(control.textContent);
+    }));
+
+  test("shows Core's own sentence for a refusal and lets the person try again", () =>
+    withFakeDocument(async () => {
+      const { port } = openLibrary();
+      port.refuseSaveNext({ code: "part.not_found", message: "That piece is not part of this automation any more." });
+      const control = mount(port);
+      const button = control.querySelectorAll("button")[0]!;
+      button.dispatch("click");
+      await settle();
+      assert.match(control.textContent, /That piece is not part of this automation any more\./u);
+      assert.ok(!/part\.not_found/u.test(control.textContent));
+      assert.equal(button.disabled, false);
+      button.dispatch("click");
+      await settle();
+      assert.match(control.textContent, /Saved\./u);
+    }));
+
+  test("says so plainly when the read failed", () =>
+    withFakeDocument(async () => {
+      const { port } = openLibrary();
+      port.failNext("save", { ok: false, sentence: "FluxIQ did not answer." });
+      const control = mount(port);
+      control.querySelectorAll("button")[0]!.dispatch("click");
+      await settle();
+      assert.match(control.textContent, /FluxIQ did not answer\./u);
     }));
 });
