@@ -132,9 +132,14 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // 4,688. The bound was 4,700 until t800 (2026-10-29) published a date
     // bound relative to the run's now (today, yesterday, now, <n> <unit> ago)
     // and `within: "<n> minutes|hours|days|weeks"` in the same contract text
-    // (K1): 146 bytes on purpose, to 4,834. The bound sits just above the
-    // intended entry, not room for another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_850);
+    // (K1): 146 bytes on purpose, to 4,834. The bound was 4,850 until t869
+    // (e17cc4dbb, 2026-11-05) said what a re-read does to a list in writeMode's
+    // text -- replace: this read is the list as it now stands; append: adds to
+    // what the datasetId already holds; one datasetId per list -- after a paid
+    // run's re-read left a stale list beside the new one: 178 bytes on purpose
+    // (the sentence names no site and no task), to 5,012. The bound sits just
+    // above the intended entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(5_025);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 
