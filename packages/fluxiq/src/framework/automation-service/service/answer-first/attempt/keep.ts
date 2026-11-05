@@ -19,6 +19,8 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
   const purse = run.input.creation.purse;
   const { usage: authority } = run.input.authority;
   const prior = run.prior;
+  // Not added, as with the rows left out: the record is seeded with what a carried-on attempt had, so its count already holds them.
+  const noRow = Math.max(prior?.actsWithNoRow ?? 0, run.record.actsWithNoRow());
   return {
     taskId: run.taskId,
     attemptId: run.attemptId,
@@ -39,6 +41,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     budget: { usd: prior ? prior.budgetUsd - Math.max(0, prior.askedUsd - purse.ceilingUsd) : purse.ceilingUsd },
     liveSteps: run.liveSteps,
     loopsCaught: run.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(),
+    ...(noRow > 0 ? { actsWithNoRow: noRow } : {}),
     startedAtMs: run.startedAtMs,
     ...(ended ? { endedAtMs: Math.max(now, run.startedAtMs) } : {})
   };

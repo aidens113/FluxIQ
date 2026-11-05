@@ -56,6 +56,7 @@ export function automationStudioAnswerFirstCarriedOpening(hold: AutomationStudio
       liveSteps: attempt.liveSteps,
       origins,
       skippedAsDone: before.result?.skippedAsDone ?? 0,
+      actsWithNoRow: attempt.actsWithNoRow ?? 0,
       flowFailedLive: ran && (origins.some((origin) => origin.ran === "failed" || origin.ran === "not_reached") || before.result?.label === "refuted")
     }
   };

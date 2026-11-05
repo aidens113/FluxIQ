@@ -1063,6 +1063,13 @@ by-hand press. The bias is deliberate: a row wrongly held done is left out and c
 skipped, which a judge's no brings back; a row wrongly held not done is an act done twice. A
 row sharing no word with any read or that sentence is a new row. An act keeps the digests of
 its row's other shapes, and a row an act is on is never dropped from the rows held.
+A press on a row of a list that nothing names, and whose list no later read shows changed, holds no
+row, so its row may be pressed again: a known limit, pinned by `act-record/tests/thin-press.test.ts`.
+It is measured, not hidden. Each such act is marked once, with one plain line in the run's step log
+(`NNNN-note`: "A lasting act could not be tied to a row" and the action's name, no page text), and the
+attempt carries the number as `actsWithNoRow` (absent reads as zero, never shown on a person's card).
+A carried-on attempt's record is seeded with what the attempt had, so it counts there too.
+`pnpm lab attempt` prints it in its result line when above zero and always in `attempt.json`.
 The person may ask for an act several times in their own words
 (`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
 and "thrice". A model's words never lift the rule. The first Flow run after an attempt

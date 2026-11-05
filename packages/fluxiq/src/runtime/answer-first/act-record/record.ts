@@ -73,6 +73,9 @@
 // and rows that read the same were not pressed. A read that changes none, or that shares no row with the list, says nothing,
 // and the next is asked. A press that leaves no mark on any read is a limit: no row is held, so it may be pressed again.
 //
+// That limit is counted, so it is measured before anything is done about it (`actsWithNoRow`, t869): each such act is marked once, when a read of its
+// list shows none of its rows changed, with one plain line in the step log (no page text) and a count the attempt carries.
+//
 // **Before it is sent (`foreseen`, t870).** A by-hand press by a handle says nothing the record can
 // know it by, so the domain says what it would be, and this is read beside the call's own identity.
 // It only adds to what is refused, in the order an answer's own ties are read:
@@ -119,6 +122,7 @@ import type {
   AutomationStudioAttemptActRecordData
 } from "./contracts.ts";
 import { automationStudioAttemptActRowSaysOnlyControl, automationStudioAttemptActId, automationStudioAttemptActRowIdentity, automationStudioAttemptActTargetKeys, type AutomationStudioAttemptActTargetKeys } from "./identity/index.ts";
+import { automationStudioLlmStepLogNote } from "../../llm/step-log/index.ts";
 import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
@@ -182,6 +186,11 @@ export class AutomationStudioAttemptActRecord {
   /** How many distinct rows this attempt left out because the record held them done (header). */
   rowsHeldDone(): number {
     return this.leftOut.count(this.ties);
+  }
+
+  /** How many acts a read of their list left with no row held (header): each is counted once, however many reads followed. It is what the attempt carries as `actsWithNoRow`. */
+  actsWithNoRow(): number {
+    return this.entries.filter((entry) => entry.unmarked === true && entry.rows.length === 0 && !entry.undeclared).length;
   }
 
   /** Whether this call declares a lasting act, so that it must be begun before it is sent. */
@@ -539,6 +548,10 @@ export class AutomationStudioAttemptActRecord {
   /** A press on a row nothing named, held on the rows of its list the read at hand shows changed (header). */
   private tieByChange(entry: AutomationStudioAttemptActEntry, read: readonly string[]): void {
     const changed = entry.listBefore!.filter((row) => !read.includes(row));
+    if (changed.length === 0 && entry.listBefore!.length > 0 && entry.unmarked !== true) {
+      entry.unmarked = true;
+      automationStudioLlmStepLogNote(`A lasting act could not be tied to a row: ${entry.actions[0] ?? "unnamed"}`);
+    }
     if (changed.length === 0 || changed.length === entry.listBefore!.length) return;
     entry.rows = changed;
     if (changed.length === 1) entry.rowIdentity = changed[0]!;

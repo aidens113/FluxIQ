@@ -99,6 +99,8 @@ export type AutomationStudioTaskAttemptFields = {
   liveSteps: number;
   simulation?: AutomationStudioTaskAttemptSimulation;
   loopsCaught: AutomationStudioTaskAttemptLoopsCaught;
+  /** How many lasting acts could not be tied to a row of their list, so that row may be pressed again: a known limit, measured here (never shown on a card). Absent reads as zero. */
+  actsWithNoRow?: number;
   /** Epoch milliseconds. */
   startedAtMs: number;
   /** Epoch milliseconds. Set on an ending, and absent while it can still go on. */
@@ -115,7 +117,7 @@ export type AutomationStudioTaskAttemptParseResult =
   | { ok: true; attempt: AutomationStudioTaskAttempt }
   | { ok: false; issues: string[] };
 
-const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "startedAtMs", "endedAtMs"]);
+const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "actsWithNoRow", "startedAtMs", "endedAtMs"]);
 const SPEND_KEYS: ReadonlySet<string> = new Set(["calls", "inputTokens", "outputTokens", "usd", "ms"]);
 const BUDGET_KEYS: ReadonlySet<string> = new Set(["usd"]);
 const SIMULATION_KEYS: ReadonlySet<string> = new Set(["verdict", "flags"]);
@@ -164,6 +166,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (!isCount(liveSteps)) issues.add("task_attempt.invalid_live_steps");
   if (simulation === null) issues.add("task_attempt.invalid_simulation");
   if (loopsCaught === null) issues.add("task_attempt.invalid_loops_caught");
+  if (value.actsWithNoRow !== undefined && !isCount(value.actsWithNoRow)) issues.add("task_attempt.invalid_acts_with_no_row");
   if (!isCount(startedAtMs)) issues.add("task_attempt.invalid_started_at");
   if (endedAtMs !== undefined && !isCount(endedAtMs)) issues.add("task_attempt.invalid_ended_at");
   if (isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_STATUSES, status)) {
@@ -178,6 +181,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (typeof flowId === "string") fields.flowId = flowId;
   if (typeof runId === "string") fields.runId = runId;
   if (simulation !== undefined) fields.simulation = simulation;
+  if (isCount(value.actsWithNoRow)) fields.actsWithNoRow = value.actsWithNoRow;
   if (isCount(endedAtMs)) fields.endedAtMs = endedAtMs;
   if (status !== "waiting_for_person") return { ...fields, status };
   return isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_WAIT_REASONS, waitingFor) ? { ...fields, status, waitingFor } : null;

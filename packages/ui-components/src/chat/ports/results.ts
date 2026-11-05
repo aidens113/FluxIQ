@@ -48,6 +48,8 @@ export type ChatTaskAttemptFields = {
   liveSteps: number;
   simulation?: { verdict: "passed" | "failed" | "inconclusive" | "not_run"; flags: number };
   loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act", ChatAttemptLoopCount>;
+  /** Lasting acts not tied to a row, a measure for testing: no card shows it. Absent reads as zero. */
+  actsWithNoRow?: number;
   startedAtMs: number;
   endedAtMs?: number;
 };

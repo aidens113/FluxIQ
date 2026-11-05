@@ -35,6 +35,8 @@
 //   `refused:<code>`), `gapStep`, `gap` (why it stopped, by code and field path)
 //   and the operation counts; never trace content,
 //   ids, page data or typed values.
+// - Note folders `NNNN-note` hold `meta.json` alone, kind `note`: one plain line (`line`) about
+//   something that happened, never page text (`note-step.ts`).
 // - `meta.json` is written last: a folder with it is complete. Every kind's
 //   carries `role` and `briefId`: the project agent that made the step
 //   (`automationStudioLlmStepLogScope.agent`), `null` outside every agent.
@@ -47,6 +49,7 @@
 export * from "./answer-step.ts";
 export * from "./directory.ts";
 export * from "./model-step.ts";
+export * from "./note-step.ts";
 export * from "./offline-trial-step.ts";
 export * from "./page-reader.ts";
 export * from "./reset-step.ts";

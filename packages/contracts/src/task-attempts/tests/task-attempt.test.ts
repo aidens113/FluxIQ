@@ -88,6 +88,15 @@ describe("parseAutomationStudioTaskAttempt", () => {
     expect(issuesOf(noLoops)).toContain("task_attempt.invalid_loops_caught");
   });
 
+  it("reads acts with no row as a whole number, absent as zero, and keeps a record written before it", () => {
+    expect(issuesOf(VALID)).toEqual([]);
+    const kept = parseAutomationStudioTaskAttempt({ ...VALID, actsWithNoRow: 2 });
+    expect(kept.ok && kept.attempt.actsWithNoRow).toBe(2);
+    const before = parseAutomationStudioTaskAttempt(VALID);
+    expect(before.ok && before.attempt.actsWithNoRow).toBeUndefined();
+    for (const bad of [-1, 1.5, "2", null]) expect(issuesOf({ ...VALID, actsWithNoRow: bad })).toEqual(["task_attempt.invalid_acts_with_no_row"]);
+  });
+
   it("takes every simulation verdict and no flags on one that did not run", () => {
     for (const verdict of AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS) {
       expect(issuesOf({ ...VALID, simulation: { verdict, flags: 0 } })).toEqual([]);
