@@ -73,21 +73,21 @@ describe("the draft a build accrues", () => {
     expect(draft.steps.map((step) => [step.disposition, step.inResult])).toEqual([["exploratory", false], ["kept", true]]);
   });
 
-  it("is not offered an edit before there is one to make, and stops offering them once the allowance is spent", async () => {
+  // The schema sits in the head of the request, so it stays as it was (t869): an edit asked before there is one to make, or once the allowance is spent, is refused.
+  it("has an edit refused before there is one to make and once the allowance is spent, with the schema unchanged", async () => {
     const offered: boolean[] = [];
     const decide = vi.fn(async ({ decisionSchema }: { decisionSchema: JsonObject }) => {
       const variants = decisionSchema.oneOf as { properties: { kind: { const: string } } }[];
       offered.push(variants.some((variant) => variant.properties.kind.const === "amend_draft"));
       return offered.length === 1 ? pressed(1) : { kind: "amend_draft", amendments: [{ step: 1, change: offered.length % 2 ? "keep" : "drop" }] };
     });
-    await runAutomationStudioLlmEvidenceLoop({
+    const { trace } = await runAutomationStudioLlmEvidenceLoop({
       tools, decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, draft: { maxAmendments: 2 },
       executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true })
     });
-    expect(offered[0]).toBe(false);
-    expect(offered[1]).toBe(true);
-    expect(offered[2]).toBe(true);
-    expect(offered[3]).toBe(false);
+    expect(new Set(offered)).toEqual(new Set([true]));
+    // The press, the two amendments the allowance holds, and a refusal of the third.
+    expect(trace.slice(0, 4).map((row) => row.decision)).toEqual(["tool_call", "amend_draft", "amend_draft", "unusable"]);
   });
 
   // A live build alternated a repeated request with an edit for sixteen calls.

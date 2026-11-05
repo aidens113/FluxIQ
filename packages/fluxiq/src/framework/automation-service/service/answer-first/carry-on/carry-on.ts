@@ -84,6 +84,8 @@ function whyNot({ attempt }: AutomationStudioAnswerFirstAttemptRecord, addUsd: n
   if (attempt.status === "stopped_by_person") return "stopped";
   if (attempt.status === "budget_out") return addUsd > 0 ? undefined : "no_budget_added";
   if (attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted") return undefined;
+  // One that kept getting stuck with nobody to ask: a person who says keep going is the answer it waited for, and its budget is untouched.
+  if (attempt.status === "waiting_for_person" && attempt.waitingFor === "stuck_in_a_loop") return undefined;
   return "waiting_for_person";
 }
 

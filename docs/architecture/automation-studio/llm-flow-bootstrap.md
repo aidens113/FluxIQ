@@ -1030,7 +1030,18 @@ A round has no time limit. Its limit on turns bounds a round and never a task.
 builds a Flow-less summary from the rows it stored, its act record, the end view and the
 witnesses, and asks one judge call (`runtime/result-verification/flow-less/`). A yes is
 `confirmed` and checked once. A no or an unsure goes back to the model with its reason.
-The same evidence is refused without a second call. The ending goes through
+A completion over the same evidence is refused without a second call, with the reason, what would
+count as new evidence and what the result holds. A refusal comes at the model in a ladder
+(`attempt/round.ts`, `loop-signal/completion-refused-again.ts`): the first repeat is steered, the
+second ends the round so the next starts fresh, and the third asks the person whether to keep going. New
+evidence starts the ladder again. With nobody to ask the attempt waits (`waiting_for_person`,
+`stuck_in_a_loop`) and spends nothing more, since a refusal is never worth a budget; a person who says keep
+going carries it on. An empty balance at the judge ends the attempt as a budget-out, as it does at a
+decision, and is never read as "not judged". **The latest read decides** what a list holds
+(`rows/list-after-read.ts`): a read carries the list on or starts it over, a read's own declared
+`process` shapes its result as a saved run's would (the stored rows stay as read), and a later read that got
+smaller is said on the card ("An earlier read of this list had 5 rows. This is the latest, with 3."). The
+ending goes through
 `checkAutomationStudioTaskAttemptResult`. The call answers `status: "answered"` however
 it ended, a budget-out included, so a task's ending is never a thrown failure. A
 pre-model refusal is a table entry (`runtime/answer-first/pre-model/`): resolved, or a
@@ -1567,10 +1578,11 @@ one decision, was resent on every decision). Its `flowBootstrap` carries:
   order they first appear in the id-sorted catalog and entries by id
   (`runtime/flow-authoring/bootstrap/plan/catalog-names.ts`);
 - `nodeCatalogNote`: one constant sentence on how to read the two fields;
-- `describedNodes`: the full catalog entries (label, description, ports,
-  parameter contracts with their authoring text, output-action contract) of
-  the nodes this build has described, in the order each was first described,
-  absent until there is one.
+- the full catalog entries (label, description, ports, parameter contracts with
+  their authoring text, output-action contract) of the nodes this build has
+  described are not in the head: each is under `describedNodes` on the entry of the
+  call that first described it, or on the window's first entry if an earlier round
+  did ([evidence-window.md](evidence-window.md), "What the prompt cache reads").
 
 `catalogTruncated` and `catalogSelection` are not sent on that payload. The
 packet still carries the whole `nodeCatalog`, `catalogSelection` included, for
@@ -1582,9 +1594,9 @@ The model reads a definition with Core's tool `core.describe_nodes`
 (`{ids}`, up to 64 per call; `runtime/llm/node-tools/describe-nodes.ts`). It
 observes only, is never a step of the Flow, and is offered only beside the
 node library (`core.run_node`). It answers with a receipt -- `described`,
-`alreadyDescribed`, `unknown`, `shownIn: "flowBootstrap.describedNodes"` --
-never the definitions, which appear in `describedNodes` from the next decision
-on, so each is shown once per request however long ago it was asked for. A
+`alreadyDescribed`, `unknown` -- never the definitions, which the next decision
+shows on that receipt in place of the ids, so each is shown once per request
+however long ago it was asked for. A
 call naming only unknown ids is refused as `describe_nodes.unknown_nodes`. The
 memory is one build's (`runtime/llm/node-tools/node-descriptions.ts`): every
 round of the build shares it, and a new build starts empty. A describe call
@@ -3090,12 +3102,11 @@ Because every decision of an evidence loop is a fresh, stateless request, the
 whole of that cache turns on the order of the user message, and
 `providerUserPayload` arranges it deliberately: the task envelope, the decision
 grammar, the person's instruction, the tool descriptions, the policy gates and
-the catalog context (the node names, their note and `describedNodes`) first,
-then the evidence window, and the iteration counter last. Everything invariant
-is therefore one contiguous prefix, and the window -- which usually only gains
-an entry between calls -- extends it. `describedNodes` is the one part of that
-head that grows: it is append-only for the length of a build, so a describe
-keeps the cached prefix through every node described before it. The order used to
+the catalog context (the node names and their note) first, then the evidence
+window, and the iteration counter last. Everything invariant is therefore one
+contiguous prefix, and the window -- which usually only gains an entry between
+calls -- extends it. Nothing in the head grows
+([evidence-window.md](evidence-window.md), "What the prompt cache reads"). The order used to
 put the counter before the tool descriptions and the catalog, which left 20,341
 identical bytes of a 50,840-byte message behind a value that changed on every
 call. A key added here must go on the correct side of that line: anything that

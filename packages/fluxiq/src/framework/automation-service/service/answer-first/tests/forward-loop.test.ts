@@ -122,6 +122,16 @@ describe("the first row by hand, then the loop that opens a row, sets a state an
     expect(attempt.scriptRanOut).toBe(false);
   });
 
+  it("each act of a forward run names the row it was on, in the row's own words", async () => {
+    const { attempt } = await firstRowByHandThenTheLoop({ from: "the loop's first step" });
+    if (attempt.answered.status !== "answered") throw new Error("no answer");
+    const said = (attempt.answered.result?.acts ?? []).map((act) => act.what);
+    expect(said.some((what) => what.endsWith(`: ${MIDDLE}`))).toBe(true);
+    expect(said.some((what) => what.endsWith(`: ${LAST}`))).toBe(true);
+    // Nothing a page minted for the row is in the line: a person reads a listing, not a handle.
+    expect(said.join("\n")).not.toMatch(/https?:|handle|row_/iu);
+  });
+
   it("asked for by its list, from another page: the list says this is not its page, and is read once more on its page", async () => {
     const { site, told } = await firstRowByHandThenTheLoop({ from: "the list" });
     expect(site.reached).toBe(1);

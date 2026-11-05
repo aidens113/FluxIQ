@@ -15,6 +15,8 @@ export type AnswerRows = {
   total: number;
   /** Said under the table when it holds fewer rows than were found: once as it first shows, once opened. */
   partialNotes?: { collapsed: string; expanded: string };
+  /** Said under the table when the latest read of the list held fewer rows than an earlier one. */
+  smallerNote?: string;
   /** The "Show all N" button, when there are previewed rows beyond the first few. */
   expandWords?: string;
   runId: string;

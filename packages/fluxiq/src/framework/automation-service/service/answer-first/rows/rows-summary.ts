@@ -15,4 +15,6 @@ export type AutomationStudioAnswerFirstRowsSummary = {
    * is told the result got smaller rather than finding it so; absent while it has not.
    */
   fewerThanEarlier?: { earlierRows: number };
+  /** The latest read of this list replaced what an earlier read of it held, rather than adding to it: the rows are that read's alone. Absent while it carried the list on. */
+  startedOver?: true;
 };

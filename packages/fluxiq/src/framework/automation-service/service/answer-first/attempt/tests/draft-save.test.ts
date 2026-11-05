@@ -1,3 +1,6 @@
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../../../candidate-drafts/index.ts";
 import { automationStudioAnswerFirstSaveDraft } from "../draft-save.ts";
@@ -61,5 +64,21 @@ describe("an answer-first draft's save", () => {
       verdictFor.refuse = false;
     }
     expect(calls).toEqual([]);
+  });
+
+  it("writes the refusal's codes to the step log as a plain note", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "fluxiq-draft-refused-"));
+    vi.stubEnv("FLUXIQ_LLM_STEP_LOG_DIR", directory);
+    verdictFor.refuse = true;
+    try {
+      await automationStudioAnswerFirstSaveDraft(runOf(undefined), "Done.");
+      const notes = readdirSync(directory).filter((name) => /^\d{4,}-note$/u.test(name)).map((name) => JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as { line: string });
+      expect(notes).toHaveLength(1);
+      expect(notes[0]!.line).toContain("draft.refused");
+    } finally {
+      verdictFor.refuse = false;
+      vi.unstubAllEnvs();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

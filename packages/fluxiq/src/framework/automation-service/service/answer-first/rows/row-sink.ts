@@ -47,7 +47,7 @@
 // list with the same columns (a run's own batches say no address): a list wrongly joined is rows a
 // judge can read and refuse, and a row wrongly dropped is a result lost. A read that does not join
 // is something else, and `./result-dataset.ts` says when it may become the result.
-import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -82,8 +82,12 @@ type Held = {
   lookUp?: boolean | undefined;
   /** The most rows the list held before a read started it over. */
   earlierRows?: number | undefined;
+  /** The latest read started the list over from rows it held. */
+  startedOver?: boolean | undefined;
   label?: string | undefined;
   process?: AutomationStudioRecordProcessing | undefined;
+  /** The processing the store holds for this dataset: it is fixed within a run, so a later read can differ from it and the read-back then applies `process` itself. */
+  sent?: AutomationStudioRecordProcessing | undefined;
 };
 
 export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswerFirstRowSinkInput): AutomationStudioAnswerFirstRowSink {
@@ -135,6 +139,9 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const schema = known?.schema ?? automationStudioAnswerFirstReadSchema(objects);
       if (!schema) return { rows: [], invalidCount: found.length, truncated: false, failure: { code: "answer_first.rows_no_columns" } };
       const validated = join?.validated ?? validateAutomationStudioRecords(found, schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
+      const declared = declaredProcess(evidence.process, schema);
+      /** A dataset keeps the processing it first stored with: the store refuses it changing within a run. */
+      const sending = known ? known.sent : declared;
       const read = wholeOnce(validated.rows);
       const after = read.length === 0 ? undefined : automationStudioAnswerFirstListAfterRead({ pages: known?.pages ?? [], held: known?.rows ?? [], read, columns: schema.fields.map((field) => field.id), evidence, moved: known !== undefined && movedFrom(known, evidence) });
       const truncated = after && !after.over ? validated.truncated || known?.truncated === true : validated.truncated;
@@ -150,28 +157,31 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         rows: addsOnly ? validated.rows : after.rows,
         invalidCount: validated.invalidCount,
         truncated: addsOnly ? validated.truncated : truncated,
-        ...(join?.held.process !== undefined ? { process: join.held.process } : {})
+        ...(sending !== undefined ? { process: sending } : {})
       };
       try {
         await input.onRecordBatch(batch);
       } catch (error) {
         return { rows: [], datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, failure: { code: "answer_first.rows_not_stored", ...(error instanceof Error ? { errorName: error.name } : {}) } };
       }
-      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp };
+      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending };
       datasets.set(datasetId, held);
       if (evidence.list !== undefined) held.view = evidence.list;
       if (after) {
+        held.startedOver = after.over && held.rows.length > 0;
         if (after.over && held.rows.length > 0) held.earlierRows = Math.max(held.earlierRows ?? 0, held.rows.length);
         held.rows = after.rows;
         held.pages = after.pages;
         held.truncated = truncated;
+        // What the read declared shapes its result as a saved run's would. The stored rows stay as the read returned them (the act record ties to them). The store keeps the first processing a dataset was stored with and refuses a change within a run, so where this differs from it the summary and the read-back apply it themselves, and both read the same.
+        if (!ran.has(datasetId)) held.process = declared;
         order.push(datasetId);
       }
       return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}) };
     },
     async recordBatch(batch) {
       const stored = await input.onRecordBatch(batch);
-      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process };
+      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process };
       datasets.set(batch.datasetId, held);
       // As the store reads it: `replace` clears what the dataset held.
       if (batch.writeMode === "replace") {
@@ -214,7 +224,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         // Processed, the dataset answers with its own dedupe. Before that (a completion judged while the
         // attempt's session is open) it holds every batch as collected, a run's and a read's of the same rows
         // among them, so it is made here what processing will make it: what the judge reads is what the person will.
-        if (stored.processing !== undefined) return { datasetId: own.datasetId, totalRows: stored.recordCount, truncated: stored.truncated || own.truncated, columns, rows, fromStore: true, ...shrunk };
+        if (stored.processing !== undefined && stableJson(held?.process ?? null) === stableJson(held?.sent ?? null)) return { datasetId: own.datasetId, totalRows: stored.recordCount, truncated: stored.truncated || own.truncated, columns, rows, fromStore: true, ...shrunk };
         const answer = held?.process && schema ? automationStudioAnswerFirstProcessedRows(rows, schema, held.process) : { rows: wholeOnce(rows), columns };
         return { datasetId: own.datasetId, totalRows: answer.rows.length, truncated: stored.truncated || own.truncated, columns: answer.columns, rows: answer.rows, fromStore: true, ...shrunk };
       } catch {
@@ -224,9 +234,19 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   };
 }
 
+/** A read's declared `process` read against its schema as the contract reads it; one it does not accept shapes nothing. */
+function declaredProcess(declared: unknown, schema: AutomationStudioRecordSchema): AutomationStudioRecordProcessing | undefined {
+  if (declared === undefined) return undefined;
+  const parsed = parseAutomationStudioRecordProcessing(declared, schema);
+  return parsed.ok ? parsed.processing : undefined;
+}
+
 /** What a list that got shorter says of it (`./rows-summary.ts`). */
-function fewer(held: Held): Pick<AutomationStudioAnswerFirstRowsSummary, "fewerThanEarlier"> {
-  return held.earlierRows !== undefined && held.earlierRows > held.rows.length ? { fewerThanEarlier: { earlierRows: held.earlierRows } } : {};
+function fewer(held: Held): Pick<AutomationStudioAnswerFirstRowsSummary, "fewerThanEarlier" | "startedOver"> {
+  return {
+    ...(held.earlierRows !== undefined && held.earlierRows > held.rows.length ? { fewerThanEarlier: { earlierRows: held.earlierRows } } : {}),
+    ...(held.startedOver ? { startedOver: true as const } : {})
+  };
 }
 
 /** Rows without a row repeated whole, the first of each staying where it was. */

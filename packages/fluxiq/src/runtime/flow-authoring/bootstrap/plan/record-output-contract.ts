@@ -242,11 +242,11 @@ export function automationStudioFlowBootstrapRecordOutputContract(definition: Au
     `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath, process, purpose.`,
     "datasetId: 1-200 of A-Za-z0-9._:-.",
     `schema: {schemaVersion:"0.1", fields:[{id, label, valueType, required?, handling?}]}; ids A-Za-z0-9_-, labels unique; valueType ${valueTypes}; handling ${handlings}, where exclude: never stored, for a value that must not be kept, and not the way a field leaves the answer.`,
-    `writeMode: ${writeModes}. maxRecords: 1-${AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling}.`,
+    `writeMode: ${writeModes}. On a read of a list, replace says this read is the list as it now stands, and append says it adds to what this datasetId already holds; use the same datasetId for the same list. maxRecords: 1-${AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling}.`,
     supplied ? "recordsPath: leave out, this node supplies it." : "recordsPath: required, dot path to the rows in the result.",
     processing, purpose
   ].join(" ");
-  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes}; optional label, maxRecords, process, purpose${supplied ? ", recordsPath (supplied)." : "; recordsPath required."} ${processing} ${purpose}`;
+  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes} (on a read of a list, replace: this read is the list as it now stands; append: adds to what this datasetId holds; one datasetId per list); optional label, maxRecords, process, purpose${supplied ? ", recordsPath (supplied)." : "; recordsPath required."} ${processing} ${purpose}`;
   return {
     keys: [...KEYS],
     requiredKeys: supplied ? [...ALWAYS_REQUIRED] : [...ALWAYS_REQUIRED, "recordsPath"],

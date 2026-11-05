@@ -11,7 +11,7 @@
 //     refused the same way every time, and the repeat guard takes it from there.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { complete, fakeLibrary, LOOK_TOOL, READ_LOANS, RENEW_LOAN, runNode, scriptedAttempt, toolCall } from "../../fake-library.ts";
-import { decisions, expectEnded, expectPresses, expectReached, judgeCalls, judgedNo, noWaiting } from "../support.ts";
+import { answerOf, decisions, expectEnded, expectPresses, expectReached, judgeCalls, judgedNo, noWaiting } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -47,8 +47,8 @@ describe("the saved-run shapes", () => {
     expect(decisions(attempt).map((request) => JSON.stringify(request.context.evidenceLoop?.evidence ?? [])).join("\n")).toContain("answer_first.same_evidence");
   });
 
-  // With a person to ask it stops spending and asks (`./refused-completion.test.ts`): only with nobody to ask does the purse bound it.
-  it("the same refused evidence again and again spends no judge call, and with nobody to ask the purse bounds what it does spend", async () => {
+  // With a person to ask it stops spending and asks (refused-completion.test.ts); with nobody to ask it waits and spends nothing more, since a refusal is never worth a budget.
+  it("the same refused evidence again and again spends no judge call, and with nobody to ask it waits instead of spending the purse", async () => {
     const attempt = await scriptedAttempt({
       judge: [judgedNo("Not it.")],
       usage: USAGE,
@@ -61,10 +61,12 @@ describe("the saved-run shapes", () => {
       keepLooking: true,
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), ...Array.from({ length: 200 }, () => complete("It is done."))]
     }, cleanups);
-    const answer = expectEnded(attempt, "budget_out");
+    expect(attempt.hung).toBe(false);
     expect(judgeCalls(attempt)).toHaveLength(1);
+    const answer = answerOf(attempt);
+    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
     expect(answer.result).toMatchObject({ label: "refuted", timesChecked: 1 });
-    expect(answer.attempt.spend.usd).toBeLessThanOrEqual(0.4);
+    expect(answer.attempt.spend.usd).toBeLessThan(0.4);
   });
 
   it("still moving, never arriving: new pages and new acts read as progress, no judge is asked, and only the purse ends it", async () => {

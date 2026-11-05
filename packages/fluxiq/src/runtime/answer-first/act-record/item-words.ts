@@ -7,8 +7,8 @@
 // (`./row-ties.ts`); this is only the short line a person reads, put through the same word check as
 // every other line of an act (`./words.ts`), and never anything the model wrote.
 
-/** The most characters of an item's words said: enough to tell a listing, short enough to stay one line. */
-const MOST_CHARACTERS = 70;
+import { automationStudioAttemptActCutItemWords } from "./cut-words.ts";
+
 /** `item 3/8 (words)` or `row 3 (words)`, alone or inside the sentence `webNodeActedOn` says. */
 const ITEM = /(?:^|\bacted on )(?:item \d+\/\d+|row \d+) \((.*)\)(?: only\b.*)?$/su;
 
@@ -20,8 +20,5 @@ export function automationStudioAttemptActItemWords(actedOn: string | undefined)
   const segments = inside.split(", ").map((segment) => segment.trim()).filter((segment) => segment !== "");
   const first = segments.findIndex((segment) => /\p{L}{2}/u.test(segment));
   if (first < 0) return undefined;
-  const words = segments.slice(first).join(", ");
-  if (words.length <= MOST_CHARACTERS) return words;
-  const cut = words.slice(0, MOST_CHARACTERS - 3);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 20)).replace(/[\s,;:]+$/u, "")}...`;
+  return automationStudioAttemptActCutItemWords(segments.slice(first).join(", "));
 }

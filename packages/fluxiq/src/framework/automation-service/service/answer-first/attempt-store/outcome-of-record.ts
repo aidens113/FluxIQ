@@ -4,6 +4,7 @@
 import { checkAutomationStudioTaskAttemptResult, parseAutomationStudioSavedState, parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult, type AutomationStudioSavedState, type AutomationStudioTaskAttempt } from "@fluxiq/contracts/automation";
 import { automationStudioFlowDraftStepIsProposed } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioTaskOutcome } from "../../../../../api-contracts/automation.ts";
+import { automationStudioAnswerFirstKeptState } from "../task-memory/kept-state.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 
@@ -44,8 +45,9 @@ function attemptOf(value: unknown, flowId: string): AutomationStudioTaskAttempt 
  * this read `candidateId` alone, so an ending whose draft did not assemble read as nothing at all.)
  */
 function savedOf(record: AutomationStudioAnswerFirstAttemptRecord, attempt: AutomationStudioTaskAttempt, flowId: string): AutomationStudioSavedState | undefined {
-  if (record.candidateId !== undefined) return draftSavedOf(attempt, flowId);
-  if (!record.steps?.some(automationStudioFlowDraftStepIsProposed)) return undefined;
+  const kept = automationStudioAnswerFirstKeptState({ steps: record.steps?.some(automationStudioFlowDraftStepIsProposed) === true, assembled: record.candidateId !== undefined });
+  if (kept === undefined) return undefined;
+  if (kept === "partly_works") return draftSavedOf(attempt, flowId);
   const read = parseAutomationStudioSavedState({ state: "notes_only", trust: "unproven", savedAtMs: attempt.endedAtMs ?? attempt.startedAtMs });
   if (!read.ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);
   return read.saved;

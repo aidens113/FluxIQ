@@ -24,7 +24,7 @@ export function automationStudioAnswerFirstReadEvidenceOf(call: AutomationStudio
   const address = live ?? (isObject(call.value.from) && typeof call.value.from.location === "string" ? call.value.from.location : undefined);
   const list = address === undefined ? undefined : split(address);
   const place = placeInCall(call.value) ?? (live === undefined ? undefined : list?.place);
-  return { lookUp: output?.purpose === "intermediate", ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}) };
+  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}) };
 }
 
 function recordOutputOf(value: JsonObject): JsonObject | undefined {

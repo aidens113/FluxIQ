@@ -250,3 +250,20 @@ describe("the stall note of a loop that plans", () => {
     expect(String(note.instruction)).toContain("Your draft holds no step that could be proposed yet");
   });
 });
+
+describe("the stall note of a task that keeps going", () => {
+  const base = { stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 2, completionAttempts: 0, lastIssueCodes: [], canComplete: true } as const;
+
+  it("says the round ends and a fresh one follows, and never that the exploration stops with no Flow", () => {
+    for (const stepsWithoutProgress of [3, 8]) {
+      const said = String(automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress, freshRoundFollows: true }).instruction);
+      expect(said).toMatch(/round ends/u);
+      expect(said).not.toMatch(/no Flow|exploration stops/u);
+    }
+  });
+
+  it("leaves every other mode's words as they were", () => {
+    expect(String(automationStudioLlmEvidenceStallRedirect(base).instruction)).toContain("5 more step(s) without progress and this exploration stops with no Flow.");
+    expect(String(automationStudioLlmEvidenceStallRedirect({ ...base, stepsWithoutProgress: 8 }).instruction)).toContain("This exploration stops on the next step without progress.");
+  });
+});

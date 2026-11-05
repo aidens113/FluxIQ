@@ -10,7 +10,10 @@
 //
 // **A person-only check with nobody to ask** is the one way out short of an ending: without a
 // thread, nobody can clear it and every round would meet it again. The attempt stays
-// `waiting_for_person`, honestly, with what it has, and returns.
+// `waiting_for_person`, honestly, with what it has, and returns. So does one that kept getting
+// stuck (loop detection's last rung) with nobody to ask whether to keep going: the person's rule
+// is never to burn a budget on a refusal, so it waits for them (`stuck_in_a_loop`), spending
+// nothing more, and a person who answers later carries it on.
 //
 // **A refusal before any model call** (`../../../../../runtime/answer-first/pre-model/`) has spent
 // nothing and tried nothing, so no attempt has really started: one a fresh round cannot change is
@@ -68,6 +71,12 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
       continue;
     }
     const asked = run.askPerson;
+    // Nobody to ask: another round would spend on a refusal it will meet again. It waits, says why, and spends nothing more.
+    if (asked && !run.input.personAsk?.port.awaitAnswer) {
+      run.askPerson = false;
+      run.waitingFor = "stuck_in_a_loop";
+      return "waiting_for_check";
+    }
     if (asked && await askedToStop(run)) return "stopped_by_person";
     idleRounds = purse.spentCalls() === spentBefore ? idleRounds + 1 : 0;
     if (idleRounds > 0) await wait(run, automationStudioAnswerFirstBackoff(idleRounds - 1).waitMs);

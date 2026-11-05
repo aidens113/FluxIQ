@@ -22,6 +22,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime/answer-first/attempt-purse/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
+import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
 import { automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
@@ -106,6 +107,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         state.purseRefused = true;
         throw new AutomationStudioAnswerFirstJudgeRefusedByPurse(judged.reason);
       }
+      // An empty balance ends the attempt as a budget-out, as it does at a decision (`../attempt/decide.ts`); read as "not judged" it would be asked again for ever.
+      if (judged.emptyBalance) throw new AutomationStudioLlmProviderError("llm.provider_balance_exhausted", judged.reason);
       if (judged.verdict === "not_judged") {
         input.say("The check did not answer", judged.reason);
         return refused(NOT_JUDGED, `${judged.reason} Complete again when you are ready, or carry on if there is more to get.`);

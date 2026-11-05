@@ -60,5 +60,7 @@ export type AutomationStudioFlowLessJudgement = {
    */
   checkedWhat?: string;
   refusedByPurse?: boolean;
+  /** The model service said the account has no balance: an ending of the attempt, never a check that was merely not answered. */
+  emptyBalance?: boolean;
   unanswered?: boolean;
 };

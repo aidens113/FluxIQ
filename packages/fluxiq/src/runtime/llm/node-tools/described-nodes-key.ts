@@ -6,7 +6,7 @@
 // -- carries their ids under this key on its own result. The result is a window
 // entry, and a window entry never changes or leaves once it is in, so the
 // request puts each definition there, in place of its id, once
-// (`../deepseek/request-body.ts`, which writes the same name on the wire).
+// (`../provider-task/described-nodes.ts`, which writes the same name on the wire).
 // Nothing in front of the window changes when a node is described, which is
 // what keeps the provider's prefix cache through it.
 

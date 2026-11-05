@@ -25,6 +25,8 @@ export function automationStudioLlmEvidenceRedirectFacts(input: {
     looksWithdrawn: input.looksWithdrawn,
     actsMissing: config.draft ? config.draft.actsMissing?.(steps) : undefined,
     acts: config.draft ? config.draft.acts?.(steps) : undefined,
+    // A loop with a loop signal is an attempt's: it ends a round, never the task (`./stall-redirect.ts`).
+    ...(config.loopSignal !== undefined ? { freshRoundFollows: true as const } : {}),
     // A loop that plans names its own way forward, asked now (`./planning-tools.ts`, t569).
     ...(config.planning ? { forward: config.planning.next() } : {})
   };

@@ -10,7 +10,7 @@ import { AutomationStudioLlmProviderError } from "../../../../../../../runtime/m
 import type { AutomationStudioService } from "../../../../../service.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "../../../index.ts";
 import { complete, LOOK_TOOL, READ_LOANS, RENEW_CARD, runNode, scriptedAttempt, toolCall } from "../../fake-library.ts";
-import { decisions, expectEnded, expectPresses, expectReached, held, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
+import { answerOf, decisions, expectEnded, expectPresses, expectReached, held, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -217,7 +217,7 @@ describe("an attempt stuck in a loop", () => {
     expect((await keptAttempt(service, projectId, flowId))?.tried.approaches).toBe(2);
   });
 
-  it("with nobody to ask it keeps going, and the purse is what ends it", async () => {
+  it("with nobody to ask it waits for a person, with the reason, and spends nothing more", async () => {
     const attempt = await scriptedAttempt({
       before: (service) => {
         noWaiting()(service);
@@ -230,9 +230,11 @@ describe("an attempt stuck in a loop", () => {
       fault: failing,
       script: stuckScript(() => false)
     }, cleanups);
-    const answer = expectEnded(attempt, "budget_out");
+    expect(attempt.hung).toBe(false);
+    const answer = answerOf(attempt);
+    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
     expect(Object.values(answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBeGreaterThanOrEqual(1);
-    expect(answer.attempt.spend.usd).toBeLessThanOrEqual(0.8);
+    expect(answer.attempt.spend.usd).toBeLessThan(0.8);
   });
 
   it("the person's Stop at that question ends it, with what it had", async () => {

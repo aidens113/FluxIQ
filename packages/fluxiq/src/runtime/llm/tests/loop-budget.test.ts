@@ -112,7 +112,7 @@ describe("an evidence loop given a budget", () => {
     expect(shown[2]!.filter((entry) => entry.toolId === "inspect").map((entry) => entry.value.page)).toEqual([1, 2]);
   });
 
-  it("offers its last decision only completion, and the build ends with a result", async () => {
+  it("tells its last decision only completion can be taken, keeps the same list in the head, and the build ends with a result", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(look(1, 30_000))
       .mockResolvedValueOnce({ kind: "complete", result: { plan: true }, usage: { totalTokens: 30_000 } });
@@ -124,8 +124,9 @@ describe("an evidence loop given a budget", () => {
 
     expect(result).toMatchObject({ ok: true, result: { plan: true } });
     const last = decide.mock.calls[1]![0];
-    expect(last.tools).toEqual([]);
-    expect((last.decisionSchema as { oneOf: Array<{ properties: { kind: { const: string } } }> }).oneOf.map((variant) => variant.properties.kind.const)).toEqual(["complete"]);
+    // What the head says is what every earlier decision was told: t869 (`../loop-budget.ts`).
+    expect(JSON.stringify(last.tools)).toBe(JSON.stringify(decide.mock.calls[0]![0].tools));
+    expect(JSON.stringify(last.decisionSchema)).toBe(JSON.stringify(decide.mock.calls[0]![0].decisionSchema));
     expect(budgetOf(last.evidence)).toMatchObject({ decisionsLeft: 1, instruction: expect.stringContaining("last decision") });
   });
 
@@ -190,7 +191,6 @@ describe("an evidence loop given a budget", () => {
       exhaustion: { maxIterations: 2, iterations: 2, draftSteps: 1, completionAttempts: 1, lastIssueCodes: ["plan.cannot_answer"] }
     });
     expect(decide).toHaveBeenCalledTimes(2);
-    expect(decide.mock.calls[1]![0].tools).toEqual([]);
     expect(stalled).not.toHaveBeenCalled();
   });
 
@@ -209,7 +209,6 @@ describe("an evidence loop given a budget", () => {
     expect(result).toMatchObject({ ok: true, result: { plan: true }, accounting: { iterations: 3 } });
     expect(decide).toHaveBeenCalledTimes(3);
     const second = decide.mock.calls[1]![0];
-    expect(second.tools).toEqual([]);
     expect(budgetOf(second.evidence)).toMatchObject({ decisionsLeft: 1, costLeftUsd: expect.closeTo(0.04, 3), instruction: expect.stringContaining("last decision") });
     // The call it was not offered is answered, never run.
     expect(executeTool).toHaveBeenCalledTimes(1);
@@ -262,9 +261,9 @@ describe("an evidence loop given a budget", () => {
 
   it("counts down to its deadline on its own clock", async () => {
     let now = 0;
-    const decide = vi.fn(async ({ tools: offered }: { tools: unknown[]; evidence: readonly unknown[] }) => {
+    const decide = vi.fn(async ({ evidence }: { tools: unknown[]; evidence: readonly unknown[] }) => {
       now += 4_000;
-      return offered.length ? look(1 + decide.mock.calls.length, 1_000) : { kind: "complete", result: {} };
+      return budgetOf(evidence as Shown[])?.decisionsLeft === 1 ? { kind: "complete", result: {} } : look(1 + decide.mock.calls.length, 1_000);
     });
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, maxIterations: 20, maxToolCalls: 20, budget: { maxDurationMs: 10_000, now: () => now }, executeTool: async ({ value }) => ({ page: value.page ?? null }) });
 
@@ -329,15 +328,17 @@ describe("a candidate's wrap-up (t383)", () => {
     expect([wrapUp.withholds("inspect"), wrapUp.withholds("core.submit_candidate"), wrapUp.withholds("core.test_candidate")]).toEqual([true, false, false]);
   });
 
-  it("leaves a draft loop's wrap-up as it was: from three decisions left, no tools at all", () => {
-    expect(offeredIds(5, false)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
-    expect(offeredIds(4, false)).toHaveLength(3);
-    for (const decisionsLeft of [3, 2, 1]) expect(offeredIds(decisionsLeft, false)).toEqual([]);
-    expect(automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: false, candidate: false, tools: candidateTools }).offered).toHaveLength(3);
+  // t869 (`run-mw37vz9n-a77a02c2` 0118): the shrinking list re-sent the whole window, so a draft loop keeps it too, and runs nothing from three decisions left.
+  it("keeps a draft loop's list as it was, and from three decisions left withholds every call", () => {
+    for (const decisionsLeft of [5, 4, 3, 2, 1]) expect(offeredIds(decisionsLeft, false)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
+    const withheld = (decisionsLeft: number) => automationStudioLlmEvidenceLoopWrapUp({ remaining: left(decisionsLeft), canComplete: true, candidate: false, tools: candidateTools }).withholds("inspect");
+    expect(withheld(4)).toBe(false);
+    for (const decisionsLeft of [3, 2, 1]) expect(withheld(decisionsLeft)).toBe(true);
+    expect(automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: false, candidate: false, tools: candidateTools }).wrappingUp).toBe(false);
     expect(automationStudioLlmEvidenceLoopWrapUp({ remaining: undefined, canComplete: true, candidate: true, tools: candidateTools })).toMatchObject({ wrappingUp: false });
   });
 
-  it("tells a candidate to submit, test and complete, and a draft loop what it was told before", () => {
+  it("tells a candidate to submit, test and complete, and a draft loop to complete from its draft", () => {
     const instruction = (decisionsLeft: number, candidate: boolean) => String(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, candidate).value.instruction);
     expect(instruction(8, true)).toMatch(/submit the whole candidate, test that revision, and complete once its trial answers yes\. From 5 decisions left/u);
     expect(instruction(4, true)).toMatch(/submit the whole candidate now with core\.submit_candidate; test that exact revision with core\.test_candidate/u);
@@ -345,8 +346,8 @@ describe("a candidate's wrap-up (t383)", () => {
     expect(instruction(1, true)).toMatch(/submitting, testing and completing are still offered/u);
     expect(instruction(1, true)).toMatch(/only after that exact revision's trial answers yes/u);
     expect(instruction(4, false)).toMatch(/^What this exploration has left/u);
-    expect(instruction(3, false)).toMatch(/^Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have/u);
-    expect(instruction(1, false)).toMatch(/^This is your last decision, so only complete is offered: write the result now/u);
+    expect(instruction(3, false)).toMatch(/^Only a few decisions are left, so no tool runs now: every tool is still listed, but a call to one is answered without running and spends a decision\. Complete now from the draft you have/u);
+    expect(instruction(1, false)).toMatch(/^This is your last decision, so only complete can be taken, whatever else is listed: write the result now/u);
   });
 
   it("runs a submission asked for in the wrap-up, and answers an exploring call without running it", async () => {
@@ -461,7 +462,6 @@ describe("an undo in a candidate's wrap-up (t741)", () => {
 
   it("leaves a draft loop's wrap-up withholding every call, an undo included", () => {
     const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: false, tools: builderTools });
-    expect(wrapUp.offered).toEqual([]);
     expect(wrapUp.withholds("core.run_node", { node: "a", undoes: "act-1" })).toBe(true);
     expect(wrapUp.withholds("core.run_node", { node: "a" })).toBe(true);
   });
@@ -518,9 +518,9 @@ describe("a budget that counts calls (t570)", () => {
 // an explicit budget clock still wins.
 describe("an evidence loop's clock and its environment", () => {
   const run = (environment: ReturnType<typeof createAutomationStudioScopedRunEnvironment>, budget: { maxDurationMs: number; now?: () => number }, onDecision: () => Promise<void>) => {
-    const decide = vi.fn(async ({ tools: offered }: { tools: unknown[]; evidence: readonly unknown[] }) => {
+    const decide = vi.fn(async ({ evidence }: { tools: unknown[]; evidence: readonly unknown[] }) => {
       await onDecision();
-      return offered.length ? look(1 + decide.mock.calls.length, 1_000) : { kind: "complete", result: {} };
+      return budgetOf(evidence as Shown[])?.decisionsLeft === 1 ? { kind: "complete", result: {} } : look(1 + decide.mock.calls.length, 1_000);
     });
     return { decide, result: runAutomationStudioLlmEvidenceLoop({ tools, decide, environment, maxIterations: 20, maxToolCalls: 20, budget, executeTool: async ({ value }) => ({ page: value.page ?? null }) }) };
   };

@@ -1,6 +1,6 @@
 // Which item each act was on, in a person's words: "Save: Round pine dining table, 90cm" and not "Save" three times.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioAttemptActRecord, automationStudioAttemptActItemWords, automationStudioAttemptActScreenedWords, type AutomationStudioAttemptActCall } from "../index.ts";
+import { AutomationStudioAttemptActRecord, automationStudioAttemptActItemWords, automationStudioAttemptActRowWords, automationStudioAttemptActScreenedWords, type AutomationStudioAttemptActCall } from "../index.ts";
 
 const press = (): AutomationStudioAttemptActCall => ({ actionId: "web.click", parameters: { selector: "#list > li > button", element: { tag: "button", accessibleName: "Save" } }, consequences: ["modify_existing"], stage: "exploration" });
 
@@ -55,5 +55,31 @@ describe("an act's line names its item", () => {
     const record = new AutomationStudioAttemptActRecord();
     record.settled(press(), { effectApplied: true, words: { what: "Save", where: "" } });
     expect(record.acts().map((act) => act.what)).toEqual(["Save"]);
+  });
+
+  it("names the row a forward pass came with, where its answer said no item", () => {
+    const record = new AutomationStudioAttemptActRecord();
+    const rows = [{ title: "Round pine dining table, 90cm", price: "£60", link: "https://shop.example/l/1", $row: "x1" }, { price: "£70", title: "Oak dining table with leaf", handle: "h2" }];
+    rows.forEach((row) => record.settled({ ...press(), stage: "forward", row }, { effectApplied: true, words: { what: "Save", where: "" } }));
+    expect(record.acts().map((act) => act.what)).toEqual(["Save: Round pine dining table, 90cm", "Save: Oak dining table with leaf"]);
+    expect(JSON.stringify(record.data())).not.toContain("pine");
+    expect(JSON.stringify(record.forModel())).not.toContain("pine");
+  });
+
+  it("prefers the answer's own sentence to the row", () => {
+    const record = new AutomationStudioAttemptActRecord();
+    record.settled({ ...press(), row: { title: "Listing 0" } }, { effectApplied: true, words: { what: "Save", where: "" }, actedOn: "item 1/6 (£60, Round pine dining table)" });
+    expect(record.acts().map((act) => act.what)).toEqual(["Save: Round pine dining table"]);
+  });
+});
+
+describe("the words of a row", () => {
+  it.each([
+    ["the first text cell with a word in it", { price: "£60", title: "Round pine dining table" }, "Round pine dining table"],
+    ["no text at all", { price: 60, stock: 3 }, undefined],
+    ["only plumbing: an address, a handle, a minted field", { link: "https://shop.example/a", itemHandle: "abc", $row: "abc def", target: "/saved/1" }, undefined],
+    ["no row", undefined, undefined]
+  ])("reads %s", (_name, row, expected) => {
+    expect(automationStudioAttemptActRowWords(row)).toBe(expected);
   });
 });

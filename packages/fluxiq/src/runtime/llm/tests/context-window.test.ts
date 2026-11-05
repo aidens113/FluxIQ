@@ -21,10 +21,10 @@ const note = (callId: string): AutomationStudioLlmEvidenceEntry =>
   ({ callId, toolId: "core.request_check", value: { ok: false, code: "llm_evidence_loop.already_answered" } });
 
 describe("the evidence one decision is shown", () => {
-  it("is every entry, unchanged and without the loop's bookkeeping", () => {
+  it("is every entry, unchanged and without the loop's bookkeeping, with Core's passing notes after the results (t869)", () => {
     const records = [page("call.1", 100), note("core.request_check.2"), page("call.3", 100, "act")];
     const window = automationStudioLlmEvidenceContextWindow(records);
-    expect(window).toEqual(records.map(({ callId, toolId, value }) => ({ callId, toolId, value })));
+    expect(window).toEqual([records[0]!, records[2]!, records[1]!].map(({ callId, toolId, value }) => ({ callId, toolId, value })));
     expect(window.every((entry) => Object.keys(entry).join() === "callId,toolId,value")).toBe(true);
   });
 

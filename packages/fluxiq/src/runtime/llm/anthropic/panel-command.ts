@@ -25,7 +25,7 @@ export function createAutomationStudioAnthropicPanelCommandModel(options: Automa
       const messages: Array<{ role: "user" | "assistant"; content: string }> = request.transcript.map((turn) => ({ role: turn.author === "person" ? "user" : "assistant", content: turn.author === "panel" ? `[The panel reported] ${turn.text}` : turn.text }));
       messages.push({ role: "user", content: request.message });
       if (request.correction) messages.push({ role: "user", content: request.correction });
-      const body = JSON.stringify(automationStudioAnthropicMessageBody({ model, system: request.instructions, messages, format: automationStudioAnthropicOutputFormat(undefined) }));
+      const body = JSON.stringify(automationStudioAnthropicMessageBody({ model, system: request.instructions, messages, format: automationStudioAnthropicOutputFormat(undefined), markLastBlock: true }));
       let billed = false;
       try {
         const result = await automationStudioAnthropicMessage({ body, model, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes, timeoutMs: AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, signal: execution.signal, taskKind: "panel_command", resolveKey: async () => await options.resolveKey(execution.caller), readAnswer: (text, usage) => {

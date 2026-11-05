@@ -648,12 +648,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining, canComplete, candidate: input.discoveryOnly === true, tools: eligibleTools, finishing: input.finishingTools }); const { wrappingUp } = wrapUp;
     const batchOffer = priorNodes.offer(wrapUp.offered, wrapUp.withholds);
     const offered = batchOffer.tools;
-    const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0, complete: canComplete, amend: canAmend });
+    const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0 && (!wrappingUp || input.discoveryOnly === true), complete: canComplete, amend: canAmend }); // A wrap-up's list stays for the head of the request, not to be chosen from.
     // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
     try {
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
-      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend, drafting && authoring);
+      // Amending stays in the schema when it is not on offer, as a wrap-up's tools stay listed: the schema sits in the head, so its changing re-sends everything behind it (`loop-budget.ts`, t869). An amendment asked when it is not on offer is refused as it always was.
+      const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, drafting && limits.maxDraftAmendments > 0, drafting && authoring);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
       const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true, input.finishingTools) : undefined;
       // Every evidence entry, and beside them the history, the draft and the

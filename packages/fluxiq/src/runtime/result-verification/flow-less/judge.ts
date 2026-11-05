@@ -37,6 +37,8 @@ import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgem
 
 /** Where the call's intervention says it came from. */
 const SOURCE = "answerFirstJudge";
+const BALANCE_CODE = "llm.provider_balance_exhausted";
+const NO_BALANCE = "The model service says the account has no balance left, so this was not judged.";
 const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it was not judged.";
 /** The most of the check's own words a result keeps: a result's words are bounded, and one over the bound is left off whole. */
 const READING_MOST = 450;
@@ -101,6 +103,7 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   if (!response) {
     const code = result.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code;
+    if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true };
     return code !== undefined && PURSE_CODES.has(code) ? { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } : unanswered(read, code);
   }
   // A reply cut off after its verdict is read from its whole fields alone (`../verify.ts`, t653).

@@ -5,6 +5,7 @@
 import type { ChatTaskResultRows } from "../../ports/index.ts";
 import { cellWords } from "./cell-words.ts";
 import { rowsWord } from "./result-headline.ts";
+import { fewerWords } from "../words/index.ts";
 import type { AnswerRows } from "./answer-types.ts";
 
 /** How many rows show before "Show all". */
@@ -29,5 +30,7 @@ export function rowsModel(rows: ChatTaskResultRows): AnswerRows {
     const note = (shown: number): string => `Showing ${shown} of ${found} here. CSV and JSON have every row.`;
     model.partialNotes = { collapsed: note(collapsed), expanded: note(held) };
   }
+  const smaller = fewerWords(rows.fewerThanEarlier, rows.totalRows);
+  if (smaller !== undefined) model.smallerNote = smaller;
   return model;
 }

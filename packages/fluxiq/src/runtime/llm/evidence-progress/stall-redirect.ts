@@ -114,6 +114,8 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
    * step did instead and where to name the act.
    */
   acts?: JsonValue | undefined;
+  /** A task that keeps going until its result or its budget: a round that stalls ends and a fresh one follows, so no word of the exploration stopping is true. */
+  freshRoundFollows?: true | undefined;
   /** A loop that plans: its way forward, said in place of the draft's sentences (`./planning-tools.ts`). */
   forward?: AutomationStudioLlmEvidencePlanningStep | undefined;
 };
@@ -309,6 +311,13 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     said.push(`You have not tried to finish yet. If the draft answers the instruction, complete now.`);
   }
   const way = stillMissing || owed.length ? "Do the missing step." : "Do something you have not done, or complete.";
+  // A task that keeps going ends no exploration here: the round does, and the next starts from the page as it stands (`freshRoundFollows`).
+  if (input.freshRoundFollows) {
+    said.push(stepsLeft > 0
+      ? `${way} ${stepsLeft} more step(s) without progress and this round ends; the next starts from the page as it stands, with what you hold kept.`
+      : `${way} This round ends on the next step without progress; the next starts from the page as it stands, with what you hold kept.`);
+    return said.join(" ");
+  }
   said.push(stepsLeft > 0
     ? `${way} ${stepsLeft} more step(s) without progress and this exploration stops with no Flow.`
     : `${way} This exploration stops on the next step without progress.`);

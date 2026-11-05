@@ -10,4 +10,6 @@ export type AutomationStudioAnswerFirstReadEvidence = {
   list?: string;
   /** Where in the list it read, where the call or the address says so. */
   place?: string;
+  /** The `process` the model declared on its record output, as written: not yet read against a schema. */
+  process?: unknown;
 };

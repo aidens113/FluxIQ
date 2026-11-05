@@ -76,6 +76,8 @@ export type ChatTaskResultRows = {
   truncated: boolean;
   columns: Array<{ id: string; label: string }>;
   previewRows: ChatJsonObject[];
+  /** The latest read of this list held fewer rows than an earlier one, and how many that was. Absent while it has not. */
+  fewerThanEarlier?: { earlierRows: number };
 };
 
 /**

@@ -2,8 +2,12 @@ import { AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL, isAutomationStudioAnthropicM
 import type { AutomationStudioLlmUsageSummary } from "../../contracts/index.ts";
 import { isRecord } from "../../transport/index.ts";
 
-// USD/MTok, official pricing checked 2026-10-30. Cache writes are additional
-// input categories, not cache hits. Haiku's tier applies to the whole prompt.
+// USD/MTok, read from the official pricing page 2026-11-05: Sonnet 5.5 and Opus
+// 5.5 cache hits are 0.05x input ($0.10 and $0.20), Haiku's are 0.1x. Cache
+// writes are additional input categories, not cache hits: 1.25x input for five
+// minutes, 2x for an hour. Haiku's tier applies to the whole prompt: "a request's
+// prompt length counts all of its input tokens, including cache reads and cache
+// writes", so `inputTokens` here is the total (`automationStudioAnthropicUsage`).
 const RATES = {
   "claude-sonnet-5-5": { input: 2, output: 10, hit: 0.1 },
   "claude-opus-5-5": { input: 4, output: 20, hit: 0.2 },
@@ -43,6 +47,13 @@ export function automationStudioAnthropicUsage(value: unknown, model: Automation
     cacheHitInputTokens: hit, cacheMissInputTokens: inputTokens - hit,
     estimatedCostUsd: estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, hit, model, write, hour)
   };
+}
+
+/** What a reply says it wrote to the cache, for the step log: the usage summary every other reader holds has no such field. */
+export function automationStudioAnthropicCacheWriteTokens(value: unknown): number | undefined {
+  if (!isRecord(value)) return undefined;
+  const write = value.cache_creation_input_tokens ?? 0;
+  return count(write) ? write : undefined;
 }
 
 function count(value: unknown): value is number {

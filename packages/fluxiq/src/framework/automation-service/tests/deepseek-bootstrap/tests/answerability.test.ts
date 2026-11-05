@@ -110,20 +110,14 @@ describe("creating a Flow through an exploration, with no grant", () => {
       });
     }
     // Its first decision is told to look first at the page the test left, so it
-    // may look or amend but not complete; decisions 2-13 may do anything; 14
-    // and 15 are the wrap-up, which offers only completion and amendments
-    // (`AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS` in
-    // `llm/loop-budget.ts`); the sixteenth is the last, only completion. A tool
+    // may look or amend but not complete; from the second every kind is listed. A tool
     // call is offered in two shapes since t244: a domain tool, and `core.run_flow`
     // (`llm/node-tools/run-flow.ts`).
     expect(secondRound[0]?.offeredDecisionKinds).toEqual(["amend_draft", "tool_call", "tool_call"]);
-    expect(secondRound.slice(1, -3).map((observation) => observation.offeredDecisionKinds)).toEqual(
-      Array.from({ length: 12 }, () => ["complete", "amend_draft", "tool_call", "tool_call"])
+    // The wrap-up and the last decision keep the same list, so the head of the request does not change (t869); their budget entry says what runs.
+    expect(secondRound.slice(1).map((observation) => observation.offeredDecisionKinds)).toEqual(
+      Array.from({ length: 15 }, () => ["complete", "amend_draft", "tool_call", "tool_call"])
     );
-    expect(secondRound.slice(-3, -1).map((observation) => observation.offeredDecisionKinds)).toEqual(
-      Array.from({ length: 2 }, () => ["complete", "amend_draft"])
-    );
-    expect(secondRound.at(-1)?.offeredDecisionKinds).toEqual(["complete"]);
     expect(secondRound.every((observation) => observation.registeredRecordProducerCount === 1)).toBe(true);
     expect(secondRound.every((observation) => observation.visibleRecordProducerCount === 1)).toBe(true);
     for (const observation of secondRound) {

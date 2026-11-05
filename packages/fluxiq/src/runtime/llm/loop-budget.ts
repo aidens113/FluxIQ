@@ -77,9 +77,15 @@
 // it offered before and withholds the exploring ones where a call is
 // dispatched (`withholds`, `./evidence-loop.ts`: answered `not_offered`, never
 // run). The withdrawal is said in the budget entry, which rides after the
-// window, so the head of the request does not change. A draft loop's wrap-up
-// still offers no tools: its schema then holds completion and amendments
-// only, which is what makes it finish.
+// window, so the head of the request does not change.
+//
+// **So does every other loop's (t869).** A draft loop's wrap-up used to offer no
+// tools, holding its schema to completion and amendments: `run-mw37vz9n-a77a02c2`
+// re-sent 123K characters at step 118 when the head shrank by 14K, and
+// `run-mvwx2cob-3454e2ce` 118K at its step 64. That schema is words the model
+// reads, never enforced on it (`jsonText`, `../models/providers/anthropic/schema.ts`),
+// so saying it in the budget entry says the same for nothing. A draft loop now
+// withholds every call at dispatch, as a candidate's withholds its exploring ones.
 //
 // **A candidate's wrap-up runs a targeted undo (t741, t775).** A trial
 // refused `trial_starts_in_end_state` will not run until the build undoes the
@@ -234,8 +240,8 @@ const COST_EPSILON_USD = 1e-9;
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID = "core.budget";
 
 const BUDGET_INSTRUCTION = "What this exploration has left, this decision included. Plan to complete while it is enough: running out ends the exploration without a result.";
-const FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: write the result now from the evidence you have.";
-const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
+const FINAL_INSTRUCTION = "This is your last decision, so only complete can be taken, whatever else is listed: write the result now from the evidence you have.";
+const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so no tool runs now: every tool is still listed, but a call to one is answered without running and spends a decision. Complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
 const CANDIDATE_BUDGET_INSTRUCTION = `What this exploration has left, this decision included. Plan to finish while it is enough: submit the whole candidate, test that revision, and complete once its trial answers yes. From ${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS} decisions left only those run, and running out ends the exploration without a result.`;
 function candidateFinalInstruction(tools: AutomationStudioLlmEvidenceFinishingTools): string {
   return `The budget counts one decision left; submitting, testing and completing are still offered while the budget permits. If the latest submission is untested, test its exact revision and digest now with ${tools.test}. Complete only after that exact revision's trial answers yes, or no trial runner is available. Never complete an untested revision when a trial runner is available.`;
@@ -252,11 +258,11 @@ function wrapUpDecisions(candidate: boolean): number {
 /**
  * Whether this decision is in the wrap-up, the tools it offers, and whether a
  * call to a tool is one the wrap-up withholds. Outside the wrap-up every
- * eligible tool is offered. In it, a draft loop offers none; a candidate loop
- * (`candidate`, the loop's `discoveryOnly`) still offers every eligible tool,
- * so the head of its request is unchanged (header, t503), and withholds all
- * but its submission, its trial and a run that undoes one of its acts
- * (header, t741) through its last counted decision. `withholds` judges the
+ * eligible tool is offered. In it too, so the head of the request is unchanged
+ * (header, t503, t869). A draft loop withholds every call; a candidate loop
+ * (`candidate`, the loop's `discoveryOnly`) withholds all but its submission,
+ * its trial and a run that undoes one of its acts (header, t741) through its
+ * last counted decision. `withholds` judges the
  * call: its tool and, where given, its input. The
  * purse and hard bounds still decide whether another decision can run; the
  * trial gate still owns success.
@@ -271,7 +277,7 @@ export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: str
 }): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string, input?: unknown) => boolean } {
   const left = input.remaining ? input.remaining.decisionsLeft : undefined;
   const wrappingUp = left !== undefined && left <= wrapUpDecisions(input.candidate) && input.canComplete;
-  const offered = !wrappingUp || input.candidate ? [...input.tools] : [];
+  const offered = [...input.tools];
   const runs: ReadonlySet<string> = input.candidate ? automationStudioLlmEvidenceFinishingToolIds(input.finishing) : new Set();
   return { wrappingUp, offered, withholds: (toolId, call) => wrappingUp && !runs.has(toolId) && !(input.candidate && undoesAnAct(toolId, call)) };
 }

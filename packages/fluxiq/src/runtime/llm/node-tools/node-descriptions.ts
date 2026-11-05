@@ -16,10 +16,10 @@
 // that first described it, which names it under `describedNodes`
 // (`./described-nodes-key.ts`): the request shows the definition there, inside
 // the evidence window, so describing a node changes nothing in front of the
-// window and the provider's prefix cache holds. Only a node this memory holds
-// that no entry of the current window names -- one an earlier round of the
-// build described -- is shown in `flowBootstrap.describedNodes`, the head,
-// which is constant for the length of a window (`../deepseek/request-body.ts`).
+// window and the provider's prefix cache holds. A node this memory holds that no
+// entry of the current window names -- one an earlier round of the build described
+// -- is shown on an entry of its own in front of the window, fixed for its length,
+// and never in the head (`../provider-task/described-nodes.ts`).
 //
 // **What it holds.** Only ids, in the order they were first described, each
 // once: the harness input carries them (`flowBootstrap.describedNodeIds`) and

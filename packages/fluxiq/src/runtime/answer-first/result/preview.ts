@@ -30,7 +30,10 @@ export function automationStudioAnswerFirstPreview(rows: AutomationStudioTaskRes
   if (dropped > 0) notes.push(`The preview leaves out ${dropped} ${dropped === 1 ? "column" : "columns"} it could not name; the stored rows keep them.`);
   const preview = fittedPreview(rows, columns);
   if (preview.withheld) notes.push("Some values in the preview are withheld because they looked like credentials; the stored rows keep them.");
-  const fitted: AutomationStudioTaskResultRows = { runId: rows.runId, datasetId: rows.datasetId, totalRows: rows.totalRows, truncated: rows.truncated, columns, previewRows: preview.rows };
+  // Only a count: a note that the list got smaller, kept where it is still true of the rows the result holds.
+  const earlier = rows.fewerThanEarlier?.earlierRows;
+  const smaller = Number.isSafeInteger(earlier) && earlier! > rows.totalRows ? { fewerThanEarlier: { earlierRows: earlier! } } : {};
+  const fitted: AutomationStudioTaskResultRows = { runId: rows.runId, datasetId: rows.datasetId, totalRows: rows.totalRows, truncated: rows.truncated, columns, previewRows: preview.rows, ...smaller };
   if (!automationStudioAnswerFirstResultProbe({ rows: fitted }).ok) return { notes: ["The rows read could not be attached, because no stored dataset could be named for them."] };
   return { rows: fitted, notes };
 }

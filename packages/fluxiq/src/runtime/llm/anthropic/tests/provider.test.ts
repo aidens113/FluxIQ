@@ -22,7 +22,9 @@ describe("native Anthropic task provider", () => {
     expect(new Headers(init.headers).get("authorization")).toBe("Bearer dummy-provider-key");
     expect(new Headers(init.headers).get("anthropic-version")).toBe(AUTOMATION_STUDIO_ANTHROPIC_API_VERSION);
     const wire = JSON.parse(String(init.body));
-    expect(wire).toMatchObject({ model: "claude-sonnet-5-5", stream: true, max_tokens: 128_000, output_config: { format: { type: "json_schema" } }, cache_control: { type: "ephemeral" } });
+    expect(wire).toMatchObject({ model: "claude-sonnet-5-5", stream: true, max_tokens: 128_000, output_config: { format: { type: "json_schema" } } });
+    // No automatic marker: it would sit after what changes on every call.
+    expect(wire).not.toHaveProperty("cache_control");
     expect(wire).not.toHaveProperty("temperature");
     expect(wire).not.toHaveProperty("thinking");
     expect(wire.system[0].text).toContain("Return exactly one JSON object matching the requested expectedOutput.");

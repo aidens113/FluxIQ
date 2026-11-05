@@ -307,3 +307,15 @@ test("steps with a failed check against their recording are said to only partly 
   assert.match(savedWords(saved, 0), /have not run on their own yet/u);
   assert.match(savedWords({ ...saved, simulation: "failed" }, 0), /only partly work/u);
 });
+
+test("a later read that got smaller says so, in plain words, and a list that did not says nothing", () => {
+  const outcome = fakeTaskOutcomes().rowsChecked;
+  const rows = outcome.result!.rows!;
+  assert.equal(modelOf(outcome).rows?.smallerNote, undefined);
+  rows.totalRows = 3;
+  rows.previewRows = rows.previewRows.slice(0, 3);
+  rows.fewerThanEarlier = { earlierRows: 5 };
+  assert.equal(modelOf(outcome).rows?.smallerNote, "An earlier read of this list had 5 rows. This is the latest, with 3.");
+  rows.fewerThanEarlier = { earlierRows: 3 };
+  assert.equal(modelOf(outcome).rows?.smallerNote, undefined, "not more than it has now: nothing true to say");
+});

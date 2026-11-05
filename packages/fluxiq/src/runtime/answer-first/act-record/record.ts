@@ -127,6 +127,7 @@ import { parseAutomationStudioAttemptActRecordData } from "./record-data.ts";
 import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
 import { automationStudioAttemptActItemWords } from "./item-words.ts";
+import { automationStudioAttemptActRowWords } from "./row-words.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
@@ -259,7 +260,8 @@ export class AutomationStudioAttemptActRecord {
       return this.shown(known);
     }
     const entry = this.newEntry(call, outcome, called, frozen, state, lasting);
-    const item = automationStudioAttemptActItemWords(outcome.actedOn);
+    // The sentence naming the item, else the row the call came with (a forward run presses once per row of a list): in memory, never persisted.
+    const item = automationStudioAttemptActItemWords(outcome.actedOn) ?? automationStudioAttemptActRowWords(call.row);
     if (item !== undefined) this.itemsOf.set(entry, item);
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);

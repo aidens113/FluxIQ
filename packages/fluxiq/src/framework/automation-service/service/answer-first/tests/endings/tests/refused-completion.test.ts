@@ -8,7 +8,7 @@ import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../../../../service.ts";
 import { complete, fakeLibrary, READ_LOANS, runNode, scriptedAttempt } from "../../fake-library.ts";
-import { decisions, expectEnded, expectReached, held, judgeCalls, judgedNo, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
+import { answerOf, decisions, expectEnded, expectReached, held, judgeCalls, judgedNo, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -135,7 +135,7 @@ describe("three refused completions in a row", () => {
     expect(asks(answer.attempt.loopsCaught)).toBe(1);
   });
 
-  it("with nobody to ask it keeps going, and the purse is what ends it", async () => {
+  it("with nobody to ask it waits for a person, with the reason, and spends nothing more", async () => {
     const attempt = await scriptedAttempt({
       before: (service) => {
         noWaiting()(service);
@@ -148,10 +148,12 @@ describe("three refused completions in a row", () => {
       keepLooking: true,
       script: [read(), ...Array.from({ length: 200 }, (_, index) => complete(`Listed, take ${index}.`))]
     }, cleanups);
-    const answer = expectEnded(attempt, "budget_out");
+    expect(attempt.hung).toBe(false);
+    const answer = answerOf(attempt);
+    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
     expect(asks(answer.attempt.loopsCaught)).toBeGreaterThanOrEqual(1);
     expect(judgeCalls(attempt)).toHaveLength(1);
-    expect(answer.attempt.spend.usd).toBeLessThanOrEqual(0.5);
+    expect(answer.attempt.spend.usd).toBeLessThan(0.5);
   });
 });
 

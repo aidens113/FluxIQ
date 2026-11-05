@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioFlowCandidate } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
-import { checkAutomationStudioFlowBootstrapCompletion } from "../../../../../runtime/llm/index.ts";
+import { automationStudioLlmStepLogNote, checkAutomationStudioFlowBootstrapCompletion } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -28,13 +28,19 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
       draftSteps: run.steps, routeSignaturesOf: input.routing.signaturesOf, instructionText: input.instructionText,
       ...(input.startLocation === undefined ? {} : { startLocation: input.startLocation })
     });
-    if (!verdict.ok) return { kind: "kept", why: "not_assembled", codes: verdict.codes };
+    if (!verdict.ok) {
+      // Codes belong in a step log, which a person does not read: without them nobody can say why a draft saved nothing.
+      automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${verdict.codes.join(", ") || "no code given"}`);
+      return { kind: "kept", why: "not_assembled", codes: verdict.codes };
+    }
     const record = await input.stores.drafts.save(draftRecord(run, verdict.summary, verdict.buildPlan));
     // Its parts go to the library; a failure there is reported by name on the trace and changes nothing here (`../../project-parts/draft-parts.ts`).
     await input.parts?.saveDraft({ projectId: input.projectId, flowId: input.flowId, candidateId: record.candidateId, buildPlan: verdict.buildPlan, instructionIds: input.instructionIds, instructionText: input.instructionText, startLocation: input.startLocation });
     return { kind: "saved", record };
   } catch (error) {
-    return { kind: "kept", why: "not_saved", codes: [error instanceof Error ? error.name : "unknown"] };
+    const code = error instanceof Error ? error.name : "unknown";
+    automationStudioLlmStepLogNote(`The draft could not be saved and was kept as steps only: ${code}`);
+    return { kind: "kept", why: "not_saved", codes: [code] };
   }
 }
 
