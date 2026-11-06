@@ -1,9 +1,9 @@
 # Answer First
 
 Status: Active
-Status detail: Most lanes are on `dev`; the attempt-2 road is on lane t869 awaiting its browser proofs. Four paid runs, $6.13. The product default flips after proof.
+Status detail: The attempt-2 road and the live lanes' first fixes are on dev; four live lanes run on their own branches. Live round about $9 of $160 credit; one repeat-act defect open (lane A).
 Created: 2026-11-03
-Last updated: 2026-11-05
+Last updated: 2026-11-06
 Owner: Senior supervisor agent
 Scope: One live exploration that reaches the person's result, a best-attempt Flow improved in simulation with the exact recorded inputs, the same loop on every later attempt, a searchable and runnable nested subflow library, and the extension and @fluxiq/ui-components experience for all of it. The web panel is out of scope until the user reopens it.
 Paired document: `docs/working/answer-first-plan.md` in FluxIQWebExtension (the Lab's scores and the extension's phases)
@@ -26,29 +26,58 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 - "i want built in agent call loop detection. If an agent keeps doing the same thing over and over that needs to be detected and steered/stopped"
 - On the tester: "It likely needs imprvovement/full development, i have no idea if its even really been built."
 
-**State (2026-11-05).** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". The discovery's findings, which describe the product before this work, are in [discovery](./answer-first-plan/reports/discovery.md) and the three studies.
+**State (2026-11-06).** The user approved the steps on 2026-11-03 ("ok steps are good"). The user's words above are theirs. Other detail here is the lead's design unless marked "user". The discovery's findings, which describe the product before this work, are in [discovery](./answer-first-plan/reports/discovery.md) and the three studies.
 
-**On `dev` (Core c93fdc757, Extension adc6a56a8, `fluxiq` 0.39.1), and not yet on `main`:** the state engine and the exploration path; the attempt road through the real chat (attempt, answer, saved state, carry-on, wait reasons); the second attempt; the extension screens with the task list, rename, remove and "Save this"; the subflow library with pinned calls and repair isolation; the model key unlock; loop detection; the prompt-cache fix and the first paid run's repairs; and the fixes the full sweeps found (t873, t874). The product default is still `project`. It flips to `answer-first` (`authoring-mode.ts:48`) only after the proof below.
+**On `dev` (Core d1a394580, Extension fb7a7a865; contracts 0.15.0, `fluxiq` 0.40.0, ui-components 0.11.0), not yet on `main`:**
+- Everything before this round: the state engine, the exploration path, the attempt road through the real chat, the extension screens and task list, the subflow library, the model key unlock, loop detection, the prompt-cache fix.
+- **The attempt-2 road (t869):** the same words again find and run the saved Flow and carry every act earlier attempts landed, so nothing is pressed twice; **Run again** repeats on purpose and keeps `ensureState`; a stopped Run again is finished by Carry on; the task key folds case and trailing punctuation; the judge of a Run again knows it was asked. Saved reads survive a Core restart. A plain press is told from a lasting one. The Lab runs attempts 1 and 2 (`--attempts 2`, `--restart-between`) and judges attempt 2's change.
+- **The live lanes' first fixes (t875-t877), merged through t869:** a judge yes citing rows by position, re-asked with the reason instead of refused for good; rows read before a wait now stored; a records request cannot complete without a read (`rows_not_read`); the same words start the task instead of asking "do it again?"; a column the person named is kept on replay; an act is named by its card, never the page title; a saved Flow pauses for a person-only check, and a person's Stop on it ends the attempt; the Lab plays the declared person; true card lines throughout.
+- Checks on the merged tree before landing: Core typecheck, about 8,000 Core tests in the changed areas, 179 apps/web route tests, domain 1,685, extension 272, Lab runner 185, both structure audits, and a scripted browser attempt pair, all passing. One Lab site test (`local-classifieds` breadth, "nearby furniture") timed out under load and passed 7 of 7 alone.
+- **Held back from dev:** the native Anthropic judge schema. Its grammar marked optional what Core's reader requires, so judges replied with every judging field empty (run-mw4db9pz-2789cf41, run-mw4coxdn-e2b30c8c). Dev uses the wrapper until lane A's required set is proven live.
+- The product default is still `project`; it flips to `answer-first` (`authoring-mode.ts:48`) after the breadth proof.
 
-**On the open lane t869 (`task/t869-attempt-road`, pushed, not on `dev`):**
-- The Lab: every realistic task's final facts are read independently of the page a run ends on; `--attempts 2` runs attempts 1 and 2 from one chat with no reseed, and judges attempt 2's change.
-- A saved read survives a restart and another Flow. A plain press is told from a lasting one, so a repeated Apply is no longer held back. A control already in state reads as not pressed. A remembered prompt no longer stops a saved Flow.
-- No limit is left on what a model writes. A dropped act is marked `landed` on the draft. The controls line carries its headings.
-- **The same words again** carry every act any earlier attempt landed or may have, so a repeat is not pressed. **Run again** starts empty and keeps `ensureState`. A repeat asked for in words is asked about once, at the start. This is the lead's call of 2026-11-05, reported to the user, who may overrule it; it is not the user's rule.
-- In progress: finishing a stopped Run again by carry-on; a task key that ignores case and trailing punctuation; heading words never satisfying a saved condition; a Core restart between Lab attempts; the toast's closing row; the docs. Then provider-free browser proofs of every attempt-2 form, then landing.
+**Four live lanes, each on its own branch and worktree, committed and pushed; their later fixes are not on dev yet.** Each lane's fix log and run table: `answer-first-plan/reports/live/lane-{a,b,c,d}.md` in its Core worktree (`fxwork/t875`-`t878`).
 
-**Paid runs, all Anthropic, all `local-classifieds` or `company-website`, $6.13 in all:**
+| Lane | Branch | Sites (Lab slot) | Fixes after the merge, or in progress |
+| --- | --- | --- | --- |
+| A | `task/t875-live-breadth-a` | company-website, bigbox, social feed (1) | Records yes must stand on its rows (WIP), the judge grammar's required set from one source, native kept on for its live check; fix A for the repeat below |
+| B | `task/t876-live-breadth-b` | everything-store, job-board, photo-social (2) | Lone-card and dialog names; steps not saved when one control is pressed from two pages; looks reaching the judge; attempt 1's before-reading carried |
+| C | `task/t877-live-breadth-c` | auction, crossborder, professional-network (3) | Named columns kept and narrowed columns logged; Stop halts the engine before a failed route; an unneeded recovery branch counted as passed |
+| D | `task/t878-live-breadth-d` | second choices across sites (4) | A press on a replaced button measured again; the saved line after a run that was repaired |
 
-| Run | Task | Model | Result | Cost |
-| --- | --- | --- | --- | --- |
-| run-mw37qofs-6116e1b1 | company-website-apprentices | Sonnet 5.5 | Passed | $0.42 |
-| run-mw37vz9n-a77a02c2 | local-classifieds-save-dining-tables | Sonnet 5.5 | Budget out, saves right, cache at 31% | $4.84 |
-| run-mw3if5xt-a2bc72ae | same | Sonnet 5.5 | Task right; the Lab's own final check was wrong, since fixed; recorded as failed | $0.79 |
-| run-mw3itjcy-ce4429f7 | same | Haiku 5.5 | Passed, 81% from cache | $0.08 |
+**Live results, attempt pairs, all Anthropic (2026-11-05 evening to 06):**
 
-**Next.** Land t869 after its browser proofs; the full sweep on 2026-11-06, then promote both repositories to `main` if it passes; then the breadth round, one task per realistic site with attempts 1 and 2, announced before it runs.
+| Task | Sonnet 5.5 | Haiku 5.5 |
+| --- | --- | --- |
+| company-website-apprentices | 3 of 3 after the citation fix (one failure before it) | 3 of 3 |
+| everything-store-batteries-and-descaler | 3 of 3, and a pair right on both attempts | 2 of 3 (the miss fixed by `rows_not_read`), and a pair right |
+| job-board-save-quillmark-remote | 3 of 3, and a pair right: attempt 2 pressed no heart ($0.10) | 0 of 2: a judge yes on the wrong rows, and an empty native judge reply |
+| auction-lens-hood-seller-shop | 3 of 3 after the citation fix | 2 pairs right; attempt 2 $0.0012 after the column fix |
+| bigbox-retail-napkins-for-delivery | attempt 1 right twice; attempt 2 once asked "do it again?" (fixed), once **added again** (open, below) | not run |
+| professional-network-accept-messaged-invitations | attempt 1 right; attempt 2 pressed nothing but a judge said yes on 0 rows (fix in lane A) | not run |
+| photo-social-kiln-notes | attempt 1 right but its steps were not saved; attempt 2 made no duplicate but stalled in a judge loop (fixes in lane B) | not run |
+| local-classifieds-nearby-furniture | 2 pairs right | not run |
 
-**Blockers.** None. **Waiting on the user:** which model the next paid round uses (the lead recommends Haiku 5.5, with Sonnet 5.5 only where Haiku fails); the GitHub deletion of merged task branches; whether to add a first-time PIN for dangerous acts at the start of a chat (the lead recommends not yet). The lead went ahead on questions 1, 2, 3 and 5, and the user can overrule any of them.
+Spend: the four first paid runs $6.13; the live round about $9.20 (ledger $8.33 plus about $0.85 on runs whose cost the Lab lost before A4 and A7 fixed that). Roughly $150 of the user's $160 of credit is left, to be used by 2026-11-10.
+
+**Open defects, each with its owner:**
+1. **A saved Flow repeated a carried count act** (napkins attempt 2, cart 2 to 4, run-mw4eb5r3-a20f3542): `hasRoom` in `act-record/record.ts` ignores `carried`. Lane A; the fix is that an act carried from an **achieved** attempt has no room, while one from an unfinished attempt keeps it. Count tasks are paused in every lane until it lands.
+2. The judge of a same-words attempt was not told what earlier attempts did (dev's t869 counts change may cover it; lane A checks).
+3. A records yes on 0 rows, or one that says it could not judge (lane A, WIP).
+4. Looks at the page never reached the judge, so a model that fetched the missing evidence was refused as `same_evidence` (lane B, wiring).
+5. Carried acts read "Already done earlier: Save." with no item, since item words are not persisted (lane B, queued).
+6. `domain/.../node-run/run.ts` at its 800-line budget, two statements sharing a line: split it by responsibility (one owner, after the next integration).
+7. The flaky `local-classifieds` breadth test's fixed 12-second wait (lane B, queued).
+8. Haiku judge calls think about 1,700 tokens each; a cost lever, not yet measured.
+
+**Next.**
+1. Collect each lane's final hand-over and commit it (in progress at the time of writing).
+2. Integration round 2: lanes A-D into dev, narrow checks, merge dev back into every lane at its ready point.
+3. Full sweep (`pnpm check`, `pnpm test`, `pnpm build`, Core's whole vitest) on dev, then promote both repositories to `main` by fast-forward if it passes.
+4. Resume live testing: count tasks after fix A, the native judge after its live proof, the sites not yet run (social feed, crossborder, bigbox's other tasks), Haiku on the rest. Pace to use the credit by 2026-11-10.
+5. Flip the product default after the breadth proof.
+
+**Blockers.** None. **Waiting on the user:** the GitHub deletion of merged task branches; whether to add a first-time PIN for dangerous acts at the start of a chat (the lead recommends not yet). **The lead's calls, which the user may overrule:** the same-words rule and Run again (above); keeping a native judge schema off dev until proven; pausing count tasks.
 
 ## The Loop
 
@@ -338,6 +367,13 @@ The user agreed on 2026-11-03. `AGENTS.md` carries the new rules now, and memory
 - Changed: on `dev`, the cache fix and the first paid run's repairs (t869, third part) and the sweep fixes (t873, t874). On t869 only: the two-attempt Lab command, the four saved-Flow defects, no caps on model output, dropped acts marked `landed`, headings on the controls line, the same-words rule and Run again. Reports in `answer-first-plan/reports/attempt-road/`.
 - Validation: lead, on t869 after merging `dev` c93fdc757: `pnpm.cmd exec vitest run src/task-attempts` -> `Tests 95 passed (95)`; `pnpm.cmd exec vitest run src/framework/automation-service/service/answer-first src/runtime/answer-first src/runtime/llm/evidence-loop/tests src/runtime/models/providers/anthropic` -> `Tests 1368 passed (1368)`; `node scripts/structure-audit.mjs` -> `passed (529 warning(s), 1097 baselined)`. The later batches' figures are the lane's, in its reports, and are re-run by the lead before landing. Paid spend from `lab-slots/spend-ledger.jsonl` and each run's `attempt.json`: $0.4213, $4.8391, $0.7938 and $0.0766.
 - Outcome: the cache fix took the toggle task from $4.84 to $0.79 on Sonnet 5.5 and $0.08 on Haiku 5.5. t869 is not landed.
+
+### 2026-11-06 - Four live lanes, the integration round, and t869's fourth part on dev
+
+- Agent: lead; supervisors of t869 and of live lanes A-D (t875-t878) and their workers.
+- Changed: on `dev`, t869's attempt-2 road with lanes A, B and C merged in (Core d1a394580, Extension fb7a7a865; contracts 0.15.0, fluxiq 0.40.0, ui-components 0.11.0), the native judge schema taken back out (4ce166b37), `person.test.ts` waiting for its row. On the lane branches only: the fixes listed in Current State, with each lane's fix log under `answer-first-plan/reports/live/`.
+- Validation: lead, on the integration tree before the merge to dev: `pnpm.cmd --filter @fluxiq/contracts --filter fluxiq --filter @fluxiq/ui-components check` -> ok; `vitest run` over answer-first, act-record, result-verification, conversations commands, route-state, automation-activity -> `Tests 1 failed | 3494 passed (3495)`, the failure a test expecting the old "once" wording, fixed, then flow-less `Tests 52 passed (52)`; `vitest run` over `src/runtime/llm`, the Anthropic provider and the flow-authoring folders -> `Tests 3963 passed (3963)`; routes, IAM catalog, node-execution -> `Tests 337 passed (337)`; contracts `src/task-attempts` -> `Tests 96 passed (96)`; ui-components chat, tasks screen and results -> `Tests 701 passed (701)`; after the native schema came out, the Anthropic and flow-less folders -> `Tests 139 passed (139)`; apps/web route and workspace tests -> `Tests 179 passed (179)`; `node scripts/test-domain.mjs runtime/llm-evidence runtime/route-state` -> `# pass 1685`, `# fail 0`; extension transport, relay and content actions -> `# pass 272`; runner attempt-lane and site-change -> `# pass 185`; Lab scenarios professional-network, local-classifieds and crossborder -> `# pass 152`, `# fail 1`, the `local-classifieds` breadth test timing out at 12 s under load, then `# pass 7`, `# fail 0` alone; both structure audits -> passed; core-mirror -> `1 mirror set(s) match`; `FLUXIQ_ATTEMPT_SCRIPT_FORM=again-check pnpm lab attempt local-classifieds --task local-classifieds-save-dining-tables --authoring-mode answer-first --scripted-model --attempts 2` -> attempt 1 and attempt 2 `answer right`. Spend from `lab-slots/spend-ledger.jsonl` finish events since 2026-11-05T13:00Z: $8.33 over 37 launches, 26 passed.
+- Outcome: four live attempt-2 pairs passed with nothing pressed twice, attempt 2 as cheap as $0.0012; one live repeat of a carried count act found, which lane A owns. Not on `main`: no full sweep has run on this dev yet.
 
 ## Open Questions
 
