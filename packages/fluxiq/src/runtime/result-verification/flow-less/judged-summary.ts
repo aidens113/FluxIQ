@@ -10,7 +10,8 @@
 //
 // **Two copies.** `read` is a full summary for Core's readers of a verdict, which
 // expect `flowShape`, here empty. `sent` is what the model sees, which leaves that
-// key out and adds the acts, the model's words and the witnesses: the summary's type
+// key out and adds the acts, the model's words, the witnesses and, on a repeat the person asked
+// for, what that means (`./asked-again.ts`): the summary's type
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
 
@@ -18,6 +19,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultEndView } from "../result-summary.ts";
+import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
@@ -53,6 +55,7 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const { flowShape: _notShown, ...shown } = read;
   const sent = {
     question: AUTOMATION_STUDIO_FLOW_LESS_QUESTION,
+    ...(summary.askedAgain ? { askedAgain: AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } : {}),
     ...shown,
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),

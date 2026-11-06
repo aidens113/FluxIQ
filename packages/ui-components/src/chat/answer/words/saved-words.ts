@@ -4,6 +4,7 @@
 
 import type { ChatSavedState } from "../../ports/index.ts";
 import { dayWords } from "./day-words.ts";
+import { savedStepsWords } from "./left-out-words.ts";
 
 /** "Saved Tuesday", or "Saved" where the time is not known. */
 function savedOn(saved: ChatSavedState, nowMs: number): string {
@@ -14,18 +15,19 @@ function savedOn(saved: ChatSavedState, nowMs: number): string {
 /** The saved line for `saved`, told on the day `nowMs`. */
 export function savedWords(saved: ChatSavedState, nowMs: number = Date.now()): string {
   const on = savedOn(saved, nowMs);
+  const steps = savedStepsWords(saved);
   switch (saved.state) {
     case "ready":
-      return `${on}: the steps. They worked last time.`;
+      return `${on}: ${steps}. They worked last time.`;
     case "partly_works":
       return saved.trust === "unproven" && saved.simulation !== "failed"
-        ? `${on}: the steps. They have not run on their own yet, so next time I will try them and fix what fails.`
-        : `${on}: the steps. They only partly work, so next time I will fix what fails.`;
+        ? `${on}: ${steps}. They have not run on their own yet, so next time I will try them and fix what fails.`
+        : `${on}: ${steps}. They only partly work, so next time I will fix what fails.`;
     case "notes_only":
       return `${on}: notes only. I could not save steps, so next time I will start from what I learned.`;
     case "needs_you":
       return saved.flowId === undefined
         ? `${on}, but it needs you before it can run on its own.`
-        : `${on}: the steps, but they need you before they can run on their own.`;
+        : `${on}: ${steps}, but they need you before they can run on their own.`;
   }
 }

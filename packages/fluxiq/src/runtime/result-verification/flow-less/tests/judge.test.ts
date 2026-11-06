@@ -13,6 +13,7 @@ import {
 } from "../../../llm/index.ts";
 import { automationStudioLlmTaskMessages } from "../../../llm/provider-task/index.ts";
 import { automationStudioFlowLessJudge } from "../judge.ts";
+import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "../asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "../question.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessSummary } from "../types.ts";
 
@@ -51,6 +52,23 @@ function scripted(script: Script): { provider: AutomationStudioLlmProvider; seen
   };
 }
 
+/** One diagnosis per call, in order; the last repeats. */
+function scriptedInOrder(answers: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
+  const seen: AutomationStudioLlmTaskRequest[] = [];
+  return {
+    seen,
+    provider: {
+      metadata: { provider: "mock", model: "debug-model" },
+      estimateCostUsd: () => 0.001,
+      runTask: async (request: AutomationStudioLlmTaskRequest) => {
+        const answer = answers[Math.min(seen.length, answers.length - 1)];
+        seen.push(request);
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: answer }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
+      }
+    }
+  };
+}
+
 const judge = (provider: AutomationStudioLlmProvider, extra: Partial<AutomationStudioFlowLessJudgeInput> = {}) => automationStudioFlowLessJudge({
   summary: summary(), provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: ["rawMarkup"], ...extra
 });
@@ -64,7 +82,7 @@ describe("the Flow-less judge's answer", () => {
   it("says yes on a yes, in one call of the verification kind", async () => {
     const { provider, seen } = scripted(YES);
     const judged = await judge(provider);
-    expect(judged).toMatchObject({ verdict: "yes", checkedWhat: "2 rows, 1 act on the site, the model's own answer, once against what was asked for." });
+    expect(judged).toMatchObject({ verdict: "yes", checkedWhat: "2 rows, 1 act on the site, the model's own answer, against what was asked for." });
     expect(judged.unanswered).toBeUndefined();
     expect(seen).toHaveLength(1);
     expect(seen[0]?.taskKind).toBe("loop_verification");
@@ -106,7 +124,49 @@ describe("the Flow-less judge's answer", () => {
     const judged = await judge(provider);
     expect(judged.verdict).toBe("unsure");
     expect(judged.reason).toContain("not in the rows that were read");
-    expect(seen).toHaveLength(1);
+    // The identical unmatched citation again is not asked a third time.
+    expect(seen).toHaveLength(2);
+  });
+
+  it("asks again with Core's sentences and the citation rule, and takes a yes whose citations then hold", async () => {
+    const { provider, seen } = scriptedInOrder([
+      { answersRequest: "yes", checked: [{ row: "the third Tuesday", column: "free", value: "yes" }] },
+      { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "yes" }] }
+    ]);
+    const judged = await judge(provider);
+    expect(judged).toMatchObject({ verdict: "yes" });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]?.context.resultSummary).not.toHaveProperty("citationsNotMatched");
+    const again = JSON.stringify(seen[1]?.context.resultSummary);
+    expect(again).toContain('The cited row \\"the third Tuesday\\" is no row the result holds.');
+    expect(again).toContain("1-based position");
+    expect(again).toContain("first stored column");
+  });
+
+  it("stops asking and is unsure when the same unmatched citation comes back", async () => {
+    const cited = { answersRequest: "yes", checked: [{ row: "the third Tuesday", column: "free", value: "yes" }] };
+    const { provider, seen } = scriptedInOrder([cited, cited, cited]);
+    expect(await judge(provider)).toMatchObject({ verdict: "unsure" });
+    expect(seen).toHaveLength(2);
+  });
+
+  it("says the purse refused a re-ask, as it does a first call", async () => {
+    const { provider } = scriptedInOrder([{ answersRequest: "yes", checked: [{ row: "the third Tuesday", column: "free", value: "yes" }] }]);
+    let calls = 0;
+    const run: AutomationStudioFlowLessJudgeInput["run"] = async (request) => {
+      calls += 1;
+      if (calls === 1) return runAutomationStudioLlmHarness(request);
+      return { ok: false, diagnostics: [{ severity: "error", code: "llm_budget.run_cost_limit", message: "The purse is spent." }] } as unknown as Awaited<ReturnType<AutomationStudioFlowLessJudgeInput["run"]>>;
+    };
+    expect(await judge(provider, { run })).toMatchObject({ verdict: "not_judged", refusedByPurse: true });
+    expect(calls).toBe(2);
+  });
+
+  it("counts only this attempt's acts on the site, and says the ones already done earlier apart", async () => {
+    const earlier = { ...BOOKED, id: "act.0", what: "Already done earlier: Booked the hall for the choir" };
+    const { provider } = scripted(YES);
+    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [earlier, { ...earlier, id: "act.2" }, { ...earlier, id: "act.3" }] } })).toMatchObject({ checkedWhat: "3 already done earlier, against what was asked for." });
+    expect(await judge(scripted(YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
   });
 
   it("takes a yes citing a cell the rows do hold", async () => {
@@ -116,7 +176,7 @@ describe("the Flow-less judge's answer", () => {
 
   it("takes a yes with no rows at all: a request carried out is judged on what was done", async () => {
     const { provider, seen } = scripted(YES);
-    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "1 act on the site, once against what was asked for." });
+    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "1 act on the site, against what was asked for." });
     expect(seen[0]?.context.resultSummary?.recordSets).toEqual([]);
   });
 
@@ -298,13 +358,29 @@ describe("what the judge is shown", () => {
     const SCENARIOS = ["everything-store", "crossborder-marketplace", "bigbox-retail", "job-board", "local-classifieds", "auction-marketplace", "photo-social", "social-network-feed", "company-website", "professional-network"];
     const SITE_WORDS = /store|shop|marketplace|retail|bigbox|crossborder|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|like\b|post\b|profile|resume|vacanc|apply/iu;
     const LAB_TASK_WORDS = /friend|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|rate limit|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
-    const text = AUTOMATION_STUDIO_FLOW_LESS_QUESTION.toLowerCase();
+    const text = `${AUTOMATION_STUDIO_FLOW_LESS_QUESTION} ${AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN}`.toLowerCase();
     for (const scenario of SCENARIOS) {
       expect(text).not.toContain(scenario);
       for (const word of scenario.split("-")) expect(text, word).not.toMatch(new RegExp(`\\b${word}\\b`, "u"));
     }
     expect(text.match(SITE_WORDS)?.[0]).toBeUndefined();
     expect(text.match(LAB_TASK_WORDS)?.[0]).toBeUndefined();
+  });
+
+  it("is told a repeat the person asked for is one, only then, judged on this time's change, and in words that say nothing of a Flow (t869)", async () => {
+    const { provider, seen } = scripted(YES);
+    await judge(provider, { summary: summary({ askedAgain: true }) });
+    await judge(provider);
+    const told = seen[0]?.context.resultSummary as unknown as Record<string, unknown>;
+    expect(told.askedAgain).toBe(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN);
+    expect(told.question).toBe(AUTOMATION_STUDIO_FLOW_LESS_QUESTION);
+    expect(told.witnesses).toEqual({ before: { bookings: 2 }, after: { bookings: 3 } });
+    expect((seen[1]?.context.resultSummary as unknown as Record<string, unknown>).askedAgain).toBeUndefined();
+    expect(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN).toContain("judge what this time changed");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN).toContain("doing it once more is right");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN).toContain("more than once more");
+    expect(shown(seen[0])).not.toMatch(/flow|\bsteps?\b|\btrials?\b|buildTest|\bbuild\b|run again/iu);
+    expect(automationStudioLlmRequestEvidenceRefusal(seen[0]!)).toBeUndefined();
   });
 
   it("is a request a real provider's pre-flight check sends", async () => {

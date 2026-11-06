@@ -42,6 +42,7 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     liveSteps: run.liveSteps,
     loopsCaught: run.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(),
     ...(noRow > 0 ? { actsWithNoRow: noRow } : {}),
+    ...(run.startedFrom && run.route.kind !== "build" ? { startedFrom: { route: run.route.kind, attemptId: run.startedFrom.attemptId, stepsDigest: run.startedFrom.stepsDigest } } : {}),
     startedAtMs: run.startedAtMs,
     ...(ended ? { endedAtMs: Math.max(now, run.startedAtMs) } : {})
   };
@@ -73,12 +74,27 @@ function rowsOf(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStud
   return { runId: run.runId, datasetId: rows.datasetId, totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, previewRows: rows.rows, ...smaller };
 }
 
-/** Writes the attempt's row as it stands now. A store that fails costs this write and never the attempt: the next one tries again. */
+/**
+ * Writes the attempt's row as it stands now. A store that fails costs this write and never the attempt: the next one tries again.
+ *
+ * **A wait is a place the attempt may rest for as long as the person takes**, and its row names the dataset that is
+ * its result and how many rows that holds. The store keeps every batch as it was collected until the dataset is
+ * processed, which an ending does (`./ending.ts`), so a row written at a wait named an answer of 4 while its dataset
+ * served the 28 rows of seven reads of the same 4 (`run-mw43h5ew-a04a583d`), to the Data window, an export and the
+ * Lab alike. So the run's datasets are processed here too, best-effort as an ending's are. It is undone by the next
+ * read's batch, which makes the dataset collected rows again, and the ending processes it once more.
+ *
+ * The row is written first: its rows are the sink's own account, which processing does not change, and a wait's row
+ * must show as soon as the question does. A wait that awaits this (`./rounds.ts`, the stuck question) asks only once
+ * both are done.
+ */
 export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswerFirstAttemptRun): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
+    const waiting = run.waitingFor !== undefined;
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.sink.summary());
     await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps });
+    if (waiting) await run.input.stores.datasets.processEndedRunDatasets({ projectId: run.input.projectId, runId: run.runId });
     return { ok: true };
   } catch (error) {
     return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };

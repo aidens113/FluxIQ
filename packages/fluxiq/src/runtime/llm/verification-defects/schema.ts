@@ -21,21 +21,24 @@
 // finds each in its record of the steps the run took
 // (`../../result-verification/located-defects/act-located.ts`).
 
-/** The shape of `diagnosis.defects` a verification is offered: at most 12, each a closed kind, the row, an optional column, value and step, and the request's words, each a bounded string. */
+// **No limit on how many, or how long (t869).** Core never caps what a model wrote: a no's grounds are read whole, whatever
+// their number and length. The schema held 12 at 500 characters each, and a current no past either was refused whole, so a
+// paid judge's answer was lost over a limit nothing needed.
+
+/** The shape of `diagnosis.defects` a verification is offered: each a closed kind, the row, an optional column, value and step, and the request's words, each a string with something in it. */
 export const AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA = {
   type: "array",
-  maxItems: 12,
   items: {
     type: "object",
     additionalProperties: false,
     required: ["kind", "row", "requestWords"],
     properties: {
       kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"] },
-      row: { type: "string", minLength: 1, maxLength: 500 },
-      column: { type: "string", minLength: 1, maxLength: 500 },
-      value: { type: "string", minLength: 1, maxLength: 500 },
-      step: { type: "string", minLength: 1, maxLength: 500 },
-      requestWords: { type: "string", minLength: 1, maxLength: 500 }
+      row: { type: "string", minLength: 1 },
+      column: { type: "string", minLength: 1 },
+      value: { type: "string", minLength: 1 },
+      step: { type: "string", minLength: 1 },
+      requestWords: { type: "string", minLength: 1 }
     }
   }
 } as const;

@@ -72,6 +72,7 @@ describe("a paired client on the program route", () => {
         "rename-task",
         "remove-task",
         "carry-on-task-attempt",
+        "run-task-again",
         "run-runtime-session",
         "generate-recording-proposal",
         "review-recording-flow-proposal",
@@ -168,6 +169,15 @@ describe("a paired client on the program route", () => {
     expect(narrow({ projectId: "p", attemptId: "attempt.1", addUsd: 0 })).toEqual({ ok: true, payload: { projectId: "p", attemptId: "attempt.1", addUsd: 0 } });
     for (const field of ["flowId", "authoringMode", "permittedConsequences", "authSessionId", "startLocation"]) {
       expect(narrow({ projectId: "p", attemptId: "attempt.1", addUsd: 1, [field]: "x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's carry-on may not carry ${field}.` });
+    }
+    expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+  });
+
+  it("runs a task again by its project and task only, never a Flow, a mode, a grant, a page or a session", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-task-again", payload);
+    expect(narrow({ projectId: "p", taskId: "task.1" })).toEqual({ ok: true, payload: { projectId: "p", taskId: "task.1" } });
+    for (const field of ["flowId", "authoringMode", "permittedConsequences", "authSessionId", "startLocation", "attemptId"]) {
+      expect(narrow({ projectId: "p", taskId: "task.1", [field]: "x" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's Run again may not carry ${field}.` });
     }
     expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });

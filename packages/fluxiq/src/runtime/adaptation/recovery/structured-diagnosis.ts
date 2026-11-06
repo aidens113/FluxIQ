@@ -44,8 +44,8 @@
 // the one field that can stop the billed patch call, so the old route was a way
 // to change what Core does with a value nothing validated.
 //
-// **What is recorded is still not what is carried.** The channel bounds each
-// description to 500 characters; it does not make the prose storable. The
+// **What is recorded is still not what is carried.** The channel puts no length on a
+// description (a model's words are never cut or refused for length); it does not make the prose storable. The
 // summary written onto a run is verdicts and counts, as below.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -54,9 +54,6 @@ import type {
   AutomationStudioRuntimeDeterministicDiagnosis,
   AutomationStudioRuntimeDiagnosisAchievability
 } from "./deterministic-diagnosis.ts";
-
-/** The longest a model-supplied description may be before it is refused. */
-export const AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH = 500;
 
 /** The model-supplied fields, named once so the reader and the summary agree. */
 export const AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_MODEL_FIELDS = Object.freeze([
@@ -268,10 +265,6 @@ function boundedText(value: JsonValue | undefined, field: string, refusals: stri
   }
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  if (trimmed.length > AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH) {
-    refusals.push(`${field}: ${trimmed.length} characters is past the ${AUTOMATION_STUDIO_STRUCTURED_DIAGNOSIS_TEXT_MAX_LENGTH}-character bound.`);
-    return undefined;
-  }
   return trimmed;
 }
 

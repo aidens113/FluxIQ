@@ -57,6 +57,11 @@ function boundedStringSchema(): JsonSchema {
   return { type: "string", minLength: 1, maxLength: 20_000 };
 }
 
+/** Words a person or a model reads, however long they run: Core never caps what a model wrote (t869). A name or an id keeps its bound above. */
+function proseSchema(): JsonSchema {
+  return { type: "string", minLength: 1 };
+}
+
 /**
  * The steps a repair inserts before a node: whole nodes, not definition names.
  *
@@ -88,7 +93,7 @@ function runtimePatchVariant(kind: string, requiredFields: string[], properties:
     type: "object",
     additionalProperties: false,
     required: ["kind", "reason", ...requiredFields],
-    properties: { kind: { const: kind }, reason: boundedStringSchema(), metadata: JSON_METADATA_SCHEMA, ...properties }
+    properties: { kind: { const: kind }, reason: proseSchema(), metadata: JSON_METADATA_SCHEMA, ...properties }
   };
 }
 
@@ -123,7 +128,7 @@ function targetOverridePatchSchema(executes: boolean): JsonSchema {
           }
         }
       },
-      reason: { type: "string", minLength: 1, maxLength: 20_000 },
+      reason: proseSchema(),
       ...(executes ? { consequences: CONSEQUENCES_SCHEMA } : {}),
       metadata: JSON_METADATA_SCHEMA
     }
@@ -284,8 +289,8 @@ function replaceUnitPatchSchema(input: { stepSchema: JsonSchema; consequencesSch
  * the recovery plan does for an in-run repair, is offered them.
  */
 const IN_RUN_REPAIR_PATCH_VARIANTS: Readonly<Record<string, JsonSchema>> = Object.freeze({
-  add_handler: addHandlerPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: boundedStringSchema() }),
-  replace_unit: replaceUnitPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: boundedStringSchema() })
+  add_handler: addHandlerPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: proseSchema() }),
+  replace_unit: replaceUnitPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: proseSchema() })
 });
 
 /**
@@ -312,7 +317,7 @@ const NO_REPAIR_OUTPUT_SCHEMA = {
   required: ["kind", "summary", "reason"],
   properties: {
     kind: { const: "no_repair" },
-    summary: boundedStringSchema(),
+    summary: proseSchema(),
     reason: { enum: Object.keys(AUTOMATION_STUDIO_NO_REPAIR_REASONS) },
     metadata: JSON_METADATA_SCHEMA
   }
@@ -341,7 +346,7 @@ export function automationStudioRuntimePatchOutputSchema(input: { proposalOnly: 
         required: ["kind", "summary", "patches", "riskLevel"],
         properties: {
           kind: { const: "runtime_patch" },
-          summary: boundedStringSchema(),
+          summary: proseSchema(),
           patches: input.proposalOnly
             ? { type: "array", minItems: 1, maxItems: 1, items: targetOverridePatchSchema(false) }
             : { type: "array", minItems: 1, maxItems: 100, items: { oneOf: variants } },

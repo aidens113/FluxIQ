@@ -15,6 +15,9 @@
 //   said to be uncertain                         may have landed.
 //   success                                      landed. The engine may judge it again after
 //                                                this answer (`record.doubted`).
+//
+// `flipped` says the press flipped its own control, in the domain's own word (`outputs.toggle`, or
+// the action result kept under `result`, as `runtime/flow-authoring/bootstrap/explored-toggles.ts` reads it).
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../../components/automation/index.ts";
@@ -25,7 +28,7 @@ const ALREADY_IN_STATE = "already_in_state";
 const NOT_YET_ACTING: ReadonlySet<unknown> = new Set(["waiting", "skipped"]);
 const BEFORE_ANYTHING_ACTED: ReadonlySet<unknown> = new Set(["target_not_found", "target_ambiguous"]);
 
-export type AutomationStudioAnswerFirstRunActNodeAnswerRead = { applied: boolean; uncertain: boolean };
+export type AutomationStudioAnswerFirstRunActNodeAnswerRead = { applied: boolean; uncertain: boolean; flipped?: boolean };
 
 /** What an answer says of the act it answers (header). */
 export function automationStudioAnswerFirstRunActNodeAnswer(result: AutomationNodeExecutionResult | undefined): AutomationStudioAnswerFirstRunActNodeAnswerRead {
@@ -39,7 +42,8 @@ export function automationStudioAnswerFirstRunActNodeAnswer(result: AutomationNo
   const said = recordOf(result.outputs?.result);
   if (result.outputs?.skipped === ALREADY_IN_STATE || said?.skipped === ALREADY_IN_STATE) return { applied: false, uncertain: false };
   const uncertain = failure?.effect === "ambiguous" || said?.reason === UNCERTAIN_REASON || typeof said?.effectUncertain === "string";
-  return { applied: !uncertain, uncertain };
+  const flipped = recordOf(result.outputs?.toggle) !== undefined || recordOf(said?.toggle) !== undefined;
+  return { applied: !uncertain, uncertain, ...(flipped ? { flipped } : {}) };
 }
 
 function recordOf(value: JsonValue | undefined): Record<string, JsonValue> | undefined {

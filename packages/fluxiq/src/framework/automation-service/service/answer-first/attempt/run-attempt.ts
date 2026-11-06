@@ -10,6 +10,10 @@
 // ids, act record, tried record, steps and counts, with a new session and run, the rows found so
 // far copied into it. It goes to the rounds and never runs the Flow from its start again.
 //
+// **A person's Run again is a new attempt with an empty record** (`../run-again/`), told by a scope a
+// route sets and nothing in a request can, so no model can claim one. Its judge is told the person
+// asked for a repeat, and judges this attempt's own change (`runtime/result-verification/flow-less/asked-again.ts`).
+//
 // **Live from before it opens until it has ended, however it ends** (`../interrupted/`): a row
 // nobody is working on any more reads as interrupted, and a throw must not leave one reading live.
 //
@@ -44,6 +48,7 @@ import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiv
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
+import { automationStudioAnswerFirstRunAgainScope, type AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
@@ -68,12 +73,14 @@ export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStu
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
   const held = automationStudioAnswerFirstCarryOnScope.getStore();
   const hold = held && !held.opened && held.projectId === input.projectId && held.flowId === input.flowId ? held : undefined;
-  const attemptId = hold?.attemptId ?? `attempt.${randomUUID()}`;
+  const pressed = automationStudioAnswerFirstRunAgainScope.getStore();
+  const again = !hold && pressed && !pressed.opened && pressed.projectId === input.projectId && pressed.flowId === input.flowId ? pressed : undefined;
+  const attemptId = hold?.attemptId ?? again?.attemptId ?? `attempt.${randomUUID()}`;
   const live = automationStudioAnswerFirstLiveAttemptsOf(input.owner);
   live.claim(attemptId);
   let opening: AutomationStudioAnswerFirstAttemptRun | undefined;
   try {
-    const run = await opened(input, attemptId, hold);
+    const run = await opened(input, attemptId, hold, again);
     opening = run;
     automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
     // On the row before anything is sent, so the first round shows as working and a Core that dies in it leaves something to read as cut off. A carry-on's press has already written its own.
@@ -114,23 +121,24 @@ async function endedUntried(run: AutomationStudioAnswerFirstAttemptRun, hold: Au
   }
 }
 
-async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId: string, hold: AutomationStudioAnswerFirstCarryOnHold | undefined): Promise<AutomationStudioAnswerFirstAttemptRun> {
+async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId: string, hold: AutomationStudioAnswerFirstCarryOnHold | undefined, again: AutomationStudioAnswerFirstRunAgainHold | undefined): Promise<AutomationStudioAnswerFirstAttemptRun> {
   const { projectId, flowId, stores, cancellation } = input;
   if (hold) hold.opened = true;
+  if (again) again.opened = true;
   const runId = `explore.${randomUUID()}`;
   const store = automationStudioAnswerFirstAttemptStoreOf(input.owner, stores);
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
   const carried = hold ? automationStudioAnswerFirstCarriedOpening(hold) : undefined;
   const opening = hold && carried
-    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, actsHeldHere: true, startedFrom: carried.startedFrom }
-    : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts });
+    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined }
+    : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts }, again);
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
   // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
   // The Flow's store must take it, since a press with no record of it is refused; the task's memory is what outlives another task on this Flow, and a write it misses is made by the next.
   const persist = async (data: AutomationStudioAttemptActRecordData): Promise<void> => {
     await acts.save(projectId, flowId, data);
-    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => ({ ...current, acts: { attemptId, flowId, data } })));
+    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => ({ ...current, acts: { attemptId, flowId, data, ...(opening.setAside ? { earlier: opening.setAside } : {}) } })));
   };
   const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist, asked: () => asked(run.claim) });
   input.partActs?.use(record);
@@ -164,9 +172,11 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
     rows: () => sink.readBack(),
+    readsRan: () => sink.readsAnswered() > 0,
     acts: () => record.acts(),
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
+    askedAgain: again !== undefined || carried?.askedAgain === true,
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),
@@ -214,14 +224,14 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const arrived = (carried?.prior.liveSteps ?? 0) > 0;
   const run: AutomationStudioAnswerFirstAttemptRun = {
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
-    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardReached: 0,
+    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardReached: 0, askedAgain: again !== undefined || carried?.askedAgain === true,
     attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
     record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: carried?.prior.liveSteps ?? 0, arrived, loopsCaught: carried?.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };
   // The Flow holds one record, and from here it reads as this attempt's: without this, one that presses nothing would leave an earlier attempt's acts to be read as its own.
-  if (opening.seed || opening.actsHeldHere) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
+  if (opening.seed || opening.actsHeldHere || again) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
   if (carried) await carriedOn(run, carried);
   else await automationStudioAnswerFirstRecordOpening(run);
   run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });

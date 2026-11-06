@@ -189,8 +189,9 @@ describe("what it says", () => {
     record.settled(call(), { effectApplied: true, words: { what: "<button id=x>Save</button>", where: "https://shop.test/p/1" } });
     record.settled(call({ actionId: "two", consequences: ["move_money", "delete"] }), { effectApplied: true, words: { what: "Bearer abc123", where: "   " } });
     const [first, second] = record.acts();
-    expect(first).toMatchObject({ what: "Made something new", where: "On the site" });
-    expect(second).toMatchObject({ what: "Moved money", where: "On the site", classes: ["move_money", "delete"] });
+    // The words were refused, so the control's own word (from its fingerprint) stands before the class's line.
+    expect(first).toMatchObject({ what: "Save it", where: "On the site" });
+    expect(second).toMatchObject({ what: "Save it", where: "On the site", classes: ["move_money", "delete"] });
     for (const act of record.acts()) expect(parseAutomationStudioAttemptAct(act)).toEqual({ ok: true, act });
   });
 
@@ -237,7 +238,9 @@ describe("persistence", () => {
     expect(written.at(-1)).toEqual(record.data());
 
     const fresh = new AutomationStudioAttemptActRecord({ seed: JSON.parse(JSON.stringify(written.at(-1))) as AutomationStudioAttemptActRecordData });
-    expect(fresh.acts()).toEqual(record.acts());
+    // The same acts, but for the row's words on the line, which stay in this process's memory (`../item-names.ts`).
+    expect(record.acts()[0]!.what).toBe("Made a thing: Oak");
+    expect(fresh.acts()).toEqual(record.acts().map((act) => ({ ...act, what: "Made a thing" })));
     expect(fresh.admit(call()).kind).toBe("already_done");
     expect(fresh.admit(call({ parameters: { target: { handle: "t21" } } })).kind).toBe("already_done");
     expect(fresh.rowDone({ name: "Oak", rowHandle: "t99" })).toBe(true);

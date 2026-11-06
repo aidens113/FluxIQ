@@ -2,12 +2,13 @@ import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, Autom
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmOpaqueSecretResolver } from "../provider-contract.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES, AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES } from "../provider-transport/index.ts";
 import { AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioAnthropicModelRefusal, isAutomationStudioAnthropicModel, type AutomationStudioAnthropicModel } from "../models/index.ts";
-import { validateAutomationStudioLlmTaskRequest, automationStudioLlmTaskOutputSchema } from "../provider-task/index.ts";
+import { validateAutomationStudioLlmTaskRequest } from "../provider-task/index.ts";
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest } from "./request.ts";
-import { automationStudioAnthropicMatchesSchema, automationStudioAnthropicReadReply } from "../../models/providers/anthropic/index.ts";
+import { automationStudioAnthropicReadReply } from "../../models/providers/anthropic/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
+import { automationStudioAnthropicTaskAnswer } from "./task-answer.ts";
 
 export type AutomationStudioAnthropicProviderOptions = {
   secretReference: AutomationStudioLlmSecretReference;
@@ -70,8 +71,5 @@ function parseAnswer(text: string, usage: AutomationStudioLlmUsageSummary, reque
   // A reply that cannot be read says which case it was; the loop asks again with that.
   const structured = automationStudioAnthropicReadReply(text, jsonText, "end_turn", usage);
   if (usage.inputTokens! > request.tokenLimits.maxInputTokens || usage.totalTokens! > request.tokenLimits.maxTotalTokens) throw automationStudioAnthropicPaidFailure("llm.provider_usage_limit_exceeded", usage);
-  if (!automationStudioAnthropicMatchesSchema(structured, automationStudioLlmTaskOutputSchema(request))) throw automationStudioAnthropicPaidFailure("llm.provider_output_invalid", usage);
-  // The unchanged original schema is checked here; Core's harness applies its
-  // usual semantic result validation again before it can execute an answer.
-  return structured as AutomationStudioLlmStructuredResponse;
+  return automationStudioAnthropicTaskAnswer(structured, request, usage, text.length);
 }

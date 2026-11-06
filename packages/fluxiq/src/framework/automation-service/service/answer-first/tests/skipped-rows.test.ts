@@ -91,7 +91,8 @@ describe("two rows nothing separates, which a forward run reads as done", () => 
     // One press on the title and none past it: a lasting act is never done twice, and that is why a row is left out.
     expect(lane.target.library.renewals).toEqual({ [ATLAS]: 1, [BIRDS]: 1 });
     expect(shown.join()).toMatch(/"skipped":2/u);
-    expect(finished.answer.result).toMatchObject({ skippedAsDone: 2 });
+    // The card counts what the person would miss: of the two alike rows one was pressed by hand in this attempt, so one is left out.
+    expect(finished.answer.result).toMatchObject({ skippedAsDone: 1 });
     expect(parseAutomationStudioTaskResult(finished.answer.result).ok).toBe(true);
   });
 

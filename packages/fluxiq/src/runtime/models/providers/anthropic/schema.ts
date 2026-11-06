@@ -1,4 +1,5 @@
 import { isRecord } from "../../transport/index.ts";
+import { automationStudioAnthropicSchemaMisses } from "./schema-misses.ts";
 
 const JSON_TEXT_SCHEMA = { type: "object", properties: { result_json: { type: "string", description: "The complete requested JSON object, serialized as JSON text." } }, required: ["result_json"], additionalProperties: false };
 const CONSTRAINTS = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "maxItems", "uniqueItems", "minProperties", "maxProperties", "pattern"]);
@@ -45,57 +46,7 @@ export function automationStudioAnthropicOutputFormat(original: Record<string, u
   return representable && optional <= 24 && unions <= 16 ? { schema, jsonText: false } : { schema: JSON_TEXT_SCHEMA, jsonText: true };
 }
 
-/** Validate the unchanged original schema; the provider's relaxed grammar is never authority. */
+/** Validate the unchanged original schema; the provider's relaxed grammar is never authority. The one walk says where it missed as well (`./schema-misses.ts`). */
 export function automationStudioAnthropicMatchesSchema(value: unknown, schema: unknown, root = schema, depth = 0): boolean {
-  if (depth > 96 || schema === false) return false;
-  if (schema === true || !isRecord(schema)) return true;
-  const fits = (child: unknown, current = value) => automationStudioAnthropicMatchesSchema(current, child, root, depth + 1);
-  if (typeof schema.$ref === "string") {
-    if (!schema.$ref.startsWith("#/")) return false;
-    let referenced = root;
-    for (const segment of schema.$ref.slice(2).split("/")) referenced = isRecord(referenced) ? referenced[segment.replace(/~1/g, "/").replace(/~0/g, "~")] : undefined;
-    if (!referenced || !fits(referenced)) return false;
-  }
-  if (schema.const !== undefined && JSON.stringify(value) !== JSON.stringify(schema.const)) return false;
-  if (Array.isArray(schema.enum) && !schema.enum.some((option) => JSON.stringify(value) === JSON.stringify(option))) return false;
-  if (Array.isArray(schema.anyOf) && !schema.anyOf.some((child) => fits(child))) return false;
-  if (Array.isArray(schema.oneOf) && schema.oneOf.filter((child) => fits(child)).length !== 1) return false;
-  if (Array.isArray(schema.allOf) && !schema.allOf.every((child) => fits(child))) return false;
-  if (schema.not !== undefined && fits(schema.not)) return false;
-  if (schema.if !== undefined && !fits(fits(schema.if) ? schema.then : schema.else)) return false;
-  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [];
-  if (types.length && !types.some((type) => matchesType(value, type))) return false;
-  if (typeof value === "number") {
-    if (typeof schema.minimum === "number" && value < schema.minimum || typeof schema.maximum === "number" && value > schema.maximum
-      || typeof schema.exclusiveMinimum === "number" && value <= schema.exclusiveMinimum || typeof schema.exclusiveMaximum === "number" && value >= schema.exclusiveMaximum) return false;
-    if (typeof schema.multipleOf === "number" && Math.abs(value / schema.multipleOf - Math.round(value / schema.multipleOf)) > 1e-9) return false;
-  }
-  if (typeof value === "string") {
-    const length = [...value].length;
-    if (typeof schema.minLength === "number" && length < schema.minLength || typeof schema.maxLength === "number" && length > schema.maxLength) return false;
-    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern, "u").test(value)) return false;
-  }
-  if (Array.isArray(value)) {
-    if (typeof schema.minItems === "number" && value.length < schema.minItems || typeof schema.maxItems === "number" && value.length > schema.maxItems) return false;
-    if (schema.uniqueItems === true && new Set(value.map((item) => JSON.stringify(item))).size !== value.length) return false;
-    if (schema.items !== undefined && !value.every((item) => fits(schema.items, item))) return false;
-  }
-  if (isRecord(value)) {
-    if (Array.isArray(schema.required) && schema.required.some((key) => typeof key !== "string" || !Object.hasOwn(value, key))) return false;
-    if (typeof schema.minProperties === "number" && Object.keys(value).length < schema.minProperties || typeof schema.maxProperties === "number" && Object.keys(value).length > schema.maxProperties) return false;
-    const properties = isRecord(schema.properties) ? schema.properties : {};
-    for (const [key, item] of Object.entries(value)) {
-      if (Object.hasOwn(properties, key)) { if (!fits(properties[key], item)) return false; }
-      else if (schema.additionalProperties === false || isRecord(schema.additionalProperties) && !fits(schema.additionalProperties, item)) return false;
-    }
-  }
-  return true;
-}
-
-function matchesType(value: unknown, type: unknown): boolean {
-  if (type === "null") return value === null;
-  if (type === "object") return isRecord(value);
-  if (type === "array") return Array.isArray(value);
-  if (type === "integer") return Number.isInteger(value);
-  return typeof value === type && (type !== "number" || Number.isFinite(value));
+  return automationStudioAnthropicSchemaMisses(value, schema, { root, depth }).length === 0;
 }

@@ -50,6 +50,8 @@ export type ChatTaskAttemptFields = {
   loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act", ChatAttemptLoopCount>;
   /** Lasting acts not tied to a row, a measure for testing: no card shows it. Absent reads as zero. */
   actsWithNoRow?: number;
+  /** What a later attempt began from: the saved steps it found, by their digest, and what it did with them. A measure for proof: no card shows it. Absent where it found none. */
+  startedFrom?: { route: "use" | "repair"; attemptId: string; stepsDigest: string };
   startedAtMs: number;
   endedAtMs?: number;
 };
@@ -101,10 +103,10 @@ export type ChatTaskResult = {
   from?: Array<{ site: string; pages: string }>;
 };
 
-/** `AutomationStudioSavedState`: the chip. `ready` is never unproven, so the chip can only claim what is true. */
+/** `AutomationStudioSavedState`: the chip. `ready` is never unproven, so the chip can only claim what is true. `leftOut` names steps that did something lasting and are not in the saved Flow; the line says so. */
 export type ChatSavedState =
-  | { state: "ready"; trust: "provisional" | "established"; flowId: string; savedAtMs: number; lastWorkedAtMs: number }
-  | { state: "partly_works"; trust: "unproven" | "provisional"; flowId: string; savedAtMs: number; simulation?: "passed" | "failed" | "inconclusive" | "not_run" }
+  | { state: "ready"; trust: "provisional" | "established"; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string; leftOut?: string[] }
+  | { state: "partly_works"; trust: "unproven" | "provisional"; flowId: string; savedAtMs: number; simulation?: "passed" | "failed" | "inconclusive" | "not_run"; stepsDigest?: string; leftOut?: string[] }
   | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
   | { state: "needs_you"; trust: "unproven" | "provisional" | "established"; flowId?: string; savedAtMs: number };
 

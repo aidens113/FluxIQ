@@ -13,18 +13,27 @@
 // - `failure.effect: "ambiguous"`: the contract's word for an outcome not known.
 // - `evidence.ok === false` or `evidence.status === "no_effect"`: the call refused itself,
 //   or a press changed nothing, whatever `effectApplied` says.
+// - `evidence.skipped === "already_in_state"`: the page said the press was not made, its control
+//   already showing the state asked for. Nothing was done, and nothing goes on the record (t869).
 // - `draft.effect`: whether the call looked or changed. A call that only reads is never
 //   an act whatever it declared (`domain/.../permission.ts`, `run-mueozmp8-348a2057`).
 // - `evidence.actedOn`, `evidence.location`, `draft.ranWith`, `outputs`: the row and the
 //   frozen target (`../row-ties.ts`, `../identity/target-keys.ts`). `evidence.actedOnItem`, where a domain says
 //   it, is that item's whole words and none of its control's, and is what a row is found by: a sentence's words are cut
 //   short, and its control's name fits every row with a column repeating it.
+// - `evidence.toggle` or `outputs.toggle`: the press flipped its own control. `draft.changed` with a line that reads
+//   otherwise or a number that rose: it changed a line of the page it stayed on. Either says something changed that stays,
+//   and not only what is in view (`../seed.ts`). A line that only appeared or went is what a menu or a dialog opening
+//   does too, and a page it moved to says nothing here at all, so neither counts. Read for a call that declared nothing.
+// - `evidence.read.title`: the title of the page the call was pressed on. `evidence.location` is where it left the page,
+//   so a press that moves on still names the page it was made on. The page's own words, for the act's line alone.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
 
 /** The reason a domain answers an act Core left uncertain with. */
 const UNCERTAIN_REASON = "outcome_uncertain";
+const ALREADY_IN_STATE = "already_in_state";
 /** The key a domain's read keeps its rows under when its binding names none (`domain/.../tools.ts`, `readRowsKey`). */
 const DEFAULT_READ_ROWS_KEY = "read.extracted";
 
@@ -39,8 +48,12 @@ export type AutomationStudioAttemptActAnswerRead = {
   ranWith?: { actionId?: string; parameters?: JsonObject };
   actedOn?: string;
   location?: string;
+  /** For a press in no list, the words of the control's own card as the domain read them before it (`actedOnCard`): what its line names (`../item-names.ts`), never a row tie. */
+  card?: string;
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
+  /** The answer says something changed that stays (header). */
+  changedState: boolean;
   /** The rows it read, one list per place the answer holds them: the same read's rows there may be written differently, and two rows of one list are never one row. */
   reads: JsonObject[][];
 };
@@ -52,7 +65,7 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   const refused = evidence?.ok === false || evidence?.status === "no_effect";
   const effect = result?.draft?.effect;
   const uncertain = result?.resultReason === UNCERTAIN_REASON || evidence?.reason === UNCERTAIN_REASON || typeof evidence?.effectUncertain === "string" || result?.failure?.effect === "ambiguous";
-  const applied = result ? result.effectApplied === true && !refused : effect !== "observe";
+  const applied = result ? result.effectApplied === true && !refused && evidence?.skipped !== ALREADY_IN_STATE : effect !== "observe";
   const observe = effect === "observe";
   const looked = !refused && !uncertain && result?.failure === undefined && (observe || (effect === undefined && !applied));
   const ranWith = result?.draft?.ranWith;
@@ -63,7 +76,9 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
     ...(parameters ? { ranWith: { ...(actionId ? { actionId } : {}), parameters } } : {}),
     ...(typeof evidence?.actedOnItem === "string" ? { actedOn: evidence.actedOnItem } : typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
+    ...(typeof evidence?.actedOnCard === "string" ? { card: evidence.actedOnCard } : {}),
     pageUnchanged: evidence?.pageChanged === false,
+    changedState: record(evidence?.toggle) !== undefined || record(result?.outputs?.toggle) !== undefined || (result?.draft?.changed ?? []).some((line) => line.how === "reads" || line.how === "rose"),
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).
     reads: refused || result?.failure !== undefined ? [] : [rowsAt(evidence, readRowsKey), ...rowsIn(result?.outputs)].filter((rows) => rows.length > 0)
   };

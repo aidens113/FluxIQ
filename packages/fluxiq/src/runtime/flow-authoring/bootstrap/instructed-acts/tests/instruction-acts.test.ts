@@ -9,13 +9,13 @@ import { automationStudioInstructedActs } from "../instruction-acts.ts";
 // both directions: every consequential task yields its acts, and no extraction
 // task yields any.
 const CONSEQUENTIAL: ReadonlyArray<[string, string, Array<[string, string]>]> = [
-  ["local-classifieds tables", "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then give me a table of everything in my saved items, cheapest first, with columns title, price and status.", [["save", "save"], ["open", "give"]]],
+  ["local-classifieds tables", "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then give me a table of everything in my saved items, cheapest first, with columns title, price and status.", [["save", "save"]]],
   ["crossborder hub to cart", "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.", [["add_to", "put"], ["claim", "collect"]]],
   ["bigbox pickup cart", "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.", [["set", "switch"], ["add_to", "add"], ["add_to", "add"]]],
   ["job board save week", "Save every job Halvard Systems has posted on Rolefinch in the last 7 days to my saved jobs, without unsaving anything that is already there, and then open my saved jobs so the list is showing.", [["save", "save"], ["open", "open"]]],
-  ["auction watch endings", "On Hammerline, add to my watchlist every auction for a Kestrel 35 camera that ends before midnight at the end of Tuesday 22 September and whose current bid is under £100, counting a listing priced in another currency at the pound estimate the site shows for it. Only the original Kestrel 35 itself counts, not the 35S, the Mark II, the 350 or an accessory, and nothing listed as for parts or not working. Then list everything on my watchlist, in the order the watchlist shows it, with columns title and price exactly as the watchlist shows them.", [["add_to", "add"], ["open", "list"]]],
+  ["auction watch endings", "On Hammerline, add to my watchlist every auction for a Kestrel 35 camera that ends before midnight at the end of Tuesday 22 September and whose current bid is under £100, counting a listing priced in another currency at the pound estimate the site shows for it. Only the original Kestrel 35 itself counts, not the 35S, the Mark II, the 350 or an accessory, and nothing listed as for parts or not working. Then list everything on my watchlist, in the order the watchlist shows it, with columns title and price exactly as the watchlist shows them.", [["add_to", "add"]]],
   ["auction place bid", "On Hammerline, place a maximum bid of £85 on the Kestrel 35 camera that the seller harrow_cameras has up for auction. I mean the original Kestrel 35, not the 35S. Make sure the bid went through.", [["submit", "place"]]],
-  ["everything store kettle to cart", "Put two Tidewell electric kettles in sage green, 1.7 litre, sold by Brightaisle itself, in my cart, and move the phone case that is already in my cart to Save for later. Then give me what is in my cart, leaving out the saved items, as a table with columns item, quantity and price, where quantity is a plain number and price is the price of one.", [["add_to", "put"], ["move", "move"], ["open", "give"]]],
+  ["everything store kettle to cart", "Put two Tidewell electric kettles in sage green, 1.7 litre, sold by Brightaisle itself, in my cart, and move the phone case that is already in my cart to Save for later. Then give me what is in my cart, leaving out the saved items, as a table with columns item, quantity and price, where quantity is a plain number and price is the price of one.", [["add_to", "put"], ["move", "move"]]],
   ["local-classifieds offer", "Send the seller an offer of £140 for the cheapest folding bike listed within 10 miles of Kelford in the last 7 days that is in like-new condition. Sponsored posts are adverts, not listings, so leave them out, and don't send any other message.", [["submit", "send"]]],
   ["company quote request", "Ask Kestrel Lane for a free quote to replace my boiler with a combi boiler. My details: Ada Synthetic, ada.synthetic@example.test, 07700 900123, and the property's postcode is KL6 2RN. Tell them the current boiler is a 2009 floor-standing model in the kitchen, ask them to reply by email, and do not sign me up for any marketing. Make sure the request actually reaches them.", [["submit", "ask"]]],
   ["company book service", "Book an annual boiler service for my combi boiler at Kestrel Lane's Hollins Cross branch, in the earliest weekday morning slot on or after Thursday 1 October 2026. Use my details: Ada Synthetic, ada.synthetic@example.test, 07700 900123, postcode KL6 2RN. Then give me the booking confirmation as a table with columns reference, branch, date, time and engineer, written exactly as the confirmation shows them.", [["submit", "book"]]],
@@ -62,6 +62,20 @@ describe("the lasting acts an instruction asks for", () => {
     expect(automationStudioInstructedActs("Create a collection in my saved posts called Glaze ideas.").map((act) => [act.kind, act.verb])).toEqual([["submit", "create"]]);
     // And a later act in the same sentence is still read past it.
     expect(automationStudioInstructedActs("Create a Flow, then save the Brightline kettle to my saved items.").map((act) => [act.kind, act.verb])).toEqual([["save", "save"]]);
+  });
+
+  // Lane B, run-mw45itmx-c4d6f5cb: "Then give me what is in my cart ... as a table" was read as an act of
+  // opening the cart, ticked done by the navigation that brought it up before anything was read. A read-out
+  // asks for what a place holds, which only a read gives, so it is no act; opening a place still is one.
+  it("reads no act in a read-out of a place, and still ends the clause before it there", () => {
+    for (const readOut of ["Give me what is in my cart, as a table with columns item and price.", "Show me what is in my basket.", "List everything on my watchlist.", "Tell me what's in my saved items."]) {
+      expect(automationStudioInstructedActs(readOut)).toEqual([]);
+    }
+    expect(automationStudioInstructedActs("Open my saved items.").map((act) => [act.kind, act.verb])).toEqual([["open", "open"]]);
+    expect(automationStudioInstructedActs("Go to my cart.").map((act) => [act.kind, act.verb])).toEqual([["open", "go"]]);
+    const [save, ...rest] = automationStudioInstructedActs("Save the cheapest lamp to my saved items, then give me a table of everything in my saved items with columns title and price.");
+    expect(rest).toEqual([]);
+    expect(save).toMatchObject({ id: "a1", kind: "save", quote: "Save the cheapest lamp to my saved items" });
   });
 
   it("drops an act the instruction forbids", () => {

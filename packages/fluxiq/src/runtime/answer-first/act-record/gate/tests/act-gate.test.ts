@@ -39,6 +39,15 @@ function gated(answers: Array<Answer | Error>) {
   return { record, dispatched, execute };
 }
 
+describe("a press the page says it did not make", () => {
+  it("puts nothing on the record, whatever it declared, since its control already showed the state asked for", async () => {
+    const { execute, record } = gated([pressed({}, { skipped: "already_in_state" }), pressed({}, { skipped: "already_in_state" })]);
+    await execute(pressCall());
+    await execute(pressCall("c2", "t8", []));
+    expect(record.data().acts).toEqual([]);
+  });
+});
+
 describe("before dispatch", () => {
   it("answers an identical landed repeat as what happened, in generic words, known by its act and not as a refusal of the page, and sends nothing", async () => {
     const { execute, dispatched, record } = gated([pressed()]);
@@ -133,7 +142,7 @@ describe("how an answer is read", () => {
     const execute = automationStudioAttemptActGate({ record, executeTool: async (_call: Call) => pressed(), wordsOf: words });
     await execute(pressCall());
     expect(words).toHaveBeenCalledOnce();
-    expect(record.acts()).toEqual([expect.objectContaining({ what: "Made something new", where: "On the shop's page" })]);
+    expect(record.acts()).toEqual([expect.objectContaining({ what: "Save it", where: "On the shop's page" })]);
   });
 });
 

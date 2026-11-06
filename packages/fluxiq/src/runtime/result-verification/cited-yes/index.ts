@@ -11,6 +11,11 @@
 // (`../verdict/result-verdict.ts`). A yes that cites nothing is read exactly as
 // before: recorded replies carry no `checked`.
 //
+// A row is named by its label (its first stored column's value); a judge that
+// cites rows by position ("1", "row 2", "#3") is read as the Nth stored row
+// where no label is that, in the order the rows are held. A label always wins
+// over a position, and the column and value must still match that row.
+//
 // The stored rows are the answer's, never a working set's (`stored-cells.ts`);
 // where Core holds only a sample of them, a cited row it does not find is not
 // refuted, since it may be a row Core was not shown (`yes-citations.ts`).

@@ -50,7 +50,7 @@
 // `replacedBy`: the number of the step standing in its place now.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import { automationStudioFlowDraftReplacingStep } from "./amendment/index.ts";
+import { automationStudioFlowDraftReplacingStep, automationStudioFlowDraftStepLandedOut } from "./amendment/index.ts";
 import { automationStudioFlowDraftRenderBindings } from "./binding-render.ts";
 import { automationStudioFlowDraftBindablePaths } from "./bindable/index.ts";
 import { automationStudioFlowDraftInputs } from "./flow-inputs.ts";
@@ -108,6 +108,9 @@ const OPEN_ROUTE_INSTRUCTION = " route \"open\": the person named no route to fo
 /** Said only where the draft lists the attempt a rerun replaced (header). */
 const REPLACED_INSTRUCTION = " A step showing replacedBy is the attempt a rerun replaced, listed only as the record of it: nothing changes it, so amend or rerun the step replacedBy names.";
 
+/** Said only where the draft shows a step that did something lasting and is out of the Flow (`./amendment/landed-out.ts`). */
+const LANDED_INSTRUCTION = " A step showing landed did something lasting that took effect, and it is not in the Flow. Leaving it out undoes nothing: what it did still stands and stays on the task's record, so it is not done again for this. The Flow is what runs next time: unless another step of the Flow does the same, a later run will not do it, and an act that only this step named shows as not done for that reason alone. If the Flow should do it, put the step back with amend_draft add or keep, naming its act: that runs nothing. If it should not have been done, leave it out and say so in your answer.";
+
 /**
  * The draft as one entry, or nothing when the draft holds no step a result
  * could be made of and no acts checklist. Every step is listed with its
@@ -150,6 +153,7 @@ export function automationStudioFlowDraftEntry(input: {
       + (steps.some((line) => Object.hasOwn(line, "bindable")) ? BINDABLE_INSTRUCTION : "")
       + (route === undefined ? "" : route.state === "named" ? NAMED_ROUTE_INSTRUCTION : OPEN_ROUTE_INSTRUCTION)
       + (listed.some((step) => automationStudioFlowDraftReplacingStep(listed, step) !== undefined) ? REPLACED_INSTRUCTION : "")
+      + (steps.some((line) => Object.hasOwn(line, "landed")) ? LANDED_INSTRUCTION : "")
       + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
   };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
@@ -209,6 +213,8 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),
     inResult: automationStudioFlowDraftStepIsProposed(step),
+    // It did something lasting and is out of the Flow (`./amendment/landed-out.ts`): shown on such a step alone, and gone once it is put back.
+    ...(automationStudioFlowDraftStepLandedOut(step) ? { landed: true } : {}),
     // Why Core took the step out (`./reversal.ts`): shown only on such a step,
     // so no other draft pays for it, and gone once the model puts it back.
     ...(step.cancels !== undefined && step.disposition !== "kept" ? { out: takenOutLine(step, all) } : {}),

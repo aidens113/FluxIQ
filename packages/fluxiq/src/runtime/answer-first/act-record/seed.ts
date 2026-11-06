@@ -1,15 +1,31 @@
 // What a new attempt at a task starts its act record with (t870, plan D6,
 // `docs/working/answer-first-plan/reports/second-attempt/design.md`, "What carries between
-// attempts").
+// attempts"; the rule below is t869's, the lead's call on an open question, for the person to
+// overrule).
 //
-//   achieved     nothing: "next time we try that task" is a new ask, and a person asking
-//                again means it.
-//   anything else  every act of the attempt that landed or may have: the ask was not
-//                finished, so what landed is what it would otherwise repeat. A status this
-//                file has not heard of carries too, since that is the side a mistake can be
-//                undone from.
+// **The same words typed again carry what landed, however the attempt before it ended.** A person
+// who types what they typed before wants what they asked for, so an act that landed is not pressed
+// again: it is checked and reported as already done. A status was once read here, and an achieved
+// attempt carried nothing, so a second run of a saved Flow pressed every Save again and a toggle
+// site undid them all.
 //
-// A carry-on of the same attempt is not here: it is the same attempt, with the same record.
+// **What means "do it again" is a person's press of Run again** (`SVC/answer-first/run-again/`),
+// which starts with an empty record whatever is here, and words of their own ("... again") that make
+// it another task with its own key. A carry-on is not here: it is the same attempt, with the same record.
+//
+// **Across many attempts it is a union (`earlier`).** An attempt seeded from the one before already
+// holds what that one carried. A Run again holds nothing of it, so what it was spared is kept beside
+// its record, and a later attempt carries both: what landed before the press still landed, and so
+// did what the press itself landed.
+//
+//   declared or claimed, landed or may have   carried, and refused as it always was.
+//   undeclared, its answer says it changed     carried, and held to a look (`heldOnRepeat`): it
+//   something that stays                       is on no result, and nothing else says what it did.
+//   undeclared, nothing says that              not carried. It changed nothing, or only moved the
+//                                              view, and a Flow presses it as often as it says.
+//   undone or not done                         not carried: it did not stand. A state this file has
+//                                              not heard of carries, since that is the side a
+//                                              mistake can be undone from.
 //
 // **What does not carry, with the attempt that held it.**
 //
@@ -24,18 +40,35 @@
 //                 held to a look by a handle that means something else costs one look, where
 //                 losing it costs the act done twice.
 
-import type { AutomationStudioTaskAttemptStatus } from "@fluxiq/contracts/automation";
 import type { AutomationStudioAttemptActEntry, AutomationStudioAttemptActRecordData } from "./contracts.ts";
 
-/** The seed for a new attempt from the one before it, or none where nothing carries (header). */
-export function automationStudioAttemptActSeed(before: { status: AutomationStudioTaskAttemptStatus; data: AutomationStudioAttemptActRecordData }): AutomationStudioAttemptActRecordData | undefined {
-  if (before.status === "achieved") return undefined;
-  const acts = before.data.acts.filter((act) => act.state === "landed" || act.state === "may_have_landed").map(carried);
+const DID_NOT_STAND: ReadonlySet<string> = new Set(["undone", "not_done"]);
+
+/** The seed for a new attempt from the task's record so far, or none where nothing carries (header). `earlier` is what a Run again left aside. */
+export function automationStudioAttemptActSeed(before: { data: AutomationStudioAttemptActRecordData; earlier?: AutomationStudioAttemptActRecordData | undefined }): AutomationStudioAttemptActRecordData | undefined {
+  const records = [...(before.earlier ? [before.earlier] : []), before.data];
+  const acts = union(records.flatMap((record) => record.acts.filter(carries).map(carried)));
   if (acts.length === 0) return undefined;
-  return structuredClone({ kind: before.data.kind, schemaVersion: before.data.schemaVersion, acts, rows: before.data.rows.map((row) => ({ ...row, handles: [] })) });
+  const rows = [...new Map(records.flatMap((record) => record.rows).map((row) => [row.row, { ...row, handles: [] }])).values()];
+  return structuredClone({ kind: before.data.kind, schemaVersion: before.data.schemaVersion, acts, rows });
+}
+
+function carries(act: AutomationStudioAttemptActEntry): boolean {
+  if (DID_NOT_STAND.has(act.state)) return false;
+  return !act.undeclared || act.changedState === true;
 }
 
 function carried(act: AutomationStudioAttemptActEntry): AutomationStudioAttemptActEntry {
   const frozen = act.keys.filter((key) => !act.handleKeys.includes(key));
-  return { ...act, lookedSince: false, ...(frozen.length > 0 ? { keys: frozen, handleKeys: [] } : {}) };
+  return { ...act, lookedSince: false, carried: true, ...(act.undeclared ? { heldOnRepeat: true as const } : {}), ...(frozen.length > 0 ? { keys: frozen, handleKeys: [] } : {}) };
+}
+
+/** One act per id, the latest as it now stands: the same act landed twice is one act that landed. */
+function union(acts: readonly AutomationStudioAttemptActEntry[]): AutomationStudioAttemptActEntry[] {
+  const held = new Map<string, AutomationStudioAttemptActEntry>();
+  for (const act of acts) {
+    const known = held.get(act.id);
+    held.set(act.id, known ? { ...act, keys: [...new Set([...known.keys, ...act.keys])], rows: [...new Set([...known.rows, ...act.rows])], actions: [...new Set([...known.actions, ...act.actions])] } : act);
+  }
+  return [...held.values()];
 }

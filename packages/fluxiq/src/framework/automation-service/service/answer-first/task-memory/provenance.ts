@@ -6,6 +6,10 @@ export type AutomationStudioAnswerFirstAttemptProvenance = {
   flowId: string;
   ordinal: number;
   route: "build" | "use" | "repair";
+  /** A person pressed Run again (`../run-again/`). A carry-on of it reads this: it was asked for again all the same. */
+  askedAgain?: true;
+  /** Its latest ending was a person's Stop. A carry-on that ends otherwise writes its row again without it. Run again reads it (`../run-again/run-again.ts`). */
+  stoppedByPerson?: true;
   startedFrom?: { attemptId: string; flowId: string; stepsDigest: string; steps: number; notes: number; provenWhole: boolean };
   steps: AutomationStudioAnswerFirstStepOrigin[];
 };

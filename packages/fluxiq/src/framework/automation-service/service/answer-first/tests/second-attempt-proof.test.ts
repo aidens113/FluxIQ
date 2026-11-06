@@ -23,6 +23,8 @@ afterEach(async () => {
 });
 
 const again = { instruction: LOAN_TASK, ...PERMITTED };
+/** A person's Run again: the press that means do it again, with an empty act record (t869). */
+const pressedAgain = { ...again, runAgain: true };
 const NEW_CARD_NAME = "Renew library card";
 const LENGTHEN = "Extend";
 const writeCardStep = (control: string) => writeStep(RENEW_CARD, { control });
@@ -49,7 +51,7 @@ describe("the Flow holds", () => {
     expect(press.routing).toEqual({ kind: "repeat", through: press.id, over: steps[1]!.id });
     expect(press.input.parameters).toMatchObject({ title: { $state: { path: "item.title" } } });
 
-    const second = await lane.attempt(again);
+    const second = await lane.attempt(pressedAgain);
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 2 });
     expect(second.decisions).toEqual([]);
     expect(second.judgeCalls).toHaveLength(1);
@@ -67,7 +69,7 @@ describe("the Flow holds", () => {
     expect(second.answer.attempt.spend.calls).toBeLessThan(first.answer.attempt.spend.calls);
     expect(second.answer.attempt.spend.usd).toBeLessThan(first.answer.attempt.spend.usd);
 
-    const third = await lane.attempt(again);
+    const third = await lane.attempt(pressedAgain);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3 });
     expect(third.decisions).toEqual([]);
     expect(third.answer.attempt.spend.calls).toBe(second.answer.attempt.spend.calls);
@@ -91,7 +93,7 @@ describe("the Flow breaks", () => {
     site.cardControl = NEW_CARD_NAME;
     const callsBefore = target.library.calls.length;
     const second = await lane.attempt({
-      instruction: BOTH_TASK, ...PERMITTED,
+      instruction: BOTH_TASK, ...PERMITTED, runAgain: true,
       script: [writeCardStep(NEW_CARD_NAME), putInPlaceOf(CARD_STEP, 6), forwardFrom(READ_STEP), complete("Renewed every loan and the card.")]
     });
     const told = toldTo(second.decisions[0])!;
@@ -108,7 +110,7 @@ describe("the Flow breaks", () => {
     expect(second.answer.result?.acts.every((act) => act.state === "landed")).toBe(true);
     expect((await lane.kept(BOTH_TASK))?.best?.provenWhole).toBe(false);
 
-    const third = await lane.attempt({ instruction: BOTH_TASK, ...PERMITTED });
+    const third = await lane.attempt({ instruction: BOTH_TASK, ...PERMITTED, runAgain: true });
     expect(third.decisions).toEqual([]);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3 });
     expect(target.library.renewals).toEqual({ ...onceEach(TITLES, 3), card: 3 });
@@ -120,14 +122,14 @@ describe("the Flow breaks", () => {
     await lane.attempt(honestFirstAttempt());
     site.loanControl = LENGTHEN;
     const second = await lane.attempt({
-      ...again,
+      ...pressedAgain,
       script: [writeLoanStep(LENGTHEN), { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }, { step: 5, change: "reorder", to: LOAN_STEP }] }, repeatOverRows(LOAN_STEP, READ_STEP), forwardFrom(READ_STEP), complete("Renewed every loan.")]
     });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: LOAN_STEP });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
     expect(target.presses).toEqual([]);
     expect(target.library.renewals).toEqual(onceEach(TITLES, 2));
-    const third = await lane.attempt(again);
+    const third = await lane.attempt(pressedAgain);
     expect(third.decisions).toEqual([]);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3 });
     expect(target.presses.map((one) => one.subject)).toEqual([...TITLES]);
@@ -139,7 +141,7 @@ describe("the Flow breaks", () => {
     const first = await lane.attempt(honestFirstAttempt());
     site.loanControl = LENGTHEN;
     const second = await lane.attempt({
-      ...again,
+      ...pressedAgain,
       script: [
         writeLoanStep("Prolong"),
         { kind: "amend_draft", amendments: [{ step: LOAN_STEP, change: "drop" }, { step: 5, change: "reorder", to: LOAN_STEP }] },
@@ -170,7 +172,7 @@ describe("lasting acts across attempts", () => {
     return { ...honestFirstAttempt(), costUsd: 0.04, maxTotalEstimatedCostUsd: 0.09, keepLooking: true, script: honestFirstAttempt().script.slice(0, -1) };
   };
 
-  it("a budget-out that did two of four: the same words do the other two and never the first two, and a further ask after an achieved one does all four again", async () => {
+  it("a budget-out that did two of four: the same words do the other two and never the first two, and a Run again after an achieved one does all four again", async () => {
     const { lane, target, site } = await siteLane(cleanups);
     const first = await lane.attempt(twoOfFour(site));
     expect(first.answer.attempt.status).toBe("budget_out");
@@ -184,7 +186,7 @@ describe("lasting acts across attempts", () => {
     // All four are the task's: two carried and two made.
     expect(second.answer.result?.acts).toHaveLength(4);
 
-    const third = await lane.attempt(again);
+    const third = await lane.attempt(pressedAgain);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3 });
     expect(target.library.renewals).toEqual(onceEach(TITLES, 2));
     expect(target.presses.slice(2).map((one) => one.subject)).toEqual([...TITLES]);
@@ -203,7 +205,7 @@ describe("lasting acts across attempts", () => {
       return cardCalls === 1 ? undefined : { status: "failed", route: "failed", message: "Not now.", failure: { category: "target_not_found", code: "library.not_now", retryable: false, stage: "target_resolution", effect: "unacted" } };
     });
     const FIRST_CARD_STEP = 2;
-    const second = await lane.attempt({ instruction: TASK, ...PERMITTED, script: [forwardFrom(FIRST_CARD_STEP), complete("Renewed it three times.")] });
+    const second = await lane.attempt({ instruction: TASK, ...PERMITTED, runAgain: true, script: [forwardFrom(FIRST_CARD_STEP), complete("Renewed it three times.")] });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: FIRST_CARD_STEP + 1 });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
     // One by the engine, then two by the walker from the first of the three, and its third pass only checks.
@@ -274,7 +276,7 @@ describe("limits on a saved Flow's run go on to the result", () => {
     // The check's own two minutes, shortened: nothing else in here waits exactly that long.
     const wallClock = globalThis.setTimeout;
     vi.spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number, ...rest: unknown[]) => wallClock(run, ms === 120_000 ? 150 : ms, ...rest)) as unknown as typeof setTimeout);
-    const second = await lane.attempt({ ...again, judge: [new Promise(() => undefined), judgeReply("yes")], script: [complete("Renewed every loan and listed them.")] });
+    const second = await lane.attempt({ ...pressedAgain, judge: [new Promise(() => undefined), judgeReply("yes")], script: [complete("Renewed every loan and listed them.")] });
     expect(second.judgeCalls).toHaveLength(2);
     expect(second.decisions).toHaveLength(1);
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ happened: expect.stringMatching(/not accepted as the result yet/u) });

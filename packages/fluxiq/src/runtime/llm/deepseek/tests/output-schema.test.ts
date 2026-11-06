@@ -55,11 +55,10 @@ describe("a verification's defects (t752)", () => {
   const verification = { taskKind: "loop_verification", expectedOutput: "diagnosis", context: {} } as unknown as AutomationStudioLlmTaskRequest;
   const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: { properties: Record<string, unknown> } } }).properties.diagnosis.properties;
 
-  it("offers at most 12 closed defects, each a kind, the row, an optional column, value and step, and the request's words, right after the verdict", () => {
+  it("offers closed defects, each a kind, the row, an optional column, value and step, and the request's words, right after the verdict, with no limit on how many or how long", () => {
     expect(Object.keys(fieldsOf(verification))).toEqual(["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"]);
     expect(fieldsOf(verification).defects).toEqual({
       type: "array",
-      maxItems: 12,
       items: {
         type: "object",
         additionalProperties: false,
@@ -67,11 +66,11 @@ describe("a verification's defects (t752)", () => {
         properties: {
           // The act kinds and the step an act_wrong names (t766): a result that stores no rows has no row a no could name.
           kind: { enum: ["kept_not_asked", "asked_missing", "wrong_value", "act_missing", "act_wrong", "other"] },
-          row: { type: "string", minLength: 1, maxLength: 500 },
-          column: { type: "string", minLength: 1, maxLength: 500 },
-          value: { type: "string", minLength: 1, maxLength: 500 },
-          step: { type: "string", minLength: 1, maxLength: 500 },
-          requestWords: { type: "string", minLength: 1, maxLength: 500 }
+          row: { type: "string", minLength: 1 },
+          column: { type: "string", minLength: 1 },
+          value: { type: "string", minLength: 1 },
+          step: { type: "string", minLength: 1 },
+          requestWords: { type: "string", minLength: 1 }
         }
       }
     });
@@ -138,7 +137,7 @@ describe("automationStudioDeepSeekOutputSchema offers the cells a yes cites", ()
     type Fields = { required?: string[]; properties: Record<string, { maxItems?: number; items?: { additionalProperties: boolean; required: string[] } }> };
     const fieldsOf = (request: AutomationStudioLlmTaskRequest) => (automationStudioDeepSeekOutputSchema(request) as { properties: { diagnosis: Fields } }).properties.diagnosis;
     const offered = fieldsOf(verification);
-    expect(offered.properties.checked?.maxItems).toBe(12);
+    expect(offered.properties.checked?.maxItems).toBeUndefined();
     expect(offered.properties.checked?.items?.additionalProperties).toBe(false);
     expect(offered.properties.checked?.items?.required).toEqual(["row", "column", "value"]);
     expect(offered.required).not.toContain("checked");

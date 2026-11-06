@@ -15,7 +15,7 @@ import { AutomationStudioService } from "../../../service.ts";
 import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
-import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
+import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
 import { libraryTarget, libraryTargetNodes, LOANS_OUTPUT, type LibraryTarget } from "./fake-library-engine.ts";
 import { fakeLibraryBinding, LOOK_TOOL, READ_LOANS, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
 
@@ -33,6 +33,7 @@ export type LaterAttemptOptions = {
   flowId?: string;
   startLocation?: string;
   script?: readonly Decision[];
+  /** The judge's replies in order, and past their end a yes. A function reads the judge's request, for a judge that weighs what it is shown. */
   judge?: readonly unknown[];
   permittedConsequences?: AutomationStudioActionConsequence[];
   /** The purse this attempt opens with. */
@@ -43,13 +44,15 @@ export type LaterAttemptOptions = {
   keepLooking?: boolean;
   /** The resolver's other extras, for a host whose limits refuse before any model call. */
   resolver?: { timeoutMs?: number };
+  /** Started by a person's press of Run again on the task's answer (`../run-again/`), not by the words typed again. */
+  runAgain?: boolean;
 };
 
 /** A Core that restarted: a new service over what an earlier lane left, on the same library. */
 export type LaterAttemptsRestart = { dataDir: string; projectId: string; target: LibraryTarget; flows: readonly string[] };
 
 /** One service and one library, to run attempts on one after another. */
-export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]> } = {}) {
+export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]>; domain?: (binding: AutomationStudioLlmEvidenceRuntimeBinding) => Partial<AutomationStudioLlmEvidenceRuntimeBinding> } = {}) {
   const dataDir = options.restart?.dataDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
   const target = options.restart?.target ?? libraryTarget(options.titles);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number; timeoutMs?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
@@ -58,14 +61,18 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
-    if (request.taskKind === "loop_verification") return current.judge.shift() ?? judgeReply("yes");
+    if (request.taskKind === "loop_verification") {
+      const reply = current.judge.shift();
+      return (typeof reply === "function" ? (reply as (asked: AutomationStudioLlmTaskRequest) => unknown)(request) : reply) ?? judgeReply("yes");
+    }
     const next = current.script[current.decided] ?? toolCall(`look.${current.decided}`, LOOK_TOOL, {});
     if (current.decided >= current.script.length && !current.keepLooking) current.stop?.();
     current.decided += 1;
     return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: USAGE };
   });
   const provider = { ...scripted, estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => current.costUsd ?? scripted.estimateCostUsd?.(tokens) ?? 0 };
-  const binding = fakeLibraryBinding(target.library, options.fault);
+  const faked = fakeLibraryBinding(target.library, options.fault);
+  const binding = { ...faked, ...options.domain?.(faked) };
   /** Every by-hand call that reached the target, and where it was told to start from. */
   const seen: { toolId: string; startLocation: string | undefined }[] = [];
   const service = new AutomationStudioService({
@@ -117,16 +124,27 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     const firstRequest = requests.length;
     const resolvedBefore = resolved;
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
-    const answered = await service.generateFlowBootstrapAdaptation({
+    const generate = async (startLocation = given.startLocation) => await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-      permittedConsequences: given.permittedConsequences ?? [], ...(given.startLocation ? { startLocation: given.startLocation } : {})
+      permittedConsequences: given.permittedConsequences ?? [], ...(startLocation ? { startLocation } : {})
     });
+    let pressed: string | undefined;
+    const answered = given.runAgain ? await (async () => {
+      const taskId = taskIds.get(given.instruction ?? TASK);
+      if (!taskId) throw new Error("Run again needs an attempt at the task first");
+      const press = await automationStudioAnswerFirstRunAgain(service, stores, { projectId: project.id, taskId, goalWords: async () => given.instruction ?? TASK }, async ({ startLocation }) => await generate(startLocation));
+      if (!press.ok) throw new Error(`Run again was refused: ${press.say}`);
+      pressed = press.attemptId;
+      return await press.finished;
+    })() : await generate();
     clearTimeout(guard);
     if (answered.status !== "answered") throw new Error(`expected an answer, got ${answered.status}`);
     const asked = requests.slice(firstRequest);
     if (answered.attempt?.taskId) taskIds.set(given.instruction ?? TASK, answered.attempt.taskId);
     return {
       answer: answered, flowId, ranOut,
+      /** The attempt a press of Run again was answered with, at once. */
+      pressed,
       /** How many times anything asked for a provider: a run's recovery or its result check would ask again. */
       providersResolved: resolved - resolvedBefore,
       /** Every request the model saw in this attempt, whatever its kind. */

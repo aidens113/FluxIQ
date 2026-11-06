@@ -11,6 +11,7 @@ export async function automationStudioAnswerFirstRecordOpening(run: AutomationSt
   await automationStudioAnswerFirstBestEffort(() => run.memory.update(projectId, run.taskId, (current) => ({
     ...current,
     flowId,
-    attempts: [...current.attempts, { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: [] }]
+    ...(run.input.startLocation !== undefined ? { startLocation: run.input.startLocation } : {}),
+    attempts: [...current.attempts, { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: [] }]
   })));
 }

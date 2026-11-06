@@ -171,7 +171,8 @@ describe("a Core that restarted", () => {
       hit();
       return new Promise((resolve) => { held = () => resolve({ status: "failed", route: "failed", message: "Gone.", failure: { category: "action_failed", code: "library.gone", retryable: false } }); });
     };
-    const going = old.attempt({ instruction, permittedConsequences: ["modify_existing"] });
+    // A person's Run again, so the saved Flow presses the card again: the same words would carry it and never reach it (t869).
+    const going = old.attempt({ instruction, permittedConsequences: ["modify_existing"], runAgain: true });
     abandon(old, { release: () => held() }, going);
     await reached;
     for (let tries = 0; tries < 400 && (await old.rows()).at(-1)?.attempt.status !== "working"; tries += 1) await new Promise((resolve) => setTimeout(resolve, 25));

@@ -8,6 +8,7 @@ export { automationStudioActivityAskPort, automationStudioActivityAskResolution,
 export { currentAutomationStudioActivityAgent, runWithAutomationStudioActivityAgent } from "../activity/index.ts";
 export { bindAutomationStudioActivityRun } from "../activity/index.ts";
 export { boundedAutomationStudioActivity } from "../activity/index.ts";
+export { emitAutomationStudioAttemptEnded } from "./attempt-ending.ts";
 export { AUTOMATION_STUDIO_BUILD_REQUEST_MAX_CHARS, emitAutomationStudioBuildRequest, withAutomationStudioBuildActivity } from "./build.ts";
 export { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 export { automationStudioActivityFoldedReason } from "./folded-reason.ts";

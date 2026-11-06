@@ -1,8 +1,7 @@
 import { automationStudioLlmTaskExpectsDiagnosis, isAutomationStudioModelAuthoredTargetOverrideTarget, isAutomationStudioNoRepairReason, type AutomationStudioLlmStructuredResponse, type AutomationStudioLlmTaskRequest, type AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import { AutomationStudioLlmProviderError } from "../provider-contract.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, automationStudioFlowBootstrapSizeLimitsOfContext, parseAutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
+import { automationStudioFlowBootstrapSizeLimitsOfContext, parseAutomationStudioFlowBootstrapPlan } from "../../flow-authoring/bootstrap/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH } from "./output-schema.ts";
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
 import { isRecord } from "../provider-transport/index.ts";
 import { automationStudioDeepSeekVerdictBeforeCut } from "./verdict-before-cut.ts";
@@ -46,9 +45,10 @@ function parseDeepSeekStructuredResponse(structured: unknown, request: Automatio
   if (request.taskKind === "evidence_tool_decision") {
     // Everything Core can work out for itself is worked out rather than
     // refused: the wrapper's own name, a decision that arrived without its
-    // wrapper, a summary over its length or missing
-    // (`evidence-loop-decision.ts`). What the decision may be is unchanged.
-    const decision = automationStudioLlmEvidenceNormalizedDecisionResponse(structured, AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH);
+    // wrapper, a summary missing (`evidence-loop-decision.ts`). A long summary is
+    // read whole, and the chat shortens what it shows. What the decision may be
+    // is unchanged.
+    const decision = automationStudioLlmEvidenceNormalizedDecisionResponse(structured, Number.POSITIVE_INFINITY);
     if (!decision) outputInvalid();
     return decision as AutomationStudioLlmStructuredResponse;
   }
@@ -57,8 +57,7 @@ function parseDeepSeekStructuredResponse(structured: unknown, request: Automatio
     || Object.keys(structured).some((key) => !["kind", "summary", "plan"].includes(key))
     || structured.kind !== "flow_bootstrap"
     || typeof structured.summary !== "string"
-    || structured.summary.trim().length === 0
-    || structured.summary.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxStringLength) outputInvalid();
+    || structured.summary.trim().length === 0) outputInvalid();
   const parsed = parseAutomationStudioFlowBootstrapPlan(structured.plan, automationStudioFlowBootstrapSizeLimitsOfContext(request.context.flowBootstrap));
   if (!parsed.plan || parsed.issues.some((issue) => issue.severity === "error")) outputInvalid();
   return { kind: "flow_bootstrap", summary: structured.summary, plan: parsed.plan };

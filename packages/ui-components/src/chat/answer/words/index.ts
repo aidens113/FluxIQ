@@ -3,15 +3,18 @@
 // Pure text, no DOM.
 export { actWords } from "./act-words.ts";
 export { comparedWords } from "./compared-words.ts";
+export { isEarlierAct } from "./earlier-act.ts";
 export { dayWords } from "./day-words.ts";
 export { durationWords } from "./duration-words.ts";
 export { fewerWords } from "./fewer-words.ts";
 export { fromWords } from "./from-words.ts";
 export { pathWords } from "./path-words.ts";
+export { hasRepeatableAct, RUN_AGAIN_DOES_IT_AGAIN } from "./repeatable-acts.ts";
 export { savedWords } from "./saved-words.ts";
 export { siteWords } from "./site-words.ts";
 export { skippedWords } from "./skipped-words.ts";
 export { costWords, timeWords } from "./spend-words.ts";
+export { checkedTimesWords } from "./times-checked-words.ts";
 export { usdWords } from "./usd-words.ts";
 export { usingSavedFor } from "./using-saved-for.ts";
 export { usingSavedWords } from "./using-saved-words.ts";

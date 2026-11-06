@@ -69,7 +69,7 @@ import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, authoringWrittenValue, isJsonObject } from "./values.ts";
 import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
 import {
-  automationStudioFlowBootstrapSubflowRequires, automationStudioFlowPlanRepeatOrder,
+  automationStudioFlowBootstrapSubflowRequires, automationStudioFlowPlanRepeatOrder, automationStudioFlowPlanRepeatRowFields,
   automationStudioFlowScriptAdjacentListRepeats, automationStudioFlowScriptCalledParts,
   automationStudioFlowScriptCallStep,
   automationStudioFlowScriptPartInputPort,
@@ -267,7 +267,8 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     own.forEach((id) => requires.add(id));
     if (own.length) subflow.metadata = { ...subflow.metadata, requires: own };
   }
-  const plan =automationStudioFlowPlanRepeatOrder({ registry: input.registry, resolution: input.resolution, plan: {
+  // The row fields a repeat reads stay on the listing that gives them, though the instruction named other columns (`../script-statements/repeat/row-fields.ts`).
+  const plan = automationStudioFlowPlanRepeatRowFields({ registry: input.registry, resolution: input.resolution, plan: automationStudioFlowPlanRepeatOrder({ registry: input.registry, resolution: input.resolution, plan: {
     schemaVersion: "0.1",
     router: {
       name: bounded(input.summary, NAME_LIMIT),
@@ -276,7 +277,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
     },
     subflows,
     ...(requires.size ? { metadata: { requires: [...requires].sort() } } : {})
-  } });
+  } }) });
   // A refused script still yields the plan its steps got as far as, under a
   // name nothing builds from. It is what the refusal's feedback reads the node
   // definition out of, so `bootstrap.unknown_parameter` can answer with the

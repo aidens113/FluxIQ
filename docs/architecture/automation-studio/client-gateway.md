@@ -390,6 +390,9 @@ stop a run, and use its automation and recording controls:
   (`flows.write`, `authoring`; narrowed to `projectId`, `attemptId` and `addUsd`, so a token
   never names a Flow, a mode, a grant or a session). It spends the approving person's own
   key through the same generation the chat's build uses, and answers at once
+- Automation Studio, running a task again: `run-task-again` (`flows.write`, `authoring`; narrowed to
+  `projectId` and `taskId`). A person's Run again on a task's answer: a new attempt with an empty act
+  record, on the approving person's own key, answered at once
 - Automation Studio, the subflow library: `list-project-parts` and `get-project-part`
   (`programs.read`, `read`), `save-project-part` (`flows.write`, `authoring`; narrowed to
   `projectId`, `flowId`, `subflowId`, `name` and `purpose`) and `run-project-part`

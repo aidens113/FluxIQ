@@ -186,7 +186,6 @@ describe("a verification's defects through the diagnosis channel (t752)", () => 
       { ...kept, row: 7 },
       { kind: "kept_not_asked", row: "The Long Road" },
       { ...wrong, column: "" },
-      { ...kept, requestWords: "x".repeat(501) },
       { ...kept, because: "a list of values" },
       "The Long Road"
     ];
@@ -208,11 +207,14 @@ describe("a verification's defects through the diagnosis channel (t752)", () => 
     }
   });
 
-  it("keeps the first 12 and drops the rest with a warning", async () => {
-    const many = Array.from({ length: 14 }, (_, index) => ({ ...kept, row: `Book ${index + 1}` }));
+  // A standing rule (t869): no number of defects, and no length of one, is a reason to lose any of them (`../harness/tests/no-cap-on-model-output.test.ts`).
+  it("carries every defect however many, each whole however long, with no warning", async () => {
+    const long = "A title the judge wrote out in full, and meant. ".repeat(40);
+    const many = Array.from({ length: 14 }, (_, index) => ({ ...kept, row: `Book ${index + 1}: ${long}` }));
     const result = await answer(many);
-    expect(result.response).toMatchObject({ diagnosis: { defects: many.slice(0, 12) } });
-    expect(dropped(result).map((diagnostic) => diagnostic.path)).toEqual(["response.diagnosis.defects[12]", "response.diagnosis.defects[13]"]);
+    expect(result.ok).toBe(true);
+    expect(result.response).toMatchObject({ diagnosis: { defects: many } });
+    expect(dropped(result)).toEqual([]);
   });
 });
 

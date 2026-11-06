@@ -18,6 +18,8 @@ export type AutomationStudioAnswerFirstCarriedOpening = {
   startedWith: AutomationStudioFlowDraftStep[];
   startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
   path: AutomationStudioTaskAttemptPath;
+  /** A person pressed Run again to start it (`../run-again/`). */
+  askedAgain: boolean;
   /** A round had already decided something after the Flow's run (`../attempt/path.ts`). */
   decidedAfterRun: boolean;
   tried: AutomationStudioTriedRecord;
@@ -43,6 +45,7 @@ export function automationStudioAnswerFirstCarriedOpening(hold: AutomationStudio
     ...(provenance?.startedFrom ? { startedFrom: provenance.startedFrom } : {}),
     // This press is a fresh start, which is no longer the repair of the step the Flow stopped at (`../attempt/path.ts`).
     path: attempt.path === "run_flow_then_repair" ? "run_flow_then_explore" : attempt.path,
+    askedAgain: provenance?.askedAgain === true,
     decidedAfterRun: attempt.path === "run_flow_then_repair" || attempt.path === "run_flow_then_explore",
     tried: before.tried,
     loopsCaught: structuredClone(attempt.loopsCaught),

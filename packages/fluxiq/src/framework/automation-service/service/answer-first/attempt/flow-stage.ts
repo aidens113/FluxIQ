@@ -15,13 +15,22 @@
 //
 // **A failure here never stops a task.** Whatever is thrown leaves the rounds to go on.
 //
+// **A robot check is put to the person in place**, and the run goes on from that step once they
+// press Continue; the attempt reads `waiting_for_person` / `person_only_check` while it stands.
+//
 // **A carried-on attempt never comes here**: the Flow is never run again from its start.
+//
+// **A person's Run again runs it as any later attempt does, states checked first** (`../run-again/`):
+// what it changes is the act record, which starts empty, so a count's add presses again. A control
+// already in its asked-for state is checked and not pressed: a person who asked for it saved wants it
+// saved, and a press that flipped it back would answer the opposite of what they asked.
 //
 // **The row is written once the first step goes out**, so a process that dies mid-run leaves an
 // attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
 
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
+import type { AutomationStudioAnswerFirstSavedFlow } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
@@ -42,7 +51,7 @@ export async function automationStudioAnswerFirstFlowStage(run: AutomationStudio
   return undefined;
 }
 
-async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string }): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated">): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { input } = run;
   if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
   const sentBefore = run.liveSteps;
@@ -54,8 +63,14 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: { steps:
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
     },
     arrived: () => { run.arrived = true; },
-    engine: () => automationStudioAnswerFirstFlowRunEngineOf(input)
-  }, { steps: saved.steps, stepsDigest: saved.stepsDigest });
+    engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
+    // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).
+    ...(input.personAsk ? { personCheck: { port: input.personAsk.port, waiting: (state: "started" | "ended", waitedMs: number) => {
+      run.waitingFor = state === "started" ? "person_only_check" : undefined;
+      run.waitedMs += waitedMs;
+      void automationStudioAnswerFirstKeep(run);
+    } } } : {})
+  }, saved);
   const flowRun: FlowRun = { outcome, wentOut: run.liveSteps > sentBefore };
   run.flowRun = flowRun;
   if (run.arrived) run.options = input.continuingOptions();

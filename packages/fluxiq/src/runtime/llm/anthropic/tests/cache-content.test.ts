@@ -36,7 +36,7 @@ function requestWith(evidence: Entries, iteration = 1): AutomationStudioLlmTaskR
 }
 
 /** What each decision of one scripted loop asks to send: calls, a refused completion and amendment, a repeat, and the notes they leave. */
-async function requestsOfALoop(): Promise<AutomationStudioLlmTaskRequest[]> {
+async function requestsOfALoop(declared: { draft?: Record<string, never> } = { draft: {} }): Promise<AutomationStudioLlmTaskRequest[]> {
   // The opening look a build begins with, as a real one does: completion is on offer from the first decision.
   const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", effect: "mutate" as const, perCallEffect: true, inputSchema: { type: "object" }, initialObservation: { input: { page: 0 } } }];
   const script = [
@@ -63,6 +63,8 @@ async function requestsOfALoop(): Promise<AutomationStudioLlmTaskRequest[]> {
     return script[requests.length - 1]!;
   });
   await runAutomationStudioLlmEvidenceLoop({
+    // It declares a draft, as a build's and an attempt's rounds do: only such a loop holds the amending vocabulary in its head, and a loop that builds no Flow offers it once a step can be amended (`../../evidence-loop.ts`, f34f16d74), which the test below holds apart.
+    ...declared,
     tools, decide, maxIterations: 30, maxToolCalls: 30, completionSchema: { type: "object" }, budget: { maxTotalTokens: 10_000_000 },
     unusableDecisions: { stalled: () => new Error("stalled") },
     checkCompletion: () => (completions += 1) < 3 ? { ok: false, issueCodes: ["plan.cannot_answer"], feedback: { issue: "plan.cannot_answer" } } : { ok: true },
@@ -87,6 +89,13 @@ describe("the marked prefix of a decision's request", () => {
       else throw new Error(`Decision ${index + 1} does not start with what decision ${index} marked.`);
     }
     expect(hits).toBe(requests.length - 1);
+  });
+
+  it("keeps the whole decision schema fixed where a draft is declared, and leaves a loop that declares none its old rule", async () => {
+    const schemas = (requests: AutomationStudioLlmTaskRequest[]) => new Set(requests.map((task) => JSON.stringify(task.context.evidenceLoop!.decisionSchema))).size;
+    expect(schemas(await requestsOfALoop())).toBe(1);
+    // A recovery's exploration builds no Flow, so the amending vocabulary comes and goes with its offer, and its head moves when it does.
+    expect(schemas(await requestsOfALoop({}))).toBeGreaterThan(1);
   });
 
   it("never marks an entry that moves, marks the head and the last settled entry, and uses at most four markers", async () => {

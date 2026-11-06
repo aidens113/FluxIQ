@@ -3,6 +3,7 @@
 
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
+import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
@@ -32,11 +33,16 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   runId: string;
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "recordBatch">;
-  permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown">;
+  permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown"> & { exploredToggles?: Pick<AutomationStudioFlowBootstrapActionPermissions["exploredToggles"], "trial"> | undefined };
   /** One call really reached the target. */
   stepped(): void;
   /** The run moved the page, so the attempt carries on from where it left it. */
   arrived(): void;
   /** Called inside the run's own care, so a service with no engine reads as a run that could not start. */
   engine(): AutomationStudioAnswerFirstFlowRunEngine;
+  /**
+   * Where a check only a person can clear is put to them, and `waiting` told while it stands
+   * (`./person-check-port.ts`). Absent, nobody can be asked, and a step meeting one ends the run.
+   */
+  personCheck?: { port: AutomationStudioParkingPort; waiting(state: "started" | "ended", waitedMs: number): void } | undefined;
 };

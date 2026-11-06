@@ -113,6 +113,14 @@ export type AutomationStudioHostRuntimeBoundary = {
    * not put in evidence.
    */
   observeRouteState?(input: { projectId: string; flowId: string; signal?: AbortSignal }): JsonObject | Promise<JsonObject>;
+  /**
+   * The observed state as a Router's condition reads it. A host that writes
+   * words into its state only for the model's benefit (a heading beside a
+   * control) takes them off here, so a condition tests what the page offers and
+   * not what a label says. Pure and synchronous; without it a condition reads
+   * the observed state as it is.
+   */
+  routeConditionState?(state: JsonObject): JsonObject;
   /** The `state.*` paths `observeRouteState` fills, so a model can write a condition on one that is absent right now. */
   routeStatePaths?: readonly AutomationStudioHostRouteStatePath[];
   /**

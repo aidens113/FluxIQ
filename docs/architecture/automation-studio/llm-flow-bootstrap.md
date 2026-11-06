@@ -1085,8 +1085,20 @@ The person may ask for an act several times in their own words
 (`runtime/answer-first/asked-count/`): digits, the number words two to twelve, "twice"
 and "thrice". A model's words never lift the rule. The first Flow run after an attempt
 carries the record (`service/answer-first/run-acts/`) and does not press what landed,
-saying so; a later run acts normally, because a person asking again means it. A first run
-that does not succeed gives its acts back.
+saying so; a later run acts normally. A first run that does not succeed gives its acts back.
+Within answer-first, the same words typed again carry what landed and press nothing twice (below,
+"Which acts carry"); a person's Run again is what says do it again.
+
+**An act's line names its item** ("Save: Round pine dining table, 90cm"), by hand or forward alike, in the words a
+read or a page said and never a word the model wrote (`act-record/item-names.ts`). In order: the answer's own sentence
+naming the item, or the row the call came with; the row the act is tied to, by its own first text cell, which is how a press
+on a row's own page is named once a read has listed that page (a row tied late names it too, and a row that fits several
+with different words names none); the title of the page it was pressed on, up to the site's name, for a press before any
+such read; and last the control's name. Every one goes through the person-words check, which refuses a credential's shape.
+These words live in the attempt's memory: what is persisted beside a Flow holds no page text, so a record read back after a
+restart says the plain line for what it did before, until a read of the same rows names it again. The attempt's own result
+does store the lines, beside the rows it read. The word before the colon is the control's as the step names it, so a Flow
+step written on a control already reading "Saved" says "Saved:" where a press by hand said "Save:".
 
 **Forward runs.** With `forwardRun` on the loop input, `core.run_flow` runs what the model
 wrote forward from the page it is on, on rows not yet done, with lasting steps really
@@ -1171,7 +1183,9 @@ The user's design (2026-11-03): "next time we try that task, we try using flow &
 
 **Anything else goes on.** A step that stopped, or a judge's no, starts the rounds from the page the run left, told the step and why, with the draft seeded from the saved steps. An engine deadline, its step bound and a child Flow's bound end the run, never the attempt. The recovery's ten minutes and a run's result check are not reached, because the run refuses any model. The step bound follows the Flow's size, and the run uses the Flow's own size setting, so a long Flow that assembles also runs.
 
-**Which acts carry.** After an achieved attempt, none: a person asking again means it. After a budget-out, a Stop or a cut-off, the attempt's landed and may-have-landed acts seed the next one. A row matches an acted row across its shapes: a by-hand read, a walker pass and an engine For Each, whatever a record output renamed or dropped. A lasting act is on the persisted record as may-have-landed before it is sent, on every path. An act in doubt is refused once and told, and only a look after that opens it; what the look shows is still the model's to read, because Core reads no page. `describeCall` also answers `wouldRunWith`, the frozen parameters a call would run with, so a press by a handle no read printed is known before it is sent. What can still press twice is in `docs/working/answer-first-plan/reports/second-attempt/closing-holes.md`.
+**A step that made a lasting act and left the Flow.** A model may drop one, or never add it: a draft edit is not lasting, and it may be right that the step saved the wrong thing, so the edit applies and is never refused (a refusal counts toward ending a round, however often a model that insists repeats itself). Nothing un-happens: the act stays on the record and on the result. The draft marks the step `landed` on every decision until it is put back, and says once what that means: the Flow is what runs next time, so unless another step does the same a later run will not do it, and `keep` or `add` puts it back and runs nothing (`flow-authoring/draft/landed-out.ts`). The way-to-a-page guard (`amendment/strand-check.ts`) knows nothing of acts: on paid step 67's shape it puts the navigations back and lets the acts go, which is what this tells. The saved Flow holds the step out of it, so the next attempt's draft says the same. The next attempt does not press again for it: the Flow lacks the step, and a press by hand is answered as already done wherever the record carries, after a budget-out or a Stop. The same words again after an achieved attempt carry the act, so a press by hand is answered as already done there too; a person's Run again starts with an empty record, so a run judged no brings the model back to press by hand, and that press is the Run again's own.
+
+**Which acts carry (t869, the lead's call, for the person to overrule).** The same words typed again carry every act that landed or may have, however the attempt before ended: an achieved one as much as a budget-out, a Stop or a cut-off. A repeat is not pressed: the saved Flow's run reads it as already done, a press by hand is refused as already done, a round is told the acts are an earlier attempt's (`earlierActs`), and the result says each as "Already done earlier: …" rather than as this attempt's change. It is a union across attempts: attempt 3 carries what attempt 1 landed though attempt 2 landed nothing (`act-record/seed.ts`). **What says do it again** is a person's press of Run again on the answer (`run-again/`, below), which starts a new attempt with an empty record; what it was spared is kept beside its record (`acts.earlier`), so the next same words carry both. Words of the person's own that ask again ("… again", or a yes to the chat's one question at the start, which becomes part of the words the command saves) are another task with its own key, and so its own empty record. A press that declared nothing carries only where its answer said it changed something that stays (its own control flipped, or a line of the page it stayed on now reads otherwise or rose): then it is held to a look in a later attempt (`heldOnRepeat`) and stays off the result. One that changed nothing or only moved the view is not carried, and a Flow presses it as often as it says. A saved step on a control its attempt saw flip gets that state as `ensureState`, kept beside the steps (`saved.stated`, `flow-run/stated-toggles.ts`), so a later run checks before it presses; a Run again keeps it too, so a control already in its asked-for state is checked and not pressed, while a count's add (no state) presses again. A row matches an acted row across its shapes: a by-hand read, a walker pass and an engine For Each, whatever a record output renamed or dropped. A lasting act is on the persisted record as may-have-landed before it is sent, on every path. An act in doubt is refused once and told, and only a look after that opens it; what the look shows is still the model's to read, because Core reads no page. `describeCall` also answers `wouldRunWith`, the frozen parameters a call would run with, so a press by a handle no read printed is known before it is sent. What can still press twice is in `docs/working/answer-first-plan/reports/second-attempt/closing-holes.md`.
 
 **Carry on** (`carry-on/`). Adding budget, or pressing to carry on an attempt a restart cut off, continues the same attempt id, act record, steps and rows, in a new session with the found rows copied in. The ceiling is read before the purse opens, from a scope held around the generate call. It never re-runs the Flow from its start. `interrupted/` rewrites a row that is working or waiting and not live in this process as `waiting_for_person`, reason `interrupted`, and reads must go through `automationStudioAnswerFirstAttemptsRead`.
 
@@ -1227,6 +1241,14 @@ answers `{ flowId }` for the exact same task (same words, same site) once a Flow
 otherwise or when that Flow is gone. It is `read`, asserts domain access, and is reached only by Core's own
 chat command (`flow.createHere`, in answer-first mode only), which reuses that Flow instead of making a
 blank one each time. It is not on a token's list, and a lookup that fails makes a new Flow: it never fails the task.
+
+**Running again.** `run-task-again` `{ projectId, taskId }` is a person's press of Run again on a task's answer: a new
+attempt at the task, from the Flow and start place its memory keeps, with an empty act record. It is
+`authoring` under `flows.write` (`studio:RunTaskAgain`), asserts domain access, is on a token's list and is
+narrowed to those two fields. That it was pressed reaches the attempt by a scope only the route sets
+(`automationStudioAnswerFirstRunAgainScope`), never by a request field, so no model can claim it. It refuses a task it
+does not have, one still going, and one whose Flow now holds another task's goal, in a person's words
+(`task_attempt.run_again_refused`), and answers `{ attemptId }` at once.
 
 **Carrying on.** `carry-on-task-attempt` `{ projectId, attemptId, addUsd }` carries a budget-out attempt
 (`addUsd` above zero) or one a restart cut off (`addUsd` zero) on as the same attempt. It spends the
@@ -2410,7 +2432,10 @@ t665 it was clipped to the bound, and Core weighed the clipped copy: on A8
 whole reading contradicted. It used to void the whole reply: live run `run-murwcmx2`'s
 second judge call answered a clear `no` with a 581-character `changed`, and the
 refutation was recorded as unconfirmed (t194 cause C-A). The bound stays 500 in
-the instruction and the output schema. When the judge's two calls do not settle
+the instruction and the output schema, as what the model is told. A verification's
+`defects` have no such bound (t869): any number of them, each whole however long,
+and only a defect of the wrong shape (a kind Core does not know, no row, no request's
+words) keeps a current no from standing. When the judge's two calls do not settle
 (`model_disagreed`, `model_unconfirmed`) but one of them judged the test not to
 do what was asked, that call's expected, observed and advice travel on the
 unsettled verification as `unconfirmedReading`, on the build's `unknown`
@@ -2513,6 +2538,30 @@ receives its progress instead of publishing the former bare
 and repaired; an empty Flow explores again while budget remains. Unreadable
 replies have their own counter, described below. A completion the check accepts
 is tested before its Flow can be persisted.
+
+**A paid reply is kept where Core can keep it, on Anthropic's JSON-text path too.** That transport sends one string, so
+only Core holds a reply to the schema, and that check came before everything Core does to keep an answer
+(`runtime/llm/anthropic/task-answer.ts`). In order: a word no model can choose is put right where the reply makes it
+unambiguous, the outer `kind` being the word its own inner object carries and that object fitting its place
+(`models/providers/anthropic/reply/own-word.ts`), and a word naming another answer stays refused; a decision is read as
+every provider's is (`automationStudioLlmEvidenceNormalizedDecisionResponse`); a length (`maxLength`, `minLength`,
+`maxItems`) is no reason to refuse a judge's answer or a decision, since the bound is what the model is told and the
+harness and each tool's input check read past it with their own codes, while other tasks keep what bounds they still have
+here (below), since nothing else holds them. What still does not fit is `llm.provider_output_invalid` with the account's case
+`content_off_shape` and its `misses`, each a path and a rule in the schema's words and never a word of the reply
+(`models/providers/anthropic/schema-misses.ts`), which the `core.decision_check` note says as "At fault: ...". The account
+reaches the step log. DeepSeek holds no such check, so it already read a long text whole, and it still refuses the
+wrong outer word, with no account.
+
+**Core never caps what a model wrote (a standing rule, t869).** No reply is refused, and nothing it says is cut, for being
+long or for listing many things: a person's display may shorten it, and the record stays whole. So a decision's summary is
+read whole and the chat shortens what it shows to whole sentences (`activity/text/reason-text.ts`); a summary, a repair's
+reason and an instruction's words have no length, and a change proposal and an instruction suggestion no count
+(`runtime/llm/harness/provider-result.ts`). The harness's walk of a reply stops only at the recursion guard, or at more
+values than the transport would read of one, which only a stand-in's object could be. A bound that stays says why:
+what an in-run repair writes into a running automation's graph (its steps, conditions, handles and ids) is bounded so a
+page's text cannot arrive inside one and become a graph write; a name or an id is one; the transport's read and a request's
+own output limit are the request's, and a reply cut there has its own reading.
 
 **An unreadable reply is asked again, never a bare ending (t211).** A reply that
 arrived and could not be read (`llm.provider_malformed_response`, a truncated

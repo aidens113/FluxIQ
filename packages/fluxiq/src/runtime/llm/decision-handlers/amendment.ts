@@ -379,12 +379,22 @@ function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext
  * `act_not_done_there`, with the judge's sentence, under the entry an
  * amendment refused is told under -- as a call whose add copies a step of the
  * Flow is (`./second-copy.ts`).
+ *
+ * A step that only reads does no act (`../../flow-draft/amendment/apply.ts`,
+ * `act_on_a_read`): the read stays in the Flow without it, and the model is told
+ * so, with the refusal's way out, under the same entry. Until lane B
+ * (run-mw43nq03-285153fa, step 0019) the act was dropped without a word, and the
+ * model sent it again as an amendment that was refused.
  */
 export function automationStudioLlmEvidenceClaimWrittenAct(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   step: AutomationStudioFlowDraftStep,
   act: string
 ): void {
+  if (step.effect !== "mutate") {
+    tell(context, step.iteration, [{ step: step.position, reason: "act_on_a_read" }], 1, undefined, []);
+    return;
+  }
   const refusal = context.input.draft ? context.input.draft.claimRefused?.(context.draftSteps, step, act) : undefined;
   if (refusal) {
     tell(context, step.iteration, [{ step: step.position, reason: "act_not_done_there", act: refusal.act, said: refusal.said, ...(refusal.instead === undefined ? {} : { instead: refusal.instead }) }], 1, undefined, []);

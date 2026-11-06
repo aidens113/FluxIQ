@@ -78,7 +78,11 @@ function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | un
   if (!offers || offers.tools) shapes.push({ kind: "tool_call", callId: "<a new id: letters, digits, . _ : ->", toolId: "<one toolId from the decision schema>", input: "<an object matching that tool's input schema>" });
   if (!offers || offers.complete) shapes.push({ kind: "complete", result: `<an object matching the completion schema${offers ? "" : ", when the decision schema offers complete"}>` });
   if (!offers || offers.amend) shapes.push({ kind: "amend_draft", amendments: [{ step: "<a step number the draft entry shows>", change: "<one change the decision schema lists>" }] });
-  return { oneOf: shapes, rule: "Answer with exactly one of these objects and no other keys." };
+  // The whole reply is the wrapper, and the decision sits inside it: the outer kind is always evidence_tool_decision, whatever the decision's own kind.
+  return {
+    reply: { kind: "evidence_tool_decision", summary: "<one short line saying what you are doing and why>", decision: { oneOf: shapes } },
+    rule: "Answer with exactly one object of the reply shape and no other keys. Its outer kind is always \"evidence_tool_decision\", and the decision goes in its decision key, as one of the listed shapes."
+  };
 }
 
 /** What a tool call named that the decision did not offer (`./evidence-loop/decision-refusal.ts`), and what it could have named. */
@@ -292,15 +296,18 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
     // Said only where a tool call could have been the answer.
     const nesting = reply && BRACKET_CASES.has(reply.case) && (!input.offers || input.offers.tools) ? ` ${TOOL_CALL_NESTING_INSTRUCTION}` : "";
+    // Where it did not fit, in the schema's words and never its own, read back through the account's bounds at this model boundary.
+    const misses = automationStudioLlmProviderReplyAccount(reply)?.misses ?? [];
+    const atFault = misses.length > 0 ? ` At fault: ${misses.map((miss) => `${miss.path} ${miss.rule}`).join("; ")}.` : "";
     return {
       ok: false,
       code: "llm_evidence_loop.reply_unreadable",
       issueCodes,
-      unreadable: { ...(reply ? { case: reply.case } : {}), said },
+      unreadable: { ...(reply ? { case: reply.case } : {}), said, ...(misses.length > 0 ? { misses } : {}) },
       unreadableInARow: inARow,
       maxUnreadableInARow: maxInARow,
       accepted: acceptedDecision(input.offers),
-      instruction: `Your previous reply could not be read: ${said}. ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
+      instruction: `Your previous reply could not be read: ${said}.${atFault} ${UNREADABLE_INSTRUCTION}${nesting} ${maxInARow} unreadable replies in a row stop this build; that was ${inARow}.`
     };
   }
   return {

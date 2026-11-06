@@ -89,11 +89,12 @@ describe("what it records", () => {
     expect(record.rowDone({ book: "The Long Winter", borrower: "Ann Lee" })).toBe(false);
   });
 
-  it("a step's label the contract's screen refuses is said by its class", async () => {
+  it("a step's label the contract's screen refuses is not said: the control's own word is, and the class's line only where it has none", async () => {
     const { options } = counted();
     const { record } = writing();
     await runAutomationStudioGraph(oneStep(pressNode("press", declared, "<b>Renew</b>")), settling(options, record));
-    expect(record.acts()).toEqual([expect.objectContaining({ what: "Changed something that was already there" })]);
+    expect(record.acts()).toEqual([expect.objectContaining({ what: "Renew" })]);
+    expect(JSON.stringify(record.acts())).not.toContain("<b>");
   });
 
   it("not a step the node reports as failed before anything acted, and the engine's retry goes ahead", async () => {
@@ -165,12 +166,7 @@ describe("what it records", () => {
     expect(AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY).toBe("declaredConsequences");
   });
 
-  it("a node a floor says commits, or marked destructive, though it names no class", async () => {
-    const byFloor = counted();
-    const floored = writing();
-    await runAutomationStudioGraph(repeating(2, pressNode("press", {})), settling({ ...byFloor.options, resolveActionEffect: () => ({ effectClass: "commit", permissionConsequences: [] }) }, floored.record));
-    expect(byFloor.presses).toHaveLength(1);
-    expect(floored.record.acts()).toEqual([expect.objectContaining({ state: "landed", classes: [] })]);
+  it("a node marked destructive, though it names no class", async () => {
     const marked = counted();
     const destructive = writing();
     await runAutomationStudioGraph(repeating(2, pressNode("press", { destructive: true })), settling(marked.options, destructive.record));
@@ -242,7 +238,7 @@ describe("nothing lasting is done twice", () => {
   it("across a by-hand act in an earlier attempt, seeded by the helper, and through a second run of the same attempt", async () => {
     const before = writing();
     before.record.settled({ ...SAME_PRESS, row: BY_HAND }, { effectApplied: true, words: WORDS });
-    const seed = automationStudioAttemptActSeed({ status: "budget_out", data: before.record.data() })!;
+    const seed = automationStudioAttemptActSeed({ data: before.record.data() })!;
     const record = new AutomationStudioAttemptActRecord({ seed });
     const rows = [{ book: "Old Roads", borrower: "Ann Lee" }, { book: "Fen Country", borrower: "Ann Lee" }];
     const first = counted(rows);

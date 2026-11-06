@@ -70,3 +70,9 @@ export type CarryOnTaskAttemptRequest = { projectId: string; attemptId: string; 
 
 /** Answered at once; the attempt goes on after the answer. */
 export type CarryOnTaskAttemptResponse = { attemptId: string; budgetUsd: number };
+
+/** `run-task-again`: a person's press of Run again on a task's answer. It starts a new attempt with an empty act record: what that press means. A refusal comes back as a sentence a person reads. */
+export type RunTaskAgainRequest = { projectId: string; taskId: string };
+
+/** Answered at once; the new attempt goes on after the answer. */
+export type RunTaskAgainResponse = { attemptId: string };

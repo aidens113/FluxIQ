@@ -27,6 +27,22 @@ const VALID: AutomationStudioTaskAttempt = {
   endedAtMs: 2_000
 };
 
+describe("what a later attempt began from", () => {
+  const startedFrom = { route: "use", attemptId: "attempt-0", stepsDigest: "a".repeat(64) } as const;
+
+  it("is carried through the parse, and is absent where nothing was found", () => {
+    expect(parseAutomationStudioTaskAttempt({ ...VALID, startedFrom })).toEqual({ ok: true, attempt: { ...VALID, startedFrom } });
+    expect(parseAutomationStudioTaskAttempt(VALID)).toEqual({ ok: true, attempt: VALID });
+  });
+
+  it("names what it did with them, whose they were and a digest, and nothing else", () => {
+    for (const bad of [{ ...startedFrom, route: "build" }, { ...startedFrom, attemptId: "" }, { ...startedFrom, stepsDigest: "the steps" }, { ...startedFrom, page: "https://shop.example.test" }]) {
+      const parsed = parseAutomationStudioTaskAttempt({ ...VALID, startedFrom: bad });
+      expect(parsed.ok ? [] : parsed.issues).toEqual(["task_attempt.invalid_started_from"]);
+    }
+  });
+});
+
 function issuesOf(value: unknown): string[] {
   const result = parseAutomationStudioTaskAttempt(value);
   return result.ok ? [] : result.issues;

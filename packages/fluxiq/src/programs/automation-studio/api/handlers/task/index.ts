@@ -1,5 +1,6 @@
 // A task's attempts on the program API (t869): reading them back, the Flow a task already has, and carrying one on.
 export { registerCarryOnTaskAttemptEndpoint } from "./attempt-carry-on.ts";
+export { registerRunTaskAgainEndpoint } from "./attempt-run-again.ts";
 export { registerTaskAttemptEndpoints } from "./attempts.ts";
 export { registerProjectTaskEndpoints } from "./project-tasks.ts";
 export { registerTaskKnownFlowEndpoint } from "./known-flow.ts";

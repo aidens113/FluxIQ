@@ -56,4 +56,14 @@ describe("the draft's guidance", () => {
     expect(automationStudioLlmLiftDraftGuide(strange)).toEqual({ evidence: strange });
   });
 
+  it("leaves what a landed step means in the entry, so the head a drop can change stays the same", () => {
+    const steps = [step(1), step(2, { input: { consequences: ["modify_existing"] }, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept" })];
+    const before = payload([draft(steps)]).context.evidenceLoop;
+    const after = payload([draft([steps[0]!, { ...steps[1]!, disposition: "dropped" }])]).context.evidenceLoop;
+    expect(after.flowDraftGuide).toBe(before.flowDraftGuide);
+    const shown = after.evidence.find((each) => each.toolId === "core.flow_draft")!.value;
+    expect(shown.instruction).toContain("Leaving it out undoes nothing");
+    expect(before.evidence.find((each) => each.toolId === "core.flow_draft")!.value.instruction ?? "").not.toContain("Leaving it out undoes nothing");
+  });
+
 });

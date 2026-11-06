@@ -11,6 +11,8 @@ import { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
 import { automationStudioAnswerFirstAttemptStoreOf, type AutomationStudioAnswerFirstAttemptRecord } from "../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
 import { automationStudioAnswerFirstLiveAttemptsOf } from "../../../../framework/automation-service/service/answer-first/interrupted/index.ts";
+import { automationStudioAnswerFirstStepsDigest } from "../../../../framework/automation-service/service/answer-first/task-memory/index.ts";
+import { savedStep } from "../../../../framework/automation-service/service/answer-first/tests/fake-library-engine.ts";
 import { registerAutomationStudioApi } from "../handlers/index.ts";
 import { createCacheApiTestService } from "../handlers/tests/test-service.ts";
 import { cacheActor } from "../handlers/tests/test-actor.ts";
@@ -19,6 +21,7 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const TRIED = { version: 1 as const, tried: [], approaches: 0 };
+const STEPS = [savedStep(1, "domain.library.read", {}, { label: "Read the list" }), savedStep(2, "domain.library.renew", {}, { label: "Renew" })];
 
 function attemptOn(flowId: string, attemptId: string, status: "working" | "achieved", startedAtMs: number, taskId = "task.same"): AutomationStudioTaskAttempt {
   return {
@@ -57,7 +60,8 @@ describe("get-task-attempt", () => {
   it("answers one attempt with its result, what it left saved and the attempt it is told against, each as the contract reads it", async () => {
     const { project, flow, call, save } = await world();
     await save(flow.flowId, "attempt.1", "achieved", 1_000);
-    await save(flow.flowId, "attempt.2", "achieved", 5_000, { candidateId: "candidate.2" });
+    // A draft is saved from the steps the attempt wrote, and the read names them by the digest the task's memory keeps (`attempt-store/outcome-of-record.ts`).
+    await save(flow.flowId, "attempt.2", "achieved", 5_000, { candidateId: "candidate.2", steps: STEPS });
     const response = await call(AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt, { projectId: project.id, attemptId: "attempt.2" });
     expect(response.ok).toBe(true);
     const { outcome } = response.payload;
@@ -66,7 +70,7 @@ describe("get-task-attempt", () => {
     expect(parseAutomationStudioSavedState(outcome.saved).ok).toBe(true);
     expect(outcome.attempt.attemptId).toBe("attempt.2");
     expect(outcome.attempt.spend.usd).toBe(0.42);
-    expect(outcome.saved).toEqual({ state: "partly_works", trust: "unproven", flowId: flow.flowId, savedAtMs: 5_900 });
+    expect(outcome.saved).toEqual({ state: "partly_works", trust: "unproven", flowId: flow.flowId, savedAtMs: 5_900, stepsDigest: automationStudioAnswerFirstStepsDigest(STEPS) });
     expect(outcome.comparedTo.attemptId).toBe("attempt.1");
   });
 

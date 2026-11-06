@@ -59,6 +59,14 @@ export function createAnswerHandlers(deps: AnswerHandlersDeps): AnswerHandlers {
       const carryOn = results.addBudgetAndCarryOn.bind(results);
       void press("budget", () => carryOn({ projectId: model.projectId, attemptId: model.attemptId, addUsd: add.addUsd }), () => "Budget added. Carrying on.", "I could not add the budget.");
     },
+    carryOn() {
+      const model = deps.model();
+      const go = model?.carryOn;
+      const results = host.results;
+      if (model === undefined || go === undefined || results?.addBudgetAndCarryOn === undefined) return;
+      const carryOn = results.addBudgetAndCarryOn.bind(results);
+      void press("budget", () => carryOn({ projectId: model.projectId, attemptId: model.attemptId, addUsd: go.addUsd }), () => (go.addUsd > 0 ? "Budget added. Carrying on." : "Carrying on."), "I could not carry it on.");
+    },
     whatIDid: () => host.onWhatIDid?.(deps.model()?.attemptId ?? ""),
     keepGoing() {
       const model = deps.model();
