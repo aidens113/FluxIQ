@@ -72,6 +72,7 @@ function parseAutomationStudioLlmStructuredResponse(
   size?: AutomationStudioFlowBootstrapSizeLimits,
   evidenceTools?: NonNullable<AutomationStudioLlmHarnessInput["evidenceLoop"]>["tools"]
 ): AutomationStudioLlmStructuredResponse | undefined {
+  value = diagnosisWithConfidenceUp(value);
   if (!isRecord(value)) {
     diagnostics.push({ severity: "error", code: "llm_output.invalid_response", message: "LLM response must be an object.", path: "response" });
     return undefined;
@@ -138,6 +139,13 @@ function parseAutomationStudioLlmStructuredResponse(
   if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
   if (kind === "evidence_tool_decision" && decision !== value.decision) return { ...value, decision } as unknown as AutomationStudioLlmStructuredResponse;
   return value as unknown as AutomationStudioLlmStructuredResponse;
+}
+
+/** A diagnosis's `confidence` written inside `diagnosis` moves up where the top level lacks it (run-mw48myz5 step 34); in both places it stays refused. */
+function diagnosisWithConfidenceUp(value: unknown): unknown {
+  if (!isRecord(value) || value.kind !== "diagnosis" || !isRecord(value.diagnosis) || value.diagnosis.confidence === undefined || value.confidence !== undefined) return value;
+  const { confidence, ...rest } = value.diagnosis;
+  return { ...value, confidence, diagnosis: rest };
 }
 
 const DIAGNOSIS_TEXT_FIELDS = ["expected", "observed", "changed"] as const;

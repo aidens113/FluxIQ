@@ -51,7 +51,7 @@ describe("native Anthropic task provider", () => {
   });
 
   it.each(["not JSON", '{"result_json":"not JSON"}', '{"result_json":"{}","extra":true}']) ("refuses malformed transport JSON while charging the paid call: %s", async (text) => {
-    await expect(provider(() => streamReply(text)).runTask(request())).rejects.toMatchObject({ code: "llm.provider_malformed_response", paid: { outputTokens: 30 } });
+    await expect(provider(() => streamReply(text)).runTask(decisionRequest())).rejects.toMatchObject({ code: "llm.provider_malformed_response", paid: { outputTokens: 30 } });
   });
 
   it("enforces the original schema after decoding instead of trusting native structure", async () => {

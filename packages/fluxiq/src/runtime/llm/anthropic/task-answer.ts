@@ -6,6 +6,7 @@
 // judge's clear yes whose `observed` ran to 575 characters against a bound of 500 (the harness reads such a text whole,
 // `../harness/provider-result.ts`, t665), and a sound decision under the wrong outer word. So, in order:
 //
+//   0. **A key one level too deep** moves up where the schema and the reply make it unambiguous (`automationStudioAnthropicReplyKeyUp`).
 //   1. **The word no model can choose** is put right where the reply makes it unambiguous (`automationStudioAnthropicReplyOwnWord`).
 //   2. **A decision is read as every provider's is** (`automationStudioLlmEvidenceNormalizedDecisionResponse`): the wrapper's
 //      own name, a decision that came without its wrapper, a summary missing. A long summary is read whole, and the chat
@@ -19,7 +20,7 @@
 // Native-schema requests take this path too. The provider's grammar relaxes what it cannot express into a description, so a
 // length may be past there as well, and the same reading holds.
 
-import { automationStudioAnthropicPaidFailure, automationStudioAnthropicReplyOwnWord, automationStudioAnthropicSchemaMisses } from "../../models/providers/anthropic/index.ts";
+import { automationStudioAnthropicPaidFailure, automationStudioAnthropicReplyKeyUp, automationStudioAnthropicReplyOwnWord, automationStudioAnthropicSchemaMisses } from "../../models/providers/anthropic/index.ts";
 import { automationStudioLlmEvidenceNormalizedDecisionResponse } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmStructuredResponse, AutomationStudioLlmTaskRequest, AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 import { automationStudioLlmTaskExpectedOutput, automationStudioLlmTaskOutputSchema } from "../provider-task/index.ts";
@@ -28,7 +29,7 @@ import { automationStudioLlmTaskExpectedOutput, automationStudioLlmTaskOutputSch
 export function automationStudioAnthropicTaskAnswer(structured: unknown, request: AutomationStudioLlmTaskRequest, usage: AutomationStudioLlmUsageSummary, contentChars: number): AutomationStudioLlmStructuredResponse {
   const schema = automationStudioLlmTaskOutputSchema(request);
   const decisionTask = request.taskKind === "evidence_tool_decision";
-  const worded = automationStudioAnthropicReplyOwnWord(structured, schema);
+  const worded = automationStudioAnthropicReplyKeyUp(automationStudioAnthropicReplyOwnWord(structured, schema), schema);
   const answer = (decisionTask ? automationStudioLlmEvidenceNormalizedDecisionResponse(worded, Number.POSITIVE_INFINITY) : undefined) ?? worded;
   const lengths = !decisionTask && automationStudioLlmTaskExpectedOutput(request.taskKind) !== "diagnosis";
   const misses = automationStudioAnthropicSchemaMisses(answer, schema, { lengths });
