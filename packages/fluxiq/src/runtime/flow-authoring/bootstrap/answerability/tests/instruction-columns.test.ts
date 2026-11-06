@@ -37,3 +37,32 @@ describe("automationStudioFlowBootstrapInstructionColumns", () => {
     expect(automationStudioFlowBootstrapInstructionColumns("columns name and price and rating")).toEqual(["name", "price", "rating"]);
   });
 });
+
+// t877, run `run-mw49972k-cebf67e5`: the closing item ran on past a name and the
+// reader answered ["title"], a partial list said as if whole, which the build
+// declared and the domain narrowed the saved read to.
+describe("a list whose closing item runs on", () => {
+  it("answers no columns, and carries the names read and the item's leading words", () => {
+    const columns = automationStudioFlowBootstrapInstructionColumns("Give me a table of the shop's listings with columns title and price exactly as the shop shows them.");
+    expect([...columns]).toEqual([]);
+    expect(columns.cutShort).toEqual({ named: ["title"], leading: ["price exactly as", "price exactly", "price"] });
+  });
+
+  it("carries every name read before the closing item", () => {
+    expect(automationStudioFlowBootstrapInstructionColumns("columns name, city and order number as printed on the receipt").cutShort)
+      .toEqual({ named: ["name", "city"], leading: ["order number as", "order number", "order"] });
+  });
+
+  it("leaves a plain list, a clause after the closing item, and an ordering as they were", () => {
+    for (const [text, names] of [
+      ["Give me a table with columns title and price.", ["title", "price"]],
+      ["columns name and email", ["name", "email"]],
+      ["columns name and message, where message is the whole text the sender wrote", ["name", "message"]],
+      ["columns title and sorted by the date each one was posted", ["title"]]
+    ] as const) {
+      const columns = automationStudioFlowBootstrapInstructionColumns(text);
+      expect([...columns], text).toEqual(names);
+      expect(columns.cutShort, text).toBeUndefined();
+    }
+  });
+});

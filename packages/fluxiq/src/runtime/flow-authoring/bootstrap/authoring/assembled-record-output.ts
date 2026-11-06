@@ -21,8 +21,21 @@
 // and its columns, where no schema is written, are the rows' own keys. That
 // parameter is told apart by standing in for an input port of the same id: the
 // rows the node is otherwise handed on that port.
+//
+// **A named list whose closing item ran on (t877).** The instruction reader
+// answers no columns, and says which names it read and the closing item's
+// leading words (`../answerability/instruction-columns.ts`), for "columns title
+// and price exactly as the shop shows them". Here the read's fields are known:
+// the longest leading words that name one of them close the list ("price"), and
+// the named columns are declared whole. When none does, nothing is declared --
+// the read stores every field it reads -- and the step log says the named
+// columns could not be read whole. A partial list is never declared: the domain
+// would narrow the read to it.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
+// The note's own module, not the step log's barrel, whose answer step reaches back here through the replay.
+import { automationStudioLlmStepLogNote } from "../../../llm/step-log/note-step.ts";
+import type { AutomationStudioFlowBootstrapInstructionColumnList } from "../answerability/index.ts";
 import { automationStudioFlowBootstrapDeclaredRecordsPath, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { authoringInstructionRecordColumns } from "./instruction-record-columns.ts";
 import { authoringWarning } from "./issue.ts";
@@ -54,7 +67,8 @@ export function automationStudioFlowBootstrapAssembledRecordOutput(input: {
 }): { value: JsonValue | undefined; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const fieldKeys = columnNames(input.parameters);
-  const asked = instructionColumns(input.definition, input.part?.columns.length ? input.part.columns : input.namedColumns, fieldKeys);
+  const named = input.part?.columns.length ? { names: input.part.columns } : closedNamedColumns(input.namedColumns, fieldKeys);
+  const asked = instructionColumns(input.definition, named.names, fieldKeys);
   const written = input.parameters[input.parameterId];
   const undeclared = written === undefined || written === null;
   const extraction = fieldKeys.length > 0 && automationStudioFlowBootstrapDeclaredRecordsPath(input.definition) !== undefined;
@@ -71,6 +85,10 @@ export function automationStudioFlowBootstrapAssembledRecordOutput(input: {
     path: input.path
   });
   issues.push(...read.issues);
+  if (named.unread && extraction && (undeclared || read.schemaDerived)) {
+    const before = named.unread.length ? `the column after ${named.unread.map((name) => `"${name}"`).join(", ")}` : "the closing column";
+    automationStudioLlmStepLogNote(`The instruction's named columns could not be read whole: ${before} runs on, and none of its leading words is a field this read reads, so the read at ${input.path} declares no columns and stores every field it reads.`);
+  }
   if (asked?.unmatched.length && (undeclared || read.schemaDerived)) {
     issues.push(authoringWarning(
       "record_output.named_column_unmatched",
@@ -96,6 +114,22 @@ function instructionColumns(
   if (!named?.length || !fieldKeys.length) return undefined;
   if (automationStudioFlowBootstrapDeclaredRecordsPath(definition) === undefined) return undefined;
   return authoringInstructionRecordColumns({ named, fieldKeys });
+}
+
+/**
+ * The instruction's named columns, closed by the read's fields when its list's
+ * closing item ran on (header): the names read before it and the longest of
+ * its leading words that names a field. `unread` holds the names read before it
+ * when no leading words name one, and nothing is then declared.
+ */
+function closedNamedColumns(
+  namedColumns: readonly string[] | undefined,
+  fieldKeys: readonly string[]
+): { names: readonly string[] | undefined; unread?: readonly string[] } {
+  const cut = (namedColumns as AutomationStudioFlowBootstrapInstructionColumnList | undefined)?.cutShort;
+  if (cut === undefined) return { names: namedColumns };
+  const leading = cut.leading.find((name) => authoringInstructionRecordColumns({ named: [name], fieldKeys }).columns.length === 1);
+  return leading === undefined ? { names: [], unread: cut.named } : { names: [...cut.named, leading] };
 }
 
 /** The column names a node already asks for, used when a record output names none. */

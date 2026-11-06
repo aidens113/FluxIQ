@@ -7,7 +7,10 @@
 // for. Each case here goes through the same door the build does: the draft the
 // build accrued (`assembleAutomationStudioFlowDraftPlan`), or a reply's own
 // plan (`acceptAutomationStudioFlowBootstrapResult`).
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
@@ -112,6 +115,57 @@ describe("an extraction with no declared columns", () => {
 
     expect(recordOutput).toMatchObject({ datasetId: "plus_earbuds" });
     expect(declaredIds(recordOutput)).toEqual(["name", "price", "rating", "url"]);
+  });
+});
+
+// t877, run `run-mw49972k-cebf67e5`: "columns title and price exactly as the
+// shop shows them". The reader answered ["title"], assembly declared it as the
+// saved read's schema (`../assembled-record-output.ts`), and the domain narrowed
+// the read to it: the answer lost price and nothing failed.
+describe("a named list whose closing item runs on", () => {
+  /** A read of three fields, one of which no instruction below names. */
+  const LISTINGS: JsonObject = { item: "li.listing", fields: { title: "a.title", price: ".price", stock: ".stock" } };
+  let directory: string;
+  let before: string | undefined;
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "fluxiq-named-columns-"));
+    before = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
+  });
+
+  afterEach(() => {
+    if (before === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    else process.env.FLUXIQ_LLM_STEP_LOG_DIR = before;
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  const notes = () => readdirSync(directory).filter((name) => name.endsWith("-note")).map((name) => (JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as { line: string }).line);
+  const declared = (read: JsonObject, instructionText: string) => declaredIds(assembled({ extractList: read }, instructionText).recordOutput);
+
+  it("run mw49972k's words: the closing item's leading name is a field, so title and price are declared", () => {
+    expect(declared(LISTINGS, "Give me a table of the shop's listings with columns title and price exactly as the shop shows them.")).toEqual(["title", "price"]);
+    expect(notes()).toEqual([]);
+  });
+
+  it("takes the longest leading words that name a field", () => {
+    const read = { ...LISTINGS, fields: { title: "a.title", orderNumber: ".order", order: ".kind" } };
+    expect(declared(read, "Give me columns title and order number exactly as printed on the receipt.")).toEqual(["title", "orderNumber"]);
+  });
+
+  it("declares nothing when no leading words name a field, and says so in the step log", () => {
+    expect(declared(LISTINGS, "Give me columns title and whatever else the shop shows beside it.")).toEqual(["title", "price", "stock"]);
+    const lines = notes();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("could not be read whole");
+    expect(lines[0]).toContain("\"title\"");
+    expect(lines[0]).toContain("stores every field it reads");
+  });
+
+  it("a plain list declares the named columns and nothing else, with no note", () => {
+    expect(declared(LISTINGS, "Give me a table with columns title and price.")).toEqual(["title", "price"]);
+    expect(declared({ ...LISTINGS, fields: { name: ".name", message: ".message", sent: ".sent" } }, "Give me columns name and message, where message is the whole text the sender wrote.")).toEqual(["name", "message"]);
+    expect(notes()).toEqual([]);
   });
 });
 
