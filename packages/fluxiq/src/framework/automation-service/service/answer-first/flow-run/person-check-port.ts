@@ -16,9 +16,10 @@
 //
 // **No clock on the wait** (`../person-waits/person-wait.ts`): only an answer, or the person's Stop
 // through the run's signal, ends it. Continue resumes the run down the step's success route, from
-// that step; the person's own Stop on the check goes down `failed`, as the engine has it.
+// that step; the person's Stop on the check goes down `failed` as the engine has it, and is told to
+// `stopped` so the attempt ends as stopped by the person and never goes back to its rounds.
 
-import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, type AutomationStudioAsk, type AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, type AutomationStudioAsk, type AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
 
@@ -41,7 +42,10 @@ export function automationStudioAnswerFirstFlowRunPersonCheckPort(person: Automa
     // Reached only by an ask `open` let through; anything else is refused again rather than waited on.
     awaitAnswer: async (ask, wait) => {
       if (!isPersonCheck(ask)) throw new Error(REFUSED);
-      return await awaitAnswer(ask, wait);
+      const answer = await awaitAnswer(ask, wait);
+      // The step's own route for Stop is `failed`; the person meant the whole attempt, which the owner ends (`../attempt/flow-stage.ts`).
+      if (answer?.kind === "choice" && answer.value === AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION) person.stopped?.();
+      return answer;
     }
   };
 }

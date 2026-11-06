@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioConversationParkingHost } from "../../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioConversationAsk } from "../../../../../../runtime/conversations/index.ts";
-import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, automationStudioAskEffect, automationStudioConversationParkingPort, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioAsk, type AutomationStudioAskDraft, type AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, automationStudioAskEffect, automationStudioConversationParkingPort, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioAsk, type AutomationStudioAskDraft, type AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
 import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunPersonCheckPort, type AutomationStudioAnswerFirstFlowRunPorts } from "../index.ts";
 import { flowRunFixture, libraryTarget, LOANS_OUTPUT, savedStep } from "../../tests/fake-library-engine.ts";
 import { READ_LOANS, RENEW_CARD } from "../../tests/fake-library.ts";
@@ -33,18 +33,19 @@ function storedOf(ask: AutomationStudioAsk): AutomationStudioConversationAsk {
 }
 
 /** A person on the Flow's thread who presses Continue on a check, or never answers until the run is stopped. */
-function person(answers: "continue" | "never") {
+function person(answers: "continue" | "stop" | "never") {
   const opened: AutomationStudioAsk[] = [];
   const waits: { state: "started" | "ended"; waitedMs: number }[] = [];
   const awaited: { expiresAtMs?: number; signal?: AbortSignal }[] = [];
   let answered = false;
+  let stops = 0;
   const port: AutomationStudioParkingPort = {
     open: (ask) => { opened.push(ask); },
     awaitAnswer: async (ask, wait) => {
       awaited.push(wait);
-      if (answers === "continue") {
+      if (answers === "continue" || answers === "stop") {
         answered = true;
-        return { askId: ask.askId, answeredAt: Date.now(), kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: "person" };
+        return { askId: ask.askId, answeredAt: Date.now(), kind: "choice", value: answers === "stop" ? AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION : AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: "person" };
       }
       await new Promise<void>((resolve) => {
         if (wait.signal?.aborted) resolve();
@@ -53,8 +54,8 @@ function person(answers: "continue" | "never") {
       return undefined;
     }
   };
-  const personCheck: NonNullable<AutomationStudioAnswerFirstFlowRunPorts["personCheck"]> = { port, waiting: (state, waitedMs) => { waits.push({ state, waitedMs }); } };
-  return { personCheck, opened, waits, awaited, answered: () => answered };
+  const personCheck: NonNullable<AutomationStudioAnswerFirstFlowRunPorts["personCheck"]> = { port, waiting: (state, waitedMs) => { waits.push({ state, waitedMs }); }, stopped: () => { stops += 1; } };
+  return { personCheck, opened, waits, awaited, answered: () => answered, stops: () => stops };
 }
 
 /** Steps 1 and 3 read the loans; step 2 presses the card, where the page shows a check until the person has cleared it. */
@@ -149,6 +150,31 @@ describe("a saved Flow's run that meets a check only a person can clear", () => 
     // On from that step: the first read is not run again, and the step after the check runs once.
     expect(fixture.target.reads).toBe(2);
     expect(fixture.asked).toEqual([]);
+  });
+
+  it("tells the attempt when the person presses Stop on the check, and not when they press Continue", async () => {
+    const check = checkAsk("check.stop");
+    const stopper = person("stop");
+    const stopping = automationStudioAnswerFirstFlowRunPersonCheckPort(stopper.personCheck, () => undefined)!;
+    await stopping.open(check);
+    expect(await stopping.awaitAnswer!(check, {})).toMatchObject({ kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION });
+    expect(stopper.stops()).toBe(1);
+    const continuer = person("continue");
+    const continuing = automationStudioAnswerFirstFlowRunPersonCheckPort(continuer.personCheck, () => undefined)!;
+    await continuing.open(check);
+    await continuing.awaitAnswer!(check, {});
+    expect(continuer.stops()).toBe(0);
+  });
+
+  it("a Stop on a check mid-run is told to the attempt and goes no further than the step's failed route", async () => {
+    const target = libraryTarget();
+    const asker = person("stop");
+    target.over = ({ nodeId }) => nodeId !== RENEW_CARD ? undefined : { status: "failed", route: "failed", message: "A robot check covers the page.", failure: { category: "user_intervention_required", code: "library.robot_check", retryable: false } };
+    const fixture = await flowRunFixture({ target }, cleanups);
+    const outcome = await automationStudioAnswerFirstFlowRun({ ...fixture.ports, personCheck: asker.personCheck }, { steps: threeSteps(), stepsDigest: "digest.saved" });
+    expect(asker.stops()).toBe(1);
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: false });
+    expect(fixture.target.reads).toBe(1);
   });
 
   it("leaves the run waiting while nobody answers, with no timeout, until the person's Stop", async () => {
