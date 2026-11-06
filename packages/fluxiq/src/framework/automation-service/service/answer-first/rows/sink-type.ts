@@ -28,4 +28,10 @@ export type AutomationStudioAnswerFirstRowSink = {
   summary(): AutomationStudioAnswerFirstRowsSummary;
   /** `summary`, read back from the store after processing, so what is judged and shown is what was stored; the sink's own account when the store cannot be read. */
   readBack(): Promise<AutomationStudioAnswerFirstRowsSummary & { fromStore: boolean }>;
+  /**
+   * How many reads have answered so far: each call whose answer held a list of rows, none
+   * included, that was not lost to a failing store, and each batch a run captured. What says a
+   * read ran even where it found nothing (`../completion/check.ts`, `rows_not_read`).
+   */
+  readsAnswered(): number;
 };

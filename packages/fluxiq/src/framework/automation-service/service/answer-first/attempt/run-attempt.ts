@@ -171,6 +171,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
     rows: () => sink.readBack(),
+    readsRan: () => sink.readsAnswered() > 0,
     acts: () => record.acts(),
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),

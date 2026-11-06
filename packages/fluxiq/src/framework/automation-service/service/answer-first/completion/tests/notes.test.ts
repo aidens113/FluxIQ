@@ -12,6 +12,7 @@ function made(verdict: "yes" | "no") {
     instructions: "List the books on loan",
     rows: async () => ({ datasetId: "dataset.1", totalRows: 1, truncated: false, columns: [{ id: "title", label: "Title" }], rows: [{ title: "Atlas" }] }),
     acts: () => [],
+    readsRan: () => true,
     endView: async () => undefined,
     witnesses: () => ({}),
     judge: async (summary) => {
