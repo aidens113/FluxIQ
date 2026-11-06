@@ -19,10 +19,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "../../../../../runtime/result-verification/index.ts";
-import { judgeReply } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstKnownFlow, automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstStepsDigest, automationStudioAnswerFirstTaskKey } from "../index.ts";
 import { HOLD_SHELF, pressCard as renewCardOnTarget, renewEveryLoan, savedStep } from "./fake-library-engine.ts";
-import { complete, RENEW_CARD, runNode } from "./fake-library.ts";
+import { complete, judgedYes, RENEW_CARD, runNode } from "./fake-library.ts";
 import { judgedNo } from "./endings/support.ts";
 import { laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
 
@@ -193,7 +192,7 @@ describe("a Run again's judge", () => {
       const sent = request.context.resultSummary as unknown as Record<string, unknown>;
       shown.push(sent);
       const change = (renewedIn(sent.endView) ?? 0) - (renewedIn((sent.witnesses as { before?: unknown } | undefined)?.before) ?? 0);
-      return sent.askedAgain === AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN && change === 1 ? judgeReply("yes") : judgedNo(`It changed by ${change}.`);
+      return sent.askedAgain === AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN && change === 1 ? judgedYes(request) : judgedNo(`It changed by ${change}.`);
     };
 
     const again = await lane.attempt({ ...same, runAgain: true, judge: [judge] });
@@ -205,7 +204,7 @@ describe("a Run again's judge", () => {
     // The same words are no repeat the person asked for, and are not told one.
     const capture = (request: AutomationStudioLlmTaskRequest) => {
       shown.push(request.context.resultSummary as unknown as Record<string, unknown>);
-      return judgeReply("yes");
+      return judgedYes(request);
     };
     await lane.attempt({ ...same, judge: [capture] });
     expect(shown[1]!.askedAgain).toBeUndefined();
