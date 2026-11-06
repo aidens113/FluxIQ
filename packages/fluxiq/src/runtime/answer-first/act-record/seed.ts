@@ -27,6 +27,12 @@
 //                                              not heard of carries, since that is the side a
 //                                              mistake can be undone from.
 //
+// **An act that stood when an attempt ended achieved is marked (`doneInAchieved`, `./done-in-achieved.ts`)**
+// and carries so: a count act (`asked` more than its `landings`) has no room in the next attempt, since
+// the attempt said the task was done and one press can land several. An act from an attempt that did not
+// finish carries unmarked and keeps its room, so the same words go on to finish a count cut short. A
+// union keeps the mark: an act once done in an achieved attempt stays so.
+//
 // **What does not carry, with the attempt that held it.**
 //
 //   a look        a may-have-landed act was looked at on the page as it stood then, so the
@@ -68,7 +74,7 @@ function union(acts: readonly AutomationStudioAttemptActEntry[]): AutomationStud
   const held = new Map<string, AutomationStudioAttemptActEntry>();
   for (const act of acts) {
     const known = held.get(act.id);
-    held.set(act.id, known ? { ...act, keys: [...new Set([...known.keys, ...act.keys])], rows: [...new Set([...known.rows, ...act.rows])], actions: [...new Set([...known.actions, ...act.actions])] } : act);
+    held.set(act.id, known ? { ...act, ...(known.doneInAchieved || act.doneInAchieved ? { doneInAchieved: true as const } : {}), keys: [...new Set([...known.keys, ...act.keys])], rows: [...new Set([...known.rows, ...act.rows])], actions: [...new Set([...known.actions, ...act.actions])] } : act);
   }
   return [...held.values()];
 }

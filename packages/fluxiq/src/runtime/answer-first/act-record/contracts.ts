@@ -82,6 +82,8 @@ export type AutomationStudioAttemptActEntry = AutomationStudioAttemptAct & {
   heldOnRepeat?: true;
   /** Made by an earlier attempt at this task: said as already done, not as this attempt's own (`./seed.ts`). Goes when this attempt does it itself. */
   carried?: true;
+  /** It stood when an attempt that ended achieved ended (`./done-in-achieved.ts`): the task was done and judged so, so carried into a later attempt it has no room for another landing, whatever its count (`./record.ts`, `hasRoom`). Goes with `carried` when an attempt does the act itself. */
+  doneInAchieved?: true;
   stage: AutomationStudioAttemptActStage;
   /** The names its action answers to. */
   actions: string[];
