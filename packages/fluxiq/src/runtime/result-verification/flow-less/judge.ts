@@ -181,7 +181,7 @@ function held(summary: AutomationStudioFlowLessSummary): string | undefined {
 /** A result's `checkedWhat` on a yes: what was checked, once. The card says it under "Checked". */
 function checked(summary: AutomationStudioFlowLessSummary): string {
   const got = held(summary);
-  return got ? `${got}, once against what was asked for.` : "nothing to show, once against what was asked for.";
+  return got ? `${got}, against what was asked for.` : "nothing to show, against what was asked for.";
 }
 
 /** On an unsure: what the check was meant to settle and did not. The card says it under "Meant to check". */
