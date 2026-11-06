@@ -135,7 +135,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (judged.verdict === "yes") {
         state.achieved = true;
         state.refused = undefined;
-        input.say("Checked", "It is what you asked for, checked once.");
+        input.say("Checked", `It is what you asked for, checked ${state.timesChecked === 1 ? "once" : `${state.timesChecked} times`}.`);
         return { ok: true };
       }
       state.refused = { verdict: judged.verdict, digest, reason: judged.reason };
