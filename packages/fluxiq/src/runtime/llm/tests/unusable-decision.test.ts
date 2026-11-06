@@ -693,7 +693,7 @@ describe("what the model is told after an unusable reply", () => {
         issueCodes: ["llm_output.kind_mismatch", "llm.provider_output_invalid"],
         stepsWithoutProgress: 1,
         maxStepsWithoutProgress: 3,
-        accepted: expect.objectContaining({ oneOf: [expect.objectContaining({ kind: "tool_call" }), expect.objectContaining({ kind: "complete" })] }),
+        accepted: expect.objectContaining({ reply: expect.objectContaining({ kind: "evidence_tool_decision", decision: { oneOf: [expect.objectContaining({ kind: "tool_call" }), expect.objectContaining({ kind: "complete" })] } }) }),
         instruction: expect.any(String)
       }
     });
