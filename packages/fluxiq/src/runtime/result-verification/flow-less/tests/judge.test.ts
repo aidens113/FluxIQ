@@ -165,8 +165,8 @@ describe("the Flow-less judge's answer", () => {
   it("counts only this attempt's acts on the site, and says the ones already done earlier apart", async () => {
     const earlier = { ...BOOKED, id: "act.0", what: "Already done earlier: Booked the hall for the choir" };
     const { provider } = scripted(YES);
-    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [earlier, { ...earlier, id: "act.2" }, { ...earlier, id: "act.3" }] } })).toMatchObject({ checkedWhat: "3 already done earlier, once against what was asked for." });
-    expect(await judge(scripted(YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, once against what was asked for." });
+    expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [earlier, { ...earlier, id: "act.2" }, { ...earlier, id: "act.3" }] } })).toMatchObject({ checkedWhat: "3 already done earlier, against what was asked for." });
+    expect(await judge(scripted(YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
   });
 
   it("takes a yes citing a cell the rows do hold", async () => {

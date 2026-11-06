@@ -191,7 +191,7 @@ function actCounts(summary: AutomationStudioFlowLessSummary): string[] {
   ];
 }
 
-/** A result's `checkedWhat` on a yes: what was checked, once. The card says it under "Checked". */
+/** A result's `checkedWhat` on a yes: what was checked. The card says it under "Checked", with how many times the attempt knows it was. */
 function checked(summary: AutomationStudioFlowLessSummary): string {
   const got = held(summary);
   return got ? `${got}, against what was asked for.` : "nothing to show, against what was asked for.";
