@@ -54,6 +54,11 @@ describe("parseAutomationStudioSavedState", () => {
     expect(issuesOf({ ...PARTLY, trust: "provisional" })).toEqual([]);
     expect(issuesOf({ ...PARTLY, trust: "established" })).toEqual(["saved_state.partly_works_not_established"]);
     expect(issuesOf({ ...PARTLY, simulation: "proved" })).toEqual(["saved_state.invalid_simulation"]);
+    // Steps that ran and had their stopping step repaired (t878): `true` or absent, and only on partly_works.
+    expect(issuesOf({ ...PARTLY, repaired: true })).toEqual([]);
+    expect(issuesOf({ ...PARTLY, repaired: false })).toEqual(["saved_state.invalid_repaired"]);
+    expect(issuesOf({ ...PARTLY, repaired: "yes" })).toEqual(["saved_state.invalid_repaired"]);
+    expect(issuesOf({ ...READY, repaired: true })).toEqual(["saved_state.unknown_key"]);
     const { flowId: _flowId, ...noDraft } = PARTLY;
     expect(issuesOf(noDraft)).toEqual(["saved_state.needs_flow"]);
   });

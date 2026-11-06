@@ -42,6 +42,14 @@ test("each saved state names when and what, and only a copy that worked says it 
   assert.equal(savedWords({ state: "notes_only", trust: "unproven", savedAtMs: 0 }, NOW).startsWith("Saved: notes only"), true, "no usable time, no day");
 });
 
+test("saved steps that ran this time and had the step that stopped them fixed never say they have not run (t878)", () => {
+  const at = NOW - 60_000;
+  const line = savedWords({ state: "partly_works", trust: "unproven", flowId: "f", savedAtMs: at, repaired: true }, NOW);
+  assert.equal(line, "Saved today: the steps. They ran this time and I fixed the step that stopped them, so next time I will try them with that fix.");
+  assert.doesNotMatch(line, /not run/iu);
+  assert.doesNotMatch(savedWords({ state: "partly_works", trust: "unproven", flowId: "f", savedAtMs: at, simulation: "failed", repaired: true }, NOW), /only partly work|not run/iu, "the repair is what happened, whatever the recording said");
+});
+
 test("a budget out says what it saved in the same words", () => {
   const outcome = fakeTaskOutcomes().budgetOutPartial;
   const said = answerModel(outcome, { reportsSpend: true, canAddBudget: true, nowMs: outcome.saved!.savedAtMs + 60_000 })!;
