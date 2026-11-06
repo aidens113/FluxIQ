@@ -50,7 +50,7 @@ import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
 import { automationStudioAnswerFirstRunAgainScope, type AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
-import { automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
+import { automationStudioAnswerFirstBeforeReadingsOf, automationStudioAnswerFirstEarlierBefore, automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstCallChain } from "./call-chain.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "./contracts.ts";
@@ -130,7 +130,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
   const carried = hold ? automationStudioAnswerFirstCarriedOpening(hold) : undefined;
   const opening = hold && carried
-    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined }
+    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, seedFrom: attemptId, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined }
     : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts }, again);
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
@@ -168,7 +168,12 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   let looks = 0;
   // Through the domain alone: a look is no call of the task's, and it reaches none of its records.
   const lookNow = async (): Promise<AutomationStudioResultEndView | undefined> => look?.({ callId: `core.attempt_look.${(looks += 1)}`, executeTool: (call) => run.options.executeTool(call) });
-  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined });
+  // Carried acts come with the before reading taken ahead of them, held in memory and never beside the Flow (`../witnesses/before-readings.ts`).
+  const befores = automationStudioAnswerFirstBeforeReadingsOf(input.owner);
+  const earlier = automationStudioAnswerFirstEarlierBefore(befores, { acts: opening.seed !== undefined, from: opening.seedFrom, sameAttempt: hold !== undefined });
+  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier, keep: (before) => befores.keep(attemptId, before) });
+  // What the model's own looks found after the first lasting act: the chain hands each new one on, the check bounds, screens and judges it (`./call-chain.ts`).
+  const looked: { where: string; found: string }[] = [];
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
     rows: () => sink.readBack(),
@@ -176,6 +181,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     acts: () => record.acts(),
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
+    looked: () => looked,
     askedAgain: again !== undefined || carried?.askedAgain === true,
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
@@ -202,7 +208,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     readRowsKey: input.binding?.readRowsKey,
     describe: describe ? (call) => describe({ projectId, flowId, ...call }) : undefined,
     stepped: () => { run.liveSteps += 1; },
-    answered: () => { run.arrived = true; }
+    answered: () => { run.arrived = true; },
+    looked: (look) => { looked.push(look); }
   });
   const ground = input.permissionGround;
   const permissions = automationStudioFlowBootstrapActionPermissions({

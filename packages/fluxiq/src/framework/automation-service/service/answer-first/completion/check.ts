@@ -28,6 +28,15 @@
 // attempt, before any judge. A read that ran and found nothing has run: an empty result is the
 // judge's to weigh, and refusing it would keep an honest attempt going until its budget ran out.
 // The refusal is an ordinary one, so the attempt goes on to read (`../attempt/round.ts`).
+//
+// **A look after the acts is evidence (lane B, run-mw4dsh8i-3fb9dc39).** A check said unsure and
+// named what it could not see; the model opened that page, searched it and found it, and every
+// completion after was refused as the same evidence, because the summary held no look. So what the
+// attempt's looks found after the first lasting act (`looked`, from Core's record of each call's
+// answer, `../attempt/call-chain.ts`) is in the summary, and so in its digest: a look that found
+// something new is new evidence, and the same look again is not. It is bounded -- the latest few, each
+// cut short -- and screened line by line as a judge's own words are, so a credential-shaped line
+// never reaches the judge and the rest of what was found still does.
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -35,7 +44,7 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
-import { automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused-words.ts";
@@ -54,6 +63,14 @@ const NOT_JUDGED = AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE;
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
+/** The latest looks the judge is shown, and how much of each (header). */
+const LOOKS_SHOWN = 6;
+const FOUND_CHARS = 600;
+const WHERE_CHARS = 300;
+/** Stands in for a line, or an address, the screen dropped whole. */
+const WITHHELD = "(withheld)";
+
+type Look = { where: string; found: string };
 
 /** The purse would not pay for the check: the round ends as a budget-out, not as a refusal the model is asked again over. */
 export class AutomationStudioAnswerFirstJudgeRefusedByPurse extends Error {
@@ -92,6 +109,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   readsRan(): boolean;
   endView(): Promise<AutomationStudioResultEndView | undefined>;
   witnesses(): { before?: JsonObject; after?: JsonObject };
+  /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
+  looked?: (() => readonly Look[]) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
@@ -151,6 +170,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
 async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCompletionCheck>[0], rows: AutomationStudioAnswerFirstRowsSummary, acts: readonly AutomationStudioAttemptAct[], answerText: string | undefined): Promise<AutomationStudioFlowLessSummary> {
   const endView = await input.endView();
   const witnesses = input.witnesses();
+  const looked = shownLooks(input.looked?.() ?? []);
   return {
     instructions: input.instructions,
     ...(rows.datasetId !== undefined ? { rows: { totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, rows: rows.rows } } : {}),
@@ -158,8 +178,31 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     ...(answerText !== undefined ? { answerText } : {}),
     ...(endView ? { endView } : {}),
     ...(Object.keys(witnesses).length ? { witnesses } : {}),
+    ...(looked.length ? { looked } : {}),
     ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
+}
+
+/** The latest few distinct looks, each cut short and screened (header). A look already shown keeps its place, so seeing it again changes nothing. */
+function shownLooks(looks: readonly Look[]): Look[] {
+  const kept = new Map<string, Look>();
+  for (const look of looks) {
+    const shown = { where: screened(cut(look.where, WHERE_CHARS)), found: cut(look.found, FOUND_CHARS).split("\n").map(screened).join("\n") };
+    const key = JSON.stringify([shown.where, shown.found]);
+    if (!kept.has(key)) kept.set(key, shown);
+  }
+  return [...kept.values()].slice(-LOOKS_SHOWN);
+}
+
+/** One line through the screen a judge's own words pass: a credential-shaped line is dropped whole, a locator in one rewritten. */
+function screened(line: string): string {
+  if (!line.trim()) return line;
+  return automationStudioFlowLessScreenedWords(line).text ?? WITHHELD;
+}
+
+function cut(text: string, most: number): string {
+  const characters = [...text];
+  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function refused(code: string, instruction: string): AutomationStudioLlmEvidenceCompletionCheck {

@@ -2,12 +2,20 @@
 // site or a task, and the only words not Core's are the check's own screened reason.
 //
 // **Every sentence is about what the check really reads** (`./check.ts`, `summaryOf`): the rows in
-// their order, the acts on the record, the model's `answer`, the page and the witnesses. So a draft
+// their order, the acts on the record, the model's `answer`, the page, the witnesses and what looks
+// found after the first lasting act. So a draft
 // edit, a reworded summary and a note are not evidence, and it says so: a run was told the opposite
 // (run-mw37vz9n-a77a02c2, steps 117 to 121, the draft's words on a check that never reads a draft),
 // edited its draft, and completed three more times at about $0.14 each.
+//
+// **A look is named as the way out, and nothing invites a wait (lane B, run-mw4dsh8i-3fb9dc39).**
+// The check reads what looks found after the first lasting act (`./check.ts`, `looked`). That run's
+// model was told new evidence was only an act, different rows or a changed site, so a look that
+// found what the check could not see read as nothing; and "you need not keep trying" told it it
+// could stop. A task ends only with its result or its budget, so a refusal says where the evidence
+// is got, never that the trying may end.
 
-const NEW_EVIDENCE = "Only new evidence changes the check's answer: an act on the site that lands, a read that returns different rows or the same rows in a different order, the site showing something different, or different words in answer where the result is words. resultHolds is exactly what the check reads, so compare it with what was asked for before you complete. Editing the draft, or rewording your summary or notes, is not new evidence: the check reads none of them.";
+const NEW_EVIDENCE = "Only new evidence changes the check's answer: an act on the site that lands, a read that returns different rows or the same rows in a different order, after your acts a look at the page that shows what the check said it could not see (open that page, then read or search it there), the site showing something different, or different words in answer where the result is words. resultHolds is exactly what the check reads, so compare it with what was asked for before you complete. Editing the draft, or rewording your summary or notes, is not new evidence: the check reads none of them.";
 
 const NOT_NEW = "The check reads what you hold, never the draft, your summary or your notes, so only new evidence changes its answer.";
 
@@ -27,7 +35,7 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
 
   /** A completion over what the check last refused: what that was about, what would change it, and what repeating it leads to. */
   sameEvidence: (verdict: "no" | "unsure", reason: string): string =>
-    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} If you cannot get anything new you need not keep trying: completing again with nothing new starts a fresh round, and the time after that the person is asked whether to keep going or to stop with what you hold.`,
+    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} So get something new before you complete again: go to where what the check could not see is shown, and look, read or act there. Completing again with nothing new starts a fresh round, and the time after that the person is asked whether to keep going or to stop with what you hold.`,
 
   /** Said when any of these comes again over one draft, in place of the loop's words for a check that reads the draft (`../../../../../runtime/llm/decision-handlers/completion.ts`). */
   sentAgain: NOT_NEW,
