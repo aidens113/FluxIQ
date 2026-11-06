@@ -21,8 +21,9 @@
 // cancellation thrown on the way. What else is thrown is a run that could not start.
 //
 // **A check only a person can clear is put to them where it stands** (`./person-check-port.ts`): the
-// run waits in place with no clock and goes on from that step once they press Continue. No other
-// question reaches a person part way through a Flow.
+// run waits in place with no clock and goes on from that step once they press Continue. Their Stop
+// there halts the run through its own signal, so it reads as `stopped` and the step's failed route,
+// whatever it presses, never runs. No other question reaches a person part way through a Flow.
 //
 // **The page has moved only if a call went out.** So a run refused before its first step leaves the
 // attempt going to the start location, as if it had not been tried.
@@ -61,8 +62,11 @@ const NO_REQUIREMENTS = "candidate.requirements.unbound";
 const CANCELLED = "candidate.execution_cancelled";
 
 export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudioAnswerFirstFlowRunPorts, saved: Saved): Promise<AutomationStudioAnswerFirstFlowRunOutcome> {
-  const signal = ports.input.cancellation.signal();
-  const stopped = (): boolean => signal?.aborted === true;
+  // The run's own signal: the attempt's Stop, or the person's Stop on a check, which halts the engine before the check step's failed route (`./person-check-port.ts`).
+  const halt = new AbortController();
+  const attempt = ports.input.cancellation.signal();
+  const signal = attempt ? AbortSignal.any([attempt, halt.signal]) : halt.signal;
+  const stopped = (): boolean => signal.aborted;
   if (stopped()) return { kind: "stopped" };
   const assembly = await automationStudioAnswerFirstFlowRunAssemble(ports, saved.steps);
   if (stopped()) return { kind: "stopped" };
@@ -72,7 +76,7 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved, watch, signal);
+    const ended = await run(ports, assembly, saved, watch, signal, () => halt.abort());
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
   } catch (error) {
@@ -89,7 +93,7 @@ function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assem
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
   const { input, runId } = ports;
   const digest = saved.stepsDigest;
   const engine = ports.engine();
@@ -100,7 +104,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
   const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
   let askedNobody = false;
-  const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; });
+  const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; }, halt);
   const options = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking);
   const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
     identity,
@@ -123,8 +127,8 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * person can clear to the person, so a step that asks anything else stops the run and asks nobody
  * (`./person-check-port.ts`, `./permission.ts`).
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal | undefined, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined): AutomationStudioGraphExecutionOptions {
-  const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal: signal ?? new AbortController().signal });
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined): AutomationStudioGraphExecutionOptions {
+  const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal });
   const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch), ...(parking ? { parking } : {}) };
   return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
 }
