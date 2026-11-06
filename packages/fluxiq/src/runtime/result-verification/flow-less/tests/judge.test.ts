@@ -166,9 +166,11 @@ describe("the Flow-less judge's answer", () => {
 
   it("counts only this attempt's acts on the site, and says the ones already done earlier apart", async () => {
     const earlier = { ...BOOKED, id: "act.0", what: "Already done earlier: Booked the hall for the choir" };
-    const { provider } = scripted(YES);
+    // Over no rows a yes cites none and says no list of records is asked (t875's records rule).
+    const ACTS_YES: Script = { answer: { answersRequest: "yes", checked: [], answerRecords: { asked: false } } };
+    const { provider } = scripted(ACTS_YES);
     expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [earlier, { ...earlier, id: "act.2" }, { ...earlier, id: "act.3" }] } })).toMatchObject({ checkedWhat: "3 already done earlier, against what was asked for." });
-    expect(await judge(scripted(YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
+    expect(await judge(scripted(ACTS_YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
   });
 
   it("takes a yes citing a cell the rows do hold", async () => {
@@ -354,6 +356,13 @@ describe("what the judge is shown", () => {
   it("tells it to judge the change, and shows before and after", () => {
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("Judge the change, not the absolute state");
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("witnesses.before and witnesses.after");
+  });
+
+  // run-mw4eb5r3-a20f3542: with no word on a carried act, a judge asked for an earlier attempt's add again.
+  it("tells it an act already done earlier at the same words counts as got, and doing it again is wrong", () => {
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("An act whose words begin 'Already done earlier' was done by an earlier attempt at these same words: it counts as got");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("doing it again would be wrong");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("'May already be done' counts as got only where the views show it");
   });
 
   // The same lists the in-run repair instruction is held to (`../../../llm/harness/tests/in-run-repair-slot.test.ts`).
