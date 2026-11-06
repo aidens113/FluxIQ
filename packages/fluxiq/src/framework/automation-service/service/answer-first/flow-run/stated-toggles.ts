@@ -7,7 +7,8 @@
 // has no submit and asks nobody, and the state is known: the attempt did what the person asked, and
 // the state to keep is the one its latest press of that control left. So this reads the same
 // observations through the same tie (`automationStudioExploredToggleTie`), whatever the step declared,
-// since a plain press that flipped its own control flips it back just the same.
+// since a plain press that flipped its own control flips it back just the same. A step is also tied to the press it
+// made itself (`ownPressHandles`), since a domain may resolve that press's handle away before the plan is laid out.
 //
 // Observations that disagree, a node that cannot take `ensureState`, and a step the model already gave
 // a state are left as they are. Nothing here refuses anything: a step with no state is pressed as the
@@ -43,7 +44,8 @@ export function automationStudioAnswerFirstStatedToggles(input: {
       const ref = `${subflow.key}.${node.key}`;
       const views = (input.handleViews ?? []).filter((view) => view.node === ref);
       const others = plan.subflows.flatMap((each) => each.nodes.filter((other) => other !== node));
-      const presses = automationStudioExploredToggleTie({ node: node.definitionId, handles: new Set(views.map((view) => view.handle)), target: node.parameters?.target, step: { ref, parameters: node.parameters, others } }, input.explored);
+      const handles = new Set([...views.map((view) => view.handle), ...ownPressHandles(step.step, node.definitionId, input.explored)]);
+      const presses = automationStudioExploredToggleTie({ node: node.definitionId, handles, target: node.parameters?.target, step: { ref, parameters: node.parameters, others } }, input.explored);
       const latest = presses.at(-1);
       if (!latest) continue;
       const choice = automationStudioToggleStateChoice({ parameters: { [ENSURE_STATE]: latest.signature }, explored: presses, controls: views.map((view) => view.control) });
@@ -51,4 +53,31 @@ export function automationStudioAnswerFirstStatedToggles(input: {
     }
   }
   return stated;
+}
+
+/**
+ * The handles of the press this step itself made while exploring: the call the step was added from, on its node, and
+ * on the handle it was written with where it names one. A domain resolves a press's handle into what finds the control
+ * again (a web press reaches the plan as a selector and its element), so the plan names no handle a view could give, and
+ * without this the step's own flip tied nothing (t869, `run-mw46041y-1a1d77e5`: a Run again pressed three saved tables
+ * off). The call id alone is not enough, since a later attempt may reuse one; the node and the handle keep it to that press.
+ */
+function ownPressHandles(step: AutomationStudioFlowDraftStep, node: string, explored: readonly AutomationStudioExploredToggle[]): string[] {
+  if (!step.callId) return [];
+  const written = writtenHandle(step.input) ?? writtenHandle(step.ranWith);
+  return explored
+    .filter((press) => press.callId === step.callId && press.node === node && (written === undefined || press.handles.includes(written)))
+    .flatMap((press) => press.handles);
+}
+
+/** The handle a call's `target` names, as the model wrote it. */
+function writtenHandle(call: unknown): string | undefined {
+  const parameters = isObject(call) ? call.parameters : undefined;
+  const target = isObject(parameters) ? parameters.target : undefined;
+  const handle = isObject(target) ? target.handle : undefined;
+  return typeof handle === "string" && handle.length > 0 ? handle : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

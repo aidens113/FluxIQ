@@ -77,6 +77,15 @@ describe("a step on a control the attempt saw flip", () => {
     // A second sighting that says the press left the switch where it found it.
     expect(await statedAfter(fixture, [seen!, { ...seen!, beforeSignature: seen!.signature }])).toEqual([]);
   });
+
+  // A web press reaches the plan resolved, as the control found again, with no handle a view could give
+  // (`run-mw46041y-1a1d77e5`): the press it made itself, while exploring, is still its own.
+  it("is tied to the press its own call made while exploring, though the plan names no handle, and to no other call's", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const own: AutomationStudioExploredToggle = { callId: "call.1", node: HOLD_SHELF, handles: ["t7"], signature: { state: "on" }, beforeSignature: { state: "off" } };
+    expect(await statedAfter(fixture, [own])).toEqual([{ step: "saved.1", ensureState: { state: "on" } }]);
+    expect(await statedAfter(fixture, [{ ...own, callId: "call.9" }])).toEqual([]);
+  });
 });
 
 describe("the same press, held by what it said of itself", () => {

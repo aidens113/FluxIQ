@@ -44,6 +44,7 @@ import { authoringKey, authoringSymbol } from "./keys.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter } from "./matching.ts";
 import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
+import { automationStudioFlowPlanRepeatRowFields } from "../script-statements/index.ts";
 import {
   AUTOMATION_STUDIO_AUTHORING_PLAN_SHAPES,
   authoringNodeList,
@@ -95,7 +96,9 @@ export function normaliseAutomationStudioFlowBootstrapJsonPlan(input: {
   }
   if (!subflows.some((subflow) => subflow.role === "primary")) subflows[0]!.role = "primary";
   const primary = subflows.find((subflow) => subflow.role === "primary")!.key;
-  return { plan: { schemaVersion: "0.1", router: router(read.plan.router, subflows, input.summary, primary), subflows }, issues };
+  // The row fields a repeat reads stay on the listing that gives them, as a script's do (`../script-statements/repeat/row-fields.ts`).
+  const plan = automationStudioFlowPlanRepeatRowFields({ registry: input.registry, resolution: input.resolution, plan: { schemaVersion: "0.1", router: router(read.plan.router, subflows, input.summary, primary), subflows } });
+  return { plan, issues };
 }
 
 /**
