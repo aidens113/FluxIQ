@@ -243,8 +243,8 @@ describe("a check whose step has a failed route that presses something", () => {
     const asker = person("continue");
     const { outcome, fixture } = await runOn(({ nodeId }) => nodeId === CLOSE_PROMPT && !asker.answered() ? robotCheck : undefined, asker.personCheck);
     expect(asker.stops()).toBe(0);
-    // Not `reachedEnd`: this shape never reads as reaching its end when the recovery is not needed, check or no check (the engine's unvisited-node ending).
-    expect(outcome).toMatchObject({ kind: "ran", steps: [expect.objectContaining({ position: 1, ran: "passed" }), expect.objectContaining({ position: 2 }), expect.objectContaining({ position: 3, ran: "not_reached" }), expect.objectContaining({ position: 4, ran: "passed" })] });
+    // The recovery it did not need is not a step left behind (lane C W11), so the run reaches its end.
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, steps: [expect.objectContaining({ position: 1, ran: "passed" }), expect.objectContaining({ position: 2 }), expect.objectContaining({ position: 3, ran: "not_reached" }), expect.objectContaining({ position: 4, ran: "passed" })] });
     expect(cardPresses(fixture.target)).toBe(0);
     expect(fixture.target.reads).toBe(2);
   });

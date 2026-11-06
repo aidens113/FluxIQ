@@ -496,6 +496,33 @@ describe("the Flow a derived graph makes when it runs", () => {
     expect(trace.attempts.map((attempt) => attempt.route)).toEqual(["failed", "success", "success"]);
     expect(trace.status).toBe("succeeded");
   });
+
+  // Lane C W10: the recovery was left out of the run when it was not needed,
+  // and the run was ended `executor.graph.unvisited_nodes` for it.
+  it("succeeds when every step does, and leaves the recovery it did not need unrun", async () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({
+      steps: [
+        step(1, "dispatch", { target: "renew" }, { kind: "on_failed", to: "d2" }),
+        step(2, "dispatch", { target: "renew-fallback" }),
+        step(3, "dispatch", { target: "confirm" })
+      ],
+      write: dispatching, registry, resolution, summary: "Renew, falling back when that fails, then confirm"
+    });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+
+    const dispatched: string[] = [];
+    const trace = await runAutomationStudioGraph(flowDocument(assembled.plan!), {
+      effectDispatcher: (effect) => {
+        dispatched.push(String((effect.payload as { outputId?: string }).outputId));
+        return { status: "success", route: "success", outputs: { ok: true } };
+      },
+    });
+
+    expect(dispatched).toEqual(["renew", "confirm"]);
+    expect(trace.attempts.map((attempt) => attempt.definitionId)).toEqual(["builtin.policy.action", "builtin.control.merge", "builtin.policy.action"]);
+    expect(trace.failure?.code).toBeUndefined();
+    expect(trace.status).toBe("succeeded");
+  });
 });
 
 /** A draft step written as a node Core itself can run, so the graph is executable here. */
