@@ -180,8 +180,8 @@ describe("replaying the recorded amendment stall", () => {
       return script[at - 1] ?? { kind: "complete", result: { summary: "done" } };
     });
     await runAutomationStudioLlmEvidenceLoop({ tools: library, decide, executeTool: page, maxIterations: 20, maxToolCalls: 20, dryRun: false, draftAuthoring: "transcript", unusableDecisions: { stalled: () => new Error("stalled") } });
-    const check = shown[4]!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)!.value as { accepted: { oneOf: JsonObject[] } };
-    expect(check.accepted.oneOf.map((shape) => shape.kind)).toEqual(["tool_call", "complete", "amend_draft"]);
+    const check = shown[4]!.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)!.value as { accepted: { reply: { decision: { oneOf: JsonObject[] } } } };
+    expect(check.accepted.reply.decision.oneOf.map((shape) => shape.kind)).toEqual(["tool_call", "complete", "amend_draft"]);
   });
 
   it("does not call an edit undone when something was run between, since the draft is then a new one", async () => {

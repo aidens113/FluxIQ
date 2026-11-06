@@ -21,8 +21,8 @@ describe("the Flow-less branch of a verification's instruction", () => {
   });
 
   it("leaves every other call's text byte for byte", () => {
-    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification"))).toBe("6da50f6aa1c3b5e412e6ba8066f7fa55b915975e731c6c1a8bfd8b913b1a3117");
-    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }))).toBe("865141b54cc33e016154f164198de73abe715a3fa25b3df268b339055d2b9f11");
+    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification"))).toBe("3b1f0faccbed038f4142da2400aa7688e3f806abdffbcf1308117744b6224cfe");
+    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }))).toBe("79d66e75bd2422f2c66fd87570c916fed4f06908368e97be4961526e38c9bd15");
     expect(digest(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"))).toBe("e7b43626fd5b1a784513f5dfd9bf3e4884160a553736ca8f1b9536b5dc63e39b");
     expect(automationStudioDiagnosisPromptInstruction("runtime_diagnosis", { flowLess: true })).toBe(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"));
   });

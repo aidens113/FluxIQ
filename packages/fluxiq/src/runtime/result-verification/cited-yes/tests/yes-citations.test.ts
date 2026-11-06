@@ -59,4 +59,44 @@ describe("automationStudioResultYesCitations", () => {
   it("does not refute anything of an answer it holds no row of", () => {
     expect(automationStudioResultYesCitations(summary({ sampleRows: [] }), [{ row: "Fish Pie", column: "minutes", value: "40" }])?.refuted).toEqual([]);
   });
+
+  describe("a row cited by its position", () => {
+    const four = summary({
+      recordCount: 4,
+      sampleRows: [{ name: "Lentil Soup", minutes: 40 }, { name: "Cheese Tart", minutes: 55 }, { name: "Fish Pie", minutes: 70 }, { name: "Flatbread", minutes: 25 }]
+    });
+
+    it("is the Nth stored row, written 1, row 2 or #3, when its cells match", () => {
+      const found = automationStudioResultYesCitations(four, [
+        { row: "1", column: "minutes", value: "40" },
+        { row: "row 2", column: "minutes", value: "55" },
+        { row: "#3", column: "minutes", value: "70" },
+        { row: "4", column: "name", value: "Flatbread" }
+      ]);
+      expect(found).toEqual({ cited: 4, refuted: [] });
+    });
+
+    it("is refuted where that row's cell does not hold the cited value", () => {
+      const found = automationStudioResultYesCitations(four, [{ row: "2", column: "minutes", value: "40" }]);
+      expect(found?.refuted).toHaveLength(1);
+      expect(found?.refuted[0]).toContain("does not hold the value cited");
+    });
+
+    it("is refuted past the last row when the rows are complete, and not when they are only a sample", () => {
+      const past = [{ row: "5", column: "minutes", value: "40" }];
+      expect(automationStudioResultYesCitations(four, past)?.refuted[0]).toContain("is no row the result holds");
+      expect(automationStudioResultYesCitations(summary({ recordCount: 9, sampleRows: [{ name: "Lentil Soup", minutes: 40 }] }), [{ row: "5", column: "minutes", value: "40" }])?.refuted).toEqual([]);
+      expect(automationStudioResultYesCitations(four, [{ row: "0", column: "minutes", value: "40" }])?.refuted).toHaveLength(1);
+    });
+
+    it("never overrides a label: a row whose label is a number is found by that label", () => {
+      const numbered = summary({ recordCount: 2, sampleRows: [{ name: "2", minutes: 10 }, { name: "1", minutes: 20 }] });
+      expect(automationStudioResultYesCitations(numbered, [{ row: "1", column: "minutes", value: "20" }])?.refuted).toEqual([]);
+      expect(automationStudioResultYesCitations(numbered, [{ row: "1", column: "minutes", value: "10" }])?.refuted).toHaveLength(1);
+    });
+
+    it("still finds a row by its label", () => {
+      expect(automationStudioResultYesCitations(four, [{ row: "Fish Pie", column: "minutes", value: "70" }])?.refuted).toEqual([]);
+    });
+  });
 });

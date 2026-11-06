@@ -18,15 +18,25 @@ function said(text: string): string {
   return text.length > SAID_MAX ? `${text.slice(0, SAID_MAX)}...` : text;
 }
 
+/** A cited row that is a whole positive number, written "3", "row 3" or "#3", is that stored row by position; none where it is not one or no row sits there. */
+function positioned<T>(text: string, rows: readonly T[]): T[] {
+  const match = /^(?:row\s*|#\s*)?(\d+)$/u.exec(text);
+  const place = match ? Number(match[1]) : 0;
+  const row = Number.isSafeInteger(place) && place >= 1 ? rows[place - 1] : undefined;
+  return row === undefined ? [] : [row];
+}
+
 /**
  * Core's sentence for one cited cell it cannot find among the stored rows
  * (`./index.ts`), or nothing where it finds it: a stored row by its label (or
- * the id Core gave it), holding the column, holding that value under the
+ * the id Core gave it, or its position among the stored rows where no label is that), holding the column, holding that value under the
  * comparison the located defects use. Never the stored cell itself.
  */
 export function automationStudioResultCitationRefuted(cited: AutomationStudioLlmVerificationChecked, rows: ReadonlyArray<{ label: string; cells: Readonly<Record<string, string>> }>): string | undefined {
   const text = fold(AutomationStudioRequestRowId.unsaid(cited.row).replace(/^["“'‘]+|["”'’]+$/gu, ""));
-  const named = rows.filter((row) => fold(row.label) === text);
+  const byLabel = rows.filter((row) => fold(row.label) === text);
+  // A label always wins; only a cited row no label names may be a position (1-based, in the order the rows are held).
+  const named = byLabel.length ? byLabel : positioned(text, rows);
   if (!named.length) return `The cited row "${said(cited.row)}" is no row the result holds.`;
   const column = bare(cited.column);
   const held = named.filter((row) => Object.keys(row.cells).some((key) => bare(key) === column));
