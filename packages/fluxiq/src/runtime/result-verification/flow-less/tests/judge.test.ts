@@ -30,7 +30,9 @@ const summary = (extra: Partial<AutomationStudioFlowLessSummary> = {}): Automati
 });
 
 type Script = { answer: Record<string, unknown> } | { reply: unknown } | { thrown: unknown };
-const YES: Script = { answer: { answersRequest: "yes" } };
+/** A yes that stands on the rows the summary holds (t875): it cites the row that answers, and says no list of records is asked. */
+const ON_ROWS = { checked: [{ row: "13 May", column: "free", value: "yes" }], answerRecords: { asked: false } };
+const YES: Script = { answer: { answersRequest: "yes", ...ON_ROWS } };
 const NO: Script = { answer: { answersRequest: "no", observed: "The date told is not the one booked.", expected: "The first free Tuesday.", changed: "Book 13 May.", defects: [{ kind: "other", row: "13 May", requestWords: "first free Tuesday" }] } };
 const UNSURE: Script = { answer: { answersRequest: "unknown", observed: "No view shows the date." } };
 
@@ -119,7 +121,7 @@ describe("the Flow-less judge's answer", () => {
   });
 
   it("holds a yes citing a cell the rows do not hold to unsure, as today's reader does", async () => {
-    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] } });
+    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }], answerRecords: { asked: false } } });
     const judged = await judge(provider);
     expect(judged.verdict).toBe("unsure");
     expect(judged.reason).toContain("not in the rows that were read");
@@ -130,7 +132,7 @@ describe("the Flow-less judge's answer", () => {
   it("asks again with Core's sentences and the citation rule, and takes a yes whose citations then hold", async () => {
     const { provider, seen } = scriptedInOrder([
       { answersRequest: "yes", checked: [{ row: "the third Tuesday", column: "free", value: "yes" }] },
-      { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "yes" }] }
+      { answersRequest: "yes", ...ON_ROWS }
     ]);
     const judged = await judge(provider);
     expect(judged).toMatchObject({ verdict: "yes" });
@@ -162,12 +164,13 @@ describe("the Flow-less judge's answer", () => {
   });
 
   it("takes a yes citing a cell the rows do hold", async () => {
-    const { provider } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "yes" }] } });
+    const { provider } = scripted({ answer: { answersRequest: "yes", ...ON_ROWS } });
     expect((await judge(provider)).verdict).toBe("yes");
   });
 
   it("takes a yes with no rows at all: a request carried out is judged on what was done", async () => {
-    const { provider, seen } = scripted(YES);
+    // Over no rows a yes cites none, and says no list of records is asked (t875).
+    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [], answerRecords: { asked: false } } });
     expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "1 act on the site, against what was asked for." });
     expect(seen[0]?.context.resultSummary?.recordSets).toEqual([]);
   });
@@ -216,7 +219,7 @@ describe("a call that gave nothing", () => {
 
   it("reads a reply cut off after its verdict from its whole fields, and a cut yes that fails them gave no answer (t653)", async () => {
     const cut = (diagnosis: Record<string, unknown>) => ({ reply: { response: { kind: "diagnosis", summary: "Reply cut off.", diagnosis, truncatedAfterVerdict: true }, usage: USAGE } });
-    expect((await judge(scripted(cut({ answersRequest: "yes" })).provider)).verdict).toBe("yes");
+    expect((await judge(scripted(cut({ answersRequest: "yes", ...ON_ROWS })).provider)).verdict).toBe("yes");
     expect(await judge(scripted(cut({ answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] })).provider)).toMatchObject(notJudged);
   });
 

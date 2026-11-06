@@ -21,7 +21,7 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } 
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
 import { automationStudioLlmToolCallKeysFolded } from "../tool-call-keys/index.ts";
 import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
-import { automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
+import { automationStudioLlmWellFormedAnswerRecords, automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
 
 /** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
 const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
@@ -56,7 +56,12 @@ export function parseAutomationStudioLlmProviderResult(
     const listed = value.response.diagnosis.defects;
     if (!Array.isArray(listed) || automationStudioLlmWellFormedVerificationDefects(listed).dropped.length) diagnostics.push({ severity: "error", code: "llm_output.verification_defects_required", message: "A current negative verification must list well-formed defects, or an explicit empty list when it finds none.", path: "response.diagnosis.defects" });
   }
-  if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap));
+  // A diagnosis's summary is prose nothing acts on (its fields carry the reading), and no grammar can ask for a non-empty
+  // string, so a blank one is read as none, never refused (t875, lane B `run-mw4coxdn-e2b30c8c`: a Sonnet yes under the
+  // native grammar wrote `summary: ""` and was not judged). What a judge reply must carry is `../verification-checked/reply-required.ts`.
+  if (response) diagnostics.push(...validateAutomationStudioLlmOutput(response, expectedOutput, flowBootstrap).map((found) => response.kind === "diagnosis" && found.code === "llm_output.missing_summary"
+    ? { ...found, severity: "warning" as const, code: "llm_output.diagnosis_summary_blank", message: "The diagnosis came with a blank summary, read as none: its fields carry the reading." }
+    : found));
   const usage = parseAutomationStudioLlmUsage(value.usage, diagnostics);
   // Every finding (2026-09-30): past 200 the rest were suppressed under `llm_output.finding_limit`.
   return {
@@ -195,6 +200,12 @@ function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, u
     copy.defects = kept;
   }
   if (copy.checked !== undefined) copy.checked = automationStudioLlmWellFormedVerificationChecked(copy.checked).kept;
+  // What a yes says of the records asked for (t875): kept rebuilt, or not at all.
+  if (copy.answerRecords !== undefined) {
+    const records = automationStudioLlmWellFormedAnswerRecords(copy.answerRecords);
+    if (records) copy.answerRecords = records;
+    else delete copy.answerRecords;
+  }
   return copy;
 }
 
@@ -213,7 +224,7 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_fields", message: "Diagnosis fields must be an object.", path });
     return;
   }
-  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "explorationNeeded", "patchNeeded"], path, diagnostics);
+  rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "defects", "checked", "answerRecords", "explorationNeeded", "patchNeeded"], path, diagnostics);
   // A malformed defect is dropped with a warning naming its place, never the
   // reply (t752): the verdict and every other defect stand. The warning says
   // nothing the model wrote.
@@ -227,6 +238,10 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     for (const index of automationStudioLlmWellFormedVerificationChecked(value.checked).dropped) {
       diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_checked_dropped", message: index === undefined ? "Diagnosis checked cells must be a list, and were dropped." : "A cited cell was not a row, a column and a value as non-empty text, and was dropped.", path: index === undefined ? `${path}.checked` : `${path}.checked[${index}]` });
     }
+  }
+  // And a malformed account of the records asked for (t875): dropped with a warning, the verdict standing.
+  if (value.answerRecords !== undefined && !automationStudioLlmWellFormedAnswerRecords(value.answerRecords)) {
+    diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_answer_records_dropped", message: "Diagnosis answerRecords was not a flag asked with an optional whole-number siteShows, and was dropped.", path: `${path}.answerRecords` });
   }
   for (const field of DIAGNOSIS_TEXT_FIELDS) {
     // Blank is omitted, not invalid: the instruction asks for an unanswerable field to be left out.

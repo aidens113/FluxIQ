@@ -5,6 +5,7 @@ import { automationStudioLlmTaskOutputSchema } from "../../provider-task/index.t
 import { parseAutomationStudioLlmProviderResult } from "../../harness/index.ts";
 import { automationStudioAnthropicRequest } from "../request.ts";
 import { automationStudioAnthropicTaskAnswer } from "../task-answer.ts";
+import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE, AUTOMATION_STUDIO_LLM_VERIFICATION_REPLY_REQUIRED, automationStudioLlmVerificationDiagnosisRequired } from "../../verification-checked/index.ts";
 import { decisionRequest, request } from "./fixtures.ts";
 
 const USAGE = { inputTokens: 100, outputTokens: 30, totalTokens: 130 };
@@ -43,6 +44,52 @@ describe("a judge's schema as Anthropic is sent it", () => {
     expect(JSON.stringify(first.system)).toBe(JSON.stringify(second.system));
     expect(first.output_config.format.schema.properties.result_json).toBeUndefined();
     expect(JSON.stringify(first.messages)).not.toBe(JSON.stringify(second.messages));
+  });
+});
+
+// t875: the judge of an attempt with no Flow is sent its own grammar, requiring what Core's reader needs of it
+// (`../../verification-checked/reply-required.ts`), native and the same on every step.
+describe("the Flow-less judge's grammar", () => {
+  const flowLess = (projectId: string) => request({ taskKind: "loop_verification", metadata: { source: AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE }, context: { ...request().context, taskKind: "loop_verification", projectId } });
+  type Grammar = { required: string[]; properties: { diagnosis: { required: string[] } } };
+
+  it("is native, closed, and requires what the table says, checked and answerRecords among them", () => {
+    const format = automationStudioAnthropicOutputFormat(automationStudioLlmTaskOutputSchema(flowLess("project.a")));
+    expect(format.jsonText).toBe(false);
+    for (const object of objects(format.schema)) expect(object.additionalProperties).toBe(false);
+    const grammar = format.schema as unknown as Grammar;
+    expect(grammar.required).toEqual([...AUTOMATION_STUDIO_LLM_VERIFICATION_REPLY_REQUIRED]);
+    expect(grammar.properties.diagnosis.required).toEqual(automationStudioLlmVerificationDiagnosisRequired(true));
+    expect(grammar.properties.diagnosis.required).toEqual(["answersRequest", "defects", "checked", "answerRecords"]);
+  });
+
+  it("leaves every other judge's required as it was", () => {
+    const grammar = automationStudioAnthropicOutputFormat(automationStudioLlmTaskOutputSchema(judge("project.a"))).schema as unknown as Grammar;
+    expect(grammar.properties.diagnosis.required).toEqual(["answersRequest", "defects"]);
+    expect(automationStudioLlmVerificationDiagnosisRequired(false)).toEqual(["answersRequest", "defects"]);
+  });
+
+  it("builds byte-identical output_config and system for two steps", () => {
+    const first = JSON.parse(automationStudioAnthropicRequest(flowLess("project.a"), "claude-sonnet-5-5").body);
+    const second = JSON.parse(automationStudioAnthropicRequest(flowLess("project.b"), "claude-sonnet-5-5").body);
+    expect(JSON.stringify(first.output_config)).toBe(JSON.stringify(second.output_config));
+    expect(JSON.stringify(first.system)).toBe(JSON.stringify(second.system));
+    expect(first.output_config.format.schema.properties.result_json).toBeUndefined();
+  });
+
+  it("reads the lane B reply that was refused (run-mw4coxdn-e2b30c8c step 40): a yes with a blank summary is a yes", () => {
+    const reply = { kind: "diagnosis", diagnosis: { answersRequest: "yes", defects: [], explorationNeeded: false, patchNeeded: false }, summary: "" };
+    // The reader alone: the blank summary was its one refusal, and it is now read as none.
+    const parsed = parseAutomationStudioLlmProviderResult({ response: reply, usage: USAGE }, "diagnosis", undefined, undefined, true);
+    expect(parsed.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    expect(parsed.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.diagnosis_summary_blank");
+    expect(parsed.response).toMatchObject({ kind: "diagnosis", summary: "", diagnosis: { answersRequest: "yes" } });
+    // The same yes as the grammar now makes it write, with what it requires, through the provider's check and the reader.
+    const whole = { ...reply, diagnosis: { ...reply.diagnosis, checked: [], answerRecords: { asked: false } } };
+    const answer = automationStudioAnthropicTaskAnswer(whole, flowLess("project.a"), USAGE, 200);
+    expect(parseAutomationStudioLlmProviderResult({ response: answer, usage: USAGE }, "diagnosis", undefined, undefined, true).diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+    // Without them it does not fit the schema it was offered, which the native grammar does not let happen.
+    expect(() => automationStudioAnthropicTaskAnswer(reply, flowLess("project.a"), USAGE, 200)).toThrow();
   });
 });
 
