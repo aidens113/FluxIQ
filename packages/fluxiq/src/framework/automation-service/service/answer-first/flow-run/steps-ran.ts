@@ -65,6 +65,8 @@ export type AutomationStudioAnswerFirstFlowRunEnded = {
   code?: string | undefined;
   trace?: AutomationStudioGraphExecutionTrace | undefined;
   graph?: AutomationStudioFlowArtifact | undefined;
+  /** A step raised a question the run's port would not put to anyone (`./person-check-port.ts`): it stopped for an answer, as a run with no port does. */
+  askedNobody?: boolean | undefined;
 };
 
 type Input = {
@@ -145,7 +147,7 @@ function failingOf(input: Input, placed: readonly Placed[], steps: readonly Auto
   const place = bound
     ? placeAt(placed, trace?.currentNodeId) ?? placeInFlight(placed, watch) ?? failedPlace ?? firstNotReached(placed, steps)
     : failedPlace ?? placeAt(placed, trace?.currentNodeId) ?? placeInFlight(placed, watch) ?? firstNotReached(placed, steps);
-  const happened = bound ?? (failed ? attemptSaid(failed) : traceSaid(trace, ended.code));
+  const happened = bound ?? (failed ? attemptSaid(failed) : traceSaid(trace, ended.code, ended.askedNobody === true));
   // A Flow with no written step does not assemble, so `placed` holds at least one.
   const at = place ?? placed[0]!;
   return { position: at.position, ...(at.label ? { label: at.label } : {}), happened, ...(code ? { code } : {}) };
@@ -156,8 +158,8 @@ function attemptSaid(attempt: AutomationStudioNodeAttemptTrace): string {
   return attempt.failure ? automationStudioTrialFailureHappened(attempt.failure.category, attempt.failure.code) : automationStudioTrialFailureHappened("action_failed");
 }
 
-function traceSaid(trace: AutomationStudioGraphExecutionTrace | undefined, code: string | undefined): string {
-  if (trace?.status === "waiting") return SAID.waiting;
+function traceSaid(trace: AutomationStudioGraphExecutionTrace | undefined, code: string | undefined, askedNobody: boolean): string {
+  if (trace?.status === "waiting" || askedNobody) return SAID.waiting;
   if (trace?.failure?.code === "executor.graph.unvisited_nodes") return SAID.unvisited;
   if (trace?.failure?.code === "executor.graph.unmatched_route") return SAID.unmatchedRoute;
   if (trace?.failure) return automationStudioTrialFailureHappened(trace.failure.category, trace.failure.code);
