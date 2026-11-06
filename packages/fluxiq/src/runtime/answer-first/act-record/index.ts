@@ -1,5 +1,6 @@
 export * from "./carried-words.ts";
 export * from "./contracts.ts";
+export * from "./control-name.ts";
 export * from "./gate/index.ts";
 export * from "./identity/index.ts";
 export * from "./mergers/index.ts";

@@ -8,7 +8,7 @@
 
 import type { ChatTaskOutcome, ChatTaskResult } from "../../ports/index.ts";
 import type { AnswerKind, AnswerModel } from "./answer-types.ts";
-import { comparedWords, fromWords, pathWords, savedWords, usdWords, waitingWords } from "../words/index.ts";
+import { comparedWords, fromWords, hasRepeatableAct, pathWords, RUN_AGAIN_DOES_IT_AGAIN, savedWords, usdWords, waitingWords } from "../words/index.ts";
 import { gotSummary, hasContent, resultHeadline } from "./result-headline.ts";
 import { emptyParts, resultParts } from "./result-parts.ts";
 
@@ -48,16 +48,22 @@ function opening(outcome: ChatTaskOutcome, options: AnswerModelOptions): Opening
   }
 }
 
-/** Said before Run again when what was done on the site may be done a second time. */
-const RUN_AGAIN_REPEATS = "Running this again may repeat what was done on the site.";
-
 /**
  * Whether the act record holds an act that happened, or may have. A task that did something
- * on the site and ran out of budget carries on instead (Add budget and carry on keeps its
- * act record, so nothing is done twice); Run again is not offered beside it.
+ * on the site and ran out of budget, or that the person stopped, carries on instead (carrying
+ * on keeps its act record, so nothing is done twice); Run again is not offered beside it.
  */
 function lastingActs(result: ChatTaskResult | undefined): boolean {
   return result?.acts.some((act) => act.state === "landed" || act.state === "may_have_landed") === true;
+}
+
+/**
+ * Carry on, on an attempt a person stopped: the same attempt goes on from where it stopped, with what it
+ * already did on its record. Its own budget, where some is left; where it is all spent, as much again.
+ */
+function carryOnStopped(attempt: ChatTaskOutcome["attempt"], reportsSpend: boolean): NonNullable<AnswerModel["carryOn"]> {
+  if (attempt.spend.usd < attempt.budget.usd || attempt.budget.usd <= 0) return { addUsd: 0, words: "Carry on" };
+  return { addUsd: attempt.budget.usd, words: reportsSpend ? `Add ${usdWords(attempt.budget.usd)} and carry on` : "Add budget and carry on" };
 }
 
 /** The answer turn for `outcome`; none while it is still working, or before an ended attempt has a result. */
@@ -75,7 +81,8 @@ export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions)
     projectId: attempt.projectId,
     ...start,
     ...parts,
-    canRunAgain: ended && !(attempt.status === "budget_out" && options.canAddBudget && lastingActs(result)),
+    // One that did something on the site and can be carried on is finished by carrying it on: a Run again would start afresh and do it again.
+    canRunAgain: ended && !((attempt.status === "budget_out" || attempt.status === "stopped_by_person") && options.canAddBudget && lastingActs(result)),
     stuckActions: attempt.status === "waiting_for_person" && (attempt.waitingFor === "stuck_in_a_loop" || attempt.waitingFor === "interrupted"),
     keepGoingCarriesOn: attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted"
   };
@@ -85,11 +92,12 @@ export function answerModel(outcome: ChatTaskOutcome, given: AnswerModelOptions)
   if (compared !== undefined) model.compared = compared;
   const how = ended ? pathWords(attempt.path, attempt.status) : undefined;
   if (how !== undefined) model.how = how;
-  if (model.canRunAgain && lastingActs(result)) model.runAgainNote = RUN_AGAIN_REPEATS;
+  if (model.canRunAgain && result !== undefined && hasRepeatableAct(result.acts)) model.runAgainNote = RUN_AGAIN_DOES_IT_AGAIN;
   if (saved !== undefined) model.saved = savedWords(saved, options.nowMs ?? Date.now());
   else if (attempt.status === "budget_out") model.saved = "Nothing saved yet.";
   if (attempt.status === "budget_out" && options.canAddBudget && attempt.budget.usd > 0) {
     model.addBudget = { addUsd: attempt.budget.usd, words: options.reportsSpend ? `Add ${usdWords(attempt.budget.usd)} and carry on` : "Add budget and carry on" };
   }
+  if (attempt.status === "stopped_by_person" && options.canAddBudget) model.carryOn = carryOnStopped(attempt, options.reportsSpend);
   return model;
 }

@@ -142,7 +142,7 @@ describe("how an answer is read", () => {
     const execute = automationStudioAttemptActGate({ record, executeTool: async (_call: Call) => pressed(), wordsOf: words });
     await execute(pressCall());
     expect(words).toHaveBeenCalledOnce();
-    expect(record.acts()).toEqual([expect.objectContaining({ what: "Made something new", where: "On the shop's page" })]);
+    expect(record.acts()).toEqual([expect.objectContaining({ what: "Save it", where: "On the shop's page" })]);
   });
 });
 

@@ -261,7 +261,8 @@ test("an act that may have landed takes the tick away: the check is not confirme
 test("Run again never repeats a lasting act unannounced: it says so, and a budget-out that did something gives way to Add budget and carry on alone", () => {
   const done = modelOf(fakeTaskOutcomes().doneOnSite);
   assert.equal(done.canRunAgain, true);
-  assert.equal(done.runAgainNote, "Running this again may repeat what was done on the site.");
+  assert.match(done.runAgainNote ?? "", /^Run again does the task again\. Something already in the state you asked for is checked, not done again/u);
+  assert.doesNotMatch(done.runAgainNote ?? "", /may repeat what was done/u);
   assert.equal(modelOf(fakeTaskOutcomes().rowsChecked).runAgainNote, undefined, "a read-only task has nothing to repeat");
 
   const out = structuredClone(fakeTaskOutcomes().budgetOutPartial);
@@ -325,4 +326,26 @@ test("a later read that got smaller says so, in plain words, and a list that did
   assert.equal(modelOf(outcome).rows?.smallerNote, "An earlier read of this list had 5 rows. This is the latest, with 3.");
   rows.fewerThanEarlier = { earlierRows: 3 };
   assert.equal(modelOf(outcome).rows?.smallerNote, undefined, "not more than it has now: nothing true to say");
+});
+
+test("a stopped attempt is finished by Carry on, the same attempt, and one that did something on the site does not offer Run again beside it", () => {
+  const quiet = modelOf(fakeTaskOutcomes().stoppedByPerson);
+  assert.deepEqual(quiet.carryOn, { addUsd: 0, words: "Carry on" }, "its own budget is not spent, so nothing is added");
+  assert.equal(quiet.canRunAgain, true, "it did nothing on the site, so starting again repeats nothing");
+
+  const acted = fakeTaskOutcomes().stoppedByPerson;
+  acted.result = { ...fakeTaskOutcomes().doneOnSite.result!, acts: [{ id: "a1", what: "Renewed a loan", where: "the site", classes: ["modify_existing"], state: "may_have_landed" }] };
+  const model = modelOf(acted);
+  assert.ok(model.carryOn);
+  assert.equal(model.canRunAgain, false, "a Run again would start afresh and do again what it did before the Stop");
+  assert.equal(model.runAgainNote, undefined);
+  assert.equal(modelOf(acted, { reportsSpend: true, canAddBudget: false }).carryOn, undefined, "a port that cannot carry on offers no Carry on");
+  assert.equal(modelOf(acted, { reportsSpend: true, canAddBudget: false }).canRunAgain, true, "and keeps Run again");
+
+  const spent = fakeTaskOutcomes().stoppedByPerson;
+  spent.attempt = { ...spent.attempt, spend: { ...spent.attempt.spend, usd: 5 } };
+  assert.deepEqual(modelOf(spent).carryOn, { addUsd: 5, words: "Add $5.00 and carry on" }, "all of it spent: as much again");
+  assert.deepEqual(modelOf(spent, NO_SPEND).carryOn, { addUsd: 5, words: "Add budget and carry on" });
+  for (const done of [fakeTaskOutcomes().doneOnSite, fakeTaskOutcomes().budgetOutPartial]) assert.equal(modelOf(done).carryOn, undefined);
+  assert.equal(BANNED.test(model.carryOn!.words), false);
 });

@@ -18,12 +18,15 @@ const T0 = Date.parse("2026-11-05T08:27:00.000Z");
 const iso = (ms: number) => new Date(T0 + ms).toISOString();
 
 /** The rows of an attempt unit that has answered but not closed: the opening row, the last step, no final row. */
-function attemptState(headline: string) {
-  const row = (sequence: number, at: number, phase: string, label: string) => ({ activityId: "build:b1", sequence, subject: { kind: "build", id: "b1", projectId: "project-1", flowId: "flow-7" }, phase, label, at: iso(at) });
+function attemptState(headline: string, earlier: "none" | "unit before" | "first row aged out" = "none") {
+  const row = (sequence: number, at: number, phase: string, label: string, activityId = "build:b1") => ({ activityId, sequence, subject: { kind: "build", id: activityId.slice(6), projectId: "project-1", flowId: "flow-7" }, phase, label, at: iso(at) });
   const opened = row(1, 0, "building", "Working on your task");
   const checked = row(2, 38_000, "running", "Checked");
+  // The unit before it, which a restart cut off: its own opening and closing rows, long before this unit's.
+  const before = earlier === "unit before" ? [row(1, -90_000, "building", "Working on your task", "build:b0"), { ...row(2, -60_000, "done", "Finished", "build:b0"), final: true }] : [];
+  const kept = earlier === "first row aged out" ? [checked] : [opened, checked];
   const display = { activityId: "build:b1", subjectKind: "build", phase: "running", headline, detail: "Checked", step: { index: 11, count: 11 }, working: true, outcome: null, sequence: 2 };
-  return { current: checked, display, recent: [opened, checked], history: [opened, checked], overlay: "expanded", live: true };
+  return { current: checked, display, recent: [...before, ...kept], history: [...before, ...kept], overlay: "expanded", live: true };
 }
 
 function answered(startedAtMs: number): ChatTaskOutcome {
@@ -60,4 +63,18 @@ test("an earlier attempt's ending does not close a new attempt's unit", async ()
 
 test("any other work keeps its strip, whatever the thread's last attempt did", async () => {
   assert.equal(await strip(answered(T0 + 500), attemptState("Building your Flow")), false);
+});
+
+// The restart run (t869): Core went down between two attempts and the chat carried the attempt on in a
+// new unit, so the attempt's own start is older than its unit's first row; its ending is not.
+test("an attempt carried on after a restart began before its unit and still closes it", async () => {
+  assert.equal(await strip(answered(T0 - 30_000), attemptState("Working on your task", "unit before")), true);
+});
+
+test("a unit whose first row has aged out of the rows kept is closed by the attempt that ended in it", async () => {
+  assert.equal(await strip(answered(T0 + 1_000), attemptState("Working on your task", "first row aged out")), true);
+});
+
+test("the attempt before a restart, ended in the unit before, does not close the unit after it", async () => {
+  assert.equal(await strip(answered(T0 - 100_000), attemptState("Working on your task", "unit before")), false);
 });

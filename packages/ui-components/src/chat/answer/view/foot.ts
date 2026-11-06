@@ -11,6 +11,7 @@ import type { AnswerModel } from "../model/index.ts";
 function buttons(model: AnswerModel, state: AnswerState, host: AnswerHost, handlers: AnswerHandlers): HTMLElement[] {
   const made: HTMLElement[] = [];
   if (model.addBudget !== undefined) made.push(answerButton(model.addBudget.words, "add-budget", handlers.addBudget, { tone: "primary", disabled: state.busy === "budget" }));
+  if (model.carryOn !== undefined && host.results?.addBudgetAndCarryOn !== undefined) made.push(answerButton(model.carryOn.words, "carry-on", handlers.carryOn, { tone: "primary", disabled: state.busy === "budget" }));
   if (model.stuckActions) {
     if (host.onKeepGoing !== undefined) made.push(answerButton("Keep going", "keep-going", handlers.keepGoing, { tone: "primary", disabled: state.busy === "budget" }));
     if (host.onTellMore !== undefined) made.push(answerButton("Tell it more", "tell-more", handlers.tellMore));

@@ -104,7 +104,7 @@
 // answer named no item, stays held on both, and the loop ladder asks the person. A press by a call
 // that has the act's own key stays refused whatever the words say: one control is one control.
 //
-// **Rows left out (`rowsHeldDone`).** How many rows this attempt left out because they were held done
+// **Rows left out (`rowsHeldDone`).** How many rows this attempt left out because an EARLIER attempt did them and they were held done (a row this attempt pressed itself is not left out)
 // (`./rows-left-out.ts`). In memory, as it says what this attempt did.
 //
 // **A count across a real run (`carried`, `counted`).** A run that settles into this record
@@ -130,6 +130,7 @@ import { AutomationStudioAttemptActRowTies as RowTies } from "./row-ties.ts";
 import { AutomationStudioAttemptActRowsLeftOut as RowsLeftOut } from "./rows-left-out.ts";
 import { AutomationStudioAttemptActItems as ActItems } from "./item-names.ts";
 import { automationStudioAttemptActCarriedWords } from "./carried-words.ts";
+import { automationStudioAttemptActControlName } from "./control-name.ts";
 import { automationStudioAttemptActScreenedWords } from "./words.ts";
 
 /** What a fresh round is told about the record, in words that teach nothing about any site. */
@@ -160,6 +161,8 @@ export class AutomationStudioAttemptActRecord {
   private readonly refusedFor = new Set<AutomationStudioAttemptActEntry>();
   /** The few words of the listing an act was on (`./item-names.ts`), said on the act a person reads and kept out of what is persisted: the record holds no page text. In memory only. */
   private readonly items = new ActItems();
+  /** The control's own word of an act whose words nothing gave (`./control-name.ts`), said on the act a person reads. In memory only. */
+  private readonly controls = new WeakMap<AutomationStudioAttemptActEntry, string>();
   /** Rows left out as held done, for `rowsHeldDone`, and which rows a read returned twice, for the words of a refusal. In memory only (header). */
   private readonly leftOut = new RowsLeftOut();
 
@@ -189,9 +192,11 @@ export class AutomationStudioAttemptActRecord {
     return blind[0] ? { kind: "look_first", act: this.shown(blind[0]) } : { kind: "run" };
   }
 
-  /** How many distinct rows this attempt left out because the record held them done (header). */
+  /** How many distinct rows this attempt left out because the record held them done by an earlier attempt: a row this attempt pressed itself, by any route, is not left out (header). */
   rowsHeldDone(): number {
-    return this.leftOut.count(this.ties);
+    // A row this attempt pressed itself was done by hand, by whatever route it was passed over after: it is not one the person would miss.
+    const own = this.entries.filter((entry) => !entry.carried && !entry.undeclared && entry.state === "landed" && this.leftOut.holds(entry.rows)).length;
+    return Math.max(0, this.leftOut.count(this.ties) - own);
   }
 
   /** How many acts a read of their list left with no row held (header): each is counted once, however many reads followed. It is what the attempt carries as `actsWithNoRow`. */
@@ -258,6 +263,7 @@ export class AutomationStudioAttemptActRecord {
       if (known.undeclared && outcome.changedState === true) known.changedState = true;
       if (wasUndeclared && lasting) this.readCount(known, call, called);
       this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
+      this.noteControl(known, call, outcome);
       this.landedAt(outcome.step, known);
       this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
@@ -265,6 +271,7 @@ export class AutomationStudioAttemptActRecord {
     }
     const entry = this.newEntry(call, outcome, called, frozen, state, lasting);
     this.items.noteAct(entry, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
+    this.noteControl(entry, call, outcome);
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);
@@ -363,7 +370,9 @@ export class AutomationStudioAttemptActRecord {
   private shown(entry: AutomationStudioAttemptActEntry): AutomationStudioAttemptAct {
     const act = contractAct(entry);
     const item = this.items.of(entry);
-    const named = item === undefined ? act : { ...act, what: automationStudioAttemptActScreenedWords({ what: act.what }, entry.classes, item).what };
+    // Where nothing gave the words, the control's own word stands before the class's line. In memory only, as the item is: a persisted line holds no page text.
+    const control = automationStudioAttemptActScreenedWords({}, entry.classes).what === act.what ? this.controls.get(entry) : undefined;
+    const named = item === undefined && control === undefined ? act : { ...act, what: automationStudioAttemptActScreenedWords(control === undefined ? { what: act.what } : {}, entry.classes, item, control).what };
     return entry.carried ? { ...named, what: automationStudioAttemptActCarriedWords(named.what, entry.state) } : named;
   }
 
@@ -495,6 +504,13 @@ export class AutomationStudioAttemptActRecord {
   /** The frozen form a call is foreseen to run with, as an act will answer to it. */
   private foreseenForm(call: AutomationStudioAttemptActCall): Identity | undefined {
     return call.foreseen?.parameters ? this.identityOf(call.actionId, call.foreseen.parameters, call.row) : undefined;
+  }
+
+  /** The control an act pressed, in its own word, kept for as long as it was not said before. */
+  private noteControl(entry: AutomationStudioAttemptActEntry, call: AutomationStudioAttemptActCall, outcome: AutomationStudioAttemptActOutcome): void {
+    if (this.controls.has(entry)) return;
+    const name = automationStudioAttemptActControlName(outcome.ranWith?.parameters) ?? automationStudioAttemptActControlName(call.foreseen?.parameters) ?? automationStudioAttemptActControlName(call.parameters);
+    if (name !== undefined) this.controls.set(entry, name);
   }
 
   /** A declared call that answered it did nothing: what it may have done stands, and only a new look lets it try again. */

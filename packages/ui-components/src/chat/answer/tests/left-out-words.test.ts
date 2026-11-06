@@ -32,3 +32,11 @@ test("a ready Flow says it too, and notes only has nothing to say", () => {
   assert.equal(savedWords(ready, NOW), 'Saved today: the steps, except the one that did "Save" (it was left out of the Flow). They worked last time.');
   assert.match(savedWords({ state: "notes_only", trust: "unproven", savedAtMs: NOW }, NOW), /notes only/u);
 });
+
+test("a step nothing names is counted in words, never quoted by its position or id", () => {
+  assert.match(savedWords(partly(["Step 13"]), NOW), /^Saved today: the steps, except one step that did something on the site \(it was left out of the Flow\)\./u);
+  assert.match(savedWords(partly(["one step that did something on the site"]), NOW), /except one step that did something on the site \(it was/u);
+  assert.match(savedWords(partly(["t622", "d7"]), NOW), /except 2 steps that did something on the site \(they were left out/u);
+  assert.match(savedWords(partly(["Save: Table", "Step 4"]), NOW), /except the ones that did "Save: Table" and one step that did something on the site \(they were/u);
+  assert.doesNotMatch(savedWords(partly(["Step 13"]), NOW), /Step 13/u);
+});
