@@ -4,8 +4,9 @@
 // own: `permittedConsequences` is no executor option (`../../runtime-session/graph-options.ts`), and
 // `authorizedDomainIds` is only which domains' published Flows a global Flow may call
 // (`../../../composite-execution/owner.ts`). A step's lasting consequence is checked when its Flow
-// is authored. So this is that check, through the attempt's own gate (`planStep`), and a run is
-// given no parking port, so a step that does raise a question ends the run and asks nobody.
+// is authored. So this is that check, through the attempt's own gate (`planStep`), and a run's
+// parking port lets through only a check only a person can clear (`./person-check-port.ts`), so a
+// step that raises any other question ends the run and asks nobody.
 //
 // **Each declaration goes as the domain made it**, with its control's words and verb. A step whose
 // domain put none to the check still has the classes the Flow declares on its node, and those are

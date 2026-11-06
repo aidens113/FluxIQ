@@ -15,6 +15,9 @@
 //
 // **A failure here never stops a task.** Whatever is thrown leaves the rounds to go on.
 //
+// **A robot check is put to the person in place**, and the run goes on from that step once they
+// press Continue; the attempt reads `waiting_for_person` / `person_only_check` while it stands.
+//
 // **A carried-on attempt never comes here**: the Flow is never run again from its start.
 //
 // **A person's Run again runs it as any later attempt does, states checked first** (`../run-again/`):
@@ -60,7 +63,13 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
     },
     arrived: () => { run.arrived = true; },
-    engine: () => automationStudioAnswerFirstFlowRunEngineOf(input)
+    engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
+    // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).
+    ...(input.personAsk ? { personCheck: { port: input.personAsk.port, waiting: (state: "started" | "ended", waitedMs: number) => {
+      run.waitingFor = state === "started" ? "person_only_check" : undefined;
+      run.waitedMs += waitedMs;
+      void automationStudioAnswerFirstKeep(run);
+    } } } : {})
   }, saved);
   const flowRun: FlowRun = { outcome, wentOut: run.liveSteps > sentBefore };
   run.flowRun = flowRun;
