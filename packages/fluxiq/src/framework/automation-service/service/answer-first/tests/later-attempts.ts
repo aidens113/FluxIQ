@@ -33,6 +33,7 @@ export type LaterAttemptOptions = {
   flowId?: string;
   startLocation?: string;
   script?: readonly Decision[];
+  /** The judge's replies in order, and past their end a yes. A function reads the judge's request, for a judge that weighs what it is shown. */
   judge?: readonly unknown[];
   permittedConsequences?: AutomationStudioActionConsequence[];
   /** The purse this attempt opens with. */
@@ -60,7 +61,10 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
-    if (request.taskKind === "loop_verification") return current.judge.shift() ?? judgeReply("yes");
+    if (request.taskKind === "loop_verification") {
+      const reply = current.judge.shift();
+      return (typeof reply === "function" ? (reply as (asked: AutomationStudioLlmTaskRequest) => unknown)(request) : reply) ?? judgeReply("yes");
+    }
     const next = current.script[current.decided] ?? toolCall(`look.${current.decided}`, LOOK_TOOL, {});
     if (current.decided >= current.script.length && !current.keepLooking) current.stop?.();
     current.decided += 1;

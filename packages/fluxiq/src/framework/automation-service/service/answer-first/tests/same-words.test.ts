@@ -12,10 +12,16 @@
 //                                           A stated control is still checked first, so a switch
 //                                           already in its asked-for state is not pressed.
 //   a new row                               not carried, so it is pressed, once.
+//   another case, or a full stop            the same task (t869): its acts carry, and nothing is pressed again.
+//   a Run again's judge                     told the person asked for a repeat, and shown this attempt's own
+//                                           before-state: one more of a count is right, more is not.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstStepsDigest, automationStudioAnswerFirstTaskKey } from "../index.ts";
-import { HOLD_SHELF, renewEveryLoan, savedStep } from "./fake-library-engine.ts";
+import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
+import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "../../../../../runtime/result-verification/index.ts";
+import { judgeReply } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { automationStudioAnswerFirstKnownFlow, automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstStepsDigest, automationStudioAnswerFirstTaskKey } from "../index.ts";
+import { HOLD_SHELF, pressCard as renewCardOnTarget, renewEveryLoan, savedStep } from "./fake-library-engine.ts";
 import { complete, RENEW_CARD, runNode } from "./fake-library.ts";
 import { judgedNo } from "./endings/support.ts";
 import { laterAttempts, readLoans, toldTo } from "./later-attempts.ts";
@@ -142,5 +148,79 @@ describe("rows across attempts", () => {
     const second = await lane.attempt({ instruction: LOAN_TASK, permittedConsequences: ["modify_existing"] });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 2 });
     expect(lane.target.library.renewals).toEqual({ "Atlas of Rivers": 1, "Birds of the Coast": 1, Clockmaking: 1, "Dune Grasses": 1 });
+  });
+});
+
+describe("the same words in another case, or with a full stop (t869)", () => {
+  it("are the same task: a switch it pressed is not pressed again, the chat finds its Flow, and the words stay as typed", async () => {
+    const lane = await laterAttempts(cleanups);
+    // A plain press of a switch that flips each time, with no state to keep: a toggle site's Save in small.
+    const steps = [renewEveryLoan()[0]!, savedStep(2, HOLD_SHELF, { control: "Keep on hold" }, { consequences: ["modify_existing"], label: "Keep on hold" })];
+    await lane.memory.update(lane.projectId, automationStudioAnswerFirstTaskKey({ instructionText: HOLD_TASK, startLocation: undefined }), (current) => ({
+      ...current, flowId: "flow.loans", best: { attemptId: "attempt.kept", flowId: "flow.loans", steps, stepsDigest: automationStudioAnswerFirstStepsDigest(steps), label: "unverified", provenWhole: false, savedAtMs: 1, spend: { calls: 1, usd: 0.01 } }
+    }));
+    const first = await lane.attempt({ instruction: HOLD_TASK, permittedConsequences: ["modify_existing"] });
+    expect(first.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
+    expect(lane.target.library.onHold).toBe(true);
+    const typed = "keep my loans on the hold shelf";
+    expect(await automationStudioAnswerFirstKnownFlow(lane.service, lane.stores, { projectId: lane.projectId, instructionText: "KEEP MY LOANS ON THE HOLD SHELF!" })).toBe("flow.loans");
+    const second = await lane.attempt({ instruction: typed, permittedConsequences: ["modify_existing"] });
+    expect(second.answer.attempt).toMatchObject({ taskId: first.answer.attempt.taskId, ordinal: 2, status: "achieved", path: "run_flow" });
+    expect(second.decisions).toHaveLength(0);
+    expect(lane.target.library.onHold).toBe(true);
+    expect(lane.target.presses.filter((press) => press.node === HOLD_SHELF)).toHaveLength(1);
+    // The key is folded; what the judge reads is what the person typed.
+    const asked = JSON.stringify(second.judgeCalls[0]?.context.instructions.instructions.map((one) => one.body));
+    expect(asked).toContain(typed);
+    expect(asked).not.toContain(HOLD_TASK);
+  });
+});
+
+/** The count a look shows, from what the judge was sent: the library's page says how many renewals it holds. */
+const renewedIn = (shown: unknown): number | undefined => {
+  const found = /"renewed":(\d+)/u.exec(JSON.stringify(shown ?? null));
+  return found ? Number(found[1]) : undefined;
+};
+
+describe("a Run again's judge", () => {
+  it("is told the person asked for a repeat and judges this attempt's own change: one more is right, the same words are not told, and a press beyond the ask is wrong", async () => {
+    const lane = await laterAttempts(cleanups);
+    await lane.attempt(cardAttempt);
+    expect(lane.target.library.renewals.card).toBe(1);
+    const shown: Record<string, unknown>[] = [];
+    // A judge in small: right only when told it is a repeat asked for, and this time's change is exactly one more.
+    const judge = (request: AutomationStudioLlmTaskRequest) => {
+      const sent = request.context.resultSummary as unknown as Record<string, unknown>;
+      shown.push(sent);
+      const change = (renewedIn(sent.endView) ?? 0) - (renewedIn((sent.witnesses as { before?: unknown } | undefined)?.before) ?? 0);
+      return sent.askedAgain === AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN && change === 1 ? judgeReply("yes") : judgedNo(`It changed by ${change}.`);
+    };
+
+    const again = await lane.attempt({ ...same, runAgain: true, judge: [judge] });
+    expect(again.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
+    expect(lane.target.library.renewals.card).toBe(2);
+    expect(renewedIn((shown[0]!.witnesses as { before?: unknown }).before)).toBe(1);
+    expect(renewedIn(shown[0]!.endView)).toBe(2);
+
+    // The same words are no repeat the person asked for, and are not told one.
+    const capture = (request: AutomationStudioLlmTaskRequest) => {
+      shown.push(request.context.resultSummary as unknown as Record<string, unknown>);
+      return judgeReply("yes");
+    };
+    await lane.attempt({ ...same, judge: [capture] });
+    expect(shown[1]!.askedAgain).toBeUndefined();
+    expect(lane.target.library.renewals.card).toBe(2);
+
+    // The page takes two where one was asked: wrong, and the attempt does not end achieved on it.
+    lane.target.over = ({ nodeId }) => {
+      if (nodeId === RENEW_CARD) renewCardOnTarget(lane.target);
+      return undefined;
+    };
+    const beyond = await lane.attempt({ ...same, runAgain: true, judge: [judge] });
+    delete lane.target.over;
+    expect(lane.target.library.renewals.card).toBe(4);
+    expect(shown[2]!.askedAgain).toBe(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN);
+    expect(renewedIn(shown[2]!.endView)! - renewedIn((shown[2]!.witnesses as { before?: unknown }).before)!).toBe(2);
+    expect(beyond.answer.attempt.status).not.toBe("achieved");
   });
 });

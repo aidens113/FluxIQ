@@ -141,10 +141,23 @@ function readingWords(said: { expected?: string | undefined; observed?: string |
 function held(summary: AutomationStudioFlowLessSummary): string | undefined {
   const got = [
     ...(summary.rows ? [`${summary.rows.totalRows} ${summary.rows.totalRows === 1 ? "row" : "rows"}`] : []),
-    ...(summary.acts.length ? [`${summary.acts.length} ${summary.acts.length === 1 ? "act" : "acts"} on the site`] : []),
+    ...actCounts(summary),
     ...(summary.answerText !== undefined ? ["the model's own answer"] : [])
   ];
   return got.length ? got.join(", ") : undefined;
+}
+
+/** An act an earlier attempt did, as Core's act record says it on a result (`../../answer-first/act-record/carried-words.ts`). */
+const CARRIED_ACT = /^(?:Already done earlier|May already be done): /u;
+
+/** The acts this attempt did on the site, and apart from them how many were already done earlier: a carried act is never this attempt's. */
+function actCounts(summary: AutomationStudioFlowLessSummary): string[] {
+  const earlier = summary.acts.filter((act) => CARRIED_ACT.test(act.what)).length;
+  const own = summary.acts.length - earlier;
+  return [
+    ...(own > 0 ? [`${own} ${own === 1 ? "act" : "acts"} on the site`] : []),
+    ...(earlier > 0 ? [`${earlier} already done earlier`] : [])
+  ];
 }
 
 /** A result's `checkedWhat` on a yes: what was checked, once. The card says it under "Checked". */

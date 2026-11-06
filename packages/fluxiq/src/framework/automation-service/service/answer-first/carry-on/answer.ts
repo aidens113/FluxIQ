@@ -14,7 +14,6 @@ export type AutomationStudioAnswerFirstCarryOnRefusedCode =
   | "unknown_attempt"
   | "live"
   | "achieved"
-  | "stopped"
   | "waiting_for_person"
   | "no_budget_added"
   | "later_attempt"

@@ -9,4 +9,4 @@ export type AutomationStudioAnswerFirstRunAgainAnswer<T> =
     finished: Promise<T>;
   };
 
-export type AutomationStudioAnswerFirstRunAgainRefusedCode = "unknown_task" | "live" | "other_task_on_flow" | "unreadable";
+export type AutomationStudioAnswerFirstRunAgainRefusedCode = "unknown_task" | "live" | "other_task_on_flow" | "stopped_part_way" | "unreadable";

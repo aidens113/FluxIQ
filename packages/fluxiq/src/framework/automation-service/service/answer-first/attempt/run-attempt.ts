@@ -11,7 +11,8 @@
 // far copied into it. It goes to the rounds and never runs the Flow from its start again.
 //
 // **A person's Run again is a new attempt with an empty record** (`../run-again/`), told by a scope a
-// route sets and nothing in a request can, so no model can claim one.
+// route sets and nothing in a request can, so no model can claim one. Its judge is told the person
+// asked for a repeat, and judges this attempt's own change (`runtime/result-verification/flow-less/asked-again.ts`).
 //
 // **Live from before it opens until it has ended, however it ends** (`../interrupted/`): a row
 // nobody is working on any more reads as interrupted, and a throw must not leave one reading live.
@@ -174,6 +175,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     acts: () => record.acts(),
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
+    askedAgain: again !== undefined || carried?.askedAgain === true,
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),

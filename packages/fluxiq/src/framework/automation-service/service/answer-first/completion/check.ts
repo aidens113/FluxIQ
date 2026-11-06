@@ -10,7 +10,8 @@
 //     refused by the purse             thrown, so the round ends as a budget-out
 //
 // The summary is built from Core's records, never the model's: rows from the store, acts from
-// the act record, the page from a fresh look. `answer` is the one thing of the model's, and it
+// the act record, the page from a fresh look, and whether a person's Run again started it. `answer`
+// is the one thing of the model's, and it
 // is marked as its words wherever it is shown. A judge emits nothing to the chat itself, so
 // this says the check, start and end.
 //
@@ -76,6 +77,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   acts(): readonly AutomationStudioAttemptAct[];
   endView(): Promise<AutomationStudioResultEndView | undefined>;
   witnesses(): { before?: JsonObject; after?: JsonObject };
+  /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
+  askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
   purse: Parameters<typeof automationStudioAnswerFirstKeepBackJudge>[0];
   say(title: string, text: string): void;
@@ -137,7 +140,8 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     acts,
     ...(answerText !== undefined ? { answerText } : {}),
     ...(endView ? { endView } : {}),
-    ...(Object.keys(witnesses).length ? { witnesses } : {})
+    ...(Object.keys(witnesses).length ? { witnesses } : {}),
+    ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
 }
 

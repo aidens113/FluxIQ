@@ -21,7 +21,7 @@ Done from source, with the real service and scripted models. The browser proofs 
 **Two calls of mine that you should check:**
 
 1. **Run again leaves off Core's own `ensureState`.** Without that, "Run again presses again and the toggle unsaves" cannot happen, because the step would see the state and skip. The cost is that on a real model a toggle Run again leaves the tables unsaved. A judge then says no to "Save these", and the rounds cannot press again because this attempt's own record refuses it, so the attempt spends until its budget is gone. A step the model itself wrote with a state, such as `again-check`'s `set Saved to checked`, keeps it on Run again.
-2. **After a Stop cuts a Run again short, the same words press nothing more.** The union carries attempt 1's rows too. A person who wants the Run again finished presses Run again again. `double-act-on-run.test.ts` (f2) now says this.
+2. **After a Stop cuts a Run again short, the same words press nothing more.** The union carries attempt 1's rows too. ~~A person who wants the Run again finished presses Run again again.~~ **Corrected (t869, `run-again-holes.md`):** that advice was wrong. A second Run again starts with an empty record and presses again what the stopped one pressed. A stopped attempt is finished by **Carry on**, the same attempt with its own record: Core now carries on a stopped attempt, the chat offers Carry on on it (and no Run again beside it once it did something on the site), and Core refuses a Run again while the task's last attempt is a Stop holding a press of its own. `double-act-on-run.test.ts` (f2) and `carry-on.test.ts` ("a Run again a person stopped part way") say this.
 
 ## The rule as built
 
@@ -93,7 +93,7 @@ There is no PIN. This happens in the chat, before any command, so never mid-Flow
 
 ### "Again" in the words is a different key
 
-`task-key` normalises Unicode, collapses runs of whitespace, trims, and keeps case. So "Save X" and "Save X again" are two keys, and so are "Save X" and "save x". A carry-on keeps its own record. This needed no change.
+`task-key` normalises Unicode, collapses runs of whitespace and trims. **Since `run-again-holes.md` it also folds case and drops the punctuation a sentence ends with, for the key only**, so "Save X" and "save x." are one key. "Save X" and "Save X again" are still two keys. A carry-on keeps its own record.
 
 ### Across many attempts
 
@@ -229,6 +229,6 @@ test-runner emitted to a private .sw-t869-dist (deleted after), then node --test
 ## Open questions
 
 1. Should Run again leave off Core's `ensureState`? I did, because the proof asks for the unsave. The alternative is to keep it, so a person's Run again of a toggle never undoes their saves; the Lab proof would then need a form whose Save no toggle answer covers.
-2. Should a Run again cut short by a Stop be finished by the same words? With the union, it is not.
-3. A real judge says no after a toggle Run again, and the attempt then spends to its budget. Should a Run again's judge be told the person asked for a repeat?
+2. Should a Run again cut short by a Stop be finished by the same words? With the union, it is not. **Answered (`run-again-holes.md`):** it is finished by Carry on.
+3. A real judge says no after a toggle Run again, and the attempt then spends to its budget. Should a Run again's judge be told the person asked for a repeat? **Answered (`run-again-holes.md`):** yes, generically, and it judges that attempt's own change.
 4. `task-attempt-routes.test.ts` fails at HEAD on `stepsDigest` (from 620bafdfc). It should be fixed by whoever owns that file.

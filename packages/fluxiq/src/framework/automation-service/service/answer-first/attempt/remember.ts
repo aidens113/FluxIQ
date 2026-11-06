@@ -33,7 +33,7 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
       ...(ended.stated.length > 0 ? { stated: [...ended.stated] } : {})
     };
     const note = noteOf(run, ending, ended.atMs);
-    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: originsOf(run) };
+    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(ending === "stopped_by_person" ? { stoppedByPerson: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: originsOf(run) };
     return await run.memory.update(projectId, run.taskId, (current) => {
       const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run) });
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);
