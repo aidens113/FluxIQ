@@ -2,6 +2,7 @@
 // judge in place of a Flow's test. Order, each stopping there:
 //
 //   nothing at all to judge            refused, no model call
+//   rows asked for, no read run        refused, no model call: rows come only from a read
 //   the same evidence as the last no   refused, no model call: new evidence is what it needs
 //   one judge call
 //     yes                              accepted, and the attempt is achieved
@@ -18,10 +19,20 @@
 // **A refusal of the same evidence is free to the purse only in the judge's call.** The model's
 // decision that sent it was a whole context, so `refusedAgain` counts them and the caller climbs
 // the ladder on it (`../loop-signal/completion-refused-again.ts`). New evidence starts it again.
+//
+// **Rows come only from a read (lane B, run-mw45itmx-c4d6f5cb).** The request ended "give me ...
+// as a table with columns ...", the model did every act, never ran a read, typed the table into
+// `answer`, and a judge said yes over 0 rows: the person was given no table. So a request that
+// asks for rows back -- read by the one reader Core has for that, the answerability check's
+// (`automationStudioFlowBootstrapInstructionAsk`) -- is refused while no read has run in the
+// attempt, before any judge. A read that ran and found nothing has run: an empty result is the
+// judge's to weigh, and refusing it would keep an honest attempt going until its budget ran out.
+// The refusal is an ordinary one, so the attempt goes on to read (`../attempt/round.ts`).
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime/answer-first/attempt-purse/index.ts";
+import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
 import { automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
@@ -32,6 +43,8 @@ import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE = "answer_first.not_judged";
 const NOTHING = "answer_first.nothing_to_judge";
+/** A request that asks for rows back, completed while no read has run in the attempt (header). */
+const ROWS_NOT_READ = "answer_first.rows_not_read";
 /** A completion over what the check last refused: the code the ladder climbs on. */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE = "answer_first.same_evidence";
 const SAME = AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE;
@@ -75,6 +88,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   instructions: string;
   rows(): Promise<AutomationStudioAnswerFirstRowsSummary>;
   acts(): readonly AutomationStudioAttemptAct[];
+  /** Whether any read has answered in this attempt, rows or none (`../rows/sink-type.ts`, `readsAnswered`). */
+  readsRan(): boolean;
   endView(): Promise<AutomationStudioResultEndView | undefined>;
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
@@ -85,6 +100,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   seed?: Pick<AutomationStudioAnswerFirstCompletionState, "timesChecked"> | undefined;
 }): AutomationStudioAnswerFirstCompletionCheck {
   const state: AutomationStudioAnswerFirstCompletionState = { achieved: false, timesChecked: input.seed?.timesChecked ?? 0, refusedAgain: 0, purseRefused: false };
+  const asks = automationStudioFlowBootstrapInstructionAsk(input.instructions);
   return {
     state,
     check: async (result) => {
@@ -96,6 +112,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       const acts = input.acts();
       state.held = { rows, acts: acts.length };
       if (rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
+      if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
       const digest = automationStudioFlowLessSummaryDigest(summary);
       if (state.refused?.digest === digest) {
@@ -121,7 +138,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (judged.verdict === "yes") {
         state.achieved = true;
         state.refused = undefined;
-        input.say("Checked", "It is what you asked for, checked once.");
+        input.say("Checked", `It is what you asked for, checked ${state.timesChecked === 1 ? "once" : `${state.timesChecked} times`}.`);
         return { ok: true };
       }
       state.refused = { verdict: judged.verdict, digest, reason: judged.reason };

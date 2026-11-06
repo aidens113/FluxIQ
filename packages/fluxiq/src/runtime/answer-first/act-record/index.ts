@@ -7,7 +7,6 @@ export * from "./mergers/index.ts";
 export * from "./cut-words.ts";
 export * from "./item-names.ts";
 export * from "./item-words.ts";
-export * from "./page-words.ts";
 export * from "./record-data.ts";
 export * from "./record.ts";
 export * from "./row-ties.ts";

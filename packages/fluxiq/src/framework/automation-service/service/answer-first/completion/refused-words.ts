@@ -21,6 +21,10 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
   /** A judge's no or unsure, as the model reads it: its reason whole, then what would change it. */
   judged: (reason: string): string => `${reason} ${NEW_EVIDENCE}`,
 
+  /** A request that asks for rows back, completed before any read ran (`./check.ts`, `rows_not_read`). `asked` is the person's own sentence, where Core found one. */
+  rowsNotRead: (asked: string | undefined): string =>
+    `The request asks for rows back${asked ? ` ("${asked}")` : ""}, and no read has run in this attempt, so this completion was not checked. Rows come only from a read of the page: words in answer are not rows, however they are laid out. Go to the page that shows the rows asked for, run the read there, and complete once it has returned them. If that read finds none, complete then: an empty read is a result the check can judge.`,
+
   /** A completion over what the check last refused: what that was about, what would change it, and what repeating it leads to. */
   sameEvidence: (verdict: "no" | "unsure", reason: string): string =>
     `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} If you cannot get anything new you need not keep trying: completing again with nothing new starts a fresh round, and the time after that the person is asked whether to keep going or to stop with what you hold.`,

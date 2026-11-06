@@ -118,4 +118,24 @@ describe("automationStudioAnswerFirstRowSink", () => {
     expect(result.datasetId).toBe(store.batches[1]!.datasetId);
     expect(result.columns.map((column) => column.id)).toEqual(["name", "stock"]);
   });
+
+  // Lane B, run-mw45itmx-c4d6f5cb: whether a read ran, rows or none, is what lets a request for rows be
+  // refused while none has, and judged once an honest read found nothing (`../../completion/check.ts`).
+  it("counts each read that answered, an empty one too, but not a call that read nothing or a read the store lost", async () => {
+    const { store, sink } = sinkOver();
+    expect(sink.readsAnswered()).toBe(0);
+    await sink.fromCall(call("call.press", "web.click", { target: "button" }), { kind: "llm_evidence_tool_execution", evidence: { pressed: true }, effectApplied: true });
+    expect(sink.readsAnswered()).toBe(0);
+    store.refuse.on = true;
+    await sink.fromCall(call("call.lost"), liveAnswer([item(1)]));
+    expect(sink.readsAnswered()).toBe(0);
+    store.refuse.on = false;
+    await sink.fromCall(call("call.empty"), liveAnswer([]));
+    expect(sink.readsAnswered()).toBe(1);
+    expect(sink.summary().totalRows).toBe(0);
+    await sink.fromCall(call("call.rows"), liveAnswer([item(1)]));
+    expect(sink.readsAnswered()).toBe(2);
+    await sink.recordBatch({ nodeId: "node.read", attemptId: "attempt.1", batchKey: "attempt.1", datasetId: "run.rows", writeMode: "append", schema: store.batches[0]!.schema, rows: [], invalidCount: 0, truncated: false });
+    expect(sink.readsAnswered()).toBe(3);
+  });
 });

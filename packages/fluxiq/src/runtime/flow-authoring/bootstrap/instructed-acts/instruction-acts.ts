@@ -63,6 +63,20 @@
 // **An act carries the class its verb names** (`./act-consequence.ts`), so the
 // check can hold the steps that do it to declaring it.
 //
+// **A read-out is no act (lane B, run-mw45itmx-c4d6f5cb).** "Then give me what
+// is in my cart, as a table ..." was read as an act of opening the cart, which
+// the press or navigation that brought the cart up does. The model named it on
+// that navigation, saw its only act done before any read, and completed with
+// the table typed as words: nothing was read and the person got no table. A
+// read-out asks for what a place holds, which only a read gives, and Core
+// cannot tell which place a read read, so no step can be shown doing it. It is
+// still read, as the end of the clause before it, so that clause's quote stops
+// where it did; it yields no act. What it asks for is held where rows are: a
+// request that asks for rows back is refused at completion while no read has
+// run (`../answerability/instruction-ask.ts`, answer-first's completion check),
+// and the judge weighs the rows read. "Open my saved items" and "go to my cart"
+// stay acts of opening, done by the step that opens the place.
+//
 // Every pattern was checked against the forty-odd instructions of the ten
 // realistic sites (`apps/scenario-lab/src/scenarios/*/live-tasks.ts` in the web
 // repository): each consequential task yields its acts, and no extraction task
@@ -122,9 +136,10 @@ const TRAILING = /(?:[\s,;:(&"“—-]+|\s+(?:then|and|also|please|first|next|fi
  * One way an act is asked for: a verb, optionally what must follow it in the
  * same sentence (`after`, tested against the rest of the sentence), and
  * optionally what must not (`unless`, tested against the verb as written and
- * the rest of the sentence).
+ * the rest of the sentence). `readOut` marks a read-out of a place: it ends the
+ * clause before it and yields no act (header).
  */
-type ActPattern = { kind: AutomationStudioInstructedActKind; verb: RegExp; after?: RegExp; unless?: RegExp };
+type ActPattern = { kind: AutomationStudioInstructedActKind; verb: RegExp; after?: RegExp; unless?: RegExp; readOut?: true };
 
 /**
  * Asking for the automation itself: "Create a deterministic Start to End
@@ -148,7 +163,7 @@ const PATTERNS: readonly ActPattern[] = [
   { kind: "move", verb: word("move"), after: /(?<![A-Za-z])to(?![A-Za-z])/iu },
   { kind: "open", verb: word("open|view|visit"), after: new RegExp(`^\\s+(?:up\\s+)?(?:my|the)\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
   { kind: "open", verb: word("go"), after: new RegExp(`^\\s+to\\s+(?:my|the)\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
-  { kind: "open", verb: word("give|list|show|tell"), after: new RegExp(`^\\s+(?:me\\s+)?(?:\\S+\\s+){0,4}?(?:everything|what\\s+is|what's|whatever\\s+is|all)\\s+(?:that\\s+is\\s+|is\\s+)?(?:already\\s+|now\\s+)?(?:in|on)\\s+my\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu") },
+  { kind: "open", verb: word("give|list|show|tell"), after: new RegExp(`^\\s+(?:me\\s+)?(?:\\S+\\s+){0,4}?(?:everything|what\\s+is|what's|whatever\\s+is|all)\\s+(?:that\\s+is\\s+|is\\s+)?(?:already\\s+|now\\s+)?(?:in|on)\\s+my\\s+(?:[A-Za-z'-]+\\s+){0,1}?${PLACE}(?![A-Za-z])`, "iu"), readOut: true },
   { kind: "submit", verb: word("book|buy|purchase|order|send|post|publish|create|confirm|withdraw|submit|reserve"), unless: THE_AUTOMATION_ITSELF },
   { kind: "submit", verb: word("place"), after: /^\s+(?:a|an|my|the)\s+(?:[A-Za-z-]+\s+){0,2}?(?:bid|order|offer)(?![A-Za-z])/iu },
   { kind: "submit", verb: word("check\\s*out|checkout") },
@@ -163,7 +178,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
   // `object` is the act's own words after its verb, which its choices are read from.
   const found: Array<Omit<AutomationStudioInstructedAct, "id" | "requires"> & { at: number; object: string }> = [];
   for (const { sentence, start } of sentences(text)) {
-    const matched: Array<{ kind: AutomationStudioInstructedActKind; index: number; written: string }> = [];
+    const matched: Array<{ kind: AutomationStudioInstructedActKind; index: number; written: string; readOut?: true }> = [];
     for (const pattern of PATTERNS) {
       pattern.verb.lastIndex = 0;
       for (let match = pattern.verb.exec(sentence); match; match = pattern.verb.exec(sentence)) {
@@ -174,11 +189,13 @@ export function automationStudioInstructedActs(instructionText: string): Automat
         // One act of a kind per sentence: "Collect and use that store's coupon"
         // is one act asked for twice, not two.
         if (matched.some((act) => act.kind === pattern.kind)) continue;
-        matched.push({ kind: pattern.kind, index: match.index, written: match[0] });
+        matched.push({ kind: pattern.kind, index: match.index, written: match[0], ...(pattern.readOut ? { readOut: true as const } : {}) });
       }
     }
     matched.sort((left, right) => left.index - right.index);
     matched.forEach((act, order) => {
+      // A read-out ends the clause before it and is no act (header).
+      if (act.readOut) return;
       // The act's own clause: its verb up to the next act's verb, or the sentence's end.
       const rest = sentence.slice(act.index + act.written.length, matched[order + 1]?.index ?? sentence.length);
       const verb = act.written.replace(/\s+/gu, " ").toLowerCase();
