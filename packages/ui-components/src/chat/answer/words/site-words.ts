@@ -4,9 +4,12 @@
 
 import type { ChatAttemptAct } from "../../ports/index.ts";
 import { actWords } from "./act-words.ts";
+import { isEarlierAct } from "./earlier-act.ts";
 
 /** The title and one line per act; no acts is "I recorded no changes". */
 export function siteWords(acts: readonly ChatAttemptAct[]): { title: string; lines: string[] } {
   if (acts.length === 0) return { title: "On the site: I recorded no changes", lines: [] };
+  // Every act an earlier attempt's: this attempt changed nothing, and the title says so beside what stands.
+  if (acts.every(isEarlierAct)) return { title: "On the site: nothing changed this time", lines: acts.map(actWords) };
   return { title: "On the site", lines: acts.map(actWords) };
 }

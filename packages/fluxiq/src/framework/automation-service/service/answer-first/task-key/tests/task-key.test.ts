@@ -1,4 +1,4 @@
-// A task is its exact words on its site: spacing is not a difference, case and site are.
+// A task is its words on its site: spacing, case and a sentence's end are not a difference, other words and another site are.
 import { describe, expect, it } from "vitest";
 import { automationStudioAnswerFirstTaskKey as key } from "../index.ts";
 
@@ -12,8 +12,18 @@ describe("the task key", () => {
   it("treats whitespace-only differences as one task", () => {
     expect(key({ instructionText: `  List the  books\n on loan\tto member 12 `, startLocation: SITE })).toBe(key({ instructionText: ASK, startLocation: SITE }));
   });
-  it("treats a case difference as another task", () => {
-    expect(key({ instructionText: ASK.toLowerCase(), startLocation: SITE })).not.toBe(key({ instructionText: ASK, startLocation: SITE }));
+  it("treats a case difference, or a sentence's end, as the same task (t869)", () => {
+    const same = key({ instructionText: ASK, startLocation: SITE });
+    for (const typed of [ASK.toLowerCase(), ASK.toUpperCase(), `${ASK}.`, `${ASK.toLowerCase()}. `, `${ASK}!`, `${ASK}?`, `${ASK} ...`, `${ASK}…`, `${ASK}.\n`]) {
+      expect(key({ instructionText: typed, startLocation: SITE }), typed).toBe(same);
+    }
+  });
+  it("keeps punctuation inside the words, and a closing quote, and other words stay another task", () => {
+    const same = key({ instructionText: ASK, startLocation: SITE });
+    expect(key({ instructionText: "List the books, on loan to member 12", startLocation: SITE })).not.toBe(same);
+    expect(key({ instructionText: 'Find "Atlas"', startLocation: SITE })).not.toBe(key({ instructionText: 'Find "Atlas', startLocation: SITE }));
+    expect(key({ instructionText: "Show the books member 12 has on loan", startLocation: SITE })).not.toBe(same);
+    expect(key({ instructionText: `${ASK} again`, startLocation: SITE })).not.toBe(same);
   });
   it("treats another origin as another task, but not another path or host case", () => {
     expect(key({ instructionText: ASK, startLocation: "https://other.example.test/desk" })).not.toBe(key({ instructionText: ASK, startLocation: SITE }));

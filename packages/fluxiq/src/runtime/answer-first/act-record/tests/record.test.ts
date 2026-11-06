@@ -189,8 +189,9 @@ describe("what it says", () => {
     record.settled(call(), { effectApplied: true, words: { what: "<button id=x>Save</button>", where: "https://shop.test/p/1" } });
     record.settled(call({ actionId: "two", consequences: ["move_money", "delete"] }), { effectApplied: true, words: { what: "Bearer abc123", where: "   " } });
     const [first, second] = record.acts();
-    expect(first).toMatchObject({ what: "Made something new", where: "On the site" });
-    expect(second).toMatchObject({ what: "Moved money", where: "On the site", classes: ["move_money", "delete"] });
+    // The words were refused, so the control's own word (from its fingerprint) stands before the class's line.
+    expect(first).toMatchObject({ what: "Save it", where: "On the site" });
+    expect(second).toMatchObject({ what: "Save it", where: "On the site", classes: ["move_money", "delete"] });
     for (const act of record.acts()) expect(parseAutomationStudioAttemptAct(act)).toEqual({ ok: true, act });
   });
 

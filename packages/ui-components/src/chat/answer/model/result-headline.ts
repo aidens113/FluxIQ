@@ -2,6 +2,7 @@
 // from the rows' own total; "of" is said only of a confirmed result.
 
 import type { ChatTaskResult } from "../../ports/index.ts";
+import { isEarlierAct } from "../words/index.ts";
 import { effectiveLabel } from "./effective-label.ts";
 
 /** "1 row" or "10 rows". */
@@ -37,12 +38,16 @@ function thingsWord(count: number): string {
 
 /** What an unfinished result holds, for "What I got: ...": its rows or words, and what it did on the site, said as the record says it. */
 export function gotSummary(result: ChatTaskResult): string {
-  const landed = result.acts.filter((act) => act.state === "landed").length;
-  const may = result.acts.filter((act) => act.state === "may_have_landed").length;
+  // An act an earlier attempt did is not this attempt's: it is said apart, never counted with what this one did.
+  const own = result.acts.filter((act) => !isEarlierAct(act));
+  const landed = own.filter((act) => act.state === "landed").length;
+  const may = own.filter((act) => act.state === "may_have_landed").length;
+  const earlier = result.acts.length - own.length;
   const parts = [
     ...(result.rows !== undefined ? [rowsWord(result.rows.totalRows)] : result.answerText !== undefined ? ["an answer in the model's words"] : []),
     ...(landed > 0 ? [`${thingsWord(landed)} done on the site`] : []),
-    ...(may > 0 ? [`${thingsWord(may)} that may have happened on the site`] : [])
+    ...(may > 0 ? [`${thingsWord(may)} that may have happened on the site`] : []),
+    ...(earlier > 0 ? [`${thingsWord(earlier)} already done earlier`] : [])
   ];
   if (parts.length === 0) return result.acts.length > 0 ? "nothing that changed the site" : "work done on the site";
   return parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;

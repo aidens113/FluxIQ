@@ -38,7 +38,9 @@ generate(answer-first)
 
 ## Task key (D10)
 
-`AF/task-key/`: `automationStudioAnswerFirstTaskKey({ instructionText, startLocation }): string` returns `task.<40 hex>`, over the instruction normalised (Unicode NFC, runs of whitespace to one space, trimmed; case kept, because "exact") and, when `startLocation` parses, its lowercase origin. The same words on another site are another task. Replaces the digest in `attempt/run-attempt.ts`. Only this exact key may run a saved Flow.
+`AF/task-key/`: `automationStudioAnswerFirstTaskKey({ instructionText, startLocation }): string` returns `task.<40 hex>`, over the instruction normalised (Unicode NFC, runs of whitespace to one space, trimmed, and since t869 case folded and the punctuation a sentence ends with dropped) and, when `startLocation` parses, its lowercase origin. The same words on another site are another task. Replaces the digest in `attempt/run-attempt.ts`. Only this key may run a saved Flow.
+
+**Revised by t869.** Case was kept, so "Save the tables" and "save the tables." were two tasks with two empty act records, and the second did again what the first had done. The words are folded for the key only; everywhere else (the Flow's goal, the judge, the chat) they stay as typed. The chat's known-Flow lookup and the attempt use the one function, so they agree. Keys written before simply start again at attempt 1. **Known limit:** the same request in other words ("Show what I have on loan" for "List my loans") is another task, with its own record; nothing here tells two phrasings apart.
 
 ## Task memory (D11)
 
@@ -111,9 +113,13 @@ Revised by t869 (the lead's call, reported to the person, who may overrule it). 
 | the same words typed again, whatever the attempt before ended as | seeded from the task's acts, landed and may-have-landed, as a union across attempts | a person typing what they typed before wants what they asked for; a repeat is checked and reported already done, never pressed |
 | a person's press of Run again on the answer | empty; what it was spared is kept beside it and carried by the next same words | that press is what means "do it again" |
 | words of the person's own that ask again ("… again", or a yes to the chat's one question at the start) | its own: another task key | the person's words, never a model's claim |
-| carry-on of the same attempt | the same record | the same attempt |
+| carry-on of the same attempt (budget out, cut off by a restart, or, since t869, stopped by the person) | the same record, and a Run again's `askedAgain` | the same attempt |
 
-A press that declared nothing carries only where its own answer said it changed something that stays, and is then held to a look rather than pressed blind. A step on a control seen to flip is given that state (`ensureState`) beside the saved steps; a Run again leaves it off.
+A press that declared nothing carries only where its own answer said it changed something that stays, and is then held to a look rather than pressed blind. A step on a control seen to flip is given that state (`ensureState`) beside the saved steps; a Run again keeps it too (`attempt-road/restart-and-run-again.md`).
+
+**A stopped attempt is finished by Carry on (t869, `attempt-road/run-again-holes.md`).** A second Run again would start empty and press again what the stopped one pressed. So Core carries on a stopped attempt (its own budget, or more where it is spent), the chat offers Carry on on it and drops Run again beside it once it did something on the site, and Core refuses a Run again, in words that say to carry on, while the task's last attempt is a Stop holding a lasting act of its own. The same words after it carry everything and press nothing.
+
+**A Run again's judge is told it is a repeat the person asked for** (`runtime/result-verification/flow-less/asked-again.ts`), in general words: it judges this attempt's own change from this attempt's own before-reading, so one more of a count is right and more than one more, or any change not asked for, is wrong. A carry-on of a Run again is told the same.
 
 ## The Flow run stage
 

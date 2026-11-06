@@ -96,6 +96,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const order: string[] = [];
   /** The datasets a saved Flow's run wrote, while its rows stand (`runRowsRefused`). */
   const ran = new Set<string>();
+  /** Reads that answered, rows or none, not lost to the store (`readsAnswered`). */
+  let readsAnswered = 0;
 
   const movedFrom = (held: Held, evidence: AutomationStudioAnswerFirstReadEvidence): boolean => held.view !== undefined && evidence.list !== undefined && held.view !== evidence.list;
 
@@ -129,7 +131,10 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const found = automationStudioAnswerFirstReadRows(answer, input.readRowsKey);
       if (!found) return undefined;
       const objects = found.filter(isObject);
-      if (!found.length) return { rows: [], invalidCount: 0, truncated: false };
+      if (!found.length) {
+        readsAnswered += 1;
+        return { rows: [], invalidCount: 0, truncated: false };
+      }
       const columns = automationStudioAnswerFirstReadColumns(objects);
       const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, input.readRowsKey);
       const join = joined(columns, found, evidence);
@@ -164,6 +169,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       } catch (error) {
         return { rows: [], datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, failure: { code: "answer_first.rows_not_stored", ...(error instanceof Error ? { errorName: error.name } : {}) } };
       }
+      readsAnswered += 1;
       const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending };
       datasets.set(datasetId, held);
       if (evidence.list !== undefined) held.view = evidence.list;
@@ -181,6 +187,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     },
     async recordBatch(batch) {
       const stored = await input.onRecordBatch(batch);
+      readsAnswered += 1;
       const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process };
       datasets.set(batch.datasetId, held);
       // As the store reads it: `replace` clears what the dataset held.
@@ -198,6 +205,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     runRowsRefused() {
       ran.clear();
     },
+    readsAnswered: () => readsAnswered,
     summary,
     async readBack() {
       const own = summary();

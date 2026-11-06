@@ -330,3 +330,38 @@ FLUXIQ_LAB_INSTANCE=t869-live FLUXIQ_TEST_ENV_FILES=none pnpm lab attempt local-
 - **A rung that ends a round answers `{ ok: true }` from the check** to keep the round's rows. Nothing is accepted by it, since only `state.achieved` counts, but a direct call would read better.
 - **The fresh round's real cost** is not measured.
 - **Cost past the 45 s cut** is still not measured.
+
+## Rounds after the cache fix (2026-11-05 and 06)
+
+Worker reports for each item are in `attempt-road/`. The live lanes t875, t876 and t877 found and fixed more of the same road; their fix logs are in `live/lane-a.md`, `live/lane-b.md` and `live/lane-c.md`.
+
+### What the paid runs found, and what was done
+
+| Found on a paid run | Cause | Now | Report |
+| --- | --- | --- | --- |
+| "Save. Save. Save." on the card | By-hand presses on an item's own page carried no item sentence and no row | An act is named by its list row, its tied row, or the card it was pressed on (lane B), else the control's own word; never the page title. **Carried acts still read "Save." because item words are not persisted: not accepted, and goes to lane B after the integration** | `repair-names-and-replies.md`, `live/lane-b.md` |
+| Two `llm.provider_output_invalid` on Haiku | The judge's `observed` was 575 characters against a `maxLength` of 500, and a decision had the wrong outer word | Limits on model output are lifted, the outer word is repaired, judges get their real schema natively (lane A) | `repair-names-and-replies.md`, `caps-and-drops.md`, `strip-and-limits.md`, `live/lane-a.md` |
+| Haiku planned to save tables outside the radius | The controls line kept in history had lost the page's "Results outside your search" heading | The line carries its headings, and conditions read bare names | `controls-headings.md`, `conditions-and-saved-line.md` |
+| Attempt 2 did not run the saved Flow | The task key and the chat's lookup differed; a saved read depended on an in-memory handle; a repeat that opens rows by address lost `url` at assembly | All fixed; attempt 2 after a real Core restart runs the saved Flow | `two-attempts.md`, `saved-flow-defects.md`, `restart-and-run-again.md`, `row-url-repeat.md` |
+| A repeat across attempts was caught only by the Lab | Core's rule was that the same words mean "do it again" | **Lead's call, not the person's:** the same words carry landed acts; Run again repeats, keeping `ensureState`; a stopped Run again is finished by Carry on; the task key folds case and trailing punctuation; the judge is told when a Run again was asked | `same-words-rule.md`, `run-again-holes.md` |
+| Untrue card and strip lines | Various | Every line is true of the record | `untrue-lines.md`, `untrue-lines-2.md` |
+
+### Browser proofs on the final batch (adf398c3c), scripted, NOT LIVE
+
+All on `local-classifieds-save-dining-tables`; every attempt 2 has `change {}` and `activity []`.
+
+| Form | Exit | Run |
+| --- | --- | --- |
+| `again-check --attempts 2` | 0 | `run-mw4alq6i-758fea36` |
+| `again-check --attempts 2 --restart-between` | 0 | `run-mw4awc1e-1eae78df` (extension back after 21.8 s) |
+| `again-press --attempts 2` | 0 | `run-mw4b19fz-6e588581` |
+| `run-again --attempts 2` | 0 | `run-mw4b5p1n-be01fd04` |
+| `plain --attempts 2` | 0 | `run-mw4bb1ob-5ed79723` |
+| `open-save-back` | 0 | `run-mw4bfj9h-af5d8f1d` |
+| `by-hand` | 0 | |
+
+The part specs `part-run-job-board`, `pinned-calls-job-board` and `left-behind-job-board`: 5 passed (15.9m). apps/web route and workspace tests: 13 files, 179 passed. Core vitest on the batch: 1464 of 1465 passed; the one failure was an expectation pinned to the old class line, updated under the control-name rule, then 40 of 40.
+
+### `person.test.ts` under load
+
+The test's assumption, not a race a person would notice (diagnosed by reading). `endings/tests/person.test.ts:44` read the kept attempt row once, right after the permission question showed, while `attempt/run-attempt.ts` writes that row without waiting. It now waits for the row with `vi.waitFor`, as the same file already did at its other reads (applied at the integration). A person can see the question a few milliseconds before the record says `waiting_for_person`; nothing is lost.

@@ -41,7 +41,8 @@ describe("a permission", () => {
     const ask = await pendingAsk(service, projectId, flowId);
     expect(ask.timeoutMs).toBeNull();
     expect(ask.onTimeout).toBeNull();
-    expect((await keptAttempt(service, projectId, flowId))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "permission" });
+    // The row is written just after the question shows, so it is waited for rather than read once.
+    await vi.waitFor(async () => expect((await keptAttempt(service, projectId, flowId))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "permission" }), { timeout: 10_000, interval: 25 });
     await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "grant" });
     const attempt = await generating;
     const answer = expectReached(attempt);

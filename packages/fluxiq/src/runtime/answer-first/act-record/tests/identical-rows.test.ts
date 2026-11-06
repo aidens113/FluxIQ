@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioAttemptActRecord, type AutomationStudioAttemptActCall } from "../index.ts";
+import { AutomationStudioAttemptActRecord, automationStudioAttemptActSeed, type AutomationStudioAttemptActCall } from "../index.ts";
 
 const WORDS = { what: "Renewed", where: "On the account" };
 const TITLE = "Atlas of Rivers";
@@ -18,6 +18,8 @@ const withRows = (rows: readonly JsonObject[]) => {
   record.noteReadRows([...rows]);
   return record;
 };
+/** The same task in a later attempt: what the first landed is carried, so a row passed over is one the person would miss. A row this attempt pressed itself is not left out (`rows-left-out.ts`). */
+const nextAttempt = (first: AutomationStudioAttemptActRecord): AutomationStudioAttemptActRecord => new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ data: first.data() })! });
 /** A press by a handle no read printed, with the words the domain says of it, in a fingerprint of its own. */
 const byHandle = (words: string, handle = "t9"): AutomationStudioAttemptActCall => ({ actionId: "press", parameters: { target: { handle } }, consequences: ["modify_existing"], stage: "exploration", foreseen: { words, parameters: { element: { label: "Renew", context: { record: words } } } } });
 /** A run's pass on the row in the shape its For Each hands on, with no word of which item it was. */
@@ -164,15 +166,16 @@ describe("a control the look before the press names by the label beside it", () 
 
 describe("how many rows an attempt left out", () => {
   it("counts a forward pass's, a run's and a press's, each row once, in any shape", () => {
-    const record = withRows([EAST, WEST, BIRDS]);
-    passOn(record, BIRDS);
+    const first = withRows([EAST, WEST, BIRDS]);
+    passOn(first, BIRDS);
+    passOn(first, EAST);
+    const record = nextAttempt(first);
     expect(record.rowsHeldDone()).toBe(0);
     expect(record.rowDone(BIRDS)).toBe(true);
     expect(record.rowDone(BIRDS)).toBe(true);
     expect(record.rowsHeldDone()).toBe(1);
     expect(record.admit(byHandle(`Renew ${BIRDS.title}`)).kind).toBe("already_done");
     expect(record.rowsHeldDone()).toBe(1);
-    passOn(record, EAST);
     expect(record.carried({ actionId: "press", parameters: { control: "Renew" }, row: EAST })).toBeDefined();
     expect(record.rowsHeldDone()).toBe(2);
   });
@@ -189,26 +192,32 @@ describe("how many rows an attempt left out", () => {
   });
 
   it("words that fit two rows are one row left out", () => {
-    const record = withRows([FIRST, SECOND, BIRDS]);
-    passOn(record, FIRST);
+    const first = withRows([FIRST, SECOND, BIRDS]);
+    passOn(first, FIRST);
+    const record = nextAttempt(first);
     expect(record.admit(byHandle(`Renew ${TITLE}`)).kind).toBe("already_done");
     expect(record.rowsHeldDone()).toBe(1);
   });
 
   it("two rows a read returned value for value are two to a forward run, each once however many times it runs, and a real run that showed no read says one", () => {
-    const record = withRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
-    passOn(record, { title: TITLE });
+    const first = withRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
+    passOn(first, { title: TITLE });
+    const record = nextAttempt(first);
+    record.noteReadRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
     for (const _ of [1, 2, 3, 4]) expect(record.rowDone({ title: TITLE })).toBe(true);
     expect(record.rowsHeldDone()).toBe(2);
-    const noRead = new AutomationStudioAttemptActRecord();
-    passOn(noRead, { title: TITLE });
+    const noReadFirst = new AutomationStudioAttemptActRecord();
+    passOn(noReadFirst, { title: TITLE });
+    const noRead = nextAttempt(noReadFirst);
     for (const _ of [1, 2]) expect(noRead.carried({ actionId: "press", parameters: { control: "Renew" }, row: { title: TITLE } })).toBeDefined();
     expect(noRead.rowsHeldDone()).toBe(1);
   });
 
   it("a press on such a row is one row left out, however many times it is refused", () => {
-    const record = withRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
-    passOn(record, { title: TITLE });
+    const first = withRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
+    passOn(first, { title: TITLE });
+    const record = nextAttempt(first);
+    record.noteReadRows([{ title: TITLE }, { title: TITLE }, BIRDS]);
     for (const handle of ["t1", "t2", "t3"]) expect(record.admit(byHandle(`Renew ${TITLE}`, handle)).kind).toBe("already_done");
     expect(record.rowsHeldDone()).toBe(1);
   });
@@ -216,8 +225,9 @@ describe("how many rows an attempt left out", () => {
   it("two rows left over that only elimination holds done are two left out, by a forward pass and by a press, and a press says several fit", () => {
     const copy = (code: string): JsonObject => ({ title: TITLE, code });
     const fresh = () => {
-      const record = withRows([copy("a1"), copy("b2")]);
-      passOn(record, copy("a1"));
+      const first = withRows([copy("a1"), copy("b2")]);
+      passOn(first, copy("a1"));
+      const record = nextAttempt(first);
       record.noteReadRows([copy("zz"), copy("yy"), copy("b2")]);
       return record;
     };
@@ -232,8 +242,10 @@ describe("how many rows an attempt left out", () => {
   it("a saved step with no row of its own leaves out the row its act was on, by a run, a forward run and by hand, once", () => {
     const step = { actionId: "press", parameters: { title: BIRDS.title }, consequences: ["modify_existing"], stage: "exploration" as const };
     const fresh = () => {
-      const record = withRows([EAST, WEST, BIRDS]);
-      record.settled(step, { effectApplied: true, words: WORDS, actedOn: `This acted on ${BIRDS.title} only; no other item was acted on.` });
+      const first = withRows([EAST, WEST, BIRDS]);
+      first.settled(step, { effectApplied: true, words: WORDS, actedOn: `This acted on ${BIRDS.title} only; no other item was acted on.` });
+      const record = nextAttempt(first);
+      record.noteReadRows([EAST, WEST, BIRDS]);
       return record;
     };
     const run = fresh();
@@ -249,14 +261,24 @@ describe("how many rows an attempt left out", () => {
   });
 
   it("an act it may have made, on a row, is left out while refused, and not once it goes after a look", () => {
-    const record = withRows([EAST, WEST]);
+    const first = withRows([EAST, WEST]);
     const press = byHandle(`Renew ${TITLE} ${WEST.wing}`);
-    record.settled(press, { effectApplied: false, uncertain: true, words: WORDS });
+    first.settled(press, { effectApplied: false, uncertain: true, words: WORDS });
+    const record = nextAttempt(first);
     expect(record.admit(press).kind).toBe("look_first");
     expect(record.rowsHeldDone()).toBe(1);
     record.looked();
     expect(record.admit(press).kind).toBe("run");
     record.settled(press, { effectApplied: true, words: WORDS });
+    expect(record.rowsHeldDone()).toBe(0);
+  });
+
+  it("a row this attempt pressed itself is not left out, by any route", () => {
+    const record = withRows([EAST, WEST, BIRDS]);
+    passOn(record, BIRDS);
+    expect(record.rowDone(BIRDS)).toBe(true);
+    expect(record.carried({ actionId: "press", parameters: { control: "Renew" }, row: BIRDS })).toBeDefined();
+    expect(record.admit(byHandle(`Renew ${BIRDS.title}`)).kind).toBe("already_done");
     expect(record.rowsHeldDone()).toBe(0);
   });
 

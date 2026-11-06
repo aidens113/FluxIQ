@@ -7,7 +7,7 @@ import type { AnswerModel } from "./answer-types.ts";
 import { checkWords } from "./check-words.ts";
 import { effectiveLabel } from "./effective-label.ts";
 import { rowsModel } from "./rows-model.ts";
-import { siteWords, skippedWords } from "../words/index.ts";
+import { checkedTimesWords, siteWords, skippedWords } from "../words/index.ts";
 
 type ResultParts = Pick<AnswerModel, "check" | "rows" | "text" | "siteTitle" | "siteLines" | "checked" | "missing" | "skipped" | "canExport">;
 
@@ -21,7 +21,7 @@ const COUNTS_ONLY = /, once against what was asked for\.$|^nothing to show, once
 function checkedLine(result: ChatTaskResult): string | undefined {
   if (result.checkedWhat === undefined) return undefined;
   const label = effectiveLabel(result);
-  if (label === "confirmed") return `Checked: ${result.checkedWhat}`;
+  if (label === "confirmed") return `Checked: ${checkedTimesWords(result.checkedWhat, result.timesChecked)}`;
   if (COUNTS_ONLY.test(result.checkedWhat)) return undefined;
   return label === "refuted" ? `What failed: ${result.checkedWhat}` : `Meant to check: ${result.checkedWhat}`;
 }

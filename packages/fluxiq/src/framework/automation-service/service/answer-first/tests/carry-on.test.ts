@@ -2,13 +2,20 @@
 // "Add budget and carry on", through the real service with a scripted model and a lending library
 // that counts presses (t870). The same attempt goes on: nothing is pressed twice, the Flow never
 // runs again from its start, and what it spent and found stays with it. Provider-free.
+//
+// Since t869 a person's Stop is carried on too, and that is how a Run again a Stop cut short is
+// finished: a second Run again would start with an empty record and press again what the stopped
+// one pressed, so it is refused in words that say to carry on.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseAutomationStudioTaskAttempt } from "@fluxiq/contracts/automation";
-import { automationStudioAnswerFirstCarryOn, automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstStepsDigest } from "../index.ts";
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/runtime";
+import { automationStudioAnswerFirstCarryOn, automationStudioAnswerFirstLiveAttemptsOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstStepsDigest } from "../index.ts";
 import { judgedNo } from "./endings/support.ts";
-import { renewEveryLoan } from "./fake-library-engine.ts";
+import { pressLoan, renewEveryLoan } from "./fake-library-engine.ts";
 import { complete, LOOK_TOOL, RENEW_LOAN, READ_LOANS, runNode } from "./fake-library.ts";
+import { honestFirstAttempt, LOAN_TASK, onceEach } from "./honest-attempts.ts";
 import { laterAttempts, readLoans, toldTo, type LaterAttemptOptions } from "./later-attempts.ts";
+import { pressLoanByHand, siteLane } from "./library-site.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -205,7 +212,7 @@ describe("add budget and carry on", () => {
     expect((await lane.rows()).map((row) => row.attempt.attemptId)).toEqual([attemptId]);
   });
 
-  it("a person's Stop during a carry-on stops it as usual, and it stays stopped", async () => {
+  it("a person's Stop during a carry-on stops it as usual, and Carry on then finishes the same attempt, pressing nothing twice", async () => {
     const lane = await laterAttempts(cleanups, { titles: TITLES });
     const first = await lane.attempt({ ...TIGHT, script: [readLoans(), press(ATLAS), press(BIRDS)] });
     const { attemptId } = first.answer.attempt;
@@ -214,8 +221,11 @@ describe("add budget and carry on", () => {
     expect(second.answer.attempt).toMatchObject({ status: "stopped_by_person", attemptId });
     expect(second.answer.result?.rows?.totalRows).toBe(4);
     expect(lane.target.library.renewals[DUNES]).toBeUndefined();
-    const again = await carryOn(lane, attemptId, 1, {});
-    expect(again).toMatchObject({ ok: false, refused: "stopped" });
+    // Since t869 a Stop is finished by Carry on, the same attempt with its own record: a fresh start would press again what it pressed.
+    const third = await pressedAndFinished(lane, attemptId, 0, { ...PERMITTED, costUsd: 0.04, script: [press(CLOCKS), press(DUNES), complete("All renewed.")] });
+    expect(third.answer.attempt).toMatchObject({ status: "achieved", attemptId, ordinal: 1 });
+    expect(lane.target.library.renewals).toEqual(ONCE_EACH);
+    expect((await lane.rows()).map((row) => row.attempt.attemptId)).toEqual([attemptId]);
   });
 
   it("a judge's no in a carry-on takes the copied rows' standing away, and they stay what the result is until something replaces them", async () => {
@@ -241,14 +251,15 @@ describe("a press that is refused", () => {
     expect(automationStudioAnswerFirstLiveAttemptsOf(lane.service).has(attemptId)).toBe(false);
   };
 
-  it("an unknown attempt, one that reached its result, and one a person stopped", async () => {
+  it("an unknown attempt, one that reached its result, and a stopped one a later attempt at the task has followed", async () => {
     const lane = await laterAttempts(cleanups);
     const achieved = await lane.attempt({ script: [readLoans(), complete("Listed.")] });
     await expectRefused(lane, "attempt.none", 1, "unknown_attempt");
     await expectRefused(lane, achieved.answer.attempt.attemptId, 1, "achieved");
     const stopped = await lane.attempt({ instruction: "Tell me about my loans on my library account.", script: [] });
     expect(stopped.answer.attempt.status).toBe("stopped_by_person");
-    await expectRefused(lane, stopped.answer.attempt.attemptId, 1, "stopped");
+    await lane.attempt({ instruction: "Tell me about my loans on my library account.", script: [complete("Nothing to tell.", "You have three loans.")] });
+    await expectRefused(lane, stopped.answer.attempt.attemptId, 1, "later_attempt");
   });
 
   it("a budget-out with nothing added, or an amount that is no amount", async () => {
@@ -335,5 +346,77 @@ describe("the look before a press on the page", () => {
     const after = lane.seen.slice(from);
     expect(after.map((call) => call.toolId)).toContain(LOOK_TOOL);
     expect(after.filter((call) => call.startLocation !== undefined)).toEqual([]);
+  });
+});
+
+describe("a Run again a person stopped part way (t869)", () => {
+  const loans = { instruction: LOAN_TASK, permittedConsequences: ["modify_existing" as const] };
+  const itemOf = (request: { inputs?: Record<string, unknown> | undefined }) => (request.inputs?.item as { title?: string } | undefined)?.title;
+  /** Waits until a Stop reaches the press, as the page would answer nothing before it. */
+  const answerAtTheStop = (signal: AbortSignal | undefined) => new Promise<{ status: "failed"; route: string; message: string; failure: AutomationStudioFailureRecord }>((resolve) => {
+    const answer = () => resolve({ status: "failed", route: "failed", message: "Page says: nothing came back", failure: { category: "action_failed", code: "library.press_failed", retryable: true } as AutomationStudioFailureRecord });
+    if (signal?.aborted) answer();
+    else signal?.addEventListener("abort", answer, { once: true });
+  });
+
+  it("is finished by Carry on: the other rows once each, the first not again, a second Run again refused, and the same words after it press nothing", async () => {
+    const { lane, target, over } = await siteLane(cleanups);
+    await lane.attempt(honestFirstAttempt());
+    expect(target.library.renewals).toEqual(onceEach(TITLES));
+
+    // The Run again's run presses the first row, and the person stops it there.
+    over((request) => {
+      if (request.nodeId !== RENEW_LOAN || itemOf(request) !== ATLAS) return undefined;
+      pressLoan(target, request.inputs ?? {}, request.parameters ?? {});
+      lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
+      return answerAtTheStop(request.signal);
+    });
+    const stopped = await lane.attempt({ ...loans, runAgain: true });
+    over();
+    const { attemptId, taskId } = stopped.answer.attempt;
+    expect(stopped.answer.attempt.status).toBe("stopped_by_person");
+    expect(target.presses.map((one) => one.subject)).toEqual([ATLAS]);
+    expect((await lane.kept(LOAN_TASK))?.attempts.at(-1)).toMatchObject({ attemptId, askedAgain: true, stoppedByPerson: true });
+
+    // A second Run again would start empty and press the first row again: refused, in a person's words, and nothing starts.
+    const started = vi.fn(async () => "never");
+    const again = await automationStudioAnswerFirstRunAgain(lane.service, lane.stores, { projectId: lane.projectId, taskId, goalWords: async () => LOAN_TASK }, started);
+    expect(again).toMatchObject({ ok: false, refused: "stopped_part_way", say: expect.stringContaining("Press Carry on") });
+    expect(again.ok ? "" : again.say).not.toMatch(/[a-z]+_[a-z]+/u);
+    expect(started).not.toHaveBeenCalled();
+
+    // Carry on: the same attempt and record. A careless press of the first row is refused; the other three are pressed once each.
+    const second = await pressedAndFinished(lane, attemptId, 0, { ...loans, script: [pressLoanByHand("again", ATLAS), pressLoanByHand("b", BIRDS), pressLoanByHand("c", CLOCKS), pressLoanByHand("d", DUNES), complete("Renewed every loan again.")] });
+    expect(second.answer.attempt).toMatchObject({ attemptId, status: "achieved" });
+    expect(target.library.renewals).toEqual(onceEach(TITLES, 2));
+    // The carry-on never runs the Flow from its start: the engine pressed only the row before the Stop.
+    expect(target.presses.map((one) => one.subject)).toEqual([ATLAS]);
+    const kept = await lane.kept(LOAN_TASK);
+    expect(kept?.attempts.at(-1)).toMatchObject({ attemptId, askedAgain: true });
+    expect(kept?.attempts.at(-1)?.stoppedByPerson).toBeUndefined();
+
+    // The same words after it: everything carried, nothing pressed.
+    const after = await lane.attempt(loans);
+    expect(after.answer.attempt.status).toBe("achieved");
+    expect(target.library.renewals).toEqual(onceEach(TITLES, 2));
+    expect(target.presses.map((one) => one.subject)).toEqual([ATLAS]);
+  });
+
+  it("that pressed nothing before the Stop can still be run again: there is nothing to press twice", async () => {
+    const { lane, target, over } = await siteLane(cleanups);
+    await lane.attempt(honestFirstAttempt());
+    // Stopped while it reads the list, before any press is sent: a press sent and cut off may have landed, and is held as such.
+    over((request) => {
+      if (request.nodeId !== READ_LOANS) return undefined;
+      lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
+      return answerAtTheStop(request.signal);
+    });
+    const stopped = await lane.attempt({ ...loans, runAgain: true });
+    over();
+    expect(stopped.answer.attempt.status).toBe("stopped_by_person");
+    expect(target.library.renewals).toEqual(onceEach(TITLES));
+    const again = await automationStudioAnswerFirstRunAgain(lane.service, lane.stores, { projectId: lane.projectId, taskId: stopped.answer.attempt.taskId, goalWords: async () => LOAN_TASK }, async () => "ran");
+    expect(again.ok).toBe(true);
+    if (again.ok) await again.finished;
   });
 });

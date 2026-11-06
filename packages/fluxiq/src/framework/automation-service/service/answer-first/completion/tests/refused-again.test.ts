@@ -13,6 +13,7 @@ function made(rows: () => JsonObject[]) {
     instructions: "List the books on loan",
     rows: async () => ({ datasetId: "dataset.1", totalRows: rows().length, truncated: false, columns, rows: rows() }),
     acts: () => [],
+    readsRan: () => true,
     endView: async () => undefined,
     witnesses: () => ({}),
     judge: async () => {

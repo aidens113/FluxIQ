@@ -63,10 +63,14 @@ export function navigateAnswer(item: Item): AutomationStudioLlmEvidenceToolExecu
   }, "mutate", "web.output.browser-navigate");
 }
 
-/** Steps 46, 50 and 60: pressing Save on an item's own page. No `actedOn`, no `actedOnItem`, no row: the page's title is all it holds of the item. */
+/**
+ * Steps 46, 50 and 60: pressing Save on an item's own page. No `actedOn`, no `actedOnItem`, no row. Since lane B
+ * (run-mw44rtn1-37dee092) the web domain says the control's own card for a press in no list, `actedOnCard`: on an item's
+ * own page, the heading the Save sits under, which is the item's title. That one key is added to the answer as it came.
+ */
 export function pressSaveAnswer(item: Item, handle: string): AutomationStudioLlmEvidenceToolExecutionResult {
   return answered({
-    ...envelope(address(item), pageView(pageTitle(item), item.path)), ok: true, node: "web.output.dom-click", status: "succeeded", pageChanged: true,
+    ...envelope(address(item), pageView(pageTitle(item), item.path)), ok: true, node: "web.output.dom-click", status: "succeeded", pageChanged: true, actedOnCard: item.title,
     toggle: { signature: { via: "attribute", attribute: "aria-pressed", to: true }, beforeSignature: { via: "attribute", attribute: "aria-pressed", to: false }, idempotentWith: "web.output.dom-check" },
     changed: [`${handle} "Saved" now pressed`, 't947 "Saved to your list" appeared'], control: "Save", controlHandle: handle,
     read: { commandId: "4a6f2a6f", actionType: "web.dom.click", status: "succeeded", validation: { status: "passed", expected: "the click lands on the target or something inside it", actual: "the point 1042,186 landed on the target" }, message: "Element clicked.", url: address(item), title: pageTitle(item), toggle: { via: "attribute", attribute: "aria-pressed", to: true }, toggleBefore: { via: "attribute", attribute: "aria-pressed", to: false }, ...clock, actionability: { actionable: true } },

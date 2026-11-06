@@ -62,7 +62,9 @@ describe("the known Flow", () => {
     const taskId = automationStudioAnswerFirstTaskKey(ask);
     await automationStudioAnswerFirstTaskMemoryOf(owner, p).update("project.1", taskId, () => memory({ taskId, flowId: "flow.7", best: { ...saved, flowId: "flow.7" } }));
     await expect(automationStudioAnswerFirstKnownFlow(owner, p, { ...ask, instructionText: `  List the books  on loan to member 12 ` })).resolves.toBe("flow.7");
-    await expect(automationStudioAnswerFirstKnownFlow(owner, p, { ...ask, instructionText: "list the books on loan to member 12" })).resolves.toBeUndefined();
+    // Since t869 case and a sentence's end are no difference: the chat finds the Flow the attempt would use.
+    await expect(automationStudioAnswerFirstKnownFlow(owner, p, { ...ask, instructionText: "list the books on loan to member 12." })).resolves.toBe("flow.7");
+    await expect(automationStudioAnswerFirstKnownFlow(owner, p, { ...ask, instructionText: "List the books member 12 has on loan" })).resolves.toBeUndefined();
     await expect(automationStudioAnswerFirstKnownFlow(owner, p, { ...ask, startLocation: "https://other.example.test/desk" })).resolves.toBeUndefined();
   });
   it("answers none where only notes were kept", async () => {

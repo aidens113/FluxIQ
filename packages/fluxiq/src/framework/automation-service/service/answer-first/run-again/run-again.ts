@@ -9,8 +9,14 @@
 // start place can say nothing of that, and runs.
 //
 // **Refusing changes nothing.** **Two presses at once start one**: the first claims the task.
+//
+// **A task a person stopped part way is finished by Carry on, never by this.** Its last attempt keeps
+// its own record when carried on, so what it pressed before the Stop stays pressed once. A Run again
+// would start empty and press it again, so it is refused, in words that say to carry on, while that
+// attempt holds a lasting act of its own (not one it carried from earlier).
 
 import { randomUUID } from "node:crypto";
+import type { AutomationStudioAttemptActEntry } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioAnswerFirstLiveAttemptsOf } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTaskKey } from "../task-key/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf, type AutomationStudioAnswerFirstTaskMemory, type AutomationStudioAnswerFirstTaskMemoryPorts } from "../task-memory/index.ts";
@@ -62,6 +68,12 @@ async function decide(owner: object, ports: AutomationStudioAnswerFirstTaskMemor
   }
   const last = kept.attempts.at(-1);
   if (last && automationStudioAnswerFirstLiveAttemptsOf(owner).has(last.attemptId)) return "live";
+  if (last?.stoppedByPerson && kept.acts?.attemptId === last.attemptId && kept.acts.data.acts.some(ownLasting)) return "stopped_part_way";
   if (words !== undefined && kept.startLocation !== undefined && automationStudioAnswerFirstTaskKey({ instructionText: words, startLocation: kept.startLocation }) !== request.taskId) return "other_task_on_flow";
   return { flowId: kept.flowId, startLocation: kept.startLocation };
+}
+
+/** An act the stopped attempt itself did, or may have, that stays: what a Run again would press a second time. */
+function ownLasting(act: AutomationStudioAttemptActEntry): boolean {
+  return act.carried !== true && (act.state === "landed" || act.state === "may_have_landed") && (!act.undeclared || act.changedState === true);
 }
