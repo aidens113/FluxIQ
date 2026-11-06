@@ -47,7 +47,7 @@ Pass rates (a pass = every attempt the run asked for answered right):
 | bigbox-retail-napkins-for-delivery | Haiku | 0 run | 0 run |
 | social-network-feed-recent-group-posts | both | 0 run | 0 run |
 
-Lane spend: about $2.85 across 10 paid runs ($0.54 + $0.26 + $0.25 + $0.23 + $0.037 + $0.025 + $0.038 + $0.28 + $0.44, plus $0 refusals).
+Lane spend: about $2.10 across 9 runs that reached a model ($0.54 + $0.26 + $0.25 + $0.23 + $0.037 + $0.025 + $0.038 + $0.28 + $0.44), plus $0 guard refusals and the $0 prelude failure.
 
 Left open at wrap-up: the napkins Sonnet pair as the live check of A10 + A11; the apprentices Haiku pair as the live Haiku check of the native judge with the required set (then native back to dev); A9 ("Lists." paragraph out of judge calls); the `asked:false` loophole in A12's helper and in the rule; a stepper-style set-up press carried while its act still runs (trace's fix B); recent-group-posts and the second choices never started.
 
