@@ -257,14 +257,14 @@ export class AutomationStudioAttemptActRecord {
       this.absorb(known, frozen, called, lasting ? declaredClasses(call) : undefined, state);
       if (known.undeclared && outcome.changedState === true) known.changedState = true;
       if (wasUndeclared && lasting) this.readCount(known, call, called);
-      this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
+      this.items.noteAct(known, { actedOn: outcome.actedOn, row: call.row, card: outcome.card });
       this.landedAt(outcome.step, known);
       this.leftOut.ranOn(known.rows, this.ties);
       void this.changed();
       return this.shown(known);
     }
     const entry = this.newEntry(call, outcome, called, frozen, state, lasting);
-    this.items.noteAct(entry, { actedOn: outcome.actedOn, row: call.row, pageTitle: outcome.pageTitle });
+    this.items.noteAct(entry, { actedOn: outcome.actedOn, row: call.row, card: outcome.card });
     if (lasting) this.readCount(entry, call, called);
     this.entries.push(entry);
     this.landedAt(outcome.step, entry);

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../llm/index.ts";
-import { AutomationStudioAttemptActRecord, automationStudioAttemptActGate, automationStudioAttemptActPageWords } from "../index.ts";
+import { AutomationStudioAttemptActRecord, automationStudioAttemptActGate } from "../index.ts";
 import { ITEMS, navigateAnswer, openCardAnswer, ORIGIN, pressSaveAnswer, readListAnswer, readSavedAnswer, type Item } from "./real-press-answers.ts";
 
 type Answer = AutomationStudioLlmEvidenceToolExecutionResult;
@@ -100,7 +100,7 @@ describe("a press by hand before any read that lists the item", () => {
     expect(whats(run.record)).toEqual([LINES[0]]);
   });
 
-  it("names the page the press was made on when the press moves on", async () => {
+  it("names the item's own card when the press moves on", async () => {
     const run = attempt();
     const moved = pressSaveAnswer(FIRST, "t889");
     (moved.evidence as { location: string }).location = `${ORIGIN}/saved/`;
@@ -110,7 +110,7 @@ describe("a press by hand before any read that lists the item", () => {
 });
 
 describe("the order an act's item is said in", () => {
-  const settled = (answer: { actedOn?: string; pageTitle?: string }, call: { row?: JsonObject; prior?: (record: AutomationStudioAttemptActRecord) => void } = {}) => {
+  const settled = (answer: { actedOn?: string; card?: string }, call: { row?: JsonObject; prior?: (record: AutomationStudioAttemptActRecord) => void } = {}) => {
     const record = new AutomationStudioAttemptActRecord();
     call.prior?.(record);
     record.settled({ actionId: "web.click", parameters: { selector: "#save" }, consequences: ["modify_existing"], stage: "exploration", ...(call.row ? { row: call.row } : {}) }, { effectApplied: true, words: { what: "Save", where: "" }, ...answer });
@@ -118,25 +118,25 @@ describe("the order an act's item is said in", () => {
   };
 
   it("the answer's sentence first", () => {
-    expect(settled({ actedOn: "item 1/6 (£60, Speckled mug)", pageTitle: "Bowl | Market" }, { row: { title: "Jug" } })).toBe("Save: Speckled mug");
+    expect(settled({ actedOn: "item 1/6 (£60, Speckled mug)", card: "Bowl" }, { row: { title: "Jug" } })).toBe("Save: Speckled mug");
   });
   it("then the row the call came with", () => {
-    expect(settled({ pageTitle: "Bowl | Market" }, { row: { title: "Jug" } })).toBe("Save: Jug");
+    expect(settled({ card: "Bowl" }, { row: { title: "Jug" } })).toBe("Save: Jug");
   });
   it("then the row the press is tied to by its page", () => {
-    expect(settled({ pageTitle: "Bowl | Market" }, { prior: (record) => {
+    expect(settled({ card: "Bowl" }, { prior: (record) => {
       record.noteReadRows([{ title: "Jug", link: "/l/1" }, { title: "Mug", link: "/l/2" }]);
       record.notePlace({ location: "http://127.0.0.1:52477/l/1" });
     } })).toBe("Save: Jug");
   });
-  it("then the page's own title", () => {
-    expect(settled({ pageTitle: "Bowl | Market" })).toBe("Save: Bowl");
+  it("then the words of the control's own card", () => {
+    expect(settled({ card: "Bowl" })).toBe("Save: Bowl");
   });
   it("and last the control's name alone", () => {
     expect(settled({})).toBe("Save");
   });
-  it("a row that fits several with different words names none of them, and the page says instead", () => {
-    expect(settled({ pageTitle: "Bowl | Market" }, { prior: (record) => {
+  it("a row that fits several with different words names none of them, and the card says instead", () => {
+    expect(settled({ card: "Bowl" }, { prior: (record) => {
       record.noteReadRows([{ title: "Jug", link: "/l/1" }, { title: "Mug", link: "/l/1" }]);
       record.notePlace({ location: "http://127.0.0.1:52477/l/1" });
     } })).toBe("Save: Bowl");
@@ -146,7 +146,7 @@ describe("the order an act's item is said in", () => {
     record.noteReadRows([{ title: "Jug", link: "/l/1" }, { title: "Mug", link: "/l/2" }]);
     record.notePlace({ location: "http://127.0.0.1:52477/l/1" });
     const call = { actionId: "web.click", consequences: ["modify_existing"] };
-    record.settled({ ...call, parameters: { target: { handle: "t1" } }, stage: "exploration" }, { effectApplied: true, words: { what: "Save", where: "" }, pageTitle: "Jug | Market" });
+    record.settled({ ...call, parameters: { target: { handle: "t1" } }, stage: "exploration" }, { effectApplied: true, words: { what: "Save", where: "" }, card: "Jug" });
     record.settled({ ...call, parameters: { selector: "#save" }, stage: "forward", row: { title: "Mug", link: "/l/2" } }, { effectApplied: true, words: { what: "Save", where: "" } });
     expect(whats(record)).toEqual(["Save: Jug", "Save: Mug"]);
   });
@@ -154,25 +154,48 @@ describe("the order an act's item is said in", () => {
 
 describe("what never reaches the line", () => {
   const TOKEN = "sk0abc1DEF2ghi3JKL4mno5PQR6stu7VWX8yz";
-  const line = (answer: { pageTitle?: string }, row?: JsonObject) => {
+  const line = (answer: { card?: string }, row?: JsonObject) => {
     const record = new AutomationStudioAttemptActRecord();
     record.settled({ actionId: "web.click", parameters: { selector: "#save" }, consequences: ["modify_existing"], stage: "exploration", ...(row ? { row } : {}) }, { effectApplied: true, words: { what: "Save", where: "" }, ...answer });
     return record.acts()[0]!.what;
   };
 
-  it("a row or a title shaped like a credential leaves the plain line", () => {
+  it("a row or a card shaped like a credential leaves the plain line", () => {
     expect(line({}, { title: `Key ${TOKEN}` })).toBe("Save");
-    expect(line({ pageTitle: `Key ${TOKEN} | Market` })).toBe("Save");
+    expect(line({ card: `Key ${TOKEN}` })).toBe("Save");
   });
   it("words that only say the control's name again", () => {
     expect(line({}, { action: "Save" })).toBe("Save");
-    expect(line({ pageTitle: "save | Market" })).toBe("Save");
+    expect(line({ card: "save" })).toBe("Save");
   });
   it("a model's words: nothing it wrote is a source, so what it called the press is not said", async () => {
     const record = new AutomationStudioAttemptActRecord();
     const gate = automationStudioAttemptActGate<Call, Answer>({ record, executeTool: async () => pressSaveAnswer(FIRST, "t889"), wordsOf: () => ({ what: "Save" }) });
     await gate({ callId: "called.the.cheapest.table", toolId: "core.run_node", value: { node: "web.output.dom-click", summary: "Press Save on the cheapest table", parameters: { target: { handle: "t889" } }, consequences: ["modify_existing"] } });
     expect(whats(record)).toEqual([LINES[0]]);
+  });
+});
+
+describe("a page's title never names an act (lane B, run-mw44rtn1-37dee092)", () => {
+  it("a press whose answer holds no card says the control's own words, whatever the page is called", async () => {
+    const run = attempt();
+    const bare = pressSaveAnswer(FIRST, "t889");
+    delete (bare.evidence as { actedOnCard?: string }).actedOnCard;
+    await automationStudioAttemptActGate<Call, Answer>({ record: run.record, executeTool: async () => bare, wordsOf: () => ({ what: "Save" }) })({ callId: "c", toolId: "core.run_node", value: { node: "web.output.dom-click", parameters: { target: { handle: "t889" } }, consequences: ["modify_existing"] } });
+    expect(whats(run.record)).toEqual(["Save"]);
+  });
+});
+
+describe("a card's words are said, never a row tie", () => {
+  it("an add from a suggestion tile, then a press on that item's row once it is listed, still runs", () => {
+    const record = new AutomationStudioAttemptActRecord();
+    const add = { actionId: "web.click", consequences: ["create_new"], stage: "exploration" as const };
+    record.settled({ ...add, parameters: { target: { handle: "t253" } } }, { effectApplied: true, words: { what: "Add to cart", where: "" }, card: "Copper Kettle Cleaner, 4 Pack $7.50" });
+    expect(whats(record)).toEqual(["Add to cart: Copper Kettle Cleaner, 4 Pack $7.50"]);
+    const rows = [{ item: "Copper Kettle Cleaner, 4 Pack", quantity: "1" }, { item: "Linen Tea Towels, Set of 3", quantity: "2" }];
+    record.noteReadRows(rows);
+    expect(record.rowDone(rows[0]!)).toBe(false);
+    expect(record.admit({ actionId: "web.click", parameters: { target: { handle: "t310" } }, consequences: ["modify_existing"], stage: "exploration", row: rows[0]! }).kind).toBe("run");
   });
 });
 
@@ -186,18 +209,5 @@ describe("a record read back from disk", () => {
     expect(whats(restored)).toEqual(["Save"]);
     restored.noteReadRows(((readListAnswer().evidence as { read: { extracted: JsonObject[] } }).read.extracted));
     expect(whats(restored)).toEqual([LINES[0]]);
-  });
-});
-
-describe("a page's title as the words that name it", () => {
-  it.each([
-    ["the page's name before the bar", "Speckled mug, 300ml | Potterfind Market", "Speckled mug, 300ml"],
-    ["a listing's own dash kept before the bar", "Oak table - seats four | Potterfind", "Oak table - seats four"],
-    ["the site's name after a dash", "Oak table - seats four - Potterfind", "Oak table - seats four"],
-    ["a title with no mark, whole", "Speckled mug", "Speckled mug"],
-    ["only a number", "12 | Potterfind", undefined],
-    ["nothing", undefined, undefined]
-  ])("reads %s", (_name, title, expected) => {
-    expect(automationStudioAttemptActPageWords(title)).toBe(expected);
   });
 });
