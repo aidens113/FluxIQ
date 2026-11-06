@@ -1,7 +1,7 @@
 # Answer First
 
 Status: Active
-Status detail: The attempt-2 road and the live lanes' first fixes are on dev; four live lanes run on their own branches. Live round about $9 of $160 credit; one repeat-act defect open (lane A).
+Status detail: The attempt-2 road and the live lanes' first fixes are on dev; four live lanes stopped at the wrap-up with their later fixes committed on their branches. About $15 of $160 credit spent; next: integration round 2, the full sweep, the live checks.
 Created: 2026-11-03
 Last updated: 2026-11-06
 Owner: Senior supervisor agent
@@ -36,48 +36,48 @@ Related: [discovery](./answer-first-plan/reports/discovery.md), [simulation stud
 - **Held back from dev:** the native Anthropic judge schema. Its grammar marked optional what Core's reader requires, so judges replied with every judging field empty (run-mw4db9pz-2789cf41, run-mw4coxdn-e2b30c8c). Dev uses the wrapper until lane A's required set is proven live.
 - The product default is still `project`; it flips to `answer-first` (`authoring-mode.ts:48`) after the breadth proof.
 
-**Four live lanes, each on its own branch and worktree, committed and pushed; their later fixes are not on dev yet.** Each lane's fix log and run table: `answer-first-plan/reports/live/lane-{a,b,c,d}.md` in its Core worktree (`fxwork/t875`-`t878`).
+**Four live lanes, stopped at the wrap-up of 2026-11-06, each on its own branch and worktree, everything committed and pushed; their fixes since the integration are not on dev yet.** Each lane's fix log, run table and pass rates: `answer-first-plan/reports/live/lane-{a,b,c,d}.md` in its Core worktree (`fxwork/t875`-`t878`). No Lab run is in flight.
 
-| Lane | Branch | Sites (Lab slot) | Fixes after the merge, or in progress |
+| Lane | Branch | Sites (Lab slot) | Fixes since the integration, verified provider-free, not yet live |
 | --- | --- | --- | --- |
-| A | `task/t875-live-breadth-a` | company-website, bigbox, social feed (1) | Records yes must stand on its rows (WIP), the judge grammar's required set from one source, native kept on for its live check; fix A for the repeat below |
-| B | `task/t876-live-breadth-b` | everything-store, job-board, photo-social (2) | Lone-card and dialog names; steps not saved when one control is pressed from two pages; looks reaching the judge; attempt 1's before-reading carried |
-| C | `task/t877-live-breadth-c` | auction, crossborder, professional-network (3) | Named columns kept and narrowed columns logged; Stop halts the engine before a failed route; an unneeded recovery branch counted as passed |
-| D | `task/t878-live-breadth-d` | second choices across sites (4) | A press on a replaced button measured again; the saved line after a run that was repaired |
+| A | `task/t875-live-breadth-a` | company-website, bigbox, social feed (1) | A records yes stands on its rows (`answerRecords`), the judge grammar's required set from one source with native kept on in this lane only; **a count act carried from an achieved attempt has no room** (napkins repeat); the judge told that a carried act counts as got; the answer-first fixtures' scripted judge updated |
+| B | `task/t876-live-breadth-b` | everything-store, job-board, photo-social (2) | Lone-card and dialog names; agreeing witnesses resolve (kiln's steps can be saved); looks reach the judge; attempt 1's before-reading carried, in memory only; the flaky feed test waits for the page's own state |
+| C | `task/t877-live-breadth-c` | auction, crossborder, professional-network (3) | Named columns kept (proven live) and narrowed columns logged; a person's Stop on a check ends the attempt and halts the engine before a failed route; an unneeded recovery branch counted as passed (engine, every mode) |
+| D | `task/t878-live-breadth-d` | second choices (4) | A press on a control the site swapped for a copy is measured again; the card says the saved steps ran and one was repaired |
 
-**Live results, attempt pairs, all Anthropic (2026-11-05 evening to 06):**
+**Live results, all Anthropic (2026-11-05 evening to 06):**
 
 | Task | Sonnet 5.5 | Haiku 5.5 |
 | --- | --- | --- |
-| company-website-apprentices | 3 of 3 after the citation fix (one failure before it) | 3 of 3 |
-| everything-store-batteries-and-descaler | 3 of 3, and a pair right on both attempts | 2 of 3 (the miss fixed by `rows_not_read`), and a pair right |
-| job-board-save-quillmark-remote | 3 of 3, and a pair right: attempt 2 pressed no heart ($0.10) | 0 of 2: a judge yes on the wrong rows, and an empty native judge reply |
-| auction-lens-hood-seller-shop | 3 of 3 after the citation fix | 2 pairs right; attempt 2 $0.0012 after the column fix |
-| bigbox-retail-napkins-for-delivery | attempt 1 right twice; attempt 2 once asked "do it again?" (fixed), once **added again** (open, below) | not run |
-| professional-network-accept-messaged-invitations | attempt 1 right; attempt 2 pressed nothing but a judge said yes on 0 rows (fix in lane A) | not run |
-| photo-social-kiln-notes | attempt 1 right but its steps were not saved; attempt 2 made no duplicate but stalled in a judge loop (fixes in lane B) | not run |
-| local-classifieds-nearby-furniture | 2 pairs right | not run |
+| company-website-apprentices | attempt 1: 3 of 3 after the citation fix (one failure before it) | attempt 1: 3 of 3 |
+| everything-store-batteries-and-descaler | attempt 1: 4 of 4; pairs 1 of 1 | attempt 1: 4 of 5 (one failure from a lane regression, reverted); pairs 1 of 1 |
+| job-board-save-quillmark-remote | attempt 1: 4 of 4; pairs 1 of 1, attempt 2 pressed no heart ($0.10) | 0 of 2 finished: a judge yes on the wrong rows, and an empty native judge reply |
+| auction-lens-hood-seller-shop | attempt 1: 3 of 3 after the citation fix | pairs 3 of 3; attempt 2 a one-call run of the saved Flow, $0.0012 |
+| local-classifieds-nearby-furniture | pairs 2 of 2 | not run |
+| bigbox-retail-napkins-for-delivery | attempt 1 right 2 of 2; pairs 0 of 2: one asked "do it again?" (fixed), one **added again** (fixed on lane A, not yet live) | not run |
+| professional-network-accept-messaged-invitations | attempt 1 right; pair 0 of 1: a judge yes on 0 rows (fixed on lane A) | not run |
+| photo-social-kiln-notes | attempt 1 right but steps not saved; pair 0 of 1: stalled in a judge loop (both fixed on lane B) | not run |
+| social feed, crossborder, bigbox's other tasks, the other second choices | not run | not run |
 
-Spend: the four first paid runs $6.13; the live round about $9.20 (ledger $8.33 plus about $0.85 on runs whose cost the Lab lost before A4 and A7 fixed that). Roughly $150 of the user's $160 of credit is left, to be used by 2026-11-10.
+Spend: the four first paid runs $6.13; the live round about $9.20 (the spend ledger's $8.35 over 38 launches, plus about $0.85 on runs whose cost the Lab lost before that was fixed; the lanes' own totals: A $2.10, B $4.63, C $1.11, D $1.36). Roughly $145 of the user's $160 of credit is left, to be used by 2026-11-10.
 
-**Open defects, each with its owner:**
-1. **A saved Flow repeated a carried count act** (napkins attempt 2, cart 2 to 4, run-mw4eb5r3-a20f3542): `hasRoom` in `act-record/record.ts` ignores `carried`. Lane A; the fix is that an act carried from an **achieved** attempt has no room, while one from an unfinished attempt keeps it. Count tasks are paused in every lane until it lands.
-2. The judge of a same-words attempt was not told what earlier attempts did (dev's t869 counts change may cover it; lane A checks).
-3. A records yes on 0 rows, or one that says it could not judge (lane A, WIP).
-4. Looks at the page never reached the judge, so a model that fetched the missing evidence was refused as `same_evidence` (lane B, wiring).
-5. Carried acts read "Already done earlier: Save." with no item, since item words are not persisted (lane B, queued).
-6. `domain/.../node-run/run.ts` at its 800-line budget, two statements sharing a line: split it by responsibility (one owner, after the next integration).
-7. The flaky `local-classifieds` breadth test's fixed 12-second wait (lane B, queued).
-8. Haiku judge calls think about 1,700 tokens each; a cost lever, not yet measured.
+**Still open, each with its owner for the next session:**
+1. The live checks of the lanes' fixes: the napkins Sonnet pair first (the repeat fix), then the apprentices Haiku pair (the native judge with its required set), then the kiln Sonnet pair (saved steps and looks). Count tasks stay paused until the napkins pair passes.
+2. The native judge schema returns to dev only after that Haiku check shows full replies.
+3. Carried acts read "Already done earlier: Save." with no item: item words are not persisted (lane B).
+4. `answerRecords {asked:false}` lets a yes over held rows skip the row check (lane A). And a carried set-up press, such as a quantity stepper, is skipped while its act still runs, which can turn "add 2" into "add 1" (lane A's fix B, designed, not built).
+5. `domain/.../node-run/run.ts` at its 800-line budget, two statements sharing a line: split it by responsibility, one owner, after the next integration.
+6. Small, seen, not traced: the chat table wraps a long cell one word per line; a real $0.0012 shows as "$0.00"; a `keep`-only draft edit wastes a call; a check inside a child Flow may still meet that child's own deadline; a before-reading does not survive a Core restart; a home-page click in the local-classifieds tests flakes.
+7. Haiku judge calls think about 1,700 tokens each, a cost lever not yet measured.
+8. The domain's paging paragraph still reaches judge calls (lane A's A9, not started).
 
 **Next.**
-1. Collect each lane's final hand-over and commit it (in progress at the time of writing).
-2. Integration round 2: lanes A-D into dev, narrow checks, merge dev back into every lane at its ready point.
-3. Full sweep (`pnpm check`, `pnpm test`, `pnpm build`, Core's whole vitest) on dev, then promote both repositories to `main` by fast-forward if it passes.
-4. Resume live testing: count tasks after fix A, the native judge after its live proof, the sites not yet run (social feed, crossborder, bigbox's other tasks), Haiku on the rest. Pace to use the credit by 2026-11-10.
-5. Flip the product default after the breadth proof.
+1. Integration round 2: lanes A-D into dev, narrow checks on the merged tree, merge dev back into every lane at its ready point.
+2. Full sweep (`pnpm check`, `pnpm test`, `pnpm build`, Core's whole vitest) on dev, then promote both repositories to `main` by fast-forward if it passes.
+3. The live checks in item 1 above, then live testing across the sites not yet run, Haiku on the rest, pacing to use the credit by 2026-11-10.
+4. Flip the product default after the breadth proof.
 
-**Blockers.** None. **Waiting on the user:** the GitHub deletion of merged task branches; whether to add a first-time PIN for dangerous acts at the start of a chat (the lead recommends not yet). **The lead's calls, which the user may overrule:** the same-words rule and Run again (above); keeping a native judge schema off dev until proven; pausing count tasks.
+**Blockers.** None. **Waiting on the user:** the GitHub deletion of merged task branches; whether to add a first-time PIN for dangerous acts at the start of a chat (the lead recommends not yet). **The lead's calls, which the user may overrule:** the same-words rule and Run again (above); keeping the native judge schema off dev until proven; pausing count tasks.
 
 ## The Loop
 
