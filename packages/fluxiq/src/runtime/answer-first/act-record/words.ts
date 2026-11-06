@@ -6,7 +6,7 @@
 //
 // What this cannot do is tell words copied off a page from words a person wrote, as
 // the contract says. So the lines a caller does not give are said by class alone, and
-// a press's control name is never used by default: it is page text.
+// a press's control name stands in only where nothing gave the words (`./control-name.ts`), screened like any.
 
 import { parseAutomationStudioAttemptAct, type AutomationStudioAttemptActClass } from "@fluxiq/contracts/automation";
 
@@ -27,8 +27,10 @@ const WHERE_WORDS = "On the site";
  * as a whole where the parser refuses the line with it, or where it only says the same again ("Save: Save"), so the
  * act is never worse for naming its item.
  */
-export function automationStudioAttemptActScreenedWords(words: { what?: string | undefined; where?: string | undefined }, classes: readonly string[], item?: string | undefined): { what: string; where: string } {
-  const what = accepted(words.what, "what") ?? CLASS_WORDS.find(([known]) => classes.includes(known))?.[1] ?? NO_CLASS_WORDS;
+export function automationStudioAttemptActScreenedWords(words: { what?: string | undefined; where?: string | undefined }, classes: readonly string[], item?: string | undefined, control?: string | undefined): { what: string; where: string } {
+  // `control` is the control's own word from its fingerprint (`./control-name.ts`), said before the class's line where
+  // nothing gave the words: a Save is "Save", not "Changed something that was already there". Screened as any words are.
+  const what = accepted(words.what, "what") ?? accepted(control, "what") ?? CLASS_WORDS.find(([known]) => classes.includes(known))?.[1] ?? NO_CLASS_WORDS;
   return {
     what: (item === undefined || item.trim().toLowerCase() === what.toLowerCase() ? undefined : accepted(`${what}: ${item}`, "what")) ?? what,
     where: accepted(words.where, "where") ?? WHERE_WORDS

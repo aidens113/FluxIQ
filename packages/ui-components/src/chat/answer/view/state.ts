@@ -17,6 +17,8 @@ export type AnswerHandlers = {
   exportRows(format: "csv" | "json"): void;
   runAgain(): void;
   addBudget(): void;
+  /** Carry on, on an attempt the person stopped. */
+  carryOn(): void;
   whatIDid(): void;
   keepGoing(): void;
   tellMore(): void;

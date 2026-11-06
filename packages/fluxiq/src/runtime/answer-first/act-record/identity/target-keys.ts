@@ -39,9 +39,9 @@ const SLOT_HANDLE = "handle";
 /** Parameters that say how a step runs and never which act it is (header). */
 const NOT_IDENTITY = /^(?:consequences|ensureState|effect|expected.*|wait.*|timeout.*|retr(?:y|ies).*|maxRetries|maxAttempts|pace.*|delay.*|settle.*|record.*|optional|metadata|description|notes?|label|scroll.*|force|routeSignatures|confidence|visualTarget)$/u;
 /** A fingerprint field that is a place on a page, not the control. */
-const POSITIONAL_FIELD = /^(?:nth.*|index|position|ordinal|bounds|documentBounds|rect|box|x|y|left|top|right|bottom|width|height|anchor|frameId|layerId|documentLayerId)$/iu;
+export const POSITIONAL_FIELD = /^(?:nth.*|index|position|ordinal|bounds|documentBounds|rect|box|x|y|left|top|right|bottom|width|height|anchor|frameId|layerId|documentLayerId)$/iu;
 /** A fingerprint field every control of a kind shares, or that names one row's copy: no words a person tells a control by. */
-const STRUCTURAL_FIELD = /^(?:tag.*|role|type|kind|class.*|id|name|path|href|src|attributes?)$/iu;
+export const STRUCTURAL_FIELD = /^(?:tag.*|role|type|kind|class.*|id|name|path|href|src|attributes?)$/iu;
 const LETTER = /\p{L}/u;
 
 export type AutomationStudioAttemptActTargetKeys = {

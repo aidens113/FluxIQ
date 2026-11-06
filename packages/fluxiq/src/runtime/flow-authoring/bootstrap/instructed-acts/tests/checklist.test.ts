@@ -9,7 +9,10 @@ import {
   checkAutomationStudioInstructedActs
 } from "../index.ts";
 
-const TABLES = "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then give me a table of everything in my saved items, cheapest first, with columns title, price and status.";
+// Two acts, a save and an opening. The run's own words ("give me a table of everything in my saved
+// items") are a read-out, which since lane B (run-mw45itmx-c4d6f5cb) is no act (`../instruction-acts.ts`),
+// so the opening is asked for in words that are one.
+const TABLES = "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then open my saved items and give me a table of everything there, cheapest first, with columns title, price and status.";
 
 function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
   return { position, id: `d${position}`, iteration: position, actionId: "web.dom.click", input: {}, effect: "mutate", effectApplied: true, disposition: "kept", ...overrides };

@@ -190,6 +190,28 @@ describe("a model that drops a step that made a landed act", () => {
     expect(target.presses.slice(1).map((one) => one.subject)).toEqual([ATLAS, BIRDS]);
   });
 
+  it("the same words after an achieved attempt that dropped it: nothing is pressed again, by the Flow or by hand, and a Run again then presses it", async () => {
+    const { lane, target } = await siteLane(cleanups);
+    const first = await lane.attempt({ ...FLOW_OF_TWO, script: [...asked(), drop(PRESS_BIRDS), complete("Renewed the two.")] });
+    expect(first.answer.attempt.status).toBe("achieved");
+    expect(target.library.renewals).toEqual({ [ATLAS]: 1, [BIRDS]: 1 });
+
+    // The judge's no brings the model back, and it presses the dropped one by hand: the record says it is done.
+    const told = shownTo();
+    const second = await lane.attempt({ ...FLOW_OF_TWO, judge: [judgedNo("One renewal asked for is not shown.")], script: [told.then(pressLoanByHand("again", BIRDS)), told.then(readLoans("read.again")), complete("Both were already renewed.")] });
+    expect(second.answer.attempt.status).toBe("achieved");
+    expect(target.presses).toEqual([]);
+    expect(target.library.renewals).toEqual({ [ATLAS]: 1, [BIRDS]: 1 });
+    expect(JSON.stringify(told.shown[1]!.context.evidenceLoop!.evidence)).toContain("attempt.act_already_done");
+    expect(second.answer.result?.acts.map((act) => act.what)).toEqual([expect.stringMatching(/^Already done earlier: /u), expect.stringMatching(/^Already done earlier: /u)]);
+
+    // A person's Run again: the Flow presses the step it holds, and the one it lacks is pressed by hand, once.
+    const third = await lane.attempt({ ...FLOW_OF_TWO, runAgain: true, judge: [judgedNo("One renewal asked for did not happen on this run.")], script: [pressLoanByHand("by-hand", BIRDS), complete("Renewed the two again.")] });
+    expect(third.answer.attempt.status).toBe("achieved");
+    expect(target.presses.map((one) => one.subject)).toEqual([ATLAS]);
+    expect(target.library.renewals).toEqual({ [ATLAS]: 2, [BIRDS]: 2 });
+  });
+
   it("an attempt that ran out of budget: the next one does not press the act again, by the Flow or by hand, since the record says it is done", async () => {
     const { lane, target } = await siteLane(cleanups);
     const first = await lane.attempt({ ...FLOW_OF_TWO, costUsd: 0.04, maxTotalEstimatedCostUsd: 0.2, keepLooking: true, script: [...asked(), drop(PRESS_BIRDS)] });

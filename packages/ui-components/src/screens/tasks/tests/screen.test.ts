@@ -173,7 +173,7 @@ test("Run again carries the answer turn's note; waiting for a locked model key s
     screen.setActive(true);
     await flush();
     await press(keyed(root, "row:task-cart"));
-    assert.match(root.byClass("answer-again-note")[0]?.textContent ?? "", /may repeat/u);
+    assert.match(root.byClass("answer-again-note")[0]?.textContent ?? "", /Run again does the task again/u);
     await press(action(root, "run-again"));
     assert.equal(port.calls.filter((call) => call.method === "results.runAgain").length, 1);
     screen.back();

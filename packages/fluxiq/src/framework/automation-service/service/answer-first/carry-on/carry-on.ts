@@ -1,5 +1,5 @@
 // "Add budget and carry on" (design, "Carry on"): a person's press, answered at once, on an attempt
-// that ran out of budget or was cut off by a restart. It decides here whether it may start, and
+// that ran out of budget, was cut off by a restart, or was stopped by the person. It decides here whether it may start, and
 // `run` (the generation path, as the client calls it) then goes on inside a scope the attempt's
 // ceiling and opening read, so the same attempt goes on: its id, its act record, what it tried, its
 // steps and its rows. The Flow is never run again from its start.
@@ -81,7 +81,8 @@ async function decide(owner: object, ports: Ports, store: AutomationStudioAnswer
 
 function whyNot({ attempt }: AutomationStudioAnswerFirstAttemptRecord, addUsd: number): AutomationStudioAnswerFirstCarryOnRefusedCode | undefined {
   if (attempt.status === "achieved") return "achieved";
-  if (attempt.status === "stopped_by_person") return "stopped";
+  // A person's Stop is finished by carrying the same attempt on, with its own record: anything that starts a new one with an empty record (a Run again) would press again what it already pressed.
+  if (attempt.status === "stopped_by_person") return addUsd > 0 || attempt.budget.usd > attempt.spend.usd ? undefined : "no_budget_added";
   if (attempt.status === "budget_out") return addUsd > 0 ? undefined : "no_budget_added";
   if (attempt.status === "waiting_for_person" && attempt.waitingFor === "interrupted") return undefined;
   // One that kept getting stuck with nobody to ask: a person who says keep going is the answer it waited for, and its budget is untouched.

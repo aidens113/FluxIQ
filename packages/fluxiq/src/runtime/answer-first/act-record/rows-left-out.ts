@@ -1,7 +1,7 @@
 // How many rows an attempt left out because the act record held them done (t870): what a person's
 // card says, beside what a forward run tells the model only by count.
 //
-// **What counts.** A pass of a list over a row (a forward run's, a real run's), or a refused press
+// **What counts.** (A row this attempt pressed itself is not left out: `rowsHeldDone` takes those off.) A pass of a list over a row (a forward run's, a real run's), or a refused press
 // (`./record.ts`). A saved step with no row of its own counts the row its act was on. A model that keeps
 // away from a done row by itself left nothing out as far as anything can know, so it does not count. A
 // row pressed in the end, after a look, was not left out after all.
@@ -48,6 +48,11 @@ export class AutomationStudioAttemptActRowsLeftOut {
   ranOn(rows: readonly string[], ties: AutomationStudioAttemptActRowTies): void {
     if (this.held.size === 0 || rows.length === 0 || ties.distinct(new Set(rows)) !== 1) return;
     for (const row of rows) this.held.delete(row);
+  }
+
+  /** Whether any of these rows was left out. */
+  holds(rows: readonly string[]): boolean {
+    return rows.some((row) => this.held.has(row));
   }
 
   /** How many rows these are, one row in several shapes counted once and each copy a read returned on its own. */

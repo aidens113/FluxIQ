@@ -522,7 +522,8 @@ describe("a completed draft that does not do what the instruction asks", () => {
     const verdict = await complete(searchedAndRead);
 
     expect(verdict.ok).toBe(true);
-    expect(todo(searchedAndRead)).toEqual([["a1", "no_step_added"], ["a1.quantity", "no_step_added"], ["a1.colour", "no_step_added"], ["a2", "no_step_added"], ["a3", "no_step_added"]]);
+    // "Then give me what is in my cart ..." is a read-out, no act since lane B (run-mw45itmx-c4d6f5cb): the put and the move are the acts.
+    expect(todo(searchedAndRead)).toEqual([["a1", "no_step_added"], ["a1.quantity", "no_step_added"], ["a1.colour", "no_step_added"], ["a2", "no_step_added"]]);
   });
 
   it("is accepted with the read of the cart claimed as putting the kettles in it", async () => {

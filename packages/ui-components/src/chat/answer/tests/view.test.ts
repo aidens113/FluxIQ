@@ -337,3 +337,24 @@ test("rows: a list that got smaller says so under the table", async () => {
     assert.deepEqual(text(root, "answer-note"), ["An earlier read of this list had 5 rows. This is the latest, with 3."]);
   });
 });
+
+test("stopped by the person: Carry on carries the same attempt on, with nothing added, and says so", async () => {
+  await withFakeDocument(async () => {
+    const outcome = fakeTaskOutcomes().stoppedByPerson;
+    const sent: unknown[] = [];
+    const results = { ...createFakeChatResultsPort({ outcomes: [outcome] }), addBudgetAndCarryOn: async (query: { projectId: string; attemptId: string; addUsd: number }) => {
+      sent.push(query);
+      return { ok: true as const, value: { attemptId: query.attemptId, budgetUsd: 5 } };
+    } };
+    let changed = 0;
+    const { root } = draw(outcome, { results, onChanged: () => { changed += 1; } });
+    assert.equal(button(root, "carry-on").textContent, "Carry on");
+    button(root, "carry-on").dispatch("click");
+    await settle();
+    assert.deepEqual(sent, [{ projectId: "project-1", attemptId: "attempt-news-1", addUsd: 0 }]);
+    assert.deepEqual(text(root, "answer-status"), ["Carrying on."]);
+    assert.equal(changed, 1);
+    const { addBudgetAndCarryOn: _omitted, ...without } = results;
+    assert.equal(hasButton(draw(outcome, { results: without }).root, "carry-on"), false);
+  });
+});

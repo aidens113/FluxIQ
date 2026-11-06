@@ -48,8 +48,8 @@ export type AutomationStudioAttemptActAnswerRead = {
   ranWith?: { actionId?: string; parameters?: JsonObject };
   actedOn?: string;
   location?: string;
-  /** The title of the page the call was made on: `location` says where it left the page, and this where it stood (`../item-names.ts`). */
-  pageTitle?: string;
+  /** For a press in no list, the words of the control's own card as the domain read them before it (`actedOnCard`): what its line names (`../item-names.ts`), never a row tie. */
+  card?: string;
   /** The answer says the page did not change. */
   pageUnchanged: boolean;
   /** The answer says something changed that stays (header). */
@@ -71,13 +71,12 @@ export function automationStudioAttemptActAnswerRead(answer: JsonValue | Automat
   const ranWith = result?.draft?.ranWith;
   const parameters = record(ranWith?.parameters);
   const actionId = typeof ranWith?.node === "string" ? ranWith.node : result?.draft?.actionId;
-  const pageTitle = record(evidence?.read)?.title;
   return {
     applied, uncertain, observe, looked,
     ...(parameters ? { ranWith: { ...(actionId ? { actionId } : {}), parameters } } : {}),
     ...(typeof evidence?.actedOnItem === "string" ? { actedOn: evidence.actedOnItem } : typeof evidence?.actedOn === "string" ? { actedOn: evidence.actedOn } : {}),
     ...(typeof evidence?.location === "string" ? { location: evidence.location } : {}),
-    ...(typeof pageTitle === "string" ? { pageTitle } : {}),
+    ...(typeof evidence?.actedOnCard === "string" ? { card: evidence.actedOnCard } : {}),
     pageUnchanged: evidence?.pageChanged === false,
     changedState: record(evidence?.toggle) !== undefined || record(result?.outputs?.toggle) !== undefined || (result?.draft?.changed ?? []).some((line) => line.how === "reads" || line.how === "rose"),
     // A refused read kept nothing, whatever its answer holds (`SVC/answer-first/rows/found-rows.ts`).

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../draft/index.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE, checkAutomationStudioInstructedActs } from "../check.ts";
 
-const TABLES = "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then give me a table of everything in my saved items, cheapest first, with columns title, price and status.";
+// `run-mulxk0ro-36bf090d`'s instruction, its read-out ("give me a table of everything in my saved
+// items") asked as the opening it implies: since lane B (run-mw45itmx-c4d6f5cb) a read-out is no act
+// (`../instruction-acts.ts`), and these cases are about two acts, a save and an opening.
+const TABLES = "Save the three cheapest dining tables for sale within 5 miles of Kelford to my saved items, then open my saved items and give me a table of everything there, cheapest first, with columns title, price and status.";
 
 function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep {
   return { position, id: `d${position}`, iteration: position, actionId: "web.dom.click", input: {}, effect: "mutate", effectApplied: true, disposition: "kept", ...overrides };

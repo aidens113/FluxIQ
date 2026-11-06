@@ -611,6 +611,8 @@ describe("(f) a Flow run cut off by a Stop mid-press, then a new ask with the sa
     over();
     const after = await lane.attempt(loans);
     // The Run again's two presses, and nothing since: the first attempt's rows carry through the union (`runtime/answer-first/act-record/seed.ts`).
+    // A person who wants the Run again finished presses Carry on on it, the same attempt with its own record; a second Run
+    // again is refused while the stopped one holds a press of its own, since it would press it again (`./carry-on.test.ts`, "a Run again a person stopped part way").
     expect(target.presses.map((one) => one.subject)).toEqual([ATLAS, BIRDS]);
     expect(target.library.renewals).toEqual({ ...onceEach(), [ATLAS]: 2, [BIRDS]: 2 });
     expect(after.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });

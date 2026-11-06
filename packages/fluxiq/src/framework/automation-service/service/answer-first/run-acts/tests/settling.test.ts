@@ -89,11 +89,12 @@ describe("what it records", () => {
     expect(record.rowDone({ book: "The Long Winter", borrower: "Ann Lee" })).toBe(false);
   });
 
-  it("a step's label the contract's screen refuses is said by its class", async () => {
+  it("a step's label the contract's screen refuses is not said: the control's own word is, and the class's line only where it has none", async () => {
     const { options } = counted();
     const { record } = writing();
     await runAutomationStudioGraph(oneStep(pressNode("press", declared, "<b>Renew</b>")), settling(options, record));
-    expect(record.acts()).toEqual([expect.objectContaining({ what: "Changed something that was already there" })]);
+    expect(record.acts()).toEqual([expect.objectContaining({ what: "Renew" })]);
+    expect(JSON.stringify(record.acts())).not.toContain("<b>");
   });
 
   it("not a step the node reports as failed before anything acted, and the engine's retry goes ahead", async () => {

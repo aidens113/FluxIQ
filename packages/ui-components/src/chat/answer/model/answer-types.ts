@@ -57,6 +57,8 @@ export type AnswerModel = {
   runAgainNote?: string;
   canExport: boolean;
   addBudget?: AnswerAddBudget;
+  /** Carry on, on an attempt the person stopped: the same attempt goes on from where it stopped, so nothing it already did is done twice. `addUsd` is above zero only where its budget is spent. */
+  carryOn?: AnswerAddBudget;
   /** Keep going, Tell it more, Stop: offered when it is stuck in a loop. */
   stuckActions: boolean;
   /** Keep going carries the attempt on where it stopped, with no budget added: its Core restarted while it worked. Stuck in a loop sends a message instead. */
