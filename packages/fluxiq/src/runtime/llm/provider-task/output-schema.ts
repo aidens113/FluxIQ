@@ -5,7 +5,7 @@ import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioFlowBootstrapOutputSchema } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-authoring/bootstrap/plan/index.ts";
 import { AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA } from "../verification-defects/index.ts";
-import { AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA } from "../verification-checked/index.ts";
+import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE, AUTOMATION_STUDIO_LLM_VERIFICATION_ANSWER_RECORDS_SCHEMA, AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA, AUTOMATION_STUDIO_LLM_VERIFICATION_REPLY_REQUIRED, automationStudioLlmVerificationDiagnosisRequired } from "../verification-checked/index.ts";
 
 /** The length an evidence decision's summary is asked to keep to, as a line a person reads: told, never held to. The reply is read whole and the chat shortens what it shows (`../../activity/text/reason-text.ts`). */
 export const AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH = 240;
@@ -57,28 +57,35 @@ const DIAGNOSIS_OUTPUT_SCHEMA = {
 // find it in its own record rather than read it out of prose. No other
 // diagnosis is offered it.
 // `checked` optionally cites stored cells; Core verifies the citations before a yes stands.
+// `answerRecords` optionally says whether the request asks for records and how many the site shows as its answer (t875);
+// the judge of an attempt with no Flow is held to it against the rows held (`../../result-verification/cited-yes/records-yes.ts`).
+// What each reply requires is one table (`../verification-checked/reply-required.ts`, t875): the Flow-less judge's schema
+// also requires `checked` and `answerRecords`, so a native grammar never lets an honest yes leave out what it is asked again for.
 const { explorationNeeded, patchNeeded, ...JUDGED_FIELDS } = DIAGNOSIS_FIELDS_SCHEMA.properties;
-const VERIFICATION_FIELDS_SCHEMA = {
-  ...DIAGNOSIS_FIELDS_SCHEMA,
-  required: ["answersRequest", "defects"],
-  properties: { ...JUDGED_FIELDS, defects: AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA, checked: AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA, explorationNeeded, patchNeeded }
-} as const;
-const VERIFICATION_OUTPUT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["kind", "diagnosis", "summary"],
-  properties: {
-    kind: DIAGNOSIS_OUTPUT_SCHEMA.properties.kind,
-    diagnosis: VERIFICATION_FIELDS_SCHEMA,
-    confidence: DIAGNOSIS_OUTPUT_SCHEMA.properties.confidence,
-    summary: DIAGNOSIS_OUTPUT_SCHEMA.properties.summary,
-    metadata: JSON_METADATA_SCHEMA
-  }
-} as const;
+function verificationOutputSchema(flowLess: boolean) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: [...AUTOMATION_STUDIO_LLM_VERIFICATION_REPLY_REQUIRED],
+    properties: {
+      kind: DIAGNOSIS_OUTPUT_SCHEMA.properties.kind,
+      diagnosis: {
+        ...DIAGNOSIS_FIELDS_SCHEMA,
+        required: automationStudioLlmVerificationDiagnosisRequired(flowLess),
+        properties: { ...JUDGED_FIELDS, defects: AUTOMATION_STUDIO_LLM_VERIFICATION_DEFECTS_SCHEMA, checked: AUTOMATION_STUDIO_LLM_VERIFICATION_CHECKED_SCHEMA, answerRecords: AUTOMATION_STUDIO_LLM_VERIFICATION_ANSWER_RECORDS_SCHEMA, explorationNeeded, patchNeeded }
+      },
+      confidence: DIAGNOSIS_OUTPUT_SCHEMA.properties.confidence,
+      summary: DIAGNOSIS_OUTPUT_SCHEMA.properties.summary,
+      metadata: JSON_METADATA_SCHEMA
+    }
+  } as const;
+}
+const VERIFICATION_OUTPUT_SCHEMA = verificationOutputSchema(false);
+const FLOW_LESS_VERIFICATION_OUTPUT_SCHEMA = verificationOutputSchema(true);
 
 /** The shape a task's answer must satisfy, or `undefined` where the task declares none. */
 export function automationStudioLlmTaskOutputSchema(request: AutomationStudioLlmTaskRequest): Record<string, unknown> | undefined {
-  if (request.taskKind === "loop_verification") return VERIFICATION_OUTPUT_SCHEMA;
+  if (request.taskKind === "loop_verification") return request.metadata?.source === AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE ? FLOW_LESS_VERIFICATION_OUTPUT_SCHEMA : VERIFICATION_OUTPUT_SCHEMA;
   if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) return DIAGNOSIS_OUTPUT_SCHEMA;
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return {
     type: "object",

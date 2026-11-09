@@ -110,7 +110,9 @@
 // **A count across a real run (`carried`, `counted`).** A run that settles into this record
 // compares each pass with what it did itself, so a person's "add 3" must still press three
 // times: it may pass while the count has room. A run that only carries acts from an attempt
-// before it reads no count, as it never did: what was done is not done again.
+// before it reads no count, as it never did: what was done is not done again. Room is given only
+// to a carried act from an attempt that did not end achieved (`doneInAchieved`, `./done-in-achieved.ts`):
+// one that did is done whatever its count, since one press can land several.
 
 import { type AutomationStudioAttemptAct, type AutomationStudioAttemptActClass, readAttemptActClasses } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
@@ -534,6 +536,7 @@ export class AutomationStudioAttemptActRecord {
       entry.lookedSince = false;
       // This attempt did it itself now, so it is no longer only an earlier attempt's.
       delete entry.carried;
+      delete entry.doneInAchieved;
       this.refusedFor.delete(entry);
       // A new landing is a new thing for a run to carry (`SVC/answer-first/run-acts/store.ts`).
       entry.at = this.now();
@@ -635,9 +638,16 @@ function declaredClasses(call: AutomationStudioAttemptActCall): AutomationStudio
   return readAttemptActClasses(call.consequences.filter((word) => readAttemptActClasses([word]) !== null).slice(0, 10)) ?? [];
 }
 
-/** Whether the request asks for this act more times than it has landed, for a call that is about no row (header). */
+/**
+ * Whether the request asks for this act more times than it has landed, for a call that is about no row (header).
+ * An act carried from an attempt that ended achieved has no room, whatever its count: the attempt said the task was done
+ * and the judge agreed, and one press can land several (a quantity chosen before an add), so its landings say nothing of
+ * what is left. Without this, the same words again pressed a landed count act once more (run-mw4eb5r3-a20f3542: 2 -> 4).
+ * One carried from an attempt that did not finish (budget out, stopped, waiting) keeps its room, so the same words go on
+ * to finish a count cut short: a task ends only with its result or its budget.
+ */
 function hasRoom(entry: AutomationStudioAttemptActEntry, identity: Identity): boolean {
-  return identity.rows.length === 0 && entry.asked !== undefined && (entry.landings ?? 0) < entry.asked;
+  return !(entry.carried && entry.doneInAchieved) && identity.rows.length === 0 && entry.asked !== undefined && (entry.landings ?? 0) < entry.asked;
 }
 
 /** An act's words, with how many times it landed where the request asked for several: a judge and a person read this as the record of them all. */

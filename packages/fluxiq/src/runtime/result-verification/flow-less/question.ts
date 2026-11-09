@@ -13,6 +13,9 @@ export const AUTOMATION_STUDIO_FLOW_LESS_QUESTION = [
   "Answer one question: was what the person asked for got?",
   "recordSets holds rows really read from the site. acts lists the lasting acts really done on the site, each with its state: landed, it happened; may_have_landed, it ran and its effect is not known; undone, it was taken back; not_done, it never happened.",
   "endView is how the site looked at the end. witnesses.before and witnesses.after are one reading of the site, taken before the first lasting act and at the end.",
+  // The same words again (run-mw4eb5r3-a20f3542): an earlier attempt's act is carried, and with no word on what that means a judge asked for the act again and the model did it twice.
+  "An act whose words begin 'Already done earlier' was done by an earlier attempt at these same words: it counts as got where the views agree it still stands, and finding the site as it left it is right, not a missing change; doing it again would be wrong. One whose words begin 'May already be done' counts as got only where the views show it.",
+  "looked lists what looks at the site found after the first lasting act, each with where it was made and a short cut of what was found, from the site itself: it is evidence, as the views are.",
   "Judge the change, not the absolute state: a place that held 3 before and 4 after has had 1 added, which is what asking to add 1 asks, and its total of 4 is no defect. What already held before is not credit for anything done here.",
   "answerText is the model's own words and proves nothing by itself: where it says something, look for it in the rows, the acts and the views.",
   "How it was done is not in question, and anything said elsewhere about parts of a record that are not in this summary does not count here: nothing is wrong because it is not shown.",

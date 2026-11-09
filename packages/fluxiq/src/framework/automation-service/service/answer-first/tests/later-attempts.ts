@@ -12,12 +12,12 @@ import type { AutomationStudioActionConsequence } from "../../../../../runtime/a
 import { automationStudioActivityHub } from "../../../../../runtime/activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { caller, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf, automationStudioAnswerFirstRunAgain, automationStudioAnswerFirstTaskMemoryOf } from "../index.ts";
 import { libraryTarget, libraryTargetNodes, LOANS_OUTPUT, type LibraryTarget } from "./fake-library-engine.ts";
-import { fakeLibraryBinding, LOOK_TOOL, READ_LOANS, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
+import { fakeLibraryBinding, judgedYes, LOOK_TOOL, READ_LOANS, runNode, toolCall, type FakeLibraryFault } from "./fake-library.ts";
 
 export const TASK = "List every loan on my library account.";
 const USAGE = { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 };
@@ -63,7 +63,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
     if (request.taskKind === "loop_verification") {
       const reply = current.judge.shift();
-      return (typeof reply === "function" ? (reply as (asked: AutomationStudioLlmTaskRequest) => unknown)(request) : reply) ?? judgeReply("yes");
+      return (typeof reply === "function" ? (reply as (asked: AutomationStudioLlmTaskRequest) => unknown)(request) : reply) ?? judgedYes(request);
     }
     const next = current.script[current.decided] ?? toolCall(`look.${current.decided}`, LOOK_TOOL, {});
     if (current.decided >= current.script.length && !current.keepLooking) current.stop?.();

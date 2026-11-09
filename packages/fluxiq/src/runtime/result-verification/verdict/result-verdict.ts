@@ -1,5 +1,5 @@
 import type { AutomationStudioResultRepairDirective, AutomationStudioResultVerification } from "../contracts/index.ts";
-import { automationStudioResultYesCitations } from "../cited-yes/index.ts";
+import { automationStudioResultRecordsYesRefuted, automationStudioResultYesCitations } from "../cited-yes/index.ts";
 import { automationStudioResultScreenedJudgement } from "../judgement-screen.ts";
 import { automationStudioResultRepairDirective } from "../repair-directive.ts";
 import { automationStudioResultCheckedRows, automationStudioResultKeptRowsUnquoted, automationStudioResultLeftOutRowsUnaccounted, automationStudioResultLeftOutRowsUnquoted, automationStudioResultLeftOutStatingAKeptNumber } from "../request-rows/index.ts";
@@ -51,7 +51,10 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     const read = automationStudioResultScreenedJudgement({ expected: input.diagnosis?.expected, observed: input.diagnosis?.observed }).judgement;
     const answeredReading = { ...(read?.expected ? { expected: read.expected } : {}), ...(read?.observed ? { observed: read.observed } : {}) };
     // What the yes cited it checked, held to Core's record of the stored rows (`../cited-yes/`, t810); nothing where it cited none.
-    const citations = automationStudioResultYesCitations(input.summary, input.diagnosis?.checked);
+    // And where the caller asks, the yes stands on the rows held: cited, and counted as the site shows the answer (`../cited-yes/records-yes.ts`, t875). Its sentences lead.
+    const onRows = input.yesOnRows ? automationStudioResultRecordsYesRefuted(input.summary, input.diagnosis, input.summaryText) : [];
+    const cited = automationStudioResultYesCitations(input.summary, input.diagnosis?.checked);
+    const citations = onRows.length ? { cited: cited?.cited ?? 0, refuted: [...onRows, ...(cited?.refuted ?? [])] } : cited;
     const yesCitations = citations ? { yesCitations: citations } : {};
     const advised = input.diagnosis?.patchNeeded === true;
     // A held yes that advised a change keeps the change it named, screened as a no's advice is (header, t636).
@@ -82,7 +85,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     // A yes citing a cell Core's record of the result does not hold is not a yes (`../cited-yes/`, t810): unsure, with Core's sentence for each citation it cannot find.
     if (citations?.refuted.length) {
       return {
-        ...failed("unsure", "model", codes.yesCitationRefuted, `The result was judged to answer the request, but Core could not find ${citations.refuted.length === 1 ? "the cell the judgement cited" : `${citations.refuted.length} of the ${citations.cited} cells the judgement cited`} in the stored rows, so the result remains unconfirmed.`, observation),
+        ...failed("unsure", "model", codes.yesCitationRefuted, onRows.length ? "The result was judged to answer the request, but the judgement does not stand on the rows the result holds, so the result remains unconfirmed." : `The result was judged to answer the request, but Core could not find ${citations.refuted.length === 1 ? "the cell the judgement cited" : `${citations.refuted.length} of the ${citations.cited} cells the judgement cited`} in the stored rows, so the result remains unconfirmed.`, observation),
         ...(Object.keys(answeredReading).length ? { answeredReading } : {}),
         ...yesCitations
       };

@@ -102,6 +102,12 @@
 // citation Core cannot find is `unsure` (`yesCitationRefuted`), never a yes. A
 // yes that cites nothing is read as before.
 //
+// **And the Flow-less judge's yes stands on the rows (t875).** Its caller sets
+// `yesOnRows`: a yes over held rows that cites none of them, says nothing in
+// `diagnosis.answerRecords`, or counts other records on the site than the rows
+// held is `unsure` under the same code (`../cited-yes/records-yes.ts`), and
+// Core's sentences for it lead `yesCitations.refuted`.
+//
 // The verdict itself is `result-verdict.ts`; its codes `codes.ts`, its input
 // `types.ts`, the answer word `from-diagnosis.ts`, Core's one-line account
 // `observation.ts`, and the kept rows a yes is held to `kept-rows-flagged.ts`.

@@ -10,7 +10,7 @@ import type { AutomationStudioRunDatasets } from "../../datasets/index.ts";
 import type { AutomationStudioFlowPaths } from "../../paths/index.ts";
 import { judgeReply } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstAttemptStoreOf, automationStudioAnswerFirstRunActStoreOf } from "../index.ts";
-import { complete, fakeLibrary, READ_LOANS, RENEW_CARD, RENEW_LOAN, runNode, scriptedAttempt, toolCall, type FakeLibrary } from "./fake-library.ts";
+import { complete, fakeLibrary, judgedYes, READ_LOANS, RENEW_CARD, RENEW_LOAN, runNode, scriptedAttempt, toolCall, type FakeLibrary } from "./fake-library.ts";
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -158,7 +158,7 @@ describe("one answer-first attempt", () => {
     const attempt = await scriptedAttempt({
       library,
       instruction: "List every loan on my library account.",
-      judge: [judgeReply("no", { expected: "Every loan", observed: "One loan is missing", defects: [{ kind: "other", row: "Atlas of Rivers", requestWords: "every loan" }] }), judgeReply("yes")],
+      judge: [judgeReply("no", { expected: "Every loan", observed: "One loan is missing", defects: [{ kind: "other", row: "Atlas of Rivers", requestWords: "every loan" }] }), judgedYes],
       script: [
         complete("Nothing yet."),
         (request) => {

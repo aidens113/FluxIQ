@@ -55,6 +55,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const { input } = run;
   if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
   const sentBefore = run.liveSteps;
+  let personStopped = false;
   run.path = "run_flow";
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, permissions: run.permissions,
@@ -65,7 +66,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
     arrived: () => { run.arrived = true; },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
     // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).
-    ...(input.personAsk ? { personCheck: { port: input.personAsk.port, waiting: (state: "started" | "ended", waitedMs: number) => {
+    ...(input.personAsk ? { personCheck: { port: input.personAsk.port, stopped: () => { personStopped = true; }, waiting: (state: "started" | "ended", waitedMs: number) => {
       run.waitingFor = state === "started" ? "person_only_check" : undefined;
       run.waitedMs += waitedMs;
       void automationStudioAnswerFirstKeep(run);
@@ -75,6 +76,8 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   run.flowRun = flowRun;
   if (run.arrived) run.options = input.continuingOptions();
   await automationStudioAnswerFirstKeep(run);
+  // Stop on a check is the person's Stop of the attempt: no judge call, no round, nothing more spent.
+  if (personStopped) return "stopped_by_person";
   if (outcome.kind === "ran" && outcome.reachedEnd) await judged(run, flowRun);
   const ending = endedBy(run);
   if (ending) return ending;

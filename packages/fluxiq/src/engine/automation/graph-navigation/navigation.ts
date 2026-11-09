@@ -8,6 +8,7 @@ import { chooseAutomationStudioEdge } from "./edge.ts";
 // The owning module avoids loading the step-skip barrel's authored-act analysis
 // back through the compiler and graph navigation.
 import { automationStudioOptionalStepWayOn } from "../step-skip/optional-step.ts";
+import { automationStudioStepRecoveryChain } from "../step-skip/recovery-chain.ts";
 export { chooseAutomationStudioEdge } from "./edge.ts";
 
 /** The node definition that finishes a run where it is reached. */
@@ -44,6 +45,16 @@ export function automationStudioNodeEndsRun(definitionId: string): boolean {
  * into them. A handler's body run, the one whose last attempt is its Handler
  * End, has left nothing behind: the rest of the graph is not its to visit.
  *
+ * Two shapes a build writes for a step that is not always followed by the
+ * same steps, and only when this run took the way into their join. The
+ * optional shape (`../step-skip/optional-step.ts`): a step skipped or failed
+ * went straight into its join, so its guarded group was not owed. Its mirror,
+ * the recovery shape (`../step-skip/recovery-chain.ts`, lane C W10/W11): the
+ * run went from a step straight into its join, by its success, so the recovery
+ * its failure would have run was not owed. A Flow of a draft step that says `on_failed`
+ * was ended `executor.graph.unvisited_nodes` on every run that did not need
+ * its recovery. General untaken branches still count.
+ *
  * A loop that ran no passes (`./graph-navigation/zero-pass-loop.ts`, t466):
  * the nodes only its body leads to count as visited. A list its conditions kept
  * no rows of is a valid outcome, and the steps after the loop were still owed.
@@ -57,10 +68,11 @@ export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocu
   if (attempts[attempts.length - 1]?.definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID) return false;
   const visited = new Set([...attempts.map((attempt) => attempt.nodeId), ...handlerOnlyNodes(flow), ...automationStudioZeroPassLoopBodies(flow, attempts)]);
   for (const [index, attempt] of attempts.entries()) {
-    // Only the optional shape's guarded success chain is exempt, and only
-    // when this run actually took its way past into the join. In a repeat
-    // span that chain may be unused on every pass. General untaken branches,
-    // disconnected nodes and a mandatory continuation still count.
+    // Only the optional shape's guarded success chain and the recovery
+    // shape's failure chain are exempt, and only when this run actually took
+    // its way past into the join. In a repeat span either chain may be unused
+    // on every pass. General untaken branches, disconnected nodes and a
+    // mandatory continuation still count.
     const bypassed = attempt.skipped?.reason === "target_absent" || attempt.status === "failed";
     const node = bypassed ? flow.nodes.find((candidate) => candidate.id === attempt.nodeId) : undefined;
     const wayOn = node && automationStudioOptionalStepWayOn(flow, node);
@@ -74,6 +86,14 @@ export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocu
         at = step ? chooseAutomationStudioEdge(flow, at, "success", step.definitionId)?.targetNodeId : undefined;
       }
     }
+    // Read off where the run went, not the attempt's status: a step a
+    // person's Continue sent on down its success route keeps its failed
+    // attempt (`../graph-run.ts`, the ask's route override). Its failure
+    // leads into the recovery, never the join, so going on straight into
+    // the join is going on by its success.
+    const recovered = flow.nodes.find((candidate) => candidate.id === attempt.nodeId);
+    const recovery = recovered && automationStudioStepRecoveryChain(flow, recovered);
+    if (recovery && attempts[index + 1]?.nodeId === recovery.join) for (const id of recovery.steps) visited.add(id);
     const skipped = attempt.skipped;
     if (skipped?.reason !== "state_routed" || skipped.direction !== "forward") continue;
     for (const id of passedOver(flow, attempt.nodeId, skipped.toNodeId)) visited.add(id);

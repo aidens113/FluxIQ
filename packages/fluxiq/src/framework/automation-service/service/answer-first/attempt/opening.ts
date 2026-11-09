@@ -14,6 +14,7 @@
 // ended, through `automationStudioAttemptActSeed`'s rule, from the task's own memory, which holds it
 // whatever has run on its Flow since. A Flow holds one record, its latest attempt's, so where the
 // memory has none the Flow's is read only when its latest row is this task's last attempt.
+// `seedFrom` names that attempt, whose before reading the new attempt's witnesses start from.
 //
 // **A person's Run again starts with nothing carried** (`../run-again/`): that press is what means
 // "do it again". What it was spared is kept beside its record (`setAside`), since it still landed.
@@ -44,6 +45,8 @@ export type AutomationStudioAnswerFirstOpening = {
   /** What the attempt starts its draft from. */
   steps: AutomationStudioFlowDraftStep[];
   seed?: AutomationStudioAttemptActRecordData | undefined;
+  /** The one attempt whose record `seed` came from, whose before reading its witnesses start from (`../witnesses/earlier.ts`). None where it unites several. */
+  seedFrom?: string | undefined;
   /** What a person's Run again started without. */
   setAside?: AutomationStudioAttemptActRecordData | undefined;
   /** This Flow already holds an act record, which from now on would read as this attempt's. */
@@ -67,7 +70,7 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
     taskId, memory, route,
     ordinal: ordinalOf(taskId, kept, rows),
     steps: stepsOf(route),
-    ...(again ? { setAside: carried } : { seed: carried }),
+    ...(again ? { setAside: carried?.data } : { seed: carried?.data, seedFrom: carried?.from }),
     // A record nobody can read is held here too: this attempt's own replaces it.
     actsHeldHere: !here.ok || here.value !== undefined,
     ...(route.kind === "build" ? {} : { startedFrom: { attemptId: route.saved.attemptId, flowId: route.saved.flowId, stepsDigest: route.saved.stepsDigest, steps: route.saved.steps.length, notes: route.notes.length, provenWhole: route.saved.provenWhole } })
@@ -96,16 +99,21 @@ function ordinalOf(taskId: string, kept: AutomationStudioAnswerFirstTaskMemory |
   return Math.max(0, ...counted) + 1;
 }
 
-async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores): Promise<AutomationStudioAttemptActRecordData | undefined> {
+/** The seed, and the one attempt it is of: none where a Run again's set-aside acts are united with it, since no one before reading came ahead of both. */
+async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores): Promise<{ data: AutomationStudioAttemptActRecordData; from?: string } | undefined> {
   const held = kept?.acts;
-  if (held) return automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier });
+  if (held) return seeded(automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier }), held.earlier ? undefined : held.attemptId);
   const last = kept?.attempts.at(-1);
   if (!last) return undefined;
   const rows = (await readOrNothing(() => stores.store.list(projectId, last.flowId))) ?? [];
   const row = rows.find((each) => each.attempt.attemptId === last.attemptId);
   if (row && rows.at(-1) !== row) return undefined;
   const data = await readOrNothing(() => stores.acts.get(projectId, last.flowId));
-  return data ? automationStudioAttemptActSeed({ data }) : undefined;
+  return data ? seeded(automationStudioAttemptActSeed({ data }), last.attemptId) : undefined;
+}
+
+function seeded(data: AutomationStudioAttemptActRecordData | undefined, from: string | undefined): { data: AutomationStudioAttemptActRecordData; from?: string } | undefined {
+  return data ? { data, ...(from === undefined ? {} : { from }) } : undefined;
 }
 
 async function readOrNothing<T>(read: () => Promise<T | undefined>): Promise<T | undefined> {
