@@ -29,7 +29,7 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 | K Keys and access design | Done; accepted as K8 | Report held locally until the K4 guards land | P3b |
 | U Panel, editor and assistant design | Done; accepted as U7 | `fluxnode-plan/reports/panel-design.md` | P9 |
 | F Subflow retirement inventory | Done; decided as O4-O6 | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
-| S Simulated Android, Linux and Windows | Three `worker`s in the new sibling repository `!FluxIQTestEnvironments` | Pure TypeScript simulators with tasks, oracles and perturbations | P8 |
+| S Simulated Android, Linux and Windows | Done, on `dev` of `!FluxIQTestEnvironments` (local; no remote yet) | Android: 6 tasks, 5 perturbations. Linux: 7 tasks, 4 perturbations. Windows: 9 tasks, 4 perturbations. Lead re-ran `pnpm typecheck` -> exit 0 and `pnpm test` -> 466 pass, 0 fail. Reports: `fluxnode-plan/reports/sim-{android,linux,windows}.md`. sim-kit gaps for P8: a task cannot declare which perturbations it survives; there is no "terminal busy" state; attributes are strings only | P8 |
 | E1 Live checks on the lanes' fixes | Lane supervisors after P0 lands | Results in Answer First's table | none |
 
 **Next:** Wave 2 starts as soon as P1 is frozen: P2, P3, P4, P5, P6 and P7 as parallel lanes on disjoint files. Wave 3 is P8 bindings, P9 panel, and P11 examples and docs.
