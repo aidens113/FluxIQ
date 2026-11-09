@@ -18,9 +18,22 @@
 // and what the call would be before it is sent, which the act gate reads beside the call (t870:
 // a by-hand press by a handle says nothing else). It is asked for every call, so an answer that
 // throws or has another shape is no answer, and never stops the call.
+//
+// **What a look found, after the first lasting act, is told on (`looked`; lane B, run-mw4dsh8i-3fb9dc39).**
+// A check said unsure and named what it could not see; the model opened that page and searched it,
+// and found it, but a look was in nothing the check read, so the next completion was refused as the
+// same evidence until a person was asked. So each look that answers -- an observation the act gate
+// also reads as one (`automationStudioAttemptActAnswerRead`), not refused, holding no rows (a read's
+// rows are the summary's own) -- is handed on from the call's own answer, never a model's words, once
+// the act record holds an act (an earlier attempt's carried one included): a look before any act
+// shows the page as it was, not what the acts made of it. What is handed on is where (the answer's
+// `location`) and a short cut of what it found: a search's own `found` lines, else the start of the
+// page it read (`page`), the web domain's keys (`domain/.../page-find/search.ts`). The same look
+// again is handed on once only, so a repeated look is no new evidence. The completion check screens
+// and bounds what it is given (`../completion/check.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
+import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
@@ -30,6 +43,12 @@ type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 
 const NO_RESET_CODE = "answer_first.no_reset";
 const NO_RESET_SAID = "Nothing is put back on this task, so this was not done. Carry on from the page as it stands; to get to another page, go there.";
+
+/** How much of what one look found is kept, in characters, and of where it was made. */
+const FOUND_CHARS = 600;
+const WHERE_CHARS = 300;
+/** Looks remembered as already handed on; past this the oldest is forgotten, so a long attempt holds a bounded set. */
+const LOOKS_REMEMBERED = 200;
 
 /** The chain under the permission gate (header). */
 export function automationStudioAnswerFirstCallChain(input: {
@@ -43,12 +62,30 @@ export function automationStudioAnswerFirstCallChain(input: {
   stepped(): void;
   /** A call was answered and not refused: the page has got to where the work starts. */
   answered(): void;
+  /** A look that found something new, after the first lasting act (header). Absent, nothing is handed on. */
+  looked?: ((look: { where: string; found: string }) => void) | undefined;
 }): Execute {
+  const handedOn = new Set<string>();
+  const noteLook = (answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult) => {
+    if (!input.looked || input.record.acts().length === 0) return;
+    const look = lookOf(answer, input.readRowsKey);
+    if (!look) return;
+    const key = JSON.stringify([look.where, look.found]);
+    if (handedOn.has(key)) return;
+    handedOn.add(key);
+    if (handedOn.size > LOOKS_REMEMBERED) handedOn.delete(handedOn.values().next().value!);
+    input.looked(look);
+  };
   const stored: Execute = async (call) => {
     input.stepped();
     const answer = await input.domain(call);
     if (!refusedAnswer(answer)) input.answered();
     if (isExecution(answer)) await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer);
+    try {
+      noteLook(answer);
+    } catch {
+      /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
+    }
     return answer;
   };
   const described = (call: { toolId: string; value: JsonObject }) => {
@@ -89,6 +126,25 @@ function declaresLasting(value: JsonObject): boolean {
   const nested = value.parameters;
   const inner = typeof nested === "object" && nested !== null && !Array.isArray(nested) ? nested.consequences : undefined;
   return automationStudioFlowDraftDeclaresLasting(value.consequences) || automationStudioFlowDraftDeclaresLasting(inner);
+}
+
+/** Where a look was made and a short cut of what it found, from its own answer (header), or nothing for any other call. */
+function lookOf(answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult, readRowsKey: string | undefined): { where: string; found: string } | undefined {
+  if (!isExecution(answer)) return undefined;
+  const evidence = answer.evidence;
+  if (!isObject(evidence)) return undefined;
+  const said = automationStudioAttemptActAnswerRead(answer, readRowsKey);
+  if (!said.looked || said.reads.length > 0) return undefined;
+  const where = typeof evidence.location === "string" ? evidence.location.trim() : "";
+  const text = typeof evidence.found === "string" ? evidence.found : typeof evidence.page === "string" ? evidence.page : "";
+  const found = text.trim();
+  return where && found ? { where: cut(where, WHERE_CHARS), found: cut(found, FOUND_CHARS) } : undefined;
+}
+
+/** At most `most` characters, by code point, with `…` where it was cut. */
+function cut(text: string, most: number): string {
+  const characters = [...text];
+  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function isObject(value: unknown): value is JsonObject {

@@ -44,5 +44,10 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
    * Where a check only a person can clear is put to them, and `waiting` told while it stands
    * (`./person-check-port.ts`). Absent, nobody can be asked, and a step meeting one ends the run.
    */
-  personCheck?: { port: AutomationStudioParkingPort; waiting(state: "started" | "ended", waitedMs: number): void } | undefined;
+  personCheck?: {
+    port: AutomationStudioParkingPort;
+    waiting(state: "started" | "ended", waitedMs: number): void;
+    /** The person pressed Stop on the check: that is their Stop of the whole attempt, not a step's failure. */
+    stopped?(): void;
+  } | undefined;
 };

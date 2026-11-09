@@ -31,7 +31,9 @@ const summary = (extra: Partial<AutomationStudioFlowLessSummary> = {}): Automati
 });
 
 type Script = { answer: Record<string, unknown> } | { reply: unknown } | { thrown: unknown };
-const YES: Script = { answer: { answersRequest: "yes" } };
+/** A yes that stands on the rows the summary holds (t875): it cites the row that answers, and says no list of records is asked. */
+const ON_ROWS = { checked: [{ row: "13 May", column: "free", value: "yes" }], answerRecords: { asked: false } };
+const YES: Script = { answer: { answersRequest: "yes", ...ON_ROWS } };
 const NO: Script = { answer: { answersRequest: "no", observed: "The date told is not the one booked.", expected: "The first free Tuesday.", changed: "Book 13 May.", defects: [{ kind: "other", row: "13 May", requestWords: "first free Tuesday" }] } };
 const UNSURE: Script = { answer: { answersRequest: "unknown", observed: "No view shows the date." } };
 
@@ -120,7 +122,7 @@ describe("the Flow-less judge's answer", () => {
   });
 
   it("holds a yes citing a cell the rows do not hold to unsure, as today's reader does", async () => {
-    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] } });
+    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }], answerRecords: { asked: false } } });
     const judged = await judge(provider);
     expect(judged.verdict).toBe("unsure");
     expect(judged.reason).toContain("not in the rows that were read");
@@ -131,7 +133,7 @@ describe("the Flow-less judge's answer", () => {
   it("asks again with Core's sentences and the citation rule, and takes a yes whose citations then hold", async () => {
     const { provider, seen } = scriptedInOrder([
       { answersRequest: "yes", checked: [{ row: "the third Tuesday", column: "free", value: "yes" }] },
-      { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "yes" }] }
+      { answersRequest: "yes", ...ON_ROWS }
     ]);
     const judged = await judge(provider);
     expect(judged).toMatchObject({ verdict: "yes" });
@@ -164,18 +166,21 @@ describe("the Flow-less judge's answer", () => {
 
   it("counts only this attempt's acts on the site, and says the ones already done earlier apart", async () => {
     const earlier = { ...BOOKED, id: "act.0", what: "Already done earlier: Booked the hall for the choir" };
-    const { provider } = scripted(YES);
+    // Over no rows a yes cites none and says no list of records is asked (t875's records rule).
+    const ACTS_YES: Script = { answer: { answersRequest: "yes", checked: [], answerRecords: { asked: false } } };
+    const { provider } = scripted(ACTS_YES);
     expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [earlier, { ...earlier, id: "act.2" }, { ...earlier, id: "act.3" }] } })).toMatchObject({ checkedWhat: "3 already done earlier, against what was asked for." });
-    expect(await judge(scripted(YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
+    expect(await judge(scripted(ACTS_YES).provider, { summary: { instructions: "Book the hall.", acts: [BOOKED, earlier] } })).toMatchObject({ checkedWhat: "1 act on the site, 1 already done earlier, against what was asked for." });
   });
 
   it("takes a yes citing a cell the rows do hold", async () => {
-    const { provider } = scripted({ answer: { answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "yes" }] } });
+    const { provider } = scripted({ answer: { answersRequest: "yes", ...ON_ROWS } });
     expect((await judge(provider)).verdict).toBe("yes");
   });
 
   it("takes a yes with no rows at all: a request carried out is judged on what was done", async () => {
-    const { provider, seen } = scripted(YES);
+    // Over no rows a yes cites none, and says no list of records is asked (t875).
+    const { provider, seen } = scripted({ answer: { answersRequest: "yes", checked: [], answerRecords: { asked: false } } });
     expect(await judge(provider, { summary: { instructions: "Book the hall.", acts: [BOOKED] } })).toMatchObject({ verdict: "yes", checkedWhat: "1 act on the site, against what was asked for." });
     expect(seen[0]?.context.resultSummary?.recordSets).toEqual([]);
   });
@@ -224,7 +229,7 @@ describe("a call that gave nothing", () => {
 
   it("reads a reply cut off after its verdict from its whole fields, and a cut yes that fails them gave no answer (t653)", async () => {
     const cut = (diagnosis: Record<string, unknown>) => ({ reply: { response: { kind: "diagnosis", summary: "Reply cut off.", diagnosis, truncatedAfterVerdict: true }, usage: USAGE } });
-    expect((await judge(scripted(cut({ answersRequest: "yes" })).provider)).verdict).toBe("yes");
+    expect((await judge(scripted(cut({ answersRequest: "yes", ...ON_ROWS })).provider)).verdict).toBe("yes");
     expect(await judge(scripted(cut({ answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] })).provider)).toMatchObject(notJudged);
   });
 
@@ -351,6 +356,13 @@ describe("what the judge is shown", () => {
   it("tells it to judge the change, and shows before and after", () => {
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("Judge the change, not the absolute state");
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("witnesses.before and witnesses.after");
+  });
+
+  // run-mw4eb5r3-a20f3542: with no word on a carried act, a judge asked for an earlier attempt's add again.
+  it("tells it an act already done earlier at the same words counts as got, and doing it again is wrong", () => {
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("An act whose words begin 'Already done earlier' was done by an earlier attempt at these same words: it counts as got");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("doing it again would be wrong");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("'May already be done' counts as got only where the views show it");
   });
 
   // The same lists the in-run repair instruction is held to (`../../../llm/harness/tests/in-run-repair-slot.test.ts`).

@@ -4,11 +4,14 @@
 // read, the acts it did, the model's words, the end view and the witnesses, and asks
 // whether what the person asked for was got.
 //
-// **One model call, asked again only for a refuted citation.** Today's judge asks up to four times
+// **One model call, asked again only for a yes Core refutes.** Today's judge asks up to four times
 // because a yes there finishes a build and a no fails a run. Here a yes labels a
 // result "checked once" (D9, t296: one yes once finished a build on wrong rows), and a
 // no or an unsure goes back to the model with its reason, which keeps looking. So
-// nothing here asks again, except that a yes whose citations Core refutes is asked again, within the same check, with Core's sentences and what a valid citation is, until the same refuted citations come back (then it is unsure). A transport fault the provider's retry policy retries
+// nothing here asks again, except that a yes whose citations Core refutes is asked again, within the same check, with Core's sentences and what a valid citation is, until the same refuted citations come back (then it is unsure).
+// A yes here must also stand on the rows the result holds (`yesOnRows`, `../cited-yes/records-yes.ts`, t875): one
+// that cites none of them, says nothing of the records asked, or counts other records on the site than the rows held
+// is refuted the same way, so a judge that only forgot to cite or count gets its chance to. A transport fault the provider's retry policy retries
 // inside the call (`../../llm/provider-retry/`) is one question still: no answer came
 // back to be weighed.
 //
@@ -29,15 +32,17 @@
 
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../../llm/verification-checked/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
+import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
-/** Where the call's intervention says it came from. */
-const SOURCE = "answerFirstJudge";
+/** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
+const SOURCE = AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE;
 const BALANCE_CODE = "llm.provider_balance_exhausted";
 const NO_BALANCE = "The model service says the account has no balance left, so this was not judged.";
 const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it was not judged.";
@@ -131,7 +136,8 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
     summary: read,
     ...(response.diagnosis ? { diagnosis: response.diagnosis } : {}),
     ...(response.summary && !cut ? { summaryText: response.summary } : {}),
-    basis: "model"
+    basis: "model",
+    yesOnRows: true
   });
   if (verdict.basis === "model_silent") return { judgement: { verdict: "not_judged", reason: NO_ANSWER, unanswered: true } };
   if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return { judgement: unanswered(read, "llm.provider_output_truncated") };
@@ -142,18 +148,23 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
   }
   if (verdict.code === AUTOMATION_STUDIO_RESULT_VERDICT_CODES.yesCitationRefuted) {
     const refuted = verdict.yesCitations?.refuted ?? [];
-    return { judgement: { verdict: "unsure", reason: "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.", checkedWhat: meantToCheck(summary) }, ...(refuted.length ? { refuted } : {}) };
+    // Core's own sentences on the rows held carry counts and Core's words only, so they may lead the reason (t875); a cited cell's words never do.
+    const onRows = automationStudioResultRecordsYesRefuted(read, response.diagnosis, response.summary && !cut ? response.summary : undefined);
+    const reason = onRows.length ? `The check said yes, but it does not stand on the rows the result holds, so it stands unconfirmed. ${onRows.join(" ")}` : "The check said yes, but a value it cited is not in the rows that were read, so it stands unconfirmed.";
+    return { judgement: { verdict: "unsure", reason, checkedWhat: meantToCheck(summary) }, ...(refuted.length ? { refuted } : {}) };
   }
   return { judgement: { verdict: "unsure", reason: readingWords(verdict.unsureReading) ?? "The check could not tell whether this is what was asked for.", checkedWhat: meantToCheck(summary) } };
 }
 
 /** What a valid citation is, said to the judge again after one Core could not match. Generic: no site, task or product is named. */
 const CITATION_RULE = "A citation names a row by its label (its value in the first stored column, such as a name or title, or its 1-based position among the stored rows), then a stored column, then that row's own value in that column, written as the rows hold it. Cite only cells the stored rows contain, or cite nothing.";
+/** What a yes on rows says of them, said to the judge again after a yes Core could not stand on the rows held (t875). Generic, as above. */
+const RECORDS_RULE = "A yes on a result that holds rows cites in checked each stored row that answers the request, and says in answerRecords whether the request asks for records as its answer (asked) and, where it does, how many records the site shows that answer it (siteShows): the records the request names, counted as the site shows them, never the rows that happen to be stored. Where that count is not the rows held, the rows are not those records: answer no, naming what is missing in defects. A request whose answer is that there are none is asked true, siteShows 0, over no rows, citing none. A yes stands only on what is here: where what was asked cannot be judged from it, answer unknown.";
 
-/** The summary sent again with Core's sentences for each citation it could not match and what a valid one is (the re-ask of `automationStudioFlowLessJudge`). */
+/** The summary sent again with Core's sentences for each refutation of the last yes and what a valid yes cites (the re-ask of `automationStudioFlowLessJudge`). */
 function automationStudioFlowLessCitationNotice(sent: AutomationStudioRunResultSummary, refuted: readonly string[]): AutomationStudioRunResultSummary {
   const sentences = refuted.map((sentence) => automationStudioFlowLessScreenedWords(sentence).text ?? WITHHELD_SENTENCE);
-  return { ...sent, citationsNotMatched: { note: "Your last reply cited cells Core could not match in the stored rows. Judge again, citing only cells the stored rows hold.", notMatched: sentences, validCitation: CITATION_RULE } } as unknown as AutomationStudioRunResultSummary;
+  return { ...sent, citationsNotMatched: { note: "Core could not confirm your last yes on the stored rows: each line of notMatched says why. Judge again on the rows themselves, citing only cells the stored rows hold.", notMatched: sentences, validCitation: CITATION_RULE, onRows: RECORDS_RULE } } as unknown as AutomationStudioRunResultSummary;
 }
 
 /** A call that gave nothing, in the reader's words for what happened to it, by its code. */
