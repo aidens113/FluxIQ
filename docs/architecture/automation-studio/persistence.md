@@ -866,7 +866,7 @@ None of the program endpoints is `destructive-ungated` any more (t809).
 `deployment-sync/sync` and `deployment-sync/rollback` (perform and reverse a
 deployment) are `destructive`: the registry asks for the operator's session PIN.
 A caller must send `authorizationPin`, and the web route must stamp
-`authSessionId`: `withProgramAuthSession` (`apps/web/src/lib/program-route.ts`)
+`authSessionId`: `withProgramAuthSession` (`packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`)
 stamps it for `automation-studio`, `identity-access`, `database-manager`, and
 `secret-keys`, and must also list `deployment-sync`.
 

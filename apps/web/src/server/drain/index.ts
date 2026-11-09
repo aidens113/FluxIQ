@@ -1,4 +1,5 @@
-// Barrel for graceful shutdown: the draining flag and the wait for open gateway connections.
-export * from "./drain-gateway";
-export * from "./drain-state";
-export * from "./program-start-refusal";
+// Barrel for graceful shutdown: the draining flag, the program calls refused
+// while draining, and the wait for open gateway connections. They live in Core
+// (`fluxiq/server`) beside the program route and the transport they serve.
+export { drainGateway, drainState, programDrainRefusal } from "fluxiq/server";
+export type { DrainableGateway, DrainOptions, ProgramDrainRefusal } from "fluxiq/server";
