@@ -375,6 +375,21 @@ Discovery, 2026-11-09. "AF" is `packages/fluxiq/src/framework/automation-service
 | 11-12 to 11-16 | Wave 3: P8, P9, P11 | P9, a redesigned panel, is the longest lane of the whole plan |
 | 11-17 | Seal: the full sweep in all three repositories, then promote | P9 |
 
+## Wave 2 Briefs (written before dispatch)
+
+**Parallel limit.** This machine has 11.9 GB of memory. With Wave 1's nine agents running, 1.4 GB was free (2026-11-09). So a lane that builds Core or opens a browser starts only when about 3 GB is free, whatever the plan's parallelism allows.
+
+| Lane | Starts when | Tier | Owns | Builds | Done when |
+| --- | --- | --- | --- | --- | --- |
+| P2a Engine seams | P0 on `dev` | `worker-heavy` | AF (`attempt/`, `completion/`, `task-key/`), `runtime/answer-first/attempt-purse/`, the attempt's dispatch in `service.ts` (~1483-1570), `flow-bootstrap-commands/contracts.ts` | Per-attempt and caller-supplied: task key; authoring mode (no env var needed); model; budget, which may be raised above $5 when the caller says so; a judge mode (`auto`, `always` or `off`) with an injected `check(summary)` run before the judge, confirming with zero calls when it passes; a person-ask port that can be an event sink instead of a conversation; scope given as `permittedConsequences` plus a site allow list | Scripted-model tests per seam; AF's existing tests pass; the chat path is unchanged in behaviour |
+| P2b FluxNode entry | P1 frozen and P2a merged | `worker-heavy` | new `framework/automation-service/service/fluxnode/` | `runFluxNode(spec, inputs, options, events)`: project and Flow per spec hash at its O2 path; the goal stored as the Flow's instruction; inputs bound as Flow inputs, plus the fixed-value rebinding check; outputs assembled from rows and answers, checked exactly against the declared type, and traced; events; resume handles | The N1-N7 tests listed in P2 |
+| P3a Headless server | Memory allows | `worker-heavy` | `apps/web/src/server/client-gateway-websocket/*` and the program route, moved by path into a new `packages/fluxiq/src/server/` entry; `apps/web` mounts the moved handlers | A plain Node HTTP and WebSocket server serving the gateway and the program API without Next.js, plus `fluxiq dev` starting it with a data directory. No new mechanisms; auth unchanged until P3b | The extension pairs to the headless server; the `apps/web` route and gateway tests pass |
+| P3b Keys | The K report accepted | `worker-heavy` | Per the K report's own briefs | K1-K7 | The K report's checks, plus an adversarial review |
+| P4 SDK and CLI | P1 frozen | `worker` | new `packages/sdk` | N9 and K3 on the client side; `init`, `dev`, `runs`, `pin` and `learn` | A sample program in an empty directory |
+| P6 B1 Migration | P0 on `dev` | `worker-heavy` | the inventory's B1 paths | O4-O5 | A dry run on a copy of a saved project, with a rollback note |
+| P7 Pipelines | P1 frozen | `worker` | new `framework/automation-service/service/pipelines/` | D1-D4 | P7's done-when |
+| P8 Simulated hosts | P1 frozen and the S packages merged | `worker` per environment | `!FluxIQTestEnvironments/packages/*/src/fluxiq/` | Domain bindings and an in-process host | P8's done-when |
+
 ## Guardrails
 
 - **No new machinery beyond this plan.** t843 stalled when a system nobody asked for took over the critical path. Each lane gets its file list at dispatch, and a newly found need becomes a plan revision.
