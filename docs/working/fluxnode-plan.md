@@ -24,12 +24,14 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 
 | Unit | Who | Output | Blocks |
 | --- | --- | --- | --- |
-| P0 Land the live lanes, then the full sweep and promotion | Lead | Both `dev`s holding every lane fix, then both `main`s | P2 rebases onto it |
-| P1 FluxNode, Flow and data contracts | `worker-heavy` on a Core task branch | `@fluxiq/contracts` additions, frozen | P2-P4, P6, P7 |
-| K Keys and access design | `worker-heavy`, report only | `fluxnode-plan/reports/keys-design.md` | P3's key work |
-| U Panel, editor and assistant design | `worker-heavy`, report only | `fluxnode-plan/reports/panel-design.md` | P9 |
-| F Subflow retirement inventory | `worker`, report only | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
-| S Simulated Android, Linux and Windows | Three `worker`s in the new sibling repository `!FluxIQTestEnvironments` | Pure TypeScript simulators with tasks, oracles and perturbations | P8 |
+| P0 Land the live lanes, then the full sweep and promotion | Lead; integration task t880 (worktrees `fxwork/t880`) | Lanes A-D merged into t880 in both repositories; one Core conflict (the judge's question lines, kept both). Narrow checks: Core vitest 5,895 + 96 + 668 pass, extension 253, scenario-lab 43, attempt lane 117, both audits pass. Two real failures being fixed on t880: a stale or regressed witness-ambiguity domain test (lineage.test.ts:106, after lane B's 175acd38f), and the scripted two-attempt proof refusing a fourth `loop_verification` request (`run-mw9tqkp0-228b64e4`). Report: `mvp-seal-plan/reports/integration-round-2-checks.md` downstream | P2a and P6 B1 branch after it lands |
+| P3a Headless engine | `worker-heavy` on t881 | Running | P3b |
+| P4 SDK and CLI | `worker` on t882 | Running against a fake server built from the contracts | P11 |
+| P1 FluxNode, Flow and data contracts | **Done, on `dev`** (merge `b4e5d6302`); contracts 0.16.0 | `@fluxiq/contracts/fluxnode`: 117 new tests. Lead re-ran the contracts `check` -> exit 0, `test` -> 783 passed, and `node scripts/structure-audit.mjs` -> passed. Lead's decisions on its open points: retries resolve as a floor of 3 that an override may replace; FluxNode Flows are filed under the top-level `nodes/` folder (names of 1-7 parts), apart from automatic `web/...` placement; the SDK drops a zod `pattern` beside a `format` and refuses a bare one; a run request may later carry a pinned Flow export so a fresh cloud engine can replay it (P2b, additive); `flowId` stays required because registering a spec creates its Flow; zod is declared browser-safe to the structure audit, and the entry is guarded as a browser bundle | P2-P4, P6, P7 |
+| K Keys and access design | Done; accepted as K8 | Report held locally until the K4 guards land | P3b |
+| U Panel, editor and assistant design | Done; accepted as U7 | `fluxnode-plan/reports/panel-design.md` | P9 |
+| F Subflow retirement inventory | Done; decided as O4-O6 | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
+| S Simulated Android, Linux and Windows | Done, on `dev` of `!FluxIQTestEnvironments` (local; no remote yet) | Android: 6 tasks, 5 perturbations. Linux: 7 tasks, 4 perturbations. Windows: 9 tasks, 4 perturbations. Lead re-ran `pnpm typecheck` -> exit 0 and `pnpm test` -> 466 pass, 0 fail. Reports: `fluxnode-plan/reports/sim-{android,linux,windows}.md`. sim-kit gaps for P8: a task cannot declare which perturbations it survives; there is no "terminal busy" state; attributes are strings only | P8 |
 | E1 Live checks on the lanes' fixes | Lane supervisors after P0 lands | Results in Answer First's table | none |
 
 **Next:** Wave 2 starts as soon as P1 is frozen: P2, P3, P4, P5, P6 and P7 as parallel lanes on disjoint files. Wave 3 is P8 bindings, P9 panel, and P11 examples and docs.
@@ -80,6 +82,28 @@ The user, 2026-11-09, third message:
 - The panel assistant edits Flows.
 
 So the editor, the run logs and the folders show everything any client made.
+
+**O4. Retiring subflows is a migration, not a rename (lead, from the F inventory, `fluxnode-plan/reports/flow-unification-inventory.md`).**
+- **Two concepts today.** "Subflow" means two things:
+  - a hidden child graph inside a Flow (the `subflows` table, stored as a Flow row);
+  - the project-parts library (`project_parts*` tables, with versions made immutable by a trigger).
+- **Size.** About 23,000 occurrences in 1,717 Core files and 2,071 in 258 extension files. About half of Core's hits and 90% of the extension's are tests or the Lab.
+- **Folders.** Flows have no folders today. Every way of creating a Flow goes through `saveFlowInternal`, which is the one hook for automatic placement.
+- **The migration** copies the data, verifies the copy, and gets a dry run on a copy of a project database and a rollback note. It never touches the user's real data in tests.
+
+**O5. The four decisions the inventory asked for (lead).**
+1. **Versions.** A call names a Flow by id and follows that Flow's latest accepted version, as it stands when the calling run starts. A repair to a shared Flow then helps every caller, and nothing changes under a run already in progress. A call may pin a version instead, and a pinned FluxNode (N8) pins the whole tree it calls.
+2. **Routing.** A Flow keeps its own routing between its entries, which state-aware recovery depends on. A route that pointed at a hidden child graph becomes a route to a Call Flow step, and each hidden child graph becomes a Flow in its parent's folder.
+3. **Folders** live in a folder table, with each Flow's placement recording `placed_by: fluxiq | person`, rather than in a plain path column. A person's placement always wins.
+4. **Old names** (endpoints, IAM actions, exported types, the `builtin.control.call-subflow` definition id, stored keys) are read as aliases through one promotion after E6 lands in the extension, and never written. Saved Flow source keeps parsing through a versioned reader.
+
+**O6. Batches (lead, from the inventory's section 5).** The batches are B1 to B9; B0, the design, is O4-O5 above. Groups run in this order:
+1. B1 migration and B2 contracts, wire and IAM.
+2. B3 engine and graph.
+3. B4 service and placement, B5 prose, B6 UI and B7 docs.
+4. B5 tool ids, B8 extension and B9 tests and Lab.
+
+B1, B3 and B4 are serial on the same persistence and service files. Each renamed directory has one owner and moves in one commit.
 
 ## FluxNode
 
@@ -243,6 +267,29 @@ run.outputs; run.path; run.verdict; run.cost; // path: "replayed" | "repaired" |
 - **The local panel** opens through a one-time sign-in link that `fluxiq dev` prints, signed by the owner key. The hosted panel keeps account sign-in.
 - **The panel assistant** acts as the signed-in person.
 
+**K8. Corrections from the K report (lead, accepted 2026-11-09).** The report checked K1-K7 against Core and AWS practice. It is held locally until the K4 guards land, because it carries a threat analysis of the public code.
+- **The profile variable** is `FLUXIQ_KEY_PROFILE`, because `FLUXIQ_PROFILE` already names the deployment profile.
+- **Private keys** live only under `~/.fluxiq/keys/`. A project's `.fluxiq/` may name a profile, never hold a key.
+- **The key id** is `fxk_` plus a SHA-256 of the public key, and credentials use an INI file in the style of AWS's shared files.
+- **The string to sign** is canonical and SigV4-like: the algorithm, purpose, audience (the configured origin plus an instance id), key id, time, nonce and body hash.
+- **Sessions** last 15 minutes to 12 hours, 1 hour by default as STS. The clock window is ±300 s and nonces are kept 600 s. WebSocket hosts sign the server's challenge.
+- **Open mode covers the FluxNode API only.** The extension, the panel and hosts always authenticate.
+- **The full K4 guard list is required before open mode ships:**
+  - loopback only;
+  - `Host` checks on HTTP and on the WebSocket upgrade;
+  - an `Origin` check;
+  - a `Sec-Fetch-Site` check;
+  - unkeyed calls must be JSON carrying a `FluxIQ-Client` header;
+  - never CORS;
+  - unkeyed calls act as the owner under `FluxNodeRunner`, never as an administrator.
+- **Keys made by the panel** are generated in the browser, so their PEM is downloaded once and the server never sees the private half.
+- **The local sign-in link** sits in the URL fragment and is minted by a call proven with the owner key.
+- **Managed browsers** make their own key and enrol it with a one-time launch ticket.
+- **Headless model-key custody.** Model keys are sealed under the person's password today, so a FluxNode program could never spend one. A `key` custody holder fixes this: its secret comes from a deterministic Ed25519 signature, with a stored random secret as the fallback where signatures differ. Its acceptance includes a probe that the signature really is deterministic in Node, Chrome, Edge and Firefox.
+- **Migrating paired extensions.** A paired extension upgrades on a normal reconnect, sending its old token with its new key. Nobody re-pairs, and model-key unlocks carry over.
+- **The SDK always signs with the owner key when it finds one,** even while keys are off. The engine still accepts unkeyed calls in open mode and keeps warning. This is the lead's reading of the user's rule, and makes "turn keys on" a no-op for code.
+- **IAM.** Two additive changes to the frozen IAM contracts are approved by the lead as their freeze owner: the condition key `fluxiq:AllowToken` and the request origin `panel-assistant`. The host and FluxNode actions are registered in the IAM catalog. In v1, CI keys are bound to a user; service identities come later.
+
 **K7. Least privilege (lead).** A key is bound to a policy: `FluxNodeRunner` (run Flows in one project), `FluxIQBrowserSession`, `FluxIQHost` or `Admin`. A key is created with the least it needs. Keys are listed, rotated and revoked on the panel's Security page, which shows each key's last use.
 
 ## Panel, Editor And Assistant
@@ -281,6 +328,16 @@ run.outputs; run.path; run.verdict; run.cost; // path: "replayed" | "repaired" |
 - **Consequential acts** proceed only when the person's words clearly ask for them; otherwise they get a one-press Allow. These are deleting, sending, moving money, changing keys or security, and spending beyond the budget.
 - **Context.** It knows the page and the selection.
 - **Its model.** The model key chosen in Settings; by default, the first key the person entered.
+
+**U7. Corrections from the U report (`fluxnode-plan/reports/panel-design.md`; lead, accepted 2026-11-09).**
+- **Endpoint schemas come first.** None of the registry's 272 endpoints declares a payload schema, so tools cannot be generated until about 100 exposed endpoints have one. A check fails the build when an endpoint has neither a schema nor a stated reason to stay hidden (the report's B1-B4).
+- **A press grant replaces the PIN.** Every destructive endpoint demands a PIN today, which breaks the user's no-PIN rule and cannot work for a local owner signed in by link. Instead, pressing Allow mints a single-use grant lasting 60 seconds, bound to the session, the endpoint and the payload. It goes through the keys lane's adversarial review.
+- **Model keys after a link sign-in** open through K8's `key` custody holder (the owner key on local).
+- **Version history** exists in storage, but its list, snapshot and restore endpoints have no handlers, and there is no operation to change a step's label. The report's brief D adds both.
+- **A tool loop for the assistant.** The chat makes one decision per message today, and its threads live inside a project. The assistant gets a bounded tool loop on a new panel-wide thread type stored outside every project, watched by Core's loop detector. The extension's threads keep today's interpreter.
+- **The editor** is a pure Core module that turns the stored graph into a nested numbered list in which every step appears exactly once; a step that does not nest shows as a "jump". Static checks block a bad edit; an offline check against the last run only advises.
+- **The wizard's sample Flow** uses data steps only: no model, no browser, no client, $0.
+- **The briefs.** The report's 15 briefs (A-O, plus W downstream) are the P9 work list, with the order and parallelism it gives.
 
 **U6. The old panel UI plans are superseded by this (lead).** `ui-upgrade-audit-plan.md` and the `automation-studio-*` UI plans are kept only as evidence.
 
@@ -352,6 +409,21 @@ Discovery, 2026-11-09. "AF" is `packages/fluxiq/src/framework/automation-service
 | 11-10 to 11-13 | Wave 2: P2-P7 in parallel | P1 frozen. P2 and P3 are the longest |
 | 11-12 to 11-16 | Wave 3: P8, P9, P11 | P9, a redesigned panel, is the longest lane of the whole plan |
 | 11-17 | Seal: the full sweep in all three repositories, then promote | P9 |
+
+## Wave 2 Briefs (written before dispatch)
+
+**Parallel limit.** This machine has 11.9 GB of memory. With Wave 1's nine agents running, 1.4 GB was free (2026-11-09). So a lane that builds Core or opens a browser starts only when about 3 GB is free, whatever the plan's parallelism allows.
+
+| Lane | Starts when | Tier | Owns | Builds | Done when |
+| --- | --- | --- | --- | --- | --- |
+| P2a Engine seams | P0 on `dev` | `worker-heavy` | AF (`attempt/`, `completion/`, `task-key/`), `runtime/answer-first/attempt-purse/`, the attempt's dispatch in `service.ts` (~1483-1570), `flow-bootstrap-commands/contracts.ts` | Per-attempt and caller-supplied: task key; authoring mode (no env var needed); model; budget, which may be raised above $5 when the caller says so; a judge mode (`auto`, `always` or `off`) with an injected `check(summary)` run before the judge, confirming with zero calls when it passes; a person-ask port that can be an event sink instead of a conversation; scope given as `permittedConsequences` plus a site allow list | Scripted-model tests per seam; AF's existing tests pass; the chat path is unchanged in behaviour |
+| P2b FluxNode entry | P1 frozen and P2a merged | `worker-heavy` | new `framework/automation-service/service/fluxnode/` | `runFluxNode(spec, inputs, options, events)`: project and Flow per spec hash at its O2 path; the goal stored as the Flow's instruction; inputs bound as Flow inputs, plus the fixed-value rebinding check; outputs assembled from rows and answers, checked exactly against the declared type, and traced; events; resume handles | The N1-N7 tests listed in P2 |
+| P3a Headless server | Memory allows | `worker-heavy` | `apps/web/src/server/client-gateway-websocket/*` and the program route, moved by path into a new `packages/fluxiq/src/server/` entry; `apps/web` mounts the moved handlers | A plain Node HTTP and WebSocket server serving the gateway and the program API without Next.js, plus `fluxiq dev` starting it with a data directory. No new mechanisms; auth unchanged until P3b | The extension pairs to the headless server; the `apps/web` route and gateway tests pass |
+| P3b Keys | The K report accepted | `worker-heavy` | Per the K report's own briefs | K1-K7 | The K report's checks, plus an adversarial review |
+| P4 SDK and CLI | P1 frozen | `worker` | new `packages/sdk` | N9 and K3 on the client side; `init`, `dev`, `runs`, `pin` and `learn` | A sample program in an empty directory |
+| P6 B1 Migration | P0 on `dev` | `worker-heavy` | the inventory's B1 paths | O4-O5 | A dry run on a copy of a saved project, with a rollback note |
+| P7 Pipelines | P1 frozen | `worker` | new `framework/automation-service/service/pipelines/` | D1-D4 | P7's done-when |
+| P8 Simulated hosts | P1 frozen and the S packages merged | `worker` per environment | `!FluxIQTestEnvironments/packages/*/src/fluxiq/` | Domain bindings and an in-process host | P8's done-when |
 
 ## Guardrails
 

@@ -34,6 +34,16 @@ result control, record processing/datasets and capture policy.
 `@fluxiq/contracts/automation` is the shared automation contract and
 reexports the same authorities.
 
+### FluxNode contracts
+
+`@fluxiq/contracts/fluxnode` (`contracts/src/fluxnode/`) is the browser-safe contract every
+FluxNode lane builds on ([FluxNode plan](../working/fluxnode-plan.md), P1): an exact JSON
+Schema subset with its parser and validator, Flow paths and automatic placement (a
+FluxNode's Flow is filed under `nodes/`), the Call Flow node type, the FluxNode spec and
+its spec hash, run requests, results, events and answers, data lineage, data steps and
+pipelines, and the `/api/fluxnode/v1` HTTP description. It has no Node-only import, and
+the structure audit's browser-bundle rule guards it.
+
 ### Answer First's shared records
 
 `@fluxiq/contracts/automation` carries the records of the
