@@ -81,6 +81,28 @@ The user, 2026-11-09, third message:
 
 So the editor, the run logs and the folders show everything any client made.
 
+**O4. Retiring subflows is a migration, not a rename (lead, from the F inventory, `fluxnode-plan/reports/flow-unification-inventory.md`).**
+- **Two concepts today.** "Subflow" means two things:
+  - a hidden child graph inside a Flow (the `subflows` table, stored as a Flow row);
+  - the project-parts library (`project_parts*` tables, with versions made immutable by a trigger).
+- **Size.** About 23,000 occurrences in 1,717 Core files and 2,071 in 258 extension files. About half of Core's hits and 90% of the extension's are tests or the Lab.
+- **Folders.** Flows have no folders today. Every way of creating a Flow goes through `saveFlowInternal`, which is the one hook for automatic placement.
+- **The migration** copies the data, verifies the copy, and gets a dry run on a copy of a project database and a rollback note. It never touches the user's real data in tests.
+
+**O5. The four decisions the inventory asked for (lead).**
+1. **Versions.** A call names a Flow by id and follows that Flow's latest accepted version, as it stands when the calling run starts. A repair to a shared Flow then helps every caller, and nothing changes under a run already in progress. A call may pin a version instead, and a pinned FluxNode (N8) pins the whole tree it calls.
+2. **Routing.** A Flow keeps its own routing between its entries, which state-aware recovery depends on. A route that pointed at a hidden child graph becomes a route to a Call Flow step, and each hidden child graph becomes a Flow in its parent's folder.
+3. **Folders** live in a folder table, with each Flow's placement recording `placed_by: fluxiq | person`, rather than in a plain path column. A person's placement always wins.
+4. **Old names** (endpoints, IAM actions, exported types, the `builtin.control.call-subflow` definition id, stored keys) are read as aliases through one promotion after E6 lands in the extension, and never written. Saved Flow source keeps parsing through a versioned reader.
+
+**O6. Batches (lead, from the inventory's section 5).** The batches are B1 to B9; B0, the design, is O4-O5 above. Groups run in this order:
+1. B1 migration and B2 contracts, wire and IAM.
+2. B3 engine and graph.
+3. B4 service and placement, B5 prose, B6 UI and B7 docs.
+4. B5 tool ids, B8 extension and B9 tests and Lab.
+
+B1, B3 and B4 are serial on the same persistence and service files. Each renamed directory has one owner and moves in one commit.
+
 ## FluxNode
 
 A FluxNode is a Flow declared in code. The declaration holds:
