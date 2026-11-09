@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/contracts",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Browser-safe shared contracts for FluxIQ programs, clients, and recording integrations.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
@@ -16,7 +16,8 @@
     "./program-api": { "types": "./dist/program-api.d.ts", "import": "./dist/program-api.js" },
     "./automation": { "types": "./dist/automation.d.ts", "import": "./dist/automation.js" },
     "./iam": { "types": "./dist/iam.d.ts", "import": "./dist/iam.js" },
-    "./platform": { "types": "./dist/platform.d.ts", "import": "./dist/platform.js" }
+    "./platform": { "types": "./dist/platform.d.ts", "import": "./dist/platform.js" },
+    "./fluxnode": { "types": "./dist/fluxnode.d.ts", "import": "./dist/fluxnode.js" }
   },
   "files": ["dist", "README.md", "LICENSE.md"],
   "scripts": {
