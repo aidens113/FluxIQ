@@ -93,6 +93,7 @@ export const STEPS = Object.freeze({
   ...library("contracts"),
   ...library("fluxiq"),
   ...library("client-gateway-websocket"),
+  ...library("sdk"),
   ...library("ui-components"),
   "web:build": {
     package: "apps/web",
