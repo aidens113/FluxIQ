@@ -1209,7 +1209,7 @@ is what the record says: a saved draft is `partly_works`, `unproven`, and no dra
 nothing. `comparedTo` is the latest earlier attempt at the same task on this Flow that ended.
 
 Both take `programs.read`, assert the project's domain access because a result holds rows,
-and are on the paired token's allowlist (`apps/web/src/lib/program-route.ts`). A file that
+and are on the paired token's allowlist (`packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`). A file that
 is there and cannot be read is a refusal in its own words (`task_attempt.unreadable`), never
 `task_attempt.not_found` or an empty list.
 
