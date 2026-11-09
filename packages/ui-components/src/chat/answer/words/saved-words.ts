@@ -20,6 +20,8 @@ export function savedWords(saved: ChatSavedState, nowMs: number = Date.now()): s
     case "ready":
       return `${on}: ${steps}. They worked last time.`;
     case "partly_works":
+      // The saved steps ran this time and one stopped them, which was fixed: never "have not run" (t878).
+      if (saved.repaired === true) return `${on}: ${steps}. They ran this time and I fixed the step that stopped them, so next time I will try them with that fix.`;
       return saved.trust === "unproven" && saved.simulation !== "failed"
         ? `${on}: ${steps}. They have not run on their own yet, so next time I will try them and fix what fails.`
         : `${on}: ${steps}. They only partly work, so next time I will fix what fails.`;

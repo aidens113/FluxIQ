@@ -103,10 +103,10 @@ export type ChatTaskResult = {
   from?: Array<{ site: string; pages: string }>;
 };
 
-/** `AutomationStudioSavedState`: the chip. `ready` is never unproven, so the chip can only claim what is true. `leftOut` names steps that did something lasting and are not in the saved Flow; the line says so. */
+/** `AutomationStudioSavedState`: the chip. `ready` is never unproven, so the chip can only claim what is true. `leftOut` names steps that did something lasting and are not in the saved Flow; the line says so. `repaired`: the saved steps ran this time and the step that stopped them was repaired. */
 export type ChatSavedState =
   | { state: "ready"; trust: "provisional" | "established"; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string; leftOut?: string[] }
-  | { state: "partly_works"; trust: "unproven" | "provisional"; flowId: string; savedAtMs: number; simulation?: "passed" | "failed" | "inconclusive" | "not_run"; stepsDigest?: string; leftOut?: string[] }
+  | { state: "partly_works"; trust: "unproven" | "provisional"; flowId: string; savedAtMs: number; simulation?: "passed" | "failed" | "inconclusive" | "not_run"; repaired?: true; stepsDigest?: string; leftOut?: string[] }
   | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
   | { state: "needs_you"; trust: "unproven" | "provisional" | "established"; flowId?: string; savedAtMs: number };
 

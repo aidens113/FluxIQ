@@ -1,0 +1,32 @@
+# Saved run stopped on "Change location" (run-mw4foote-9cbea70e, attempt 2)
+
+## Outcome
+Done (read only). Cause traced to the extension's click verb, not Core assembly and not the site.
+`steps/` below means `lab-runs/2026-11-05/run-mw4foote-9cbea70e/steps/`.
+
+## Findings
+1. **Step 11 and the opener.** Positions are draft positions (`answer-first/flow-run/outcome.ts:5`). In the final draft (`steps/0048-decide/request.txt`, `core.flow_draft`), step 11 is `dom-type` "100" with submit into Max (live `0024`). Step 4, the click on chip "Kelford · Within 20 mi" (t267, live `0008`), opened the dialog. The saved Flow ran positions 1,2,3,4,6,7,11,13,14,16,20 (the `held` list in `steps/0052-*/call.json`). Its only Apply is step 7, which was live `0020` (`timeoutMs` 15000).
+2. **Why the dialog was still open.** The site (on purpose) ignores the first Apply after the radius changes. It swaps that button for a clone, and only the second press applies the radius (`apps/scenario-lab/src/scenarios/local-classifieds/client/location-element.ts:6-9,51-59,70`). In attempt 1, Apply was pressed twice: `0014` was ignored and the dialog stayed open (`0016`, `0018`), then `0020` applied it. At `0021` the model dropped the first press ("the early Apply press that hit a hidden control") and kept only the second (`0021-decide/decision.json`; `0023` draft shows step 8 `dropped`). The saved Flow therefore makes one press, which is again the ignored first press. The page after the saved run (`0052/page.txt`) shows the dialog open, Radius = 5 miles and the chip still "Within 20 mi", exactly what one ignored press leaves. In repair, the model pressed Apply once more (`0054`) and the dialog closed. So the cause is a needed press dropped by the model's amend_draft. It was not dropped at assembly, it was not marked optional, and it was not a timing problem.
+3. **What misled the model: the click verb reported a press that did nothing as a success.** The result for `0014` is `status: succeeded` with `actionability: {actionable:false, cause:"hidden"}`. In `apps/extension/src/content/actions/click.ts:331`, the settled look did find no effect: the Apply sits in the `role=dialog` section (`press-scope.ts:32`), and the clone's markup is byte-identical. But `measure()` re-checks the old element, which is now detached (`action-runtime/actionability.ts:74`, "the element is not in the document"). It is read as "hidden", so the `NO_EFFECT` branch is skipped and the press passes at `:335`. That post-press `measure()` also overwrote `measured` (`click.ts:249-251`). The "hidden" flag the model saw came from there, and it is why the model said the press "hit a hidden control" and dropped it. The test `actions/tests/click/tests/settled-look.test.ts:51-59` encodes this rule: a control that is no longer pressable after it settled counts as answered, with no exception for a control replaced by an identical copy.
+   - Which branch ran is inferred, not observed: the result shows `measure()` was called after the press. That happens only on the settled or notice branches, or the no-sign branch (`:352`, which would also end in success at `:358`). Either way the same defect applies.
+
+## Proposed fix (domain)
+- **File:** `apps/extension/src/content/actions/click.ts`, the branches at `:327` and `:331`. Re-measure the control as it now stands, not the stale node. When `element.isConnected === false` and the settled look found the section unchanged, the control was replaced in place by an identical copy, so the press did nothing. Re-resolve the target through `deps.resolveTarget(action)`, measure that, and fail with `web.action.no_effect` and `certainNoEffect`. Core then makes the press once more (t517 path), so one Apply step closes the dialog both live and in replay. Keep the pre-press actionability as the evidence, so a press that landed is never reported as "hidden".
+- **Test:** add a row to `apps/extension/src/content/actions/tests/click/tests/settled-look.test.ts`: `seen:["change"]`, `settledUnchanged:true`, old element detached, replacement pressable. Expect `failed`/`web.action.no_effect`, `FIRST_PRESS`, and `actionability.actionable === true` in the evidence. It fails today (it reads as `succeeded`, as the `0014` result shows). Keep the existing `:56-59` rows for a control hidden or disabled where it stands. The fake in `actions/tests/click/dependencies.ts:18-28` needs a "detached and replaced" mode.
+- **Not Core:** Core accepted a drop the model asked for, based on true-looking evidence. **Not the site:** the bug is a documented realistic trap (`location-element.ts:6-9`).
+- **Live proof afterwards:** a provider-free path on local-classifieds: select 5 miles, press Apply once, expect the chip to read "Within 5 mi".
+
+## Q4: "They have not run on their own yet"
+- **Words:** `packages/ui-components/src/chat/answer/words/saved-words.ts:22-24` say this for `partly_works` with `trust:"unproven"` and `simulation !== "failed"`.
+- **Why that state:** `answer-first/attempt-store/outcome-of-record.ts:69-71` counts saved steps as run only when `path === "run_flow"` and the run achieved its result. Attempt 2 took the path `run_flow_then_repair` (`attempt-report.txt` row 2), and the record has no `simulation` (`attempt.json:262-267`). The saved state has no field for "the saved Flow ran, stopped at a step, and was repaired" (`packages/contracts/src/task-attempts/saved-state.ts:34,44`), so the "never ran" line is the only one left.
+- **Fix:** carry the attempt path, or a new `partly_works` field such as `ran:"stopped_then_repaired"` (contract, parser, `draftSavedOf`). Then say e.g. "They ran and stopped at one step, which I fixed, so next time I will run them and check the fix."
+- **Test:** `packages/ui-components/src/chat/answer/tests/second-attempt-words.test.ts:24-40` (add a repaired row). Today `:36` encodes the unproven wording for every `partly_works`.
+
+## Commands run
+Reads of the step folders, the bundle (`attempt.json`, `attempt-report.txt`) and the source files. Nothing was edited or executed except `C:\Users\osrs_\AppData\Local\Temp\claude\bc302d3e1bd85154\8f43228c-dbdb-476a-a7e2-84eabbfcc82d\scratchpad\draft.mjs`, `res.py` (JSON readers).
+
+## Not verified
+- The saved run's own trace: no step folders or trace exist for it in the bundle. That step 7 passed is inferred from the run stopping at step 11 with the dialog open.
+- Which `click.ts` branch ran (`:331` or `:352`).
+- That Core's NO_EFFECT retry re-resolves to the cloned button in replay.
+- No tests were run.

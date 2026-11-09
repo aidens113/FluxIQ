@@ -28,10 +28,14 @@ export type AutomationStudioSavedStateName = (typeof AUTOMATION_STUDIO_SAVED_STA
  * `leftOut`, on a saved state that has steps: the names, as a person reads them, of steps that did something
  * lasting on the site and are not in the saved Flow, because the model dropped them from its draft. What they
  * did still stands; the Flow will not do it again unless another step does. Absent when none.
+ *
+ * `repaired`, on `partly_works` only: the saved steps ran in this attempt, stopped at a step, and that step was
+ * repaired live (the attempt's path `run_flow_then_repair`), so the line never says they have not run (t878,
+ * run-mw4foote-9cbea70e). Absent when they did not run, or ran and held.
  */
 export type AutomationStudioSavedState =
   | { state: "ready"; trust: Exclude<AutomationStudioTrustTier, "unproven">; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string; leftOut?: string[] }
-  | { state: "partly_works"; trust: Exclude<AutomationStudioTrustTier, "established">; flowId: string; savedAtMs: number; simulation?: AutomationStudioTaskAttemptSimulationVerdict; stepsDigest?: string; leftOut?: string[] }
+  | { state: "partly_works"; trust: Exclude<AutomationStudioTrustTier, "established">; flowId: string; savedAtMs: number; simulation?: AutomationStudioTaskAttemptSimulationVerdict; repaired?: true; stepsDigest?: string; leftOut?: string[] }
   | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
   | { state: "needs_you"; trust: AutomationStudioTrustTier; flowId?: string; savedAtMs: number };
 
@@ -41,7 +45,7 @@ export type AutomationStudioSavedStateParseResult =
 
 const KEYS_BY_STATE: Readonly<Record<AutomationStudioSavedStateName, ReadonlySet<string>>> = Object.freeze({
   ready: new Set(["state", "trust", "flowId", "savedAtMs", "lastWorkedAtMs", "stepsDigest", "leftOut"]),
-  partly_works: new Set(["state", "trust", "flowId", "savedAtMs", "simulation", "stepsDigest", "leftOut"]),
+  partly_works: new Set(["state", "trust", "flowId", "savedAtMs", "simulation", "repaired", "stepsDigest", "leftOut"]),
   notes_only: new Set(["state", "trust", "savedAtMs"]),
   needs_you: new Set(["state", "trust", "flowId", "savedAtMs"])
 });
@@ -62,7 +66,7 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
     issues.add("saved_state.not_object");
     return null;
   }
-  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation, stepsDigest, leftOut } = value;
+  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation, repaired, stepsDigest, leftOut } = value;
   if (!isMemberOf(AUTOMATION_STUDIO_SAVED_STATES, state)) {
     issues.add("saved_state.invalid_state");
     return null;
@@ -85,8 +89,9 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
   if (state === "partly_works") {
     if (trust === "established") issues.add("saved_state.partly_works_not_established");
     if (simulation !== undefined && !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation)) issues.add("saved_state.invalid_simulation");
+    if (repaired !== undefined && repaired !== true) issues.add("saved_state.invalid_repaired");
     if (issues.size > 0 || trust === "established" || !isId(flowId)) return null;
-    return { state, trust, flowId, savedAtMs, ...(isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation) ? { simulation } : {}), ...(isDigest(stepsDigest) ? { stepsDigest } : {}), ...left };
+    return { state, trust, flowId, savedAtMs, ...(isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS, simulation) ? { simulation } : {}), ...(repaired === true ? { repaired } : {}), ...(isDigest(stepsDigest) ? { stepsDigest } : {}), ...left };
   }
   if (state === "notes_only") {
     if (trust !== "unproven") {

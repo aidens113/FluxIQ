@@ -46,6 +46,12 @@ describe("what an attempt left", () => {
     expect(outcomeOf({ path: "run_flow_then_explore" }).saved).toMatchObject({ state: "partly_works", trust: "unproven" });
   });
 
+  it("says the saved steps ran and were repaired only of a run of them whose stopping step was repaired (t878)", () => {
+    expect(outcomeOf({ path: "run_flow_then_repair" }).saved).toEqual({ state: "partly_works", trust: "unproven", flowId: FLOW, savedAtMs: 2000, repaired: true, stepsDigest: DIGEST });
+    for (const path of ["explore", "run_flow_then_explore"] as const) expect(outcomeOf({ path }).saved).not.toHaveProperty("repaired");
+    expect(outcomeOf({ path: "run_flow" }).saved).not.toHaveProperty("repaired");
+  });
+
   it("names a step that did something lasting and is out of the saved Flow, and only such a step", () => {
     const pressed = savedStep(3, "domain.library.save", {}, { consequences: ["create_new"], label: "Save: Round pine dining table", disposition: "dropped" });
     const looked = savedStep(4, "domain.library.read", {}, { label: "Look at the list", disposition: "dropped" });
