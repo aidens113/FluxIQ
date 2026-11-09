@@ -23,6 +23,7 @@ export * from "./locks.ts";
 export * from "./numbers.ts";
 export * from "./object-documents.ts";
 export * from "./paths/index.ts";
+export * from "./pipelines/index.ts";
 export * from "./proposals/index.ts";
 export * from "./projects/index.ts";
 export * from "./recordings/index.ts";
