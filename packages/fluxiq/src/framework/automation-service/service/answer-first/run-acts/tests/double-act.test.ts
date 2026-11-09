@@ -19,7 +19,8 @@ import type { AutomationStudioLlmTaskRequest } from "../../../../../../runtime/l
 import { AutomationStudioNativeNodeRuntime } from "../../../../../../runtime/native-nodes/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { AutomationStudioService } from "../../../../service.ts";
-import { caller, judgeReply, mockProvider } from "../../../../tests/service-bootstrap/tests/fixtures.ts";
+import { judgedYes } from "../../tests/fake-library.ts";
+import { caller, mockProvider } from "../../../../tests/service-bootstrap/tests/fixtures.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../paths/index.ts";
 import { AutomationStudioAnswerFirstRunActsUnreadable, automationStudioAnswerFirstRunActStoreOf } from "../index.ts";
 
@@ -74,7 +75,7 @@ async function appliedPressFlow() {
   });
   let decisions = 0;
   const provider = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
-    if (request.taskKind === "loop_verification") return judgeReply("yes");
+    if (request.taskKind === "loop_verification") return judgedYes(request);
     decisions += 1;
     const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
     const decision = decisions === 1 ? { kind: "tool_call", callId: "look", toolId: "inspect", input: {} }

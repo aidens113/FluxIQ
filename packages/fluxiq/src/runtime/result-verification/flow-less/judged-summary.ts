@@ -10,7 +10,8 @@
 //
 // **Two copies.** `read` is a full summary for Core's readers of a verdict, which
 // expect `flowShape`, here empty. `sent` is what the model sees, which leaves that
-// key out and adds the acts, the model's words, the witnesses and, on a repeat the person asked
+// key out and adds the acts, the model's words, the witnesses, what looks found after the acts
+// (screened and bounded again, `lookedShown`) and, on a repeat the person asked
 // for, what that means (`./asked-again.ts`): the summary's type
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
@@ -29,6 +30,10 @@ const WITHHELD_VALUE = "[withheld]";
 /** Words the screen dropped whole. */
 const WITHHELD_WORDS = "(withheld)";
 const ANSWER_NOTE = "The model's own words, not evidence.";
+/** The latest looks the judge is shown, and how much of each: the completion check's own bounds (`SVC/answer-first/completion/check.ts`). */
+const LOOKS_SHOWN = 6;
+const FOUND_CHARS = 600;
+const WHERE_CHARS = 300;
 
 /** The rows' one record set has no dataset id here: the writer's result names the real one. */
 const SET_ID = "result";
@@ -40,7 +45,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const after = witness(summary.witnesses?.after, deniedEvidenceKeys);
   const answer = summary.answerText === undefined ? { withheld: false } : automationStudioFlowLessScreenedWords(summary.answerText);
   const acts = summary.acts.map((act) => ({ what: words(act.what), where: words(act.where), classes: [...act.classes], state: act.state }));
-  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld);
+  const looked = lookedShown(summary.looked ?? []);
+  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld;
   const read: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: rows?.set.recordCount ?? 0,
@@ -60,7 +66,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
-    ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {})
+    ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
+    ...(looked.looks.length ? { looked: looked.looks } : {})
   };
   return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
 }
@@ -68,6 +75,29 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
 function words(text: string): { text: string; withheld: boolean } {
   const screened = automationStudioFlowLessScreenedWords(text);
   return { text: screened.text ?? WITHHELD_WORDS, withheld: screened.withheld };
+}
+
+/**
+ * What looks found after the first lasting act (`./types.ts`, `looked`), screened again here whatever
+ * screened it before, because this is what leaves for the model: the latest few, each cut short, and an
+ * address or a line of what was found that a screen dropped is said as withheld, here or earlier.
+ */
+function lookedShown(looks: readonly { where: string; found: string }[]): { looks: { where: string; found: string }[]; withheld: boolean } {
+  let withheld = false;
+  const line = (text: string): string => {
+    if (!text.trim()) return text;
+    const screened = words(text);
+    if (screened.withheld || screened.text === WITHHELD_WORDS) withheld = true;
+    return screened.text;
+  };
+  const shown = looks.slice(-LOOKS_SHOWN).map((look) => ({ where: line(cut(look.where, WHERE_CHARS)), found: cut(look.found, FOUND_CHARS).split("\n").map(line).join("\n") }));
+  return { looks: shown, withheld };
+}
+
+/** At most `most` characters, by code point, with `…` where it was cut. */
+function cut(text: string, most: number): string {
+  const characters = [...text];
+  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function witness(view: JsonObject | undefined, denied: readonly string[]): { view?: JsonObject; withheld: boolean } {

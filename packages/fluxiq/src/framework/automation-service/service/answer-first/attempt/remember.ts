@@ -6,6 +6,7 @@
 // never the judge's, which quote the page.
 
 import type { AutomationStudioTaskResultLabel } from "@fluxiq/contracts/automation";
+import { automationStudioAttemptActMarkDoneInAchieved } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStatedToggle, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
@@ -39,6 +40,8 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);
       return {
         ...current, flowId, ...(best ? { best } : {}), latest: next,
+        // An attempt that ended achieved says the task is done: what stood is marked, so the same words again press none of it once more (`runtime/answer-first/act-record/done-in-achieved.ts`).
+        ...(ending === "achieved" && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
         notes: note ? [...current.notes, note] : current.notes,
         attempts: known ? current.attempts.map((each) => (each.attemptId === run.attemptId ? row : each)) : [...current.attempts, row]
       };

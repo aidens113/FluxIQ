@@ -69,6 +69,8 @@ function draftSavedOf(attempt: AutomationStudioTaskAttempt, flowId: string, step
   const provenWhole = attempt.path === "run_flow" && attempt.status === "achieved" && attempt.liveSteps > 0;
   const fields: Record<string, unknown> = provenWhole ? { state: "ready", trust: "provisional", flowId, savedAtMs: atMs, lastWorkedAtMs: atMs, stepsDigest } : { state: "partly_works", trust: "unproven", flowId, savedAtMs: atMs, stepsDigest };
   if (attempt.simulation && !provenWhole) fields.simulation = attempt.simulation.verdict;
+  // The saved run stopped at a step that was repaired live: the steps ran, so the line must not say they have not (t878).
+  if (attempt.path === "run_flow_then_repair" && attempt.status === "achieved") fields.repaired = true;
   if (leftOut.length > 0) fields.leftOut = [...leftOut];
   const read = parseAutomationStudioSavedState(fields);
   if (!read.ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);

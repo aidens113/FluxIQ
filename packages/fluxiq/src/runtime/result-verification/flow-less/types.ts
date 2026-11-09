@@ -19,6 +19,8 @@ export type AutomationStudioFlowLessSummary = {
   endView?: AutomationStudioResultEndView;
   /** The same reading of the site before the first lasting act and at the end: the change is what is judged. */
   witnesses?: { before?: JsonObject; after?: JsonObject };
+  /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and a short screened cut of what was found, the latest few. */
+  looked?: readonly { where: string; found: string }[];
   /** The person asked for it to be done once more (a Run again): the judge is told so (`./asked-again.ts`). Only a route sets it, never a model. */
   askedAgain?: true;
 };

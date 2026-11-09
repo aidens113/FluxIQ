@@ -7,9 +7,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseAutomationStudioSavedState } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstSavedStateOf, automationStudioAnswerFirstStepsDigest } from "../index.ts";
-import { judgeReply } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { LOANS_OUTPUT, savedStep } from "./fake-library-engine.ts";
-import { complete, READ_LOANS, RENEW_CARD, RENEW_LOAN } from "./fake-library.ts";
+import { complete, judgedYes, READ_LOANS, RENEW_CARD, RENEW_LOAN } from "./fake-library.ts";
 import { readLoans, toldTo } from "./later-attempts.ts";
 import { BOTH_TASK, honestFirstAttempt, honestFirstAttemptWithCard, LOAN_STEP, LOAN_TASK, onceEach, PERMITTED, READ_STEP, repeatOverRows } from "./honest-attempts.ts";
 import { ATLAS, BIRDS, CLOCKS, DUNES, forwardFrom, pressCardByHand, pressLoanByHand, siteLane, TITLES, writeStep } from "./library-site.ts";
@@ -276,7 +275,7 @@ describe("limits on a saved Flow's run go on to the result", () => {
     // The check's own two minutes, shortened: nothing else in here waits exactly that long.
     const wallClock = globalThis.setTimeout;
     vi.spyOn(globalThis, "setTimeout").mockImplementation(((run: () => void, ms?: number, ...rest: unknown[]) => wallClock(run, ms === 120_000 ? 150 : ms, ...rest)) as unknown as typeof setTimeout);
-    const second = await lane.attempt({ ...pressedAgain, judge: [new Promise(() => undefined), judgeReply("yes")], script: [complete("Renewed every loan and listed them.")] });
+    const second = await lane.attempt({ ...pressedAgain, judge: [new Promise(() => undefined), judgedYes], script: [complete("Renewed every loan and listed them.")] });
     expect(second.judgeCalls).toHaveLength(2);
     expect(second.decisions).toHaveLength(1);
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ happened: expect.stringMatching(/not accepted as the result yet/u) });

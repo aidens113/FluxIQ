@@ -108,6 +108,11 @@ export type AutomationStudioLlmDiagnosisFields = {
   defects?: AutomationStudioLlmVerificationDefect[];
   /** A `loop_verification` yes only (t810): the stored cells it checked, which Core finds in its own record (`../../result-verification/cited-yes/`). */
   checked?: AutomationStudioLlmVerificationChecked[];
+  /**
+   * A `loop_verification` yes (t875): whether the request asks for records as its answer, and how many the site shows as
+   * that answer, which Core compares with the rows the result holds (`../../result-verification/cited-yes/records-yes.ts`).
+   */
+  answerRecords?: { asked: boolean; siteShows?: number };
 };
 
 /** One stored cell a `loop_verification` yes cites as checked (t810): the row by its label, a stored column and the cell's value. */

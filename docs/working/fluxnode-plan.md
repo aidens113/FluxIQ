@@ -24,8 +24,10 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 
 | Unit | Who | Output | Blocks |
 | --- | --- | --- | --- |
-| P0 Land the live lanes, then the full sweep and promotion | Lead | Both `dev`s holding every lane fix, then both `main`s | P2 rebases onto it |
-| P1 FluxNode, Flow and data contracts | `worker-heavy` on a Core task branch | `@fluxiq/contracts` additions, frozen | P2-P4, P6, P7 |
+| P0 Land the live lanes, then the full sweep and promotion | Lead; integration task t880 (worktrees `fxwork/t880`) | Lanes A-D merged into t880 in both repositories; one Core conflict (the judge's question lines, kept both). Narrow checks: Core vitest 5,895 + 96 + 668 pass, extension 253, scenario-lab 43, attempt lane 117, both audits pass. Two real failures being fixed on t880: a stale or regressed witness-ambiguity domain test (lineage.test.ts:106, after lane B's 175acd38f), and the scripted two-attempt proof refusing a fourth `loop_verification` request (`run-mw9tqkp0-228b64e4`). Report: `mvp-seal-plan/reports/integration-round-2-checks.md` downstream | P2a and P6 B1 branch after it lands |
+| P3a Headless engine | `worker-heavy` on t881 | Running | P3b |
+| P4 SDK and CLI | `worker` on t882 | Running against a fake server built from the contracts | P11 |
+| P1 FluxNode, Flow and data contracts | **Done, on `dev`** (merge `b4e5d6302`); contracts 0.16.0 | `@fluxiq/contracts/fluxnode`: 117 new tests. Lead re-ran the contracts `check` -> exit 0, `test` -> 783 passed, and `node scripts/structure-audit.mjs` -> passed. Lead's decisions on its open points: retries resolve as a floor of 3 that an override may replace; FluxNode Flows are filed under the top-level `nodes/` folder (names of 1-7 parts), apart from automatic `web/...` placement; the SDK drops a zod `pattern` beside a `format` and refuses a bare one; a run request may later carry a pinned Flow export so a fresh cloud engine can replay it (P2b, additive); `flowId` stays required because registering a spec creates its Flow; zod is declared browser-safe to the structure audit, and the entry is guarded as a browser bundle | P2-P4, P6, P7 |
 | K Keys and access design | Done; accepted as K8 | Report held locally until the K4 guards land | P3b |
 | U Panel, editor and assistant design | Done; accepted as U7 | `fluxnode-plan/reports/panel-design.md` | P9 |
 | F Subflow retirement inventory | Done; decided as O4-O6 | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
