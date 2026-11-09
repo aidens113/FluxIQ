@@ -7,9 +7,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioConversationParkingHost } from "../../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioConversationAsk } from "../../../../../../runtime/conversations/index.ts";
-import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, automationStudioAskEffect, automationStudioConversationParkingPort, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioAsk, type AutomationStudioAskDraft, type AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
-import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunPersonCheckPort, type AutomationStudioAnswerFirstFlowRunPorts } from "../index.ts";
-import { flowRunFixture, libraryTarget, LOANS_OUTPUT, savedStep } from "../../tests/fake-library-engine.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION, automationStudioAskEffect, automationStudioConversationParkingPort, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioAsk, type AutomationStudioAskDraft, type AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
+import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunAssemble, automationStudioAnswerFirstFlowRunPersonCheckPort, type AutomationStudioAnswerFirstFlowRunPorts } from "../index.ts";
+import { CLOSE_PROMPT, flowRunFixture, libraryTarget, LOANS_OUTPUT, savedStep, type LibraryNodeOver } from "../../tests/fake-library-engine.ts";
 import { READ_LOANS, RENEW_CARD } from "../../tests/fake-library.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -33,18 +33,19 @@ function storedOf(ask: AutomationStudioAsk): AutomationStudioConversationAsk {
 }
 
 /** A person on the Flow's thread who presses Continue on a check, or never answers until the run is stopped. */
-function person(answers: "continue" | "never") {
+function person(answers: "continue" | "stop" | "never") {
   const opened: AutomationStudioAsk[] = [];
   const waits: { state: "started" | "ended"; waitedMs: number }[] = [];
   const awaited: { expiresAtMs?: number; signal?: AbortSignal }[] = [];
   let answered = false;
+  let stops = 0;
   const port: AutomationStudioParkingPort = {
     open: (ask) => { opened.push(ask); },
     awaitAnswer: async (ask, wait) => {
       awaited.push(wait);
-      if (answers === "continue") {
+      if (answers === "continue" || answers === "stop") {
         answered = true;
-        return { askId: ask.askId, answeredAt: Date.now(), kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: "person" };
+        return { askId: ask.askId, answeredAt: Date.now(), kind: "choice", value: answers === "stop" ? AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION : AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: "person" };
       }
       await new Promise<void>((resolve) => {
         if (wait.signal?.aborted) resolve();
@@ -53,8 +54,8 @@ function person(answers: "continue" | "never") {
       return undefined;
     }
   };
-  const personCheck: NonNullable<AutomationStudioAnswerFirstFlowRunPorts["personCheck"]> = { port, waiting: (state, waitedMs) => { waits.push({ state, waitedMs }); } };
-  return { personCheck, opened, waits, awaited, answered: () => answered };
+  const personCheck: NonNullable<AutomationStudioAnswerFirstFlowRunPorts["personCheck"]> = { port, waiting: (state, waitedMs) => { waits.push({ state, waitedMs }); }, stopped: () => { stops += 1; } };
+  return { personCheck, opened, waits, awaited, answered: () => answered, stops: () => stops };
 }
 
 /** Steps 1 and 3 read the loans; step 2 presses the card, where the page shows a check until the person has cleared it. */
@@ -86,7 +87,7 @@ describe("the run's port", () => {
       awaitAnswer: thread.awaitAnswer!
     };
     const waits: string[] = [];
-    const port = automationStudioAnswerFirstFlowRunPersonCheckPort({ port: conversation, waiting: (state) => { waits.push(state); } }, () => undefined)!;
+    const port = automationStudioAnswerFirstFlowRunPersonCheckPort({ port: conversation, waiting: (state) => { waits.push(state); } }, () => undefined, () => undefined)!;
     const ask = checkAsk("check.1");
     await port.open(ask);
     expect(opened).toEqual([expect.objectContaining({ control: expect.objectContaining({ kind: AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND }), timeoutMs: null, onTimeout: null })]);
@@ -115,7 +116,7 @@ describe("the run's port", () => {
   it("refuses any other parked question as it is opened, tells nobody, and lets a question nobody waits on pass", async () => {
     const asker = person("continue");
     let refused = 0;
-    const port = automationStudioAnswerFirstFlowRunPersonCheckPort(asker.personCheck, () => { refused += 1; })!;
+    const port = automationStudioAnswerFirstFlowRunPersonCheckPort(asker.personCheck, () => { refused += 1; }, () => undefined)!;
     const permission: AutomationStudioAsk = { askId: "permission.1", kind: "permission", parks: true, text: "Allow deleting the card?", consequences: ["delete"], status: "pending", raisedBy: { stage: "execution" } };
     const pin: AutomationStudioAsk = { askId: "pin.1", kind: "open", parks: true, text: "Enter your PIN.", control: { name: "PIN", kind: "pin" }, status: "pending", raisedBy: { stage: "execution" } };
     await expect(port.open(permission)).rejects.toThrow(/asks a person only to clear a check/u);
@@ -128,8 +129,8 @@ describe("the run's port", () => {
   });
 
   it("is no port at all where nobody can be asked, or where the thread cannot hold a run in place", () => {
-    expect(automationStudioAnswerFirstFlowRunPersonCheckPort(undefined, () => undefined)).toBeUndefined();
-    expect(automationStudioAnswerFirstFlowRunPersonCheckPort({ port: { open: () => undefined }, waiting: () => undefined }, () => undefined)).toBeUndefined();
+    expect(automationStudioAnswerFirstFlowRunPersonCheckPort(undefined, () => undefined, () => undefined)).toBeUndefined();
+    expect(automationStudioAnswerFirstFlowRunPersonCheckPort({ port: { open: () => undefined }, waiting: () => undefined }, () => undefined, () => undefined)).toBeUndefined();
   });
 });
 
@@ -151,6 +152,34 @@ describe("a saved Flow's run that meets a check only a person can clear", () => 
     expect(fixture.asked).toEqual([]);
   });
 
+  it("tells the attempt and halts the run when the person presses Stop on the check, and neither when they press Continue", async () => {
+    const check = checkAsk("check.stop");
+    const stopper = person("stop");
+    let halts = 0;
+    const stopping = automationStudioAnswerFirstFlowRunPersonCheckPort(stopper.personCheck, () => undefined, () => { halts += 1; })!;
+    await stopping.open(check);
+    expect(await stopping.awaitAnswer!(check, {})).toMatchObject({ kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION });
+    expect(stopper.stops()).toBe(1);
+    expect(halts).toBe(1);
+    const continuer = person("continue");
+    const continuing = automationStudioAnswerFirstFlowRunPersonCheckPort(continuer.personCheck, () => undefined, () => { halts += 1; })!;
+    await continuing.open(check);
+    await continuing.awaitAnswer!(check, {});
+    expect(continuer.stops()).toBe(0);
+    expect(halts).toBe(1);
+  });
+
+  it("a Stop on a check mid-run is told to the attempt and ends the run there as stopped", async () => {
+    const target = libraryTarget();
+    const asker = person("stop");
+    target.over = ({ nodeId }) => nodeId !== RENEW_CARD ? undefined : { status: "failed", route: "failed", message: "A robot check covers the page.", failure: { category: "user_intervention_required", code: "library.robot_check", retryable: false } };
+    const fixture = await flowRunFixture({ target }, cleanups);
+    const outcome = await automationStudioAnswerFirstFlowRun({ ...fixture.ports, personCheck: asker.personCheck }, { steps: threeSteps(), stepsDigest: "digest.saved" });
+    expect(asker.stops()).toBe(1);
+    expect(outcome).toEqual({ kind: "stopped" });
+    expect(fixture.target.reads).toBe(1);
+  });
+
   it("leaves the run waiting while nobody answers, with no timeout, until the person's Stop", async () => {
     const target = libraryTarget();
     target.over = ({ nodeId }) => nodeId !== RENEW_CARD ? undefined : { status: "failed", route: "failed", message: "A robot check covers the page.", failure: { category: "user_intervention_required", code: "library.robot_check", retryable: false } };
@@ -169,6 +198,55 @@ describe("a saved Flow's run that meets a check only a person can clear", () => 
     expect(await running).toEqual({ kind: "stopped" });
     expect(asker.waits.map((wait) => wait.state)).toEqual(["started", "ended"]);
     expect(fixture.target.reads).toBe(1);
+  });
+});
+
+describe("a check whose step has a failed route that presses something", () => {
+  /** Read; close a prompt, where the check stands, and when that fails press the card instead; read again. */
+  const failedRouteSteps = () => [
+    savedStep(1, READ_LOANS, { recordOutput: LOANS_OUTPUT }),
+    savedStep(2, CLOSE_PROMPT, { control: "Close" }, { routing: { kind: "on_failed", to: "saved.3" } }),
+    savedStep(3, RENEW_CARD, { control: "Renew" }),
+    savedStep(4, READ_LOANS, { recordOutput: LOANS_OUTPUT })
+  ];
+  const robotCheck = { status: "failed" as const, route: "failed", message: "A robot check covers the page.", failure: { category: "user_intervention_required" as const, code: "library.robot_check", retryable: false } };
+  const cardPresses = (target: ReturnType<typeof libraryTarget>) => target.presses.filter((press) => press.node === RENEW_CARD).length;
+  const runOn = async (over: LibraryNodeOver, personCheck?: AutomationStudioAnswerFirstFlowRunPorts["personCheck"]) => {
+    const target = libraryTarget();
+    target.over = over;
+    const fixture = await flowRunFixture({ target }, cleanups);
+    const assembled = await automationStudioAnswerFirstFlowRunAssemble(fixture.ports, failedRouteSteps());
+    if (!assembled.ok) throw new Error(`did not assemble: ${assembled.codes.join(", ")}`);
+    const outcome = await automationStudioAnswerFirstFlowRun({ ...fixture.ports, ...(personCheck ? { personCheck } : {}) }, { steps: failedRouteSteps(), stepsDigest: "digest.saved" });
+    return { outcome, fixture };
+  };
+
+  it("the failed route really presses: a prompt that fails on its own leads to the card", async () => {
+    const { outcome, fixture } = await runOn(({ nodeId }) => nodeId === CLOSE_PROMPT ? { status: "failed", route: "failed", message: "No prompt.", failure: { category: "action_failed", code: "library.no_prompt", retryable: false } } : undefined);
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true });
+    expect(cardPresses(fixture.target)).toBe(1);
+    expect(fixture.target.reads).toBe(2);
+  });
+
+  it("Stop on the check halts the run there: the failed route's press never runs, and the run reads as stopped", async () => {
+    const asker = person("stop");
+    const { outcome, fixture } = await runOn(({ nodeId }) => nodeId === CLOSE_PROMPT ? robotCheck : undefined, asker.personCheck);
+    expect(asker.opened).toHaveLength(1);
+    expect(asker.stops()).toBe(1);
+    expect(outcome).toEqual({ kind: "stopped" });
+    expect(cardPresses(fixture.target)).toBe(0);
+    expect(fixture.target.library.renewals.card).toBeUndefined();
+    expect(fixture.target.reads).toBe(1);
+  });
+
+  it("Continue on the check still goes on from that step down its success route, and presses nothing on the failed one", async () => {
+    const asker = person("continue");
+    const { outcome, fixture } = await runOn(({ nodeId }) => nodeId === CLOSE_PROMPT && !asker.answered() ? robotCheck : undefined, asker.personCheck);
+    expect(asker.stops()).toBe(0);
+    // The recovery it did not need is not a step left behind (lane C W11), so the run reaches its end.
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, steps: [expect.objectContaining({ position: 1, ran: "passed" }), expect.objectContaining({ position: 2 }), expect.objectContaining({ position: 3, ran: "not_reached" }), expect.objectContaining({ position: 4, ran: "passed" })] });
+    expect(cardPresses(fixture.target)).toBe(0);
+    expect(fixture.target.reads).toBe(2);
   });
 });
 

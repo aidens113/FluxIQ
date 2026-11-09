@@ -23,6 +23,22 @@
 // in "first" or "last", or opening with "sorted", "ordered", "ranked", "sort
 // by" or "order by". A part refused only for its characters ("price (GBP)") is
 // still skipped and the list read on.
+//
+// **A closing item that runs on is not dropped (t877, run `run-mw49972k-cebf67e5`).**
+// "with columns title and price exactly as the shop shows them" split into
+// "title" and "price exactly as the shop shows them", the second too long to be
+// a name, and the reader answered `["title"]`: a partial list said as if whole.
+// The build declared it as the saved read's schema and the domain narrowed the
+// read to it, so the answer lost price with no error anywhere. Which of the
+// item's leading words is the name ("price", or "order number" of "order number
+// as shown") only the read's fields can say, and this reader has none. So when
+// the item "and" or "&" introduced runs past a name, and is not an ordering,
+// the list is answered empty -- nothing declared, every column kept, as for an
+// instruction that names none -- and the array carries `cutShort`: the names
+// read before the item and the item's leading words, longest first. The build's
+// assembly, which knows the fields, takes the leading name that is one of them
+// (`../authoring/assembled-record-output.ts`), and otherwise declares nothing
+// and notes it in the step log.
 
 const MAX_COLUMNS = 12;
 const MAX_COLUMN_NAME = 32;
@@ -40,10 +56,19 @@ const CLOSING_SEPARATOR = /^(?: and | & )$/iu;
 const ORDERING_PHRASE = /^(?:sorted|ordered|ranked|(?:sort|order) by)(?: |$)|(?:^| )(?:first|last)$/iu;
 
 /**
+ * A list whose closing item ran on past a column name (header): the names read
+ * before it, and the item's leading words that could be a name, longest first.
+ */
+export type AutomationStudioFlowBootstrapInstructionColumnsCutShort = { named: string[]; leading: string[] };
+
+/** The columns an instruction names; empty, with `cutShort` set, when its closing item ran on (header). */
+export type AutomationStudioFlowBootstrapInstructionColumnList = string[] & { cutShort?: AutomationStudioFlowBootstrapInstructionColumnsCutShort };
+
+/**
  * The columns the instruction named, in the order it named them, as the person
  * wrote them. Nothing here calls a provider.
  */
-export function automationStudioFlowBootstrapInstructionColumns(instructionText: string): string[] {
+export function automationStudioFlowBootstrapInstructionColumns(instructionText: string): AutomationStudioFlowBootstrapInstructionColumnList {
   const text = typeof instructionText === "string" ? instructionText : "";
   const listed = COLUMN_LIST.exec(text)?.[1];
   if (!listed) return [];
@@ -57,10 +82,27 @@ export function automationStudioFlowBootstrapInstructionColumns(instructionText:
     if (CLOSING_SEPARATOR.test(separatorBefore)) closing = true;
     const name = pieces[index]!.replace(/^[^A-Za-z0-9]+/u, "").replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim();
     if (!name) continue;
-    if (name.split(" ").length > MAX_COLUMN_WORDS || ORDERING_PHRASE.test(name)) break;
+    if (ORDERING_PHRASE.test(name)) break;
+    if (name.split(" ").length > MAX_COLUMN_WORDS) {
+      if (CLOSING_SEPARATOR.test(separatorBefore)) return cutShort(names, name);
+      break;
+    }
     if (name.length > MAX_COLUMN_NAME || !COLUMN_NAME.test(name) || names.includes(name)) continue;
     names.push(name);
     if (names.length >= MAX_COLUMNS) break;
   }
   return names;
+}
+
+/** The empty list a closing item that ran on answers, carrying what was read (header). */
+function cutShort(named: readonly string[], item: string): AutomationStudioFlowBootstrapInstructionColumnList {
+  const words = item.split(" ");
+  const leading: string[] = [];
+  for (let count = Math.min(MAX_COLUMN_WORDS, words.length - 1); count >= 1; count -= 1) {
+    const name = words.slice(0, count).join(" ");
+    if (name.length <= MAX_COLUMN_NAME && COLUMN_NAME.test(name) && !named.includes(name)) leading.push(name);
+  }
+  const list: AutomationStudioFlowBootstrapInstructionColumnList = [];
+  list.cutShort = { named: [...named], leading };
+  return list;
 }
