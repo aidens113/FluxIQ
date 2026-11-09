@@ -1,0 +1,457 @@
+const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
+
+export function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
+  if (response.ok) return 200;
+  if (response.errorCode === "authorization.required") return 401;
+  if (response.errorCode === "authorization.forbidden") return 403;
+  if (response.errorCode === "endpoint.not_found") return 404;
+  return 400;
+}
+
+export function programDomainScope(requestUrl: string): { domainId: string | null } {
+  return { domainId: new URL(requestUrl).searchParams.get("domainId") };
+}
+
+export function withProgramAuthSession(programId: string, payload: unknown, sessionId: string): unknown {
+  if (!SESSION_BOUND_PROGRAMS.has(programId) || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  return { ...payload, authSessionId: sessionId };
+}
+
+// A paired client's bearer token on the program route.
+//
+// The web panel reaches program endpoints with its login cookie. A paired
+// browser extension has no cookie: it holds the client-gateway token the
+// person approved when they paired it, the same token `/api/recordings`
+// already accepts. The extension's panel needs a handful of endpoints to talk
+// to FluxIQ, to stop a run, and for Simple Mode to run a saved Flow, read its
+// history and turn a recording into one, so exactly those accept the token, acting as the
+// person who approved the pairing. Every other endpoint still requires the
+// cookie, and a token on one of them is refused rather than ignored.
+//
+// Four rules keep the token from being more than that:
+//
+// - **An allowlist, not a classification.** The endpoints are named below. A
+//   new endpoint is unreachable by token until someone adds it here, next to
+//   this comment.
+// - **Nothing destructive, ever.** The route also refuses a token call to any
+//   endpoint the registry classifies as other than `read` or `authoring`, so an
+//   entry added here by mistake still cannot reach a delete, a payment or a
+//   program-gated credential check. Deleting and moving money keep asking the
+//   person, and the token is never a way round that. Answering an ask is
+//   `authoring`: it is how a person answers a question in their own thread, and
+//   the act it answers is still gated where it happens.
+// - **Only the permissions these endpoints need.** The actor carries the
+//   approving person's role permissions intersected with the four the
+//   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
+//   whatever the person's role. Where an allowlisted endpoint's body could
+//   still reach further -- an LLM, an inline Flow, a side-effect authorization,
+//   another reviewer -- `narrowPairedClientRequest` refuses that field, and
+//   where its answer holds more than a token should read,
+//   `projectPairedClientResponse` cuts it down.
+// - **The domain its pairing bound, for every project it names.** A pairing
+//   binds the domain the client declared when the person approved it, and a
+//   later connection declaring another is not resumed: it goes back through
+//   pairing (`client-gateway/service/lifecycle.ts`), and `authorizeToken`
+//   answers only a session whose declared domain is its trust's. A request
+//   whose URL names another domain is refused. And every Automation Studio
+//   token call reaches its project -- the body's `projectId`, or the session's
+//   current project when the body names none -- only when that project's
+//   domain is the bound one (`pairedClientProjectTarget`, then
+//   `assertProjectDomainAccess` in the route), on every allowlisted endpoint,
+//   so no handler has to remember. A project that does not exist is refused the
+//   same way. A signed-in person's cookie calls are not gated: for them the
+//   domain is only what the URL says.
+//
+// What a pairing approves (t379). A person approves a browser for their own
+// account in one domain, not for one project: the approval carries only the
+// pairing reference and the approving person
+// (`/api/client-gateway/approve-pairing`), and the durable trust record holds
+// the client, that person and the bound domain, no project
+// (`client-gateway/service/pairing-flow.ts`, `trusted-clients.ts`). The
+// session's `projectId` is the current context -- the project a recording
+// started under -- and it moves; the extension follows the project the person
+// has open and names projects explicitly. Core has no per-person project
+// either: every project belongs to a domain, and any person whose role holds
+// the permission reaches it. So a token call may name any project in its
+// domain, and reaches it exactly as its approver's own login would on that
+// endpoint, with fewer permissions; nothing in a request makes it speak for
+// anyone else (the actor comes from the session alone, a named auth session is
+// removed, a review may not name a reviewer). Its reach is therefore its
+// approver's, in its bound domain, never another person's.
+//
+// No auth session is injected into a token call's payload: the gateway session
+// is not an identity session, so a PIN check a handler runs against it fails
+// closed. The token is never logged, never echoed and never used as an
+// identifier; the actor's session id names the gateway session instead.
+
+/** The program endpoints a paired client's bearer token may call, by program. */
+export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  "automation-studio": Object.freeze([
+    "get-runtime-build-identity",
+    "list-conversations",
+    "open-conversation",
+    "get-conversation",
+    "append-turn",
+    "answer-ask",
+    "list-runtime-sessions",
+    "cancel-runtime-session",
+    "cancel-flow-bootstrap",
+    // Take over and Hand back on a live run, `authoring` under `runtime.control`, like Stop: holding a run removes
+    // nothing and acts nowhere. Not narrowed: the bodies carry only the run's ids, a flag and the person's own note.
+    "pause-runtime-session",
+    "resume-runtime-session",
+    // Reading a live run's hold, `read`. Not projected: it is the run's control and progress, nothing secret.
+    "get-runtime-run-control",
+    // Simple Mode's Flow picker, `read`.
+    "list-flow-summaries",
+    // Simple Mode's run history for a Flow, `read`.
+    "list-flow-runs",
+    // Opening one run from that history, `read`.
+    "get-flow-run-detail",
+    // Showing what a run learned, `read`; reviewing an adaptation stays cookie-only.
+    "list-flow-adaptations",
+    // Downloading a run's captured rows, `read`. No stored row holds an encrypted field: the store refuses an `encrypt` schema until record keys exist (K11).
+    "export-run-dataset",
+    // A task's attempts, read back into its chat thread (t869), `read`. Not projected: a result's rows are what `export-run-dataset` already answers.
+    "get-task-attempt",
+    "list-conversation-task-attempts",
+    // A Flow's subflows, `read`, so a task's "Save this" can name the one worth keeping. Not narrowed: the body is a Flow and a filter, and each summary is a name, a role and a status.
+    "list-flow-subflows",
+    // A project's tasks with their latest attempt (`read`), from what each task remembers. Not projected: it is what the two reads above answer, listed.
+    "list-project-tasks",
+    // A person's own name for a task, and forgetting one, `authoring` (programs.write). Narrowed: the project, the task and a name. Each touches only the task's memory entry, never a Flow, a saved part, a result or an attempt.
+    "rename-task",
+    "remove-task",
+    // Carrying a budget-out or cut-off attempt on (t869), `authoring` under `flows.write`. It spends the person's own key, as the chat's build does,
+    // and goes on through the same generation. Narrowed: an attempt id, a project and an amount, never a Flow, a mode, a grant or a session.
+    "carry-on-task-attempt",
+    // A person's Run again on a task's answer (t869), `authoring` under `flows.write`: a new attempt with an empty act record, on the person's
+    // own key, through the same generation. Narrowed: a project and a task, never a Flow, a mode, a grant, a page or a session.
+    "run-task-again",
+    // Running a saved Flow, `authoring`. Narrowed: a stored Flow by id, with no LLM, no inputs and no side-effect authorization.
+    "run-runtime-session",
+    // Turning a finished recording into a Flow proposal, `authoring`. Narrowed: the direct mapper only, never the LLM-assisted one.
+    "generate-recording-proposal",
+    // Accepting that proposal as a Flow, `authoring`. Narrowed: approve only, as the paired person, with no policy override or destination.
+    "review-recording-flow-proposal",
+    // Undoing one captured step while the recording is still open, `authoring`; a finalized recording refuses it.
+    "remove-recording-entry",
+    // What a recording may capture and whether a Flow may send direct requests, `read` (t728). Not projected: Core's
+    // policy is switches and nothing secret, and the extension reads it before capturing rather than deciding alone.
+    "get-recording-capture-policy",
+    // Searching the project's library of saved parts, `read` (programs.read). Not narrowed or projected: the body is a search
+    // and the cards hold names, the person's words, hashes and counts, never page text.
+    "list-project-parts",
+    // Reading one saved part, `read`. Not projected: its steps are screened labels and a part's page evidence stays in its snapshot.
+    "get-project-part",
+    // Keeping one Subflow of a Flow as a saved part, `authoring` (flows.write). Narrowed: those five fields and nothing else.
+    "save-project-part",
+    // Running one saved part now, with no model, `authoring` (runtime.control), as a Flow's Run is. Narrowed: those seven fields and nothing else. Core's guard then refuses a wrong page, an unasked lasting class and an unconfirmed repeat.
+    "run-project-part",
+  ]),
+  "secret-keys": Object.freeze([
+    // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, unlocked and why not only, nothing that names or identifies a key.
+    "snapshot",
+  ]),
+});
+
+/**
+ * The permissions a paired client's actor may hold: exactly those the
+ * allowlisted endpoints require. `flows.write` is here only because
+ * `generate-recording-proposal` and `review-recording-flow-proposal` require
+ * it; no other `flows.write` endpoint is on the allowlist.
+ */
+const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
+
+/** The registry classifications a token call may reach. Anything destructive or credential-gated is refused. */
+const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
+
+/** Whether a paired client's token may name this endpoint at all. */
+export function isPairedClientEndpoint(programId: string, endpoint: string): boolean {
+  const allowed = PAIRED_CLIENT_ENDPOINTS[programId.trim().toLowerCase()];
+  return allowed?.includes(endpoint.trim().toLowerCase()) === true;
+}
+
+/** Whether the registry's classification of an allowlisted endpoint is one a token may reach. Unknown is refused. */
+export function isPairedClientClassification(classification: string | undefined): boolean {
+  return classification !== undefined && PAIRED_CLIENT_CLASSIFICATIONS.includes(classification);
+}
+
+/** The token from an `Authorization: Bearer <token>` header, or null. */
+export function readBearerToken(header: string | null): string | null {
+  if (!header) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match?.[1]?.trim() || null;
+}
+
+type PairedSession = {
+  sessionId: string;
+  operatorUserId?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type IdentityDirectory = {
+  users: ReadonlyArray<{ id: string; roleId: string; enabled: boolean }>;
+  roles: ReadonlyArray<{ id: string; permissions: readonly string[] }>;
+};
+
+type PairedClientActor<TPermission extends string> = {
+  sessionId: string;
+  userId: string;
+  roleId: string;
+  permissions: TPermission[];
+  channel: "paired-client";
+};
+
+/**
+ * The actor a paired client's call runs as: the person who approved the
+ * pairing, with their role's permissions narrowed to the allowlist's, on the
+ * `paired-client` channel (under the `service` profile the registry then
+ * narrows it by those permissions as well as its person's policies). Null when
+ * that person is gone, disabled or roleless, so disabling a person takes their
+ * paired clients' reach with them.
+ */
+export function pairedClientActor<TPermission extends string>(session: PairedSession, directory: IdentityDirectory): PairedClientActor<TPermission> | null {
+  const userId = session.operatorUserId;
+  if (!userId) return null;
+  const user = directory.users.find((candidate) => candidate.id === userId);
+  if (!user?.enabled) return null;
+  const role = directory.roles.find((candidate) => candidate.id === user.roleId);
+  if (!role) return null;
+  const permissions = role.permissions.filter((permission) => PAIRED_CLIENT_PERMISSIONS.includes(permission)) as TPermission[];
+  return { sessionId: `client-gateway:${session.sessionId}`, userId, roleId: role.id, permissions, channel: "paired-client" };
+}
+
+/**
+ * The domain a paired client's call is scoped to: the one its session declared
+ * when it connected. Undefined when the URL names a different one, which the
+ * route refuses.
+ */
+export function pairedClientDomainScope(requestUrl: string, session: PairedSession): { domainId: string | null } | undefined {
+  const declared = session.metadata?.domainId;
+  const domainId = typeof declared === "string" && declared.trim() ? declared.trim() : null;
+  const requested = programDomainScope(requestUrl).domainId;
+  if (requested !== null && requested !== domainId) return undefined;
+  return { domainId };
+}
+
+/** The project a token call reaches, which the route checks against the bound domain, or the refusal of a malformed one. */
+export type PairedClientProjectTarget =
+  | { ok: true; projectId: string | null }
+  | { ok: false; errorCode: "authorization.forbidden"; error: string };
+
+/**
+ * The project a paired client's call reaches: the body's `projectId`, or, when
+ * the body names none, the session's current project. The route refuses the
+ * call unless that project's domain is the one the pairing bound, so no
+ * allowlisted handler has to remember to assert it. Null when neither names a
+ * project (the build identity; a thread list across the domain, which its
+ * handler already scopes to the domain). A `projectId` that is not a string is
+ * refused rather than read, since handlers would coerce it.
+ */
+export function pairedClientProjectTarget(programId: string, payload: unknown, currentProjectId: string | null | undefined): PairedClientProjectTarget {
+  // Projects are Automation Studio's; the secret-keys snapshot names none.
+  if (programId.trim().toLowerCase() !== "automation-studio") return { ok: true, projectId: null };
+  const named = payloadRecord(payload)?.projectId;
+  if (named !== undefined && named !== null && typeof named !== "string") {
+    return { ok: false, errorCode: "authorization.forbidden", error: "A paired client must name its project by a string projectId." };
+  }
+  // Checked exactly as sent, untrimmed, because that is the id the handler reads.
+  if (typeof named === "string" && named !== "") return { ok: true, projectId: named };
+  return { ok: true, projectId: typeof currentProjectId === "string" && currentProjectId !== "" ? currentProjectId : null };
+}
+
+/** A token call's payload after narrowing, or the refusal that names the field it may not carry. */
+export type PairedClientRequestNarrowing =
+  | { ok: true; payload: unknown }
+  | { ok: false; errorCode: "authorization.forbidden"; error: string };
+
+/**
+ * The run modes a token may ask for. Absent, `default`, `fully_adaptive` and
+ * `manual_approval` all let the run invoke an LLM for diagnosis
+ * (`normalizeAutomationStudioRuntimeInterventionMode` reads absent and
+ * `default` as `fully_adaptive`, and `runtimeAdaptationContextWithRunOverride`
+ * turns `invokeLlm` off only for `no_llm_intervention`), so a token's run with
+ * no mode and no intent is pinned to `no_llm_intervention` and any other mode
+ * is refused. A run that names the repair intent is the one exception
+ * (`PAIRED_CLIENT_RUN_INTENT`).
+ */
+const PAIRED_CLIENT_RUN_MODES: readonly string[] = ["no_llm_intervention", "deterministic"];
+
+/**
+ * The one model intent a paired client's run may carry: the extension's
+ * Automations Run (t267), so a saved Flow the person runs is repaired when its
+ * page has changed since it was built. It is a deliberate exception to the
+ * rule below that no token call reaches an LLM, made for the same reason as
+ * the chat's (`runtime/conversations/commands/caller.ts` in `fluxiq`): the
+ * person asked for the extension to do it. The token still grants nothing.
+ * The run handler maps the paired actor to the person's unlocked session, so
+ * the key that pays is theirs, and with no unlocked session the Flow runs with
+ * no model at all. The run executes under the Flow's own mode, so no
+ * `adaptiveMode` may be named beside it. A lasting consequence -- money, a
+ * delete, a send -- is still asked of the person act by act, since
+ * `permittedConsequences` stays refused.
+ */
+const PAIRED_CLIENT_RUN_INTENT = "explore_and_adapt";
+
+/**
+ * What a paired client may put in the request body of an endpoint whose
+ * handler would otherwise let it reach further than the allowlist means. The
+ * rule is least privilege: no token call carries an LLM grant or reaches an
+ * LLM -- except a run that names `PAIRED_CLIENT_RUN_INTENT`, under the
+ * person's own key --, runs an inline Flow document, authorizes an external
+ * side effect, or speaks for a reviewer other than the person the actor
+ * already is. A refused field is named, never its value. Endpoints not listed
+ * here pass unchanged.
+ */
+export function narrowPairedClientRequest(programId: string, endpoint: string, payload: unknown): PairedClientRequestNarrowing {
+  const program = programId.trim().toLowerCase();
+  const name = endpoint.trim().toLowerCase();
+  if (program !== "automation-studio") return { ok: true, payload };
+  if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
+  if (name === "carry-on-task-attempt") return narrowCarryOnTaskAttempt(payload);
+  if (name === "run-task-again") return narrowRunTaskAgain(payload);
+  if (name === "rename-task") return narrowTaskMemory(payload, ["projectId", "taskId", "title"]);
+  if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
+  if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
+  if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
+  if (name === "save-project-part") return narrowSaveProjectPart(payload);
+  if (name === "run-project-part") return narrowRunProjectPart(payload);
+  return { ok: true, payload };
+}
+
+function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
+  // `authorizedDomainIds` would let the run act in domains beyond the one the
+  // pairing bound (`runtime/composite-execution/owner.ts`), so a token never names any.
+  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs", "authorizedDomainIds"] as const) {
+    if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
+  }
+  if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {
+    return forbidden("A paired client's run may not carry authorizedExternalSideEffects.");
+  }
+  if ("runIntent" in body) {
+    if (body.runIntent !== PAIRED_CLIENT_RUN_INTENT) return forbidden("A paired client's run may carry only the explore_and_adapt intent.");
+    if ("adaptiveMode" in body) return forbidden("A paired client's run that names an intent may not also carry adaptiveMode.");
+    return { ok: true, payload: body };
+  }
+  if (body.adaptiveMode === undefined) return { ok: true, payload: { ...body, adaptiveMode: "no_llm_intervention" } };
+  if (typeof body.adaptiveMode !== "string" || !PAIRED_CLIENT_RUN_MODES.includes(body.adaptiveMode)) {
+    return forbidden("A paired client's run may not carry an adaptiveMode that lets it invoke an LLM.");
+  }
+  return { ok: true, payload: body };
+}
+
+/** A carry-on names the attempt, the project and the dollars to add, and nothing the generation behind it could be steered by. */
+function narrowCarryOnTaskAttempt(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's carry-on must name an attempt.");
+  for (const field of Object.keys(body)) {
+    if (field !== "projectId" && field !== "attemptId" && field !== "addUsd") return forbidden(`A paired client's carry-on may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+/** A Run again names the project and the task, and nothing the generation behind it could be steered by: that it was pressed is the route itself. */
+function narrowRunTaskAgain(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's Run again must name a task.");
+  for (const field of Object.keys(body)) {
+    if (field !== "projectId" && field !== "taskId") return forbidden(`A paired client's Run again may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+/** A rename or a forget names the project and the task (and the new name), and nothing else. */
+function narrowTaskMemory(payload: unknown, allowed: readonly string[]): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's task change must name a project and a task.");
+  for (const field of Object.keys(body)) {
+    if (!allowed.includes(field)) return forbidden(`A paired client's task change may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  if (body.mode === "llm_assisted") return forbidden("A paired client's proposal may not carry mode llm_assisted.");
+  for (const field of ["instructions", "constraints"] as const) {
+    if (field in body) return forbidden(`A paired client's proposal may not carry ${field}.`);
+  }
+  return { ok: true, payload };
+}
+
+function narrowReviewRecordingFlowProposal(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  // `destination` names where the approved Flow is written, which can be over
+  // an existing one; the panel saves a new automation, so a token never names it.
+  for (const field of ["policyOverride", "reviewerId", "destination"] as const) {
+    if (field in body) return forbidden(`A paired client's review may not carry ${field}.`);
+  }
+  if ("decision" in body && body.decision !== "approved") return forbidden("A paired client's review may only carry decision approved.");
+  return { ok: true, payload };
+}
+
+/** The five fields a person's "save this" carries. Anything else a token names is refused, by name. */
+const SAVE_PROJECT_PART_FIELDS: readonly string[] = ["projectId", "flowId", "subflowId", "name", "purpose"];
+
+function narrowSaveProjectPart(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  for (const field of Object.keys(body)) {
+    if (!SAVE_PROJECT_PART_FIELDS.includes(field)) return forbidden(`A paired client's save may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+/** The seven fields a person's run of a saved part carries. Anything else a token names is refused, by name. */
+const RUN_PROJECT_PART_FIELDS: readonly string[] = ["projectId", "partId", "version", "inputs", "permittedConsequences", "acknowledgedRepeat", "newRunId"];
+
+function narrowRunProjectPart(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  for (const field of Object.keys(body)) {
+    if (!RUN_PROJECT_PART_FIELDS.includes(field)) return forbidden(`A paired client's part run may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+function payloadRecord(payload: unknown): Record<string, unknown> | null {
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : null;
+}
+
+function forbidden(error: string): PairedClientRequestNarrowing {
+  return { ok: false, errorCode: "authorization.forbidden", error };
+}
+
+/**
+ * What a paired client is answered, where the endpoint's full answer holds
+ * more than a token should read. The secret-keys snapshot is cut to whether a
+ * key of each kind and provider exists, is enabled, and opens for this client:
+ * never its id, name,
+ * scope, description, dates or metadata (where a fingerprint or hint would
+ * live), and never a value, which the snapshot does not hold either. Every
+ * other answer passes unchanged.
+ */
+export function projectPairedClientResponse<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
+  if (programId.trim().toLowerCase() !== "secret-keys" || endpoint.trim().toLowerCase() !== "snapshot" || !response.ok) return response;
+  const keys = payloadRecord(response.payload)?.keys;
+  // No snapshot list means readiness is unknown, not that no key exists.
+  if (!Array.isArray(keys)) return { ...response, payload: {} };
+  return {
+    ...response,
+    payload: {
+      // What starts this browser's own unlock, when nobody has unlocked it yet. No use without its person's password.
+      ...(typeof payloadRecord(response.payload)?.unlockTicket === "string" ? { unlockTicket: payloadRecord(response.payload)?.unlockTicket } : {}),
+      keys: keys.map((key) => {
+          const summary = payloadRecord(key) ?? {};
+          return {
+            kind: typeof summary.kind === "string" ? summary.kind : null,
+            provider: typeof summary.provider === "string" ? summary.provider : null,
+            enabled: summary.enabled === true,
+            ...(typeof summary.unlocked === "boolean" ? { unlocked: summary.unlocked } : {}),
+            ...(typeof summary.lockedBecause === "string" ? { lockedBecause: summary.lockedBecause } : {}),
+          };
+        }),
+    },
+  };
+}
