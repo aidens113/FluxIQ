@@ -31,4 +31,10 @@ export type AutomationStudioResultVerdictInput = {
    * a yes is read as before.
    */
   wording?: AutomationStudioRequestWording | undefined;
+  /**
+   * A yes must stand on the rows the result holds (`../cited-yes/records-yes.ts`, t875): set by the judge of an attempt
+   * with no Flow, which can ask again. A yes that cites no stored row while rows are held, does not say whether records
+   * are asked, or counts other records than the rows held is `unsure` (`yesCitationRefuted`). Absent, a yes is read as before.
+   */
+  yesOnRows?: true | undefined;
 };

@@ -3,7 +3,7 @@
 // held to a look, and the count survives the file it is written to.
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioAttemptActRecord, parseAutomationStudioAttemptActRecordData, type AutomationStudioAttemptActCall } from "../index.ts";
+import { AutomationStudioAttemptActRecord, automationStudioAttemptActMarkDoneInAchieved, automationStudioAttemptActSeed, parseAutomationStudioAttemptActRecordData, type AutomationStudioAttemptActCall } from "../index.ts";
 
 const call = (over: Partial<AutomationStudioAttemptActCall> = {}): AutomationStudioAttemptActCall => ({ actionId: "domain.add", parameters: { target: { handle: "h1" } }, consequences: ["modify_existing"], stage: "exploration", ...over });
 const landed = { effectApplied: true, words: { what: "Added one", where: "On the page" } };
@@ -88,6 +88,58 @@ describe("an act asked for several times", () => {
     expect(seeded.admit(call()).kind).toBe("run");
     seeded.settled(call(), landed);
     expect(seeded.admit(call()).kind).toBe("already_done");
+  });
+
+  // The same words again (run-mw4eb5r3-a20f3542): one press after a quantity was chosen landed the whole count, so the
+  // record held 1 landing of 2 asked. The attempt ended achieved; a new attempt carries the act; nothing may press it again.
+  const NAPKINS = { actionId: "domain.add", parameters: { target: { handle: "h1" } } };
+  const seeded = (count: number, ended: "achieved" | "unfinished", landings: number) => {
+    const first = askedFor(count);
+    for (let landing = 0; landing < landings; landing += 1) first.settled(call(), landed);
+    const data = ended === "achieved" ? automationStudioAttemptActMarkDoneInAchieved(first.data()) : first.data();
+    return new AutomationStudioAttemptActRecord({ seed: automationStudioAttemptActSeed({ data })!, asked: () => count });
+  };
+
+  it("a count act carried from an achieved attempt has no room: the run gate, a press by hand and a step all hold it done", () => {
+    const next = seeded(2, "achieved", 1);
+    expect(next.carried({ ...NAPKINS, counted: true })).toBeDefined();
+    expect(next.admit(call()).kind).toBe("already_done");
+    expect(next.stepDone(NAPKINS)).toBe(true);
+    expect(next.acts()[0]?.what).toContain("Already done earlier");
+  });
+
+  it("a count act carried from an unfinished attempt keeps its room: the same words run the rest, then it is done", () => {
+    const next = seeded(3, "unfinished", 1);
+    expect(next.carried({ ...NAPKINS, counted: true })).toBeUndefined();
+    for (let landing = 0; landing < 2; landing += 1) {
+      expect(next.admit(call()).kind).toBe("run");
+      next.settled(call(), landed);
+    }
+    expect(next.admit(call()).kind).toBe("already_done");
+  });
+
+  it("the mark survives a union and the file, and goes when the attempt does the act itself", () => {
+    const data = automationStudioAttemptActMarkDoneInAchieved(askedFor(2).data());
+    expect(data.acts).toHaveLength(0);
+    const first = askedFor(2);
+    first.settled(call(), landed);
+    const marked = automationStudioAttemptActMarkDoneInAchieved(first.data());
+    expect(parseAutomationStudioAttemptActRecordData(JSON.parse(JSON.stringify(marked))).ok).toBe(true);
+    const seed = automationStudioAttemptActSeed({ data: first.data(), earlier: marked })!;
+    expect(seed.acts[0]?.doneInAchieved).toBe(true);
+  });
+
+  it("a row-bound act and a non-count act are held done as before, marked or not", () => {
+    for (const ended of ["achieved", "unfinished"] as const) {
+      const byRow = askedFor(3);
+      byRow.settled(call({ row }), landed);
+      const rowSeed = automationStudioAttemptActSeed({ data: ended === "achieved" ? automationStudioAttemptActMarkDoneInAchieved(byRow.data()) : byRow.data() })!;
+      expect(new AutomationStudioAttemptActRecord({ seed: rowSeed }).admit(call({ row })).kind).toBe("already_done");
+      const plain = askedFor(undefined);
+      plain.settled(call(), landed);
+      const plainSeed = automationStudioAttemptActSeed({ data: ended === "achieved" ? automationStudioAttemptActMarkDoneInAchieved(plain.data()) : plain.data() })!;
+      expect(new AutomationStudioAttemptActRecord({ seed: plainSeed }).admit(call()).kind).toBe("already_done");
+    }
   });
 
   it("the record's file refuses a count that is no count", () => {

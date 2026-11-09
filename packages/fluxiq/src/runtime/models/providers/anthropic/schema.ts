@@ -7,6 +7,17 @@ const FORMATS = new Set(["date-time", "time", "date", "duration", "email", "host
 export type AutomationStudioAnthropicOutputFormat = { schema: Record<string, unknown>; jsonText: boolean };
 
 /**
+ * An optional property that is an open object (`{ type: "object" }` and nothing more), such as a `metadata` bag Core strips
+ * on the way in anyway. The grammar cannot close it, and carrying it would force the whole answer into JSON text, so the
+ * Anthropic grammar leaves it out. The unchanged original schema still describes it to every other provider.
+ */
+function isOpenOptionalObject(parent: Record<string, unknown>, key: string): boolean {
+  const child = isRecord(parent.properties) ? parent.properties[key] : undefined;
+  const required = Array.isArray(parent.required) ? parent.required : [];
+  return !required.includes(key) && isRecord(child) && child.type === "object" && child.properties === undefined && child.additionalProperties === undefined && Object.keys(child).length === 1;
+}
+
+/**
  * Native schemas must be closed and stay below Anthropic's grammar limits.
  * Arbitrary maps cannot be closed losslessly. Encode the whole original value
  * as JSON text in that case; only the transport changes, never the task schema.
@@ -25,7 +36,7 @@ export function automationStudioAnthropicOutputFormat(original: Record<string, u
     if (value.type === "object" || value.properties !== undefined) {
       if (value.additionalProperties !== false) representable = false;
       const required = Array.isArray(value.required) ? value.required : [];
-      if (isRecord(value.properties)) optional += Object.keys(value.properties).filter((key) => !required.includes(key)).length;
+      if (isRecord(value.properties)) optional += Object.keys(value.properties).filter((key) => !required.includes(key) && !isOpenOptionalObject(value, key)).length;
     }
     if (value.anyOf || value.oneOf || Array.isArray(value.type)) unions += 1;
     for (const [key, item] of Object.entries(value)) {
@@ -33,7 +44,7 @@ export function automationStudioAnthropicOutputFormat(original: Record<string, u
         notes.push(`${key}: ${JSON.stringify(item)}`);
       } else if (["$ref", "$defs", "definitions", "not", "if", "then", "else", "patternProperties", "dependentRequired", "dependentSchemas", "contains", "prefixItems"].includes(key)) {
         representable = false;
-      } else if (key === "properties" && isRecord(item)) result[key] = Object.fromEntries(Object.entries(item).map(([name, child]) => [name, visit(child)]));
+      } else if (key === "properties" && isRecord(item)) result[key] = Object.fromEntries(Object.entries(item).filter(([name]) => !isOpenOptionalObject(value, name)).map(([name, child]) => [name, visit(child)]));
       else if (["anyOf", "oneOf", "allOf"].includes(key) && Array.isArray(item)) result[key === "oneOf" ? "anyOf" : key] = item.map(visit);
       else if (key === "items") result.items = visit(item);
       else if (["type", "enum", "const", "required", "additionalProperties", "description", "title", "default", "minItems", "format"].includes(key)) result[key] = item;

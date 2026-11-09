@@ -16,6 +16,8 @@ import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import type { AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioResultCitedStoredCells, automationStudioResultHeldRowCount } from "../../../../../runtime/result-verification/cited-yes/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../../../../runtime/result-verification/contracts/index.ts";
 import { caller, judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 export const READ_LOANS = "domain.library.read_loans";
@@ -142,6 +144,17 @@ export function fakeLibraryNodes(): AutomationStudioNativeNodeRuntime {
   );
 }
 
+/** A yes that stands on the rows the judge's request holds: the first stored row cited in its first column, and the count the site shows taken to be those rows. */
+export function judgedYes(request?: AutomationStudioLlmTaskRequest, said: Record<string, unknown> = {}) {
+  const summary = request?.context.resultSummary as Pick<AutomationStudioRunResultSummary, "reads" | "recordSets"> | undefined;
+  if (!summary) return judgeReply("yes", said);
+  const held = automationStudioResultHeldRowCount(summary);
+  const [first] = automationStudioResultCitedStoredCells(summary).rows;
+  const column = first ? Object.keys(first.cells)[0] : undefined;
+  const checked = held > 0 && first && column ? [{ row: first.label, column, value: first.cells[column]! }] : [];
+  return judgeReply("yes", { checked, answerRecords: { asked: false }, ...said });
+}
+
 /** One scripted decision, as a model would answer it. */
 export const toolCall = (callId: string, toolId: string, input: JsonObject, over: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId, toolId, input, ...over });
 export const runNode = (callId: string, nodeId: string, parameters: JsonObject = {}, consequences: string[] = [], over: JsonObject = {}): JsonObject => toolCall(callId, "core.run_node", { node: nodeId, parameters, consequences }, over);
@@ -203,7 +216,10 @@ export async function scriptedAttempt(options: ScriptedAttemptOptions, cleanups:
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: options.usage ?? USAGE };
-    if (request.taskKind === "loop_verification") return judged.shift() ?? judgeReply("yes");
+    if (request.taskKind === "loop_verification") {
+      const reply = judged.shift();
+      return (typeof reply === "function" ? (reply as (asked: AutomationStudioLlmTaskRequest) => unknown)(request) : reply) ?? judgedYes(request);
+    }
     const next = options.script[decided] ?? toolCall(`look.${decided}`, LOOK_TOOL, {});
     if (decided >= options.script.length && !options.keepLooking && ids) {
       ran.out = true;

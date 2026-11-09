@@ -5,6 +5,7 @@ export * from "./gate/index.ts";
 export * from "./identity/index.ts";
 export * from "./mergers/index.ts";
 export * from "./cut-words.ts";
+export * from "./done-in-achieved.ts";
 export * from "./item-names.ts";
 export * from "./item-words.ts";
 export * from "./record-data.ts";
