@@ -156,6 +156,7 @@ export const CONFIG = {
       "packages/fluxiq/src/framework/automation-service/panel-capabilities/client/index.ts",
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/contracts/src/automation.ts",
+      "packages/contracts/src/fluxnode.ts",
       "packages/client-gateway-websocket/src/index.ts",
       "packages/fluxiq/src/ui/index.ts",
       "packages/ui-components/src/index.ts",
@@ -163,7 +164,7 @@ export const CONFIG = {
       "packages/ui-components/src/icons/index.ts"
     ],
     ownedElsewhere: [],
-    browserPackages: []
+    browserPackages: ["zod"]
   },
 
   // Paths whose files build values that must satisfy an external wire
