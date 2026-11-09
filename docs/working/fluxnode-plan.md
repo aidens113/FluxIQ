@@ -26,9 +26,9 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 | --- | --- | --- | --- |
 | P0 Land the live lanes, then the full sweep and promotion | Lead | Both `dev`s holding every lane fix, then both `main`s | P2 rebases onto it |
 | P1 FluxNode, Flow and data contracts | `worker-heavy` on a Core task branch | `@fluxiq/contracts` additions, frozen | P2-P4, P6, P7 |
-| K Keys and access design | `worker-heavy`, report only | `fluxnode-plan/reports/keys-design.md` | P3's key work |
-| U Panel, editor and assistant design | `worker-heavy`, report only | `fluxnode-plan/reports/panel-design.md` | P9 |
-| F Subflow retirement inventory | `worker`, report only | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
+| K Keys and access design | Done; accepted as K8 | Report held locally until the K4 guards land | P3b |
+| U Panel, editor and assistant design | Done; accepted as U7 | `fluxnode-plan/reports/panel-design.md` | P9 |
+| F Subflow retirement inventory | Done; decided as O4-O6 | `fluxnode-plan/reports/flow-unification-inventory.md` | P6 |
 | S Simulated Android, Linux and Windows | Three `worker`s in the new sibling repository `!FluxIQTestEnvironments` | Pure TypeScript simulators with tasks, oracles and perturbations | P8 |
 | E1 Live checks on the lanes' fixes | Lane supervisors after P0 lands | Results in Answer First's table | none |
 
@@ -265,6 +265,29 @@ run.outputs; run.path; run.verdict; run.cost; // path: "replayed" | "repaired" |
 - **The local panel** opens through a one-time sign-in link that `fluxiq dev` prints, signed by the owner key. The hosted panel keeps account sign-in.
 - **The panel assistant** acts as the signed-in person.
 
+**K8. Corrections from the K report (lead, accepted 2026-11-09).** The report checked K1-K7 against Core and AWS practice. It is held locally until the K4 guards land, because it carries a threat analysis of the public code.
+- **The profile variable** is `FLUXIQ_KEY_PROFILE`, because `FLUXIQ_PROFILE` already names the deployment profile.
+- **Private keys** live only under `~/.fluxiq/keys/`. A project's `.fluxiq/` may name a profile, never hold a key.
+- **The key id** is `fxk_` plus a SHA-256 of the public key, and credentials use an INI file in the style of AWS's shared files.
+- **The string to sign** is canonical and SigV4-like: the algorithm, purpose, audience (the configured origin plus an instance id), key id, time, nonce and body hash.
+- **Sessions** last 15 minutes to 12 hours, 1 hour by default as STS. The clock window is ±300 s and nonces are kept 600 s. WebSocket hosts sign the server's challenge.
+- **Open mode covers the FluxNode API only.** The extension, the panel and hosts always authenticate.
+- **The full K4 guard list is required before open mode ships:**
+  - loopback only;
+  - `Host` checks on HTTP and on the WebSocket upgrade;
+  - an `Origin` check;
+  - a `Sec-Fetch-Site` check;
+  - unkeyed calls must be JSON carrying a `FluxIQ-Client` header;
+  - never CORS;
+  - unkeyed calls act as the owner under `FluxNodeRunner`, never as an administrator.
+- **Keys made by the panel** are generated in the browser, so their PEM is downloaded once and the server never sees the private half.
+- **The local sign-in link** sits in the URL fragment and is minted by a call proven with the owner key.
+- **Managed browsers** make their own key and enrol it with a one-time launch ticket.
+- **Headless model-key custody.** Model keys are sealed under the person's password today, so a FluxNode program could never spend one. A `key` custody holder fixes this: its secret comes from a deterministic Ed25519 signature, with a stored random secret as the fallback where signatures differ. Its acceptance includes a probe that the signature really is deterministic in Node, Chrome, Edge and Firefox.
+- **Migrating paired extensions.** A paired extension upgrades on a normal reconnect, sending its old token with its new key. Nobody re-pairs, and model-key unlocks carry over.
+- **The SDK always signs with the owner key when it finds one,** even while keys are off. The engine still accepts unkeyed calls in open mode and keeps warning. This is the lead's reading of the user's rule, and makes "turn keys on" a no-op for code.
+- **IAM.** Two additive changes to the frozen IAM contracts are approved by the lead as their freeze owner: the condition key `fluxiq:AllowToken` and the request origin `panel-assistant`. The host and FluxNode actions are registered in the IAM catalog. In v1, CI keys are bound to a user; service identities come later.
+
 **K7. Least privilege (lead).** A key is bound to a policy: `FluxNodeRunner` (run Flows in one project), `FluxIQBrowserSession`, `FluxIQHost` or `Admin`. A key is created with the least it needs. Keys are listed, rotated and revoked on the panel's Security page, which shows each key's last use.
 
 ## Panel, Editor And Assistant
@@ -303,6 +326,16 @@ run.outputs; run.path; run.verdict; run.cost; // path: "replayed" | "repaired" |
 - **Consequential acts** proceed only when the person's words clearly ask for them; otherwise they get a one-press Allow. These are deleting, sending, moving money, changing keys or security, and spending beyond the budget.
 - **Context.** It knows the page and the selection.
 - **Its model.** The model key chosen in Settings; by default, the first key the person entered.
+
+**U7. Corrections from the U report (`fluxnode-plan/reports/panel-design.md`; lead, accepted 2026-11-09).**
+- **Endpoint schemas come first.** None of the registry's 272 endpoints declares a payload schema, so tools cannot be generated until about 100 exposed endpoints have one. A check fails the build when an endpoint has neither a schema nor a stated reason to stay hidden (the report's B1-B4).
+- **A press grant replaces the PIN.** Every destructive endpoint demands a PIN today, which breaks the user's no-PIN rule and cannot work for a local owner signed in by link. Instead, pressing Allow mints a single-use grant lasting 60 seconds, bound to the session, the endpoint and the payload. It goes through the keys lane's adversarial review.
+- **Model keys after a link sign-in** open through K8's `key` custody holder (the owner key on local).
+- **Version history** exists in storage, but its list, snapshot and restore endpoints have no handlers, and there is no operation to change a step's label. The report's brief D adds both.
+- **A tool loop for the assistant.** The chat makes one decision per message today, and its threads live inside a project. The assistant gets a bounded tool loop on a new panel-wide thread type stored outside every project, watched by Core's loop detector. The extension's threads keep today's interpreter.
+- **The editor** is a pure Core module that turns the stored graph into a nested numbered list in which every step appears exactly once; a step that does not nest shows as a "jump". Static checks block a bad edit; an offline check against the last run only advises.
+- **The wizard's sample Flow** uses data steps only: no model, no browser, no client, $0.
+- **The briefs.** The report's 15 briefs (A-O, plus W downstream) are the P9 work list, with the order and parallelism it gives.
 
 **U6. The old panel UI plans are superseded by this (lead).** `ui-upgrade-audit-plan.md` and the `automation-studio-*` UI plans are kept only as evidence.
 
