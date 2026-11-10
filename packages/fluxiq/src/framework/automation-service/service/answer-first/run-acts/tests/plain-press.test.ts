@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { edge, graph } from "../../../../../../engine/automation/lifecycle-run/tests/lifecycle-fixtures.ts";
 import type { AutomationStudioFlowNode } from "../../../../../../flows/executable/graph/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
+import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION } from "../../../../../../runtime/parking/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../../../executor/index.ts";
 import { automationStudioAnswerFirstRunActGate } from "../index.ts";
 
@@ -75,6 +76,32 @@ describe("a press that declares nothing and claims no act", () => {
     expect(state.presses).toBe(1);
     expect(record.acts()).toEqual([expect.objectContaining({ state: "may_have_landed" })]);
     expect(record.admit({ actionId: PRESS, parameters: CONTROL, consequences: [], stage: "exploration" }).kind).toBe("look_first");
+  });
+
+  // run-mwa19obz-abd5d558: the saved Flow's Next page met a robot check on its second pass, the person cleared it,
+  // and every pass after was skipped as already done, so the loop stood still and the run ended repeat.no_progress.
+  it("runs on every pass of a repeat after a person cleared the check one press met, and is not held to a look", async () => {
+    const check: Result = { status: "failed", route: "failed", outputs: {}, message: "A robot check is on the page.", failure: { category: "user_intervention_required", code: "library.check", retryable: false, stage: "execution" } };
+    const { state, options } = toggle((pressed) => pressed === 2 ? check : { status: "success", route: "success", outputs: {} });
+    const asked: string[] = [];
+    const parking: NonNullable<AutomationStudioGraphExecutionOptions["parking"]> = {
+      open: (ask) => void asked.push(ask.askId),
+      awaitAnswer: async (ask) => ({ askId: ask.askId, answeredAt: 2, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: null })
+    };
+    const record = new AutomationStudioAttemptActRecord();
+    const trace = await run(repeated(4, press("next")), { ...options, parking }, record);
+    expect(asked).toHaveLength(1);
+    expect(state.presses).toBe(4);
+    expect(trace.attempts.filter((attempt) => attempt.nodeId === "next").every((attempt) => attempt.skipped === undefined && !/^Already done/u.test(attempt.message ?? ""))).toBe(true);
+    expect(record.acts()).toEqual([]);
+    expect(record.admit({ actionId: PRESS, parameters: CONTROL, consequences: [], stage: "exploration" }).kind).toBe("run");
+  });
+
+  it("is nothing on the record where a check only a person can clear stood before anything was sent", async () => {
+    const { options } = toggle(() => ({ status: "failed", route: "failed", outputs: {}, failure: { category: "user_intervention_required", code: "library.check", retryable: false, stage: "execution", effect: "unacted" } }));
+    const record = new AutomationStudioAttemptActRecord();
+    await run(inLine(press("apply.1")), { ...options, retryPolicy: { maxAttempts: 1, backoffMs: [] } }, record);
+    expect(record.data().acts).toEqual([]);
   });
 
   it("is nothing on the record where it answers that nothing acted", async () => {
