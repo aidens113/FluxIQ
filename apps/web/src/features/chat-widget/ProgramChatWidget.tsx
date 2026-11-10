@@ -19,7 +19,7 @@ import { ChatWidget } from "./ChatWidget";
 import { createPanelOpenControl } from "./navigation";
 import { panelChatOptions } from "./options";
 import { ReauthorizeDialog } from "./ReauthorizeDialog";
-import { createProgramChatTransport } from "./transport";
+import { createProgramChatTransport, type PanelConversationOptions } from "./transport";
 
 export type ProgramChatWidgetProps = {
   /** The project the panel has open; null on the landing screen, where the chat spans every project. */
@@ -34,6 +34,8 @@ export type ProgramChatWidgetProps = {
   onSelectedConversationChange?(conversationId: string): void;
   /** The thread to open on, when it is still listed. */
   requestedConversationId?: string;
+  /** Present: the chat is the panel-wide assistant thread, not a project's. Read when the chat is made. */
+  panel?: PanelConversationOptions;
   /** Puts the chat in a window over the panel. Absent: the chat fills its container. */
   windowed?: { ariaLabel: string; escapeBlocked(): boolean };
 };
@@ -53,7 +55,9 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
   const transport = useMemo(() => createProgramChatTransport(studio, {
     projectId: () => shown.current ?? latest.current.projectId ?? undefined,
     secretKeys,
-    onScreen: () => latest.current.onScreen ?? {}
+    onScreen: () => latest.current.onScreen ?? {},
+    // The panel-wide assistant talks to the panel's own endpoints; whether this chat is that one is fixed when it is made.
+    ...(latest.current.panel ? { panel: { onScreen: () => latest.current.panel?.onScreen() ?? {} } } : {})
   }), [studio, secretKeys]);
 
   // The chat reads its options once, when it is made; a later change of the requested thread is not a new chat.

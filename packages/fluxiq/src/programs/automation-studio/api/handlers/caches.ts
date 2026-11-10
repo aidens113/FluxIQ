@@ -9,7 +9,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectUiCache,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectUiCache, assistant: { hidden: "Saved layout and view settings of the editor; a person never asks for them." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProjectUiCache",
@@ -22,7 +22,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectUiCache,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectUiCache, assistant: { hidden: "Only the editor writes its saved layout and view settings." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:SaveProjectUiCache",
@@ -35,7 +35,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectUiCache,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectUiCache, assistant: { hidden: "Only the editor clears its saved layout and view settings." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:DeleteProjectUiCache",
@@ -48,7 +48,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectUiCacheStats,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectUiCacheStats, assistant: { hidden: "Size counts of the editor's saved settings, an internal detail." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectUiCacheStats",
@@ -62,9 +62,9 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
       return { ok: true, payload: await service.listProjectUiCacheStats({ projectId: payload.projectId, userId: request.actor?.userId ?? "" }) };
     }
   });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContextStatus, permission: "programs.read", classification: "read", action: "studio:GetReusableLlmContextStatus", accessLevel: "Read", resource: endpointResource.workspace(), handler: async () => ({ ok: true, payload: service.reusableLlmContextStatus() }) });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContextStatus, assistant: { hidden: "An internal status of the model-context cache, not something a person asks about." }, permission: "programs.read", classification: "read", action: "studio:GetReusableLlmContextStatus", accessLevel: "Read", resource: endpointResource.workspace(), handler: async () => ({ ok: true, payload: service.reusableLlmContextStatus() }) });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listReusableLlmContexts, permission: "programs.read", classification: "read",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listReusableLlmContexts, assistant: { hidden: "Internal model-context cache entries that runs reuse; not shown to people." }, permission: "programs.read", classification: "read",
     action: "studio:ListReusableLlmContexts",
     accessLevel: "List",
     resource: endpointResource.project(),
@@ -77,7 +77,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContext, permission: "programs.read", classification: "read",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getReusableLlmContext, assistant: { hidden: "An internal model-context cache entry; not shown to people." }, permission: "programs.read", classification: "read",
     action: "studio:GetReusableLlmContext",
     accessLevel: "Read",
     resource: endpointResource.project(),
@@ -90,7 +90,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putReusableLlmContext, permission: "flows.write", classification: "authoring",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.putReusableLlmContext, assistant: { hidden: "Only the runtime writes its model-context cache entries." }, permission: "flows.write", classification: "authoring",
     action: "studio:PutReusableLlmContext",
     accessLevel: "Write",
     resource: endpointResource.project(),
@@ -102,7 +102,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteReusableLlmContext, permission: "flows.write", classification: "authoring",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteReusableLlmContext, assistant: { hidden: "Only the runtime removes its model-context cache entries." }, permission: "flows.write", classification: "authoring",
     action: "studio:DeleteReusableLlmContext",
     accessLevel: "Write",
     resource: endpointResource.project(),
@@ -115,7 +115,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.clearReusableLlmContextScope, permission: "flows.write", classification: "authoring",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.clearReusableLlmContextScope, assistant: { hidden: "Cache maintenance the runtime does itself, not a person's request." }, permission: "flows.write", classification: "authoring",
     action: "studio:ClearReusableLlmContextScope",
     accessLevel: "Write",
     resource: endpointResource.project(),
@@ -127,7 +127,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.purgeExpiredReusableLlmContexts, permission: "flows.write", classification: "authoring",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.purgeExpiredReusableLlmContexts, assistant: { hidden: "Cache maintenance the runtime does itself, not a person's request." }, permission: "flows.write", classification: "authoring",
     action: "studio:PurgeExpiredReusableLlmContexts",
     accessLevel: "Write",
     resource: endpointResource.project(),
@@ -139,7 +139,7 @@ export function registerCacheEndpoints(dependencies: AutomationStudioApiDependen
     }
   });
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts, permission: "programs.read", classification: "read",
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts, assistant: { hidden: "Cache maintenance the runtime does itself, not a person's request." }, permission: "programs.read", classification: "read",
     action: "studio:PackReusableLlmContexts",
     accessLevel: "Read",
     resource: endpointResource.project(),

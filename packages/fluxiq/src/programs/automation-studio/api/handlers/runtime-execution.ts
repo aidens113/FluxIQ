@@ -8,12 +8,13 @@ import { automationStudioWithWholeAttemptInputs } from "../../../../framework/au
 import { runRuntimeSessionForRequest } from "../../../../framework/automation-service/service/run-requests/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { startRuntimeSessionInput, cancelRuntimeSessionInput, runRuntimeSessionInput } from "@fluxiq/contracts/program-api-inputs";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.startRuntimeSession, assistant: { input: startRuntimeSessionInput, summary: "Starts a run of a Flow.", phrases: ["start the flow", "start a run"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:StartRuntimeSession",
@@ -34,7 +35,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   // answers, so pressing Stop twice is never an error.
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelRuntimeSession, assistant: { input: cancelRuntimeSessionInput, summary: "Stops a run.", phrases: ["stop the run", "cancel that run"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:CancelRuntimeSession",
@@ -52,7 +53,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, assistant: { input: runRuntimeSessionInput, summary: "Runs a Flow to its end, or carries on a run that stopped part way.", phrases: ["run the flow", "run it again"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:RunRuntimeSession",
@@ -62,7 +63,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectStateDiff,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectStateDiff, assistant: { hidden: "An internal comparison of two saved states for the editor; a person asks what changed in words, not for this." },
     permission: "programs.read",
     classification: "read",
     action: "studio:InspectStateDiff",
@@ -75,7 +76,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listSignalRegistries,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listSignalRegistries, assistant: { hidden: "An internal list the editor reads to fill its pickers; a person does not ask for it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListSignalRegistries",
@@ -88,7 +89,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordingDomains,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordingDomains, assistant: { hidden: "An internal list the recorder reads to know the kinds of events it may send; a person does not ask for it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListRecordingDomains",
@@ -101,7 +102,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.validateRecordingDomainEvent,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.validateRecordingDomainEvent, assistant: { hidden: "Only the recorder calls it to check an event before sending it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ValidateRecordingDomainEvent",
@@ -114,7 +115,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingDomainEvent,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingDomainEvent, assistant: { hidden: "Only the recorder calls it to add events as it records." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:AppendRecordingDomainEvent",

@@ -79,7 +79,22 @@ export type IamRequestContext = {
   mfaPresent?: boolean;
   profile?: FluxIQProfile;
   connectedClientId?: string;
+  /** Who made the call on the actor's behalf: `assistant` for the panel assistant's tool calls; absent for the person's own. Audited, never a condition key. */
+  via?: IamRequestVia;
+  /** How the person consented to a confirmed act: set on a press grant's mint and on the destructive call it confirms. Audited, never a condition key. */
+  consent?: IamRequestConsent;
 };
+
+/** Who made a call on its actor's behalf: only the panel assistant today. */
+export type IamRequestVia = "assistant";
+
+/**
+ * How a press grant was earned, and so how the person consented to the act it
+ * confirms: `press`, they pressed Allow or a page's own button; `words`, their
+ * own message clearly asked for exactly this act. The activity log reads it
+ * as "you pressed Allow" or "because you asked".
+ */
+export type IamRequestConsent = "press" | "words";
 
 /** The statement that decided: its policy's name and its `Sid` (null when it has none). */
 export type IamMatchedStatement = {
@@ -138,6 +153,10 @@ export type IamAuditRecord = {
   matched: IamMatchedStatement | "implicit";
   origin: FluxIQRequestOrigin;
   ipPrefix: string | null;
+  /** Present only when the call was made on the principal's behalf (`IamRequestContext.via`). */
+  via?: IamRequestVia;
+  /** Present only on a press grant's mint and the call it confirmed (`IamRequestContext.consent`). Never the grant or any digest of it. */
+  consent?: IamRequestConsent;
 };
 
 /** Where decisions and IAM changes are recorded. `record` never awaits storage; `flush` drains the buffer. */

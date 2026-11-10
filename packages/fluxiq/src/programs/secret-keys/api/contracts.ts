@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { SecretKeyKind, SecretKeyLockedClient, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
+import type { ModelKeySettingsView, SecretKeyKind, SecretKeyLockedClient, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
 
 export const SECRET_KEYS_ENDPOINTS = {
   snapshot: "snapshot",
@@ -8,7 +8,10 @@ export const SECRET_KEYS_ENDPOINTS = {
   rotateKey: "rotate-key",
   revealKey: "reveal-key",
   deleteKey: "delete-key",
-  unlock: "unlock"
+  unlock: "unlock",
+  setDefaultKey: "set-default-key",
+  getAssistantModel: "get-assistant-model",
+  setAssistantModel: "set-assistant-model"
 } as const;
 
 export type SecretKeyAuthorizationPayload = {
@@ -77,3 +80,8 @@ export type RevealSecretKeyResponse = {
   key: SecretKeySummary;
   value: string;
 };
+
+export type SetDefaultKeyRequest = { id: string };
+export type SetAssistantModelRequest = { keyId?: string; model?: string };
+/** The reply of `set-default-key`, `get-assistant-model` and `set-assistant-model`. */
+export type ModelKeySettingsResponse = ModelKeySettingsView;

@@ -5,15 +5,11 @@ import { describe, expect, it } from "vitest";
 import {
   architectureSource,
   automationStudioFeaturePath,
-  callCount,
   countPattern,
   customEventChannelCounts,
   domainPrivateImportCounts,
   featurePath,
-  functionSpans,
   importSpecifiers,
-  jsxElementCount,
-  jsxTagCounts,
   mapCounts,
   namedResidualAudit,
   productionSources,
@@ -22,7 +18,7 @@ import {
   testSources,
   type NamedResidualExemption
 } from "../architecture-test-helpers";
-import { automationStudioViewId, automationStudioViewIds } from "../views/view-registry";
+import { automationStudioViewIds } from "../views/view-registry";
 
 const sources = productionSources();
 const tests = testSources();
@@ -74,7 +70,7 @@ const productDomains = new Set([
 
 const approvedTopLevelDirectories = [
   "adaptations", "authoring", "authorization", "bootstrap", "cache", "clients", "conversation", "data", "datasets", "development", "flow-editor", "graph",
-  "hierarchy", "inspector", "instructions", "live", "model", "onboarding", "parameters", "problems",
+  "hierarchy", "inspector", "instructions", "model", "parameters", "problems",
   "presentation", "project", "recordings", "router", "runtime", "settings", "shared", "state", "stores", "styles",
   "subflows", "sync", "testing", "tests", "views", "workspace"
 ] as const;
@@ -116,28 +112,15 @@ const synchronousInteractionPaths = [
   "flow-editor/flow-canvas-interaction-controller.ts",
   "flow-editor/hooks/useFlowEditorCanvasInteractions.ts",
   "flow-editor/hooks/useFlowEditorGraphDocument.ts",
-  "hierarchy/components/ProjectTree.tsx",
   "hierarchy/controller.ts",
-  "hierarchy/components/TreeRows.tsx",
-  "live/components/AutomationStudioSession.tsx",
-  "live/hooks/useAutomationHierarchyCommandBridge.ts",
-  "live/hooks/useAutomationSelectionNavigation.ts",
-  "live/hooks/useAutomationWorkspaceRuntime.ts",
-  "presentation/transaction.ts",
-  "workspace/commands/port.ts",
-  "workspace/commands/warm-activation.ts",
-  "workspace/commands/workspace-commands.ts",
-  "workspace/components/view-container.tsx"
+  "presentation/transaction.ts"
 ] as const;
 
 const diagnosticCustomEventOwners = new Map<string, ReadonlySet<string> | "dynamic-telemetry">([
   ["cache/data-cache.ts", new Set(["automation-studio:cache-metric"])],
   ["development/telemetry.ts", "dynamic-telemetry"],
   ["graph/worker-tasks.ts", new Set(["automation-studio:worker-queue-metric"])],
-  ["sync/background-work.ts", new Set(["automation-studio:background-work"])],
-  ["sync/lazy-preloader.ts", new Set(["automation-studio:preload-metric"])],
-  ["sync/project-sync.ts", new Set(["automation-studio:change-feed-reconciliation"])],
-  ["workspace/cache/coordinator.ts", new Set(["automation-studio:ui-cache-metric"])]
+  ["sync/project-sync.ts", new Set(["automation-studio:change-feed-reconciliation"])]
 ]);
 
 function rawCanonicalViewBoundaryCount(source: ReturnType<typeof architectureSource>): number {
@@ -150,46 +133,6 @@ function rawCanonicalViewBoundaryCount(source: ReturnType<typeof architectureSou
 }
 function debt(path: string, ceiling: number, owner: string, removalPhase: string): NamedResidualExemption {
   return { path, ceiling, owner, removalPhase };
-}
-
-function importedBindingNames(source: ReturnType<typeof architectureSource>): string[] {
-  const names: string[] = [];
-  visitSyntax(source.syntax, (node) => {
-    if (!ts.isImportDeclaration(node)) return;
-    const clause = node.importClause;
-    if (!clause) return;
-    if (clause.name) names.push(clause.name.text);
-    const bindings = clause.namedBindings;
-    if (bindings && ts.isNamedImports(bindings)) {
-      names.push(...bindings.elements.map((element) => element.name.text));
-    } else if (bindings && ts.isNamespaceImport(bindings)) {
-      names.push(bindings.name.text);
-    }
-  });
-  return names;
-}
-
-function runtimeImportSpecifiers(source: ReturnType<typeof architectureSource>): string[] {
-  const specifiers: string[] = [];
-  visitSyntax(source.syntax, (node) => {
-    if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return;
-    const clause = node.importClause;
-    if (clause?.isTypeOnly) return;
-    const bindings = clause?.namedBindings;
-    if (bindings && ts.isNamedImports(bindings) && bindings.elements.every((element) => element.isTypeOnly)) return;
-    specifiers.push(node.moduleSpecifier.text);
-  });
-  return specifiers;
-}
-
-function directSelectorOwners(source: ReturnType<typeof architectureSource>): string[] {
-  const owners: string[] = [];
-  visitSyntax(source.syntax, (node) => {
-    if (!ts.isCallExpression(node) || node.expression.getText(source.syntax) !== "useAutomationStoreSelector") return;
-    const owner = node.arguments[0]?.getText(source.syntax);
-    if (owner) owners.push(owner);
-  });
-  return owners;
 }
 
 function customEventCreations(source: ReturnType<typeof architectureSource>): Array<string | null> {
@@ -328,22 +271,6 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     expect(namedResidualAudit(current, rawViewIdResiduals).violations).toEqual([]);
   });
 
-  it("keeps canonical host registration typed and destination connectors publisher-free", () => {
-    const contracts = architectureSource("live/view-host/contracts.ts").source;
-    const connectors = architectureSource("live/view-host/canonical-connected-views.tsx").source;
-    const directConnector = architectureSource("live/view-host/direct-view-connector.tsx").source;
-    const hostTypes = architectureSource("views/view-host-types.ts").source;
-    const hostRegistry = architectureSource("views/view-host-registry.tsx").source;
-    const viewContracts = architectureSource("views/view-contracts.ts").source;
-
-    expect(contracts).not.toContain("canonicalViewHostKinds");
-    expect(hostRegistry).not.toContain("registrationList");
-    expect(hostTypes).not.toMatch(/AutomationViewHostBindingMap\s*=\s*\{/u);
-    expect(connectors).toContain("createAutomationDirectViewConnector({");
-    expect(directConnector).not.toMatch(/AutomationCanonicalViewPublisher|WorkspaceViewSource/u);
-    expect(viewContracts).toContain("automationStudioViewDefinitionsList.map");
-  });
-
   it("keeps deleted aggregate-model and publisher modules absent and unimportable", () => {
     expect(removedAggregateAndPublisherPaths.filter((path) => existsSync(featurePath(path)))).toEqual([]);
     const forbiddenImports = [...sources, ...tests].flatMap((source) =>
@@ -355,64 +282,6 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
       })
     );
     expect(forbiddenImports).toEqual([]);
-  });
-
-  it("keeps Session off broad live project, entity, resource, and selection subscriptions", () => {
-    const session = architectureSource("live/components/AutomationStudioSession.tsx");
-    const forbiddenBindings = new Set([
-      "useAutomationCanonicalViewInputs",
-      "useAutomationProjectDataResource",
-      "useAutomationProjectEntityCollection",
-      "useAutomationProjectResource",
-      "useAutomationProjectSelection",
-      "useAutomationProjectView",
-      "useAutomationSelectionState",
-      "useSyncExternalStore"
-    ]);
-    expect(importedBindingNames(session).filter((name) => forbiddenBindings.has(name))).toEqual([]);
-    expect(directSelectorOwners(session)).toEqual(["studioStores.catalog"]);
-    expect(session.source).not.toMatch(
-      /studioStores\.(?:projectData|queries|runtimeStatus|selection)\.subscribe\s*\(|useAutomationStoreSelector\s*\(\s*studioStores\.(?:projectData|queries|runtimeStatus|selection)/u
-    );
-    expect(session.source).not.toMatch(
-      /useAutomation(?:CanonicalViewInputs|ProjectDataResource|ProjectEntityCollection|ProjectResource|ProjectSelection|ProjectView|SelectionState)\s*\(/u
-    );
-  });
-
-  it("keeps every canonical connector owned by its destination ViewHost", () => {
-    const session = architectureSource("live/components/AutomationStudioSession.tsx").source;
-    const entries = architectureSource("live/view-host/connected-view-entries.tsx").source;
-    const connector = architectureSource("live/view-host/direct-view-connector.tsx").source;
-    const host = architectureSource("views/ViewHost.tsx").source;
-    const connectorProperties = [...entries.matchAll(
-      /\[\s*automationStudioViewId\.([A-Za-z][A-Za-z0-9]*)\s*,/gu
-    )].map((match) => match[1] as keyof typeof automationStudioViewId);
-    const connectedIds = connectorProperties.map((property) => automationStudioViewId[property]).sort();
-
-    expect(connectedIds).toEqual([...automationStudioViewIds].sort());
-    expect(new Set(connectedIds).size).toBe(automationStudioViewIds.length);
-    expect(entries).toContain("const connectorByViewId = new Map");
-    expect(entries).toContain("createAutomationConnectedViewHostRequest(view as never, connect)");
-    expect(entries).toContain("createAutomationDirectViewConnection(Connector");
-    expect(session).toContain("useAutomationConnectedViewEntries({");
-    expect(session).not.toMatch(/AutomationCanonicalViewPublisher|createAutomationViewHostComposition/u);
-
-    const connectedMount = host.indexOf('if ("connect" in props.request) return props.request.connect(activity);');
-    const boundRegistration = host.indexOf("const registration = automationViewHostRegistration(boundRequest.kind);");
-    expect(connectedMount).toBeGreaterThan(-1);
-    expect(boundRegistration).toBeGreaterThan(connectedMount);
-    expect(host).not.toMatch(/canonical-connected-views|direct-view-connector/u);
-
-    expect(connector).toContain("if (!active) return () => undefined;");
-    expect(connector).toContain("stores.projectData.subscribe(listener, scope)");
-    expect(connector).toContain("store.subscribe(listener, scope)");
-    expect(connector).toContain("<AutomationViewBoundary");
-    expect(connector).toContain("renderAutomationViewHostRequest(");
-
-    const connectorConsumers = sources
-      .filter((source) => runtimeImportSpecifiers(source).some((specifier) => specifier.endsWith("/canonical-connected-views")))
-      .map((source) => source.path);
-    expect(connectorConsumers).toEqual(["live/view-host/connected-view-entries.tsx"]);
   });
 
   it("forbids imports of sibling domain-private modules", () => {
@@ -563,31 +432,12 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps AutomationStudioLive a bounded composition root without debt", () => {
-    const root = architectureSource("AutomationStudioLive.tsx");
-    const functions = functionSpans(root);
-    const programApiCalls = callCount(root, (expression) => {
-      const text = expression.getText(root.syntax);
-      return text === "useProgramApi" || text === "api.get" || text === "api.post";
-    });
-    const stateCalls = callCount(root, (expression) => ["useState", "useReducer"].includes(expression.getText(root.syntax)));
-    const forbiddenJsx = [...jsxTagCounts(root, /(?:Modal|Pane|ProjectTree|Graph|Timeline|Palette|Drawer)/u).values()]
-      .reduce((total, count) => total + count, 0);
-
-    expect(sourceLineCount(root.source)).toBeLessThanOrEqual(250);
-    expect(Math.max(0, ...functions.map((entry) => entry.lines))).toBeLessThanOrEqual(40);
-    expect(programApiCalls).toBe(0);
-    expect(jsxElementCount(root)).toBe(0);
-    expect(forbiddenJsx).toBe(0);
-    expect(stateCalls).toBe(0);
-  });
-
   it("keeps CSS ownership executable through the import manifest gate", () => {
     const styleGate = featurePath("styles/tests/styles-architecture.test.ts");
     const globals = resolve(automationStudioFeaturePath, "../../app/globals.css");
-    const studioManifest = resolve(automationStudioFeaturePath, "../../app/programs/automation-studio/automation-studio.css");
+    const studioManifest = resolve(automationStudioFeaturePath, "../../app/(panel)/flows/[flowId]/graph/graph.css");
     const rootLayout = resolve(automationStudioFeaturePath, "../../app/layout.tsx");
-    const studioLayout = resolve(automationStudioFeaturePath, "../../app/programs/automation-studio/layout.tsx");
+    const studioLayout = resolve(automationStudioFeaturePath, "../../app/(panel)/flows/[flowId]/graph/layout.tsx");
     expect(existsSync(styleGate), "styles architecture gate").toBe(true);
     const lines = readFileSync(globals, "utf8").split(/\r?\n/u).filter(Boolean);
     const studioLines = readFileSync(studioManifest, "utf8").split(/\r?\n/u).filter(Boolean);
@@ -617,7 +467,6 @@ describe("Automation Studio Phase 10I architecture enforcement", () => {
     const boundedBarrels = new Map([
       ["hierarchy/model.ts", 5],
       ["views/Renderer.tsx", 15],
-      ["workspace/components.tsx", 7],
       ["workspace/layout.ts", 8]
     ]);
     const oversized = [...boundedBarrels].flatMap(([path, ceiling]) => {

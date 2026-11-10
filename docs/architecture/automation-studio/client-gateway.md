@@ -912,12 +912,15 @@ and treats every `note` row as internal, which is why the cards ride on
 after `Kind` once any agent has written a step to the directory; a directory
 no agent wrote to keeps its table exactly as before.
 
-Start/stop recording and action execution are privileged operations and use
-shared PIN authorization. Client-initiated pairing requests can create pending
-display references without PIN because the client still cannot pair until a
-signed-in web-panel user approves the request.
+Starting and stopping a recording are ordinary authoring calls and ask for no
+PIN. Executing an action in a client is destructive, so it is confirmed by a
+press grant: one use, 60 seconds, bound to the session, the person, the
+endpoint and the exact payload, minted only by the person's own press (a
+person who turned a PIN on still gives it). Client-initiated pairing requests
+can create pending display references because the client still cannot pair
+until a signed-in web-panel user approves the request.
 
-The initial UI is the `Connected Clients` inner-window view. It lists paired
+The `Connected Clients` inner-window view below belonged to the retired Studio workspace; in the new panel, connected clients show on Home and will move to Security. It listed paired
 sessions, starts/stops recordings, queues snapshots, and sends test actions
 using client-declared action capabilities. Pairing itself is globalized at the
 web-panel shell through `/api/client-gateway/snapshot`, so a request can pop up
@@ -928,7 +931,7 @@ the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
 then receives `server.session_ready` with its client credential. Raw
 credentials are never included in session snapshots. The Client Gateway view
-lists safe trust metadata and lets a PIN-authorized operator revoke access. The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. Snapshot polling runs only while the view is active, rejects stale responses, and uses a five-second interval. Start/stop recording, action testing, and trust revocation open command-specific PIN-only authorization dialogs after the command is chosen; no shared always-visible credential field is used.
+lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. Snapshot polling runs only while the view is active, rejects stale responses, and uses a five-second interval. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
 
 Extension/client connection flow:
 

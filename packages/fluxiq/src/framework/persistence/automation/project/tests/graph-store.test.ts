@@ -300,6 +300,73 @@ describe("AutomationStudioProjectGraphRepository", () => {
     }
   });
 
+  it("sets a step's label with set_node_label, refuses an empty or unknown one, and its inverse restores the old label", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.label" });
+    try {
+      const flow = createBlankAutomationStudioFlowArtifact({ flowId: "flow.label", projectId: "project.label", name: "Label", now: 1 });
+      flow.nodes = [
+        { id: "node.a", definitionId: "builtin.step", label: "Open the page", position: { x: 0, y: 0 }, parameterValues: { target: "#a" } },
+        { id: "node.b", definitionId: "builtin.step", position: { x: 200, y: 0 } }
+      ];
+      await graph.importMonolithicFlowGraph(flow, { changedAt: 1 });
+      const before = await graph.getNode("node.a");
+
+      const applied = appliedPatch((await graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 1, mutationId: "mutation.label", operations: [{ op: "set_node_label", nodeId: "node.a", label: "  Open the start page " }], changedAt: 2 })).response);
+      expect(applied.inverseOperations).toEqual([{ op: "set_node_label", nodeId: "node.a", label: "Open the page" }]);
+      const after = await graph.getNode("node.a");
+      expect(after).toMatchObject({ label: "Open the start page", parameterValues: { target: "#a" }, x: 0 });
+      await expect(graph.searchNodes({ flowId: "flow.label", query: "start page" })).resolves.toHaveLength(1);
+
+      // A step that never had a label is shown by its id, and its inverse puts that back.
+      const unlabelled = appliedPatch((await graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 2, mutationId: "mutation.label.b", operations: [{ op: "set_node_label", nodeId: "node.b", label: "Second" }], changedAt: 3 })).response);
+      expect(unlabelled.inverseOperations).toEqual([{ op: "set_node_label", nodeId: "node.b", label: "node.b" }]);
+
+      const undone = appliedPatch((await graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 3, mutationId: "mutation.label.undo", operations: applied.inverseOperations, changedAt: 4 })).response);
+      expect(undone.revisionNumber).toBe(4);
+      await expect(graph.getNode("node.a")).resolves.toMatchObject({ label: before!.label });
+
+      await expect(graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 4, mutationId: "mutation.empty", operations: [{ op: "set_node_label", nodeId: "node.a", label: "   " }], changedAt: 5 })).rejects.toThrow(/cannot be empty/);
+      await expect(graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 4, mutationId: "mutation.unknown", operations: [{ op: "set_node_label", nodeId: "node.missing", label: "x" }], changedAt: 5 })).rejects.toThrow(/node\.missing/);
+      await expect(graph.getFlowRevision("flow.label")).resolves.toBe(4);
+
+      // A stale base revision on a step that changed since gives the conflict result, not an overwrite.
+      const stale = (await graph.applyPatch({ pool, projectId: "project.label", flowId: "flow.label", baseRevision: 1, mutationId: "mutation.stale", operations: [{ op: "set_node_label", nodeId: "node.a", label: "Out of date" }], changedAt: 6 })).response;
+      expect(stale).toMatchObject({ status: "conflict", baseRevision: 1, currentRevision: 4, conflictingEntityIds: ["node.a"] });
+      await expect(graph.getNode("node.a")).resolves.toMatchObject({ label: "Open the page" });
+    } finally {
+      await graph.close();
+      await pool.closeAll();
+    }
+  });
+
+  it("lists, snapshots and restores a three-revision Flow, and a restore is a new revision", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.history" });
+    try {
+      const flow = createBlankAutomationStudioFlowArtifact({ flowId: "flow.history", projectId: "project.history", name: "History", now: 1 });
+      flow.nodes = [{ id: "node.a", definitionId: "builtin.step", label: "First words", position: { x: 0, y: 0 } }];
+      await graph.importMonolithicFlowGraph(flow, { changedAt: 1 });
+      const snapshot = await graph.createSnapshot({ pool, projectId: "project.history", flowId: "flow.history", changedAt: 2 });
+      await graph.applyPatch({ pool, projectId: "project.history", flowId: "flow.history", baseRevision: 1, mutationId: "h.2", operations: [{ op: "set_node_label", nodeId: "node.a", label: "Second words" }], source: "assistant_patch", message: "Reword", changedAt: 3 });
+      await graph.applyPatch({ pool, projectId: "project.history", flowId: "flow.history", baseRevision: 2, mutationId: "h.3", operations: [{ op: "move_node", nodeId: "node.a", x: 90, y: 0 }], changedAt: 4 });
+
+      const listed = await graph.revisions({ flowId: "flow.history" });
+      expect(listed.items.map((item) => [item.revisionNumber, item.source, item.snapshotObjectId !== null])).toEqual([[3, "editor_patch", false], [2, "assistant_patch", false], [1, "legacy_import", true]]);
+      expect(listed.items[1]).toMatchObject({ message: "Reword", parentRevision: 1 });
+
+      const restored = await graph.restoreSnapshot({ pool, projectId: "project.history", flowId: "flow.history", snapshotSha256: snapshot.sha256, mutationId: "h.restore", changedAt: 5 });
+      expect(appliedPatch(restored.response).revisionNumber).toBe(4);
+      await expect(graph.getNode("node.a")).resolves.toMatchObject({ label: "First words", x: 0 });
+      const after = await graph.revisions({ flowId: "flow.history" });
+      expect(after.items.map((item) => item.revisionNumber)).toEqual([4, 3, 2, 1]);
+      expect(after.items[0]).toMatchObject({ source: "snapshot_restore", parentRevision: 3 });
+    } finally {
+      await graph.close();
+      await pool.closeAll();
+    }
+  });
+
   it("restores every field a snapshot captured, not only position and parameters", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.fidelity" });

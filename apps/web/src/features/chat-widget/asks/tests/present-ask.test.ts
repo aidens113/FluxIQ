@@ -78,4 +78,20 @@ describe("a question in the panel's words", () => {
     expect(presentAsk({ askId: "ask.9", kind: "nonsense", status: "pending", parks: true })).toBeNull();
     expect(presentAsk({ ...permissionAsk, missing: ["something_unknown"] })).toBeNull();
   });
+
+  it("uses the two answers a confirmation names for itself, and asks no PIN for them", () => {
+    const presented = presentAsk({
+      askId: "ask.assistant.1",
+      kind: "confirm",
+      status: "pending",
+      parks: false,
+      options: [{ id: "grant", label: "Allow", route: null }, { id: "deny", label: "Don't", route: null }],
+      consequences: ["delete"],
+      conversationId: "conversation.1",
+      turnId: "turn.2",
+      control: { name: "Delete a Flow", kind: "panel action" }
+    })!;
+    expect(presented.actions.map((action) => [action.kind, action.label])).toEqual([["deny", "Don't"], ["grant", "Allow"]]);
+    for (const action of presented.actions) expect(action).not.toHaveProperty("reauthorize");
+  });
 });

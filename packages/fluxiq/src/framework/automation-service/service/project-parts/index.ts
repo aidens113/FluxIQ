@@ -6,6 +6,7 @@ export { automationStudioFlowWriterKeepingPartCalls } from "./graph-calls.ts";
 export { automationStudioDurableAdaptationsKeepingParts, automationStudioRunDetailWithPartFacts, PROJECT_PART_RUN_FACTS_KEY } from "./repair/index.ts";
 export { automationStudioAnswerFirstKnownParts, automationStudioProjectBuildKnownParts, type AutomationStudioAnswerFirstPartActs } from "./known-parts.ts";
 export { projectPartIdOf, projectPartKeyOf } from "./part-id.ts";
+export { projectPartStepOf, type ProjectPartStepCallee } from "./step-words.ts";
 export * from "./run/index.ts";
 export type { AutomationStudioProjectPartsDependencies, AutomationStudioProjectPartsPorts, AutomationStudioProjectPartsRefusal } from "./library-types.ts";
 export type {

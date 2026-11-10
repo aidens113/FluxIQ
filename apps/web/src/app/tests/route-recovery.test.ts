@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("App Router recovery contract", () => {
-  it("provides root, domain, program, and not-found recovery surfaces", () => {
-    for (const file of ["error.tsx", "domains/[domainId]/error.tsx", "programs/[programId]/error.tsx"]) {
+  it("provides root, program, and not-found recovery surfaces", () => {
+    for (const file of ["error.tsx", "programs/[programId]/error.tsx"]) {
       const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
       expect(source).toContain("RouteErrorSurface");
     }
-    for (const file of ["loading.tsx", "domains/[domainId]/loading.tsx", "programs/[programId]/loading.tsx"]) {
+    for (const file of ["loading.tsx", "programs/[programId]/loading.tsx"]) {
       expect(readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).toContain('role="status"');
     }
     const notFound = readFileSync(new URL("../not-found.tsx", import.meta.url), "utf8");

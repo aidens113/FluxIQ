@@ -1,5 +1,6 @@
 import type { GlobalProgramApiRegistry, ProgramApiActor } from "../../_shared/api.ts";
 import { endpointResource } from "../../_shared/iam/index.ts";
+import { getAssistantModelInput, secretKeysSnapshotInput, setAssistantModelInput, setDefaultKeyInput } from "@fluxiq/contracts/program-api-inputs";
 import { isJsonObject } from "../../../framework/persistence/program-state/storage.ts";
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import {
@@ -32,6 +33,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.workspace(),
+    assistant: { input: secretKeysSnapshotInput, summary: "Lists the person's model keys by name and provider, and says which is the default and whether they are unlocked. A key's value is never shown.", phrases: ["list my keys", "which model keys do I have"] },
     list: {
       items: (payload) => (payload as { keys?: readonly unknown[] } | undefined)?.keys ?? [],
       ref: (item) => ({ kind: "key", keyId: (item as { id?: unknown }).id }),
@@ -47,6 +49,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:Unlock",
     accessLevel: "Write",
     resource: endpointResource.selfUser(),
+    assistant: { hidden: "Takes the person's password and authenticator code, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as UnlockSecretKeysRequest | undefined;
       if (!payload?.authorizationPassword) return { ok: false, error: "Your password is required." };
@@ -70,6 +73,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:CreateKey",
     accessLevel: "Write",
     resource: endpointResource.workspace(),
+    assistant: { hidden: "Takes a key's value and the person's password, which are never given to the assistant." },
     creates: (payload) => {
       const id = payload !== null && typeof payload === "object" ? (payload as { id?: unknown }).id : undefined;
       return typeof id === "string" && id ? { kind: "key", keyId: id } : null;
@@ -92,6 +96,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:UpdateKey",
     accessLevel: "Write",
     resource: endpointResource.key("id"),
+    assistant: { hidden: "Needs the person's password to rename or change a key, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as UpdateSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -110,6 +115,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:RotateKey",
     accessLevel: "Write",
     resource: endpointResource.key("id"),
+    assistant: { hidden: "Takes a new key value and the person's password, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as RotateSecretKeyRequest | undefined;
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
@@ -127,6 +133,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:RevealKey",
     accessLevel: "Write",
     resource: endpointResource.key("id"),
+    assistant: { hidden: "Shows a key's value, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as RevealSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -143,6 +150,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:DeleteKey",
     accessLevel: "Write",
     resource: endpointResource.key("id"),
+    assistant: { hidden: "Needs the person's password to delete a key, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as DeleteSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -151,6 +159,62 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       return { ok: true, payload: { deleted: await service.deleteKey(payload.id) } };
     }
   });
+  registry.register({
+    programId: "secret-keys",
+    endpoint: SECRET_KEYS_ENDPOINTS.setDefaultKey,
+    permission: "secrets.manage",
+    classification: "program-gated",
+    action: "secrets:SetDefaultKey",
+    accessLevel: "Write",
+    resource: endpointResource.key("id"),
+    assistant: { input: setDefaultKeyInput, summary: "Makes one of the person's model keys the default key.", phrases: ["use this key by default", "make this the default key"], contextArgs: { id: "keyId" } },
+    handler: async (request) => {
+      const input = setDefaultKeyInput.read(request.payload);
+      if (!input.ok) return { ok: false, error: "id is required" };
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setDefault(input.value.id) }));
+    }
+  });
+  registry.register({
+    programId: "secret-keys",
+    endpoint: SECRET_KEYS_ENDPOINTS.getAssistantModel,
+    permission: "programs.read",
+    classification: "read",
+    action: "secrets:GetAssistantModel",
+    accessLevel: "Read",
+    resource: endpointResource.workspace(),
+    assistant: { input: getAssistantModelInput, summary: "Says which key and model the assistant uses, and which key is the default.", phrases: ["which model are you using", "which key do you use"] },
+    handler: async () => ({ ok: true, payload: await service.modelKeys.read() })
+  });
+  registry.register({
+    programId: "secret-keys",
+    endpoint: SECRET_KEYS_ENDPOINTS.setAssistantModel,
+    permission: "secrets.manage",
+    classification: "program-gated",
+    action: "secrets:SetAssistantModel",
+    accessLevel: "Write",
+    resource: endpointResource.workspace(),
+    assistant: { input: setAssistantModelInput, summary: "Chooses the key and model the assistant uses; with neither, it uses the default key and that provider's normal model.", phrases: ["use a different model", "change the assistant's key"], contextArgs: { keyId: "keyId" }, target: { keyId: "key" } },
+    handler: async (request) => {
+      const input = setAssistantModelInput.read(request.payload);
+      if (!input.ok) return { ok: false, error: input.error };
+      const { keyId, model } = input.value;
+      // Someone else's key is never chosen for a person: the key must be theirs, or have no owner.
+      if (keyId !== undefined && request.actor) {
+        const owner = (await service.getKeySummary(keyId))?.createdBy;
+        if (owner !== undefined && owner !== request.actor.userId) return { ok: false, error: "That key belongs to someone else." };
+      }
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setAssistant({ keyId, model }) }));
+    }
+  });
+}
+
+/** A refusal the service words for a person (a missing, disabled or wrong kind of key) becomes the reply's error. */
+async function plainRefusal(run: () => Promise<{ ok: true; payload: unknown }>): Promise<{ ok: true; payload: unknown } | { ok: false; error: string }> {
+  try {
+    return await run();
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**

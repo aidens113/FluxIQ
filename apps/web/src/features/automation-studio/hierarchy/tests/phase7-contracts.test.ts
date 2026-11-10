@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createAutomationHierarchyCommands } from "../commands";
 import type { AutomationHierarchyNode } from "../contracts";
@@ -281,17 +279,5 @@ describe("Phase 7 SQL sibling pagination contracts", () => {
       hasMore: true,
       nextCursor: "child.cursor.2"
     });
-  });
-
-  it("forwards parent-owned page metadata through the canonical hierarchy sidebar", () => {
-    const source = readFileSync(
-      fileURLToPath(new URL("../AutomationProjectHierarchySidebar.tsx", import.meta.url)),
-      "utf8"
-    );
-
-    expect(source).toContain("childPageInfo?: Record<string, AutomationHierarchyPageInfo>");
-    expect(source).toContain("loadMoreChildren?(parentId: string | null): void");
-    expect(source).toContain("childPageInfo: props.childPageInfo");
-    expect(source).toContain("loadMoreChildren: props.loadMoreChildren");
   });
 });

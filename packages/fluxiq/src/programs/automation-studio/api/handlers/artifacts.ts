@@ -9,7 +9,7 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectArtifact, assistant: { hidden: "Reads and writes the raw stored documents the editor screens keep; people work with Flows, instructions and recordings instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProjectArtifact",
@@ -22,7 +22,7 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectArtifact,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectArtifact, assistant: { hidden: "Reads and writes the raw stored documents the editor screens keep; people work with Flows, instructions and recordings instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveProjectArtifact",
@@ -38,7 +38,7 @@ export function registerArtifactEndpoints(dependencies: AutomationStudioApiDepen
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectArtifact,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectArtifact, assistant: { hidden: "Reads and writes the raw stored documents the editor screens keep; people work with Flows, instructions and recordings instead." },
     permission: "flows.write",
     classification: "destructive",
     action: "studio:DeleteProjectArtifact",

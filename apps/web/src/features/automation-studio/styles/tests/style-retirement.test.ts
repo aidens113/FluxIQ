@@ -7,7 +7,8 @@ const stylesRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const studioRoot = resolve(stylesRoot, "..");
 const appRoot = resolve(studioRoot, "../../app");
 const globalsPath = join(appRoot, "globals.css");
-const studioManifestPath = join(appRoot, "programs/automation-studio/automation-studio.css");
+// The Studio views' styles load with the graph editor under a Flow's Advanced section.
+const studioManifestPath = join(appRoot, "(panel)/flows/[flowId]/graph/graph.css");
 const deletedLegacyStylesheets = [
   "instructions-settings-adaptations-problems/02-proposals.css",
   "instructions-settings-adaptations-problems/03-proposal-editor.css",
@@ -34,7 +35,7 @@ function productionSource(): string {
 }
 
 function imported(relativePath: string): boolean {
-  const expected = '@import "../../../features/automation-studio/styles/' + relativePath + '";';
+  const expected = '@import "../../../../../features/automation-studio/styles/' + relativePath + '";';
   return readFileSync(studioManifestPath, "utf8").includes(expected);
 }
 
@@ -76,7 +77,6 @@ describe("retired Automation Studio styles", () => {
     const runtimeStyles = readFileSync(join(stylesRoot, "runtime/03-runs-workspace.css"), "utf8");
 
     expect(imported("runtime/03-runs-workspace.css")).toBe(true);
-    expect(imported("workspace/08-view-workspaces.css")).toBe(true);
     expect(runtimeStyles).toContain(".automation-runs-workspace > header");
     expect(source).toContain("automation-runs-workspace");
   });

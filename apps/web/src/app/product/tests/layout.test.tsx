@@ -5,7 +5,6 @@ vi.mock("../../globals.css", () => ({}));
 vi.mock("../../styles/product-branding.css", () => ({}));
 vi.mock("../../../lib/auth", () => ({ currentFluxIQUser: async () => null }));
 vi.mock("../../GlobalClientGatewayPairing", () => ({ GlobalClientGatewayPairing: () => null }));
-vi.mock("../../GlobalConversationPrompt", () => ({ GlobalConversationPrompt: () => null }));
 vi.mock("../../session-reauthentication", () => ({ SessionReauthentication: () => null }));
 vi.mock("../../../features/programs/shared-ui", () => ({ GlobalAlertViewport: () => null }));
 import RootLayout, { generateMetadata } from "../../layout";

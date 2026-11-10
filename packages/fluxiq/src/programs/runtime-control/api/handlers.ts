@@ -1,4 +1,5 @@
 import type { RuntimeService } from "../../../runtime/index.ts";
+import { getRuntimeRunInput, listRuntimeCapabilitiesInput, listRuntimeClientsInput, listRuntimeRunsInput, runtimeSnapshotInput } from "@fluxiq/contracts/program-api-inputs";
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import { RUNTIME_ENDPOINTS, type GetRuntimeRunRequest } from "./contracts.ts";
@@ -12,6 +13,7 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     action: "ops:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.program(),
+    assistant: { input: runtimeSnapshotInput, summary: "Says how the engine is doing: its clients, capabilities and runs.", phrases: ["how is the engine doing", "engine status"] },
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
@@ -22,6 +24,7 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     action: "ops:ListClients",
     accessLevel: "List",
     resource: endpointResource.program(),
+    assistant: { input: listRuntimeClientsInput, summary: "Lists the clients connected to the engine.", phrases: ["list connected clients", "which clients are connected"] },
     handler: () => ({ ok: true, payload: service.clients() })
   });
   registry.register({
@@ -32,6 +35,7 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     action: "ops:ListCapabilities",
     accessLevel: "List",
     resource: endpointResource.program(),
+    assistant: { input: listRuntimeCapabilitiesInput, summary: "Lists what the engine can do.", phrases: ["what can the engine do"] },
     handler: async () => ({ ok: true, payload: await service.capabilities() })
   });
   registry.register({
@@ -42,6 +46,7 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     action: "ops:ListRuns",
     accessLevel: "List",
     resource: endpointResource.program(),
+    assistant: { input: listRuntimeRunsInput, summary: "Lists the runs the engine knows of.", phrases: ["list engine runs"] },
     handler: async () => ({ ok: true, payload: (await service.snapshot()).runs })
   });
   registry.register({
@@ -52,6 +57,7 @@ export function registerRuntimeApi(registry: GlobalProgramApiRegistry, service: 
     action: "ops:GetRun",
     accessLevel: "Read",
     resource: endpointResource.program(),
+    assistant: { input: getRuntimeRunInput, summary: "Shows one engine run.", phrases: ["show this engine run"] },
     handler: (request) => {
       const payload = request.payload as GetRuntimeRunRequest | undefined;
       if (!payload?.runId) return { ok: false, error: "runId is required" };

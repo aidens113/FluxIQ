@@ -78,11 +78,10 @@ timeline and action preview and reuse of the ordered preview index as selection
 moves. Browser certification must verify the mounted element count; passing the
 pure fixture test alone does not establish rendering or heap behavior.
 
-Follow
-[Automation Studio UI performance profiling](automation-studio-ui-performance-profiling.md)
-for browser setup, required interactions, source budgets, artifacts, and manual
-trace capture. Browser measurements are not currently implied by the accepted
-refactor architecture and must be attached explicitly.
+The browser profiling runbook for the old Studio workspace was retired with that
+workspace (`performance-baseline.spec.ts` and the phase 8 suite were deleted).
+Browser measurements are not implied by the accepted architecture and must be
+attached explicitly.
 
 ## Collection Procedure
 
@@ -185,7 +184,6 @@ Phase 12 documentation evidence cites:
 - `docs/architecture/automation-studio/persistence.md`;
 - `docs/architecture/automation-studio/workspace.md`;
 - `docs/operations/automation-studio-scale-certification.md`;
-- `docs/operations/automation-studio-ui-performance-profiling.md`;
 - `docs/integrations/automation-studio-importing-repos.md`.
 
 Validate authored links and generated reference freshness with:

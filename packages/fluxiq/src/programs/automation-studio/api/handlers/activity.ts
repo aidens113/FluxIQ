@@ -20,6 +20,7 @@ import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ActivityReadRequest } from "../../../../api-contracts/automation.ts";
 import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
 import { automationStudioActivityHub, type AutomationStudioActivitySnapshot } from "../../../../runtime/automation-activity/index.ts";
+import { getActivityInput } from "@fluxiq/contracts/program-api-inputs";
 
 export type AutomationStudioActivityApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
@@ -33,7 +34,7 @@ export function registerAutomationStudioActivityEndpoints(dependencies: Automati
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getActivity,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getActivity, assistant: { input: getActivityInput, summary: "Shows what a project is doing right now.", phrases: ["what is it doing right now"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetActivity",

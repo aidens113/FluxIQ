@@ -106,15 +106,13 @@ and other domain-specific programs are out of scope for this public framework.
 
 ## Web Program Launcher
 
-The root and domain directory routes share one `ProgramLauncher`. It presents
-compact grouped rows instead of descriptive cards, searches title, description,
-category, and status, and stores up to six recent destinations in local browser
-storage. Arrow Up/Down and Home/End move through visible destinations.
+Retired. The home launcher (`ProgramLauncher`), the `/get-started` page and the
+`/domains/:domainId` routes were deleted with the old Studio workspace. The panel
+is now `/`, `/flows`, `/flows/<id>`, `/flows/<id>/graph`, `/runs`, `/runs/<id>`,
+`/data`, `/security` and `/settings`; the old routes redirect to the matching new
+page. Program availability and permission filtering remain server/catalog
+responsibilities.
 
-Domains appear in the same discovery model as programs while retaining their
-own route and status. A domain route reuses the launcher with its scoped program
-catalog. Loaded-empty and filtered-empty states are explicit. Program
-availability and permission filtering remain server/catalog responsibilities.
 ## Global Web Shell
 
 Directory routes use `GlobalTopbar` with a FluxIQ home link, optional semantic

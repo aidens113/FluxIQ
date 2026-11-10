@@ -12,6 +12,7 @@ import { registerProjectEndpoints } from "./projects.ts";
 import { registerCacheEndpoints } from "./caches.ts";
 import { registerWorkspaceEndpoints } from "./workspace.ts";
 import { registerFlowEndpoints } from "./flows.ts";
+import { registerGraphRevisionEndpoints } from "./graph-revisions.ts";
 import { registerFlowLifecycleEndpoints } from "./flow-lifecycle.ts";
 import { registerArtifactEndpoints } from "./artifacts.ts";
 import { registerRecordingEndpoints } from "./recordings.ts";
@@ -30,6 +31,8 @@ import { registerRunControlEndpoints } from "./run-control.ts";
 import { registerProjectTaskEndpoints, registerTaskAttemptEndpoints, registerTaskKnownFlowEndpoint } from "./task/index.ts";
 import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 import { registerRuntimeIdentityEndpoint } from "./diagnostics/index.ts";
+import { registerPanelAssistantEndpoints } from "../panel-assistant/index.ts";
+import { registerFlowOutlineEndpoints } from "../flow-outline/index.ts";
 import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";
 
 export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, service: AutomationStudioService, identityAccess?: IdentityAccessService, clientGatewayBridge?: AutomationStudioClientGatewayBridge, clientGateway?: ClientGatewayService): void {
@@ -40,6 +43,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerCacheEndpoints(dependencies);
   registerWorkspaceEndpoints(dependencies);
   registerFlowEndpoints(dependencies);
+  registerGraphRevisionEndpoints(dependencies);
+  registerFlowOutlineEndpoints(dependencies);
   registerFlowLifecycleEndpoints(dependencies);
   registerArtifactEndpoints(dependencies);
   registerRecordingEndpoints(dependencies);
@@ -61,4 +66,5 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerRunControlEndpoints(dependencies);
   registerClientGatewayEndpoints(dependencies);
   registerRuntimeIdentityEndpoint(dependencies);
+  registerPanelAssistantEndpoints(dependencies);
 }

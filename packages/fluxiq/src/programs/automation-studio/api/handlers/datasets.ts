@@ -21,13 +21,14 @@ import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type DatasetRunListRequest, type ProjectDatasetListRequest, type RunDatasetDeleteRequest, type RunDatasetExportRequest, type RunDatasetListRequest, type RunDatasetPageRequest } from "../../../../api-contracts/automation.ts";
 import { automationStudioPageLimit } from "../../../../framework/persistence/automation/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { listRunDatasetsInput, getRunDatasetPageInput, exportRunDatasetInput, deleteRunDatasetsInput, listProjectDatasetsInput, listDatasetRunsInput } from "@fluxiq/contracts/program-api-inputs";
 
 export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRunDatasets, assistant: { input: listRunDatasetsInput, summary: "Lists the tables of rows one run collected.", phrases: ["what data did the run collect"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListRunDatasets",
@@ -44,7 +45,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRunDatasetPage, assistant: { input: getRunDatasetPageInput, summary: "Shows a page of rows from a collected table.", phrases: ["show the collected rows", "show the data"], contextArgs: { projectId: "projectId", runId: "runId", datasetId: "datasetId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRunDatasetPage",
@@ -67,7 +68,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportRunDataset, assistant: { input: exportRunDatasetInput, summary: "Exports a collected table as CSV or JSON.", phrases: ["export the data", "download the results as csv"], contextArgs: { projectId: "projectId", runId: "runId", datasetId: "datasetId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ExportRunDataset",
@@ -90,7 +91,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRunDatasets, assistant: { input: deleteRunDatasetsInput, summary: "Deletes one collected table of a run, or all of them.", phrases: ["delete the collected data"], contextArgs: { projectId: "projectId", runId: "runId", datasetId: "datasetId" } },
     permission: "flows.write",
     classification: "destructive",
     action: "studio:DeleteRunDatasets",
@@ -112,7 +113,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectDatasets, assistant: { input: listProjectDatasetsInput, summary: "Lists the tables of rows collected in a project.", phrases: ["show my data tables"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectDatasets",
@@ -136,7 +137,7 @@ export function registerRunDatasetEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listDatasetRuns, assistant: { input: listDatasetRunsInput, summary: "Lists the runs that hold rows for one table.", phrases: ["which runs collected this table"], contextArgs: { projectId: "projectId", flowId: "flowId", datasetId: "datasetId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListDatasetRuns",

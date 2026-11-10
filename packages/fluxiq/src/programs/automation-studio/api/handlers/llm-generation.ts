@@ -4,6 +4,7 @@
 // only a lasting consequence of one of its actions is asked about
 // (`permittedConsequences`).
 
+import { cancelFlowBootstrapInput, getFlowBootstrapFailureInput, getFlowBootstrapGenerationReadinessInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
 import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBootstrapGenerationError } from "../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
@@ -16,7 +17,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   const { registry, service } = dependencies;
   const failedBuilds = automationStudioFlowBootstrapFailedBuilds<NonNullable<ReturnType<typeof parseAutomationStudioFlowBootstrapGenerationError>>>();
   registry.register({
-    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelFlowBootstrap,
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelFlowBootstrap, assistant: { input: cancelFlowBootstrapInput, summary: "Stops a Flow's build that is running.", phrases: ["stop the build","cancel building this flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "runtime.control", classification: "authoring",
     action: "studio:CancelFlowBootstrap",
     accessLevel: "Write",
@@ -30,7 +31,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness, assistant: { input: getFlowBootstrapGenerationReadinessInput, summary: "Checks whether a model is set up to build Flows.", phrases: ["can I build flows yet","is a model set up"] },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowBootstrapGenerationReadiness",
@@ -49,7 +50,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowGenerationInstruction, assistant: { hidden: "Sent by the build screen with the caller's sign-in session id to store the words a build starts from; a person gives them in chat." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlowGenerationInstruction",
@@ -69,7 +70,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, assistant: { hidden: "The build itself: it needs the caller's sign-in session and build options, and builds start from the chat, which supplies them." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:GenerateFlowBootstrapAdaptation",
@@ -89,7 +90,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   // `run-muq3ubys-4b4dbf5b` spent $0.227 and the spend ledger recorded $0.
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapFailure,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapFailure, assistant: { input: getFlowBootstrapFailureInput, summary: "Explains why a Flow's latest build failed.", phrases: ["why did the build fail","what went wrong building this flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowBootstrapFailure",

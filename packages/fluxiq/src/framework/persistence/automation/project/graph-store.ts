@@ -24,6 +24,8 @@ export type AutomationStudioGraphPatchOperation =
   | { op: "set_node_parameters"; nodeId: string; values: JsonObject }
   /** Replaces a node's whole metadata object, leaving every other field alone. Its inverse restores the previous object. */
   | { op: "set_node_metadata"; nodeId: string; metadata: JsonObject }
+  /** Sets a step's label. An empty label is refused; the store shows a step with no label by its id, so that is what an inverse puts back. */
+  | { op: "set_node_label"; nodeId: string; label: string }
   | { op: "delete_node"; nodeId: string }
   | { op: "add_edge"; edge: Omit<AutomationStudioGraphEdgeRecord, "revision" | "createdAt" | "updatedAt" | "deletedAt"> }
   | { op: "delete_edge"; edgeId: string };
@@ -123,7 +125,7 @@ export class AutomationStudioProjectGraphRepository {
       return { status: "imported", revisionNumber: 1, nodeCount: flow.nodes.length, edgeCount: flow.edges.length, regionCount: flow.regions?.length ?? 0 };
     });
   }
-  async applyPatch(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; baseRevision: number; mutationId: string; operations: AutomationStudioGraphPatchOperation[]; authorId?: string | null; message?: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
+  async applyPatch(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; baseRevision: number; mutationId: string; operations: AutomationStudioGraphPatchOperation[]; authorId?: string | null; source?: string; message?: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
     const unit = await AutomationStudioProjectUnitOfWork.open({ pool: input.pool, projectId: input.projectId });
     try {
       return await unit.runIdempotent({ mutationId: input.mutationId, operationKind: "graph.patch", ownerKind: "flow_graph", ownerId: input.flowId, request: graphPatchRequest(input), ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) }, async (context) => {
@@ -136,7 +138,7 @@ export class AutomationStudioProjectGraphRepository {
         }
         const nextRevision = flow.graph_revision + 1;
         const revisionId = graphRevisionId(input.flowId, nextRevision);
-        await insertRevision(context.sql, { flowId: input.flowId, revisionNumber: nextRevision, parentRevision: flow.graph_revision, authorId: input.authorId ?? null, source: "editor_patch", operationCount: input.operations.length, digest: digest({ baseRevision: input.baseRevision, operations: input.operations }), message: input.message ?? "", createdAt: context.changedAt });
+        await insertRevision(context.sql, { flowId: input.flowId, revisionNumber: nextRevision, parentRevision: flow.graph_revision, authorId: input.authorId ?? null, source: input.source ?? "editor_patch", operationCount: input.operations.length, digest: digest({ baseRevision: input.baseRevision, operations: input.operations }), message: input.message ?? "", createdAt: context.changedAt });
         const changedEntities: AutomationStudioGraphPatchApplied["changedEntities"] = [];
         const deletedIds: string[] = [];
         const affectedPartitionIds = new Set<string>();
@@ -175,7 +177,7 @@ export class AutomationStudioProjectGraphRepository {
       return { revisionNumber, objectId: written.object.objectId, sha256: written.object.sha256, byteCount: written.object.byteCount };
     } finally { await content.close(); }
   }
-  async restoreSnapshot(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; snapshotSha256: string; mutationId: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
+  async restoreSnapshot(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; snapshotSha256: string; mutationId: string; authorId?: string | null; message?: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
     const content = await AutomationStudioProjectContentStore.open({ pool: input.pool, projectId: input.projectId });
     try {
       const asset = await content.readBytesBySha256(input.snapshotSha256);
@@ -192,7 +194,7 @@ export class AutomationStudioProjectGraphRepository {
         const existing = current.edges.find((item) => item.edgeId === edge.edgeId);
         if (!existing || !sameJson(stripEdge(existing), stripEdge(edge))) operations.push({ op: "add_edge", edge: stripEdge(edge) });
       }
-      return await this.applyPatch({ pool: input.pool, projectId: input.projectId, flowId: input.flowId, baseRevision: current.flow.graphRevision, mutationId: input.mutationId, operations, message: "Restore graph snapshot", ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) });
+      return await this.applyPatch({ pool: input.pool, projectId: input.projectId, flowId: input.flowId, baseRevision: current.flow.graphRevision, mutationId: input.mutationId, operations, source: "snapshot_restore", message: input.message ?? "Restore graph snapshot", ...(input.authorId === undefined ? {} : { authorId: input.authorId }), ...(input.changedAt === undefined ? {} : { changedAt: input.changedAt }) });
     } finally { await content.close(); }
   }
   async exportSnapshotData(flowId: string): Promise<{ flow: { flowId: string; graphRevision: number }; nodes: AutomationStudioGraphNodeRecord[]; edges: AutomationStudioGraphEdgeRecord[]; partitions: AutomationStudioGraphPartitionRecord[] }> {
@@ -319,6 +321,20 @@ async function applyGraphOperation(sql: AutomationStudioSqlExecutor, store: Auto
       primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
       cascaded: [],
       inverse: [{ op: "set_node_metadata", nodeId: before.nodeId, metadata: before.metadata }],
+      affectedPartitionIds: partitionIds([saved.partitionId])
+    };
+  }
+  if (operation.op === "set_node_label") {
+    if (typeof operation.label !== "string") throw new Error("A step label must be text.");
+    const label = operation.label.trim();
+    if (!label) throw new Error("A step label cannot be empty.");
+    if (label.length > 200) throw new Error("A step label can be at most 200 characters.");
+    const before = await requiredNode(store, sql, operation.nodeId, flowId);
+    const saved = await store.upsertNode({ ...stripNode(before), label }, changedAt, sql);
+    return {
+      primary: nodeRecord(operation.op, saved.nodeId, before, saved, null, revision),
+      cascaded: [],
+      inverse: [{ op: "set_node_label", nodeId: before.nodeId, label: before.label || before.nodeId }],
       affectedPartitionIds: partitionIds([saved.partitionId])
     };
   }

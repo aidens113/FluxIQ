@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   automationGraphDerivationKeys,
@@ -20,16 +19,6 @@ function request(revision: string, ownerKey = "project:flow", validate = true): 
 }
 
 describe("Automation graph derivation job", () => {
-  it("keeps conversion and validation out of the graph runtime render path", () => {
-    const runtimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
-    expect(runtimeSource).toContain("createAutomationGraphDerivationJob()");
-    expect(runtimeSource).toContain("automationStudioViewBaseId(pane.activeViewId) === automationStudioViewId.flowEditor");
-    expect(runtimeSource).toContain("pane.activeViewId === automationStudioViewId.problems");
-    expect(runtimeSource).not.toContain("taskFlowToReactFlowGraph");
-    expect(runtimeSource).not.toContain("automationPolicyGraphProblems");
-    expect(runtimeSource).not.toContain("pane.tabs.includes(automationStudioViewId.flowEditor)");
-  });
-
   it("does no conversion until a displaying connector subscribes and cancels when the last subscriber leaves", () => {
     const queued: Array<{ callback: () => void; cancel: ReturnType<typeof vi.fn> }> = [];
     const convert = vi.fn(() => ({ nodes: [], edges: [] }));

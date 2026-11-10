@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { identityAccessSnapshotInput, renameIdentityUserInput, revokeIdentitySessionInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   IDENTITY_ACCESS_ENDPOINTS,
@@ -65,6 +66,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.workspace(),
+    assistant: { input: identityAccessSnapshotInput, summary: "Lists the people, their roles and the sign-in sessions.", phrases: ["who has access", "show sign-in sessions", "list the people"] },
     handler: async () => ({
       ok: true,
       payload: await service.snapshot()
@@ -78,6 +80,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:CreateUser",
     accessLevel: "PermissionsManagement",
     resource: endpointResource.workspace(),
+    assistant: { hidden: "Adding a person needs their password and the caller's own password, PIN or authenticator code, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as CreateIdentityUserRequest | undefined;
       if (!payload?.username || !payload.displayName || !payload.roleId) return { ok: false, error: "username, displayName, and roleId are required" };
@@ -98,6 +101,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:UpdateUser",
     accessLevel: "PermissionsManagement",
     resource: endpointResource.user("id"),
+    assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in.", phrases: ["rename this person", "change this person's display name"] },
     handler: async (request) => {
       const payload = request.payload as UpdateIdentityUserRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -121,6 +125,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:SetPassword",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Takes a password, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -142,6 +147,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:SetPin",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Takes a PIN, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as SetIdentitySecretRequest | undefined;
       if (!payload?.userId || !payload.value) return { ok: false, error: "userId and value are required" };
@@ -163,6 +169,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:BeginTotp",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Starts authenticator enrollment, which hands out a secret and needs the caller's own credentials, never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -181,6 +188,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:ConfirmTotp",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Takes an authenticator code, which is never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as TotpConfirmRequest | undefined;
       if (!payload?.userId || !payload.code) return { ok: false, error: "userId and code are required" };
@@ -200,6 +208,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:DisableTotp",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Turns off a person's authenticator and needs the caller's own credentials, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -216,6 +225,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:CreateSession",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Creates a sign-in token for a person and needs the caller's own credentials, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as SessionRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -234,6 +244,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:RevokeSession",
     accessLevel: "Write",
     resource: endpointResource.workspace(),
+    assistant: { input: revokeIdentitySessionInput, summary: "Signs one sign-in session out, by the digest the sessions list shows.", phrases: ["sign this session out", "end this sign-in session"], target: { sessionDigest: "sign-in session" } },
     handler: async (request) => {
       const payload = request.payload as RevokeSessionRequest | undefined;
       const sessionId = typeof payload?.sessionId === "string" && payload.sessionId ? payload.sessionId : undefined;
@@ -257,6 +268,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:UnlockVault",
     accessLevel: "Write",
     resource: endpointResource.user("userId"),
+    assistant: { hidden: "Takes the person's vault password, PIN or authenticator code, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as VaultUnlockRequest | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
@@ -275,6 +287,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:LockVault",
     accessLevel: "Write",
     resource: endpointResource.selfUser(),
+    assistant: { hidden: "Locks the engine's vault; an operator step a person does not ask for in words." },
     // No recheck: locking only takes access away, and a lock must never be the
     // step that fails when an operator is trying to shut the vault.
     handler: async () => ({ ok: true, payload: await service.lockVault() })

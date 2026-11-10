@@ -3,7 +3,6 @@ import type { CSSProperties } from "react";
 import "./globals.css";
 import "./styles/product-branding.css";
 import { GlobalClientGatewayPairing } from "./GlobalClientGatewayPairing";
-import { GlobalConversationPrompt } from "./GlobalConversationPrompt";
 import { GlobalAlertViewport } from "../features/programs/shared-ui";
 import { currentFluxIQUser } from "../lib/auth";
 import { SessionReauthentication } from "./session-reauthentication";
@@ -32,7 +31,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           <GlobalAlertViewport />
           {auth ? <SessionReauthentication /> : null}
           {pairingEligible ? <GlobalClientGatewayPairing asksTotp={auth?.user.totpEnabled === true} /> : null}
-          {auth ? <GlobalConversationPrompt /> : null}
         </PanelBrandingProvider>
       </body>
     </html>

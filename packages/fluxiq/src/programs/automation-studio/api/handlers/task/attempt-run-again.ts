@@ -15,6 +15,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type RunTaskAgainRequest } from "../../../
 import { automationStudioAnswerFirstGoalWords, automationStudioAnswerFirstRunAgain } from "../../../../../framework/automation-service/service/answer-first/run-again/index.ts";
 import { boundedIdentifier, generateFlowBootstrapAdaptationForRequest } from "../../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
+import { runTaskAgainInput } from "@fluxiq/contracts/program-api-inputs";
 
 const FIELDS: ReadonlySet<string> = new Set(["projectId", "taskId", "authSessionId"]);
 
@@ -24,7 +25,7 @@ export function registerRunTaskAgainEndpoint(dependencies: AutomationStudioApiDe
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runTaskAgain,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runTaskAgain, assistant: { input: runTaskAgainInput, summary: "Runs a task again.", phrases: ["run that task again", "try the task again"], contextArgs: { projectId: "projectId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:RunTaskAgain",

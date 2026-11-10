@@ -1,6 +1,7 @@
 // Everything routed through a paired client: its snapshot and item listings,
 // trust revocation, recording control, snapshots and action execution.
 
+import { clientGatewaySnapshotInput, listClientGatewayItemsInput, revokeClientTrustInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type CaptureClientSnapshotRequest, type ExecuteClientActionRequest, type RevokeClientTrustRequest, type StartClientRecordingRequest, type StopClientRecordingRequest } from "../../../../api-contracts/automation.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../../../../framework/persistence/automation/index.ts";
@@ -11,6 +12,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.clientGatewaySnapshot,
+    assistant: { input: clientGatewaySnapshotInput, summary: "Shows how many browsers are connected, paired and trusted.", phrases: ["is my browser connected", "how many browsers are connected"] },
     permission: "programs.read",
     classification: "read",
     action: "studio:ClientGatewaySnapshot",
@@ -28,6 +30,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listClientGatewayItems,
+    assistant: { input: listClientGatewayItemsInput, summary: "Lists the connected browsers, waiting pairing requests or trusted browsers.", phrases: ["show my connected browsers", "which browsers are trusted"] },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListClientGatewayItems",
@@ -50,6 +53,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.revokeClientTrust,
+    assistant: { input: revokeClientTrustInput, summary: "Stops trusting a browser.", phrases: ["stop trusting this browser", "remove a trusted browser"], target: { trustedClientId: "trusted browser" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:RevokeClientTrust",
@@ -65,6 +69,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.startClientRecording,
+    assistant: { hidden: "The browser starts its own recording and tells FluxIQ; a person does not know its session ids." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:StartClientRecording",
@@ -79,6 +84,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.stopClientRecording,
+    assistant: { hidden: "The browser stops its own recording and tells FluxIQ; a person does not know its session ids." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:StopClientRecording",
@@ -94,6 +100,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.captureClientSnapshot,
+    assistant: { hidden: "This is sent between FluxIQ and a connected browser to capture a page; only a client process uses it." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:CaptureClientSnapshot",
@@ -112,6 +119,7 @@ export function registerClientGatewayEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.executeClientAction,
+    assistant: { hidden: "This runs a raw command in a connected browser; only a client process sends it." },
     permission: "runtime.control",
     classification: "destructive",
     action: "studio:ExecuteClientAction",

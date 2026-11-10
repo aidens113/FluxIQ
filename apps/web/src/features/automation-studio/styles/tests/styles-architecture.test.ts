@@ -6,8 +6,12 @@ import { describe, expect, it } from "vitest";
 const stylesRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appRoot = resolve(stylesRoot, "../../../app");
 const globalsPath = join(appRoot, "globals.css");
-const studioRouteRoot = join(appRoot, "programs/automation-studio");
-const studioManifestPath = join(studioRouteRoot, "automation-studio.css");
+// The Studio views' styles load with the graph editor under a Flow's Advanced section.
+const studioRouteRoot = join(appRoot, "(panel)/flows/[flowId]/graph");
+const studioManifestPath = join(studioRouteRoot, "graph.css");
+// The run page reuses the run views, so it loads the runtime and state styles itself.
+// Only these two route manifests may import Studio view styles.
+const runManifestPath = join(appRoot, "(panel)/runs/[runId]/run.css");
 const studioLayoutPath = join(studioRouteRoot, "layout.tsx");
 const rootLayoutPath = join(appRoot, "layout.tsx");
 const deletedLegacyStylesheet = normalize(
@@ -18,10 +22,8 @@ const expectedDomains = new Set([
   "flow-editor",
   "instructions-settings-adaptations-problems",
   "recordings-clients-inspector",
-  "router-subflows",
   "runtime",
   "state",
-  "workspace",
 ]);
 const retiredStylesheets = new Set<string>();
 
@@ -62,7 +64,7 @@ describe("Automation Studio CSS architecture", () => {
     expect(studio).not.toContain("{");
     expect(rootLayout).not.toContain("@xyflow/react/dist/style.css");
     expect(studioLayout).toContain('import "@xyflow/react/dist/style.css"');
-    expect(studioLayout).toContain('import "./automation-studio.css"');
+    expect(studioLayout).toContain('import "./graph.css"');
     expect(importedCssFiles().length).toBeGreaterThan(0);
   });
 
@@ -115,16 +117,37 @@ describe("Automation Studio CSS architecture", () => {
     }
   });
 
-  it("keeps feature style imports owned by the Studio route manifest", () => {
-    const appStyles = cssFilesUnder(appRoot).filter((file) => ![normalize(globalsPath), normalize(studioManifestPath)].includes(file));
+  it("keeps feature style imports owned by the Studio route manifests", () => {
+    const owners = [normalize(globalsPath), normalize(studioManifestPath), normalize(runManifestPath)];
+    const appStyles = cssFilesUnder(appRoot).filter((file) => !owners.includes(file));
 
     for (const file of appStyles) {
       const css = readFileSync(file, "utf8");
       expect(css, file).not.toMatch(/@import\s+["'][^"']*automation-studio[^"']*["']/u);
     }
 
+    // The run page's manifest is import-only, imports each stylesheet at most once, and only
+    // stylesheets the Studio manifest also owns, so no style exists outside the Studio set.
+    const runImports = readFileSync(runManifestPath, "utf8")
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => {
+        const importPath = line.match(/^@import "([^"]+)";$/u)?.[1];
+        if (!importPath) {
+          throw new Error(`Invalid run.css manifest entry: ${line}`);
+        }
+        return normalize(resolve(dirname(runManifestPath), importPath));
+      });
+    const studioImports = importedCssFiles();
+    expect(runImports.length).toBeGreaterThan(0);
+    expect(new Set(runImports).size).toBe(runImports.length);
+    for (const path of runImports) {
+      expect(path.startsWith(normalize(stylesRoot)), path).toBe(true);
+      expect(studioImports, path).toContain(path);
+    }
+
     expect(readFileSync(globalsPath, "utf8")).not.toMatch(/automation-studio|@xyflow/u);
-    const imports = importedCssFiles().filter((path) => path.startsWith(normalize(stylesRoot)));
+    const imports = studioImports.filter((path) => path.startsWith(normalize(stylesRoot)));
     expect(imports).toHaveLength(cssFilesUnder(stylesRoot).length - retiredStylesheets.size);
   });
 });

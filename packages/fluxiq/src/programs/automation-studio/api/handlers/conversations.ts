@@ -32,6 +32,7 @@
 // service. `register.ts` builds the record from the service's `conversations`
 // field in one line.
 
+import { getConversationInput, listConversationsInput } from "@fluxiq/contracts/program-api-inputs";
 import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "../../../_shared/authorization.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
@@ -77,6 +78,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations,
+    assistant: { input: listConversationsInput, summary: "Lists the conversation threads in a project.", phrases: ["show my past chats", "list my conversations"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListConversations",
@@ -117,6 +119,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.openConversation,
+    assistant: { hidden: "The chat panel opens a thread by itself when a person starts typing." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:OpenConversation",
@@ -138,6 +141,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversation,
+    assistant: { input: getConversationInput, summary: "Reads one conversation thread.", phrases: ["show me that conversation", "what was said in this chat"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetConversation",
@@ -160,6 +164,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
+    assistant: { hidden: "This is how the chat panel sends what a person types, so the assistant is already in the middle of it." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:AppendTurn",
@@ -176,6 +181,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk,
+    assistant: { hidden: "A question a thread is waiting on is answered with the panel's own buttons, never by the assistant on the person's behalf." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:AnswerAsk",
@@ -193,6 +199,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment,
+    assistant: { hidden: "The chat panel fetches a turn's attachment to draw it; a person does not ask for it in words." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetConversationAttachment",

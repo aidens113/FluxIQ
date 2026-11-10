@@ -72,9 +72,50 @@ export type EncryptedSecretValueRecordV2 = {
 
 export type EncryptedSecretValueRecord = EncryptedSecretValueRecordV1 | EncryptedSecretValueRecordV2;
 
+/**
+ * Which model key is the workspace's default, and what the panel assistant uses.
+ * One small record beside the keys; it holds key ids, a model id and a notice,
+ * never a value. Absent until something sets it: the default is then the oldest
+ * enabled model key, so a workspace made before this record needs no migration.
+ */
+export type ModelKeySettingsRecord = {
+  recordType: "secret-keys-model-settings";
+  id: string;
+  /** The key chosen or promoted as default; read only while it is still an enabled model key. */
+  defaultKeyId?: string | undefined;
+  /** Said when the default changed on its own, until the person picks a default. */
+  defaultNotice?: { message: string; atMs: number } | undefined;
+  /** The key the assistant uses; absent means "the default key". */
+  assistantKeyId?: string | undefined;
+  /** The model id for that key's provider; absent means the provider's normal model. */
+  assistantModel?: string | undefined;
+  /** The provider `assistantModel` was chosen for, so a model is never sent to another provider. */
+  assistantModelProvider?: string | undefined;
+  /** What one message to the assistant may spend, in US dollars; absent means the assistant's default. */
+  assistantAllowanceUsd?: number | undefined;
+  updatedAtMs: number;
+};
+
+/** The model-key choices as a client shows them: no ids of values, only which key. */
+export type ModelKeySettingsView = {
+  defaultKeyId: string | null;
+  defaultNotice?: { message: string; atMs: number } | undefined;
+  assistantKeyId: string | null;
+  assistantModel: string | null;
+  /** The per-message spending allowance a person chose for the assistant, in US dollars; null means the assistant's default. */
+  assistantAllowanceUsd: number | null;
+};
+
+/** What the panel assistant should call, or a plain reason there is none. Never carries a secret value. */
+export type AssistantModelChoice =
+  | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined }
+  | { ok: false; reason: string };
+
 export type SecretKeysSnapshot = {
   /** `unlocked` is said only on a snapshot read for a caller, and only of that caller's own keys. */
   keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>;
+  /** Which key is the default, and the assistant's choice. */
+  modelSettings?: ModelKeySettingsView;
 };
 
 /**

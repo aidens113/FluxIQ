@@ -15,6 +15,7 @@ import type { ProgramCommandTransport } from "../../automation-studio/data/progr
 import { createProgramActivityPort } from "../activity";
 import { createChangesPort } from "./changes-port";
 import { createConversationPort } from "./conversation-port";
+import { createPanelConversationPort } from "./panel-conversation-port";
 import { createModelsPort } from "./models-port";
 import type { ProgramChatTransportOptions } from "./options";
 import { createRecordingsPort } from "./recordings-port";
@@ -22,7 +23,7 @@ import { createRunPort } from "./run-port";
 
 export function createProgramChatTransport(api: ProgramCommandTransport, options: ProgramChatTransportOptions): ChatTransport {
   return {
-    conversation: createConversationPort(api, options),
+    conversation: options.panel ? createPanelConversationPort(api, options.panel) : createConversationPort(api, options),
     changes: createChangesPort(options),
     activity: createProgramActivityPort(api, { projectId: options.projectId, ...(options.activityTimers ? { timers: options.activityTimers } : {}) }),
     runs: createRunPort(api, options),

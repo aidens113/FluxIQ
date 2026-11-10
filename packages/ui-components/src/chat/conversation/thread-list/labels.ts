@@ -13,7 +13,8 @@ const SUBJECT_NOUN: Readonly<Record<ThreadSubjectKind, string>> = Object.freeze(
   project: "This project",
   flow: "This Flow",
   build: "This Flow build",
-  run: "This run"
+  run: "This run",
+  panel: "FluxIQ assistant"
 });
 
 /** What the thread is about, as a noun: "This run", "This Flow". Never the subject's id. */

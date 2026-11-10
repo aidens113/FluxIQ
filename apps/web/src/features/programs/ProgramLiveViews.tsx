@@ -5,10 +5,6 @@ import type { CurrentUser } from "./types";
 import { Panel } from "./shared-ui";
 import { useUiRenderMetric } from "./ui-performance";
 
-const AutomationStudioLive = dynamic(
-  () => import("../automation-studio/AutomationStudioLive").then((module) => module.AutomationStudioLive),
-  { loading: ProgramViewLoading }
-);
 const BackgroundTasksLive = dynamic(
   () => import("./live-views/background-tasks").then((module) => module.BackgroundTasksLive),
   { loading: ProgramViewLoading }
@@ -49,7 +45,6 @@ const RuntimeLive = dynamic(
 export function LiveProgramMain({ programId, user }: { programId: string; user: CurrentUser }) {
   useUiRenderMetric(`LiveProgramMain:${programId}`);
   switch (programId) {
-    case "automation-studio": return <AutomationStudioLive currentUser={user} />;
     case "identity-access": return <IdentityAccessLive currentUser={user} />;
     case "database-manager": return <DatabaseManagerLive currentUser={user} />;
     case "background-tasks": return <BackgroundTasksLive />;

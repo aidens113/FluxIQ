@@ -139,8 +139,8 @@ coupled to the current transaction boundary.
 The chat a person types into is not part of this program. It is
 `@fluxiq/ui-components`, which each client mounts through ports (see
 [workspace](automation-studio/workspace.md#the-chat-ui)). The extension's
-chat is a thin adapter over it, and Core's panel renders it at
-`/programs/automation-studio/chat` beside its own conversation UI.
+chat is a thin adapter over it, and Core's panel renders it as the assistant dock
+on every page.
 
 ## First Core Contracts
 
@@ -1068,7 +1068,7 @@ Public saves cannot downgrade a legacy graph to `orchestration`. The internal
 visual migration creates or reuses a dedicated primary Subflow, copies and
 verifies nodes, edges, evidence, and execution defaults, installs and reads back
 the Router fallback, and only then clears the parent graph and execution
-defaults. The PIN-authorized `migrate-legacy-flow-representation` endpoint gives
+defaults. The `migrate-legacy-flow-representation` endpoint (an authoring call; no PIN) gives
 non-editor automation the same verified transition for one caller-specified,
 existing owned Subflow; it requires `flows.write`, refuses mismatched ownership
 or graph content, and returns the migrated parent Flow, Subflow, and graph Flow.
@@ -2792,8 +2792,9 @@ payload to reconcile locally.
   every legacy source artifact unchanged.
 
 The corresponding API endpoints use `programs.read` for list/get and
-`flows.write` for authoring, publishing, deprecation, and inspection. Mutating
-operations retain the existing authorization-PIN recheck.
+`flows.write` for authoring, publishing, deprecation, and inspection. None asks
+for a PIN: a destructive endpoint is confirmed by the person's one-press grant
+(see `automation-studio/persistence.md`).
 
 Legacy compatibility is governed per project. Projects begin at schema `0.1`
 in `compatibility`; Task/Routine writes return structured deprecation

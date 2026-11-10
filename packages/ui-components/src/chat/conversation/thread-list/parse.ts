@@ -4,7 +4,7 @@
 
 import type { ChatThreadSummary, ThreadSubjectKind } from "./summary.ts";
 
-const SUBJECT_KINDS: readonly string[] = ["project", "flow", "build", "run"];
+const SUBJECT_KINDS: readonly string[] = ["project", "flow", "build", "run", "panel"];
 const STATUSES: readonly string[] = ["open", "resolved"];
 
 /** `value` as a list of threads, in the order Core gave them, or undefined when it is not a list. */
