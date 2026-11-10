@@ -10,9 +10,11 @@ import {
   FLUXNODE_ERROR_HTTP_STATUS,
   fluxNodeEventAnswerSchema,
   fluxNodeNameToFlowPath,
+  dataPipelineHash,
   fluxNodeSpecHash,
   formatFluxNodeEventFrame,
   parseFluxNodeRunRequest,
+  type DataPipeline,
   type FluxNodeErrorCode,
   type FluxNodeRunRequest,
   type FluxNodeSpec
@@ -41,6 +43,8 @@ export type FakeEngine = {
   requests: RecordedRequest[];
   runs: Map<string, FakeRun>;
   specs: Map<string, FluxNodeSpec>;
+  /** The pipelines registered, or run, by name. */
+  pipelines: Map<string, DataPipeline>;
   /** Teach the engine a public key (SPKI DER, base64url), as turning keys on does. */
   trust(publicKeyBase64Url: string): void;
   /** Forget every session, so the next call is refused as unauthenticated. */
@@ -84,6 +88,7 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
   const requests: RecordedRequest[] = [];
   const runs = new Map<string, FakeRun>();
   const specs = new Map<string, FluxNodeSpec>();
+  const pipelines = new Map<string, DataPipeline>();
   const known = new Map<string, Buffer>();
   const sessions = new Set<string>();
   let streamsOpened = 0;
@@ -94,12 +99,14 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
   async function startRun(request: FluxNodeRunRequest, response: ServerResponse): Promise<void> {
     const spec = request.spec ?? (request.name === undefined ? undefined : specs.get(request.name));
     const resumed = request.resumeHandle === undefined ? undefined : [...runs.values()].find((run) => run.result?.resumeHandle === request.resumeHandle);
-    if (spec === undefined && resumed === undefined) return refuse(response, "unknown_fluxnode", "No such FluxNode.");
+    const pipeline = request.pipeline ?? (request.name === undefined ? undefined : pipelines.get(request.name)) ?? (resumed === undefined ? undefined : pipelines.get(resumed.name));
+    if (spec === undefined && pipeline === undefined && resumed === undefined) return refuse(response, "unknown_fluxnode", "No such FluxNode.");
     if (spec !== undefined) specs.set(spec.name, spec);
-    const run = new FakeRun(`run_${runs.size + 1}`, spec?.name ?? (resumed as FakeRun).name, request.inputs ?? resumed?.inputs ?? {});
+    if (pipeline !== undefined) pipelines.set(pipeline.name, pipeline);
+    const run = new FakeRun(`run_${runs.size + 1}`, spec?.name ?? pipeline?.name ?? (resumed as FakeRun).name, request.inputs ?? resumed?.inputs ?? {});
     runs.set(run.id, run);
     run.emit({ type: "step", flowId: "flow_1", stepId: "start", label: "Starting", state: "started" });
-    options.scenario(run, request).catch((error: unknown) => {
+    options.scenario(run, pipeline === undefined ? request : { ...request, pipeline }).catch((error: unknown) => {
       run.emit({ type: "step", flowId: "flow_1", stepId: "scenario", label: `Scenario failed: ${String(error)}`.slice(0, 200), state: "failed" });
     });
     return send(response, 200, runState(run));
@@ -149,6 +156,12 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
     if (!url.pathname.startsWith(base)) return refuse(response, "invalid_request", "Not a FluxNode path.");
     const parts = url.pathname.slice(base.length).split("/");
     if (parts[0] === "specs" && request.method === "POST") {
+      const pipeline = (body as { pipeline?: DataPipeline }).pipeline;
+      if (pipeline !== undefined) {
+        const createdPipeline = !pipelines.has(pipeline.name);
+        pipelines.set(pipeline.name, pipeline);
+        return send(response, 200, { name: pipeline.name, specHash: await dataPipelineHash(pipeline), flowPath: fluxNodeNameToFlowPath(pipeline.name), created: createdPipeline });
+      }
       const spec = (body as { spec: FluxNodeSpec }).spec;
       const created = !specs.has(spec.name);
       specs.set(spec.name, spec);
@@ -199,6 +212,7 @@ export async function startFakeEngine(options: FakeEngineOptions): Promise<FakeE
     requests,
     runs,
     specs,
+    pipelines,
     revokeSessions: () => sessions.clear(),
     trust: (publicKey) => {
       const spki = Buffer.from(publicKey, "base64url");

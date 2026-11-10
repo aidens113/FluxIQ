@@ -17,6 +17,14 @@ describe("a caller's options", () => {
     expect(read({ scope: { permittedConsequences: [] } }).scope).toEqual({ permittedConsequences: [] });
   });
 
+  it("keeps a copy of the inputs, and refuses inputs that are not an object of JSON values", () => {
+    const inputs = { title: "Atlas", count: 3 };
+    const read_ = read({ inputs });
+    expect(read_.inputs).toEqual(inputs);
+    expect(read_.inputs).not.toBe(inputs);
+    for (const bad of [null, ["Atlas"], "Atlas", { when: new Date(0) }]) expect(() => read({ inputs: bad }), JSON.stringify(bad)).toThrow(/inputs/u);
+  });
+
   it("refuses what is wrong, naming it", () => {
     expect(() => read(null)).toThrow(/object/u);
     expect(() => read({ budget: 5 })).toThrow(/"budget"/u);

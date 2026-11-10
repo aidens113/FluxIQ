@@ -38,7 +38,19 @@ if (run.status === "achieved") run.outputs.listings; // typed
 5. the `[default]` profile of `~/.fluxiq/credentials`;
 6. no key: open mode, which only a local engine accepts.
 
-Private keys live only under `~/.fluxiq/keys/` (`FLUXIQ_CONFIG_DIR` moves the folder). The engine's address defaults to `http://127.0.0.1:4780`; `FLUXIQ_ENDPOINT` or a profile's `endpoint` changes it.
+Private keys live only under `~/.fluxiq/keys/` (`FLUXIQ_CONFIG_DIR` moves the folder). The engine's address defaults to `http://127.0.0.1:3000`; `FLUXIQ_ENDPOINT` or a profile's `endpoint` changes it.
+
+## Data pipelines
+
+`pipeline(name).fromInput("rows")...build()` builds a data pipeline (map a FluxNode over records, filter, transform, join, sort, sink). Run it like a FluxNode:
+
+```ts
+const built = pipeline("market.price-report").fromInput("skus").map(lookup, { inputs: { sku: { field: "sku" } } }).outputs(reportRow).build();
+const run = await fluxiq.runPipeline<ReportRow>(built, { skus: [{ sku: "a-1" }] });
+if (run.status === "achieved") console.log(run.outputs); // the final records, with lineage on `run.lineage`
+```
+
+The engine compiles the pipeline to a Flow and registers it on the way (`fluxiq.registerPipeline(built)` registers without running), so the second run replays every mapped call at no model cost. Function transforms and sinks written in your program run here: the engine asks for them over `transform_needed`, and `runPipeline` answers from the built callbacks (`options.transforms` adds to or replaces them). A mapped call that ends budget out, stopped or waiting ends the pipeline the same way; continue it with `fluxiq.resumePipeline(built, run.resumeHandle)`.
 
 ## The `fluxiq` command
 

@@ -6,6 +6,8 @@ export { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 export { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 export { automationStudioAnswerFirstFlowRunEngineOf } from "./engine-of.ts";
 export { automationStudioAnswerFirstFlowRun } from "./flow-run.ts";
+export { automationStudioAnswerFirstInputBoundSteps } from "./input-bound-steps.ts";
+export { automationStudioAnswerFirstInputValuedSteps } from "./input-valued-steps.ts";
 export { automationStudioAnswerFirstFlowRunPersonCheckPort } from "./person-check-port.ts";
 export type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
 export type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";

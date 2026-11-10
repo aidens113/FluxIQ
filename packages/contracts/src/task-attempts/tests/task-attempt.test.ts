@@ -113,6 +113,14 @@ describe("parseAutomationStudioTaskAttempt", () => {
     for (const bad of [-1, 1.5, "2", null]) expect(issuesOf({ ...VALID, actsWithNoRow: bad })).toEqual(["task_attempt.invalid_acts_with_no_row"]);
   });
 
+  it("reads a caller's checking turned off as true only, and absent as checking on", () => {
+    const off = parseAutomationStudioTaskAttempt({ ...VALID, checkingOff: true });
+    expect(off.ok && off.attempt.checkingOff).toBe(true);
+    const on = parseAutomationStudioTaskAttempt(VALID);
+    expect(on.ok && "checkingOff" in on.attempt).toBe(false);
+    for (const bad of [false, "true", 1, null]) expect(issuesOf({ ...VALID, checkingOff: bad })).toEqual(["task_attempt.invalid_checking_off"]);
+  });
+
   it("takes every simulation verdict and no flags on one that did not run", () => {
     for (const verdict of AUTOMATION_STUDIO_TASK_ATTEMPT_SIMULATION_VERDICTS) {
       expect(issuesOf({ ...VALID, simulation: { verdict, flags: 0 } })).toEqual([]);

@@ -17,16 +17,22 @@ import {
   type FluxNodeRunEvent,
   type FluxNodeRunStateBody
 } from "@fluxiq/contracts/fluxnode";
+import type { JsonObject } from "@fluxiq/contracts/core";
 import type { AnyFluxNode, FluxNode, InputOf, OutputOf } from "../define/index.ts";
 import { SdkError } from "../errors/index.ts";
 import { resolveCredential } from "../keys/index.ts";
 import type { TypeSchemaInput } from "../schema/index.ts";
+import type { BuiltPipeline } from "../pipeline/index.ts";
 import { createSession } from "../session/index.ts";
+import { buildPipelineRunRequest } from "./build-pipeline-run-request.ts";
 import { buildResumeRequest, buildRunRequest } from "./build-run-request.ts";
 import type { ConnectOptions } from "./connect-options.ts";
 import { executeRun } from "./execute-run.ts";
+import { finishPipelineRun } from "./finish-pipeline-run.ts";
 import { finishRun } from "./finish-run.ts";
 import { followRun } from "./follow-run.ts";
+import { pipelineRunOptions } from "./pipeline-run-options.ts";
+import type { PipelineOutcome } from "./pipeline-run-types.ts";
 import { resolveEndpoint } from "./resolve-endpoint.ts";
 import type { RunOptions, RunOutcome } from "./run-types.ts";
 import { createTransport, type Transport } from "./transport.ts";
@@ -109,6 +115,34 @@ export class FluxIQ {
   /** Registers `node`'s spec without running it. Idempotent. */
   register(node: AnyFluxNode): Promise<FluxNodeRegisterSpecResponse> {
     return this.#transport.json({ method: "POST", path: FLUXNODE_API_PATHS.specs, body: { spec: node.spec }, answer: fluxNodeRegisterSpecResponseSchema });
+  }
+
+  /** Registers a pipeline built by `pipeline(...).build()` without running it. Idempotent; the answer's `specHash` is the pipeline's hash. */
+  registerPipeline(built: BuiltPipeline): Promise<FluxNodeRegisterSpecResponse> {
+    return this.#transport.json({ method: "POST", path: FLUXNODE_API_PATHS.specs, body: { pipeline: built.definition }, answer: fluxNodeRegisterSpecResponseSchema });
+  }
+
+  /**
+   * Runs a pipeline built by `pipeline(...).build()` over `inputs` and returns how it ended. The engine compiles
+   * it into a Flow and registers it on the way. Its function transforms and sinks are served from the built
+   * callbacks over `transform_needed` (`options.transforms` adds to or replaces them). An achieved run's `outputs`
+   * are the final records, typed `R` by the program and checked against the pipeline's declared output type.
+   * Budget out, a stop and a wait for a person are endings, not errors; narrow on `status`.
+   */
+  async runPipeline<R = JsonObject>(built: BuiltPipeline, inputs: JsonObject = {}, options: RunOptions = {}): Promise<PipelineOutcome<R>> {
+    const result = await endedResult(this.streamPipeline(built, inputs, options));
+    return finishPipelineRun<R>(built, result);
+  }
+
+  /** Continues a pipeline run that ended `budget_out` or `waiting_for_person`, from its `resumeHandle`. */
+  async resumePipeline<R = JsonObject>(built: BuiltPipeline, resumeHandle: string, options: RunOptions = {}): Promise<PipelineOutcome<R>> {
+    const events = executeRun(this.#transport, buildResumeRequest(resumeHandle, options), undefined, pipelineRunOptions(built, options));
+    return finishPipelineRun<R>(built, await endedResult(events));
+  }
+
+  /** Runs a pipeline and yields every event; the program's callbacks are answered before the event is yielded. The last event is `ended`. */
+  streamPipeline(built: BuiltPipeline, inputs: JsonObject = {}, options: RunOptions = {}): AsyncGenerator<FluxNodeRunEvent> {
+    return executeRun(this.#transport, buildPipelineRunRequest(built, inputs, options), undefined, pipelineRunOptions(built, options));
   }
 
   /** A run's state, with its result once it has ended. */

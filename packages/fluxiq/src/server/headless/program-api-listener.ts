@@ -1,19 +1,28 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
+import { FLUXNODE_API_BASE_PATH } from "@fluxiq/contracts/fluxnode";
+import type { FluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
+import { fluxNodeApiHandler } from "../fluxnode-api/index.ts";
 import { handleProgramRequest, type ProgramRouteContext, type ProgramRouteResponse } from "../program-route/index.ts";
 
 const PROGRAM_PATH = /^\/api\/programs\/([^/]+)\/([^/]+)$/u;
 
 /**
  * The HTTP side of a server without Next.js: `/api/programs/<programId>/<endpoint>`
- * answered by the same handler the web panel mounts, and nothing else (404).
+ * answered by the same handler the web panel mounts, plus, when `fluxNodes` is given,
+ * the FluxNode API under `/api/fluxnode/v1` (its own open-mode guards); nothing else (404).
  *
  * No cookie is read: the panel's login, and so a person's session, is the web
  * panel's, so here every caller is a paired client with its bearer token, held
  * to the same allowlist, narrowing, IAM and domain gate. With no cookie read,
  * the panel's cross-site guard for cookie-carrying writes has nothing to guard.
  */
-export function programApiListener(context: ProgramRouteContext): RequestListener {
+export function programApiListener(context: ProgramRouteContext, fluxNodes?: FluxNodeService): RequestListener {
+  const fluxNodeApi = fluxNodes ? fluxNodeApiHandler(fluxNodes) : undefined;
   return (request, response) => {
+    if (fluxNodeApi && isFluxNodePath(request)) {
+      fluxNodeApi(request, response);
+      return;
+    }
     void answer(request, context).then(
       (answered) => write(response, answered),
       (error: unknown) => {
@@ -22,6 +31,12 @@ export function programApiListener(context: ProgramRouteContext): RequestListene
       }
     );
   };
+}
+
+/** True for the FluxNode API's base path and everything under it. */
+function isFluxNodePath(request: IncomingMessage): boolean {
+  const { pathname } = new URL(request.url ?? "/", "http://127.0.0.1");
+  return pathname === FLUXNODE_API_BASE_PATH || pathname.startsWith(`${FLUXNODE_API_BASE_PATH}/`);
 }
 
 async function answer(request: IncomingMessage, context: ProgramRouteContext): Promise<ProgramRouteResponse> {

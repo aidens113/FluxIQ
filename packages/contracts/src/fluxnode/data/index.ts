@@ -6,6 +6,7 @@ export * from "./dataset-ref.ts";
 export * from "./expression.ts";
 export * from "./field-path.ts";
 export * from "./lineage.ts";
+export * from "./pipeline-hash.ts";
 export * from "./pipeline.ts";
 export * from "./sink.ts";
 export * from "./step.ts";

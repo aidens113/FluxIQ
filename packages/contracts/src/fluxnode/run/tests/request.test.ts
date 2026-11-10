@@ -22,11 +22,13 @@ describe("parseFluxNodeRunRequest", () => {
     expect(codesOf({ spec: SPEC, inputs: { query: "lens hood", count: 3 }, correlationId: "batch-7", idempotencyKey: "k1" })).toEqual([]);
     expect(codesOf({ name: "market.cheapest-listings", specHash: "a".repeat(64), inputs: { query: "x" }, options: { budgetUsd: 0 } })).toEqual([]);
     expect(codesOf({ resumeHandle: "resume_0123456789abcdef", options: { budgetUsd: 2 } })).toEqual([]);
+    expect(codesOf({ pipeline: { name: "market.price-watch", source: { kind: "input", field: "queries" }, steps: [{ id: "top", kind: "limit", count: 10 }] }, inputs: { queries: ["a"] } })).toEqual([]);
   });
 
   it("refuses no target or two, a spec hash without a name, and inputs on a resume", () => {
     expect(codesOf({ inputs: {} })).toEqual([" run_request.target"]);
     expect(codesOf({ spec: SPEC, name: "a", inputs: { query: "x", count: 1 } })).toEqual([" run_request.target"]);
+    expect(codesOf({ name: "a", pipeline: { name: "a", source: { kind: "input", field: "q" }, steps: [{ id: "top", kind: "limit", count: 1 }] } })).toEqual([" run_request.target"]);
     expect(codesOf({ resumeHandle: "resume_0123456789abcdef", specHash: "a".repeat(64) })).toEqual(["/specHash run_request.spec_hash_without_name"]);
     expect(codesOf({ resumeHandle: "resume_0123456789abcdef", inputs: {} })).toEqual(["/inputs run_request.inputs_on_resume"]);
   });

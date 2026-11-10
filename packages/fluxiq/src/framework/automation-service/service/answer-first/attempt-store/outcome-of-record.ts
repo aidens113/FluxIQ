@@ -66,7 +66,8 @@ function savedOf(record: AutomationStudioAnswerFirstAttemptRecord, attempt: Auto
 
 function draftSavedOf(attempt: AutomationStudioTaskAttempt, flowId: string, stepsDigest: string, leftOut: readonly string[]): AutomationStudioSavedState {
   const atMs = attempt.endedAtMs ?? attempt.startedAtMs;
-  const provenWhole = attempt.path === "run_flow" && attempt.status === "achieved" && attempt.liveSteps > 0;
+  // A result a caller took with checking off was never judged, so its run proves nothing whole.
+  const provenWhole = attempt.path === "run_flow" && attempt.status === "achieved" && attempt.checkingOff !== true && attempt.liveSteps > 0;
   const fields: Record<string, unknown> = provenWhole ? { state: "ready", trust: "provisional", flowId, savedAtMs: atMs, lastWorkedAtMs: atMs, stepsDigest } : { state: "partly_works", trust: "unproven", flowId, savedAtMs: atMs, stepsDigest };
   if (attempt.simulation && !provenWhole) fields.simulation = attempt.simulation.verdict;
   // The saved run stopped at a step that was repaired live: the steps ran, so the line must not say they have not (t878).

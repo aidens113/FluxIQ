@@ -9,6 +9,7 @@ import type { AutomationStudioTaskResultLabel } from "@fluxiq/contracts/automati
 import { automationStudioAttemptActMarkDoneInAchieved } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStatedToggle, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
+import { automationStudioAnswerFirstKeptCallerOptions } from "../caller/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -34,14 +35,14 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
       ...(ended.stated.length > 0 ? { stated: [...ended.stated] } : {})
     };
     const note = noteOf(run, ending, ended.atMs);
-    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(ending === "stopped_by_person" ? { stoppedByPerson: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: originsOf(run) };
+    const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(ending === "stopped_by_person" ? { stoppedByPerson: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), ...(run.input.caller ? { caller: automationStudioAnswerFirstKeptCallerOptions(run.input.caller) } : {}), steps: originsOf(run) };
     return await run.memory.update(projectId, run.taskId, (current) => {
       const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run) });
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);
       return {
         ...current, flowId, ...(best ? { best } : {}), latest: next,
         // An attempt that ended achieved says the task is done: what stood is marked, so the same words again press none of it once more (`runtime/answer-first/act-record/done-in-achieved.ts`).
-        ...(ending === "achieved" && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
+        ...((ending === "achieved" || ending === "taken_unverified") && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
         notes: note ? [...current.notes, note] : current.notes,
         attempts: known ? current.attempts.map((each) => (each.attemptId === run.attemptId ? row : each)) : [...current.attempts, row]
       };

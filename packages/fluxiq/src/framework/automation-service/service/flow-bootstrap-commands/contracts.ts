@@ -1,4 +1,5 @@
 import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult } from "@fluxiq/contracts/automation";
+import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
@@ -161,10 +162,10 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
   /**
    * Only for an attempt run with caller options (`AutomationStudioAnswerFirstCallerOptions`): what
    * confirmed its result, `check` or `judge`, or `none` where the caller turned checking off and took
-   * the result as it was. The attempt record can say that last one only as `stopped_by_person`,
-   * labelled `unverified`, because the shared contract lets nothing but a confirmed result be
-   * `achieved`; this says it was the caller's choice, not a Stop. Absent when the attempt ended
-   * without a result taken, and always absent on a chat attempt.
+   * the result as it was. That last attempt is `achieved`, its result `unverified`, and the attempt
+   * record says why (`checkingOff`), which is the one achieved attempt the shared contract lets go
+   * unconfirmed. Absent when the attempt ended without a result taken, and always absent on a chat
+   * attempt.
    */
   confirmedBy?: "check" | "judge" | "none";
 };
@@ -195,7 +196,24 @@ export type AutomationStudioAnswerFirstCallerOptions = {
   personAsk?: AutomationStudioAnswerFirstPersonAskSink;
   /** The standing grant. Present, it replaces the request's permitted consequences, nothing is asked about a lasting act, and an act outside it is refused so the rounds find another way. */
   scope?: AutomationStudioAnswerFirstCallerScope;
+  /**
+   * This attempt's Flow input values, by name (a FluxNode's inputs; fluxnode-plan N2). A saved Flow's
+   * run gets them as its run inputs, so a step bound to an input runs with this attempt's value; and the
+   * draft this attempt saves has every fixed step value equal to one of them bound to that input
+   * (`../answer-first/flow-run/input-bound-steps.ts`), with the value as its default. No model reads them.
+   */
+  inputs?: Readonly<Record<string, JsonValue>>;
 };
+
+/**
+ * What an attempt keeps of its caller's options, with the attempt in its task's memory, so a person's
+ * press in the panel (Carry on, Run again) goes on under them: everything that can be written down.
+ * A press comes from the panel with no options of its own, so it takes these. The function-valued
+ * options are the caller's process and cannot be kept: such a press has no `check`, so its judge
+ * runs as the kept mode says with no check (`auto` judges, `off` takes the result unverified), and no
+ * `personAsk`, so a question goes to the Flow's conversation, where the person who pressed is.
+ */
+export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "model" | "budgetUsd" | "judge" | "scope" | "inputs">;
 
 /**
  * The caller's check of what the attempt got: Core's own summary of it (rows from reads, acts from

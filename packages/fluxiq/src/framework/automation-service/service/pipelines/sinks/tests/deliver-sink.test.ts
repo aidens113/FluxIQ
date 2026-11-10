@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { context, datasetPort, records } from "../../tests/support.ts";
-import { createDirectoryFileWriter } from "../directory-file-writer.ts";
+import { createDirectoryFileWriter } from "../../../fluxnode/pipeline/index.ts";
 import { deliverSink } from "../deliver-sink.ts";
 import { encodeCsv } from "../encode-csv.ts";
 
