@@ -7,6 +7,8 @@
 // record, and the judge is asked whenever the replay deviates. Each deviation is named, in this order:
 //
 //   judge_always         the caller asked for the judge every time (a FluxNode's `judge: always`)
+//   asked_again          the person pressed Run again: they asked for the change again, which only a
+//                        judge can say this run made (its lasting acts pressed again are not the record)
 //   flow_not_proven      no judged whole run of this exact Flow is behind it: this run is that run
 //   flow_not_confirmed   the saved Flow's label is not confirmed
 //   run_not_whole        the run did not reach the Flow's end
@@ -34,7 +36,7 @@ import type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstR
 
 /** Every deviation the rule names, in the order it is checked (header). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS = [
-  "judge_always", "flow_not_proven", "flow_not_confirmed", "run_not_whole", "repaired", "step_failed", "step_routed",
+  "judge_always", "asked_again", "flow_not_proven", "flow_not_confirmed", "run_not_whole", "repaired", "step_failed", "step_routed",
   "act_not_done", "check_cleared", "step_retried", "shape_unknown", "shape_differs"
 ] as const;
 
@@ -42,10 +44,11 @@ export type AutomationStudioAnswerFirstReplayDeviation = (typeof AUTOMATION_STUD
 
 export function automationStudioAnswerFirstReplayStands(
   record: AutomationStudioAnswerFirstReplayRecord,
-  now: { shape: AutomationStudioAnswerFirstReadShape; judge?: "auto" | "always" | "off" | undefined }
+  now: { shape: AutomationStudioAnswerFirstReadShape; judge?: "auto" | "always" | "off" | undefined; askedAgain?: boolean | undefined }
 ): { stands: true } | { stands: false; deviation: AutomationStudioAnswerFirstReplayDeviation } {
   const deviated = (deviation: AutomationStudioAnswerFirstReplayDeviation) => ({ stands: false as const, deviation });
   if (now.judge === "always") return deviated("judge_always");
+  if (now.askedAgain === true) return deviated("asked_again");
   if (!record.saved.provenWhole) return deviated("flow_not_proven");
   if (record.saved.label !== "confirmed") return deviated("flow_not_confirmed");
   if (!record.reachedEnd) return deviated("run_not_whole");

@@ -4,7 +4,7 @@
 // otherwise, and a FluxNode's `judge: always` always asking.
 
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation, type AutomationStudioAnswerFirstReplayRecord } from "../index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation, type AutomationStudioAnswerFirstReplayRecord } from "../index.ts";
 
 const COLUMNS = ["title", "price"];
 const SHAPE = { columns: COLUMNS, empty: false };
@@ -39,6 +39,7 @@ describe("whether a replay stands on its own record", () => {
   it("names each deviation that sends it to the judge", () => {
     const cases: Array<[AutomationStudioAnswerFirstReplayDeviation, Parameters<typeof automationStudioAnswerFirstReplayStands>]> = [
       ["judge_always", [replay(), { shape: SHAPE, judge: "always" }]],
+      ["asked_again", [replay(), { shape: SHAPE, askedAgain: true }]],
       ["flow_not_proven", [replay({ saved: { label: "confirmed", provenWhole: false, shape: SHAPE } }), { shape: SHAPE }]],
       ["flow_not_confirmed", [replay({ saved: { label: "unverified", provenWhole: true, shape: SHAPE } }), { shape: SHAPE }]],
       ["run_not_whole", [replay({ reachedEnd: false }), { shape: SHAPE }]],
@@ -97,7 +98,7 @@ describe("a completion that closes a replay", () => {
     expect(judged()).toBe(0);
     // A confirmed result needs a check behind it (`task_result.label_needs_a_check`): the record is that check.
     expect(check.state).toMatchObject({ achieved: true, onRecord: true, timesChecked: 1 });
-    expect(check.state.checkedWhat).toContain("judged whole run");
+    expect(check.state.checkedWhat).toBe(AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS);
   });
 
   it("asks the judge once for a replay that deviated, and says why", async () => {

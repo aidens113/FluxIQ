@@ -31,7 +31,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioTrialExecutedSteps, automationStudioTrialFailureHappened } from "../../candidate-trial/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
-import type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
+import type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunSkip, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
 
 type Ran = Extract<AutomationStudioAnswerFirstFlowRunOutcome, { kind: "ran" }>;
 type Placed = { position: number; label?: string; nodeKey: string; nodeId?: string };
@@ -92,10 +92,12 @@ export function automationStudioAnswerFirstFlowRunStepsRan(input: Input): Ran {
   const { ended, watch } = input;
   const placed = placedSteps(input);
   const attempts = automationStudioTrialExecutedSteps(ended.trace?.attempts ?? []);
+  const raw = ended.trace?.attempts ?? [];
   const steps = placed.map((place): AutomationStudioAnswerFirstFlowRunStep => ({
     position: place.position,
     ...(place.label ? { label: place.label } : {}),
-    ...ranOf(attempts.filter((entry) => entry.attempt.nodeId === place.nodeId).map((entry) => entry.attempt), place, watch)
+    ...ranOf(attempts.filter((entry) => entry.attempt.nodeId === place.nodeId).map((entry) => entry.attempt), place, watch),
+    ...deviationsOf(place.nodeId === undefined ? [] : raw.filter((attempt) => attempt.nodeId === place.nodeId))
   }));
   if (ended.reachedEnd) return { kind: "ran", reachedEnd: true, steps };
   const failing = failingOf(input, placed, steps);
@@ -127,17 +129,27 @@ function placedSteps(input: Input): Placed[] {
   return placed.sort((one, other) => one.position - other.position);
 }
 
-function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Placed, watch: Watch | undefined): Pick<AutomationStudioAnswerFirstFlowRunStep, "ran" | "happened"> {
+function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Placed, watch: Watch | undefined): Pick<AutomationStudioAnswerFirstFlowRunStep, "ran" | "happened" | "skipped"> {
   const nodeId = place.nodeId;
   if (!attempts.length) return nodeId && watch && watch.succeededCount(nodeId) > 0 ? { ran: "passed" } : { ran: "not_reached" };
   const last = attempts.at(-1)!;
-  if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", happened: skippedSaid(last) };
+  if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", ...skippedOf(last) };
   if (personCleared(last)) return { ran: "passed", happened: SAID.personCleared };
   const settled = automationStudioAttemptSettled(last).status;
   if (settled !== "succeeded") return { ran: "failed", happened: last.failure ? automationStudioTrialFailureHappened(last.failure.category, last.failure.code) : SAID.notFinished };
   // Every call reached the run gate and none got past it.
-  if (nodeId && watch && watch.askedCount(nodeId) > 0 && watch.sentCount(nodeId) === 0) return { ran: "skipped", happened: SAID.alreadyDone };
+  if (nodeId && watch && watch.askedCount(nodeId) > 0 && watch.sentCount(nodeId) === 0) return { ran: "skipped", happened: SAID.alreadyDone, skipped: "already_done" };
   return { ran: "passed" };
+}
+
+/**
+ * What of a step's run makes a replay deviate from its saved Flow, over every attempt of every pass
+ * (`../completion/replay-stands.ts`): a check a person cleared, whether or not the step ran again
+ * after it, and each attempt a retry asked for.
+ */
+function deviationsOf(attempts: readonly AutomationStudioNodeAttemptTrace[]): Pick<AutomationStudioAnswerFirstFlowRunStep, "personCleared" | "retries"> {
+  const retries = attempts.filter((attempt) => attempt.retry !== undefined).length;
+  return { ...(attempts.some(personCleared) ? { personCleared: true as const } : {}), ...(retries > 0 ? { retries } : {}) };
 }
 
 /** The person pressed Continue at a check this step met, and the run went on down its `success` route (header). */
@@ -146,12 +158,18 @@ function personCleared(attempt: AutomationStudioNodeAttemptTrace): boolean {
   return attempt.status === "failed" && ask?.personNeeded === true && ask.status === "answered" && ask.route === "success";
 }
 
-function skippedSaid(attempt: AutomationStudioNodeAttemptTrace): string {
+/**
+ * Why a step was passed over, in words and in the closed word a replay is read by. An act the run's
+ * own ledger already completed is `already_done`: it once read as "the page was already at another
+ * step", which said the run was routed when it was not.
+ */
+function skippedOf(attempt: AutomationStudioNodeAttemptTrace): { happened: string; skipped: AutomationStudioAnswerFirstFlowRunSkip } {
   const skipped = attempt.skipped;
-  if (skipped?.reason === "already_in_state") return SAID.inState;
-  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return SAID.notArisen;
-  if (skipped?.reason === "target_absent") return skipped.notDone ? SAID.absentNotDone : SAID.absent;
-  return SAID.elsewhere;
+  if (skipped?.reason === "already_in_state") return { happened: SAID.inState, skipped: "already_in_state" };
+  if (skipped?.reason === "already_done") return { happened: SAID.alreadyDone, skipped: "already_done" };
+  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return { happened: SAID.notArisen, skipped: "not_arisen" };
+  if (skipped?.reason === "target_absent") return skipped.notDone ? { happened: SAID.absentNotDone, skipped: "absent_not_done" } : { happened: SAID.absent, skipped: "absent" };
+  return { happened: SAID.elsewhere, skipped: "routed_elsewhere" };
 }
 
 /** Where the run stopped and why, in Core's words (header). */

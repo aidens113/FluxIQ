@@ -2,11 +2,9 @@
 // `./replay-stands.ts`). Built by the attempt from its Flow run stage's outcome and the saved Flow it
 // ran; every field is Core's own record, closed words and counts, never the page's or a model's.
 
-/** What a step's reads came to, by shape: the columns kept and whether any row was. Never the rows themselves. */
-export type AutomationStudioAnswerFirstReadShape = {
-  columns: readonly string[];
-  empty: boolean;
-};
+import type { AutomationStudioAnswerFirstReadShape } from "../task-memory/index.ts";
+
+export type { AutomationStudioAnswerFirstReadShape };
 
 /** One step of the replay, by its position in the saved draft. */
 export type AutomationStudioAnswerFirstReplayStep = {

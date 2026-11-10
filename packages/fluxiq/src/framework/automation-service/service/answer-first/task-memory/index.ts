@@ -4,7 +4,7 @@ export type { AutomationStudioAnswerFirstFlowBase } from "./flow-base.ts";
 export { automationStudioAnswerFirstProjectTasks, type AutomationStudioAnswerFirstProjectTasksPorts } from "./project-tasks.ts";
 export type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 export type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.ts";
-export type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
+export type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
 export type { AutomationStudioAnswerFirstStatedToggle } from "./stated-toggle.ts";
 export { automationStudioAnswerFirstKeptState } from "./kept-state.ts";
 export { automationStudioAnswerFirstLeftOutSteps } from "./left-out-steps.ts";

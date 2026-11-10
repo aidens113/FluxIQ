@@ -14,6 +14,18 @@ export type AutomationStudioAnswerFirstSavedFlow = {
   provenWhole: boolean;
   /** The steps on a control seen to flip, and the state each checks for before it presses. */
   stated?: AutomationStudioAnswerFirstStatedToggle[];
+  /**
+   * What the attempt that kept this Flow read, by shape (task speed S9): a later replay is accepted on
+   * its own record only when it reads the same (`../completion/replay-stands.ts`). Absent on a Flow
+   * kept before t895, which a replay then cannot be compared with, so its judge is asked.
+   */
+  shape?: AutomationStudioAnswerFirstReadShape;
   savedAtMs: number;
   spend: { calls: number; usd: number };
+};
+
+/** What an attempt's reads came to, by shape: the columns kept and whether any row was. Never the rows themselves. */
+export type AutomationStudioAnswerFirstReadShape = {
+  columns: readonly string[];
+  empty: boolean;
 };
