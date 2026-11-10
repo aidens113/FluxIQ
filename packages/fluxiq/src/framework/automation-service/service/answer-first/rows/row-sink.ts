@@ -69,14 +69,35 @@
 // as an ad and again as not, that is what says which card a stored row is. The note the model is shown
 // of a changed result still says only place and count (`./result-change.ts`).
 //
-// **A read without every condition of the result never replaces it (run-mwaudvnh-c208d32c).** After a wrong judge's no, reads with no
+// **A weaker re-read of the result's own list never replaces it (run-mwaudvnh-c208d32c).** After a wrong judge's no, reads with no
 // condition (0219, 0250) each became the whole result: 16 right rows became 15, then 27 unfiltered. A list holds the conditions all its rows
-// met (`./read-evidence.ts`); a read whose list then lacks one of the result's is set aside, stored and told so (`held_apart`), and never joins
-// a list whose conditions it lacks. With all, more included, it is as before; only `writeMode: replace` gets past. A run is never set aside.
+// met (`./read-evidence.ts`); a read of the result's list whose list then lacks one of the result's is set aside, stored and told so
+// (`held_apart`), and never joins a list whose conditions it lacks. With all, more included, it is as before; only `writeMode: replace` gets
+// past. A run is never set aside. **Only the same list (run-mwb4bf67-3c240399):** a read of another list has no reason to share the result's
+// conditions, and a task's last read is often another page entirely (the saved items, with a status column, after a filtered search), so it
+// replaces the result as before (`other_list`). Same is the model's own word first, its record output naming the result's list; else the
+// view of the site, where the read and the result's reads both say one; else, a view unsaid, the read returns every column of the result.
+//
+// **The columns the person named are the answer's (run-mwb2kkv5-1baeee11).** A saved Flow's read is declared from the
+// person's words at assembly (`runtime/flow-authoring/bootstrap/authoring/assembled-record-output.ts`) and the domain narrows
+// it to them. A result was not: a read the model ran stored every field it read under a schema derived from its rows, and a
+// replayed step's record output is derived without the named columns, so that run delivered name, price, rating and a `link`
+// nobody asked for, to the chat, the store and the judge alike, while its saved Flow dropped it. So a read's processing, and a
+// run's batch's, gains `columns` -- how a record output says which columns are its answer -- set to the ones the request
+// names, in its order (`askedColumns`). The batch is stored with it: its rows are collected whole, and the store's answer (its
+// page and export), this summary and the read-back show those columns; as the contract says of any `columns`, they are then
+// also the default dedupe key. A `where` the processing declared over a column left out stays shown, as the contract requires.
+// Only where every named column is a stored column, met exactly or with case and separators set aside as the build matches one:
+// a name none meets may be a column stored under another name ("url" read as `link`), and dropping the rest would drop a
+// column the person asked for. Nothing changes with no instruction, one that names no column, processing that declares its
+// own `columns`, named columns that are already every stored column in order, or a result the contract would not take. The
+// names come from the one reader of the person's words (`automationStudioFlowBootstrapInstructionColumns`); a closing item
+// that ran on is closed by the leading words that name a stored column, as assembly closes it.
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioFlowBootstrapInstructionColumns, type AutomationStudioFlowBootstrapInstructionColumnList } from "../../../../../runtime/flow-authoring/bootstrap/answerability/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
@@ -114,6 +135,8 @@ type Held = {
   conditions?: readonly string[] | undefined;
   /** Its latest read lacked a condition of the result, so it is not the result while another list stands (header). */
   aside?: boolean | undefined;
+  /** The name a read's record output gave the list, or a run's dataset: what says a later read is of it (header). */
+  named?: string | undefined;
   /** The columns this dataset's id was made from, where a read made it: what an empty read is matched by (header). */
   idColumns?: readonly string[] | undefined;
   /** The call that last stored rows in this list, where a call of the exploration did (header). */
@@ -136,6 +159,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const ran = new Set<string>();
   /** Reads that answered, rows or none, not lost to the store (`readsAnswered`). */
   let readsAnswered = 0;
+  /** The columns the person's request names, read once (header). */
+  const named = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
 
   const movedFrom = (held: Held, evidence: AutomationStudioAnswerFirstReadEvidence): boolean => held.view !== undefined && evidence.list !== undefined && held.view !== evidence.list;
 
@@ -185,9 +210,17 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     return { datasetId: now.datasetId, rows: [...held.rows], totalRows: now.totalRows, columns: now.columns.map((column) => column.id), pages: pagesOf(held), by: held.by, conditions: held.conditions ?? [] };
   };
 
-  /** Sets a read's list aside where, after it, it lacks a condition of the result as it stood, and says so (header); `undefined` where it may be the result. */
-  const heldApart = (was: ReturnType<typeof standing>, datasetId: string, held: Held, says: AutomationStudioAnswerFirstReadEvidence["says"]): AutomationStudioAnswerFirstResultChange | undefined => {
-    held.aside = !(!was || was.datasetId === datasetId || held.lookUp || says === "replace" || meets(held.conditions, was.conditions));
+  /** A read is of this list (header): it names it; else the view, where both say one; else it returns every column of it. */
+  const ofList = (list: Held | undefined, evidence: AutomationStudioAnswerFirstReadEvidence, columns: readonly string[]): boolean => {
+    if (!list) return false;
+    if (evidence.named !== undefined && evidence.named === list.named) return true;
+    const views = [list.view, ...list.pages.map((page) => page.where)].filter((view) => view !== undefined);
+    return evidence.list !== undefined && views.length ? views.includes(evidence.list) : list.schema.fields.every((field) => columns.includes(field.id));
+  };
+
+  /** Sets a read's list aside where it is a read of the result's list that, after it, lacks a condition of the result as it stood, and says so (header); `undefined` where it may be the result. */
+  const heldApart = (was: ReturnType<typeof standing>, datasetId: string, held: Held, evidence: AutomationStudioAnswerFirstReadEvidence, columns: readonly string[]): AutomationStudioAnswerFirstResultChange | undefined => {
+    held.aside = !(!was || was.datasetId === datasetId || held.lookUp || evidence.says === "replace" || meets(held.conditions, was.conditions) || !ofList(datasets.get(was.datasetId), evidence, columns));
     if (!was || !held.aside) return undefined;
     const missing = was.conditions.filter((condition) => !(held.conditions ?? []).includes(condition)).map((condition) => JSON.parse(condition) as JsonValue);
     return { kind: "held_apart", now: { rows: was.totalRows, pages: was.pages }, apart: { rows: held.rows.length, pages: pagesOf(held) }, missing };
@@ -229,7 +262,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const schema = known?.schema ?? automationStudioAnswerFirstReadSchema(objects);
       if (!schema) return { rows: [], invalidCount: found.length, truncated: false, failure: { code: "answer_first.rows_no_columns" } };
       const validated = join?.validated ?? validateAutomationStudioRecords(found, schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
-      const declared = declaredProcess(evidence.process, schema);
+      const declared = askedColumns(named, schema, declaredProcess(evidence.process, schema));
       /** A dataset keeps the processing it first stored with: the store refuses it changing within a run. */
       const sending = known ? known.sent : declared;
       const read = wholeOnce(validated.rows);
@@ -255,7 +288,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         return { rows: [], datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, failure: { code: "answer_first.rows_not_stored", ...(error instanceof Error ? { errorName: error.name } : {}) } };
       }
       readsAnswered += 1;
-      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, conditions: evidence.conditions, ...(join ? {} : { idColumns: columns }) };
+      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, conditions: evidence.conditions, ...(join ? {} : { idColumns: columns }), ...(datasetId === asNamed ? { named: evidence.named } : {}) };
       datasets.set(datasetId, held);
       if (evidence.list !== undefined) held.view = evidence.list;
       if (after) {
@@ -270,15 +303,18 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         held.by = call.callId;
         order.push(datasetId);
       }
-      const apart = after ? heldApart(was, datasetId, held, evidence.says) : undefined;
+      const apart = after ? heldApart(was, datasetId, held, evidence, columns) : undefined;
       const resultChanged = apart ?? (after ? changed(was, datasetId, after.over) : undefined);
       return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}), ...(resultChanged ? { resultChanged } : {}) };
     },
-    async recordBatch(batch) {
+    async recordBatch(given) {
+      // The same for every batch of a dataset, whose schema and processing the store fixes within a run (header).
+      const process = askedColumns(named, given.schema, given.process);
+      const batch: AutomationStudioRecordBatch = process === undefined || process === given.process ? given : { ...given, process };
       const stored = await input.onRecordBatch(batch);
       readsAnswered += 1;
       const asked = automationStudioAnswerFirstReadConditions(batch.leftOut?.parameters);
-      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process, conditions: asked };
+      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process, conditions: asked, named: batch.datasetId };
       datasets.set(batch.datasetId, held);
       if (batch.writeMode === "replace") held.conditions = asked;
       else if (batch.rows.length) held.conditions = common(held.conditions, asked);
@@ -352,6 +388,40 @@ function declaredProcess(declared: unknown, schema: AutomationStudioRecordSchema
   if (declared === undefined) return undefined;
   const parsed = parseAutomationStudioRecordProcessing(declared, schema);
   return parsed.ok ? parsed.processing : undefined;
+}
+
+/** `process` with the answer's columns set to the ones `named` names, in that order, or `process` itself where nothing is to change (header). */
+function askedColumns(named: AutomationStudioFlowBootstrapInstructionColumnList, schema: AutomationStudioRecordSchema, process: AutomationStudioRecordProcessing | undefined): AutomationStudioRecordProcessing | undefined {
+  if (process?.columns !== undefined) return process;
+  const stored = schema.fields.filter((field) => field.handling !== "exclude").map((field) => field.id);
+  const names = closedNames(named, stored);
+  const matched = names.length ? namedColumnsOf(names, stored) : undefined;
+  if (matched === undefined) return process;
+  const filtered = (process?.where ?? []).map((condition) => condition.field).filter((field, at, all) => !matched.includes(field) && all.indexOf(field) === at);
+  const columns = [...matched, ...filtered];
+  if (columns.length === stored.length && columns.every((column, at) => stored[at] === column)) return process;
+  const parsed = parseAutomationStudioRecordProcessing({ ...(process ?? {}), columns }, schema);
+  return parsed.ok ? parsed.processing : process;
+}
+
+/** The named columns, a closing item that ran on closed by the longest leading words that name a stored column (header); none where none does. */
+function closedNames(named: AutomationStudioFlowBootstrapInstructionColumnList, stored: readonly string[]): readonly string[] {
+  const cut = named.cutShort;
+  if (cut === undefined) return named;
+  const leading = cut.leading.find((name) => namedColumnsOf([name], stored) !== undefined);
+  return leading === undefined ? [] : [...cut.named, leading];
+}
+
+/** Each name's stored column, each column once, in the names' order; `undefined` when a name meets none (header). */
+function namedColumnsOf(names: readonly string[], stored: readonly string[]): string[] | undefined {
+  const key = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/gu, "");
+  const taken: string[] = [];
+  for (const name of names) {
+    const column = stored.find((id) => id === name && !taken.includes(id)) ?? stored.find((id) => !taken.includes(id) && key(id) !== "" && key(id) === key(name));
+    if (column === undefined) return undefined;
+    taken.push(column);
+  }
+  return taken;
 }
 
 /** Every condition of a list is one of a read's (header): the same ones, or those and more. A list of none is met by any read. */

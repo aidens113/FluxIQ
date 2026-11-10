@@ -12,6 +12,8 @@ import { call, liveAnswer, READ_ROWS_KEY, stubStore } from "./support.ts";
 const HALL = "http://127.0.0.1:5000/bookings?month=may&sort=rating";
 const at = (page: number) => ({ location: `${HALL}&page=${page}` });
 const FIELDS = { title: "span_title", price: "span_price" };
+/** Another page of the hall's site: the bookings a person holds, not the list the result was read from. */
+const MINE = { location: "http://127.0.0.1:5000/my-reservations" };
 const FOUR: JsonValue[] = [
   { field: "div_promo", is: "absent" },
   { field: "span_rating", atLeast: 4.5 },
@@ -34,9 +36,9 @@ function sinkOver() {
 
 type Sink = ReturnType<typeof sinkOver>;
 
-/** One call through the sink, its answer as the model's next request shows it. */
-async function asked(sink: Sink, readCall: ReturnType<typeof read>, rows: JsonObject[], page: number) {
-  const answer = liveAnswer(rows, at(page));
+/** One call through the sink, its answer as the model's next request shows it: read at a page of the hall's list, or where `said` says (none: the answer names no address). */
+async function asked(sink: Sink, readCall: ReturnType<typeof read>, rows: JsonObject[], page: number | JsonObject) {
+  const answer = liveAnswer(rows, typeof page === "number" ? at(page) : page);
   const stored = await sink.fromCall(readCall, answer);
   const told = stored?.resultChanged ? automationStudioAnswerFirstResultChangeTold(answer, stored.resultChanged) : answer;
   return { stored, note: (told.evidence as JsonObject).resultList as JsonObject | undefined };
@@ -149,5 +151,64 @@ describe("a read with every condition of the result", () => {
     const again = await asked(sink, read("p1.four.reordered", reordered), range(1, 11).map(booking), 1);
     expect(again.note).toMatchObject({ code: "answer_first.result_list_replaced", rows: 11, replaced: { rows: 11 } });
     expect(sink.summary().totalRows).toBe(11);
+  });
+});
+
+// Local-classifieds dining tables, run-mwb4bf67-3c240399: the three cheapest were found under three conditions on the search, saved,
+// and the last read was of the saved items (another view, a status column, no condition), which is the answer. The rule above held it
+// apart and the search's three rows were answered. Only a re-read of the result's own list is held to its conditions (`../row-sink.ts`).
+describe("a read of another list than the result's", () => {
+  const reserved = (n: number): JsonObject => ({ title: `Booking ${n}`, price: `${n}.00`, status: n % 2 ? "Confirmed" : "Waiting" });
+
+  it("becomes the result when it reads another view with other columns and no condition, and is told as another list", async () => {
+    const sink = sinkOver();
+    await rightResult(sink);
+    const mine = await asked(sink, read("mine", [], { title: "span_title", price: "span_price", status: "span_status" }, { datasetId: "reservations", writeMode: "append" }), [1, 2, 3, 40, 41].map(reserved), MINE);
+    expect(mine.note).toMatchObject({ code: "answer_first.result_list_replaced", rows: 5, replaced: { rows: 16 } });
+    expect(sink.summary()).toMatchObject({ datasetId: mine.stored?.datasetId, totalRows: 5, rows: [1, 2, 3, 40, 41].map(reserved) });
+  });
+
+  it("becomes the result when it reads another view, even with every column of the result", async () => {
+    const sink = sinkOver();
+    await rightResult(sink);
+    const mine = await asked(sink, read("mine.same.columns"), [1, 2, 3].map(booking), MINE);
+    expect(mine.note).toMatchObject({ code: "answer_first.result_list_replaced", rows: 3 });
+    expect(sink.summary().totalRows).toBe(3);
+  });
+
+  it("becomes the result with other columns where no address says which view either read", async () => {
+    const sink = sinkOver();
+    await asked(sink, read("p1.four.unsaid", FOUR), range(1, 11).map(booking), {});
+    const mine = await asked(sink, read("mine.unsaid", undefined, { title: "span_title", status: "span_status" }), [1, 2].map((n) => ({ title: `Booking ${n}`, status: "Confirmed" })), {});
+    expect(mine.note).toMatchObject({ code: "answer_first.result_list_replaced", rows: 2 });
+    expect(sink.summary().totalRows).toBe(2);
+  });
+});
+
+describe("a re-read of the result's own list without its conditions is still held apart", () => {
+  it("where no address says the view, by every column of the result (towels' look, which added a column)", async () => {
+    const sink = sinkOver();
+    await asked(sink, read("p1.four.unsaid", FOUR), range(1, 11).map(booking), {});
+    const look = await asked(sink, read("p1.look.unsaid", undefined, { ...FIELDS, promo: "div_promo" }), range(1, 15).map(withPromo), {});
+    expect(look.note).toMatchObject({ code: "answer_first.result_list_kept", rows: 11, apart: { rows: 15 } });
+    expect(sink.summary().totalRows).toBe(11);
+  });
+
+  it("at another view, where its record output names the result's list", async () => {
+    const sink = sinkOver();
+    const named = { datasetId: "bookings" };
+    await asked(sink, read("p1.named", FOUR, FIELDS, named), range(1, 11).map(booking), 1);
+    const moved = await asked(sink, read("mine.named", undefined, FIELDS, named), range(1, 15).map(booking), MINE);
+    expect(moved.note).toMatchObject({ code: "answer_first.result_list_kept", rows: 11 });
+    expect(sink.summary().totalRows).toBe(11);
+  });
+
+  it("a saved Flow's run named the list, and a look read by that name elsewhere is held to it", async () => {
+    const sink = sinkOver();
+    const schema = { schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string" }, { id: "price", label: "Price", valueType: "string" }] } as AutomationStudioRecordBatch["schema"];
+    await sink.recordBatch({ nodeId: "read", attemptId: "run.1", batchKey: "run.1", datasetId: "bookings-run", writeMode: "append", schema, rows: range(1, 11).map(booking), invalidCount: 0, truncated: false, leftOut: { extraction: { rejectedSamples: [[], [], [], []] }, parameters: { extractList: { fields: FIELDS, where: FOUR } } } });
+    const look = await asked(sink, read("mine.run.named", undefined, FIELDS, { datasetId: "bookings-run" }), range(1, 15).map(booking), MINE);
+    expect(look.note).toMatchObject({ code: "answer_first.result_list_kept", rows: 11 });
+    expect(sink.summary()).toMatchObject({ datasetId: "bookings-run", totalRows: 11 });
   });
 });
