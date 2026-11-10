@@ -22,12 +22,26 @@ import { AUTOMATION_STUDIO_TRUST_TIERS, type AutomationStudioTrustTier } from ".
  */
 export const AUTOMATION_STUDIO_SAVED_STATES = Object.freeze(["ready", "partly_works", "notes_only", "needs_you"] as const);
 
+/**
+ * Why a state is `notes_only`, where the record knows:
+ * - `still_waiting`: the attempt has not ended (it works, or waits for the person), and its steps are saved as a Flow only when it ends. Nothing failed.
+ * - `not_assembled`: it ended and the steps it wrote did not fit together as a Flow.
+ * - `not_saved`: it ended and saving the Flow failed.
+ * Absent where the record does not say.
+ */
+export const AUTOMATION_STUDIO_SAVED_NOTES_WHY = Object.freeze(["still_waiting", "not_assembled", "not_saved"] as const);
+
+export type AutomationStudioSavedNotesWhy = (typeof AUTOMATION_STUDIO_SAVED_NOTES_WHY)[number];
+
 export type AutomationStudioSavedStateName = (typeof AUTOMATION_STUDIO_SAVED_STATES)[number];
 
 /**
  * `leftOut`, on a saved state that has steps: the names, as a person reads them, of steps that did something
  * lasting on the site and are not in the saved Flow, because the model dropped them from its draft. What they
  * did still stands; the Flow will not do it again unless another step does. Absent when none.
+ *
+ * `earlierKept`, on `notes_only` with `why: "still_waiting"` only: the attempt started from steps an earlier attempt saved, and
+ * they are still kept.
  *
  * `repaired`, on `partly_works` only: the saved steps ran in this attempt, stopped at a step, and that step was
  * repaired live (the attempt's path `run_flow_then_repair`), so the line never says they have not run (t878,
@@ -36,7 +50,7 @@ export type AutomationStudioSavedStateName = (typeof AUTOMATION_STUDIO_SAVED_STA
 export type AutomationStudioSavedState =
   | { state: "ready"; trust: Exclude<AutomationStudioTrustTier, "unproven">; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string; leftOut?: string[] }
   | { state: "partly_works"; trust: Exclude<AutomationStudioTrustTier, "established">; flowId: string; savedAtMs: number; simulation?: AutomationStudioTaskAttemptSimulationVerdict; repaired?: true; stepsDigest?: string; leftOut?: string[] }
-  | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
+  | { state: "notes_only"; trust: "unproven"; savedAtMs: number; why?: AutomationStudioSavedNotesWhy; earlierKept?: true }
   | { state: "needs_you"; trust: AutomationStudioTrustTier; flowId?: string; savedAtMs: number };
 
 export type AutomationStudioSavedStateParseResult =
@@ -46,7 +60,7 @@ export type AutomationStudioSavedStateParseResult =
 const KEYS_BY_STATE: Readonly<Record<AutomationStudioSavedStateName, ReadonlySet<string>>> = Object.freeze({
   ready: new Set(["state", "trust", "flowId", "savedAtMs", "lastWorkedAtMs", "stepsDigest", "leftOut"]),
   partly_works: new Set(["state", "trust", "flowId", "savedAtMs", "simulation", "repaired", "stepsDigest", "leftOut"]),
-  notes_only: new Set(["state", "trust", "savedAtMs"]),
+  notes_only: new Set(["state", "trust", "savedAtMs", "why", "earlierKept"]),
   needs_you: new Set(["state", "trust", "flowId", "savedAtMs"])
 });
 
@@ -66,7 +80,7 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
     issues.add("saved_state.not_object");
     return null;
   }
-  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation, repaired, stepsDigest, leftOut } = value;
+  const { state, trust, flowId, savedAtMs, lastWorkedAtMs, simulation, repaired, stepsDigest, leftOut, why, earlierKept } = value;
   if (!isMemberOf(AUTOMATION_STUDIO_SAVED_STATES, state)) {
     issues.add("saved_state.invalid_state");
     return null;
@@ -98,7 +112,10 @@ function readSaved(value: unknown, issues: Set<string>): AutomationStudioSavedSt
       issues.add("saved_state.notes_only_is_unproven");
       return null;
     }
-    return { state, trust, savedAtMs };
+    if (why !== undefined && !isMemberOf(AUTOMATION_STUDIO_SAVED_NOTES_WHY, why)) issues.add("saved_state.invalid_why");
+    if (earlierKept !== undefined && (earlierKept !== true || why !== "still_waiting")) issues.add("saved_state.invalid_earlier_kept");
+    if (issues.size > 0) return null;
+    return { state, trust, savedAtMs, ...(isMemberOf(AUTOMATION_STUDIO_SAVED_NOTES_WHY, why) ? { why } : {}), ...(earlierKept === true ? { earlierKept } : {}) };
   }
   return isId(flowId) ? { state, trust, flowId, savedAtMs } : { state, trust, savedAtMs };
 }

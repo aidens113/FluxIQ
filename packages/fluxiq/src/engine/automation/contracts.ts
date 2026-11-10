@@ -673,8 +673,15 @@ export type AutomationStudioRecordBatch = {
   rows: JsonObject[];
   /** Rows the schema refused. */
   invalidCount: number;
-  /** The address the read's answer says it read, where it says one (`records/read-location.ts`): which page these rows came from. Never stored with the rows. */
+  /** The address the read's answer says it read, where it says one (`records/read/location.ts`): which page these rows came from. Never stored with the rows. */
   location?: string;
+  /**
+   * What the read's own conditions left out, where its answer said (`records/read/left-out.ts`): the answer's
+   * `extraction` account, which holds the rows each condition turned down, and the `parameters` the read was
+   * dispatched with, whose conditions and columns word them. So the judge of a saved Flow's run is told what each
+   * read left out as it is told of a read the model made. Never stored with the rows.
+   */
+  leftOut?: { extraction: JsonObject; parameters?: JsonObject };
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
   /**

@@ -51,7 +51,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : ending === "taken_unverified" ? TAKEN_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
   const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending === "taken_unverified" ? "achieved" as const : ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
-  const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
+  const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined, draft.kind === "kept" ? draft.why : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
   const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, stated: draft.kind === "saved" ? draft.stated : automationStudioAnswerFirstHeldStated(run), spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
   const applied = await automationStudioAnswerFirstApplyProven(run, ending, draft.kind === "saved" ? { record: draft.record } : {});
@@ -100,13 +100,14 @@ async function endedSession(run: AutomationStudioAnswerFirstAttemptRun, ending: 
   }
 }
 
-async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked: ReturnType<typeof automationStudioAnswerFirstEnding>, candidateId: string | undefined): Promise<{ ok: true } | { ok: false; errorName: string }> {
+async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked: ReturnType<typeof automationStudioAnswerFirstEnding>, candidateId: string | undefined, draftKept?: "not_assembled" | "not_saved"): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
     await run.store.save(run.input.projectId, run.input.flowId, {
       attempt: checked.attempt,
       ...(checked.result ? { result: checked.result } : {}),
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
+      ...(draftKept === undefined ? {} : { draftKept }),
       // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
       steps: run.steps
     });
