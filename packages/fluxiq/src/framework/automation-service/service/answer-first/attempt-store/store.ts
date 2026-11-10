@@ -24,6 +24,7 @@ import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { AutomationStudioAnswerFirstAttemptLocator } from "./locator.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
+import { automationStudioAnswerFirstReplayVerdictRead } from "../completion/replay-verdict.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";
@@ -141,7 +142,7 @@ function readStored(value: JsonObject, projectId: string, flowId: string): Store
 
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown };
+  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown };
   const attempt = parseAutomationStudioTaskAttempt(held.attempt);
   if (!attempt.ok) return undefined;
   const tried = parseAutomationStudioTriedRecord(held.tried);
@@ -151,13 +152,16 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
   if (held.steps !== undefined && !stepsRead(held.steps)) return undefined;
   if (held.candidateId !== undefined && typeof held.candidateId !== "string") return undefined;
   if (held.draftKept !== undefined && held.draftKept !== "not_assembled" && held.draftKept !== "not_saved") return undefined;
+  const replay = held.replay === undefined ? undefined : automationStudioAnswerFirstReplayVerdictRead(held.replay);
+  if (held.replay !== undefined && replay === undefined) return undefined;
   return {
     attempt: attempt.attempt,
     tried: tried.record,
     ...(result?.ok ? { result: result.result } : {}),
     ...(held.steps !== undefined ? { steps: held.steps as AutomationStudioAnswerFirstAttemptRecord["steps"] & object } : {}),
     ...(typeof held.candidateId === "string" ? { candidateId: held.candidateId } : {}),
-    ...(held.draftKept === "not_assembled" || held.draftKept === "not_saved" ? { draftKept: held.draftKept } : {})
+    ...(held.draftKept === "not_assembled" || held.draftKept === "not_saved" ? { draftKept: held.draftKept } : {}),
+    ...(replay ? { replay } : {})
   };
 }
 

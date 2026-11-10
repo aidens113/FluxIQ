@@ -62,7 +62,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime/answer-first/attempt-purse/index.ts";
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
+import { automationStudioLlmStepLogNote, type AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
 import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstCallerCheck } from "../../flow-bootstrap-commands/index.ts";
@@ -74,6 +74,7 @@ import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "./on-record.ts";
 import { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
 import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
+import { automationStudioAnswerFirstReplayVerdictNote } from "./replay-verdict.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE = "answer_first.not_judged";
@@ -230,9 +231,12 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
           state.deviation = undefined;
           state.refused = undefined;
           input.say("Ran as accepted", "Every step ran exactly as the run you accepted, so no check was needed.");
+          // The verdict is kept on the attempt's row too (`./replay-verdict.ts`); the step files say it here.
+          automationStudioLlmStepLogNote(automationStudioAnswerFirstReplayVerdictNote({ stood: true }));
           return { ok: true };
         }
         state.deviation = read.deviation;
+        automationStudioLlmStepLogNote(automationStudioAnswerFirstReplayVerdictNote({ stood: false, deviation: read.deviation }));
       }
       automationStudioAnswerFirstKeepBackJudge(input.purse, { summaryInputTokens: Math.ceil(JSON.stringify(summary).length / CHARS_PER_TOKEN) });
       input.say("Checking the result", "Checking what I have against what you asked for.");

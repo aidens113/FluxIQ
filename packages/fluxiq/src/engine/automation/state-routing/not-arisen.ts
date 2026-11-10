@@ -20,12 +20,15 @@
 // over -- what that step would have brought about did not come either, so a chain of
 // follow-on steps is passed one by one, each on the same proof.
 //
-// **Why a lasting act, and not any step skipped.** A lasting act brings about a page of its
+// **Why an act done, and not any step skipped.** A lasting act brings about a page of its
 // own (a confirmation, a dialog closing onto the next page) that the steps after it were
-// written on. A plain press not done again -- a banner's "No thanks" an earlier attempt
-// answered -- brings about nothing but the cover's absence, which a page without the cover
-// already shows; a step after it whose control is missing is missing for another reason,
-// and keeps its recovery. So a host says the word only for a lasting act
+// written on, and so may a press an earlier attempt's answer said changed something that
+// stays (an undeclared Add whose cart count rose, and whose drawer the next step was written
+// on), which the attempt's record holds on repeat. A
+// plain press that only moved the view -- a banner's "No thanks" -- brings about nothing but the
+// cover's absence, which a page without the cover already shows; it is never held, so it runs
+// again, and a step after it whose control is missing is missing for another reason and keeps
+// its recovery. So a host says the word only for an act its record held done
 // (`service/answer-first/run-acts/run-gate.ts`).
 //
 // **What it never passes over.** A step that does a lasting act (`decision.ts` asks the

@@ -48,6 +48,17 @@ describe("the attempt store", () => {
     expect((await store.list("project.1", "flow.1")).map((each) => each.attempt.attemptId)).toEqual(["attempt.two"]);
   });
 
+  it("keeps how a replay was checked across a new store, and reads a verdict it does not know as a file it cannot read (t897)", async () => {
+    const { store, dir, flows } = await onDisk();
+    await store.save("project.1", "flow.1", { ...record("attempt.1"), replay: { stood: true } });
+    await store.save("project.1", "flow.1", { ...record("attempt.2"), replay: { stood: false, deviation: "act_not_done" } });
+    const again = new AutomationStudioAnswerFirstAttemptStore({ root: dir }, flows, PROJECTS);
+    expect((await again.list("project.1", "flow.1")).map((each) => each.replay)).toEqual([{ stood: true }, { stood: false, deviation: "act_not_done" }]);
+    const name = (await readdir(dir)).find((each) => each.startsWith("answer-attempts"))!;
+    await writeFile(path.join(dir, name), JSON.stringify({ kind: "answer_first_attempts", schemaVersion: 1, projectId: "project.1", flowId: "flow.1", attempts: [{ ...record("attempt.1"), replay: { stood: false, deviation: "a word nobody wrote" } }] }));
+    await expect(again.list("project.1", "flow.1")).rejects.toBeInstanceOf(AutomationStudioAnswerFirstAttemptsUnreadable);
+  });
+
   it("lives in memory with no data root", async () => {
     const store = new AutomationStudioAnswerFirstAttemptStore({ root: undefined }, { flowDirectory: () => "" }, PROJECTS);
     await store.save("project.1", "flow.1", record("attempt.1"));

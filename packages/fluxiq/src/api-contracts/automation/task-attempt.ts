@@ -11,6 +11,13 @@ export type AutomationStudioTaskOutcomeProvenance = {
   steps: { position: number; label: string; from: "saved" | "worked_out"; ran: boolean }[];
 };
 
+/**
+ * How an attempt's replay of its saved Flow was checked (task speed S9, t897): it stood on its own record
+ * with no judge call, or it deviated from the accepted run and was judged. `deviation` is Core's closed
+ * word for why (`AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS`).
+ */
+export type AutomationStudioTaskOutcomeReplay = { stood: true } | { stood: false; deviation: string };
+
 /** One attempt at a task and what goes with it. */
 export type AutomationStudioTaskOutcome = {
   attempt: AutomationStudioTaskAttempt;
@@ -22,6 +29,8 @@ export type AutomationStudioTaskOutcome = {
   comparedTo?: AutomationStudioTaskAttempt;
   /** How its steps came to be, where the task remembers the attempt. Absent where it does not. */
   provenance?: AutomationStudioTaskOutcomeProvenance;
+  /** How its replay of the saved Flow was checked. Absent where it closed no replay: an exploration, a repair, a carry-on. */
+  replay?: AutomationStudioTaskOutcomeReplay;
 };
 
 /** `get-task-attempt`. An attempt Core cannot find is refused, and so is a file it cannot read, in different words. */
