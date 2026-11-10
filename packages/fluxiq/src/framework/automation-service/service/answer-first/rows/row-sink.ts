@@ -62,6 +62,12 @@
 // over and leaves out rows it held, `fromCall` returns `resultChanged`: the result now and just before.
 // The chain puts it on the read's answer for the model (`./result-change.ts`). Which list a read joins is
 // not changed by it. A working read's list going is no change to tell: it was never the answer.
+//
+// **Each read page keeps the rows it kept and what its conditions left out (run-mwaknxf9-7549d126).**
+// `readPages` tells the judge, per read, its rows and, where its answer said, the rows its own conditions
+// turned down under the conditions that did it (`./read-evidence.ts`): on a site that lists one product
+// as an ad and again as not, that is what says which card a stored row is. The note the model is shown
+// of a changed result still says only place and count (`./result-change.ts`).
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
@@ -143,7 +149,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     for (const [datasetId, held] of datasets) {
       if (held.lookUp || held.idColumns === undefined) continue;
       if (automationStudioAnswerFirstReadDatasetId({ toolId: call.toolId, value: call.value, columns: held.idColumns, named: evidence.named, list: evidence.list, lookUp: evidence.lookUp }) !== datasetId) continue;
-      if (!held.pages.some((page) => page.place === place)) held.pages.push({ rows: [], place, ...(evidence.list !== undefined ? { where: evidence.list } : {}) });
+      if (!held.pages.some((page) => page.place === place)) held.pages.push({ rows: [], place, ...(evidence.list !== undefined ? { where: evidence.list } : {}), ...(evidence.leftOut ? { leftOut: evidence.leftOut } : {}) });
       return;
     }
   };
@@ -273,7 +279,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     readPages: () => {
       const id = resultDataset();
       const held = id === undefined ? undefined : datasets.get(id);
-      return held ? pagesOf(held) : [];
+      return held ? readPagesOf(held) : [];
     },
     summary,
     async readBack() {
@@ -326,9 +332,17 @@ function fewer(held: Held): Pick<AutomationStudioAnswerFirstRowsSummary, "fewerT
   };
 }
 
-/** A list's reads as they are told: the view and place each read, where said, and how many rows it kept. */
+/** A list's reads as a changed result is told: the view and place each read, where said, and how many rows it kept. */
 function pagesOf(held: Held): AutomationStudioAnswerFirstReadPage[] {
   return held.pages.map((page) => ({ ...(page.where !== undefined ? { where: page.where } : {}), ...(page.place !== undefined ? { place: page.place } : {}), kept: page.rows.length }));
+}
+
+/** A list's reads as the judge is told them (`readPages`): as `pagesOf`, with the rows each kept and what its conditions left out, where its answer said (header). */
+function readPagesOf(held: Held): AutomationStudioAnswerFirstReadPage[] {
+  return pagesOf(held).map((told, at) => {
+    const page = held.pages[at]!;
+    return { ...told, ...(page.rows.length ? { rows: page.rows.map((row) => ({ ...row })) } : {}), ...(page.leftOut ? { leftOut: page.leftOut } : {}) };
+  });
 }
 
 /** Rows without a row repeated whole, the first of each staying where it was. */

@@ -1,3 +1,5 @@
+import type { AutomationStudioFlowLessReadLeftOut } from "../../../../../runtime/result-verification/index.ts";
+
 /** What a read says of itself (`./read-evidence.ts`). */
 export type AutomationStudioAnswerFirstReadEvidence = {
   /** The name the model gave this list. */
@@ -12,4 +14,6 @@ export type AutomationStudioAnswerFirstReadEvidence = {
   place?: string;
   /** The `process` the model declared on its record output, as written: not yet read against a schema. */
   process?: unknown;
+  /** What its own conditions left out, as its answer said it (`./read-evidence.ts`): what the judge is told of the page it read. */
+  leftOut?: AutomationStudioFlowLessReadLeftOut;
 };

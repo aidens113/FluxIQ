@@ -47,7 +47,7 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const answer = summary.answerText === undefined ? { withheld: false } : automationStudioFlowLessScreenedWords(summary.answerText);
   const acts = summary.acts.map((act) => ({ what: words(act.what), where: words(act.where), classes: [...act.classes], state: act.state }));
   const looked = lookedShown(summary.looked ?? []);
-  const readPages = automationStudioFlowLessReadPagesShown(summary, words);
+  const readPages = automationStudioFlowLessReadPagesShown(summary, words, deniedEvidenceKeys);
   const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld;
   const read: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
