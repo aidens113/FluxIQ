@@ -68,10 +68,15 @@
 // turned down under the conditions that did it (`./read-evidence.ts`): on a site that lists one product
 // as an ad and again as not, that is what says which card a stored row is. The note the model is shown
 // of a changed result still says only place and count (`./result-change.ts`).
+//
+// **A read without every condition of the result never replaces it (run-mwaudvnh-c208d32c).** After a wrong judge's no, reads with no
+// condition (0219, 0250) each became the whole result: 16 right rows became 15, then 27 unfiltered. A list holds the conditions all its rows
+// met (`./read-evidence.ts`); a read whose list then lacks one of the result's is set aside, stored and told so (`held_apart`), and never joins
+// a list whose conditions it lacks. With all, more included, it is as before; only `writeMode: replace` gets past. A run is never set aside.
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
@@ -82,7 +87,7 @@ import { automationStudioAnswerFirstReadRows } from "./found-rows.ts";
 import { automationStudioAnswerFirstListAfterRead } from "./list-after-read.ts";
 import type { AutomationStudioAnswerFirstListPage, AutomationStudioAnswerFirstReadPage } from "./list-page.ts";
 import { automationStudioAnswerFirstProcessedRows } from "./processed-rows.ts";
-import { automationStudioAnswerFirstBatchLeftOut, automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
+import { automationStudioAnswerFirstBatchLeftOut, automationStudioAnswerFirstReadConditions, automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
 import type { AutomationStudioAnswerFirstResultChange } from "./result-change.ts";
 import { automationStudioAnswerFirstResultDataset } from "./result-dataset.ts";
@@ -105,6 +110,10 @@ type Held = {
   view?: string | undefined;
   /** The model marked its reads working ones. */
   lookUp?: boolean | undefined;
+  /** The conditions every row of the list met (header); absent is none. */
+  conditions?: readonly string[] | undefined;
+  /** Its latest read lacked a condition of the result, so it is not the result while another list stands (header). */
+  aside?: boolean | undefined;
   /** The columns this dataset's id was made from, where a read made it: what an empty read is matched by (header). */
   idColumns?: readonly string[] | undefined;
   /** The call that last stored rows in this list, where a call of the exploration did (header). */
@@ -134,7 +143,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const joined = (columns: readonly string[], found: readonly unknown[], evidence: AutomationStudioAnswerFirstReadEvidence) => {
     const latest = order.filter((datasetId) => ran.has(datasetId)).at(-1) ?? [...ran].at(-1);
     const held = latest === undefined ? undefined : datasets.get(latest);
-    if (latest === undefined || !held || evidence.lookUp || (evidence.named !== undefined && evidence.named !== latest) || !held.schema.fields.every((field) => columns.includes(field.id))) return undefined;
+    if (latest === undefined || !held || evidence.lookUp || (evidence.named !== undefined && evidence.named !== latest) || !held.schema.fields.every((field) => columns.includes(field.id)) || !meets(evidence.conditions, held.conditions)) return undefined;
     const validated = validateAutomationStudioRecords(found, held.schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
     if (validated.invalidCount > 0) return undefined;
     const shares = automationStudioAnswerFirstRowTies(held.rows, validated.rows, held.schema.fields.map((field) => field.id)).some((tie) => tie !== undefined);
@@ -154,9 +163,9 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     }
   };
 
-  /** The dataset that is the result: a working read only while no other stands. */
+  /** The dataset that is the result: a working read, or a list set aside (header), only while no other stands. */
   const resultDataset = (): string | undefined => {
-    const standing = order.filter((datasetId) => !datasets.get(datasetId)?.lookUp);
+    const standing = order.filter((datasetId) => !datasets.get(datasetId)?.lookUp && !datasets.get(datasetId)?.aside);
     return automationStudioAnswerFirstResultDataset(standing.length ? standing : order, ran.size ? { ids: ran, rowsOf: (id) => datasets.get(id)?.rows.length ?? 0 } : undefined);
   };
 
@@ -173,7 +182,15 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     const now = summary();
     const held = now.datasetId === undefined ? undefined : datasets.get(now.datasetId);
     if (now.datasetId === undefined || !held || held.lookUp || held.rows.length === 0) return undefined;
-    return { datasetId: now.datasetId, rows: [...held.rows], totalRows: now.totalRows, columns: now.columns.map((column) => column.id), pages: pagesOf(held), by: held.by };
+    return { datasetId: now.datasetId, rows: [...held.rows], totalRows: now.totalRows, columns: now.columns.map((column) => column.id), pages: pagesOf(held), by: held.by, conditions: held.conditions ?? [] };
+  };
+
+  /** Sets a read's list aside where, after it, it lacks a condition of the result as it stood, and says so (header); `undefined` where it may be the result. */
+  const heldApart = (was: ReturnType<typeof standing>, datasetId: string, held: Held, says: AutomationStudioAnswerFirstReadEvidence["says"]): AutomationStudioAnswerFirstResultChange | undefined => {
+    held.aside = !(!was || was.datasetId === datasetId || held.lookUp || says === "replace" || meets(held.conditions, was.conditions));
+    if (!was || !held.aside) return undefined;
+    const missing = was.conditions.filter((condition) => !(held.conditions ?? []).includes(condition)).map((condition) => JSON.parse(condition) as JsonValue);
+    return { kind: "held_apart", now: { rows: was.totalRows, pages: was.pages }, apart: { rows: held.rows.length, pages: pagesOf(held) }, missing };
   };
 
   /** How this read changed the result, from what stood just before it (header), or nothing to tell. */
@@ -202,7 +219,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const columns = automationStudioAnswerFirstReadColumns(objects);
       const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, input.readRowsKey);
       const join = joined(columns, found, evidence);
-      const datasetId = join?.datasetId ?? automationStudioAnswerFirstReadDatasetId({ toolId: call.toolId, value: call.value, columns, named: evidence.named, list: evidence.list, lookUp: evidence.lookUp });
+      const idOf = (named: string | undefined) => automationStudioAnswerFirstReadDatasetId({ toolId: call.toolId, value: call.value, columns, named, list: evidence.list, lookUp: evidence.lookUp });
+      const asNamed = join?.datasetId ?? idOf(evidence.named);
+      // Never into a list whose conditions it lacks, short of `replace`: it is then a list of its own, as if unnamed (header).
+      const into = join ? undefined : datasets.get(asNamed);
+      const datasetId = !into || into.lookUp || evidence.says === "replace" || meets(evidence.conditions, into.conditions) ? asNamed : idOf(undefined);
       // A later page of the same list keeps the schema the first page fixed: the store refuses a dataset whose schema changes within a run.
       const known = datasets.get(datasetId);
       const schema = known?.schema ?? automationStudioAnswerFirstReadSchema(objects);
@@ -234,10 +255,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         return { rows: [], datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, failure: { code: "answer_first.rows_not_stored", ...(error instanceof Error ? { errorName: error.name } : {}) } };
       }
       readsAnswered += 1;
-      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, ...(join ? {} : { idColumns: columns }) };
+      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, conditions: evidence.conditions, ...(join ? {} : { idColumns: columns }) };
       datasets.set(datasetId, held);
       if (evidence.list !== undefined) held.view = evidence.list;
       if (after) {
+        if (known) held.conditions = after.over ? evidence.conditions : common(held.conditions, evidence.conditions);
         held.startedOver = after.over && held.rows.length > 0;
         if (after.over && held.rows.length > 0) held.earlierRows = Math.max(held.earlierRows ?? 0, held.rows.length);
         held.rows = after.rows;
@@ -248,14 +270,19 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         held.by = call.callId;
         order.push(datasetId);
       }
-      const resultChanged = after ? changed(was, datasetId, after.over) : undefined;
+      const apart = after ? heldApart(was, datasetId, held, evidence.says) : undefined;
+      const resultChanged = apart ?? (after ? changed(was, datasetId, after.over) : undefined);
       return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}), ...(resultChanged ? { resultChanged } : {}) };
     },
     async recordBatch(batch) {
       const stored = await input.onRecordBatch(batch);
       readsAnswered += 1;
-      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process };
+      const asked = automationStudioAnswerFirstReadConditions(batch.leftOut?.parameters);
+      const held: Held = datasets.get(batch.datasetId) ?? { schema: batch.schema, rows: [], truncated: false, pages: [], label: batch.label, process: batch.process, sent: batch.process, conditions: asked };
       datasets.set(batch.datasetId, held);
+      if (batch.writeMode === "replace") held.conditions = asked;
+      else if (batch.rows.length) held.conditions = common(held.conditions, asked);
+      if (batch.rows.length) held.aside = false; // Its read's conditions where the batch carries its account, and a run is never set aside (header).
       // As the store reads it: `replace` clears what the dataset held.
       if (batch.writeMode === "replace") {
         held.rows = [];
@@ -325,6 +352,15 @@ function declaredProcess(declared: unknown, schema: AutomationStudioRecordSchema
   if (declared === undefined) return undefined;
   const parsed = parseAutomationStudioRecordProcessing(declared, schema);
   return parsed.ok ? parsed.processing : undefined;
+}
+
+/** Every condition of a list is one of a read's (header): the same ones, or those and more. A list of none is met by any read. */
+function meets(read: readonly string[] | undefined, list: readonly string[] | undefined): boolean {
+  return (list ?? []).every((condition) => (read ?? []).includes(condition));
+}
+/** The conditions two reads of one list share: what every row of it met. */
+function common(list: readonly string[] | undefined, read: readonly string[] | undefined): string[] {
+  return (list ?? []).filter((condition) => (read ?? []).includes(condition));
 }
 
 /** What a list that got shorter says of it (`./rows-summary.ts`). */

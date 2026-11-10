@@ -8,8 +8,9 @@
 // dataset, and the latest read's alone is the result. An earlier read of
 // something else (a look-up on the way) never replaces it, and a read that
 // stored nothing never displaces an earlier one that did. A read the model
-// marked as a working one is the result only while there is no other
-// (`./row-sink.ts`).
+// marked as a working one is the result only while there is no other, and so
+// is a list set aside because it lacks a condition of the result
+// (`./row-sink.ts`, which leaves both out of the datasets it hands this).
 //
 // **A saved Flow's run is the task's own answer so far, not one read among others.** A read after
 // it of something else (a look-up on the way to the next step) must not replace what the run found

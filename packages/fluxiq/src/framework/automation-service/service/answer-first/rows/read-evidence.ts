@@ -40,10 +40,16 @@
 // `togetherRows` a `together` set, `aloneObservations` what each condition found, and the conditions and columns are the
 // ones the read was dispatched with. Without it the judge was told what a Flow's read kept and never what it left out,
 // and refused a right replay twice over the ad cards it had rightly left out (judges 0131, 0182).
+//
+// **And which conditions it was asked under (`conditions`).** The `where` list the call asked, or the batch's read was
+// dispatched with (only where the batch carries its account, above; a batch without one says none), found as `leftOut`'s
+// are, each condition in a stable form. The row sink holds a list's conditions by them and lets a read's rows become
+// the result only where they include every condition of the result's (`./row-sink.ts`, run-mwaudvnh-c208d32c).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY, automationStudioResultReadParameters, type AutomationStudioFlowLessReadLeftOut } from "../../../../../runtime/result-verification/index.ts";
+import { stableJson } from "../../stable-json.ts";
 import { extractionSummaryFromOutputs } from "../../summaries/index.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstPageWord } from "./page-word.ts";
@@ -64,7 +70,18 @@ export function automationStudioAnswerFirstReadEvidenceOf(call: AutomationStudio
   const list = address === undefined ? undefined : automationStudioAnswerFirstAddressSplit(address);
   const place = placeInCall(call.value) ?? (live === undefined ? undefined : list?.place);
   const leftOut = leftOutOf(call, answer, readRowsKey);
-  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}), ...(leftOut ? { leftOut } : {}) };
+  const conditions = automationStudioAnswerFirstReadConditions(isObject(call.value.parameters) ? call.value.parameters : undefined);
+  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}), ...(leftOut ? { leftOut } : {}), ...(conditions.length ? { conditions } : {}) };
+}
+
+/**
+ * A read's `where` conditions, from the parameters it was asked or dispatched with (header): each in a
+ * stable form (keys sorted), once, sorted. Two reads share a condition only where they wrote it alike.
+ * None, or no read parameters in reach, is none.
+ */
+export function automationStudioAnswerFirstReadConditions(parameters: JsonObject | undefined): string[] {
+  const where = automationStudioResultReadParameters(parameters)?.where;
+  return Array.isArray(where) ? [...new Set(where.map((condition) => stableJson(condition)))].sort() : [];
 }
 
 function recordOutputOf(value: JsonObject): JsonObject | undefined {
