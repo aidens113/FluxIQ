@@ -7,6 +7,7 @@ import { automationStudioLlmStepLogListStep } from "./listing.ts";
 import { automationStudioLlmStepLogNaming } from "./naming.ts";
 import type { AutomationStudioLlmStepLogPageReader } from "./page-reader.ts";
 import { automationStudioLlmStepLogScope, type AutomationStudioLlmStepLogPass } from "./scope.ts";
+import { automationStudioLlmStepLogSpans } from "./span.ts";
 import { automationStudioLlmStepLogSummary } from "./summary.ts";
 
 /** A tool request as the evidence loop and the Flow test make it: `value` is the input the model wrote. */
@@ -28,26 +29,29 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * in the next request. A call made inside a pass scope also writes `pass`, `of`
  * and `row` (the pass's row label, never its values) to `meta.json`: live run
  * `run-musp474o-e0ed7432` left no record of which row a never-judged test's
- * pass checked. `run` itself, untouched, when the step log is off.
+ * pass checked. What the call's own work timed inside it (`./span.ts`) is
+ * written as `spans`, where it timed anything. `run` itself, untouched, when
+ * the step log is off.
  */
 export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (request: R) => Promise<O>, env: Readonly<Record<string, string | undefined>> = process.env, pageText?: AutomationStudioLlmStepLogPageReader): (request: R) => Promise<O> {
   const directory = automationStudioLlmStepLogDirectory(env);
   if (!directory) return run;
   return async (request) => {
     const step = toolStep(directory, request, pageText);
+    const timed = automationStudioLlmStepLogSpans.collect(() => run(request));
     let result: O;
     try {
-      result = await run(request);
+      result = await timed.done;
     } catch (error) {
-      step?.(undefined, error);
+      step?.(undefined, error, timed.spans());
       throw error;
     }
-    step?.(result, undefined);
+    step?.(result, undefined, timed.spans());
     return result;
   };
 }
 
-function toolStep(directory: string, request: ToolRequest, pageText: AutomationStudioLlmStepLogPageReader | undefined): ((result: unknown, error: unknown) => void) | undefined {
+function toolStep(directory: string, request: ToolRequest, pageText: AutomationStudioLlmStepLogPageReader | undefined): ((result: unknown, error: unknown, spans: Parameters<typeof automationStudioLlmStepLogSpans.written>[0]) => void) | undefined {
   const scope = automationStudioLlmStepLogScope.current();
   const toolId = typeof request.toolId === "string" ? request.toolId : "unnamed";
   const callId = typeof request.callId === "string" ? request.callId : "";
@@ -64,7 +68,7 @@ function toolStep(directory: string, request: ToolRequest, pageText: AutomationS
   const files = automationStudioLlmStepLogWriter(folder.path);
   // A replay's row is page data: written as its field names (`./field-names.ts`).
   files.json("call.json", { callId, toolId, input: automationStudioLlmStepLogFieldNames.call(request.value) ?? null });
-  return (result, error) => {
+  return (result, error, spans) => {
     try {
       const execution = executionOf(result);
       const evidence = execution ? execution.evidence : result;
@@ -95,7 +99,9 @@ function toolStep(directory: string, request: ToolRequest, pageText: AutomationS
         // A replayed read's rows, as each output port's field names only.
         ...(outputs ? { outputs } : {}),
         // A repeat's pass: which, of how many, and its row's screened label (`./scope.ts`).
-        ...passFields(scope?.pass)
+        ...passFields(scope?.pass),
+        // Where the step's time went, as the call's own work timed it (task speed S0).
+        ...(spans.length > 0 ? { spans: automationStudioLlmStepLogSpans.written(spans, started) } : {})
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined, role: scope?.role, briefId: scope?.briefId });
     } catch {
