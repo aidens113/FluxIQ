@@ -158,20 +158,23 @@ describe("the same words in another case, or with a full stop (t869)", () => {
     await lane.memory.update(lane.projectId, automationStudioAnswerFirstTaskKey({ instructionText: HOLD_TASK, startLocation: undefined }), (current) => ({
       ...current, flowId: "flow.loans", best: { attemptId: "attempt.kept", flowId: "flow.loans", steps, stepsDigest: automationStudioAnswerFirstStepsDigest(steps), label: "unverified", provenWhole: false, savedAtMs: 1, spend: { calls: 1, usd: 0.01 } }
     }));
-    const first = await lane.attempt({ instruction: HOLD_TASK, permittedConsequences: ["modify_existing"] });
+    // Typed in another case and with no full stop, the words find the kept Flow, whose first whole run this is: it is judged.
+    const typed = "keep my loans on the hold shelf";
+    const first = await lane.attempt({ instruction: typed, permittedConsequences: ["modify_existing"] });
     expect(first.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow" });
     expect(lane.target.library.onHold).toBe(true);
-    const typed = "keep my loans on the hold shelf";
-    expect(await automationStudioAnswerFirstKnownFlow(lane.service, lane.stores, { projectId: lane.projectId, instructionText: "KEEP MY LOANS ON THE HOLD SHELF!" })).toBe("flow.loans");
-    const second = await lane.attempt({ instruction: typed, permittedConsequences: ["modify_existing"] });
-    expect(second.answer.attempt).toMatchObject({ taskId: first.answer.attempt.taskId, ordinal: 2, status: "achieved", path: "run_flow" });
-    expect(second.decisions).toHaveLength(0);
-    expect(lane.target.library.onHold).toBe(true);
-    expect(lane.target.presses.filter((press) => press.node === HOLD_SHELF)).toHaveLength(1);
     // The key is folded; what the judge reads is what the person typed.
-    const asked = JSON.stringify(second.judgeCalls[0]?.context.instructions.instructions.map((one) => one.body));
+    const asked = JSON.stringify(first.judgeCalls[0]?.context.instructions.instructions.map((one) => one.body));
     expect(asked).toContain(typed);
     expect(asked).not.toContain(HOLD_TASK);
+    expect(await automationStudioAnswerFirstKnownFlow(lane.service, lane.stores, { projectId: lane.projectId, instructionText: "KEEP MY LOANS ON THE HOLD SHELF!" })).toBe("flow.loans");
+    const second = await lane.attempt({ instruction: HOLD_TASK, permittedConsequences: ["modify_existing"] });
+    expect(second.answer.attempt).toMatchObject({ taskId: first.answer.attempt.taskId, ordinal: 2, status: "achieved", path: "run_flow" });
+    expect(second.decisions).toHaveLength(0);
+    // The switch's press was already done, so its step was passed over as saved, and the run stands on its record (task speed S9).
+    expect(second.judgeCalls).toHaveLength(0);
+    expect(lane.target.library.onHold).toBe(true);
+    expect(lane.target.presses.filter((press) => press.node === HOLD_SHELF)).toHaveLength(1);
   });
 });
 
@@ -201,13 +204,16 @@ describe("a Run again's judge", () => {
     expect(renewedIn((shown[0]!.witnesses as { before?: unknown }).before)).toBe(1);
     expect(renewedIn(shown[0]!.endView)).toBe(2);
 
-    // The same words are no repeat the person asked for, and are not told one.
+    // The same words are no repeat the person asked for, and are not told one: the run, its renewal
+    // already done, ran as the Run again's judged run did, so it stands on that record and no judge is
+    // asked at all (task speed S9).
     const capture = (request: AutomationStudioLlmTaskRequest) => {
       shown.push(request.context.resultSummary as unknown as Record<string, unknown>);
       return judgedYes(request);
     };
-    await lane.attempt({ ...same, judge: [capture] });
-    expect(shown[1]!.askedAgain).toBeUndefined();
+    const sameWords = await lane.attempt({ ...same, judge: [capture] });
+    expect(sameWords.judgeCalls).toHaveLength(0);
+    expect(shown).toHaveLength(1);
     expect(lane.target.library.renewals.card).toBe(2);
 
     // The page takes two where one was asked: wrong, and the attempt does not end achieved on it.
@@ -218,8 +224,8 @@ describe("a Run again's judge", () => {
     const beyond = await lane.attempt({ ...same, runAgain: true, judge: [judge] });
     delete lane.target.over;
     expect(lane.target.library.renewals.card).toBe(4);
-    expect(shown[2]!.askedAgain).toBe(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN);
-    expect(renewedIn(shown[2]!.endView)! - renewedIn((shown[2]!.witnesses as { before?: unknown }).before)!).toBe(2);
+    expect(shown[1]!.askedAgain).toBe(AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN);
+    expect(renewedIn(shown[1]!.endView)! - renewedIn((shown[1]!.witnesses as { before?: unknown }).before)!).toBe(2);
     expect(beyond.answer.attempt.status).not.toBe("achieved");
   });
 });

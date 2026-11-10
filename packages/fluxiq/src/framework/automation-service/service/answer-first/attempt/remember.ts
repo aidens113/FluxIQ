@@ -10,6 +10,7 @@ import { automationStudioAttemptActMarkDoneInAchieved } from "../../../../../run
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstStepsDigest, type AutomationStudioAnswerFirstSavedFlow, type AutomationStudioAnswerFirstStatedToggle, type AutomationStudioAnswerFirstStepOrigin, type AutomationStudioAnswerFirstTaskNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstKeptCallerOptions } from "../caller/index.ts";
+import { automationStudioAnswerFirstReadShapeOf } from "../completion/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -32,7 +33,9 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
     const next: AutomationStudioAnswerFirstSavedFlow = {
       attemptId: run.attemptId, flowId, ...(ended.candidateId === undefined ? {} : { candidateId: ended.candidateId }),
       steps, stepsDigest, label: ended.label, provenWhole: wholeRunYes(run), savedAtMs: ended.atMs, spend: ended.spend,
-      ...(ended.stated.length > 0 ? { stated: [...ended.stated] } : {})
+      ...(ended.stated.length > 0 ? { stated: [...ended.stated] } : {}),
+      // What this attempt read when its result was last checked, for a later replay to be compared with (`../completion/read-shape.ts`).
+      ...(run.completion.state.held ? { shape: automationStudioAnswerFirstReadShapeOf(run.completion.state.held.rows) } : {})
     };
     const note = noteOf(run, ending, ended.atMs);
     const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(ending === "stopped_by_person" ? { stoppedByPerson: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), ...(run.input.caller ? { caller: automationStudioAnswerFirstKeptCallerOptions(run.input.caller) } : {}), steps: originsOf(run) };
