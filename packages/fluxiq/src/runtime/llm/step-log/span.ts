@@ -46,6 +46,10 @@ export const automationStudioLlmStepLogSpans = {
     // Async, so a `fn` that throws before its first await rejects `done` rather than throwing here.
     return { done: storage.run(spans, async () => await fn()), spans: () => spans };
   },
+  /** Whether a step is collecting now: a step opened inside another's work would take the spans that one is owed. */
+  active(): boolean {
+    return storage.getStore() !== undefined;
+  },
   /** One timed part of the current step; nothing outside a step, and nothing for a span that is not one. */
   record(name: string, startedAt: number, finishedAt: number, detail?: string): void {
     const spans = storage.getStore();

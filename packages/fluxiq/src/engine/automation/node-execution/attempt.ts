@@ -28,6 +28,7 @@ import { automationStudioAttemptWithRecordedEffect } from "./recorded-effect.ts"
 import { automationStudioAttemptAlreadyInState } from "./already-in-state.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import { automationStudioCallSubflow } from "../frames/index.ts";
+import { automationStudioLlmStepLogSpans } from "../../../runtime/llm/step-log/index.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, controlFlowNodes } from "../../../components/automation/control-flow/index.ts";
 import { dataNodes } from "../../../components/automation/data/index.ts";
 import { logicNodes } from "../../../components/automation/logic/index.ts";
@@ -136,7 +137,8 @@ export class AutomationStudioNodeAttemptExecution {
         failure: { category: "graph_validation_or_unknown_node", code: "executor.parameter.unresolved_state_path", retryable: false, stage: "dispatch", effect: "unacted" }
       };
     }
-    const beforeAction = await captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" }, runState);
+    // Each part around the dispatch is a span of the Flow run's step (task speed S0, `step-loop/step-timing.ts`).
+    const beforeAction = await automationStudioLlmStepLogSpans.time("host.before", () => captureHostState(options, { node: executionNode, attemptId, inputs, point: "before_action" }, runState));
     if (options.signal?.aborted) throw new Error("Node execution was cancelled before dispatch.");
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
       return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch", effect: "unacted" } }, options, beforeAction, hostCapabilities, runState);
@@ -273,9 +275,9 @@ export class AutomationStudioNodeAttemptExecution {
     hostCapabilities: string[],
     runState: AutomationStudioRunState
   ): Promise<AutomationStudioNodeAttemptTrace> {
-    const enriched = await enrichAttemptWithHostState(node, automationStudioAttemptAlreadyInState(attempt), options, beforeAction, hostCapabilities, runState);
-    const judged = await attemptWithHostExpectationEvaluation(node, enriched, options);
-    return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options, runState.actionEffects.get(node.id));
+    const enriched = await automationStudioLlmStepLogSpans.time("host.after", () => enrichAttemptWithHostState(node, automationStudioAttemptAlreadyInState(attempt), options, beforeAction, hostCapabilities, runState));
+    const judged = await automationStudioLlmStepLogSpans.time("expectation", () => attemptWithHostExpectationEvaluation(node, enriched, options));
+    return await automationStudioLlmStepLogSpans.time("recorded-effect", () => automationStudioAttemptWithRecordedEffect(flow, node, judged, options, runState.actionEffects.get(node.id)));
   }
 
   /** The attempt a dispatch belongs to, and the run state its captured rows are recorded in. */
@@ -325,7 +327,8 @@ export class AutomationStudioNodeAttemptExecution {
         }
         const dispatchContext = this.effectDispatchContext(options, withholding);
         target.runState.dispatchedActions.add(target.nodeId);
-        const reported = await options.effectDispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext);
+        const dispatcher = options.effectDispatcher;
+        const reported = await automationStudioLlmStepLogSpans.time("dispatch", async () => await dispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext));
         if (!reported) { if (issued) throw new Error("executor.required_result_missing");
           continue; }
         const answer = projectRuntimeTargetActionability(reported);

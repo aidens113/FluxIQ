@@ -20,7 +20,7 @@ import { chooseAutomationStudioStartNode } from "./graph-navigation/index.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioEndedTrace, automationStudioStepArrival, automationStudioStepAskOrPark, automationStudioStepBeforeNext, automationStudioStepCheckpointRoute, automationStudioStepChildOutcomeStop, automationStudioStepEndFrameIncident, automationStudioStepEntry, automationStudioStepFailedAttempt, automationStudioStepFrameSucceeded, automationStudioStepLearnInterruption, automationStudioStepLifecycle, automationStudioStepLifecycleFrame, automationStudioStepLifecycleRegister, automationStudioStepRequiredOutcomeStop, automationStudioStepRetryBeforeRouting, automationStudioStepSaidAlreadyInState, automationStudioStepStateRoute, automationStudioTraceWithLifecycle, type AutomationStudioStepLifecycleFrame, type AutomationStudioStepLifecycleOutcome, type AutomationStudioStepLoopContext } from "./step-loop/index.ts";
 import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
-import { automationStudioStepAlreadyDone } from "./step-loop/index.ts";
+import { automationStudioStepAlreadyDone, automationStudioStepTiming, type AutomationStudioStepTiming } from "./step-loop/index.ts";
 import { automationStudioCheckpointRow } from "./target-reacquire/index.ts";
 import { automationStudioRepeatNoProgress } from "./repeat-progress/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace/index.ts";
@@ -174,7 +174,15 @@ async function runGraphToTrace(
   recordDeclaredStateBindings(flow, options, withholding);
   // What lifecycle dispatch keeps for this frame's trace: handler bodies' attempts, and the run's records at its root.
   const lifecycle = automationStudioStepLifecycleFrame();
-  const start = () => executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, seed);
+  // Each pass over a node is a timed step of the step log (`step-loop/step-timing.ts`); the last ends as the run leaves the loop.
+  const timing = automationStudioStepTiming();
+  const start = async () => {
+    try {
+      return await executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, timing, seed);
+    } finally {
+      timing.end();
+    }
+  };
   const running = options.commandRun ? options.commandRun.own(start) : start();
   const trace = await running;
   const executed = automationStudioTraceInFrame(options.referenceNow !== undefined && options.referenceNow !== trace.startedAt ? { ...trace, referenceNow: options.referenceNow } : trace, options.invocation);
@@ -286,6 +294,7 @@ async function executeAutomationStudioGraph(
   runState: AutomationStudioRunState,
   lifecycle: AutomationStudioStepLifecycleFrame,
   repeatTraceProvenance: ReturnType<typeof automationStudioRuntimeRepeatTraceProvenance.frame>,
+  timing: AutomationStudioStepTiming,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
@@ -364,6 +373,7 @@ async function executeAutomationStudioGraph(
   // `stepsTaken` already counted, so it is not a second step either.
   for (let step = seed?.stepsTaken ?? 0; step < ctx.maxSteps; step += 1) {
     ctx.step = step;
+    timing.begin(currentNode);
     await options.commandRun?.checkpoint();
     if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, "Run cancelled.");
     // A pause holds here, before the node executes, and never inside it. The run resumes at this same node with
@@ -377,14 +387,15 @@ async function executeAutomationStudioGraph(
         return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, released.outcome === "stop" ? released.message : "Run cancelled.");
       }
     }
-    const regionId = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
+    const regionId: string | undefined = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
     const region = options.regionRuntime?.regions.find((candidate) => candidate.id === regionId);
     let route = resumedRoute;
     let repeatSample: AutomationStudioRuntimeRepeatSample | undefined;
     resumedRoute = undefined;
     if (route === undefined) {
       // The region's checks, the arrival count, the node's pace and its readiness gate (`step-loop/arrival.ts`).
-      const arrived = await automationStudioStepArrival(ctx, currentNode, regionId, region);
+      const arriving: AutomationStudioFlowNode = currentNode;
+      const arrived: Awaited<ReturnType<typeof automationStudioStepArrival>> = await timing.phase("arrival", (): ReturnType<typeof automationStudioStepArrival> => automationStudioStepArrival(ctx, arriving, regionId, region));
       if (arrived.kind === "return") return arrived.trace;
       if (arrived.kind === "next") {
         ctx.runtimeRepeat.barrier();
@@ -426,20 +437,20 @@ async function executeAutomationStudioGraph(
       // A timeout belongs to this logical pass, even if its timer fires before
       // the attempt reaches its first checkpoint.
       runState.dispatchedActions.delete(node.id);
-      const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample)
-        : await executeWithRegionTimeout(
+      const executed = gone ?? (notShown && routing?.kind !== "none" ? notShown : await timing.execute(() => remainingMs === undefined
+        ? executeAutomationStudioNode(ctx.flow, node, nodeValues, options, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample)
+        : executeWithRegionTimeout(
           (signal) => executeAutomationStudioNode(ctx.flow, node, nodeValues, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState, ctx.arrival.parameterOverlay, repeatSample),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
           () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution", effect: runState.dispatchedActions.has(node.id) ? "ambiguous" : "unacted" } }), options.commandRun, options.startTimer
-        ));
+        )));
       // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
       const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
       const childOutcomeUnknown = executed.childTrace?.status === "failed" && executed.childTrace.failure?.code === "run.outcome_uncertain";
       const childRepeatStopped = executed.childTrace !== undefined && automationStudioRuntimeRepeatStoppedTrace(executed.childTrace, options.invocation);
-      if (!outcomeUnknown && !childOutcomeUnknown) await options.commandRun?.checkpoint();
+      if (!outcomeUnknown && !childOutcomeUnknown) await timing.phase("checkpoint", async () => await options.commandRun?.checkpoint());
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
       const attempt: AutomationStudioNodeAttemptTrace = {
@@ -492,13 +503,13 @@ async function executeAutomationStudioGraph(
       for (const effect of attempt.effects) effects.push({ ...effect, nodeId: node.id });
       if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.");
       // The question the attempt raised, and the wait it asked for (`step-loop/ask-or-park.ts`).
-      const asked = await automationStudioStepAskOrPark(ctx, { node, attempt, attemptIndex, stepIndex: step, remainingMs });
+      const asked: Awaited<ReturnType<typeof automationStudioStepAskOrPark>> = await timing.phase("ask-or-park", () => automationStudioStepAskOrPark(ctx, { node, attempt, attemptIndex, stepIndex: step, remainingMs }));
       if (asked.kind === "return") return asked.trace;
       let routeOverride = asked.routeOverride;
       if (routeOverride !== undefined) ctx.runtimeRepeat.barrier();
       // A step that cannot run continues where the page is (`step-loop/state-route.ts`); an item found gone goes straight to its failure path.
       if (routeOverride === undefined && automationStudioCouldNotRun(attempt) && !gone) {
-        const routed = await automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy });
+        const routed: Awaited<ReturnType<typeof automationStudioStepStateRoute>> = await timing.phase("state-route", () => automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy }));
         if (routed.kind === "return") return routed.trace;
         if (routed.kind === "retry") {
           ctx.runtimeRepeat.barrier();
@@ -512,7 +523,7 @@ async function executeAutomationStudioGraph(
       }
       // The fault, the ladder and the way the run goes on from a failure (`step-loop/failed-attempt.ts`).
       if (routeOverride === undefined && attempt.status === "failed") {
-        const recovered = await automationStudioStepFailedAttempt(ctx, { node, attempt, attemptIndex, regionId, retryPolicy });
+        const recovered: Awaited<ReturnType<typeof automationStudioStepFailedAttempt>> = await timing.phase("failed-attempt", () => automationStudioStepFailedAttempt(ctx, { node, attempt, attemptIndex, regionId, retryPolicy }));
         if (recovered.kind === "return") return recovered.trace;
         if (recovered.kind === "retry") {
           ctx.runtimeRepeat.barrier();
@@ -531,8 +542,8 @@ async function executeAutomationStudioGraph(
         // A slow-down notice the client closed so the step went through slows the node too (`pacing/rate-limit-pace.ts`, P6 CC8).
         attempts[attemptIndex] = automationStudioPaceAfterRateLimit(runState.pace, node, attempts[attemptIndex]!);
         // A layer the client's defence closed on the way is learned as a handler first (`step-loop/incident-repair.ts`, t516).
-        await automationStudioStepLearnInterruption(ctx, node, attemptIndex);
-        const onward = await automationStudioStepBeforeNext(ctx, node, attemptIndex);
+        await timing.phase("learn-interruption", () => automationStudioStepLearnInterruption(ctx, node, attemptIndex));
+        const onward: Awaited<ReturnType<typeof automationStudioStepBeforeNext>> = await timing.phase("before-next", () => automationStudioStepBeforeNext(ctx, node, attemptIndex));
         if (onward?.kind === "return") return onward.trace;
         if (onward?.kind === "next") {
           ctx.runtimeRepeat.barrier();
