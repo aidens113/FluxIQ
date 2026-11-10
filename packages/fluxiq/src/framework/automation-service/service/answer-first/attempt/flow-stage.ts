@@ -18,6 +18,12 @@
 // **A robot check is put to the person in place**, and the run goes on from that step once they
 // press Continue; the attempt reads `waiting_for_person` / `person_only_check` while it stands.
 //
+// **A purse of nothing is replay only** (fluxnode-plan N5, a caller's `budgetUsd: 0`): the saved Flow
+// still runs, since a run calls no model. A check of the caller's own, or checking turned off, can
+// then end it with no model call at all; anything that needs one (a judge) meets the empty purse and
+// ends `budget_out` with what the run read. A task with no saved Flow to run goes to the rounds, which
+// end at once on the same purse (`./rounds.ts`), so nothing anywhere asks a model.
+//
 // **A carried-on attempt never comes here**: the Flow is never run again from its start.
 //
 // **A person's Run again runs it as any later attempt does, states checked first** (`../run-again/`):
@@ -44,7 +50,7 @@ const WHOLE_RUN = "The saved Flow ran from its start to its end.";
 /** The stage's ending, or nothing where the rounds go on. Never throws. */
 export async function automationStudioAnswerFirstFlowStage(run: AutomationStudioAnswerFirstAttemptRun): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { route } = run;
-  if (route.kind !== "use" || run.prior || run.input.creation.purse.ceilingUsd <= 0) return undefined;
+  if (route.kind !== "use" || run.prior) return undefined;
   const staged = await automationStudioAnswerFirstBestEffort(() => stage(run, route.saved));
   if (staged.ok) return staged.value;
   run.path = run.flowRun?.wentOut ? "run_flow_then_repair" : "explore";

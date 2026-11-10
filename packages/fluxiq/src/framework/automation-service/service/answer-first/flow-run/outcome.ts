@@ -14,6 +14,8 @@ export type AutomationStudioAnswerFirstFlowRunOutcome =
   | { kind: "not_assembled"; codes: readonly string[] }
   /** A person said no, or there is nobody to say yes. Nothing was sent. */
   | { kind: "permission_declined"; consequences: readonly string[] }
+  /** A step is outside the caller's scope (`../caller/replay-scope.ts`), said in Core's words. Nothing was asked and nothing was sent. */
+  | { kind: "outside_scope"; said: string }
   /** A person's Stop. */
   | { kind: "stopped" }
   | {

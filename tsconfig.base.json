@@ -17,6 +17,7 @@
     "paths": {
       "@fluxiq/contracts": ["packages/contracts/src/index.ts"],
       "@fluxiq/contracts/*": ["packages/contracts/src/*.ts"],
+      "@fluxiq/sdk": ["packages/sdk/src/index.ts"],
       "@fluxiq/ui-components": ["packages/ui-components/src/index.ts"],
       "@fluxiq/ui-components/dom": ["packages/ui-components/src/dom/index.ts"],
       "@fluxiq/ui-components/icons": ["packages/ui-components/src/icons/index.ts"],

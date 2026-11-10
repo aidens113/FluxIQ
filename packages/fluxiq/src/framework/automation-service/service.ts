@@ -1490,7 +1490,7 @@ export class AutomationStudioService {
     try {
       // Every field of the request, read and refused in one place
       // (`./service/flow-bootstrap-commands/generation-request.ts`).
-      const { projectId, flowId, startLocation, caller, permittedConsequences, mode, authoringMode, interpretationCostUsd, interpretationCalls } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput), answerFirstOptions = answerFirst === undefined ? undefined : (await import("./service/answer-first/caller/index.ts")).automationStudioAnswerFirstCallerOptionsRead(answerFirst);
+      const { projectId, flowId, startLocation, caller, permittedConsequences, mode, authoringMode, interpretationCostUsd, interpretationCalls } = readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput), answerFirstOptions = (await import("./service/answer-first/caller/index.ts")).automationStudioAnswerFirstCallerOptionsHeld(answerFirst, { projectId, flowId, startLocation }); // A person's press brings none: it goes on under those its attempt kept.
       failureCode = "flow_bootstrap.generation_lock_failed";
       return await this.locks.withBootstrapGenerationLock(projectId, flowId, async () => {
         failureCode = "flow_bootstrap.blank_target_required"; this.buildCancellation.checkpoint();

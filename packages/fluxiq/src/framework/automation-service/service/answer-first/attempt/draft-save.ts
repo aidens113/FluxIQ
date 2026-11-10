@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioFlowCandidate } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioLlmStepLogNote, checkAutomationStudioFlowBootstrapCompletion } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
-import { automationStudioAnswerFirstStampedPlan, automationStudioAnswerFirstStatedToggles } from "../flow-run/index.ts";
+import { automationStudioAnswerFirstInputBoundSteps, automationStudioAnswerFirstStampedPlan, automationStudioAnswerFirstStatedToggles } from "../flow-run/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -29,6 +29,8 @@ export type AutomationStudioAnswerFirstDraftOutcome =
 export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudioAnswerFirstAttemptRun, summary: string): Promise<AutomationStudioAnswerFirstDraftOutcome> {
   const { input } = run;
   try {
+    // A caller's input values become the Flow's inputs before anything is assembled, so the draft and the steps the task keeps (`./remember.ts`, after this) both hold the bindings (`../flow-run/input-bound-steps.ts`).
+    if (input.caller?.inputs) run.steps = automationStudioAnswerFirstInputBoundSteps(run.steps, input.caller.inputs);
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary }, projectId: input.projectId, flowId: input.flowId, registry: input.registry, resolution: input.resolution, size: input.size, binding: input.binding,
       permissionFor: () => async () => ({ permitted: true, missing: [], requestId: null }),

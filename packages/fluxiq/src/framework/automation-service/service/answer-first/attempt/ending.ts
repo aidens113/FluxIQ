@@ -11,10 +11,10 @@
 // programming error (`automationStudioAnswerFirstEnding`).
 //
 // **A result a caller took unchecked** (`taken_unverified`: its judge `off` and no check of its own;
-// `../completion/check.ts`) is stored as `stopped_by_person`, labelled `unverified` with why: the
-// shared contract lets only a confirmed result be `achieved`, and of its other endings only that
-// one is the caller ending it with a result in hand. The answer's `confirmedBy: "none"` says it was
-// the caller's choice and no Stop.
+// `../completion/check.ts`) is the result: it is stored `achieved`, labelled `unverified` with why,
+// on an attempt marked `checkingOff` (`./keep.ts`), which is the one attempt the shared contract
+// lets be achieved unconfirmed. It is never stored as a person's Stop. The answer's
+// `confirmedBy: "none"` says nothing confirmed it, by the caller's choice.
 
 import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer-first/result/index.ts";
 import { emitAutomationStudioAttemptEnded } from "../../../../../runtime/automation-activity/index.ts";
@@ -49,7 +49,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   // A wait is for a check only a person can clear, or for a person to say whether a task that kept getting stuck goes on.
   const stuck = ending === "waiting_for_check" && run.waitingFor === "stuck_in_a_loop";
   const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : ending === "taken_unverified" ? TAKEN_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
-  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending === "taken_unverified" ? "stopped_by_person" as const : ending };
+  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending === "taken_unverified" ? "achieved" as const : ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;

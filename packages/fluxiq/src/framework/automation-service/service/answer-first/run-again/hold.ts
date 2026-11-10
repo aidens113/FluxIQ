@@ -4,12 +4,15 @@
 // model writes can say a person asked for this.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { AutomationStudioAnswerFirstKeptCallerOptions } from "../../flow-bootstrap-commands/index.ts";
 
 export type AutomationStudioAnswerFirstRunAgainHold = {
   projectId: string;
   flowId: string;
   taskId: string;
   attemptId: string;
+  /** The options the task's latest attempt kept from its caller, which the new attempt goes on under (`../caller/held.ts`). */
+  caller?: AutomationStudioAnswerFirstKeptCallerOptions | undefined;
   /** The attempt took it, and no later attempt in this scope may. */
   opened: boolean;
 };

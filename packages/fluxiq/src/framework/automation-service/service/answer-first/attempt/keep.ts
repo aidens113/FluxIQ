@@ -41,11 +41,18 @@ export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswer
     budget: { usd: prior ? prior.budgetUsd - Math.max(0, prior.askedUsd - purse.ceilingUsd) : purse.ceilingUsd },
     liveSteps: run.liveSteps,
     loopsCaught: run.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(),
+    // Its caller turned checking off (its judge `off` and no check of its own), so its result is taken as it stands, unverified (`./ending.ts`).
+    ...(checkingOff(run) ? { checkingOff: true as const } : {}),
     ...(noRow > 0 ? { actsWithNoRow: noRow } : {}),
     ...(run.startedFrom && run.route.kind !== "build" ? { startedFrom: { route: run.route.kind, attemptId: run.startedFrom.attemptId, stepsDigest: run.startedFrom.stepsDigest } } : {}),
     startedAtMs: run.startedAtMs,
     ...(ended ? { endedAtMs: Math.max(now, run.startedAtMs) } : {})
   };
+}
+
+function checkingOff(run: AutomationStudioAnswerFirstAttemptRun): boolean {
+  const caller = run.input.caller;
+  return caller?.judge === "off" && caller.check === undefined;
 }
 
 /** What the attempt has got, as the contract's record, however it stands. */

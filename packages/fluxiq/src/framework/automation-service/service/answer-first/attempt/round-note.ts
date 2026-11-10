@@ -62,6 +62,7 @@ function flowRunTold(run: AutomationStudioAnswerFirstAttemptRun): JsonObject | u
   if (!outcome || outcome.kind === "stopped") return undefined;
   if (outcome.kind === "permission_declined") return { happened: DECLINED };
   if (outcome.kind === "not_assembled") return { happened: NOT_ASSEMBLED };
+  if (outcome.kind === "outside_scope") return { happened: outcome.said };
   const steps = outcome.steps.map((step) => ({ position: step.position, ran: step.ran, ...(step.happened ? { happened: step.happened } : {}) }));
   if (!outcome.failing) return { steps, happened: WHOLE_NOT_ACCEPTED };
   return { steps, stoppedAt: outcome.failing.position, happened: `${outcome.failing.happened} ${THE_PAGE}` };

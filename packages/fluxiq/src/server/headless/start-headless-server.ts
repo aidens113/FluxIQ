@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { createServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { FluxIQ } from "../../framework/index.ts";
+import type { FluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
 import { startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../client-gateway-websocket/index.ts";
 import { programApiListener } from "./program-api-listener.ts";
 
@@ -15,6 +16,8 @@ export type HeadlessServerOptions = {
   gatewayPort?: number;
   /** The gateway's WebSocket path. Defaults to `/client`. */
   gatewayPath?: string;
+  /** When given, the API listener also serves the FluxNode HTTP API (`/api/fluxnode/v1`) with it, in open mode. Without it those paths are 404. */
+  fluxNodes?: FluxNodeService;
 };
 
 export type HeadlessServerHandle = {
@@ -52,7 +55,7 @@ export async function startHeadlessServer(options: HeadlessServerOptions): Promi
     await gateway.close().catch(/* best-effort: never bound, nothing to close */ () => undefined);
     throw error;
   }
-  const api = createServer(programApiListener({ fluxiq: options.fluxiq }));
+  const api = createServer(programApiListener({ fluxiq: options.fluxiq }, options.fluxNodes));
   try {
     api.listen(options.apiPort ?? 3000, HOST);
     await listening(api, () => undefined);

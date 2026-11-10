@@ -6,7 +6,7 @@ import { readProjectConfig } from "../keys/index.ts";
 import { SdkError } from "../errors/index.ts";
 
 /** Where `fluxiq dev` serves on this machine. */
-export const DEFAULT_ENGINE_URL = "http://127.0.0.1:4780";
+export const DEFAULT_ENGINE_URL = "http://127.0.0.1:3000";
 
 /** The engine's base address, with no trailing path. */
 export function resolveEndpoint(explicit: string | undefined, credential: ResolvedCredential | undefined, env: NodeJS.ProcessEnv, cwd: string): string {
