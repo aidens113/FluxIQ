@@ -1,11 +1,14 @@
 {
   "name": "fluxiq",
-  "version": "0.40.0",
+  "version": "0.42.0",
   "description": "Domain-neutral FluxIQ framework runtime for Node.js.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "bin": {
+    "fluxiq": "./dist/server/cli/main.js"
   },
   "exports": {
     ".": {
@@ -203,6 +206,10 @@
     "./runtime/agents": {
       "types": "./dist/runtime/agents/index.d.ts",
       "import": "./dist/runtime/agents/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
     },
     "./secret-keys": {
       "types": "./dist/programs/secret-keys/index.d.ts",
