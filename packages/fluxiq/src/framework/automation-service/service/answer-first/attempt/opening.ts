@@ -59,7 +59,8 @@ type Stores = { store: Pick<AutomationStudioAnswerFirstAttemptStore, "list">; ac
 /** Reads what the task kept (header). */
 export async function automationStudioAnswerFirstOpening(input: AutomationStudioAnswerFirstAttemptInput, stores: Stores, again?: AutomationStudioAnswerFirstRunAgainHold): Promise<AutomationStudioAnswerFirstOpening> {
   const { projectId, flowId } = input;
-  const taskId = again?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation });
+  // A caller that names its task (a FluxNode's name and spec hash) is known by that, whatever its words (`../task-key/task-key.ts`).
+  const taskId = again?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation, callerKey: input.caller?.taskKey });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
   const kept = await readOrNothing(() => memory.get(projectId, taskId));
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];

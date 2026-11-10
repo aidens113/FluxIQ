@@ -34,8 +34,8 @@ import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstAskStuck } from "./stuck-ask.ts";
 
-/** How the rounds ended: an ending, or the one wait nothing here can end. */
-export type AutomationStudioAnswerFirstRoundsEnding = "achieved" | "budget_out" | "stopped_by_person" | "waiting_for_check";
+/** How the rounds ended: an ending, or the one wait nothing here can end. `taken_unverified` is a caller's result taken unchecked, its judge off and no check (`../completion/check.ts`): a result, never a failure. */
+export type AutomationStudioAnswerFirstRoundsEnding = "achieved" | "taken_unverified" | "budget_out" | "stopped_by_person" | "waiting_for_check";
 
 /** Rounds in a row that spent nothing, on a refusal before any model call, before it is a setup step: a fresh round could not get past it. */
 const REFUSED_ROUNDS_BEFORE_SETUP = 3;
@@ -50,8 +50,9 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
   for (let ordinal = 1; ; ordinal += 1) {
     const spentBefore = purse.spentCalls();
     const end = await automationStudioAnswerFirstRound(run, { ordinal, note });
-    const next = automationStudioAnswerFirstNext({ end, aborted: stopped(run), purseRefused: run.completion.state.purseRefused || purse.refusal !== undefined, achieved: run.completion.state.achieved, backoffs: run.backoffs });
-    if (next.kind === "achieved") return "achieved";
+    const { achieved, takenUnverified } = run.completion.state;
+    const next = automationStudioAnswerFirstNext({ end, aborted: stopped(run), purseRefused: run.completion.state.purseRefused || purse.refusal !== undefined, achieved: achieved || takenUnverified === true, backoffs: run.backoffs });
+    if (next.kind === "achieved") return achieved ? "achieved" : "taken_unverified";
     if (next.kind === "budget_out") return "budget_out";
     if (next.kind === "stopped") return "stopped_by_person";
     if (run.personEnded === "unreachable") return "waiting_for_check";
