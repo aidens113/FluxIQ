@@ -8,14 +8,7 @@ import type { AnyFluxNode } from "../define/index.ts";
 import { SdkError } from "../errors/index.ts";
 import { isZodSchema } from "../schema/index.ts";
 import type { RunOptions } from "./run-types.ts";
-
-function withOptions(request: FluxNodeRunRequestInput, options: RunOptions): FluxNodeRunRequestInput {
-  const out = { ...request };
-  if (options.overrides !== undefined) out.options = options.overrides;
-  if (options.correlationId !== undefined) out.correlationId = options.correlationId;
-  if (options.idempotencyKey !== undefined) out.idempotencyKey = options.idempotencyKey;
-  return out;
-}
+import { withRunOptions } from "./with-run-options.ts";
 
 /** The request that runs `node` over `inputs`. */
 export function buildRunRequest(node: AnyFluxNode, inputs: unknown, options: RunOptions): FluxNodeRunRequestInput {
@@ -28,10 +21,10 @@ export function buildRunRequest(node: AnyFluxNode, inputs: unknown, options: Run
     }
     values = parsed.data;
   }
-  return withOptions({ spec: node.spec, inputs: (values ?? {}) as JsonObject }, options);
+  return withRunOptions({ spec: node.spec, inputs: (values ?? {}) as JsonObject }, options);
 }
 
 /** The request that continues a waiting or budget-out run. */
 export function buildResumeRequest(resumeHandle: string, options: RunOptions): FluxNodeRunRequestInput {
-  return withOptions({ resumeHandle }, options);
+  return withRunOptions({ resumeHandle }, options);
 }

@@ -3,6 +3,7 @@
 // A waiting or budget-out run continues from its resume handle instead.
 
 import { z } from "zod";
+import { dataPipelineSchema } from "../data/index.ts";
 import { fluxNodeFieldSchemas } from "../fields/index.ts";
 import { fluxNodeNameSchema } from "../flow/index.ts";
 import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
@@ -16,7 +17,9 @@ import { fluxNodeResumeHandleSchema } from "./result.ts";
  *
  * - `spec`: the FluxNode itself, registered on the way if it is new;
  * - `name`: a registered FluxNode, at its latest spec or at `specHash`;
- * - `resumeHandle`: continue a waiting or budget-out run, keeping its inputs.
+ * - `resumeHandle`: continue a waiting or budget-out run, keeping its inputs;
+ * - `pipeline`: a data pipeline (plan, D3), compiled into a Flow and registered on
+ *   the way if it is new; a registered one runs by `name`, as a FluxNode does.
  *
  * - `inputs`: the inputs, checked against an inline spec here and against a
  *   registered one by Core; not allowed with `resumeHandle`;
@@ -32,6 +35,7 @@ export const fluxNodeRunRequestSchema = z
     name: fluxNodeNameSchema.optional(),
     specHash: fluxNodeFieldSchemas.sha256Hex.optional(),
     resumeHandle: fluxNodeResumeHandleSchema.optional(),
+    pipeline: dataPipelineSchema.optional(),
     inputs: jsonObjectSchema.optional(),
     options: fluxNodeOptionsSchema.optional(),
     correlationId: fluxNodeFieldSchemas.callerKey.optional(),
@@ -42,8 +46,8 @@ export const fluxNodeRunRequestSchema = z
     const issue = (path: string, code: string, message: string): void => {
       context.addIssue({ code: z.ZodIssueCode.custom, path: path === "" ? [] : [path], message, params: { code: `run_request.${code}` } });
     };
-    const given = [request.spec, request.name, request.resumeHandle].filter((part) => part !== undefined).length;
-    if (given !== 1) issue("", "target", "Give exactly one of spec, name and resumeHandle.");
+    const given = [request.spec, request.name, request.resumeHandle, request.pipeline].filter((part) => part !== undefined).length;
+    if (given !== 1) issue("", "target", "Give exactly one of spec, name, resumeHandle and pipeline.");
     if (request.specHash !== undefined && request.name === undefined) issue("specHash", "spec_hash_without_name", "specHash picks a version of a registered name; give name with it.");
     if (request.resumeHandle !== undefined && request.inputs !== undefined) issue("inputs", "inputs_on_resume", "A resumed run keeps its inputs; leave inputs out.");
     if (request.spec !== undefined) {

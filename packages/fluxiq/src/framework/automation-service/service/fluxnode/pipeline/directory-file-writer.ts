@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PipelineError } from "../errors.ts";
-import type { PipelineFileWriter } from "../types.ts";
+import { PipelineError, type PipelineFileWriter } from "../../pipelines/index.ts";
 
 /**
  * A file writer confined to `directory`: a relative path that resolves outside it

@@ -35,6 +35,14 @@ describe("checkAutomationStudioTaskAttemptResult", () => {
     expect(issuesOf("achieved", resultOf({ kind: "rows", label: "refuted", timesChecked: 2 }))).toEqual(["task_outcome.achieved_not_confirmed"]);
   });
 
+  it("passes an achieved, unverified result only where the caller turned checking off, and never a refuted one", () => {
+    const off = (result: AutomationStudioTaskResult) => checkAutomationStudioTaskAttemptResult({ attemptId: "attempt-1", status: "achieved", checkingOff: true }, result);
+    expect(off(resultOf({ kind: "rows", label: "unverified", timesChecked: 0 }))).toEqual({ ok: true });
+    expect(off(resultOf({ kind: "rows", label: "confirmed", timesChecked: 1 }))).toEqual({ ok: true });
+    expect(off(resultOf({ kind: "rows", label: "refuted", timesChecked: 1 }))).toEqual({ ok: false, issues: ["task_outcome.achieved_not_confirmed"] });
+    expect(checkAutomationStudioTaskAttemptResult({ attemptId: "attempt-1", status: "achieved", checkingOff: true }, undefined)).toEqual({ ok: false, issues: ["task_outcome.achieved_needs_result"] });
+  });
+
   it("refuses a budget-out with no result: even one that found nothing has an empty partial", () => {
     expect(issuesOf("budget_out", undefined)).toEqual(["task_outcome.budget_out_needs_result"]);
     expect(issuesOf("budget_out", resultOf())).toEqual([]);

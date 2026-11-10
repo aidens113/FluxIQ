@@ -3,12 +3,13 @@
 // a scripted model and the lending library's stub target (`../../tests/fake-library.ts`). The call
 // carries neither `authoringMode` nor `evidenceGuided`: the caller's options alone ask for answer-first.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { checkAutomationStudioTaskAttemptResult } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmProviderResolverInput } from "../../../../../../runtime/llm/index.ts";
-import { AutomationStudioService } from "../../../../service.ts";
-import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioGenerateFlowBootstrapAdaptationInput } from "../../../flow-bootstrap-commands/index.ts";
+import type { AutomationStudioAnswerFirstCallerOptions } from "../../../flow-bootstrap-commands/index.ts";
 import { complete, LOOK_TOOL, READ_LOANS, RENEW_CARD, runNode, scriptedAttempt, toolCall } from "../../tests/fake-library.ts";
 import { laterAttempts, readLoans } from "../../tests/later-attempts.ts";
+import { drivenBy } from "./caller-driven.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -16,19 +17,6 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const LIST = "List every loan on my library account.";
-
-/** Has the service's generation take the caller's options, and drops the flags the chat sends: the options must be enough. */
-function drivenBy(service: AutomationStudioService, options: () => AutomationStudioAnswerFirstCallerOptions | undefined): void {
-  const own = AutomationStudioService.prototype.generateFlowBootstrapAdaptation;
-  Object.assign(service, {
-    generateFlowBootstrapAdaptation: (input: AutomationStudioGenerateFlowBootstrapAdaptationInput) => {
-      const given = options();
-      if (!given) return own.call(service, input);
-      const { evidenceGuided: _guided, authoringMode: _mode, ...plain } = input;
-      return own.call(service, plain, given);
-    }
-  });
-}
 
 function answered(attempt: { answered: Awaited<ReturnType<typeof scriptedAttempt>>["answered"] }) {
   if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${JSON.stringify(attempt.answered)}`);
@@ -81,7 +69,7 @@ describe("a caller's check", () => {
 });
 
 describe("the judge's mode, through the service", () => {
-  it("off with no check: taken unverified with no judge call, and stored as the caller ending it, never achieved", async () => {
+  it("off with no check: achieved with no judge call, its result unverified, marked checking off, and never stored as a person's Stop", async () => {
     const attempt = await scriptedAttempt({
       instruction: LIST,
       script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")],
@@ -90,8 +78,9 @@ describe("the judge's mode, through the service", () => {
     const answer = answered(attempt);
     expect(judgeCalls(attempt)).toBe(0);
     expect(answer.confirmedBy).toBe("none");
-    expect(answer.attempt.status).toBe("stopped_by_person");
+    expect(answer.attempt).toMatchObject({ status: "achieved", checkingOff: true });
     expect(answer.result).toMatchObject({ kind: "rows", label: "unverified", timesChecked: 0 });
+    expect(checkAutomationStudioTaskAttemptResult(answer.attempt, answer.result)).toEqual({ ok: true });
     expect(answer.result?.missingWhat).toMatch(/checking was turned off/u);
     expect(answer.result?.rows?.totalRows).toBe(3);
     expect(attempt.scriptRanOut).toBe(false);
@@ -119,6 +108,7 @@ describe("the judge's mode, through the service", () => {
     expect(judgeCalls(attempt)).toBe(1);
     expect(answer.attempt.status).toBe("achieved");
     expect(answer.confirmedBy).toBe("judge");
+    expect(answer.attempt.checkingOff).toBeUndefined();
   });
 });
 

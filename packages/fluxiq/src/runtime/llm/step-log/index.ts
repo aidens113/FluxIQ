@@ -16,6 +16,9 @@
 //   test's replay, hold `call.json`, `result.json`, `page.txt` when the result
 //   carries a page view, and `meta.json`. A replay's row (`item` in the call) and
 //   output values (`outputs` in `meta.json`) are written as field names only.
+//   Where the call's own work timed its parts (`span.ts`), `meta.json` carries
+//   `spans`: each `{ name, at, ms, detail? }`, `at` milliseconds after the step
+//   began, named in the domain's closed words and never page text.
 // - Answer folders `NNNN-answer-amend_draft`, `NNNN-answer-unusable` for a
 //   decision Core refused (no decision shape, a refused completion, a call not
 //   offered), and `NNNN-answer-<toolId>` for a call refused unrun as a repeat
@@ -35,6 +38,9 @@
 //   `refused:<code>`), `gapStep`, `gap` (why it stopped, by code and field path)
 //   and the operation counts; never trace content,
 //   ids, page data or typed values.
+// - Flow folders `NNNN-flow-<definitionId>` time one pass of a Flow run over one
+//   node, which no tool call wraps (`flow-step.ts`): `meta.json` alone, kind `flow`,
+//   `toolId` the definition, `nodeId`, `status`, `resultCode` and `spans`.
 // - Note folders `NNNN-note` hold `meta.json` alone, kind `note`: one plain line (`line`) about
 //   something that happened, never page text (`note-step.ts`).
 // - `meta.json` is written last: a folder with it is complete. Every kind's
@@ -48,6 +54,7 @@
 // best-effort: a step log that cannot write never changes or fails a call.
 export * from "./answer-step.ts";
 export * from "./directory.ts";
+export * from "./flow-step.ts";
 export * from "./model-step.ts";
 export * from "./note-step.ts";
 export * from "./offline-trial-step.ts";
@@ -55,4 +62,5 @@ export * from "./page-reader.ts";
 export * from "./reset-step.ts";
 export * from "./scope.ts";
 export * from "./screen.ts";
+export * from "./span.ts";
 export * from "./tool-step.ts";

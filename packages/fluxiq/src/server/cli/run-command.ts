@@ -1,4 +1,5 @@
 import { DEV_USAGE, parseDevArguments } from "./dev-arguments.ts";
+import { createFluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
 import { runDev } from "./run-dev.ts";
 
 const USAGE = ["Usage: fluxiq <command>", "", "Commands:", "  dev   Serve FluxIQ on 127.0.0.1 without the web panel", "", DEV_USAGE].join("\n");
@@ -24,7 +25,10 @@ export async function runFluxIQCommand(argv: readonly string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const dev = await runDev(parsed.value);
+  // `fluxiq dev` serves the FluxNode API in local open mode (plan, K4); keys are P3b.
+  const dev = await runDev(parsed.value, console.log, {
+    createFluxNodes: (fluxiq) => createFluxNodeService({ service: fluxiq.programs.automationStudio, domainId: fluxiq.activeDomainId })
+  });
   let stopping = false;
   const onSignal = (): void => {
     if (stopping) process.exit(130);
