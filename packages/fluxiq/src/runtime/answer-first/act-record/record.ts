@@ -674,9 +674,11 @@ function matches(entry: AutomationStudioAttemptActEntry, identity: Identity): bo
   if (!identity.rows.some((row) => entry.rows.includes(row)) || !entry.actions.includes(identity.actionId)) return false;
   if (sameKey) return true;
   // One press by hand and in a loop can run under different selectors, so a form that says nothing of its control is not two. Two fingerprints whose keys differ and that share no words are.
-  if (entry.controls && identity.controls && identity.controls.some((words) => entry.controls!.includes(words))) return true;
-  if (entry.fingerprinted === true && identity.fingerprinted === true) return false;
-  return !entry.controls || !identity.controls;
+  // Where both say words, the words decide. Where only one does, the other is a thinner form of a control and may be this one, so it is held the same: a kind
+  // word both shared ("button") was all that once held it so (`./tests/kind-is-no-control-word.test.ts`). Two that say none, both fingerprinted, are two (t869).
+  if (entry.controls && identity.controls) return identity.controls.some((words) => entry.controls!.includes(words));
+  if (entry.controls || identity.controls) return true;
+  return !(entry.fingerprinted === true && identity.fingerprinted === true);
 }
 
 /** Whether what a call is foreseen to be is this entry's act (header). */
