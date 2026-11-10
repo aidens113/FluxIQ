@@ -9,6 +9,12 @@
 // throw or is held so a failure says so and goes on: the person's answer is what this returns.
 // The one throw left is the contract's check of an ending that contradicts itself, which is a
 // programming error (`automationStudioAnswerFirstEnding`).
+//
+// **A result a caller took unchecked** (`taken_unverified`: its judge `off` and no check of its own;
+// `../completion/check.ts`) is stored as `stopped_by_person`, labelled `unverified` with why: the
+// shared contract lets only a confirmed result be `achieved`, and of its other endings only that
+// one is the caller ending it with a result in hand. The answer's `confirmedBy: "none"` says it was
+// the caller's choice and no Stop.
 
 import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer-first/result/index.ts";
 import { emitAutomationStudioAttemptEnded } from "../../../../../runtime/automation-activity/index.ts";
@@ -27,7 +33,8 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 const BUDGET_MISSING = "The budget ran out before this was confirmed.";
 const STOP_MISSING = "You stopped it before this was confirmed.";
-const SESSION_END = { achieved: "succeeded", budget_out: "failed", stopped_by_person: "cancelled", waiting_for_check: "failed" } as const;
+const TAKEN_MISSING = "Nothing checked this result: checking was turned off for this task.";
+const SESSION_END = { achieved: "succeeded", taken_unverified: "succeeded", budget_out: "failed", stopped_by_person: "cancelled", waiting_for_check: "failed" } as const;
 
 export async function automationStudioAnswerFirstFinish(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   const { input } = run;
@@ -41,8 +48,8 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   if (draft.kind === "kept") automationStudioAnswerFirstSay("The steps were not saved as a Flow", "I could not write what I did as a Flow this time, so I kept the steps with this attempt.");
   // A wait is for a check only a person can clear, or for a person to say whether a task that kept getting stuck goes on.
   const stuck = ending === "waiting_for_check" && run.waitingFor === "stuck_in_a_loop";
-  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
-  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending };
+  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : ending === "taken_unverified" ? TAKEN_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
+  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending === "taken_unverified" ? "stopped_by_person" as const : ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
@@ -59,11 +66,20 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
     accounting: automationStudioAnswerFirstAccounting(run),
     attempt: checked.attempt,
     ...(checked.result ? { result: checked.result } : {}),
-    ...(draft.kind === "saved" ? { candidateId: draft.record.candidateId, revision: draft.record.candidate.revision, digest: draft.record.candidate.digest } : {})
+    ...(draft.kind === "saved" ? { candidateId: draft.record.candidateId, revision: draft.record.candidate.revision, digest: draft.record.candidate.digest } : {}),
+    ...confirmedBy(run, ending)
   };
   // The answer is stored: the toast and the header close now, with the card, and not when the whole build returns.
   emitAutomationStudioAttemptEnded(answer);
   return answer;
+}
+
+/** What confirmed a result a caller's attempt took (header), and nothing on a chat attempt or one that ended without a result taken. */
+function confirmedBy(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding): Pick<AutomationStudioGenerateFlowBootstrapAdaptationAnswered, "confirmedBy"> {
+  if (!run.input.caller) return {};
+  if (ending === "taken_unverified") return { confirmedBy: "none" };
+  const by = run.completion.state.confirmedBy;
+  return ending === "achieved" && by ? { confirmedBy: by } : {};
 }
 
 async function flushedRecord(run: AutomationStudioAnswerFirstAttemptRun): Promise<{ ok: true } | { ok: false; errorName: string }> {

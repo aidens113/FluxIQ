@@ -3,6 +3,8 @@ import type { AutomationStudioActionConsequence, AutomationStudioActionPermissio
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
+import type { AutomationStudioAsk, AutomationStudioAskAnswer } from "../../../../runtime/automation-parking/index.ts";
+import type { AutomationStudioFlowLessSummary } from "../../../../runtime/result-verification/index.ts";
 
 // What a caller asks for when it generates a Flow Bootstrap adaptation, and
 // what it gets back.
@@ -156,6 +158,72 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
   candidateId?: string;
   revision?: number;
   digest?: string;
+  /**
+   * Only for an attempt run with caller options (`AutomationStudioAnswerFirstCallerOptions`): what
+   * confirmed its result, `check` or `judge`, or `none` where the caller turned checking off and took
+   * the result as it was. The attempt record can say that last one only as `stopped_by_person`,
+   * labelled `unverified`, because the shared contract lets nothing but a confirmed result be
+   * `achieved`; this says it was the caller's choice, not a Stop. Absent when the attempt ended
+   * without a result taken, and always absent on a chat attempt.
+   */
+  confirmedBy?: "check" | "judge" | "none";
+};
+
+/**
+ * Per-call settings for an answer-first attempt, for a caller that drives one from code -- a
+ * FluxNode (`docs/working/fluxnode-plan.md`, N1-N7) -- rather than from the chat. They are the
+ * second argument of the service's `generateFlowBootstrapAdaptation`, which a request body cannot
+ * reach, so nothing sent over the API can raise a budget or bring its own check.
+ *
+ * Passing them at all asks for answer-first: no `authoringMode`, `evidenceGuided` or
+ * `FLUXIQ_AUTHORING_MODE` is needed. Every field is optional, and an absent one means exactly what
+ * the chat does. The hard rule binds them all: the attempt ends with its result, its budget gone,
+ * or a Stop, and none of them adds a way to end in failure.
+ */
+export type AutomationStudioAnswerFirstCallerOptions = {
+  /** The task's key in place of the digest of its words and site, so other words for one task find what it kept (a FluxNode's name and spec hash). 1 to 512 characters. */
+  taskKey?: string;
+  /** The model this attempt's calls ask for, in place of the Flow's `llmModel`. */
+  model?: string;
+  /** The attempt's whole allowance in dollars, which may be above the $5 default. A Flow limit a person chose, the host's total and a Lab ceiling still hold it lower. */
+  budgetUsd?: number;
+  /** When the judge runs: `auto`, only when there is no `check` (the default); `always`, after a passing check too; `off`, never, and with no check the result is taken unverified. */
+  judge?: "auto" | "always" | "off";
+  /** The caller's own check of a completion, run before any judge and at no cost. */
+  check?: AutomationStudioAnswerFirstCallerCheck;
+  /** Where a question only a person can answer goes, in place of the Flow's conversation. */
+  personAsk?: AutomationStudioAnswerFirstPersonAskSink;
+  /** The standing grant. Present, it replaces the request's permitted consequences, nothing is asked about a lasting act, and an act outside it is refused so the rounds find another way. */
+  scope?: AutomationStudioAnswerFirstCallerScope;
+};
+
+/**
+ * The caller's check of what the attempt got: Core's own summary of it (rows from reads, acts from
+ * the act record, the page as it ended), never the model's. `true` passes; a string is a "no" whose
+ * reason goes back into the rounds as a judge's no does; `false` is a no with no reason given. A
+ * check that throws is a no too, naming the error, so a faulty check costs a round and never the task.
+ */
+export type AutomationStudioAnswerFirstCallerCheck = (summary: AutomationStudioFlowLessSummary) => boolean | string | Promise<boolean | string>;
+
+/**
+ * A program's way to hear a question only a person can answer, and to answer it by callback.
+ * `raised` is told each question as it is put (the `person_needed` event). `answer`, when given, is
+ * waited on in place; absent, or resolving `undefined`, nobody answered, and the attempt waits as it
+ * does with nobody to ask.
+ */
+export type AutomationStudioAnswerFirstPersonAskSink = {
+  raised(ask: AutomationStudioAsk): void | Promise<void>;
+  answer?(ask: AutomationStudioAsk, wait: { expiresAtMs?: number; signal?: AbortSignal }): Promise<AutomationStudioAskAnswer | undefined>;
+};
+
+/**
+ * What a caller's attempt may do. `permittedConsequences` are the lasting acts granted, the classes a
+ * chat request permits. `sites` are host names, each covering itself and its subdomains, with a port
+ * only where given (the FluxNode scope's rule, `fluxNodeScopeAllowsSite`); absent, any site.
+ */
+export type AutomationStudioAnswerFirstCallerScope = {
+  permittedConsequences: readonly AutomationStudioActionConsequence[];
+  sites?: readonly string[];
 };
 
 /**

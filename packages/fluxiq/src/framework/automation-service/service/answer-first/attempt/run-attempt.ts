@@ -27,6 +27,11 @@
 // **The rows' reader only processes once the session has ended**, since processing is what a run's
 // end does. Before that a read-back answers the rows as they were collected, which is what a
 // completion is judged on.
+//
+// **A caller that drives it from code** (`input.caller`, a FluxNode; `../caller/`) may bring its
+// own task key (`./opening.ts`), check and judge mode (`../completion/check.ts`), person port and
+// grant (`../caller/applied.ts`, `../caller/scope-gate.ts`). Each is optional, and a chat
+// attempt has none of them, so it runs exactly as it did.
 
 import { randomUUID } from "node:crypto";
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
@@ -41,6 +46,7 @@ import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } fro
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
+import { automationStudioAnswerFirstCallerApplied, automationStudioAnswerFirstScopeGate } from "../caller/index.ts";
 import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
 import { automationStudioAnswerFirstKnownParts } from "../../project-parts/index.ts";
@@ -69,7 +75,8 @@ import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
 
 export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   // The library is offered here, once, before anything runs: no part that can be offered leaves `given` as it is (`../../project-parts/known-parts.ts`).
-  const input = await automationStudioAnswerFirstKnownParts(given);
+  // A caller's grant and person port, where it brought them (`../caller/applied.ts`); a chat attempt's input is left as it is.
+  const input = automationStudioAnswerFirstCallerApplied(await automationStudioAnswerFirstKnownParts(given));
   if (!input.binding?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
   const held = automationStudioAnswerFirstCarryOnScope.getStore();
   const hold = held && !held.opened && held.projectId === input.projectId && held.flowId === input.flowId ? held : undefined;
@@ -186,6 +193,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),
+    // A caller's own check and judge mode (`../completion/check.ts`); a chat attempt has the judge alone.
+    ...(input.caller ? { confirm: { judge: input.caller.judge ?? "auto", check: input.caller.check } } : {}),
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
@@ -202,7 +211,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     })
   });
   const describe = input.binding?.describeCall?.bind(input.binding);
-  const chain = automationStudioAnswerFirstCallChain({
+  // A caller's scope, held before anything in the chain (`../caller/scope-gate.ts`); with none, the chain as it was.
+  const chain = automationStudioAnswerFirstScopeGate(input.caller?.scope, automationStudioAnswerFirstCallChain({
     domain: (call) => run.options.executeTool(call),
     record, sink, witnesses,
     readRowsKey: input.binding?.readRowsKey,
@@ -210,7 +220,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     stepped: () => { run.liveSteps += 1; },
     answered: () => { run.arrived = true; },
     looked: (look) => { looked.push(look); }
-  });
+  }));
   const ground = input.permissionGround;
   const permissions = automationStudioFlowBootstrapActionPermissions({
     ...ground,

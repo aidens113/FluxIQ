@@ -33,6 +33,21 @@ describe("budget", () => {
   });
 });
 
+describe("a caller's budget", () => {
+  it("replaces the default, above $5 as well as below", () => {
+    expect(automationStudioAnswerFirstBudgetUsd({ callerUsd: 12, env: {} })).toBe(12);
+    expect(automationStudioAnswerFirstBudgetUsd({ callerUsd: 0.5, env: {} })).toBe(0.5);
+    expect(automationStudioAnswerFirstBudgetUsd({ callerUsd: 0, env: {} })).toBe(0);
+  });
+  it("is still held lower by a Flow's chosen limit and a Lab's ceiling", () => {
+    expect(automationStudioAnswerFirstBudgetUsd({ callerUsd: 12, flowSetting: 2, env: {} })).toBe(2);
+    expect(automationStudioAnswerFirstBudgetUsd({ callerUsd: 12, env: lab("0.5") })).toBe(0.5);
+  });
+  it("is no budget when it is not a finite amount of at least 0, and the default stands", () => {
+    for (const callerUsd of [Number.NaN, Number.POSITIVE_INFINITY, -1]) expect(automationStudioAnswerFirstBudgetUsd({ callerUsd, env: {} }), String(callerUsd)).toBe(5);
+  });
+});
+
 describe("judge reserve", () => {
   const price = (inputTokens: number, outputTokens: number) => inputTokens * 1e-6 + outputTokens * 4e-6; // 8,000 in + 1,250 out = $0.013
   const decision = { projectedCostUsd: 0.01, estimatedInputTokens: 100, maxOutputTokens: 750, price };
