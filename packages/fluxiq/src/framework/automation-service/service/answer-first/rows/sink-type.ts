@@ -37,7 +37,8 @@ export type AutomationStudioAnswerFirstRowSink = {
   readsAnswered(): number;
   /**
    * The reads that make up the result's list, one per read since it last started over, each with where it read (the view
-   * of the site and the place in it, where the call or its answer said) and how many rows it kept. Empty while no read stored a row.
+   * of the site and the place in it, where the call or its answer said) and how many rows it kept. A further page of it read the
+   * same way that kept no row is one, with `kept: 0` (`./row-sink.ts`). Empty while no read stored a row.
    */
   readPages(): AutomationStudioAnswerFirstReadPage[];
 };

@@ -15,6 +15,7 @@ export { automationStudioAnswerFirstPageWord } from "./page-word.ts";
 export { automationStudioAnswerFirstProcessedRows } from "./processed-rows.ts";
 export { automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
 export type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
+export { automationStudioAnswerFirstResultChangeTold, type AutomationStudioAnswerFirstResultChange } from "./result-change.ts";
 export { automationStudioAnswerFirstResultDataset } from "./result-dataset.ts";
 export { automationStudioAnswerFirstRowSink } from "./row-sink.ts";
 export { automationStudioAnswerFirstRowTies } from "./row-ties.ts";

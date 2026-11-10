@@ -32,7 +32,9 @@
 // sees the result short says so. The other way cannot. What a person sees of this is
 // `fewerThanEarlier` (`./rows-summary.ts`).
 //
-// A read with no rows is no read of the list: the sink never brings it here.
+// A read with no rows is no read of the list: the sink never brings it here. A page the sink kept as
+// read and empty (`./row-sink.ts`) holds no row, so it is passed by: it says nothing of where a read
+// is, and a read with rows at its place takes its place.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioAnswerFirstListPage } from "./list-page.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
@@ -64,7 +66,7 @@ export function automationStudioAnswerFirstListAfterRead(input: {
     if (tie === undefined) rows.push(row);
     else rows[tie] = row;
   });
-  return { over: false, pages: same >= 0 ? pages.map((page, at) => (at === same ? own : page)) : [...pages, own], rows };
+  return { over: false, pages: same >= 0 ? pages.map((page, at) => (at === same ? own : page)) : [...pages.filter((page) => page.rows.length > 0 || page.place !== own.place), own], rows };
 }
 
 function carriesOn(input: { same: boolean; known: number; read: number; ties: readonly (number | undefined)[]; held: number; moved: boolean; evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says">; pages: readonly AutomationStudioAnswerFirstListPage[] }): boolean {
@@ -72,7 +74,7 @@ function carriesOn(input: { same: boolean; known: number; read: number; ties: re
   if (input.same) return true;
   if (input.moved && says !== "append") return false;
   if (place !== undefined) {
-    if (input.pages.some((page) => page.place === place)) return false;
+    if (input.pages.some((page) => page.place === place && page.rows.length > 0)) return false;
     return !(FIRST_PLACE.test(place) && input.pages.some((page) => page.place === undefined)) || input.known === 0;
   }
   if (says === "replace") return false;

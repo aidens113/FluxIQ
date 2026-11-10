@@ -23,6 +23,38 @@ describe("automationStudioAnswerFirstRowSink readPages", () => {
     ]);
   });
 
+  // run-mwaf6gnt-638d90a0 (steps 0039, 0049): page 2 held nothing the conditions keep, so it stored no row
+  // and was told nowhere, and two judges said unknown because "only page 1 was read".
+  it("names a further page of the same read that kept no row, with kept 0, and changes no row", async () => {
+    const sink = sinkOver();
+    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)], { location: `${HALL}&page=1` }));
+    await sink.fromCall(call("call.2"), liveAnswer([], { location: `${HALL}&page=2` }));
+    await sink.fromCall(call("call.3"), liveAnswer([], { location: `${HALL}&page=2` }));
+    const where = `${new URL(HALL).origin}/bookings?month=may&sort=date`;
+    expect(sink.readPages()).toEqual([{ where, place: "page=1", kept: 2 }, { where, place: "page=2", kept: 0 }]);
+    expect(sink.summary()).toMatchObject({ totalRows: 2, rows: [item(1), item(2)] });
+  });
+
+  it("does not name an empty read asked another way, named otherwise, of another view, or with no place", async () => {
+    const sink = sinkOver();
+    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)], { location: `${HALL}&page=1` }));
+    await sink.fromCall(call("call.2", "web.read", { target: "other list" }), liveAnswer([], { location: `${HALL}&page=2` }));
+    await sink.fromCall(call("call.3", "web.read", { target: "list", recordOutput: { datasetId: "spare" } }), liveAnswer([], { location: `${HALL}&page=3` }));
+    await sink.fromCall(call("call.4"), liveAnswer([], { location: "http://127.0.0.1:5000/bookings?month=june&sort=date&page=2" }));
+    await sink.fromCall(call("call.5"), liveAnswer([], { location: HALL }));
+    expect(sink.readPages()).toEqual([{ where: `${new URL(HALL).origin}/bookings?month=may&sort=date`, place: "page=1", kept: 2 }]);
+  });
+
+  it("carries the list on when a page told empty is read again with rows, in that page's place", async () => {
+    const sink = sinkOver();
+    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)], { location: `${HALL}&page=1` }));
+    await sink.fromCall(call("call.2"), liveAnswer([], { location: `${HALL}&page=2` }));
+    await sink.fromCall(call("call.3"), liveAnswer([item(3), item(4), item(5)], { location: `${HALL}&page=2` }));
+    const where = `${new URL(HALL).origin}/bookings?month=may&sort=date`;
+    expect(sink.readPages()).toEqual([{ where, place: "page=1", kept: 2 }, { where, place: "page=2", kept: 3 }]);
+    expect(sink.summary().rows.map((row) => row.price)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it("is empty while no read stored a row", async () => {
     const sink = sinkOver();
     expect(sink.readPages()).toEqual([]);

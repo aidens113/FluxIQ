@@ -20,13 +20,13 @@ const readNode = (id: string) => ({ id, definitionId: "builtin.policy.action", p
 /** Each read answers as the web domain does: the action's result holds the rows and the snapshot of the page it read. */
 const answerOf = (rows: JsonValue[], url: string | undefined) => ({ status: "success" as const, route: "success" as const, outputs: { ok: true, result: { result: { extracted: rows, ...(url === undefined ? {} : { snapshot: { url, title: "Bookings" } }) } } } });
 
-async function runTwoReads(urls: [string | undefined, string | undefined]) {
+async function runTwoReads(urls: [string | undefined, string | undefined], second: JsonValue[] = [{ title: "Item 3", price: 3 }, { title: "Item 4", price: 4 }, { title: "Item 5", price: 5 }]) {
   const store = stubStore();
   const sink = automationStudioAnswerFirstRowSink({ runId: "run.a", readRowsKey: READ_ROWS_KEY, onRecordBatch: (batch) => store.onRecordBatch(batch) });
   const batches: AutomationStudioRecordBatch[] = [];
   const answers: Record<string, ReturnType<typeof answerOf>> = {
     "read-first": answerOf([{ title: "Item 1", price: 1 }, { title: "Item 2", price: 2 }], urls[0]),
-    "read-second": answerOf([{ title: "Item 3", price: 3 }, { title: "Item 4", price: 4 }, { title: "Item 5", price: 5 }], urls[1])
+    "read-second": answerOf(second, urls[1])
   };
   const trace = await runAutomationStudioGraph({
     schemaVersion: "0.1", flowId: "flow.two-pages", ownerKind: "task", ownerId: "task.two-pages", name: "Two pages", createdAt: 1, updatedAt: 1,
@@ -49,6 +49,15 @@ describe("a saved Flow's run read pages", () => {
     expect(batches.map((batch) => batch.location)).toEqual([`${HALL}&page=1`, `${HALL}&page=2`]);
     const where = `${new URL(HALL).origin}/bookings?month=may&sort=date`;
     expect(sink.readPages()).toEqual([{ where, place: "page=1", kept: 2 }, { where, place: "page=2", kept: 3 }]);
+  });
+
+  // run-mwaf6gnt-638d90a0: a later page that held nothing the read keeps was told nowhere, and two judges said unknown.
+  it("names a later page that kept no row, with kept 0, and holds the first page's rows alone", async () => {
+    const { sink, batches } = await runTwoReads([`${HALL}&page=1`, `${HALL}&page=2`], []);
+    expect(batches.map((batch) => batch.rows.length)).toEqual([2, 0]);
+    const where = `${new URL(HALL).origin}/bookings?month=may&sort=date`;
+    expect(sink.readPages()).toEqual([{ where, place: "page=1", kept: 2 }, { where, place: "page=2", kept: 0 }]);
+    expect(sink.summary().totalRows).toBe(2);
   });
 
   it("says no address where the read's answer carried none, and still counts the rows kept", async () => {

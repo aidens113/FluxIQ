@@ -5,6 +5,11 @@
 // real service, a scripted model and real SQL for the rows. A lending library is none of the Lab's
 // realistic scenarios. What a test asserts is what the judge was shown and what the person got, and
 // that they are the same rows in the same order.
+//
+// A read that makes the result another list, or starts its list over and leaves rows out, says so to
+// the model on its own answer (run-mwafor01-bb471f52, cause 1d: the result held two pages, the model
+// read page 2 again asked another way, that one page became the whole result, and nothing it was shown
+// said so). The last describe asserts what the model's next request carries.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
@@ -240,5 +245,101 @@ describe("the latest read of a list is the result", () => {
     expect(rows[2]!.due).toBe("2031-06-30");
     expect(library.renewals).toEqual({ "Atlas of Rivers": 1 });
     expect(attempt.answered.status === "answered" && attempt.answered.result?.acts).toHaveLength(1);
+  });
+});
+
+/** Core's note on the result, on the answer to `callId` as a request shows it, or nothing. */
+function resultNoteOn(request: AutomationStudioLlmTaskRequest, callId: string): JsonObject | undefined {
+  const value = request.context.evidenceLoop?.evidence.find((each) => each.callId === callId)?.value as JsonObject | undefined;
+  return value?.resultList as JsonObject | undefined;
+}
+
+describe("a read that changes which rows the result holds says so in the model's next request", () => {
+  it("another list: what it holds now, and the list it replaced", async () => {
+    const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
+    library.address = "library://account/loans?page=1";
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const attempt = await scriptedAttempt({
+      library,
+      script: [
+        read("page-one", { shape: "listed" }),
+        ...after(library, () => {
+          library.address = "library://account/loans?page=2";
+          library.loans = [loan("Clockmaking")];
+        }, "page-two", { shape: "listed" }),
+        (request) => {
+          seen.push(request);
+          return toolCall("look.carried", LOOK_TOOL, { at: "carried" });
+        },
+        ...after(library, () => undefined, "page-two-asked-otherwise", { shape: "narrowed" }),
+        (request) => {
+          seen.push(request);
+          return complete("Listed.");
+        }
+      ]
+    }, cleanups);
+    expect(attempt.answered.status).toBe("answered");
+    const [carried, switched] = seen;
+    // A further page of the same list carries it on, and that is no change to tell.
+    expect(resultNoteOn(carried!, "page-two")).toBeUndefined();
+    expect(resultNoteOn(switched!, "page-two-asked-otherwise")).toEqual({
+      code: "answer_first.result_list_replaced",
+      rows: 1,
+      pages: [{ place: "page=2", kept: 1 }],
+      replaced: { rows: 3, columns: ["title", "due"], pages: [{ place: "page=1", kept: 2 }, { place: "page=2", kept: 1 }], lastReadBy: "page-two" },
+      instruction: expect.stringContaining("the result is now this list alone")
+    });
+    // What the model was told is what the result became.
+    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(1);
+  });
+
+  it("its list started over and a row it held left out", async () => {
+    const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const attempt = await scriptedAttempt({
+      library,
+      script: [
+        read("first", output("loans")),
+        ...after(library, () => { library.loans = [loan("Birds of the Coast")]; }, "filtered", output("loans", "replace")),
+        (request) => {
+          seen.push(request);
+          return complete("Listed.");
+        }
+      ]
+    }, cleanups);
+    expect(attempt.answered.status).toBe("answered");
+    expect(resultNoteOn(seen[0]!, "filtered")).toMatchObject({ code: "answer_first.result_list_started_over", rows: 1, replaced: { rows: 2, lastReadBy: "first" } });
+  });
+
+  it("a Flow run that switches the list: the run's answer says so, as a read by hand's does", async () => {
+    const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const attempt = await scriptedAttempt({
+      library,
+      script: [
+        { ...read("listed", { shape: "listed" }), add: true },
+        // The model asks for the same loans another way, which is a list of its own and the result.
+        ...after(library, () => { library.loans = [loan("Clockmaking")]; }, "narrowed", { shape: "narrowed" }),
+        // The Flow's read step asks as the first did, so running it makes the first list the result again.
+        () => {
+          library.loans = [loan("Atlas of Rivers"), loan("Birds of the Coast"), loan("Dunes of the South")];
+          library.shelf = `${library.shelf} moved`;
+          return toolCall("forward", "core.run_flow", { from: 2, to: 2 });
+        },
+        (request) => {
+          seen.push(request);
+          return complete("Listed.");
+        }
+      ]
+    }, cleanups);
+    expect(attempt.answered.status).toBe("answered");
+    const note = resultNoteOn(seen[0]!, "forward");
+    expect(note).toMatchObject({
+      code: "answer_first.result_list_replaced",
+      rows: 3,
+      replaced: { rows: 1, columns: ["title", "due"], lastReadBy: "narrowed" },
+      instruction: expect.stringContaining("the result is now this list alone")
+    });
+    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(3);
   });
 });
