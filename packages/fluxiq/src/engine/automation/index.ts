@@ -5,7 +5,7 @@ export { automationStudioReferenceNow } from "../../runtime/reference-time/index
 // enforces rather than restate them.
 export * from "./defensive/index.ts";
 export { automationStudioAbsentStepSkip, automationStudioOptionalStepWayOn } from "./step-skip/index.ts";
-export { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioCouldNotRun, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
+export { AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT, AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioCouldNotRun, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
 // A Wait node's pause and each node's pace between starts (t378); the metadata key is what a Flow authors a pace under.
 export { AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS, AUTOMATION_STUDIO_PACE_METADATA_KEY, automationStudioAuthoredPaceMs } from "./pacing/index.ts";
 export { runAutomationStudioGraph, resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";

@@ -26,7 +26,7 @@ import { automationStudioAttemptSettled } from "../../../../../runtime/adaptatio
 import { automationStudioUnresolvedFailedAttempt } from "../../../../../runtime/adaptation/recovery/index.ts";
 import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioTrialExecutedSteps, automationStudioTrialFailureHappened } from "../../candidate-trial/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
@@ -51,6 +51,7 @@ const SAID = Object.freeze({
   personCleared: "It met a check only a person can complete; the person completed it, and the run went on from this step.",
   absentNotDone: "Its control was not on the page, so the step was skipped and what it does was not done.",
   absent: "Its control was not on the page, so the step was skipped.",
+  notArisen: "The step before it was not done again, so the page this step answers never came, and the run went on past it.",
   inState: "Its control already showed the asked state, so it was not pressed.",
   elsewhere: "The page was already at another step, so the run went on from there.",
   notFinished: "The run did not reach the end of the Flow.",
@@ -146,6 +147,7 @@ function personCleared(attempt: AutomationStudioNodeAttemptTrace): boolean {
 function skippedSaid(attempt: AutomationStudioNodeAttemptTrace): string {
   const skipped = attempt.skipped;
   if (skipped?.reason === "already_in_state") return SAID.inState;
+  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return SAID.notArisen;
   if (skipped?.reason === "target_absent") return skipped.notDone ? SAID.absentNotDone : SAID.absent;
   return SAID.elsewhere;
 }
