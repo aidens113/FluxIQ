@@ -143,3 +143,150 @@ Report: docs/working/fluxnode-plan/reports/panel-redesign.md
 Notes: Tiers: worker-light x1, worker x14, worker-heavy x9; no escalations. Deferred as briefed: sign-in link/vault (H), Flows folder tree, Security key list, FluxNode runs; Data/Security pages and wizard still placeholders.
 Follow-ups: ~100 old Studio files and the hand-written chat catalog remain (kept views import them); contracts/fluxiq version bumps; P2b endpoints must declare assistant entries.
 ```
+
+## Integration after the merge with dev (2026-11-10)
+
+The lead committed P9 (`708d4343b`) and merged Core `dev` into it (`fb0cd6571`). This section covers items 1-6 of the lead's integration brief. Nothing was committed; the changes are in the working tree.
+
+**Outcome: Partial.** Every check passes except one Playwright spec: the "All runs" link on Home fails to navigate in about half of runs. The cause is a React 19.2 bug in the React that Next 15.5.24 bundles. Fixing it means patching `next`, which needs the root `package.json` and a `patches/` file, both outside the paths this lane may edit. Details and the exact change are below.
+
+1. **P2b's endpoints.** None needed declaring. The FluxNode runner's API (`/api/fluxnode/v1`, `server/fluxnode-api/`) is its own HTTP handler, not program-registry registrations, so there is no registry run endpoint to put in the overrides table. The parity test refuses an override that names an endpoint the registry does not have. Both catalogs were regenerated and nothing drifted.
+   - Consequence for the assistant: it cannot start or read FluxNode runs, because they are reachable only through that open-mode API with no registry entry or IAM. When P3b brings keys and IAM to that API, a registry endpoint for it should be declared `per-call`.
+2. **`.structure-baseline.json` is legitimate; I kept it.** The diff only removes entries for files the old-UI retirement deleted (or that no longer violate) and lowers `hierarchy` from 30 to 29. That is the retirement worker's `pnpm structure:baseline` output, which the commit left out. `node scripts/structure-audit.mjs --update` on the merged tree reports "baseline already current, not rewritten: 969 entries across 13 rules (0 lowered, 0 removed)", and the file is byte-identical (ignoring line endings) to a fresh `--update`.
+3. **Versions.** `@fluxiq/contracts` 0.17.0 -> 0.18.0; `fluxiq` 0.43.0 -> 0.44.0. `@fluxiq/ui-components` stays 0.12.0: dev held 0.11.0, so 0.12.0 carries only P9's content. Nothing pins these versions: every internal dependency is `workspace:*`, and the only lockfile matches for those strings are Node engine ranges.
+4. **Docs.** A docs worker updated the docs below (report `panel-redesign/doc-updates.md`):
+   - `docs/README.md`;
+   - in `docs/architecture/`: `code-structure`, `current-system`, `program-layout`, `automation-studio`, `package-boundaries`, `automation-studio/persistence`, and `automation-studio/workspace` (marked retired);
+   - `docs/programs/global-programs.md`;
+   - `docs/operations/automation-studio-scale-certification.md`;
+   - `docs/reference/framework-reference.md` and `packages/fluxiq/docs/reference/framework-reference.md`, regenerated with `pnpm docs:reference`, which also picked up other drift in the API reference;
+   - `packages/ui-components/README.md` and `apps/web/e2e/README.md`.
+
+   It deleted three operations docs for the deleted phase 7/8 and performance specs and fixed their links. I fixed four more stale PIN statements myself: in `docs/architecture/automation-studio/client-gateway.md` and `docs/architecture/automation-studio.md`, endpoints described as "PIN-authorized" are in fact classified `authoring`, so they ask for no PIN, and `execute-client-action` is `destructive`, so it takes a press grant.
+5. **Keys questions (not built).** The user's standing rule: no PIN on normal actions, never mid-Flow, at most a PIN for a dangerous action the first time a person does it. Under that rule the keys lane (P3b) decides two things: whether `delete-key` becomes one-press (today it is `program-gated` and asks for the password), and how a person who turned a PIN on confirms the assistant's acts.
+
+### Navigation stall from Home to Runs: root cause (worker-heavy, report `panel-redesign/nav-home-to-runs.md`)
+
+- **The defect.** `e2e/panel-home.spec.ts:36` failed 1 of 43 in the full run, then 5 of 8 with `--repeat-each=8`. After "All runs" is clicked, Next fetches `/runs` and its chunks (all 200), but the URL never commits.
+- **The cause.** It is a lost-ping bug in React 19.2's work loop, fixed upstream by React PR #36134 (issue #35821). Next 15.5.24 bundles React 19.2.0-canary-0bdb9206-20250818, which lacks the fix.
+  - A navigation's page module finishes loading between React's read and the moment it attaches its ping listener.
+  - The ping then arrives synchronously during render, and this React build drops it.
+  - Nothing restarts the render until an unrelated update arrives (on Home, the 30-second refresh).
+  - Any navigation whose page module is still loading can stall the same way. It is not specific to this link.
+- **The proof.** The worker instrumented stuck runs. In 8 of 8 runs, a module that was already resolved when React attached its listener meant the navigation stuck, and one still loading meant it navigated. With the upstream one-line fix applied to the served React chunk, 15 of 15 navigations succeeded. The `.runs` stylesheet preload warning is a side effect: with the sheet already loaded, the spec still failed 8 of 12.
+- **No workaround shipped.** A full prefetch on that one link, or a `(panel)/loading.tsx`, would hide the symptom, which the root-cause rule forbids.
+- **The fix, needing your approval (root `package.json` and `patches/`, outside my paths).** Either:
+  - `pnpm patch next@15.5.24` with React #36134 applied to the bundled react-dom builds: in `pingSuspendedRoot`'s render-context branch, record `workInProgressRootPingedLanes |= pingedLanes` instead of dropping it. The exact lines are in the worker's report. Or:
+  - upgrade Next to a release that bundles a React with #36134. A third-party note says 16.3.0; this is unverified.
+
+  Then rebuild and re-run `panel-home.spec.ts` with `--repeat-each=8` and the seven specs.
+
+### Commands run on the merged tree and their output
+
+All vitest runs used `--pool=forks --poolOptions.forks.singleFork`.
+
+| Command | Output |
+| --- | --- |
+| parity: `npx vitest run src/programs/_shared/assistant/tests/assistant-parity.test.ts` (packages/fluxiq) | `{"registrations":266,"undeclared":0,"byProgram":{}}`, Tests 5 passed (5) |
+| `FLUXIQ_REGENERATE_IAM_CATALOG=1 npx vitest run src/platform/iam/catalog` | Tests 11 passed (11); no file changed |
+| `FLUXIQ_REGENERATE_ASSISTANT_TOOLS=1 npx vitest run src/programs/_shared/assistant` | Tests 36 passed (36); no file changed |
+| `node scripts/structure-audit.mjs --update` | `baseline already current, not rewritten: 969 entries across 13 rules (0 lowered, 0 removed)` |
+| fluxiq vitest `src/programs/_shared` | 36 files, 273 passed |
+| fluxiq vitest `src/platform/iam` | 25 files, 242 passed |
+| fluxiq vitest `src/programs/secret-keys` | 18 files, 195 passed |
+| fluxiq vitest `src/programs/automation-studio/api` | 64 files, 357 passed |
+| fluxiq vitest `src/runtime/conversations` | 42 files, 335 passed |
+| fluxiq vitest `src/flows/executable` | 7 files, 45 passed |
+| fluxiq vitest `src/framework/persistence/automation/project` | 75 files passed (2 skipped), 523 passed (4 skipped) |
+| fluxiq vitest `service/flows`, `service/project-parts` | 2 files 10 passed; 16 files 197 passed |
+| fluxiq vitest `src/framework/automation-service/service/fluxnode` (P2b) | 3 files, 15 passed |
+| fluxiq vitest `src/server` (P2b) | 14 files, 112 passed |
+| fluxiq vitest identity-access, background-tasks, compute-control, database-manager, deployment-sync, docs, production-runner, runtime-control | 90, 11, 1, 47, 1, 2, 1, 5 passed; 0 failed |
+| contracts `npx vitest run src/program-api` | 23 files, 64 passed |
+| ui-components `npx vitest run src/chat` | 102 files, 671 passed |
+| `node --max-old-space-size=6144 node_modules/typescript/bin/tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/fluxiq-build/check.tsbuildinfo` (packages/fluxiq) | exit 0 |
+| `node --max-old-space-size=6144 node_modules/typescript/bin/tsc --noEmit` (apps/web) | exit 0 |
+| `pnpm --filter @fluxiq/contracts --filter fluxiq --filter @fluxiq/ui-components build` | contracts Done, fluxiq Done, ui-components Done |
+| web vitest: panel-shell, chat-widget, home, runs, settings-page, flows, `app/(panel)` | 13, 113, 15, 10, 24, 51, 7 passed; 0 failed |
+| web vitest `src/features/automation-studio` | 191 files, 1,228 passed |
+| `pnpm --filter @fluxiq/web build` | exit 0; "Runtime build identity is stamped: no placeholder in 1238 server files." |
+| seed `FLUXIQ_E2E_FAST_STUDIO=true node e2e/support/seed-fixtures.mjs`, then `next start` on 127.0.0.1:3187 (no model keys, gateway off, scripted assistant) | seed exit 0; "Ready in 3.9s" |
+| `FLUXIQ_E2E_BASE_URL=http://127.0.0.1:3187 npx playwright test e2e/panel-{shell,home,runs,settings,flows,assistant,redirects}.spec.ts --project=desktop-chromium --workers=1` | **1 failed, 42 passed (2.2m)**; the failure is `panel-home.spec.ts:36` (the React stall above) |
+| same server, `npx playwright test e2e/panel-home.spec.ts --repeat-each=8` | 5 failed, 27 passed; all 5 are `panel-home.spec.ts:36` |
+| after each run: listeners on 3187 | 0 (server stopped; heavy lock removed) |
+| `node scripts/structure-audit.mjs` | `passed (524 warning(s), 969 baselined)` |
+| `node scripts/structure-audit.mjs --rule docs-links` | `passed (0 warning(s), 0 baselined)` |
+
+Free memory was 3,021 to 4,676 MB at each heavy step. Playwright ran only at 3 GB or more free.
+
+**Not verified:** the React patch applied through `pnpm patch` with a rebuild (proven only by rewriting the served chunk in a browser); the stall on other links (same mechanism, not reproduced); non-desktop Playwright projects; the extension against ui-components 0.12.0.
+
+```text
+Outcome: Partial
+Changed: packages/contracts/package.json (0.18.0), packages/fluxiq/package.json (0.44.0), docs/README.md, docs/architecture/{automation-studio,code-structure,current-system,package-boundaries,program-layout}.md, docs/architecture/automation-studio/{client-gateway,persistence,workspace}.md, docs/programs/global-programs.md, docs/operations/automation-studio-scale-certification.md, docs/reference/framework-reference.md, packages/fluxiq/docs/reference/framework-reference.md, packages/ui-components/README.md, apps/web/e2e/README.md; deleted docs/operations/{automation-studio-ui-performance-profiling,web-panel-phase8-browser-scale-certification,web-panel-responsive-visual-certification}.md; .structure-baseline.json kept (legitimate); reports panel-redesign.md (appended), panel-redesign/{doc-updates,nav-home-to-runs}.md
+Validation: fluxiq and web `tsc --noEmit` -> exit 0; parity -> 266 registrations, 0 undeclared; vitest in every changed directory plus service/fluxnode (15) and server/ (112) -> all pass; structure audit -> passed; Playwright 7 panel specs -> 42 passed, 1 failed (panel-home.spec.ts:36, React 19.2 lost-ping bug in Next 15.5.24's bundled React; 5/8 with --repeat-each=8)
+Not verified: the React fix through pnpm patch + rebuild; the stall on other links; non-desktop Playwright projects; extension against ui-components 0.12.0
+Report: C:/Users/osrs_/FluxStuff/fxwork/t887/!FluxIQ/docs/working/fluxnode-plan/reports/panel-redesign.md
+Notes: Needs the lead: approve `pnpm patch next@15.5.24` with React #36134 (root package.json + patches/, outside my paths) or a Next upgrade; exact lines in nav-home-to-runs.md.
+P2b's FluxNode API is outside the program registry, so nothing to declare; the assistant cannot reach FluxNode runs until P3b puts that API behind IAM.
+Tiers this round: worker x1 (docs), worker-heavy x1 (navigation root cause); keys questions noted for P3b, not built.
+```
+
+## React lost-ping patch (2026-11-10, lead-approved)
+
+**Outcome: Done.** All seven panel specs pass: 43 of 43, and the Home spec 32 of 32 with `--repeat-each=8` (it failed 5 of 8 before). The upstream React fix, PR #36134, is applied through `pnpm patch`, and the lockfile records it.
+
+**One deviation from the approval, and why.** You approved patching `next@15.5.24`, as `nav-home-to-runs.md` proposed. I applied that patch to all ten vendored builds, rebuilt, and checked the shipped client chunk. It still held the unpatched branch, `?0==(2&iI)&&ud(e,0):iG|=n`, and carried the version string "19.2.8". The panel's browser bundle runs the installed `react-dom@19.2.8`, not Next's vendored canary, so the next patch alone fixes nothing the browser runs.
+- I applied the same fix to `react-dom@19.2.8` as a second `pnpm patch`, using only the files you allowed: `patches/`, `pnpm.patchedDependencies` and the lockfile.
+- I kept the approved next patch, so no path through Next's vendored copy keeps the bug.
+- After the rebuild, the shipped chunk reads `(…&&0==(2&ij))?ud(e,0):iG|=n`. The minifier folded the nested branch, and a ping that arrives during a render now records its lanes instead of dropping them.
+- No Next upgrade.
+
+**The patch, matching the upstream diff.** Upstream #36134 changes one source file, `packages/react-reconciler/src/ReactFiberWorkLoop.js`. In `pingSuspendedRoot` it records `workInProgressRootPingedLanes = mergeLanes(workInProgressRootPingedLanes, pingedLanes)` when a render is in progress. Here the same branch becomes `? 0 === (executionContext & 2) ? prepareFreshStack(root, 0) : (workInProgressRootPingedLanes |= pingedLanes)`, or its `RenderContext`/`NoContext` form in the development builds.
+- `patches/react-dom@19.2.8.patch` covers 4 files: client and profiling, production and development.
+- `patches/next@15.5.24.patch` covers 10 files: `react-dom` and `react-dom-experimental`, client, profiling and testing builds.
+- Every patched file passed `node --check`.
+- `patches/README.md` documents what the patches fix, the upstream PR and issue, why there are two, and when to remove them: once both the installed `react-dom` and Next's bundled React contain #36134. Re-run the Home spec with `--repeat-each=8` after removing them.
+
+**Files changed**
+- `package.json`: `pnpm.patchedDependencies` lists both patches.
+- `pnpm-lock.yaml`: the `patchedDependencies` block, and `patch_hash` on `next` and `react-dom` and on the packages that depend on `react-dom` (`@xyflow/react`).
+- New: `patches/next@15.5.24.patch`, `patches/react-dom@19.2.8.patch`, `patches/README.md`.
+
+### Commands and output
+
+| Command | Output |
+| --- | --- |
+| `pnpm patch next@15.5.24 --edit-dir <scratch>`, edit, `pnpm patch-commit <scratch>` | exit 0; `patches/next@15.5.24.patch`, 10 `diff --git` entries |
+| `pnpm patch react-dom@19.2.8 --edit-dir <scratch>`, edit, `pnpm patch-commit <scratch>` | exit 0; `patches/react-dom@19.2.8.patch`, 4 files |
+| `pnpm install --frozen-lockfile --offline` (after both patches) | "Done in 1.9s", exit 0; the lockfile is unchanged by it. The only warning is the existing one about the SDK's unbuilt `dist` bin. |
+| installed `apps/web/node_modules/react-dom` | resolves to `react-dom@19.2.8_patch_hash=v4db5easgq7dk5zsilxvbslzbm`; `cjs/react-dom-client.{production,development}.js` contain the patched branch |
+| `node --max-old-space-size=6144 node_modules/typescript/bin/tsc --noEmit` (apps/web) | exit 0 |
+| web vitest: panel-shell, chat-widget, home, runs, settings-page, flows, `app/(panel)` | 13, 113, 15, 10, 24, 51, 7 passed; 0 failed |
+| web vitest: `src/features/automation-studio` | 1,228 passed |
+| `pnpm --filter @fluxiq/web build` | exit 0 (the cache saw the lockfile and package.json change and rebuilt); "Runtime build identity is stamped" |
+| fresh seed, then `next start` on 127.0.0.1:3187 (no model keys, gateway off, scripted assistant) | seed exit 0; "Ready in 3.1s" |
+| `FLUXIQ_E2E_BASE_URL=http://127.0.0.1:3187 npx playwright test e2e/panel-home.spec.ts --project=desktop-chromium --workers=1 --repeat-each=8` | exit 0, **32 passed (1.6m)** |
+| server stopped; fresh seed; `next start` again | listeners on 3187: 0; seed exit 0; "Ready in 1770ms" |
+| `... npx playwright test e2e/panel-{shell,home,runs,settings,flows,assistant,redirects}.spec.ts --project=desktop-chromium --workers=1` | exit 0, **43 passed (2.0m)** |
+| server stopped | listeners on 3187: 0; heavy lock removed |
+| `node scripts/structure-audit.mjs` | `passed (524 warning(s), 969 baselined)` |
+
+Free memory at the heavy steps was 3,148 to 4,703 MB; each run waited for 3 GB.
+
+**Not verified:**
+- Other worktrees taking the lockfile: only this tree's frozen offline install was run.
+- The development server (`next dev`) with the patch.
+- Non-desktop Playwright projects.
+- Stalls on other links: they share the mechanism, and the patch covers it, but they were not separately reproduced.
+
+```text
+Outcome: Done
+Changed: package.json (pnpm.patchedDependencies), pnpm-lock.yaml, new patches/next@15.5.24.patch, patches/react-dom@19.2.8.patch, patches/README.md; docs/working/fluxnode-plan/reports/panel-redesign.md (appended)
+Validation: `npx playwright test e2e/panel-home.spec.ts --repeat-each=8` -> 32 passed; 7 panel specs -> 43 passed; `pnpm install --frozen-lockfile --offline` -> Done, exit 0; web `tsc --noEmit` -> exit 0; web vitest (panel features 233, automation-studio 1,228) -> all pass; `node scripts/structure-audit.mjs` -> passed
+Not verified: other worktrees taking the lockfile; next dev with the patch; non-desktop Playwright projects; other links' stalls reproduced separately
+Report: C:/Users/osrs_/FluxStuff/fxwork/t887/!FluxIQ/docs/working/fluxnode-plan/reports/panel-redesign.md
+Notes: Deviation: the browser runs react-dom@19.2.8, not Next's vendored React, so the same upstream fix is also a pnpm patch of react-dom@19.2.8; the approved next patch is kept. No Next upgrade.
+Removal condition and upstream links are in patches/README.md.
+No workers this round.
+```

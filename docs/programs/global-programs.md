@@ -259,8 +259,9 @@ regions may own bounded inner scrolling. Docs, Database Manager, Background
 Tasks, and Compute Control do not impose fixed 520-720 pixel workspace
 minimums. At 320 pixels, actions stack, modal and drawer surfaces occupy the
 dynamic viewport, and tables retain local horizontal scrolling. The complete
-viewport and state matrix is maintained in
-[Web Panel responsive and visual certification](../operations/web-panel-responsive-visual-certification.md).
+viewport matrix is exercised by `apps/web/e2e/surface-matrix.spec.ts`. The
+older responsive and visual certification runbook was retired with the old
+Studio workspace.
 
 ## Operational Framework Routes
 

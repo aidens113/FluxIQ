@@ -411,11 +411,11 @@ registered output bindings; all other inputs remain state or non-executable
 evidence.
 ## Workspace scopes
 
-The web panel has a global workspace at `/` and a workspace for each registered
-domain at `/domains/:domainId`. The global workspace lists domains alongside the
-global program catalog. A domain workspace has a back link to that global grid
-and presents the same global programs in an explicit domain context. Program API
-calls carry that context as `domainId`; global pages carry no domain ID.
+The web panel is `/` (Home), `/flows`, `/flows/<id>`, `/flows/<id>/graph`,
+`/runs`, `/runs/<id>`, `/data`, `/security` and `/settings`. The per-domain
+workspace at `/domains/:domainId` was deleted; it redirects to the panel. Program
+API calls still carry a domain context as `domainId`; global pages carry no
+domain ID.
 
 Global Automation Studio projects and flows remain domain-neutral (`domainId:
 null`). Projects, project categories, and newly created recordings are scoped by

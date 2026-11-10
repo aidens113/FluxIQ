@@ -221,6 +221,20 @@ Added only; nothing a client already imports changed shape.
 - Added only: [the records and the port](#answer-firsts-shared-records). A client
   that supplies no `results` port is unchanged, and nothing reads the records yet.
 
+### Next minor (unreleased): a press grant replaces the PIN on destructive endpoints (`fluxiq`)
+
+- A `destructive` endpoint no longer needs the session PIN by default. It needs a
+  press grant: one use, 60 seconds, bound to the session, the person, the endpoint
+  and the exact payload. Only the person's own press mints one
+  (`identity-access/mint-press-grant`), or, for the panel assistant, their own
+  words clearly asking or a press of Allow. A person who turned a PIN on still
+  gives it, and a grant never stands in for it. A payload from the assistant that
+  carries a grant or a PIN is refused. The earlier "Fewer PIN prompts" and "One new
+  PIN prompt" bullets below describe the PIN as it was when they shipped.
+- Rule (user, 2026-11-03): no PIN on normal actions, never in the middle of a
+  Flow; at most a PIN for a dangerous action the first time a person does it.
+  Details: [which endpoints need a confirmation](automation-studio/persistence.md#which-endpoints-need-a-confirmation).
+
 ### Next minor (unreleased): `answer-ask` takes a PIN only on a panel command, and a Flow change can be drawn (`fluxiq`, `@fluxiq/ui-components`)
 
 - `answer-ask` takes no PIN for a permission ask or a question a run or build
@@ -986,8 +1000,10 @@ inserts. Read the whole entry if a host:
   `ProgramEndpointClassification`: `read`, `authoring`, `destructive`,
   `program-gated` or `destructive-ungated`. A host endpoint without one does not
   compile. `endpoints()` reports it.
-- `call()` now asks for the operator's session PIN before the handler of every
-  `destructive` endpoint, and of no other. The registry takes Identity Access
+- `call()` now asks for a confirmation before the handler of every `destructive`
+  endpoint, and of no other. When this shipped the confirmation was always the
+  operator's session PIN; it is now a press grant unless the person turned a PIN
+  on (see the next minor below). The registry takes Identity Access
   from its constructor: `new GlobalProgramApiRegistry({ identityAccess })`.
   `registerAutomationStudioApi` still accepts an `identityAccess` argument but
   no longer uses it. A host that builds its registry without one therefore gets
