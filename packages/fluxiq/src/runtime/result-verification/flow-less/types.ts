@@ -4,6 +4,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioResultEndView } from "../contracts/index.ts";
+import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {
@@ -21,6 +22,12 @@ export type AutomationStudioFlowLessSummary = {
   witnesses?: { before?: JsonObject; after?: JsonObject };
   /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and a short screened cut of what was found, the latest few. */
   looked?: readonly { where: string; found: string }[];
+  /**
+   * For a result made of rows: one entry per read that makes up the list, oldest first, with where it read (the view of
+   * the site and the place in it, where said), how many rows it kept and, where held, those rows (`rows`) and what its
+   * own conditions left out (`leftOut`, `./read-left-out.ts`). The rows may come from pages the end view is not on.
+   */
+  readPages?: readonly { where?: string; place?: string; kept: number; rows?: readonly JsonObject[]; leftOut?: AutomationStudioFlowLessReadLeftOut }[];
   /** The person asked for it to be done once more (a Run again): the judge is told so (`./asked-again.ts`). Only a route sets it, never a model. */
   askedAgain?: true;
 };

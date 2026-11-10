@@ -1241,6 +1241,13 @@ answers `{ flowId }` for the exact same task (same words, same site) once a Flow
 otherwise or when that Flow is gone. It is `read`, asserts domain access, and is reached only by Core's own
 chat command (`flow.createHere`, in answer-first mode only), which reuses that Flow instead of making a
 blank one each time. It is not on a token's list, and a lookup that fails makes a new Flow: it never fails the task.
+Asked by `{ projectId, flowId }` instead, it answers the task that Flow belongs to (its words and start place),
+or `{}` for a Flow no task saved. The chat's `run.execute` asks it in answer-first mode: a Run of a task's Flow
+is the task asked for again, so it starts one attempt from the task's start place (as `flow.explore` does on a
+Flow's saved goal) rather than the project run path, which has nothing to run on a Flow whose steps are still
+held by the task and would end in "Run failed" (t885, run-mw9xfwvd-ccc692b2). A Flow with no task, and any other
+mode, runs as before. Asked by Flow, the route fails loudly on a gone Flow or unreadable memory, and the chat then
+runs the Flow as any other.
 
 **Running again.** `run-task-again` `{ projectId, taskId }` is a person's press of Run again on a task's answer: a new
 attempt at the task, from the Flow and start place its memory keeps, with an empty act record. It is

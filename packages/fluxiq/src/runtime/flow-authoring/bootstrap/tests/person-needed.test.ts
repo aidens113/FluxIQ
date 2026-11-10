@@ -104,7 +104,7 @@ describe("a build tool result that needs a person", () => {
     // The step stands as the domain described it once cleared; nothing about the check survives.
     expect(result).toEqual({
       kind: "llm_evidence_tool_execution",
-      evidence: expect.objectContaining({ personCompletedCheck: true, now: { saw: "the list" } }),
+      evidence: expect.objectContaining({ personCompletedCheck: true, saw: "the list" }),
       effectApplied: true,
       nodeId: "example.open",
       stateDigests: { before: "state.before", after: "state.after" },
@@ -142,7 +142,7 @@ describe("a build tool result that needs a person", () => {
     const wrapped = automationStudioFlowBootstrapPersonNeeded({ executeTool: domain.executeTool, tools: [LOOK, ACT], ask: { port: asks.port } });
     const result = await wrapped.executeTool(call()) as AutomationStudioLlmEvidenceToolExecutionResult;
     expect(asks.opened).toHaveLength(2);
-    expect(result.evidence).toMatchObject({ personCompletedCheck: true, now: { saw: "the list" } });
+    expect(result.evidence).toMatchObject({ personCompletedCheck: true, saw: "the list" });
   });
 
   it.each([
@@ -186,15 +186,29 @@ describe("a build tool result that needs a person", () => {
     expect(asks.waits).toEqual([{ expiresAtMs: AUTOMATION_STUDIO_PERSON_NEEDED_ASK_TIMEOUT_MS }]);
   });
 
-  it("asks at most as often as it may, then ends the build", async () => {
-    const domain = executor({ checks: 5 });
+  it("asks at most as often as it may in a row about a check that stays, then ends the build", async () => {
+    // Continue each time, and every look after it still meets the check.
+    const domain = executor({ checks: 1, lookChecks: 5 });
     const asks = thread([choice("person_done"), choice("person_done"), choice("person_done")]);
     const wrapped = automationStudioFlowBootstrapPersonNeeded({ executeTool: domain.executeTool, tools: [LOOK, ACT], ask: { port: asks.port }, maxAsks: 2 });
-    await wrapped.executeTool(call());
-    await wrapped.executeTool(call());
     await expect(wrapped.executeTool(call())).rejects.toThrow(/stopped for a person/);
     expect(asks.opened).toHaveLength(2);
     expect(wrapped.endedOnIntervention()?.diagnostic.issueCodes).toEqual(["person_needed.asks_exhausted"]);
+  });
+
+  it("asks at every fresh check a person clears, however many, and each call stands in place", async () => {
+    // run-mwa19obz-abd5d558: the site put a new check in front of every few loads. Each was cleared; the fourth was
+    // never put to anyone, the round threw, and the next round started again from the check left on the page.
+    const domain = executor({ checks: 5 });
+    const asks = thread(Array.from({ length: 5 }, () => choice("person_done")));
+    const wrapped = automationStudioFlowBootstrapPersonNeeded({ executeTool: domain.executeTool, tools: [LOOK, ACT], ask: { port: asks.port }, maxAsks: 2 });
+    for (let each = 0; each < 5; each += 1) {
+      const result = await wrapped.executeTool(call()) as AutomationStudioLlmEvidenceToolExecutionResult;
+      expect(result.evidence).toMatchObject({ personCompletedCheck: true, saw: "the list" });
+    }
+    expect(asks.opened).toHaveLength(5);
+    expect(wrapped.signal.aborted).toBe(false);
+    expect(wrapped.endedOnIntervention()).toBeUndefined();
   });
 
   it("answers a replayed step in the replay's own words once the person has cleared the check", async () => {

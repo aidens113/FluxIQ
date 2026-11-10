@@ -31,6 +31,13 @@
 // decision that sent it was a whole context, so `refusedAgain` counts them and the caller climbs
 // the ladder on it (`../loop-signal/completion-refused-again.ts`). New evidence starts it again.
 //
+// **The same evidence is any the check already refused, not only the last.** Each refusal's digest
+// is kept for the attempt. Run `run-mwa19obz-abd5d558` (0068-0078) completed four times over one
+// unchanged page and one set of rows, with an answer, then without it, then without it again: the
+// third matched the first, not the second, so it was judged again and paid for, and the ladder's
+// count started over each time. Evidence that comes back after something else in between is still
+// evidence already refused, and the words given are that refusal's.
+//
 // **Rows come only from a read (lane B, run-mw45itmx-c4d6f5cb).** The request ended "give me ...
 // as a table with columns ...", the model did every act, never ran a read, typed the table into
 // `answer`, and a judge said yes over 0 rows: the person was given no table. So a request that
@@ -104,11 +111,11 @@ export type AutomationStudioAnswerFirstCompletionState = {
   /** Checks that came back with an answer: the judge's calls, and the caller's own check. */
   timesChecked: number;
   checkedWhat?: string | undefined;
-  /** The latest completion's own words. */
+  /** The latest completion's own words; none when it gave none (see where it is set). */
   answerText?: string | undefined;
   /** The model's notes for the next attempt at this task, screened; never given to the judge. */
   notes?: { worked?: string; failed?: string; quirks?: string } | undefined;
-  /** The last judge's no or unsure, its digest and its words. */
+  /** The no or unsure that stands: the last one, or the earlier one whose evidence came back (header); its digest and its words. */
   refused?: { verdict: "no" | "unsure"; digest: string; reason: string } | undefined;
   /** Completions refused in a row over exactly what `refused` refused, each a whole paid decision. New evidence puts it back to nothing. */
   refusedAgain: number;
@@ -132,6 +139,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
   looked?: (() => readonly Look[]) | undefined;
+  /** The reads the result's rows came from, with where each read and how many rows it kept (`../rows/sink-type.ts`, `readPages`). Absent, none. */
+  readPages?: (() => NonNullable<AutomationStudioFlowLessSummary["readPages"]>) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
@@ -143,11 +152,20 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
 }): AutomationStudioAnswerFirstCompletionCheck {
   const state: AutomationStudioAnswerFirstCompletionState = { achieved: false, timesChecked: input.seed?.timesChecked ?? 0, refusedAgain: 0, purseRefused: false };
   const asks = automationStudioFlowBootstrapInstructionAsk(input.instructions);
+  // Every refusal of this attempt, by its evidence's digest (header).
+  const refusals = new Map<string, NonNullable<AutomationStudioAnswerFirstCompletionState["refused"]>>();
+  const refuse = (refusal: NonNullable<AutomationStudioAnswerFirstCompletionState["refused"]>): void => {
+    state.refused = refusal;
+    refusals.set(refusal.digest, refusal);
+  };
   return {
     state,
     check: async (result) => {
       const answerText = typeof result.answer === "string" && result.answer.trim() ? result.answer.trim() : undefined;
-      if (answerText !== undefined) state.answerText = answerText;
+      // This completion's own words, or none: a refused completion's answer is never shown as the one a later result
+      // was checked with (run-mwa19obz-abd5d558 told the person "could not be finished because a robot check appeared"
+      // beside rows a judge had confirmed, from completion 0074, refused, when the accepted 0128 gave no answer).
+      state.answerText = answerText;
       const notes = automationStudioAnswerFirstScreenedNote(result.notes as { worked?: unknown; failed?: unknown; quirks?: unknown } | undefined);
       if (notes) state.notes = notes;
       const rows = await input.rows();
@@ -157,9 +175,11 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
       const digest = automationStudioFlowLessSummaryDigest(summary);
-      if (state.refused?.digest === digest) {
+      const earlier = refusals.get(digest);
+      if (earlier) {
+        state.refused = earlier;
         state.refusedAgain += 1;
-        return refused(SAME, WORDS.sameEvidence(state.refused.verdict, state.refused.reason));
+        return refused(SAME, WORDS.sameEvidence(earlier.verdict, earlier.reason));
       }
       state.refusedAgain = 0;
       const confirm = input.confirm;
@@ -168,7 +188,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         state.timesChecked += 1;
         state.checkedWhat = BY_CALLER_CHECK;
         if (!checked.pass) {
-          state.refused = { verdict: "no", digest, reason: checked.reason };
+          refuse({ verdict: "no", digest, reason: checked.reason });
           input.say("Not there yet", "The check did not pass this yet, so I am carrying on.");
           return refused(CHECKED_NO, WORDS.judged(checked.reason));
         }
@@ -207,7 +227,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         input.say("Checked", `It is what you asked for, checked ${state.timesChecked === 1 ? "once" : `${state.timesChecked} times`}.`);
         return { ok: true };
       }
-      state.refused = { verdict: judged.verdict, digest, reason: judged.reason };
+      refuse({ verdict: judged.verdict, digest, reason: judged.reason });
       input.say(judged.verdict === "no" ? "Not there yet" : "Could not confirm it yet", "The check did not confirm this yet, so I am carrying on.");
       return refused(judged.verdict === "no" ? JUDGED_NO : JUDGED_UNSURE, WORDS.judged(judged.reason));
     }
@@ -218,6 +238,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
   const endView = await input.endView();
   const witnesses = input.witnesses();
   const looked = shownLooks(input.looked?.() ?? []);
+  const readPages = input.readPages?.() ?? [];
   return {
     instructions: input.instructions,
     ...(rows.datasetId !== undefined ? { rows: { totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, rows: rows.rows } } : {}),
@@ -226,6 +247,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     ...(endView ? { endView } : {}),
     ...(Object.keys(witnesses).length ? { witnesses } : {}),
     ...(looked.length ? { looked } : {}),
+    ...(rows.datasetId !== undefined && readPages.length ? { readPages } : {}),
     ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
 }

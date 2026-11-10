@@ -189,6 +189,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
     looked: () => looked,
+    readPages: () => sink.readPages(),
     askedAgain: again !== undefined || carried?.askedAgain === true,
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,

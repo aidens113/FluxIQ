@@ -40,6 +40,19 @@
 // does not tell a press from a read, and calling every read in a Flow a press would say something
 // false to a judge. The run's own step outcomes say what it ran.
 //
+// **A press that met a check only a person can clear (run-mwa19obz-abd5d558).** The page answered the press
+// with a robot check, the run asked the person, and once they clear it the engine goes on from a press that
+// was made (`engine/automation/person-cleared.ts`): the press reached the page, and the engine carries on as
+// though it had answered that it acted. So it is told as one that did, never held in doubt. Where the page
+// then shows its effect gone, the engine presses it again, and nothing here refuses that: a plain press is
+// left out of every refusal, and the second press is settled by its own answer. Held, it read as
+// a lasting act that may have landed, and every later pass of a loop over it was refused as already done: the
+// saved Flow's Next page, after the person cleared the check its second press met, was skipped on each pass
+// after, the loop stood still on one page and the run ended `repeat.no_progress`, and the next round's run of
+// the Flow was refused its sort until a look, so its read read the list unsorted. One that says nothing was
+// sent (`effect: "unacted"`) is nothing on the record, as any such answer is, and the engine presses it again
+// once the check is cleared (`run-mwapfy0i-d64b26db`: a filter the check stood in front of was never pressed).
+//
 // **Except where the target itself says an act was made.** A failure stating `effect: "ambiguous"`
 // is the producer saying it acted and only the answer is missing, and its statement outranks what the
 // step declared, since a model under-declares (`engine/automation/defensive/lasting-act.ts`). The
@@ -58,6 +71,8 @@ const DECLARED_METADATA = "declaredConsequences";
 /** A lasting call that names no class: it lasts, and what kind of act it is nobody said. */
 const LASTS_WITHOUT_CLASS = "flow_step";
 const LOST: AutomationStudioAnswerFirstRunActNodeAnswerRead = { applied: false, uncertain: true };
+/** The failure category a domain answers a check only a person can clear with (`engine/automation/person-needed.ts`). */
+const PERSON_NEEDED_CATEGORY = "user_intervention_required";
 
 type Node = Pick<AutomationStudioFlowNode, "id" | "metadata" | "label">;
 /** One step's act about to go, or going. */
@@ -106,6 +121,10 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
   };
   /** What a step that does not last says of itself (header): the target's own word that it acted, and for a plain press its answer. */
   const heldByTarget = (step: AutomationStudioAnswerFirstRunActStep, result: Sent) => {
+    if (metPersonCheck(result)) {
+      if (step.plainPress && result?.failure?.effect !== "unacted") record.settled(step.call, { effectApplied: true, words: step.words, ...named(step) });
+      return;
+    }
     if (result?.status === "failed" && result.failure?.effect === "ambiguous") return heldInDoubt(step);
     if (!step.plainPress) return;
     const said = automationStudioAnswerFirstRunActNodeAnswer(result);
@@ -199,6 +218,11 @@ export function automationStudioAnswerFirstRunActSettling(record: AutomationStud
       return answer;
     }
   };
+}
+
+/** A step whose answer is a check only a person can clear, which the engine puts to them and goes on from (header). */
+function metPersonCheck(result: Sent): boolean {
+  return result?.status === "failed" && result.failure?.category === PERSON_NEEDED_CATEGORY;
 }
 
 function declaredOf(node: Node | undefined): string[] {

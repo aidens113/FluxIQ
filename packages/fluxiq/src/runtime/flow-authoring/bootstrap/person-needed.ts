@@ -29,9 +29,10 @@
 // each of them asks the person rather than counting a check as a failed,
 // changed or unreproducible step.
 //
-// **Bounded.** A build asks at most `maxAsks` times. A site that keeps putting
-// a check in front of every step is not one a build should keep a person
-// clearing, and past the bound the build ends with the same code.
+// **Bounded by a check that stays.** A build asks at most `maxAsks` times in a
+// row about a check the person's Continue did not get past, and past the bound
+// it ends with the same code. Every fresh check a person clears is asked about,
+// however many the site puts up (`../parking/person-needed-tool-calls.ts`).
 //
 // **Shared with recovery.** The question, the wait, the bound and the fresh
 // look are `../parking/person-needed-tool-calls.ts`, which a recovery's

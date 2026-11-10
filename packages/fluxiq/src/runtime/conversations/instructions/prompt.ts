@@ -9,6 +9,7 @@
 
 import { automationStudioPanelCapabilityVocabulary } from "../../../framework/automation-service/panel-capabilities/index.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE, automationStudioConversationPageShown } from "../commands/index.ts";
+import { automationStudioConversationAnswersFirst } from "../commands/answer-first/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
 
@@ -139,5 +140,18 @@ function onScreenSection(context: AutomationStudioConversationDecisionContext): 
 function describedJobLine(context: AutomationStudioConversationDecisionContext): string {
   const createHere = AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability.id;
   if (!context.capabilities.some((capability) => capability.id === createHere)) return "";
+  if (automationStudioConversationAnswersFirst()) return ` ${answerFirstJobLine(createHere)}`;
   return ` A job they describe for this site -- something to find, list, collect, fill in or buy on it -- that no Flow above already does is a request to make a new automation from this page: choose ${createHere} and pass their whole message, in their own words, as its instruction.`;
+}
+
+/**
+ * The same, in answer-first mode, where a described job is a task and the same words again start it
+ * through create-here (t869), which finds the Flow the task already has. "That no Flow above already
+ * does" read, to a smaller model, as "a Flow above does it, so run it": Haiku answered the same words
+ * typed again with `run.execute` on the task's own Flow (run-mw9xfwvd-ccc692b2, t885), where Sonnet
+ * chose create-here on the same text. So this says outright that a Flow made from the same words
+ * changes nothing, and that describing a job is never a request to run a Flow.
+ */
+function answerFirstJobLine(createHere: string): string {
+  return `A job they describe for this site -- something to find, list, collect, fill in or buy on it -- is a task to do from this page: choose ${createHere} and pass their whole message, in their own words, as its instruction. That holds just the same when a Flow above was made from the same words before: ${createHere} finds that Flow, does the task with what it kept, and returns the result. A job described again is never a request to run a Flow; run one only when they ask for a Flow to be run without describing a job.`;
 }

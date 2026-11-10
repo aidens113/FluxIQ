@@ -238,7 +238,9 @@ export type AutomationStudioConversationSetupNeeded = { ok: true; status: "setup
  * `configured`: the API's contract names no such mode, and Core resolves it. A budget-out and a
  * person's Stop come back as answers too, so this fails only where the call itself did.
  */
-export async function automationStudioConversationAnswerFirstAttempt(context: AutomationStudioConversationCommandContext, input: { flowId: string }): Promise<AutomationStudioConversationAnswered | AutomationStudioConversationSetupNeeded | Extract<AutomationStudioConversationBuildResult, { ok: false }>> {
+export async function automationStudioConversationAnswerFirstAttempt(context: AutomationStudioConversationCommandContext, input: { flowId: string; startLocation?: string | null | undefined }): Promise<AutomationStudioConversationAnswered | AutomationStudioConversationSetupNeeded | Extract<AutomationStudioConversationBuildResult, { ok: false }>> {
+  // Where the task starts: the page on screen, unless the caller knows the task's own start place (a Run of its Flow names no page).
+  const startLocation = input.startLocation || context.startLocation;
   const response = await context.port.call("generate-flow-bootstrap-adaptation", {
     projectId: context.projectId,
     flowId: input.flowId,
@@ -247,7 +249,7 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
     conversationId: context.conversationId,
     evidenceGuided: true,
     authoringMode: "configured",
-    ...(context.startLocation ? { startLocation: context.startLocation } : {}),
+    ...(startLocation ? { startLocation } : {}),
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
     ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
   });

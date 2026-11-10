@@ -22,6 +22,13 @@
 // call stands as the domain described it once cleared -- its `draft`,
 // `effectApplied` and `nodeId` -- and its evidence is replaced by a fresh look
 // at the target, under a note that says a person completed a check here. A
+// look whose answer is an object is the call's answer, keys and all, so it is
+// the loop's current view (`../llm/decision-context/current-view.ts`, which
+// reads the domain's declared view keys at the top of an answer): nested under
+// `now`, as it was, the model's current view stayed the page from before the
+// checked call, and a decision read handles off a page that was gone (scripted
+// pair `run-mwa3kh87-d34c2f04`: a detection after a cleared sort was refused
+// `target_unobserved`). Only a look that is not an object stays under `now`. A
 // call whose draft says it went out stands as having acted, whatever
 // `effectApplied` said of the moment the check stopped it: a domain reports that
 // call as the refusal it was (run `run-mw0jw263-0251c104`, where a Next page that
@@ -32,9 +39,18 @@
 // loop stops at its next turn without asking the model anything, and the
 // caller reads `ended()` for why.
 //
-// **Bounded.** At most `maxAsks` questions per wrapper. Work that keeps putting
-// a check in front of every step is not work a person should keep clearing,
-// and past the bound it ends the same way.
+// **Bounded by a check that stays, never by checks a person cleared.** At most
+// `maxAsks` questions in a row with nothing between them getting past a check:
+// the person said Continue and the look, or the next call, met a check again.
+// That is a check nobody is clearing, and past the bound the work ends the same
+// way. A call that comes back without one -- the look after Continue, or any
+// later call -- shows the person got past it, and the count starts again. It
+// used to count every question the wrapper ever put, so a site that raises a
+// fresh check every few loads, each one cleared, ran the bound out on its
+// fourth: that call was never put to anyone, it threw, the round ended with the
+// check left on the page, and the next round began again from there
+// (`run-mwa19obz-abd5d558`, steps 0066-0080). `asks()` still counts every
+// question, for the record.
 //
 // **Kept free of activity.** The caller says what the person sees happening:
 // the wait and how it ended, by wrapping the port it hands in
@@ -48,7 +64,7 @@ import type { AutomationStudioAsk, AutomationStudioAskStage } from "../interacti
 import { automationStudioAskedPersonNeeded, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft, type AutomationStudioPersonNeededOutcome } from "../parking/index.ts";
 import type { AutomationStudioParkingPort } from "../parking/index.ts";
 
-/** How many times one piece of work may put the question to a person. */
+/** How many times in a row one piece of work may put the question about a check that stays (header). */
 export const AUTOMATION_STUDIO_PERSON_NEEDED_MAX_ASKS = 3;
 
 /** Why work stopped for a person: how the last question came out, or the bound. */
@@ -65,9 +81,14 @@ export const AUTOMATION_STUDIO_PERSON_NEEDED_ISSUE_CODES: Readonly<Record<Automa
 
 /**
  * What the model is told in place of the call's own evidence, once the person
- * has completed the check. The fresh look travels beside it, under `now`.
+ * has completed the check: the step stands, and what of the target it is shown
+ * with it (header).
  */
-const PERSON_COMPLETED_NOTE = "This step met a check only a person can complete. FluxIQ handed it to the person, who completed it and pressed Continue, so the step stands. `now` is a fresh look at the target as it is after that. Never press, type into or reload a check.";
+const STANDS = "This step met a check only a person can complete. FluxIQ handed it to the person, who completed it and pressed Continue, so the step stands and is not to be done again.";
+const NEVER = "Never press, type into or reload a check.";
+const PERSON_COMPLETED_NOTE = `${STANDS} The rest of this answer is a fresh look at the target as it is after that. ${NEVER}`;
+const PERSON_COMPLETED_NOTE_NOW = `${STANDS} \`now\` is a fresh look at the target as it is after that. ${NEVER}`;
+const PERSON_COMPLETED_NOTE_NO_LOOK = `${STANDS} ${NEVER}`;
 
 type ExecuteTool = AutomationStudioLlmEvidenceLoopInput["executeTool"];
 type ToolCall = Parameters<ExecuteTool>[0];
@@ -132,6 +153,8 @@ export function automationStudioPersonNeededToolCalls(input: {
   const newAskId = input.newAskId;
   const look = input.tools.find((tool) => tool.initialObservation);
   let asks = 0;
+  // Questions since a call last came back without a check: what the bound counts (header).
+  let inARow = 0;
   let ended: AutomationStudioPersonNeededEnding | undefined;
 
   const end = (reason: AutomationStudioPersonNeededEnding): never => {
@@ -144,8 +167,9 @@ export function automationStudioPersonNeededToolCalls(input: {
 
   /** Puts the question once, and returns only when the person got past the check. */
   const asked = async (call: ToolCall): Promise<void> => {
-    if (asks >= maxAsks) end("asks_exhausted");
+    if (inARow >= maxAsks) end("asks_exhausted");
     asks += 1;
+    inARow += 1;
     const port = input.ask?.port;
     if (!port) return end("unreachable");
     const ask = automationStudioPersonNeededAsk(
@@ -179,6 +203,8 @@ export function automationStudioPersonNeededToolCalls(input: {
         await asked(call);
         continue;
       }
+      // The look met no check: the person got past this one.
+      inARow = 0;
       if (!executionResult(ran)) return { seen: true, evidence: ran };
       const stateAfter = ran.stateDigests?.after ?? ran.stateDigests?.before;
       return { seen: true, evidence: ran.evidence, ...(stateAfter ? { stateAfter } : {}) };
@@ -188,7 +214,10 @@ export function automationStudioPersonNeededToolCalls(input: {
   return {
     executeTool: async (call) => {
       const ran = await input.executeTool(call);
-      if (!automationStudioToolResultNeedsPerson(ran)) return ran;
+      if (!automationStudioToolResultNeedsPerson(ran)) {
+        inARow = 0;
+        return ran;
+      }
       if (ended) end(ended);
       await asked(call);
       const now = await freshLook(call);
@@ -220,7 +249,11 @@ function standing(
 ): AutomationStudioLlmEvidenceToolExecutionResult {
   const before = ran.stateDigests?.before;
   const after = now.seen ? now.stateAfter : undefined;
-  const evidence: JsonObject = { personCompletedCheck: true, note: PERSON_COMPLETED_NOTE, ...(now.seen ? { now: now.evidence } : { lookUnavailable: now.why }) };
+  const evidence: JsonObject = !now.seen
+    ? { personCompletedCheck: true, note: PERSON_COMPLETED_NOTE_NO_LOOK, lookUnavailable: now.why }
+    : isObject(now.evidence)
+      ? { personCompletedCheck: true, note: PERSON_COMPLETED_NOTE, ...withoutOwnKeys(now.evidence) }
+      : { personCompletedCheck: true, note: PERSON_COMPLETED_NOTE_NOW, now: now.evidence };
   return {
     kind: "llm_evidence_tool_execution",
     evidence,
@@ -231,6 +264,16 @@ function standing(
     ...(before !== undefined || after !== undefined ? { stateDigests: { ...(before === undefined ? {} : { before }), ...(after === undefined ? {} : { after }) } } : {}),
     ...(ran.draft === undefined ? {} : { draft: ran.draft })
   };
+}
+
+/** The look's answer without the two keys the note owns. */
+function withoutOwnKeys(look: JsonObject): JsonObject {
+  const { personCompletedCheck: _flag, note: _note, ...rest } = look;
+  return rest;
+}
+
+function isObject(value: JsonValue): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function executionResult(value: unknown): value is AutomationStudioLlmEvidenceToolExecutionResult {

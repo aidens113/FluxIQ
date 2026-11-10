@@ -18,12 +18,21 @@
 // Core's closed change kinds (`patch[].kind`, then `appliedTo[].kind`), never
 // the model's diagnosis, page text or a selector, and whether the next run
 // starts with it (applied) or it waits for review.
+//
+// **A task's Flow in answer-first mode is not run this way** (t885). A task's first attempt keeps its
+// steps with the task and leaves its Flow with no Router until a later attempt proves them whole, so
+// the run path had nothing to run and ended at once in "Run failed" (run-mw9xfwvd-ccc692b2), against
+// the rule that a task ends only with its result or its budget. Run of such a Flow is the task asked
+// for again: one attempt, as `flow.explore` starts on the Flow's saved goal, from where the task
+// starts, which finds the saved Flow, carries the acts earlier attempts landed, judges, and answers.
 
 import type { AutomationStudioChangeProposalKind, AutomationStudioFlowAdaptation } from "../../../flows/authoring/model/index.ts";
 import { automationStudioDecisionAppliedAutomatically } from "../../adaptation/durable-behavior/index.ts";
+import { automationStudioConversationAttemptOutcome, automationStudioConversationTaskOfFlow, type AutomationStudioConversationTaskOfFlow } from "./answer-first/index.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
-import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandPort } from "./command.ts";
-import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause } from "./progress.ts";
+import { automationStudioConversationAnswerFirstAttempt } from "./build.ts";
+import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandContext, AutomationStudioConversationCommandOutcome, AutomationStudioConversationCommandPort } from "./command.ts";
+import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause, automationStudioModelKeySetupStep, type AutomationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Run a Flow";
 
@@ -54,6 +63,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow to run");
     progress.carry({ flowId });
+    // A task's Flow is the task asked for again (header): it takes the road the same words take.
+    const task = await automationStudioConversationTaskOfFlow(context, flowId);
+    if (task) return await taskRun(context, progress, flowId, task);
     // What reading the message cost travels with the run: the Flow's spend in a Lab-scoped run (t438).
     const reading = { ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }), ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }) };
     const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", ...reading });
@@ -79,6 +91,21 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     return progress.succeeded(learned ? `${summary} ${learned}` : summary);
   }
 };
+
+/**
+ * A Run of a task's Flow in answer-first mode: one attempt at the task, from where the task starts,
+ * told as create-here and explore tell one. It needs the person's model key as they do, so a key
+ * this caller cannot open is the same setup step, said before anything starts.
+ */
+async function taskRun(context: AutomationStudioConversationCommandContext, progress: AutomationStudioConversationCommandProgress, flowId: string, task: AutomationStudioConversationTaskOfFlow): Promise<AutomationStudioConversationCommandOutcome> {
+  if (context.keyNeedsUnlock === true) {
+    context.noteKeySetupStepTold?.();
+    return progress.succeeded(automationStudioModelKeySetupStep(context.keyLockReason));
+  }
+  const answered = await automationStudioConversationAnswerFirstAttempt(context, { flowId, startLocation: task.startLocation });
+  if (!answered.ok) return progress.failed(answered.cause, { ending: answered.ending, kept: answered.candidateKept, told: answered.told });
+  return automationStudioConversationAttemptOutcome(progress, answered);
+}
 
 /**
  * What ran and how far it got, in plain words: the Flow's name (read from

@@ -654,7 +654,7 @@ const PERSON_NEEDED_SENTENCE: Readonly<Record<AutomationStudioPersonNeededEnding
   timed_out: "The exploration met a check only a person can complete, and nobody completed it in time.",
   unreachable: "The exploration met a check only a person can complete, and there was nowhere to ask the person.",
   cancelled: "The exploration met a check only a person can complete, and was stopped while it waited for the person.",
-  asks_exhausted: "The exploration kept meeting checks only a person can complete, so it stopped asking the person and ended."
+  asks_exhausted: "The exploration kept meeting a check only a person can complete after the person pressed Continue, so it stopped asking the person and ended."
 });
 
 const STOP_REASON_SENTENCE: Readonly<Record<AutomationStudioExplorationStopReason, string>> = Object.freeze({

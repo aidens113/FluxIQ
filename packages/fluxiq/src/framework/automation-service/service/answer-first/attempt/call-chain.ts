@@ -7,7 +7,10 @@
 // executor. The first lasting act reads the "before" witness first, and only then is dispatched.
 //
 // **What the sink is told is the call's answer alone**, never a model's words (plan D9), and
-// the chain counts what reached the domain as the attempt's live steps.
+// the chain counts what reached the domain as the attempt's live steps. A read that made the result
+// another list, or started its list over and left rows out, carries Core's note on that beside what
+// the domain answered (`resultList`, `../rows/result-change.ts`; run-mwafor01-bb471f52): without it the
+// model cannot tell from the read that rows it read before are no longer in the result.
 //
 // **Nothing is put back on this path (D1).** A forward run sends no reset by construction, but a
 // model's `amend_draft` rerun of a step on another page would (`../../../../../runtime/llm/node-tools/step-place.ts`),
@@ -36,7 +39,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
+import { automationStudioAnswerFirstResultChangeTold, type AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
@@ -80,13 +83,14 @@ export function automationStudioAnswerFirstCallChain(input: {
     input.stepped();
     const answer = await input.domain(call);
     if (!refusedAnswer(answer)) input.answered();
-    if (isExecution(answer)) await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer);
+    const rows = isExecution(answer) ? await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer) : undefined;
     try {
       noteLook(answer);
     } catch {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
-    return answer;
+    // A read that changed which rows the result holds says so on its own answer (`../rows/result-change.ts`).
+    return isExecution(answer) && rows?.resultChanged ? automationStudioAnswerFirstResultChangeTold(answer, rows.resultChanged) : answer;
   };
   const described = (call: { toolId: string; value: JsonObject }) => {
     try {

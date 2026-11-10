@@ -14,7 +14,16 @@
 //   4. The model said `replace`: over.
 //   5. The rows: none known is the next page. All known, in any other order or fewer, is a sort or
 //      a filter: over. Some known is a next page where the read takes up where the list ended (a
-//      window on a feed), or where they are under half of it (a feed repeating a row); otherwise over.
+//      window on a feed); a read that holds every row the list holds, and more, out of the list's
+//      order, is the list read whole again: over, which loses nothing it held; otherwise a next page
+//      where they are under half of it (a feed repeating a row), and over where they are not.
+//
+// **A short list read whole again is not its next page (run-mwa19obz-abd5d558).** A rerun of a saved
+// Flow read an unsorted list where the sort had not been pressed, and two rows matched; the list
+// started over on them. The next run sorted it and read all ten, those two among them, under the
+// Flow's own `append`: two known of ten is under half, so the ten were taken as the next page and
+// put after the two, and a judge refused the result twice as out of the order asked. Every row the
+// list held was in the read, so the read was the list again, not a page beyond it.
 //
 // **Two pages, then the first read again sorted differently, is over: the result is that one page,
 // with the rest gone.** A sort moves rows between pages, so the old second page has no place in the
@@ -23,7 +32,9 @@
 // sees the result short says so. The other way cannot. What a person sees of this is
 // `fewerThanEarlier` (`./rows-summary.ts`).
 //
-// A read with no rows is no read of the list: the sink never brings it here.
+// A read with no rows is no read of the list: the sink never brings it here. A page the sink kept as
+// read and empty (`./row-sink.ts`) holds no row, so it is passed by: it says nothing of where a read
+// is, and a read with rows at its place takes its place.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioAnswerFirstListPage } from "./list-page.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
@@ -39,12 +50,13 @@ export function automationStudioAnswerFirstListAfterRead(input: {
   /** This read's rows, none repeated whole. */
   read: readonly JsonObject[];
   columns: readonly string[];
-  evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says">;
+  evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says" | "list" | "leftOut">;
   /** The read was of another view than the list's last. */
   moved: boolean;
 }): { over: boolean; pages: AutomationStudioAnswerFirstListPage[]; rows: JsonObject[] } {
   const { pages, held, read, columns, evidence, moved } = input;
-  const own: AutomationStudioAnswerFirstListPage = { rows: [...read], ...(evidence.place !== undefined ? { place: evidence.place } : {}) };
+  // What the read left out stays with the page it read, whichever way the list goes on (`./row-sink.ts`, `readPages`).
+  const own: AutomationStudioAnswerFirstListPage = { rows: [...read], ...(evidence.place !== undefined ? { place: evidence.place } : {}), ...(evidence.list !== undefined ? { where: evidence.list } : {}), ...(evidence.leftOut ? { leftOut: evidence.leftOut } : {}) };
   const ties = automationStudioAnswerFirstRowTies(held, read, columns);
   const known = ties.filter((tie) => tie !== undefined).length;
   const same = pages.findIndex((page) => page.rows.length === read.length && automationStudioAnswerFirstRowTies(page.rows, read, columns).every((tie, at) => tie === at));
@@ -55,7 +67,7 @@ export function automationStudioAnswerFirstListAfterRead(input: {
     if (tie === undefined) rows.push(row);
     else rows[tie] = row;
   });
-  return { over: false, pages: same >= 0 ? pages.map((page, at) => (at === same ? own : page)) : [...pages, own], rows };
+  return { over: false, pages: same >= 0 ? pages.map((page, at) => (at === same ? own : page)) : [...pages.filter((page) => page.rows.length > 0 || page.place !== own.place), own], rows };
 }
 
 function carriesOn(input: { same: boolean; known: number; read: number; ties: readonly (number | undefined)[]; held: number; moved: boolean; evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says">; pages: readonly AutomationStudioAnswerFirstListPage[] }): boolean {
@@ -63,13 +75,20 @@ function carriesOn(input: { same: boolean; known: number; read: number; ties: re
   if (input.same) return true;
   if (input.moved && says !== "append") return false;
   if (place !== undefined) {
-    if (input.pages.some((page) => page.place === place)) return false;
+    if (input.pages.some((page) => page.place === place && page.rows.length > 0)) return false;
     return !(FIRST_PLACE.test(place) && input.pages.some((page) => page.place === undefined)) || input.known === 0;
   }
   if (says === "replace") return false;
   if (input.known === 0) return true;
   if (input.known === input.read) return false;
-  return takesUpWhereItEnded(input.ties, input.held) || input.known * 2 < input.read;
+  if (takesUpWhereItEnded(input.ties, input.held)) return true;
+  if (holdsEveryRow(input.ties, input.held)) return false;
+  return input.known * 2 < input.read;
+}
+
+/** Every row the list holds is one of the read's (header, 5). */
+function holdsEveryRow(ties: readonly (number | undefined)[], held: number): boolean {
+  return held > 0 && new Set(ties.filter((tie) => tie !== undefined)).size === held;
 }
 
 /** The read begins with the list's last rows, in order, and then only new ones. */

@@ -40,7 +40,15 @@ const CHECK_RESULT: AutomationNodeExecutionResult = {
   failure: { category: "user_intervention_required", code: CHECK_CODE, retryable: false, stage: "execution" }
 };
 
-/** A host that executes page steps: those in `checked` meet a check, the rest read the page. */
+/**
+ * What the domain's floor says of each page step: a press, which commits. A
+ * press the check answered was made, so once the person clears the check the
+ * run goes on from it (`../person-cleared.ts`); a step whose act was not made
+ * runs again, which `./person-cleared.test.ts` covers.
+ */
+const PRESS_FLOOR = { effectClass: "commit" as const, permissionConsequences: [] };
+
+/** A host that executes page steps, each a press: those in `checked` meet a check, the rest read the page. */
 function pageHost(checked: ReadonlySet<string>, extra: AutomationStudioGraphExecutionOptions = {}): { executed: string[]; inputs: Record<string, Record<string, JsonValue>>; options: AutomationStudioGraphExecutionOptions } {
   const executed: string[] = [];
   const inputs: Record<string, Record<string, JsonValue>> = {};
@@ -55,6 +63,7 @@ function pageHost(checked: ReadonlySet<string>, extra: AutomationStudioGraphExec
         inputs[request.node.id] = request.inputs;
         return Promise.resolve({ result: checked.has(request.node.id) ? CHECK_RESULT : { status: "success", route: "success", outputs: { text: `read by ${request.node.id}` } } });
       },
+      resolveActionEffect: (node) => node.definitionId === "domain.page.step" ? PRESS_FLOOR : undefined,
       ...extra
     }
   };
@@ -169,7 +178,8 @@ describe("a step that meets something only a person can get past", () => {
   });
 
   it("fails as it always did when no parking port is bound: nobody asked, the ladder decides", async () => {
-    const host = pageHost(new Set(["check"]));
+    // A step with no floor, so the ladder, not the effect check a committing press's lost answer gets, decides.
+    const host = pageHost(new Set(["check"]), { resolveActionEffect: () => undefined });
 
     const trace = await runAutomationStudioGraph(pageFlow(["check", "read"]), host.options);
 
@@ -273,6 +283,21 @@ describe("a check that is still there after Continue", () => {
     expect(last.ask).toBeUndefined();
     expect(last.recoveryDecision).toBeUndefined();
     expect(host.executed).toEqual(steps);
+  });
+
+  it("asks at every check a person cleared, however many the run meets, and goes on from each in place", async () => {
+    // A site that puts a fresh check in front of every other load (run-mwa19obz-abd5d558): each is cleared, and the step after it reads the page.
+    const flowSteps = ["c1", "r1", "c2", "r2", "c3", "r3", "c4", "r4", "c5", "r5"];
+    const host = pageHost(new Set(["c1", "c2", "c3", "c4", "c5"]));
+    const { asked, port } = inPlacePort(AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION);
+
+    const trace = await runAutomationStudioGraph(pageFlow(flowSteps), { ...host.options, parking: port });
+
+    expect(asked).toHaveLength(5);
+    expect(trace.status).toBe("succeeded");
+    // Nothing ran twice, and nothing started over: each check was passed where it stood.
+    expect(host.executed).toEqual(flowSteps);
+    for (const id of ["c1", "c2", "c3", "c4", "c5"]) expect(attemptOf(trace, id)?.ask).toMatchObject({ status: "answered", route: "success", personNeeded: true });
   });
 
   it("keeps the count across durable parks", async () => {

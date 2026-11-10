@@ -16,6 +16,7 @@ import type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRo
 import { automationStudioStateReopenOpener } from "./reopen.ts";
 import { automationStudioRepeatedLastingAct } from "./repeated-act.ts";
 import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
+import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, automationStudioStateNotArisenWayOn } from "./not-arisen.ts";
 
 /**
  * What a run does with a step that cannot run.
@@ -25,6 +26,9 @@ import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
  *   `notDone` when the step does a lasting act (`step-skip/act-not-done.ts`)
  *   and the page did not show its effect: the act was not done, which the
  *   attempt and the chat say (r4b F4).
+ *   Also a step whose state never arose because its way in did not act this
+ *   run (`./not-arisen.ts`), which does no lasting act: its `code` is
+ *   `executor.state.not_arisen`, the code its skipped attempt carries.
  * - `routed`: the page already shows the failing step's own effect, and the
  *   run goes on along its success `edge` to `node` (record outcome
  *   `effect_holds`); or the page matched `node`'s recorded pre-state, and the
@@ -39,7 +43,7 @@ import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
  * A record names every way on a safety guard refused (`refused`), when one was.
  */
 export type AutomationStudioStateRouteDecision =
-  | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true }
+  | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true; code?: string }
   | { kind: "routed"; node: AutomationStudioFlowNode; direction: AutomationStudioStateRouteDirection; closeness?: number; edge?: AutomationStudioFlowEdge; reopen?: true; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "stopped"; message: string; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "none"; record: AutomationStudioGuardedStateRoutingRecord };
@@ -63,6 +67,9 @@ export type AutomationStudioStateRouteInput = {
  * step that cannot run continues where the page is"):
  *
  * 1. The Flow's declared way on past a sometimes-present step, unobserved.
+ *    Then, unobserved too, the way on past a step whose state never arose
+ *    because its way in did not act this run (`./not-arisen.ts`), when it does
+ *    no lasting act.
  * 2. Every other node with a recorded pre-state is a candidate. With none, and
  *    no effect of the failing step's own to test, nothing is observed.
  * 3. The page is observed, once. When the failing step recorded its effect and
@@ -100,17 +107,10 @@ export type AutomationStudioStateRouteInput = {
 export async function decideAutomationStudioStateRoute(input: AutomationStudioStateRouteInput): Promise<AutomationStudioStateRouteDecision> {
   if (!automationStudioTargetFailureProvesUnacted(input.attempt)) return none("no_match", 0, "The target failure does not prove the act was unacted; its effect must be settled before routing.");
   const declared = automationStudioAbsentStepSkip(input.flow, input.node, input.attempt);
-  if (declared) {
-    // Synthetic readiness skips have no resolved dispatch pass. Resolve current
-    // raw slots conservatively, never a previous loop pass's node-id cache.
-    const actionEffect = input.options.resolveActionEffect?.(input.node, input.node.parameterValues ?? {});
-    const classifyLegacyStepAct = (node: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["classifyLegacyStepAct"]>>[0]) => {
-      const host = input.options.hostRuntime;
-      const classifier = host?.classifyLegacyStepAct;
-      return classifier?.call(host, node) ?? input.options.classifyLegacyStepAct?.(node);
-    };
-    return automationStudioSkippedStepDoesAct(input.node, actionEffect, classifyLegacyStepAct) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
-  }
+  if (declared) return doesAct(input) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
+  // A step written on the page an act brings about, after that act did not run (`./not-arisen.ts`).
+  const notArisen = targetNotFound(input) ? automationStudioStateNotArisenWayOn({ flow: input.flow, node: input.node, attempts: input.attempts }) : undefined;
+  if (notArisen && !doesAct(input)) return { kind: "declared", edge: notArisen, code: AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE };
   const candidates = input.flow.nodes
     .filter((node) => node.id !== input.node.id)
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))
@@ -162,6 +162,27 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   const record = { candidates: candidates.length, matched: matches.length - chosen.refused.length, toNodeId: best.node.id, direction: best.direction, closeness: best.closeness, ...refusedOf(refused) };
   const stopped = guarded(input, best.node.id, record, `the page matched only node ${best.node.id}'s expected starting page`);
   return stopped ?? { kind: "routed", node: best.node, direction: best.direction, closeness: best.closeness, record: { outcome: "routed", ...record } };
+}
+
+/**
+ * Whether passing over the failing step would leave a lasting act it does not
+ * done (`step-skip/act-not-done.ts`), asked the same way for every skip.
+ * Synthetic readiness skips have no resolved dispatch pass. Resolve current raw
+ * slots conservatively, never a previous loop pass's node-id cache.
+ */
+function doesAct(input: AutomationStudioStateRouteInput): boolean {
+  const actionEffect = input.options.resolveActionEffect?.(input.node, input.node.parameterValues ?? {});
+  const classifyLegacyStepAct = (node: Parameters<NonNullable<AutomationStudioGraphExecutionOptions["classifyLegacyStepAct"]>>[0]) => {
+    const host = input.options.hostRuntime;
+    const classifier = host?.classifyLegacyStepAct;
+    return classifier?.call(host, node) ?? input.options.classifyLegacyStepAct?.(node);
+  };
+  return automationStudioSkippedStepDoesAct(input.node, actionEffect, classifyLegacyStepAct);
+}
+
+/** Whether the failing attempt says its target is not on the page: `target_not_found`, proven unacted above. */
+function targetNotFound(input: AutomationStudioStateRouteInput): boolean {
+  return input.attempt.failure?.category === "target_not_found";
 }
 
 /**

@@ -22,6 +22,7 @@ import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultS
 import { automationStudioResultEndView } from "../result-summary.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
+import { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
 
@@ -46,7 +47,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const answer = summary.answerText === undefined ? { withheld: false } : automationStudioFlowLessScreenedWords(summary.answerText);
   const acts = summary.acts.map((act) => ({ what: words(act.what), where: words(act.where), classes: [...act.classes], state: act.state }));
   const looked = lookedShown(summary.looked ?? []);
-  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld;
+  const readPages = automationStudioFlowLessReadPagesShown(summary, words, deniedEvidenceKeys);
+  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld;
   const read: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: rows?.set.recordCount ?? 0,
@@ -67,7 +69,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
     ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
-    ...(looked.looks.length ? { looked: looked.looks } : {})
+    ...(looked.looks.length ? { looked: looked.looks } : {}),
+    ...(readPages.pages.length ? { readPages: readPages.pages, ...(readPages.notShown ? { readPagesNotShown: readPages.notShown } : {}) } : {})
   };
   return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
 }

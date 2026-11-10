@@ -14,13 +14,21 @@
 //
 // **It always names a failing step.** Whatever stopped the run (a step, the engine's bound, a
 // refusal before anything ran) the attempt has somewhere to carry on from.
+//
+// **A check a person cleared is a step that passed.** Its attempt keeps `failed` and the failure
+// the check gave (`engine/automation/person-needed.ts`), and when it is the step's last attempt the run
+// went on down its `success` route once the person pressed Continue: a step run again after the check
+// has a later attempt of its own, and one held as Outcome uncertain is the failing step
+// (`engine/automation/person-cleared.ts`). Read by its status alone it was told to the next round as
+// "failed: The page needs a person before the step can go on" (scripted pair
+// `run-mwa86qgu-9ded690b`, step 4), which asks a model to do again a step the run already got past.
 
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import { automationStudioAttemptSettled } from "../../../../../runtime/adaptation/flow-change/index.ts";
 import { automationStudioUnresolvedFailedAttempt } from "../../../../../runtime/adaptation/recovery/index.ts";
 import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioTrialExecutedSteps, automationStudioTrialFailureHappened } from "../../candidate-trial/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
@@ -42,8 +50,10 @@ const SAID = Object.freeze({
   unvisited: "The run reached an end with steps it never ran.",
   unmatchedRoute: "The step chose a way on that leads to no other step.",
   alreadyDone: "This was already done earlier in the task, so it was not done again.",
+  personCleared: "It met a check only a person can complete; the person completed it, and the run went on from this step.",
   absentNotDone: "Its control was not on the page, so the step was skipped and what it does was not done.",
   absent: "Its control was not on the page, so the step was skipped.",
+  notArisen: "The step before it was not done again, so the page this step answers never came, and the run went on past it.",
   inState: "Its control already showed the asked state, so it was not pressed.",
   elsewhere: "The page was already at another step, so the run went on from there.",
   notFinished: "The run did not reach the end of the Flow.",
@@ -122,6 +132,7 @@ function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Pla
   if (!attempts.length) return nodeId && watch && watch.succeededCount(nodeId) > 0 ? { ran: "passed" } : { ran: "not_reached" };
   const last = attempts.at(-1)!;
   if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", happened: skippedSaid(last) };
+  if (personCleared(last)) return { ran: "passed", happened: SAID.personCleared };
   const settled = automationStudioAttemptSettled(last).status;
   if (settled !== "succeeded") return { ran: "failed", happened: last.failure ? automationStudioTrialFailureHappened(last.failure.category, last.failure.code) : SAID.notFinished };
   // Every call reached the run gate and none got past it.
@@ -129,9 +140,16 @@ function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Pla
   return { ran: "passed" };
 }
 
+/** The person pressed Continue at a check this step met, and the run went on down its `success` route (header). */
+function personCleared(attempt: AutomationStudioNodeAttemptTrace): boolean {
+  const ask = attempt.ask;
+  return attempt.status === "failed" && ask?.personNeeded === true && ask.status === "answered" && ask.route === "success";
+}
+
 function skippedSaid(attempt: AutomationStudioNodeAttemptTrace): string {
   const skipped = attempt.skipped;
   if (skipped?.reason === "already_in_state") return SAID.inState;
+  if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return SAID.notArisen;
   if (skipped?.reason === "target_absent") return skipped.notDone ? SAID.absentNotDone : SAID.absent;
   return SAID.elsewhere;
 }

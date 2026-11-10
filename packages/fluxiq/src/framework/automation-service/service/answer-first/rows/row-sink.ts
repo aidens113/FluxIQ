@@ -44,25 +44,50 @@
 // changing within a run), and it then carries that list on or starts it over like any read. Two
 // things say it is another list even so: the model named it otherwise, or it read another view of
 // the site than the list's last read and shares no row. With neither, it can still take in another
-// list with the same columns (a run's own batches say no address): a list wrongly joined is rows a
+// list with the same columns (a run's own batches say no address of the view, only of the page they read, where the answer did): a list wrongly joined is rows a
 // judge can read and refuse, and a row wrongly dropped is a result lost. A read that does not join
 // is something else, and `./result-dataset.ts` says when it may become the result.
+//
+// **A further page of a list that kept no row is still a page read (run-mwaf6gnt-638d90a0).** A list
+// read in pages whose later page held nothing its conditions keep answers no rows, and stored nothing,
+// so `readPages` named page 1 alone: two judges in a row answered unknown, "only page 1 was read, page 2
+// may still hold qualifying rows" (steps 0039, 0049), and the model read page 2 again to prove it. So a
+// read with no rows that is the same read of the same list -- its identity, given the list's columns,
+// names that list's dataset (`./dataset-of-read.ts`) -- at a place the list has not read is kept as an
+// empty page of it, and is told with `kept: 0`. It adds no row and moves no result; only a read with
+// rows, or a run's batch, ever changes what the list holds (`./list-after-read.ts` passes empty pages by).
+//
+// **A read that changed the result in a way its own rows do not show says so (run-mwafor01-bb471f52).**
+// When a read makes the result another list than the one that held rows, or starts the result's list
+// over and leaves out rows it held, `fromCall` returns `resultChanged`: the result now and just before.
+// The chain puts it on the read's answer for the model (`./result-change.ts`). Which list a read joins is
+// not changed by it. A working read's list going is no change to tell: it was never the answer.
+//
+// **Each read page keeps the rows it kept and what its conditions left out (run-mwaknxf9-7549d126).**
+// `readPages` tells the judge, per read, its rows and, where its answer said, the rows its own conditions
+// turned down under the conditions that did it (`./read-evidence.ts`): on a site that lists one product
+// as an ad and again as not, that is what says which card a stored row is. The note the model is shown
+// of a changed result still says only place and count (`./result-change.ts`).
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { stableJson } from "../../stable-json.ts";
+import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
 import { automationStudioAnswerFirstReadDatasetId } from "./dataset-of-read.ts";
 import { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
 import { automationStudioAnswerFirstReadRows } from "./found-rows.ts";
 import { automationStudioAnswerFirstListAfterRead } from "./list-after-read.ts";
-import type { AutomationStudioAnswerFirstListPage } from "./list-page.ts";
+import type { AutomationStudioAnswerFirstListPage, AutomationStudioAnswerFirstReadPage } from "./list-page.ts";
 import { automationStudioAnswerFirstProcessedRows } from "./processed-rows.ts";
 import { automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
+import type { AutomationStudioAnswerFirstResultChange } from "./result-change.ts";
 import { automationStudioAnswerFirstResultDataset } from "./result-dataset.ts";
 import { automationStudioAnswerFirstRowTies } from "./row-ties.ts";
+import type { AutomationStudioAnswerFirstRowCall } from "./rows-call.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "./rows-summary.ts";
 import type { AutomationStudioAnswerFirstRowSinkInput } from "./sink-input.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "./sink-type.ts";
@@ -80,6 +105,10 @@ type Held = {
   view?: string | undefined;
   /** The model marked its reads working ones. */
   lookUp?: boolean | undefined;
+  /** The columns this dataset's id was made from, where a read made it: what an empty read is matched by (header). */
+  idColumns?: readonly string[] | undefined;
+  /** The call that last stored rows in this list, where a call of the exploration did (header). */
+  by?: string | undefined;
   /** The most rows the list held before a read started it over. */
   earlierRows?: number | undefined;
   /** The latest read started the list over from rows it held. */
@@ -112,6 +141,19 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     return movedFrom(held, evidence) && !shares ? undefined : { datasetId: latest, held, validated };
   };
 
+  /** A read that answered no rows, kept as an empty page of the list it is the same read of, at a place that list has not read (header). */
+  const emptyPage = (call: AutomationStudioAnswerFirstRowCall, answer: AutomationStudioLlmEvidenceToolExecutionResult): void => {
+    const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, input.readRowsKey);
+    const place = evidence.place;
+    if (evidence.lookUp || place === undefined) return;
+    for (const [datasetId, held] of datasets) {
+      if (held.lookUp || held.idColumns === undefined) continue;
+      if (automationStudioAnswerFirstReadDatasetId({ toolId: call.toolId, value: call.value, columns: held.idColumns, named: evidence.named, list: evidence.list, lookUp: evidence.lookUp }) !== datasetId) continue;
+      if (!held.pages.some((page) => page.place === place)) held.pages.push({ rows: [], place, ...(evidence.list !== undefined ? { where: evidence.list } : {}), ...(evidence.leftOut ? { leftOut: evidence.leftOut } : {}) });
+      return;
+    }
+  };
+
   /** The dataset that is the result: a working read only while no other stands. */
   const resultDataset = (): string | undefined => {
     const standing = order.filter((datasetId) => !datasets.get(datasetId)?.lookUp);
@@ -126,6 +168,26 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     return { datasetId, totalRows: answer.rows.length, truncated: held.truncated, columns: answer.columns, rows: answer.rows, ...fewer(held) };
   };
 
+  /** The result as it stands, for telling a read that changed it (header); none while no list that is not a working one holds a row. */
+  const standing = () => {
+    const now = summary();
+    const held = now.datasetId === undefined ? undefined : datasets.get(now.datasetId);
+    if (now.datasetId === undefined || !held || held.lookUp || held.rows.length === 0) return undefined;
+    return { datasetId: now.datasetId, rows: [...held.rows], totalRows: now.totalRows, columns: now.columns.map((column) => column.id), pages: pagesOf(held), by: held.by };
+  };
+
+  /** How this read changed the result, from what stood just before it (header), or nothing to tell. */
+  const changed = (was: ReturnType<typeof standing>, datasetId: string, over: boolean): AutomationStudioAnswerFirstResultChange | undefined => {
+    const now = standing();
+    if (!was || !now || now.datasetId !== datasetId) return undefined;
+    const before = { rows: was.totalRows, columns: was.columns, pages: was.pages, ...(was.by !== undefined ? { lastReadBy: was.by } : {}) };
+    if (was.datasetId !== datasetId) return { kind: "other_list", now: { rows: now.totalRows, pages: now.pages }, before };
+    if (!over) return undefined;
+    // Only a start-over that left out a row it held: a read of the whole list again loses nothing.
+    const kept = new Set(automationStudioAnswerFirstRowTies(was.rows, now.rows, datasets.get(datasetId)!.schema.fields.map((field) => field.id)).filter((tie) => tie !== undefined));
+    return kept.size < was.rows.length ? { kind: "started_over", now: { rows: now.totalRows, pages: now.pages }, before } : undefined;
+  };
+
   return {
     async fromCall(call, answer) {
       const found = automationStudioAnswerFirstReadRows(answer, input.readRowsKey);
@@ -133,8 +195,10 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const objects = found.filter(isObject);
       if (!found.length) {
         readsAnswered += 1;
+        emptyPage(call, answer);
         return { rows: [], invalidCount: 0, truncated: false };
       }
+      const was = standing();
       const columns = automationStudioAnswerFirstReadColumns(objects);
       const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, input.readRowsKey);
       const join = joined(columns, found, evidence);
@@ -170,7 +234,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         return { rows: [], datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, failure: { code: "answer_first.rows_not_stored", ...(error instanceof Error ? { errorName: error.name } : {}) } };
       }
       readsAnswered += 1;
-      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending };
+      const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, ...(join ? {} : { idColumns: columns }) };
       datasets.set(datasetId, held);
       if (evidence.list !== undefined) held.view = evidence.list;
       if (after) {
@@ -181,9 +245,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         held.truncated = truncated;
         // What the read declared shapes its result as a saved run's would. The stored rows stay as the read returned them (the act record ties to them). The store keeps the first processing a dataset was stored with and refuses a change within a run, so where this differs from it the summary and the read-back apply it themselves, and both read the same.
         if (!ran.has(datasetId)) held.process = declared;
+        held.by = call.callId;
         order.push(datasetId);
       }
-      return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}) };
+      const resultChanged = after ? changed(was, datasetId, after.over) : undefined;
+      return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}), ...(resultChanged ? { resultChanged } : {}) };
     },
     async recordBatch(batch) {
       const stored = await input.onRecordBatch(batch);
@@ -196,7 +262,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         held.pages = [];
       }
       held.rows = wholeOnce([...held.rows, ...batch.rows]);
-      if (batch.rows.length) held.pages.push({ rows: wholeOnce(batch.rows) });
+      // A saved run's read says which page it read only where its answer did (`location`); its view stays unset, as a run's batches have never set it, so which list a later read joins is as before.
+      const at = batch.location === undefined ? undefined : automationStudioAnswerFirstAddressSplit(batch.location);
+      if (batch.rows.length) held.pages.push({ rows: wholeOnce(batch.rows), ...(at ? { where: at.view } : {}), ...(at?.place !== undefined ? { place: at.place } : {}) });
+      // A run's later page that kept no row is told as read, as an exploring read's is (header).
+      else if (at?.place !== undefined && !held.pages.some((page) => page.place === at.place)) held.pages.push({ rows: [], where: at.view, place: at.place });
       held.truncated ||= batch.truncated;
       ran.add(batch.datasetId);
       if (batch.rows.length) order.push(batch.datasetId);
@@ -206,6 +276,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       ran.clear();
     },
     readsAnswered: () => readsAnswered,
+    readPages: () => {
+      const id = resultDataset();
+      const held = id === undefined ? undefined : datasets.get(id);
+      return held ? readPagesOf(held) : [];
+    },
     summary,
     async readBack() {
       const own = summary();
@@ -255,6 +330,19 @@ function fewer(held: Held): Pick<AutomationStudioAnswerFirstRowsSummary, "fewerT
     ...(held.earlierRows !== undefined && held.earlierRows > held.rows.length ? { fewerThanEarlier: { earlierRows: held.earlierRows } } : {}),
     ...(held.startedOver ? { startedOver: true as const } : {})
   };
+}
+
+/** A list's reads as a changed result is told: the view and place each read, where said, and how many rows it kept. */
+function pagesOf(held: Held): AutomationStudioAnswerFirstReadPage[] {
+  return held.pages.map((page) => ({ ...(page.where !== undefined ? { where: page.where } : {}), ...(page.place !== undefined ? { place: page.place } : {}), kept: page.rows.length }));
+}
+
+/** A list's reads as the judge is told them (`readPages`): as `pagesOf`, with the rows each kept and what its conditions left out, where its answer said (header). */
+function readPagesOf(held: Held): AutomationStudioAnswerFirstReadPage[] {
+  return pagesOf(held).map((told, at) => {
+    const page = held.pages[at]!;
+    return { ...told, ...(page.rows.length ? { rows: page.rows.map((row) => ({ ...row })) } : {}), ...(page.leftOut ? { leftOut: page.leftOut } : {}) };
+  });
 }
 
 /** Rows without a row repeated whole, the first of each staying where it was. */

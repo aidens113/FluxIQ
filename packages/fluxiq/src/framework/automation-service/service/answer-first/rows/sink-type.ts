@@ -1,6 +1,7 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
+import type { AutomationStudioAnswerFirstReadPage } from "./list-page.ts";
 import type { AutomationStudioAnswerFirstRowCall, AutomationStudioAnswerFirstRowsStored } from "./rows-call.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "./rows-summary.ts";
 
@@ -34,4 +35,10 @@ export type AutomationStudioAnswerFirstRowSink = {
    * read ran even where it found nothing (`../completion/check.ts`, `rows_not_read`).
    */
   readsAnswered(): number;
+  /**
+   * The reads that make up the result's list, one per read since it last started over, each with where it read (the view
+   * of the site and the place in it, where the call or its answer said) and how many rows it kept. A further page of it read the
+   * same way that kept no row is one, with `kept: 0` (`./row-sink.ts`). Empty while no read stored a row.
+   */
+  readPages(): AutomationStudioAnswerFirstReadPage[];
 };
