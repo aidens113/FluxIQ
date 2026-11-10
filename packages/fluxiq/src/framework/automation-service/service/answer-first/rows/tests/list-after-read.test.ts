@@ -15,6 +15,8 @@ function after(pages: AutomationStudioAnswerFirstListPage[], read: JsonObject[],
 }
 
 const titles = (rows: readonly JsonObject[]) => rows.map((each) => each.title);
+/** Ten rows of one list, in the order its site sorts them. */
+const SHELF = ["Alder bench", "Birch stool", "Cedar shelf", "Dogwood rack", "Elm crate", "Fir desk", "Gum chest", "Hazel lamp", "Ivy basket", "Juniper tray"];
 
 describe("what a list holds after another read of it", () => {
   it("rows it has none of are the next page", () => {
@@ -72,6 +74,13 @@ describe("what a list holds after another read of it", () => {
   it("another view starts over, and the model's `append` keeps both", () => {
     expect(after([page("Alder bench")], [row("Birch stool")], { moved: true }).over).toBe(true);
     expect(after([page("Alder bench")], [row("Birch stool")], { moved: true, says: "append" }).over).toBe(false);
+  });
+
+  // run-mwa19obz-abd5d558: two rows read off an unsorted view, then all ten read sorted under the Flow's own append.
+  it("a read holding every row of a short list and more, out of its order, is the list read whole again, whatever `append` says", () => {
+    const again = after([page(SHELF[8]!, SHELF[6]!)], SHELF.map((title) => row(title)), { moved: true, says: "append" });
+    expect(again.over).toBe(true);
+    expect(titles(again.rows)).toEqual(SHELF);
   });
 });
 
@@ -193,6 +202,20 @@ describe("the sink over the rule", () => {
     await sink.fromCall(call("read.again", "core.run_node", { node: "read" }), liveAnswer([row("Birch stool"), row("Alder bench")]));
     expect(store.batches[1]).toMatchObject({ datasetId: "shelves", writeMode: "replace", schema });
     expect(titles(sink.summary().rows)).toEqual(["Birch stool", "Alder bench"]);
+  });
+
+  // run-mwa19obz-abd5d558, steps 0039 and 0046: a Flow's run kept ten rows; a rerun whose sort did not go read two off the
+  // unsorted list; the next rerun read all ten sorted. The judge was shown the two first, then the other eight.
+  it("a run's list, then a short read of another view, then the whole list read sorted: the sorted read, in its order", async () => {
+    const { store, sink } = sinkOver();
+    const whole = SHELF.map((title, at) => row(title, at + 1));
+    const read = { node: "read", parameters: { recordOutput: { datasetId: "shelves", writeMode: "append" } }, consequences: [] };
+    await sink.recordBatch({ nodeId: "node.read", attemptId: "a", batchKey: "a", datasetId: "shelves", writeMode: "append", schema, rows: whole, invalidCount: 0, truncated: false });
+    await sink.fromCall(call("rerun.1", "core.run_node", read), liveAnswer([whole[8]!, whole[6]!], { location: "https://example.test/shelves?q=wood" }));
+    expect(titles(sink.summary().rows)).toEqual([SHELF[8], SHELF[6]]);
+    await sink.fromCall(call("rerun.2", "core.run_node", read), liveAnswer(whole, { location: "https://example.test/shelves?q=wood&sort=price" }));
+    expect(titles(sink.summary().rows)).toEqual(SHELF);
+    expect(store.batches.at(-1)).toMatchObject({ datasetId: "shelves", writeMode: "replace" });
   });
 
   it("a read the model named otherwise never joins a run's list, however its columns fit", async () => {

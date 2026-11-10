@@ -14,7 +14,16 @@
 //   4. The model said `replace`: over.
 //   5. The rows: none known is the next page. All known, in any other order or fewer, is a sort or
 //      a filter: over. Some known is a next page where the read takes up where the list ended (a
-//      window on a feed), or where they are under half of it (a feed repeating a row); otherwise over.
+//      window on a feed); a read that holds every row the list holds, and more, out of the list's
+//      order, is the list read whole again: over, which loses nothing it held; otherwise a next page
+//      where they are under half of it (a feed repeating a row), and over where they are not.
+//
+// **A short list read whole again is not its next page (run-mwa19obz-abd5d558).** A rerun of a saved
+// Flow read an unsorted list where the sort had not been pressed, and two rows matched; the list
+// started over on them. The next run sorted it and read all ten, those two among them, under the
+// Flow's own `append`: two known of ten is under half, so the ten were taken as the next page and
+// put after the two, and a judge refused the result twice as out of the order asked. Every row the
+// list held was in the read, so the read was the list again, not a page beyond it.
 //
 // **Two pages, then the first read again sorted differently, is over: the result is that one page,
 // with the rest gone.** A sort moves rows between pages, so the old second page has no place in the
@@ -69,7 +78,14 @@ function carriesOn(input: { same: boolean; known: number; read: number; ties: re
   if (says === "replace") return false;
   if (input.known === 0) return true;
   if (input.known === input.read) return false;
-  return takesUpWhereItEnded(input.ties, input.held) || input.known * 2 < input.read;
+  if (takesUpWhereItEnded(input.ties, input.held)) return true;
+  if (holdsEveryRow(input.ties, input.held)) return false;
+  return input.known * 2 < input.read;
+}
+
+/** Every row the list holds is one of the read's (header, 5). */
+function holdsEveryRow(ties: readonly (number | undefined)[], held: number): boolean {
+  return held > 0 && new Set(ties.filter((tie) => tie !== undefined)).size === held;
 }
 
 /** The read begins with the list's last rows, in order, and then only new ones. */
