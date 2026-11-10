@@ -129,6 +129,51 @@ describe("a check only a person can clear", () => {
     const attempt = await generating;
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
+    // The next decision sees the page as it is after the check, as its current view: the fresh look the cleared call
+    // stands with, never the page from before it (scripted pair run-mwa3kh87-d34c2f04 read a gone page's handles).
+    const next = decisions(attempt)[1]!.context.evidenceLoop?.evidence ?? [];
+    const view = next.find((entry) => entry.toolId === "core.current_view")?.value as { groups?: { group: string; callId: string }[] } | undefined;
+    expect(view?.groups?.find((group) => group.group === "top")?.callId).toBe("read.checked");
+  });
+
+  it("pauses at every fresh check the person clears, however many, and the same round goes on from each (run-mwa19obz-abd5d558)", async () => {
+    // The site put a new check in front of every few loads. The fourth in one round was never put to the person:
+    // the round threw, the check stayed on the page, and the next round started over from there.
+    const hold = held();
+    const checked = new Set<number>();
+    const reads = [1, 2, 3, 4, 5];
+    const generating = scriptedAttempt({
+      before: hold.before,
+      fault: (call) => {
+        const page = (call.value.parameters as JsonObject | undefined)?.page;
+        if (call.value.node !== READ_LOANS || typeof page !== "number" || checked.has(page)) return undefined;
+        checked.add(page);
+        return check(call);
+      },
+      // Each checked call stands as the domain described it once cleared, with nothing read; the last read reads the list.
+      script: [...reads.map((page) => runNode(`read.${page}`, READ_LOANS, { page }, [], page === 1 ? { add: true } : {})), runNode("read.all", READ_LOANS, { all: true }, [], {}), complete("Listed.")]
+    }, cleanups);
+    const { service, projectId, flowId } = await hold.ready();
+    let finished = false;
+    const settled = generating.finally(() => { finished = true; });
+    const answered: string[] = [];
+    while (!finished) {
+      const [conversation] = await service.conversations.listConversations({ projectId, subject: { kind: "flow", id: flowId } });
+      const thread = conversation ? await service.conversations.getConversation({ projectId, conversationId: conversation.conversationId }) : null;
+      const ask = thread?.turns.map((turn) => turn.ask).find((each) => each?.status === "pending" && each.control?.kind === AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND && !answered.includes(each.askId));
+      if (ask) {
+        answered.push(ask.askId);
+        await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION });
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
+    const attempt = await settled;
+    // Every check was put to the person, the fourth and fifth included.
+    expect(answered).toHaveLength(reads.length);
+    expect(expectReached(attempt).result?.rows?.totalRows).toBe(3);
+    // One decision per step and one to complete: no step was asked for twice, and nothing started over.
+    expect(decisions(attempt)).toHaveLength(reads.length + 2);
   });
 
   it("its Stop ends the task as a person's Stop, with what it had", async () => {

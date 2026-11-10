@@ -275,6 +275,21 @@ describe("a check that is still there after Continue", () => {
     expect(host.executed).toEqual(steps);
   });
 
+  it("asks at every check a person cleared, however many the run meets, and goes on from each in place", async () => {
+    // A site that puts a fresh check in front of every other load (run-mwa19obz-abd5d558): each is cleared, and the step after it reads the page.
+    const flowSteps = ["c1", "r1", "c2", "r2", "c3", "r3", "c4", "r4", "c5", "r5"];
+    const host = pageHost(new Set(["c1", "c2", "c3", "c4", "c5"]));
+    const { asked, port } = inPlacePort(AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION);
+
+    const trace = await runAutomationStudioGraph(pageFlow(flowSteps), { ...host.options, parking: port });
+
+    expect(asked).toHaveLength(5);
+    expect(trace.status).toBe("succeeded");
+    // Nothing ran twice, and nothing started over: each check was passed where it stood.
+    expect(host.executed).toEqual(flowSteps);
+    for (const id of ["c1", "c2", "c3", "c4", "c5"]) expect(attemptOf(trace, id)?.ask).toMatchObject({ status: "answered", route: "success", personNeeded: true });
+  });
+
   it("keeps the count across durable parks", async () => {
     const host = pageHost(new Set(steps));
     const flow = pageFlow(steps);

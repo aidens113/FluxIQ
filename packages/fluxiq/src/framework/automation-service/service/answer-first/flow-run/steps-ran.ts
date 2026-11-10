@@ -14,6 +14,12 @@
 //
 // **It always names a failing step.** Whatever stopped the run (a step, the engine's bound, a
 // refusal before anything ran) the attempt has somewhere to carry on from.
+//
+// **A check a person cleared is a step that passed.** Its attempt keeps `failed` and the failure
+// the check gave (`engine/automation/person-needed.ts`), and the run went on down its `success`
+// route once the person pressed Continue. Read by its status alone it was told to the next round as
+// "failed: The page needs a person before the step can go on" (scripted pair
+// `run-mwa86qgu-9ded690b`, step 4), which asks a model to do again a step the run already got past.
 
 import type { AutomationStudioFlowArtifact } from "../../../../../flows/authoring/model/index.ts";
 import { automationStudioAttemptSettled } from "../../../../../runtime/adaptation/flow-change/index.ts";
@@ -42,6 +48,7 @@ const SAID = Object.freeze({
   unvisited: "The run reached an end with steps it never ran.",
   unmatchedRoute: "The step chose a way on that leads to no other step.",
   alreadyDone: "This was already done earlier in the task, so it was not done again.",
+  personCleared: "It met a check only a person can complete; the person completed it, and the run went on from this step.",
   absentNotDone: "Its control was not on the page, so the step was skipped and what it does was not done.",
   absent: "Its control was not on the page, so the step was skipped.",
   inState: "Its control already showed the asked state, so it was not pressed.",
@@ -122,11 +129,18 @@ function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Pla
   if (!attempts.length) return nodeId && watch && watch.succeededCount(nodeId) > 0 ? { ran: "passed" } : { ran: "not_reached" };
   const last = attempts.at(-1)!;
   if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", happened: skippedSaid(last) };
+  if (personCleared(last)) return { ran: "passed", happened: SAID.personCleared };
   const settled = automationStudioAttemptSettled(last).status;
   if (settled !== "succeeded") return { ran: "failed", happened: last.failure ? automationStudioTrialFailureHappened(last.failure.category, last.failure.code) : SAID.notFinished };
   // Every call reached the run gate and none got past it.
   if (nodeId && watch && watch.askedCount(nodeId) > 0 && watch.sentCount(nodeId) === 0) return { ran: "skipped", happened: SAID.alreadyDone };
   return { ran: "passed" };
+}
+
+/** The person pressed Continue at a check this step met, and the run went on down its `success` route (header). */
+function personCleared(attempt: AutomationStudioNodeAttemptTrace): boolean {
+  const ask = attempt.ask;
+  return attempt.status === "failed" && ask?.personNeeded === true && ask.status === "answered" && ask.route === "success";
 }
 
 function skippedSaid(attempt: AutomationStudioNodeAttemptTrace): string {

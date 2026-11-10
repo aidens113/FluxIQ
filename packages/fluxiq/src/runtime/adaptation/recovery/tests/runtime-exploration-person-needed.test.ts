@@ -173,15 +173,31 @@ describe("a recovery exploration that meets a check only a person can complete",
     expect(run.seenByModel.join("\n")).not.toContain(CHECK_MARKER);
   });
 
-  it("asks at most three times, then ends person-needed", async () => {
+  it("asks at most three times in a row about a check that stays, then ends person-needed", async () => {
+    // The person says Continue and every look after it still meets the check.
     const run = await explore({
-      pressChecks: 10,
+      pressChecks: 1,
+      lookChecks: 10,
       answers: [choice("person_done"), choice("person_done"), choice("person_done"), choice("person_done")],
-      decisions: ["c1", "c2", "c3", "c4", "c5"].map((handle) => ({ kind: "tool_call", callId: `call.${handle}`, toolId: "shop.press", input: { handle } }))
+      decisions: ["c1", "c2"].map((handle) => ({ kind: "tool_call", callId: `call.${handle}`, toolId: "shop.press", input: { handle } }))
     });
 
     expect(run.opened).toHaveLength(3);
     expect(run.exploration).toMatchObject({ outcome: "user_intervention_required", endedBy: "person_needed.asks_exhausted", personNeeded: { asks: 3, ended: "asks_exhausted" } });
+    expect(run.seenByModel.join("\n")).not.toContain(CHECK_MARKER);
+  });
+
+  it("asks at every fresh check the person clears, however many, and never ends for them", async () => {
+    // Every press meets a new check, and each look after Continue finds it gone (run-mwa19obz-abd5d558's site).
+    const run = await explore({
+      pressChecks: 5,
+      answers: Array.from({ length: 5 }, () => choice("person_done")),
+      decisions: ["c1", "c2", "c3", "c4", "c5"].map((handle) => ({ kind: "tool_call", callId: `call.${handle}`, toolId: "shop.press", input: { handle } }))
+    });
+
+    expect(run.opened).toHaveLength(5);
+    expect(run.exploration.endedBy ?? "").not.toContain("person_needed");
+    expect(run.exploration).toMatchObject({ personNeeded: { asks: 5 } });
     expect(run.seenByModel.join("\n")).not.toContain(CHECK_MARKER);
   });
 });

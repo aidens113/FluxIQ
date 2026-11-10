@@ -18,10 +18,16 @@
 // **Only with a port.** An unbound run has nobody to ask, so it fails as it
 // always did rather than parking on a question nobody will ever see.
 //
-// **Bounded.** A check that is still there after Continue fails the node again
-// and asks again. Past `AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN` asks the
-// run stops asking and ends, because a loop that keeps knocking on the same
-// check is the thing the ask exists to replace.
+// **Bounded by a check that stays, never by checks a person cleared.** A check
+// that is still there after Continue fails the next node again and asks again.
+// Past `AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN` asks in a row, with no step
+// succeeding between them, the run stops asking and ends, because a loop that
+// keeps knocking on the same check is the thing the ask exists to replace. A
+// step that succeeds after Continue shows the person got past it, and the count
+// starts again. It used to count every ask of the run, so a Flow that pages
+// through a site raising a fresh check every few loads ended on its fourth,
+// cleared or not, saying "the check was still there", and the attempt then ran
+// the Flow again from its first step (`run-mwa19obz-abd5d558`).
 
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowNode } from "../../flows/executable/graph/index.ts";
@@ -31,7 +37,7 @@ import type { AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 /** The failure category a domain reports when only a person can go on. */
 const PERSON_NEEDED_CATEGORY = "user_intervention_required";
 
-/** How many times one run asks a person before it stops asking and ends. */
+/** How many times in a row, with no step succeeding between, one run asks a person before it stops asking and ends. */
 export const AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN = 3;
 
 /** What the executor does about one failed attempt, as far as a person is concerned. */
@@ -56,7 +62,7 @@ export function automationStudioIsPersonNeededAsk(ask: Pick<AutomationStudioAsk,
 /**
  * Decides, for an attempt that has just been recorded, whether the run asks a
  * person. `attempts` is the run's attempts so far, the seed's included, so the
- * cap holds across a durable park and resume.
+ * bound holds across a durable park and resume.
  */
 export function automationStudioPersonNeededStep(input: {
   attempt: AutomationStudioNodeAttemptTrace;
@@ -68,7 +74,7 @@ export function automationStudioPersonNeededStep(input: {
   parkingBound: boolean;
 }): AutomationStudioPersonNeededStep {
   if (input.raised || !input.parkingBound || !automationStudioAttemptNeedsPerson(input.attempt)) return { kind: "none" };
-  const asked = input.attempts.filter((attempt) => attempt.ask?.personNeeded === true).length;
+  const asked = askedInARow(input.attempts);
   if (asked >= AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN) {
     return { kind: "exhausted", message: endingMessage(input.node, input.attempt, `a person was asked ${asked} times and the check was still there`) };
   }
@@ -109,6 +115,17 @@ export function automationStudioPersonNeededEnding(
   if (ask.status === "expired") return endingMessage(node, attempt, "nobody answered in time");
   if (ask.status === "answered") return endingMessage(node, attempt, "the person pressed Stop");
   return undefined;
+}
+
+/** Person-needed asks since the run's last step that succeeded: a check nobody is getting past (header). */
+function askedInARow(attempts: readonly AutomationStudioNodeAttemptTrace[]): number {
+  let asked = 0;
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = attempts[index]!;
+    if (attempt.status === "succeeded") break;
+    if (attempt.ask?.personNeeded === true) asked += 1;
+  }
+  return asked;
 }
 
 function latestAttemptOf(attempts: readonly AutomationStudioNodeAttemptTrace[], nodeId: string): AutomationStudioNodeAttemptTrace | undefined {

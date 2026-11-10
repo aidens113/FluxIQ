@@ -54,6 +54,21 @@ describe("the same evidence refused again", () => {
     expect(check.state.refusedAgain).toBe(0);
   });
 
+  it("refuses evidence an earlier no refused, not only the last one, without a judge (run-mwa19obz-abd5d558, 0068-0078)", async () => {
+    const { check, judged } = made(() => [{ title: "Atlas" }, { title: "Birds" }]);
+    // Without an answer, then with one, then without it again: the third is the first's evidence.
+    await check.check({ summary: "Blocked here." });
+    await check.check({ summary: "Blocked, with an answer.", answer: "It could not be finished." });
+    expect(judged()).toBe(2);
+    expect(check.state.refusedAgain).toBe(0);
+    const third = await check.check({ summary: "Blocked, said again." });
+    expect(judged()).toBe(2);
+    expect(check.state.refusedAgain).toBe(1);
+    if (third.ok) throw new Error("It should have been refused.");
+    expect(third.issueCodes).toEqual([AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE]);
+    expect(third.feedback.instruction).toContain("Not what was asked.");
+  });
+
   it("says what a check that reads no draft reads, and leaves a not-judged free to ask again", () => {
     expect(AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.sentAgain).toContain("never the draft");
     expect(AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.sentAgainUnjudged).toContain("not a no");
@@ -85,5 +100,17 @@ describe("what the result holds, as the model is shown it", () => {
 
   it("says plainly when it holds nothing", () => {
     expect(holds([])).toEqual({ totalRows: 0, acts: 2 });
+  });
+});
+
+describe("the answer a result is shown with", () => {
+  it("is the latest completion's own, never a refused one's carried past a completion that gave none (run-mwa19obz-abd5d558)", async () => {
+    let rows = [{ title: "Atlas" }];
+    const { check } = made(() => rows);
+    await check.check({ summary: "Blocked.", answer: "It could not be finished because of a check." });
+    expect(check.state.answerText).toBe("It could not be finished because of a check.");
+    rows = [{ title: "Atlas" }, { title: "Birds" }];
+    await check.check({ summary: "Listed." });
+    expect(check.state.answerText).toBeUndefined();
   });
 });
