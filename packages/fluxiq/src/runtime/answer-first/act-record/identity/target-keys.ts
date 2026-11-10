@@ -40,8 +40,13 @@ const SLOT_HANDLE = "handle";
 const NOT_IDENTITY = /^(?:consequences|ensureState|effect|expected.*|wait.*|timeout.*|retr(?:y|ies).*|maxRetries|maxAttempts|pace.*|delay.*|settle.*|record.*|optional|metadata|description|notes?|label|scroll.*|force|routeSignatures|confidence|visualTarget)$/u;
 /** A fingerprint field that is a place on a page, not the control. */
 export const POSITIONAL_FIELD = /^(?:nth.*|index|position|ordinal|bounds|documentBounds|rect|box|x|y|left|top|right|bottom|width|height|anchor|frameId|layerId|documentLayerId)$/iu;
-/** A fingerprint field every control of a kind shares, or that names one row's copy: no words a person tells a control by. */
-export const STRUCTURAL_FIELD = /^(?:tag.*|role|type|kind|class.*|id|name|path|href|src|attributes?)$/iu;
+/**
+ * A fingerprint field every control of a kind shares, or that names one row's copy: no words a person tells a control by.
+ * A kind is read by its field's ending, however a domain qualifies it (`implicitRole`, `inputType`): every button of a
+ * page says "button", so read as words it made a page's close button the same act as an "Accept" pressed before it
+ * (`run-mwaszqeh-cc316c6d`, `../tests/kind-is-no-control-word.test.ts`).
+ */
+export const STRUCTURAL_FIELD = /^(?:tag.*|\w*role|\w*type|\w*kind|class.*|id|name|path|href|src|attributes?)$/iu;
 const LETTER = /\p{L}/u;
 
 export type AutomationStudioAttemptActTargetKeys = {
