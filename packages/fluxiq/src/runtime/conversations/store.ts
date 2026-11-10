@@ -21,6 +21,7 @@ import {
   type AutomationStudioProjectDatabaseLease,
   type AutomationStudioProjectDatabasePool,
   type AutomationStudioProjectMutationContext,
+  type AutomationStudioSchemaMigration,
   type AutomationStudioSqlExecutor
 } from "../../framework/persistence/automation/index.ts";
 import { automationStudioConversationAnswerFits, type AutomationStudioConversationAsk, type AutomationStudioConversationAskInput } from "./ask.ts";
@@ -51,11 +52,19 @@ import {
   type AutomationStudioConversationReadInput,
   type AutomationStudioConversationTurnInput
 } from "./inputs.ts";
-import type { AutomationStudioConversation, AutomationStudioConversationThread } from "./thread.ts";
+import type { AutomationStudioConversation, AutomationStudioConversationSubjectKind, AutomationStudioConversationThread } from "./thread.ts";
 import type { AutomationStudioConversationTurn } from "./turn.ts";
 
 /** The refusal a second, different answer gets. Named so a caller can recognise it without matching prose. */
 export const AUTOMATION_STUDIO_CONVERSATION_ASK_ANSWERED = "This question has already been answered.";
+
+/**
+ * The subjects a thread may be stored under: a project's own, and `panel`,
+ * which only a reserved database whose migrations allow it holds
+ * (`openReserved`, `./assistant/store/`). A project database refuses `panel`
+ * at its check constraint.
+ */
+type StoredSubjectKind = AutomationStudioConversationSubjectKind | "panel";
 
 export class AutomationStudioProjectConversationStore {
   private constructor(
@@ -75,6 +84,26 @@ export class AutomationStudioProjectConversationStore {
     }
   }
 
+  /**
+   * Opens a reserved conversation database that belongs to no project -- the
+   * panel assistant's, one per person (`./assistant/store/`) -- with the same
+   * tables, rows and change feed as a project's. `migrations` are the reserved
+   * database's own, run after the project's; they are what lets it hold a
+   * subject no project holds. `databaseId` names the database in the pool and
+   * must never be a project's id: the caller keeps the pool apart from every
+   * project's.
+   */
+  static async openReserved(input: { pool: AutomationStudioProjectDatabasePool; databaseId: string; migrations: readonly AutomationStudioSchemaMigration[] }): Promise<AutomationStudioProjectConversationStore> {
+    const lease = await input.pool.acquire(input.databaseId);
+    try {
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, ...input.migrations] }).migrate();
+      return new AutomationStudioProjectConversationStore(lease, await AutomationStudioProjectUnitOfWork.open({ pool: input.pool, projectId: input.databaseId }));
+    } catch (error) {
+      await lease.release();
+      throw error;
+    }
+  }
+
   async close(): Promise<void> {
     try {
       await this.unit.close();
@@ -88,7 +117,7 @@ export class AutomationStudioProjectConversationStore {
    * Re-opening is the same mutation replayed, so a caller that does not
    * remember whether it opened the thread may simply open it again.
    */
-  async openConversation(input: AutomationStudioConversationOpenInput): Promise<AutomationStudioConversation> {
+  async openConversation(input: Omit<AutomationStudioConversationOpenInput, "subjectKind"> & { subjectKind: StoredSubjectKind }): Promise<AutomationStudioConversation> {
     const conversationId = automationStudioConversationIdOrRefuse(input.conversationId, "conversation");
     const subjectId = automationStudioConversationIdOrRefuse(input.subjectId, "conversation subject");
     const title = automationStudioConversationShortTextOrRefuse(input.title ?? null, "Conversation title", AUTOMATION_STUDIO_CONVERSATION_TITLE_MAX);

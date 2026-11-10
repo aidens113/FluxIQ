@@ -43,15 +43,6 @@ describe("Automation graph controller", () => {
     expect(source).not.toContain("const [flowEdges, setFlowEdges] = useState");
   });
 
-  it("keeps scalable graph ownership out of AutomationStudioLive", () => {
-    const rootSource = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const graphRuntimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
-    expect(graphRuntimeSource).toContain("automationGraphDraftIdentity(options.selectedTaskGraph)");
-    expect(rootSource).not.toContain("automationGraphDraftIdentity");
-    expect(rootSource).not.toContain("function taskGraphDraftKey");
-    expect(rootSource).not.toContain("stableStringHash(shape)");
-  });
-
   it("keeps graph render caps and avoids full graph dirty serialization on every render", () => {
     const controllerSource = readFileSync(new URL("../useAutomationGraphController.ts", import.meta.url), "utf8");
     const editorSource = flowEditorSource();

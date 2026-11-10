@@ -9,7 +9,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflows,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflows, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowSubflows",
@@ -23,7 +23,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflowTargets,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSubflowTargets, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowSubflowTargets",
@@ -45,7 +45,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowSubflow",
@@ -58,7 +58,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CreateFlowSubflow",
@@ -76,7 +76,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateLegacyFlowRepresentation, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:MigrateLegacyFlowRepresentation",
@@ -96,7 +96,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:UpdateFlowSubflow",
@@ -122,7 +122,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:RenameFlowSubflow",
@@ -135,7 +135,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.duplicateFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.duplicateFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:DuplicateFlowSubflow",
@@ -150,7 +150,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.disableFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.disableFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:DisableFlowSubflow",
@@ -163,7 +163,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.archiveFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.archiveFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ArchiveFlowSubflow",
@@ -176,7 +176,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.enableFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.enableFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:EnableFlowSubflow",
@@ -189,7 +189,7 @@ export function registerSubflowEndpoints(dependencies: AutomationStudioApiDepend
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowSubflow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowSubflow, assistant: { hidden: "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows." },
     permission: "flows.write",
     classification: "destructive",
     action: "studio:DeleteFlowSubflow",

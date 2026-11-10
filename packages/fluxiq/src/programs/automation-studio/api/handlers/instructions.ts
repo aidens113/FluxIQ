@@ -1,6 +1,7 @@
 // Flow instructions, their instruction sets, and the change proposals raised
 // against them.
 
+import { getFlowChangeProposalInput, getFlowInstructionInput, getFlowInstructionReadinessInput, getFlowInstructionSetInput, listFlowChangeProposalsInput, listFlowInstructionsInput, saveFlowInstructionInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowChangeProposalRequest, type FlowExpansionSummaryRequest, type FlowInstructionRequest, type FlowInstructionSetRequest, type SaveFlowInstructionRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { saveFlowInstructionForRequest } from "../../../../framework/automation-service/service/flow-instruction-requests/index.ts";
@@ -11,7 +12,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowInstructions,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowInstructions, assistant: { input: listFlowInstructionsInput, summary: "Lists the instructions given to Flows in a project.", phrases: ["show my instructions","what instructions does this flow have"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowInstructions",
@@ -34,7 +35,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstruction,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstruction, assistant: { input: getFlowInstructionInput, summary: "Reads one instruction in full.", phrases: ["open this instruction"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowInstruction",
@@ -47,7 +48,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionSet,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionSet, assistant: { input: getFlowInstructionSetInput, summary: "Reads every instruction that applies to a Flow.", phrases: ["show all the rules for this flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowInstructionSet",
@@ -61,13 +62,13 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
       return { ok: true, payload: { instructions: await service.getFlowInstructionSet(input) } };
     }
   });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionReadiness, permission: "programs.read", classification: "read", action: "studio:GetFlowInstructionReadiness", accessLevel: "Read", resource: endpointResource.projectChild("flow", "flowId"), handler: async request => {
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowInstructionReadiness, assistant: { input: getFlowInstructionReadinessInput, summary: "Checks whether a Flow's instructions are enough to build or run it.", phrases: ["is this flow ready","are my instructions complete"], contextArgs: { projectId: "projectId", flowId: "flowId" } }, permission: "programs.read", classification: "read", action: "studio:GetFlowInstructionReadiness", accessLevel: "Read", resource: endpointResource.projectChild("flow", "flowId"), handler: async request => {
     const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
     return { ok: true, payload: await service.instructionAuthority.readiness({ projectId: String(payload.projectId ?? ""), flowId: String(payload.flowId ?? "") }) };
   } });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowInstruction,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowInstruction, assistant: { input: saveFlowInstructionInput, summary: "Adds an instruction to a Flow, or changes one that exists.", phrases: ["tell the flow to","add an instruction","change that instruction"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlowInstruction",
@@ -86,7 +87,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowChangeProposals,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowChangeProposals, assistant: { input: listFlowChangeProposalsInput, summary: "Lists the changes proposed for a project's Flows.", phrases: ["show proposed changes","what changes were suggested"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowChangeProposals",
@@ -103,7 +104,7 @@ export function registerInstructionEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowChangeProposal,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowChangeProposal, assistant: { input: getFlowChangeProposalInput, summary: "Reads one proposed change in full.", phrases: ["open this proposed change"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowChangeProposal",

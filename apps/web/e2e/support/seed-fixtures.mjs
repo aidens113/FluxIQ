@@ -8,7 +8,6 @@ const FIXTURE_MARKER = "fluxiq-e2e-fixture-v1";
 const FIXED_NOW_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
 const FIXTURE_USERNAME = "admin";
 const FIXTURE_PASSWORD = "FluxIQ-E2E-Admin!";
-const FIXTURE_SECURITY_PIN = "123456";
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
 const phase8Contract = JSON.parse(await readFile(new URL("./phase8-fixture-contract.json", import.meta.url), "utf8"));
@@ -52,6 +51,15 @@ const fixtureProfiles = Object.freeze({
   }),
 });
 const markerPath = path.join(fixtureRoot, ".fluxiq-e2e-fixture-root");
+// What the panel specs edit and list (see seedPanelFixture); declared up here because the seed runs top to bottom.
+const EDITABLE_STEPS = [
+  { label: "Open the catalog page", parameters: { url: "https://shop.example.test/catalog" } },
+  { label: "Type the search words", parameters: { text: "wooden chair" } },
+  { label: "Press the search button", parameters: { button: "primary" } },
+  { label: "Read the first result", parameters: { count: 1 } },
+];
+const MODEL_KEY_NAMES = ["Fixture key (Anthropic)", "Fixture key (DeepSeek)"];
+
 const fastStudioOnly = process.env.FLUXIQ_E2E_FAST_STUDIO === "true";
 
 await resetOwnedFixtureRoot();
@@ -59,7 +67,8 @@ await resetOwnedFixtureRoot();
 const fluxiq = FluxIQ.create({ rootDir: fixtureRoot, loadEnv: false });
 await fluxiq.setup();
 await fluxiq.programs.identityAccess.setPassword(FIXTURE_USERNAME, FIXTURE_PASSWORD);
-await fluxiq.programs.identityAccess.setPin(FIXTURE_USERNAME, FIXTURE_SECURITY_PIN);
+// No PIN: a person with one has to confirm the assistant's lasting acts another way, and the panel's specs sign in as a
+// person without one (the product asks for no PIN on normal actions).
 const studio = fluxiq.programs.automationStudio;
 const category = await studio.createProjectCategory({ name: "UI Baselines" });
 
@@ -92,6 +101,9 @@ const scale10kProject = fastStudioOnly ? smallProject : await seedProject({
   fixture: fixtureProfiles.scale10k,
 });
 
+const panelFixture = await seedPanelFixture(category.id);
+await seedModelKeys();
+
 const phase8OrdinaryProject = includesPhase8Profile("ordinary")
   ? await seedPhase8Project("ordinary", phase8Contract.profiles.ordinary, category.id)
   : null;
@@ -105,7 +117,7 @@ const manifest = {
   schemaVersion: 1,
   fixedNowMs: FIXED_NOW_MS,
   root: fixtureRoot,
-  credentials: { username: FIXTURE_USERNAME, password: FIXTURE_PASSWORD, securityPin: FIXTURE_SECURITY_PIN },
+  credentials: { username: FIXTURE_USERNAME, password: FIXTURE_PASSWORD },
   fixtureProfiles,
   projects: {
     empty: summarizeProject(emptyProject),
@@ -128,10 +140,69 @@ const manifest = {
     },
   },
   globalStress,
+  panel: panelFixture,
 };
 
 await writeFile(path.join(fixtureRoot, "fixture-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+
+/**
+ * What the panel specs assume, in a project of its own so the counts the older fixtures verify never move: Flows
+ * named "Old search" (with twelve runs, two of them failed), "Spare copy" and "Cheapest listings", and the
+ * last one's Subflow graph holds four steps a person can edit. Edits go to a Subflow graph Flow, never to a
+ * top-level one (a top-level Flow owns no steps), so the manifest names that graph Flow as `editableFlowId`.
+ */
+async function seedPanelFixture(categoryId) {
+  const seeded = await seedProject({
+    name: "Panel Fixture",
+    description: "Flows, steps and runs for the panel's browser specs.",
+    categoryId,
+    fixture: { flowCount: 3, subflowsPerFlow: 1, runsPerFlow: 12, adaptationsPerFlow: 0, instructionsPerFlow: 0, recordingCount: 0 },
+  });
+  const projectId = seeded.id;
+  const names = ["Old search", "Spare copy", "Cheapest listings"];
+  for (const [index, name] of names.entries()) {
+    const flow = await studio.getFlow(projectId, seeded.flowIds[index]);
+    await studio.saveFlow({ projectId, flow: ownedFixtureFlow(projectId, { ...flow, name }) });
+  }
+  const editableTopFlowId = seeded.flowIds[2];
+  const subflows = await studio.listFlowSubflowSummaries({ projectId, flowId: editableTopFlowId, limit: 10 });
+  const editableFlowId = subflows.subflows[0]?.graphFlowId;
+  if (!editableFlowId) throw new Error("The panel fixture's editable Flow has no Subflow graph to hold its steps.");
+  const graph = await studio.getFlow(projectId, editableFlowId);
+  await studio.saveFlow({ projectId, flow: withEditableSteps(graph) });
+  return {
+    projectId,
+    projectName: seeded.name,
+    oldSearchFlowId: seeded.flowIds[0],
+    spareFlowId: seeded.flowIds[1],
+    editableTopFlowId,
+    editableFlowId,
+    stepLabels: EDITABLE_STEPS.map((step) => step.label),
+    modelKeyNames: MODEL_KEY_NAMES,
+  };
+}
+
+function withEditableSteps(flow) {
+  const nodes = EDITABLE_STEPS.map((step, index) => ({
+    id: `node.panel.${index + 1}`,
+    definitionId: "builtin.policy.action",
+    label: step.label,
+    parameterValues: { outputId: "site.output.press", parameters: step.parameters },
+    position: { x: 0, y: index * 140 },
+  }));
+  const edges = nodes.slice(1).map((node, index) => ({ id: `edge.panel.${index + 1}`, sourceNodeId: nodes[index].id, targetNodeId: node.id }));
+  return { ...flow, nodes, edges };
+}
+
+
+/** Two model keys with made-up values: enough for Settings to list and the assistant to choose between; no provider accepts them. */
+async function seedModelKeys() {
+  const providers = ["anthropic", "deepseek"];
+  for (const [index, name] of MODEL_KEY_NAMES.entries()) {
+    await fluxiq.programs.secretKeys.createKey({ name, kind: "llm", provider: providers[index], value: `fixture-not-a-real-key-${index + 1}`, authorizationPassword: FIXTURE_PASSWORD });
+  }
+}
 
 async function seedProject({ name, description, categoryId, fixture: fixtureOptions }) {
   const project = await studio.createProject({ name, description, categoryId });

@@ -3,7 +3,7 @@
 // record is ignored.
 
 /** What a thread is about. `build` is a Flow's build. */
-export type ThreadSubjectKind = "project" | "flow" | "build" | "run";
+export type ThreadSubjectKind = "project" | "flow" | "build" | "run" | "panel";
 
 /** One thread of the list. */
 export type ChatThreadSummary = {

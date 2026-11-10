@@ -25,6 +25,7 @@ export type {
   ChatTaskResult,
   ChatTaskResultRows
 } from "./results.ts";
+export type { ChatSelection } from "./selection.ts";
 export type { ChatThreadsOptions, ChatWelcome, ChatWelcomeItem } from "./threads.ts";
 export type {
   ChatActivityPort,

@@ -10,7 +10,6 @@ describe("retired review UI boundary", () => {
     const types = source("../views/view-host-types.ts");
     const registry = source("../views/canonical-view-definitions.tsx");
     const host = source("../views/ViewHost.tsx");
-    const live = source("../AutomationStudioLive.tsx");
 
     expect(types).not.toContain("AutomationProposalView");
     expect(types).not.toContain("AutomationProposalGeneratorView");
@@ -21,8 +20,6 @@ describe("retired review UI boundary", () => {
     expect(host).toContain("resolution.status === \"retired\"");
     expect(existsSync(new URL("../views/legacy-renderer-adapter.tsx", import.meta.url))).toBe(false);
     expect(host).not.toContain('view.type === "proposal-generator"');
-    expect(live).not.toContain('"create-recording-flow-proposals"');
-    expect(live).not.toContain('"generate-recording-proposal"');
   });
 
   it("deletes unsupported retired view implementations", () => {

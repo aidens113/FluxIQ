@@ -44,7 +44,10 @@ export function askPresentation(ask: CoreAsk): AskPresentation {
     case "permission":
       return { state: "choices", choices: [{ label: "Allow", kind: "grant" }, { label: "Don't allow", kind: "deny" }] };
     case "confirm":
-      return { state: "choices", choices: [{ label: "Yes", kind: "grant" }, { label: "No", kind: "deny" }] };
+      // A confirmation may name its own two answers (options `grant` and
+      // `deny`), as the panel assistant's "Allow" / "Don't" card does;
+      // otherwise it is a plain yes-or-no question.
+      return { state: "choices", choices: [{ label: answerLabel(ask, "grant", "Yes"), kind: "grant" }, { label: answerLabel(ask, "deny", "No"), kind: "deny" }] };
     case "choice":
       return ask.options && ask.options.length > 0
         ? { state: "choices", choices: ask.options.map((option) => ({ label: option.label, kind: "choice", value: option.id })) }
@@ -54,6 +57,11 @@ export function askPresentation(ask: CoreAsk): AskPresentation {
     default:
       return { state: "elsewhere", sentence: ELSEWHERE };
   }
+}
+
+function answerLabel(ask: CoreAsk, id: "grant" | "deny", fallback: string): string {
+  const label = ask.options?.find((option) => option.id === id)?.label.trim();
+  return label ? label : fallback;
 }
 
 function answeredSentence(ask: CoreAsk): string {

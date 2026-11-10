@@ -1,5 +1,6 @@
 import type { ConversationOnScreen } from "../../automation-studio/conversation";
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
+import type { PanelConversationOptions } from "./panel-conversation-port";
 import type { ActivityTimers } from "../activity";
 
 /** What `createProgramChatTransport` needs besides the Studio's own transport. */
@@ -20,4 +21,6 @@ export type ProgramChatTransportOptions = {
   onScreen?(): ConversationOnScreen;
   /** The clock and timers the activity poll runs on; the browser's own when absent. */
   activityTimers?: ActivityTimers;
+  /** Present: this chat is the panel-wide thread, and its conversation goes to the panel assistant's endpoints. */
+  panel?: PanelConversationOptions;
 };

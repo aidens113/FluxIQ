@@ -1,6 +1,7 @@
 // Program snapshot and performance metrics, project problems, projects,
 // project categories, and the project hierarchy and change feed.
 
+import { createProjectCategoryInput, createProjectInput, deleteProjectCategoryInput, deleteProjectInput, listProjectProblemsInput, listProjectsInput, updateProjectCategoryInput, updateProjectInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { fluxiqPerformanceMetricsSnapshot } from "../../../../framework/persistence/performance-metrics/performance-metrics.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AutomationStudioListHierarchyChildrenRequest, type AutomationStudioProjectChangeFeedRequest } from "../../../../api-contracts/automation.ts";
@@ -13,6 +14,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.performanceMetrics,
+    assistant: { hidden: "These are internal timing figures for engineers, not something a person asks the assistant for." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetPerformanceMetrics",
@@ -29,6 +31,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.snapshot,
+    assistant: { hidden: "This is the whole workspace in one large dump for the screens to draw from; a person asks for projects, Flows or runs instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:Snapshot",
@@ -42,6 +45,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectProblems,
+    assistant: { input: listProjectProblemsInput, summary: "Lists what is wrong in a project.", phrases: ["what problems does my project have", "show the project problems"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectProblems",
@@ -66,6 +70,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.projects,
+    assistant: { input: listProjectsInput, summary: "Lists the projects a person can see.", phrases: ["show my projects", "what projects do I have"] },
     permission: "programs.read",
     classification: "read",
     action: "studio:Projects",
@@ -90,6 +95,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProject,
+    assistant: { input: createProjectInput, summary: "Creates a new project.", phrases: ["make a new project", "create a project called"] },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:CreateProject",
@@ -104,6 +110,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProject,
+    assistant: { input: updateProjectInput, summary: "Renames a project or changes its note or category.", phrases: ["rename this project", "change the project description"], contextArgs: { projectId: "projectId" } },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:UpdateProject",
@@ -119,6 +126,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProject,
+    assistant: { input: deleteProjectInput, summary: "Deletes a project and everything in it.", phrases: ["delete this project", "remove the project"], contextArgs: { projectId: "projectId" } },
     permission: "programs.write",
     classification: "destructive",
     action: "studio:DeleteProject",
@@ -132,6 +140,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createProjectCategory,
+    assistant: { input: createProjectCategoryInput, summary: "Creates a category for grouping projects.", phrases: ["make a new category", "add a project category"] },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:CreateProjectCategory",
@@ -145,6 +154,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateProjectCategory,
+    assistant: { input: updateProjectCategoryInput, summary: "Renames a project category.", phrases: ["rename this category"] },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:UpdateProjectCategory",
@@ -158,6 +168,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectCategory,
+    assistant: { input: deleteProjectCategoryInput, summary: "Deletes a project category; its projects stay.", phrases: ["delete this category", "remove the category"], target: { categoryId: "category" } },
     permission: "programs.write",
     classification: "destructive",
     action: "studio:DeleteProjectCategory",
@@ -171,6 +182,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reorderProjectCategories,
+    assistant: { hidden: "Categories are put in order by dragging them on the projects screen, which sends the whole new order." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:ReorderProjectCategories",
@@ -184,6 +196,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectHierarchy,
+    assistant: { hidden: "This is the tree the workspace sidebar draws, which a person never asks for in words." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProjectHierarchy",
@@ -200,6 +213,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectHierarchyChildren,
+    assistant: { hidden: "The sidebar tree asks for one branch at a time as it opens; it is not something a person asks for." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectHierarchyChildren",
@@ -225,6 +239,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectChangeFeed,
+    assistant: { hidden: "The screens poll this feed to refresh themselves; a person asks what happened in words through other reads." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectChangeFeed",
@@ -247,6 +262,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectHierarchy,
+    assistant: { hidden: "The workspace screen saves how items are filed on its own as a person drags them around." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:SaveProjectHierarchy",
@@ -269,6 +285,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.putProjectHierarchyNode,
+    assistant: { hidden: "The workspace screen saves one filing change at a time on its own as a person drags items around." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:PutProjectHierarchyNode",
@@ -290,6 +307,7 @@ export function registerProjectEndpoints(dependencies: AutomationStudioApiDepend
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProjectHierarchyNode,
+    assistant: { hidden: "The workspace screen removes a folder from the sidebar on its own; the items in it are kept." },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:DeleteProjectHierarchyNode",

@@ -16,7 +16,7 @@ export function registerTaskKnownFlowEndpoint(dependencies: AutomationStudioApiD
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getTaskKnownFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getTaskKnownFlow, assistant: { hidden: "The chat looks up an earlier Flow for a repeated task by itself; a person does not ask for it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetTaskKnownFlow",

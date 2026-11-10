@@ -12,6 +12,7 @@ export type GraphPatchOperation =
   | { op: "add_node"; node: Record<string, unknown> }
   | { op: "move_node"; nodeId: string; x: number; y: number }
   | { op: "set_node_parameters"; nodeId: string; values: JsonObject }
+  | { op: "set_node_label"; nodeId: string; label: string }
   | { op: "delete_node"; nodeId: string }
   | { op: "add_edge"; edge: Record<string, unknown> }
   | { op: "delete_edge"; edgeId: string };

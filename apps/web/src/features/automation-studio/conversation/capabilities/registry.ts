@@ -65,10 +65,7 @@ export function panelCapabilitiesByGroup(): Map<PanelCapabilityGroup, PanelCapab
  * a sentence for, not a way of making the test quiet.
  */
 export const PANEL_ENDPOINTS_WITHOUT_A_CAPABILITY: Readonly<Record<string, string>> = Object.freeze({
-  "save-flow": "The editor's whole-document save, which sends the graph as the canvas holds it. The conversation changes a Flow by saying what it should do (`flow.describe`) and having it built.",
   "apply-graph-patch": "A live drag of a node on a canvas, carrying viewport geometry a sentence cannot express.",
-  "save-project-ui-cache": "Where the panes were left on screen. Nobody asks for that in words.",
-  "delete-project-ui-cache": "Where the panes were left on screen, cleared when the workspace is reset.",
   "append-turn": "Writing in the conversation is the conversation itself, not one of the things it drives.",
   "answer-ask": "Answering a question FluxIQ asked is already the conversation's own control, on the turn that asked it.",
   "execute-client-action": "One browser action inside a live recording session, driven from the recorder at recorder speed.",
@@ -78,7 +75,6 @@ export const PANEL_ENDPOINTS_WITHOUT_A_CAPABILITY: Readonly<Record<string, strin
   "create-recording": "Opens a recording around a live browser session; the browser has to be there.",
   "finalize-recording": "Closes a recording the browser is still writing into.",
   "repair-recording-state-index": "A maintenance repair of a recording's index, reached from the recording it repairs.",
-  "delete-project-artifact": "Removes a stored object the pipeline produced. It goes with the recording that produced it, through `recording.delete`.",
   "put-project-hierarchy-node": "The project tree's own persistence. It writes a node record the widget built, batched under a replay id, rather than anything a sentence describes.",
   "delete-project-hierarchy-node": "The same tree persistence, removing a node the widget is holding.",
   "reorder-project-categories": "Dragging the project list into an order. There is nothing to say about it in words.",

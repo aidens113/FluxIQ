@@ -32,7 +32,8 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
  *   workspace, and an action on no specific resource, are denied.
  * - `SelfService`: the actions that change only the caller's own credentials,
  *   and a person's own unlock of their own keys with their own password, on
- *   `user/${fluxiq:PrincipalId}`. Not `iam:CreateUser`,
+ *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
+ *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
  *   also names browser management (covered by `OwnData` on the caller's own
  *   `gateway` browsers) and a deletion request, which has no action yet.
@@ -71,7 +72,8 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
       "iam:CreateSession",
       "iam:RevokeSession",
       "iam:UnlockVault",
-      "iam:LockVault"
+      "iam:LockVault",
+      "iam:MintPressGrant"
     ],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}"
   }

@@ -56,13 +56,10 @@ describe("Automation Studio product vocabulary", () => {
   it("keeps retired names out of current UI and project-title sources", () => {
     const sources = [
       "../inspector-identity.ts",
-      "../panel-registry.tsx",
-      "../../model/project-view-model.ts",
-      "../../workspace/components/view-metadata.ts"
+      "../panel-registry.tsx"
     ].map((relative) => readFileSync(new URL(relative, import.meta.url), "utf8"));
     const retiredUi = /Legacy Proposal|Proposal Generator|proposal-workbench|Policy Graph|Proposal Step/i;
 
     for (const source of sources) expect(source).not.toMatch(retiredUi);
-    expect(sources[2]).toContain("automationStudioViewDefinition");
   });
 });

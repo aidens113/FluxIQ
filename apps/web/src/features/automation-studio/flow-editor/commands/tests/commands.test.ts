@@ -400,6 +400,15 @@ describe("Flow draft commands", () => {
     expect(cache.get("flow", "project.one", "flow.one")).toEqual(savedFlow);
   });
 
+  it("saves without a PIN, because saving steps is a normal action", async () => {
+    const savedFlow = { flowId: "flow.one", name: "Flow", nodes: [], edges: [], updatedAt: 20, graphRevision: 2 };
+    const post = vi.fn().mockResolvedValue({ ok: true, payload: { result: { status: "applied", revisionNumber: 2 }, flow: savedFlow } });
+    const capabilities = { ...createCapabilities(post), drafts: createDraftRepository() };
+    const flow = { schemaVersion: "0.1", flowId: "flow.one", ownerKind: "project", ownerId: "project.one", name: "Flow", description: "", nodes: [], edges: [], createdAt: 1, updatedAt: 10 } as any;
+    await expect(saveAutomationFlowDraft({ scope, flow, graph, canonical: true }, capabilities)).resolves.toMatchObject({ status: "success" });
+    expect(post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+  });
+
   it("preserves recovery on conflict and on stale mutation completion", async () => {
     const conflictDrafts = createDraftRepository();
     const conflict = { ...createCapabilities(vi.fn().mockResolvedValue({ ok: true, payload: { result: { status: "conflict", currentRevision: 2 } } })), drafts: conflictDrafts };

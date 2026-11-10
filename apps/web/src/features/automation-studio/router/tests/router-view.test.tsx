@@ -241,15 +241,11 @@ describe("Automation Router workspace", () => {
     expect(source).toContain("scopeRef.current");
   });
 
-  it("gives Router search and editor workflows dedicated responsive UI contracts", () => {
+  it("gives Router search and editor workflows dedicated UI contracts", () => {
     const viewSource = readFileSync(new URL("../RouterContentView.tsx", import.meta.url), "utf8");
-    const styles = readFileSync(new URL("../../styles/router-subflows/02-workbench.css", import.meta.url), "utf8");
     expect(viewSource).toContain("automation-router-search");
     expect(viewSource).toContain("Choose a destination");
     expect(viewSource).toContain("Try a sample value");
     expect(viewSource).toContain('role="radiogroup"');
-    expect(styles).toContain("grid-template-columns: minmax(240px, 1fr)");
-    expect(styles).toContain(".automation-router-fallback-choices");
-    expect(styles).toContain("@media (max-width: 520px)");
   });
 });

@@ -10,7 +10,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouter,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouter, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRouter",
@@ -23,7 +23,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterSummary,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterSummary, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRouterSummary",
@@ -36,7 +36,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterRoutes,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterRoutes, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowRouterRoutes",
@@ -58,7 +58,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterTargetReferences,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRouterTargetReferences, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowRouterTargetReferences",
@@ -78,7 +78,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterGraphSummary,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRouterGraphSummary, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRouterGraphSummary",
@@ -99,7 +99,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRouteGroup,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRouteGroup, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlowMapRouteGroup",
@@ -118,7 +118,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRouteGroup,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRouteGroup, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "destructive",
     action: "studio:DeleteFlowMapRouteGroup",
@@ -131,7 +131,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRoute,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapRoute, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlowMapRoute",
@@ -157,7 +157,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapFallback,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlowMapFallback, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlowMapFallback",
@@ -176,7 +176,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.testFlowMapRouteCondition,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.testFlowMapRouteCondition, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:TestFlowMapRouteCondition",
@@ -190,7 +190,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.mutateFlowMapRoute,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.mutateFlowMapRoute, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:MutateFlowMapRoute",
@@ -204,7 +204,7 @@ export function registerRouterEndpoints(dependencies: AutomationStudioApiDepende
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRoute,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlowMapRoute, assistant: { hidden: "Routes send work between Subflows, which are being retired; people describe a Flow's steps instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:DeleteFlowMapRoute",

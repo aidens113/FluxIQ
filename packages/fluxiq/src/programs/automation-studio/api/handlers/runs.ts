@@ -14,12 +14,13 @@ import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type FlowSpendRequest, type FlowSpendResponse, type ReviewFlowAdaptationRequest } from "../../../../api-contracts/automation.ts";
 import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { listFlowRunsInput, getFlowRunDetailInput, getFlowSpendInput, exportFlowRunAuditInput, listFlowRunActionsInput, getFlowRunActionDetailInput, listFlowRunEventsInput, getFlowRunEventDetailInput, listFlowAdaptationsInput, getFlowAdaptationInput, reviewFlowAdaptationInput } from "@fluxiq/contracts/program-api-inputs";
 
 export function registerRunEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRuns,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRuns, assistant: { input: listFlowRunsInput, summary: "Lists the runs of a project or of one Flow, newest first.", phrases: ["show my runs", "what runs happened"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowRuns",
@@ -42,7 +43,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, assistant: { input: getFlowRunDetailInput, summary: "Shows one run's record: how it went and what it did.", phrases: ["how did that run go", "show this run"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRunDetail",
@@ -63,7 +64,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   // with no record.
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSpend,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowSpend, assistant: { input: getFlowSpendInput, summary: "Shows what a Flow has spent so far.", phrases: ["how much has this flow cost"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowSpend",
@@ -93,7 +94,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   // answers `{ audit: null }` rather than an error, as run detail does.
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportFlowRunAudit, assistant: { input: exportFlowRunAuditInput, summary: "Exports one run's full audit record.", phrases: ["export the run audit"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ExportFlowRunAudit",
@@ -107,7 +108,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunActions,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunActions, assistant: { input: listFlowRunActionsInput, summary: "Lists what one run did, step by step.", phrases: ["show the run log", "what did the run do"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowRunActions",
@@ -121,7 +122,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunActionDetail,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunActionDetail, assistant: { input: getFlowRunActionDetailInput, summary: "Shows one action of a run in full.", phrases: ["show that step of the run"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRunActionDetail",
@@ -134,7 +135,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunEvents,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowRunEvents, assistant: { input: listFlowRunEventsInput, summary: "Lists the events of one run's log.", phrases: ["show the run events"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowRunEvents",
@@ -148,7 +149,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunEventDetail,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunEventDetail, assistant: { input: getFlowRunEventDetailInput, summary: "Shows one event of a run's log in full.", phrases: ["show that event"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowRunEventDetail",
@@ -161,7 +162,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowAdaptations,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowAdaptations, assistant: { input: listFlowAdaptationsInput, summary: "Lists the changes runs proposed to Flows.", phrases: ["what changes were suggested"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowAdaptations",
@@ -183,7 +184,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowAdaptation,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowAdaptation, assistant: { input: getFlowAdaptationInput, summary: "Shows one proposed change to a Flow.", phrases: ["show that suggested change"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowAdaptation",
@@ -196,7 +197,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewFlowAdaptation, assistant: { input: reviewFlowAdaptationInput, summary: "Approves, rejects or otherwise settles a proposed change to a Flow.", phrases: ["approve that change", "reject the suggested change"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ReviewFlowAdaptation",

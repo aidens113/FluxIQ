@@ -4,7 +4,7 @@ import { IamRequestAuthorizer, type IamPolicySource } from "../../../platform/ia
 import { compileIamPolicySet, type CompiledIamPolicySet } from "../../../platform/iam/evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../../platform/iam/frn/index.ts";
 import { IAM_SERVICE_GUARDRAIL, resolveIamPredefinedPolicy } from "../../../platform/iam/predefined/index.ts";
-import type { IamAuditSink, IamPolicy, IamPolicySet, IamPrincipal, IamRequestContext, IamResource } from "../../../platform/iam/index.ts";
+import type { IamAuditSink, IamPolicy, IamPolicySet, IamPrincipal, IamRequestConsent, IamRequestContext, IamRequestVia, IamResource } from "../../../platform/iam/index.ts";
 import { rolePolicyNames } from "../../identity-access/runtime/roles.ts";
 import type { Permission } from "../../identity-access/index.ts";
 import type { ProgramApiActor } from "../api.ts";
@@ -103,8 +103,15 @@ export class ProgramIamGate {
     this.compiledSets.clear();
   }
 
-  /** Gathers and compiles the actor's policies for one call. A failure is a set that denies everything, never a throw. */
-  async open(actor: ProgramApiActor, origin?: FluxIQRequestOrigin, override?: ProgramIamActionOverride): Promise<ProgramIamRequest> {
+  /**
+   * Gathers and compiles the actor's policies for one call. A failure is a set
+   * that denies everything, never a throw. `via` names who made the call on
+   * the actor's behalf (the panel assistant); it is written to every audit row
+   * of the call and decides nothing. `consent` is how the person consented to
+   * the act a press grant confirms (a mint, or the call it confirms); it is
+   * written the same way and decides nothing either.
+   */
+  async open(actor: ProgramApiActor, origin?: FluxIQRequestOrigin, override?: ProgramIamActionOverride, via?: IamRequestVia, consent?: IamRequestConsent): Promise<ProgramIamRequest> {
     const id = programIamIdSegment(actor.userId).segment;
     const principal: IamPrincipal = { type: "user", id, workspaceId: this.workspaceId, frn: iamPrincipalFrn("user", this.workspaceId, id) };
     this.requests = (this.requests + 1) % 1000;
@@ -114,7 +121,9 @@ export class ProgramIamGate {
       origin: origin ?? (actor.channel === "paired-client" ? "extension-chat" : "panel"),
       currentTimeMs: Date.now(),
       profile: this.profile,
-      requestId
+      requestId,
+      ...(via === undefined ? {} : { via }),
+      ...(consent === undefined ? {} : { consent })
     };
     const compiled = await this.compiledFor(actor, principal, override);
     return { authorizer: new IamRequestAuthorizer(compiled, principal, context, this.sink, requestId), compiled, resolveOwners: this.profile === "service", actorUserId: actor.userId };

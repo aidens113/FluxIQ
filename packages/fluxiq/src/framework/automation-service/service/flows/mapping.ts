@@ -8,7 +8,7 @@ import {
   type AutomationStudioFlowSubflow,
   isAutomationStudioSubflowGraphMetadata
 } from "../../../../flows/authoring/model/index.ts";
-import type { AutomationStudioFlowSummary, AutomationStudioGraphNodeRecord } from "../../../persistence/automation/index.ts";
+import type { AutomationStudioFlowSummary, AutomationStudioGraphEdgeRecord, AutomationStudioGraphNodeRecord } from "../../../persistence/automation/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 
 // Shape conversions between Flow documents and their SQL projections. Shared:
@@ -30,6 +30,18 @@ export function flowNodeFromGraphRecord(node: AutomationStudioGraphNodeRecord): 
     parameterValues: node.parameterValues,
     position: { x: node.x, y: node.y },
     metadata: node.metadata
+  };
+}
+
+export function flowEdgeFromGraphRecord(edge: AutomationStudioGraphEdgeRecord): AutomationStudioFlowArtifact["edges"][number] {
+  return {
+    id: edge.edgeId,
+    sourceNodeId: edge.sourceNodeId,
+    targetNodeId: edge.targetNodeId,
+    ...(edge.sourcePortId ? { sourcePortId: edge.sourcePortId } : {}),
+    ...(edge.targetPortId ? { targetPortId: edge.targetPortId } : {}),
+    ...(edge.label ? { label: edge.label } : {}),
+    metadata: edge.metadata
   };
 }
 

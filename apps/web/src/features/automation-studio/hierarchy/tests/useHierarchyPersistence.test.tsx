@@ -24,13 +24,14 @@ describe("useHierarchyPersistence", () => {
     vi.useFakeTimers();
     Object.defineProperty(globalThis, "window", {
       configurable: true,
+      writable: true,
       value: { clearTimeout: globalThis.clearTimeout, setTimeout: globalThis.setTimeout }
     });
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: originalWindow });
   });
 
   it("contains no executable retired hierarchy-save endpoint", () => {

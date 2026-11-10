@@ -18,6 +18,7 @@ import { boundedIdentifier } from "../../../../../framework/automation-service/s
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 import { automationStudioApiTaskOutcomesWithProvenance } from "./attempt-provenance.ts";
 import { automationStudioApiTaskOutcomeSource } from "./attempt-store.ts";
+import { listProjectTasksInput, renameTaskInput, removeTaskInput } from "@fluxiq/contracts/program-api-inputs";
 
 const UNREADABLE = "What was kept of your tasks could not be read, so I cannot list them.";
 const NOT_FOUND = "I could not find that task.";
@@ -31,7 +32,7 @@ export function registerProjectTaskEndpoints(dependencies: AutomationStudioApiDe
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks, assistant: { input: listProjectTasksInput, summary: "Lists a project's tasks with their latest attempt.", phrases: ["show my tasks", "what tasks do I have"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectTasks",
@@ -55,7 +56,7 @@ export function registerProjectTaskEndpoints(dependencies: AutomationStudioApiDe
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameTask,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameTask, assistant: { input: renameTaskInput, summary: "Renames a task.", phrases: ["rename this task"], contextArgs: { projectId: "projectId" } },
     permission: "programs.write",
     classification: "authoring",
     action: "studio:RenameTask",
@@ -77,7 +78,7 @@ export function registerProjectTaskEndpoints(dependencies: AutomationStudioApiDe
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.removeTask,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.removeTask, assistant: { input: removeTaskInput, summary: "Forgets a task's notes and remembered steps; its Flow and results stay.", phrases: ["remove this task", "forget this task"], contextArgs: { projectId: "projectId" } },
     permission: "programs.write",
     // Authoring and not destructive: it forgets one memory entry and no Flow, saved part, result or attempt row (above).
     classification: "authoring",

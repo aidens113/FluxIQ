@@ -38,10 +38,15 @@ describe("global program API registry classification", () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses a destructive endpoint that carries no PIN, without reaching the handler", async () => {
+  it("refuses a destructive endpoint that carries no PIN from a person who turned a PIN on, without reaching the handler", async () => {
     const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
     const handler = vi.fn().mockResolvedValue({ ok: true });
-    const registry = new GlobalProgramApiRegistry({ identityAccess: identityAccessStub(authorizeSessionPin) });
+    // Since press grants (P9), only a person who turned a PIN on is asked for one; the rest press Allow (press-grant tests).
+    const identityAccess = {
+      authorizeSessionPin,
+      validateSession: vi.fn().mockResolvedValue({ session: { id: "session.one" }, user: { id: "user.one", pinConfigured: true }, role: { id: "admin" } })
+    } as unknown as IdentityAccessService;
+    const registry = new GlobalProgramApiRegistry({ identityAccess });
     registry.register({ programId: "automation-studio", endpoint: "delete-thing", permission: "programs.write", classification: "destructive", handler });
 
     await expect(registry.call({ programId: "automation-studio", endpoint: "delete-thing", scope: {}, actor, payload: { authSessionId: "session.one" } }))

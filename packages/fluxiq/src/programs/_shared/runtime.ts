@@ -10,6 +10,8 @@ import { currentAutomationStudioConversation } from "../../runtime/conversations
 import type { AutomationStudioSessionKeyPorts } from "../../runtime/models/secrets/index.ts";
 import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioAnthropicPanelCommandModel, automationStudioLlmModelProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver } from "../../framework/automation-service/public/index.ts";
 import { registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index.ts";
+import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../../runtime/recording/gateway-trace/wiring/index.ts";
@@ -25,6 +27,7 @@ import { registerRuntimeApi } from "../runtime-control/index.ts";
 import { type HeldKeys, registerSecretKeysApi, secretKeyPairedHolderId, secretKeyPanelHolderId, secretKeySessionDigest, SecretKeysService, type SecretKeyCredentialHolder } from "../secret-keys/index.ts";
 import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
+import { registerPressGrantApi } from "./press-grant/index.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import type { ProgramApiIamOptions } from "./iam/index.ts";
 import { ProgramJsonStore, programDataFile } from "../../framework/persistence/program-state/storage.ts";
@@ -359,12 +362,23 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   }
 
   registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway);
+  // The panel-wide assistant answers with the key chosen in Settings (by default
+  // the first key entered), released per call to the signed-in person, and
+  // spends within the per-message allowance set beside it. On the e2e fixture
+  // host alone (its marker file AND FLUXIQ_E2E_SCRIPTED_ASSISTANT) it replays a
+  // script instead; anywhere else the key binding stands.
+  if (modelProvidersEnabled) {
+    const keyModelSource = panelAssistantKeyModelSource({ resolveAssistant: () => secretKeys.modelKeys.resolveAssistant(), keyPorts: sessionKeyPorts, ...(instanceHost ? { instanceHost } : {}) });
+    panelAssistantOf(api)?.bindModelSource(panelAssistantFixtureHostModelSource({ rootDir: paths?.root, env: process.env, fallback: keyModelSource }))
+      .bindSettings({ allowanceUsd: () => secretKeys.modelKeys.assistantAllowance(), setAllowanceUsd: (usd) => secretKeys.modelKeys.setAssistantAllowance(usd) });
+  }
   registerBackgroundTasksApi(api, backgroundTasks);
   registerComputeControlApi(api, computeControl);
   registerDatabaseManagerApi(api, databaseManager, identityAccess);
   registerDeploymentSyncApi(api, deploymentSync);
   registerDocsApi(api, docs);
   registerIdentityAccessApi(api, identityAccess);
+  registerPressGrantApi(api);
   registerSecretKeysApi(api, secretKeys, identityAccess, (actor) => ({
     sessionId: actor.sessionId.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX) ? pairedUnlockOf(actor.userId, actor.sessionId) : secretKeys.holdingSession(actor.sessionId, actor.userId) ?? secretKeys.unlockedSessionFor(actor.userId),
     ...holderOf(actor.sessionId)

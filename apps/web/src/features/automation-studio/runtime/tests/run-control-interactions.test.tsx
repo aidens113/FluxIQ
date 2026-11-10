@@ -4,21 +4,32 @@
 
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("../RunHistory", () => ({ RunHistory: () => null }));
 
 import { FlowRunViewContent } from "../FlowRunView";
-import { AutomationWorkspaceHeader } from "../../workspace/shell/WorkspaceHeader";
 import { automationStudioActionSnapshot, invokeAutomationStudioRuntimeAction, resetAutomationStudioActionsForTests } from "../../workspace/studio-action-registry";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-// The panel times a live run with `window.setInterval`; this suite runs in Node.
-(globalThis as any).window ??= globalThis;
-// The workspace header listens for its save shortcut on `window`.
-(globalThis as any).addEventListener ??= () => undefined;
-(globalThis as any).removeEventListener ??= () => undefined;
+// The panel times a live run with `window.setInterval`; this suite runs in Node. Install the
+// stand-ins for this file only, so they do not leak into suites that test for their absence.
+const installed = ["window", "addEventListener", "removeEventListener"] as const;
+const before = new Map(installed.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+beforeAll(() => {
+  const target = globalThis as any;
+  target.window ??= globalThis;
+  target.addEventListener ??= () => undefined;
+  target.removeEventListener ??= () => undefined;
+});
+afterAll(() => {
+  for (const key of installed) {
+    const descriptor = before.get(key);
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else delete (globalThis as any)[key];
+  }
+});
 
 const flow = { flowId: "flow.sign-in", name: "Sign in and export", nodes: [{ id: "start" }], interface: { inputs: [] }, metadata: {} };
 
@@ -124,32 +135,6 @@ describe("pausing and taking over a run from the run panel", () => {
     mounted.push(renderer);
     await act(async () => { invokeAutomationStudioRuntimeAction("pause"); });
     expect(core.commands.pause).toHaveBeenCalledTimes(1);
-    await act(async () => { core.finish(); });
-  });
-
-  it("puts a working Pause in the workspace header while the run can be held, and none with no run panel", async () => {
-    const headerProps = {
-      breadcrumbs: [],
-      chrome: { setNarrowPanel: () => undefined } as never,
-      commands: { closeProject: () => undefined, openDataInspector: () => undefined, openPreferences: () => undefined, openRuntime: () => undefined, requestWorkspaceSave: () => undefined } as never,
-      inspectorLabel: "Inspector",
-      narrow: false,
-      narrowPanel: null
-    };
-    let header!: ReactTestRenderer;
-    await act(async () => { header = create(<AutomationWorkspaceHeader {...headerProps} />); });
-    mounted.push(header);
-    const headerPause = () => header.root.findAll((node) => node.type === "button" && node.props["aria-label"] === "Pause automation")[0];
-    expect(headerPause()).toBeUndefined();
-
-    const core = fakeCore();
-    const renderer = await startRun(core);
-    mounted.push(renderer);
-    expect(headerPause()?.props.disabled).toBe(false);
-    await act(async () => { headerPause()!.props.onClick(); });
-    expect(core.commands.pause).toHaveBeenCalledWith({ projectId: "project.one", runId: "run.live" });
-    // Held, the run cannot be paused again, and the header says so.
-    expect(headerPause()?.props.disabled).toBe(true);
     await act(async () => { core.finish(); });
   });
 

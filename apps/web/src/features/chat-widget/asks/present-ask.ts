@@ -29,17 +29,34 @@ export function presentAsk(record: unknown): ChatAskPresentation | null {
     description: presentation.description,
     consequences: presentation.consequencePhrases,
     ...(control ? { note: control } : {}),
-    actions: presentation.actions.map((action) => chatAction(ask, action)),
+    actions: presentation.actions.map((action) => chatAction(ask, action, namedAnswers(record))),
     takesText: presentation.takesText,
     ...(presentation.takesText ? { textHint: TEXT_HINT, textMax: CONVERSATION_TEXT_MAX } : {})
   };
 }
 
-function chatAction(ask: ConversationAsk, action: ConversationAnswerAction): ChatAskAction {
+/**
+ * The two answers a confirmation names for itself (options `grant` and `deny`), such as the assistant's "Allow" and
+ * "Don't allow" card. A confirmation that names none keeps the Studio's "Confirm" and "Cancel".
+ */
+function namedAnswers(record: unknown): { grant?: string; deny?: string } {
+  const options = (record as { options?: unknown } | null)?.options;
+  if (!Array.isArray(options)) return {};
+  const labelOf = (id: string): string | undefined => {
+    const found = options.find((option) => (option as { id?: unknown } | null)?.id === id) as { label?: unknown } | undefined;
+    return typeof found?.label === "string" && found.label.trim() ? found.label.trim() : undefined;
+  };
+  const grant = labelOf("grant");
+  const deny = labelOf("deny");
+  return { ...(grant ? { grant } : {}), ...(deny ? { deny } : {}) };
+}
+
+function chatAction(ask: ConversationAsk, action: ConversationAnswerAction, named: { grant?: string; deny?: string }): ChatAskAction {
   const request = conversationAnswerRequest(action.answer);
+  const nameOfConfirmation = ask.kind === "confirm" ? (request.kind === "grant" ? named.grant : request.kind === "deny" ? named.deny : undefined) : undefined;
   return {
     id: action.actionId,
-    label: action.label,
+    label: nameOfConfirmation ?? action.label,
     description: action.description,
     tone: action.variant,
     kind: request.kind,

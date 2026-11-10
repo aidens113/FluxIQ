@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { productionRunnerSnapshotInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   PRODUCTION_RUNNER_ENDPOINTS,
@@ -18,6 +19,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.program(),
+    assistant: { input: productionRunnerSnapshotInput, summary: "Lists the production targets and their runs.", phrases: ["show production runs"] },
     handler: async (request) => ({ ok: true, payload: await service.snapshot(request.scope.domainId) })
   });
   registry.register({
@@ -28,6 +30,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:RegisterTarget",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "An operator adds a production target; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as RegisterProductionTargetRequest | undefined;
       if (!payload?.id || !payload.name || !payload.type) return { ok: false, error: "id, name, and type are required" };
@@ -42,6 +45,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:Start",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "An operator starts a production run; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as StartProductionRunRequest | undefined;
       if (!payload?.name) return { ok: false, error: "name is required" };
@@ -56,6 +60,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:Advance",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "The engine moves production runs forward on its own; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as AdvanceProductionRunRequest | undefined;
       if (payload?.runId) return { ok: true, payload: await service.advanceRun(payload.runId) };
@@ -70,6 +75,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:Stop",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "An operator stops a production run; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as StopProductionRunRequest | undefined;
       if (!payload?.runId) return { ok: false, error: "runId is required" };
@@ -84,6 +90,7 @@ export function registerProductionRunnerApi(registry: GlobalProgramApiRegistry, 
     action: "ops:Cancel",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "An operator cancels a production run; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as StopProductionRunRequest | undefined;
       if (!payload?.runId) return { ok: false, error: "runId is required" };

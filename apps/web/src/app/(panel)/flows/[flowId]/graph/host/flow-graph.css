@@ -1,0 +1,63 @@
+.flow-graph {
+  display: grid;
+  gap: var(--space-md, 12px);
+  min-width: 0;
+}
+
+.flow-graph-header {
+  display: grid;
+  gap: var(--space-sm, 8px);
+}
+
+.flow-graph-header h1,
+.flow-graph-header p {
+  margin: 0;
+}
+
+.flow-graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+}
+
+.flow-graph-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: var(--space-md, 12px);
+  min-width: 0;
+}
+
+.flow-graph-canvas {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: calc(100vh - 220px);
+  min-height: 420px;
+}
+
+.flow-graph-canvas > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.flow-graph-details {
+  min-width: 0;
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+}
+
+@media (max-width: 720px) {
+  .flow-graph-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .flow-graph-canvas {
+    height: 70vh;
+    min-height: 320px;
+  }
+
+  .flow-graph-details {
+    max-height: none;
+  }
+}

@@ -7,7 +7,7 @@ import { NODE_PALETTE_FAVORITES_STORAGE_KEY, readNodePaletteFavoritesFromLocalSt
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 const originalWindow = globalThis.window;
-afterEach(() => { Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow }); });
+afterEach(() => { Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: originalWindow }); });
 
 function storageWindow(initial?: string) {
   const values = new Map<string, string>();
@@ -26,11 +26,11 @@ describe("node palette preferences", () => {
 
   it("persists deduped values and tolerates denied browser storage", () => {
     const allowed = storageWindow('["node.a","node.a","node.b"]');
-    Object.defineProperty(globalThis, "window", { configurable: true, value: allowed });
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: allowed });
     expect(readNodePaletteFavoritesFromLocalStorage()).toEqual(["node.a", "node.b"]);
     saveNodePaletteFavoritesToLocalStorage(["node.b", "node.b", "node.c"]);
     expect(allowed.localStorage.setItem).toHaveBeenCalledWith(NODE_PALETTE_FAVORITES_STORAGE_KEY, '["node.b","node.c"]');
-    Object.defineProperty(globalThis, "window", { configurable: true, value: Object.defineProperty({}, "localStorage", { get() { throw new Error("denied"); } }) });
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: Object.defineProperty({}, "localStorage", { get() { throw new Error("denied"); } }) });
     expect(readNodePaletteFavoritesFromLocalStorage()).toEqual([]);
     expect(() => saveNodePaletteFavoritesToLocalStorage(["node.a"])).not.toThrow();
   });

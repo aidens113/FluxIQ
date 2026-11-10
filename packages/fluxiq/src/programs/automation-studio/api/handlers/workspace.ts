@@ -1,6 +1,7 @@
 // The workspace overview: one project's summary plus its recording and
 // artifact listings.
 
+import { getProjectWorkspaceSummaryInput, listRecordingsInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type RecordingProjectRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
@@ -10,7 +11,7 @@ export function registerWorkspaceEndpoints(dependencies: AutomationStudioApiDepe
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectWorkspaceSummary,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectWorkspaceSummary, assistant: { input: getProjectWorkspaceSummaryInput, summary: "Shows a project's overview.", phrases: ["give me an overview of this project","what is in this project"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProjectWorkspaceSummary",
@@ -23,7 +24,7 @@ export function registerWorkspaceEndpoints(dependencies: AutomationStudioApiDepe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordings,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecordings, assistant: { input: listRecordingsInput, summary: "Lists the recordings in a project.", phrases: ["show my recordings","what have I recorded"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListRecordings",
@@ -39,7 +40,7 @@ export function registerWorkspaceEndpoints(dependencies: AutomationStudioApiDepe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectArtifacts,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectArtifacts, assistant: { hidden: "Lists the raw stored documents the editor screens keep; people ask for Flows, instructions and recordings instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectArtifacts",

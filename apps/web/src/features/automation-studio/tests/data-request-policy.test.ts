@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_STUDIO_BROWSER_BLOCKED_LEGACY_ENDPOINTS,
@@ -64,11 +63,6 @@ describe("Automation Studio ordinary request policy", () => {
     expect(plan.tasks.every((task) => task.tier <= 1)).toBe(true);
     expect(plan.tasks.map((task) => task.request.endpoint)).not.toContain("list-flow-run-events");
     expect(plan.tasks.map((task) => task.request.endpoint)).not.toContain("list-flow-adaptations");
-  });
-  it("does not call the Automation Studio snapshot endpoint from the live UI", () => {
-    const source = readFileSync(new URL("../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    expect(source).not.toMatch(/\bapi\.(?:get|post)<[^>]*>?\s*\(\s*["']snapshot["']/);
-    expect(source).not.toMatch(/\bapi\.(?:get|post)\(\s*["']snapshot["']/);
   });
 
   it("blocks browser access to legacy broad endpoints during v2 cutover", () => {

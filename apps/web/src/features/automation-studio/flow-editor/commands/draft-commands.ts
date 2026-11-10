@@ -132,7 +132,8 @@ export async function saveAutomationFlowDraft(
     scope: AutomationFlowCommandScope;
     flow: AutomationStudioFlowDocument;
     graph: AutomationEditableFlowGraph;
-    authorizationPin: string;
+    /** Sent when given. Saving steps is a normal action: the engine's `apply-graph-patch` asks for no PIN. */
+    authorizationPin?: string;
     canonical: boolean;
     signal?: AbortSignal;
   },
@@ -141,7 +142,6 @@ export async function saveAutomationFlowDraft(
   const preflight = flowCommandPreflight<{ flow: AutomationStudioFlowDocument; flowId: string }>(input.scope, capabilities, input.signal);
   if (preflight) return preflight;
   if (!input.canonical) return { status: "failure", code: "READ_ONLY_FLOW", error: "Only canonical Flows can be saved." };
-  if (input.authorizationPin.length < 4) return { status: "failure", code: "AUTHORIZATION_REQUIRED", error: "PIN is required to save a Flow." };
   const serialized = graphToTaskFlow({
     task: { taskId: input.flow.flowId, name: input.flow.name } as any,
     existingFlow: { ...input.flow, ownerKind: "flow", ownerId: input.flow.flowId } as any,
@@ -156,7 +156,7 @@ export async function saveAutomationFlowDraft(
     }>(AUTOMATION_FLOW_ENDPOINTS.applyGraphPatch, {
       projectId: input.scope.projectId,
       flowId: input.flow.flowId,
-      authorizationPin: input.authorizationPin,
+      ...(input.authorizationPin ? { authorizationPin: input.authorizationPin } : {}),
       baseRevision,
       mutationId: createGraphMutationId(input.flow.flowId),
       operations,

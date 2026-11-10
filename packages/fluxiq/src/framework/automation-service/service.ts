@@ -372,7 +372,7 @@ export class AutomationStudioService {
   private readonly evidenceMining: AutomationStudioEvidenceMining;
   private readonly proposalGeneration: AutomationStudioProposalGeneration;
   private readonly flowSubflowMigration: AutomationStudioFlowSubflowMigration;
-  private readonly flowGraphPatch: AutomationStudioFlowGraphPatch;
+  readonly flowGraphPatch: AutomationStudioFlowGraphPatch; // public: the graph endpoints call it directly
   private readonly projectArtifacts: AutomationStudioProjectArtifactStore;
   private readonly normalizationReview: AutomationStudioNormalizationReview;
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
