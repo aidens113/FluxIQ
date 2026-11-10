@@ -10,7 +10,7 @@ import type { AutomationStudioRunDatasets } from "../../datasets/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
 import type { AutomationStudioAnswerFirstPartActs, AutomationStudioProjectParts } from "../../project-parts/index.ts";
 import type { AutomationStudioProjectStore } from "../../projects/index.ts";
-import type { AutomationStudioBuildCancellation, AutomationStudioFlowBootstrapCreationPurse } from "../../flow-bootstrap-commands/index.ts";
+import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioBuildCancellation, AutomationStudioFlowBootstrapCreationPurse } from "../../flow-bootstrap-commands/index.ts";
 import type { automationStudioFlowBootstrapInstructionAuthority } from "../../instruction-authority.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioCandidateOriginalSourceBinding } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
@@ -69,4 +69,6 @@ export type AutomationStudioAnswerFirstAttemptInput = {
   parts?: Pick<AutomationStudioProjectParts, "runAs" | "shortlist" | "saveDraft"> | undefined;
   /** Set where a part may run: told this attempt's act record, so what a part's steps land is in it (`../../project-parts/known-parts.ts`). */
   partActs?: AutomationStudioAnswerFirstPartActs | undefined;
+  /** A caller's own settings for this attempt, read (`../caller/options.ts`): its task key, its check and judge, its person port and its scope. The model and budget were applied before it opened. Absent on a chat attempt, which is then exactly as it was. */
+  caller?: AutomationStudioAnswerFirstCallerOptions | undefined;
 };

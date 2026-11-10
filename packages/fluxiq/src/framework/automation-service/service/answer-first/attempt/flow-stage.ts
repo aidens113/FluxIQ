@@ -98,6 +98,7 @@ async function judged(run: AutomationStudioAnswerFirstAttemptRun, flowRun: FlowR
 function endedBy(run: AutomationStudioAnswerFirstAttemptRun): AutomationStudioAnswerFirstRoundsEnding | undefined {
   if (run.input.cancellation.signal()?.aborted === true) return "stopped_by_person";
   if (run.completion.state.achieved) return "achieved";
+  if (run.completion.state.takenUnverified) return "taken_unverified";
   return run.completion.state.purseRefused || run.input.creation.purse.refusal !== undefined ? "budget_out" : undefined;
 }
 

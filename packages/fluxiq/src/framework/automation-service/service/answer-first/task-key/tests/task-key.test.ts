@@ -36,4 +36,19 @@ describe("the task key", () => {
     expect(key({ instructionText: ASK, startLocation: "about:blank" })).toBe(none);
     expect(none).not.toBe(key({ instructionText: ASK, startLocation: SITE }));
   });
+  it("keeps the digest of words and site exactly as it was, so no task kept before this is lost", () => {
+    // The key a chat attempt has always had for these words on this site, computed by the formula before the caller's key existed.
+    expect(key({ instructionText: ASK, startLocation: SITE })).toBe("task.907f0c397f928cbf306a2cdef89ad89bbdfab63a");
+    expect(key({ instructionText: ASK, startLocation: SITE, callerKey: undefined })).toBe("task.907f0c397f928cbf306a2cdef89ad89bbdfab63a");
+    expect(key({ instructionText: ASK, startLocation: SITE, callerKey: "" })).toBe(key({ instructionText: ASK, startLocation: SITE }));
+  });
+  it("a caller's key names the task whatever its words and site, and never meets a key made from words", () => {
+    const named = key({ instructionText: ASK, startLocation: SITE, callerKey: "market.cheapest-listings:3f2a" });
+    expect(named).toMatch(/^task\.[0-9a-f]{40}$/);
+    expect(key({ instructionText: "Other words entirely", startLocation: "https://other.example.test/", callerKey: "market.cheapest-listings:3f2a" })).toBe(named);
+    expect(key({ instructionText: ASK, startLocation: SITE, callerKey: "market.cheapest-listings:9b1c" })).not.toBe(named);
+    expect(named).not.toBe(key({ instructionText: ASK, startLocation: SITE }));
+    // A caller whose key is the very words, or the words' pair, still gets its own space.
+    expect(key({ instructionText: "x", callerKey: ASK.toLowerCase() })).not.toBe(key({ instructionText: ASK }));
+  });
 });

@@ -4,11 +4,22 @@
 //   nothing at all to judge            refused, no model call
 //   rows asked for, no read run        refused, no model call: rows come only from a read
 //   the same evidence as the last no   refused, no model call: new evidence is what it needs
+//   the caller's check, where given    no model call (`./caller-check.ts`)
+//     no                               refused with its reason, as a judge's no; the digest is kept
+//     pass, judge not `always`         accepted, confirmed by the check, and the attempt is achieved
+//   judge `off` and no check           taken as it is, unverified: the rounds end, nothing confirmed
 //   one judge call
 //     yes                              accepted, and the attempt is achieved
 //     no, unsure                       refused with the screened reason; the digest is kept
 //     not judged                       refused, the digest not kept: no answer came back
 //     refused by the purse             thrown, so the round ends as a budget-out
+//
+// **The caller's confirmation** (`confirm`, from `AutomationStudioAnswerFirstCallerOptions`;
+// fluxnode-plan N4) is absent on a chat attempt, which is then exactly the judge alone. Its judge is
+// `auto` (only where there is no check), `always` (after a passing check too) or `off`. A check's
+// answer counts in `timesChecked` as a judge's does, since it is what a confirmed or refuted label
+// stands on. `off` with no check takes the result unverified (`takenUnverified`), never confirmed:
+// the shared contract lets only a confirmed result be `achieved` (`../attempt/ending.ts`).
 //
 // The summary is built from Core's records, never the model's: rows from the store, acts from
 // the act record, the page from a fresh look, and whether a person's Run again started it. `answer`
@@ -45,8 +56,10 @@ import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runt
 import type { AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
 import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioAnswerFirstCallerCheck } from "../../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
+import { automationStudioAnswerFirstCallerCheckAnswer } from "./caller-check.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused-words.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
@@ -60,6 +73,10 @@ const SAME = AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE;
 const JUDGED_NO = "answer_first.judged_no";
 const JUDGED_UNSURE = "answer_first.judged_unsure";
 const NOT_JUDGED = AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE;
+/** The caller's own check said no (header). */
+const CHECKED_NO = "answer_first.check_no";
+/** What a result the caller's check passed was checked by, in a person's words. */
+const BY_CALLER_CHECK = "The caller's own check of the result.";
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
@@ -80,7 +97,11 @@ export class AutomationStudioAnswerFirstJudgeRefusedByPurse extends Error {
 /** Where the completion stands, for the ending to read. */
 export type AutomationStudioAnswerFirstCompletionState = {
   achieved: boolean;
-  /** Judge calls that came back with an answer. */
+  /** What confirmed `achieved`, where a caller set its own confirmation: its check, or the judge. */
+  confirmedBy?: "check" | "judge" | undefined;
+  /** The caller turned the judge off and gave no check, so the latest completion was taken as it was: the rounds end, and nothing calls it confirmed (header). */
+  takenUnverified?: true | undefined;
+  /** Checks that came back with an answer: the judge's calls, and the caller's own check. */
   timesChecked: number;
   checkedWhat?: string | undefined;
   /** The latest completion's own words. */
@@ -114,6 +135,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
+  /** The caller's own confirmation (header). Absent, the judge alone, as the chat has it. */
+  confirm?: { judge: "auto" | "always" | "off"; check?: AutomationStudioAnswerFirstCallerCheck | undefined } | undefined;
   purse: Parameters<typeof automationStudioAnswerFirstKeepBackJudge>[0];
   say(title: string, text: string): void;
   seed?: Pick<AutomationStudioAnswerFirstCompletionState, "timesChecked"> | undefined;
@@ -139,6 +162,29 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         return refused(SAME, WORDS.sameEvidence(state.refused.verdict, state.refused.reason));
       }
       state.refusedAgain = 0;
+      const confirm = input.confirm;
+      if (confirm?.check) {
+        const checked = await automationStudioAnswerFirstCallerCheckAnswer(confirm.check, summary);
+        state.timesChecked += 1;
+        state.checkedWhat = BY_CALLER_CHECK;
+        if (!checked.pass) {
+          state.refused = { verdict: "no", digest, reason: checked.reason };
+          input.say("Not there yet", "The check did not pass this yet, so I am carrying on.");
+          return refused(CHECKED_NO, WORDS.judged(checked.reason));
+        }
+        if (confirm.judge !== "always") {
+          state.achieved = true;
+          state.confirmedBy = "check";
+          state.refused = undefined;
+          input.say("Checked", "It passed the check it was given.");
+          return { ok: true };
+        }
+      } else if (confirm?.judge === "off") {
+        state.takenUnverified = true;
+        state.refused = undefined;
+        input.say("Not checked", "Checking is turned off for this task, so this is the result as it is, unchecked.");
+        return { ok: true };
+      }
       automationStudioAnswerFirstKeepBackJudge(input.purse, { summaryInputTokens: Math.ceil(JSON.stringify(summary).length / CHARS_PER_TOKEN) });
       input.say("Checking the result", "Checking what I have against what you asked for.");
       const judged = await input.judge(summary);
@@ -157,6 +203,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       if (judged.verdict === "yes") {
         state.achieved = true;
         state.refused = undefined;
+        if (confirm) state.confirmedBy = "judge";
         input.say("Checked", `It is what you asked for, checked ${state.timesChecked === 1 ? "once" : `${state.timesChecked} times`}.`);
         return { ok: true };
       }
