@@ -33,6 +33,16 @@ test("a ready Flow says it too, and notes only has nothing to say", () => {
   assert.match(savedWords({ state: "notes_only", trust: "unproven", savedAtMs: NOW }, NOW), /notes only/u);
 });
 
+test("a wait is never told as a failed save, and a save that failed says why", () => {
+  const notes = { state: "notes_only", trust: "unproven", savedAtMs: NOW } as const;
+  const waiting = savedWords({ ...notes, why: "still_waiting", earlierKept: true }, NOW);
+  assert.equal(waiting, "Saved today: this attempt is not finished, and its steps are saved as a Flow when it ends. The steps saved by the earlier attempt are kept.");
+  assert.doesNotMatch(waiting, /could not|failed/u);
+  assert.match(savedWords({ ...notes, why: "still_waiting" }, NOW), /No steps are saved yet/u);
+  assert.match(savedWords({ ...notes, why: "not_assembled" }, NOW), /did not fit together as a Flow/u);
+  assert.match(savedWords({ ...notes, why: "not_saved" }, NOW), /Saving the steps failed/u);
+});
+
 test("a step nothing names is counted in words, never quoted by its position or id", () => {
   assert.match(savedWords(partly(["Step 13"]), NOW), /^Saved today: the steps, except one step that did something on the site \(it was left out of the Flow\)\./u);
   assert.match(savedWords(partly(["one step that did something on the site"]), NOW), /except one step that did something on the site \(it was/u);

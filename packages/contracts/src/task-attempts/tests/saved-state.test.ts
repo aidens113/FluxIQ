@@ -21,6 +21,14 @@ describe("parseAutomationStudioSavedState", () => {
     }
   });
 
+  it("carries why a state is notes only, and that earlier steps are kept at a wait, and refuses anything else there", () => {
+    for (const why of ["still_waiting", "not_assembled", "not_saved"]) expect(parseAutomationStudioSavedState({ ...NOTES, why })).toEqual({ ok: true, saved: { ...NOTES, why } });
+    expect(parseAutomationStudioSavedState({ ...NOTES, why: "still_waiting", earlierKept: true })).toEqual({ ok: true, saved: { ...NOTES, why: "still_waiting", earlierKept: true } });
+    expect(issuesOf({ ...NOTES, why: "broken" })).toEqual(["saved_state.invalid_why"]);
+    expect(issuesOf({ ...NOTES, why: "not_saved", earlierKept: true })).toEqual(["saved_state.invalid_earlier_kept"]);
+    expect(issuesOf({ ...PARTLY, why: "still_waiting" })).toEqual(["saved_state.unknown_key"]);
+  });
+
   it("carries the digest of saved steps where it names them, and refuses anything else there", () => {
     const stepsDigest = "a".repeat(64);
     expect(parseAutomationStudioSavedState({ ...READY, stepsDigest })).toEqual({ ok: true, saved: { ...READY, stepsDigest } });
