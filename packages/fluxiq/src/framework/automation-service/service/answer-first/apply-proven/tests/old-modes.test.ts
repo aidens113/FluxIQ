@@ -21,12 +21,10 @@ async function sourceFiles(directory: string): Promise<string[]> {
 
 describe("who reaches a proven Flow's apply", () => {
   it("only the attempt's ending, and the service reaches that only on the answer-first path", async () => {
-    const callers: string[] = [];
-    for (const file of await sourceFiles(AUTOMATION_SERVICE)) {
-      if (file.startsWith(path.join(ANSWER_FIRST, "apply-proven"))) continue;
-      const text = await readFile(file, "utf8");
-      if (text.includes("automationStudioAnswerFirstApplyProven")) callers.push(path.relative(ANSWER_FIRST, file).split(path.sep).join("/"));
-    }
+    // Read every file at once: one after another, the ~800 reads ran past the test's time under load (t885).
+    const files = (await sourceFiles(AUTOMATION_SERVICE)).filter((file) => !file.startsWith(path.join(ANSWER_FIRST, "apply-proven")));
+    const texts = await Promise.all(files.map((file) => readFile(file, "utf8")));
+    const callers = files.filter((_, index) => texts[index]!.includes("automationStudioAnswerFirstApplyProven")).map((file) => path.relative(ANSWER_FIRST, file).split(path.sep).join("/"));
     expect(callers).toEqual(["attempt/ending.ts"]);
     const service = await readFile(path.join(AUTOMATION_SERVICE, "service.ts"), "utf8");
     expect(service.match(/runAutomationStudioAnswerFirstAttempt\(/gu)).toHaveLength(1);
