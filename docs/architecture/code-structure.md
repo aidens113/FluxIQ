@@ -42,7 +42,7 @@ Every source file answers four questions, in order. The answers are its path.
 | Backend logic that only one program calls today (services, persistence, model calls, authoring) | The framework area that owns the capability, not the program. Automation Studio's backend is in `framework/automation-service`, `framework/persistence/automation`, `runtime/*`, `flows/authoring` and `api-contracts/automation` |
 | A chat interface any client can mount | `packages/ui-components` (`@fluxiq/ui-components`): plain DOM and CSS behind ports the client supplies |
 | Web UI for one feature of the panel | `apps/web/src/features/<feature>/` |
-| Next.js routes, API route handlers, the global shell that composes routes (`AuthShell`, `ProgramLauncher`, `ProgramWorkspace`, `GlobalClientGatewayPairing`, `RouteErrorSurface`), and global stylesheets | `apps/web/src/app/` — nothing feature-specific; feature logic lives under `features/`. A `tests/` folder here is safe: Next.js routes only folders containing a `page` or `route` file. |
+| Next.js routes, API route handlers, the global shell that composes routes (`AuthShell`, `ProgramWorkspace`, `GlobalClientGatewayPairing`, `RouteErrorSurface`), and global stylesheets | `apps/web/src/app/` — nothing feature-specific; feature logic lives under `features/`. A `tests/` folder here is safe: Next.js routes only folders containing a `page` or `route` file. |
 | Domain-specific behaviour | Not in this repository. See Repository Boundary in `AGENTS.md`. |
 
 The test for ownership: *if this program were deleted, would the file still

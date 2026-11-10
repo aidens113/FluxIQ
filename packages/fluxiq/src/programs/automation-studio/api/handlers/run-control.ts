@@ -18,6 +18,7 @@ import { automationStudioRunControlOf, automationStudioRunProgress, type Automat
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { pauseRuntimeSessionInput, resumeRuntimeSessionInput, getRuntimeRunControlInput } from "@fluxiq/contracts/program-api-inputs";
 
 /**
  * What every run-control endpoint answers. `live` is whether the run was
@@ -58,7 +59,7 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.pauseRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.pauseRuntimeSession, assistant: { input: pauseRuntimeSessionInput, summary: "Holds a running Flow where it is.", phrases: ["pause the run", "hold on"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:PauseRuntimeSession",
@@ -79,7 +80,7 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.resumeRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.resumeRuntimeSession, assistant: { input: resumeRuntimeSessionInput, summary: "Lets a held run carry on.", phrases: ["continue the run", "resume"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:ResumeRuntimeSession",
@@ -99,7 +100,7 @@ export function registerRunControlEndpoints(dependencies: AutomationStudioApiDep
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeRunControl,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeRunControl, assistant: { input: getRuntimeRunControlInput, summary: "Says whether a run is held and how far along it is.", phrases: ["is the run paused", "how far along is the run"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRuntimeRunControl",

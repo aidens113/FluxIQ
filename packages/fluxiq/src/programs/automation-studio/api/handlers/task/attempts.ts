@@ -16,6 +16,7 @@ import { boundedIdentifier } from "../../../../../framework/automation-service/s
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 import { automationStudioApiTaskOutcomesWithProvenance } from "./attempt-provenance.ts";
 import { automationStudioApiTaskOutcomeSource } from "./attempt-store.ts";
+import { getTaskAttemptInput, listConversationTaskAttemptsInput } from "@fluxiq/contracts/program-api-inputs";
 
 const NOT_FOUND = "I could not find that attempt.";
 const UNREADABLE = "What was kept of this task could not be read, so I cannot say how it went.";
@@ -25,7 +26,7 @@ export function registerTaskAttemptEndpoints(dependencies: AutomationStudioApiDe
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getTaskAttempt, assistant: { input: getTaskAttemptInput, summary: "Shows one attempt at a task and how it went.", phrases: ["how did that attempt go"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetTaskAttempt",
@@ -46,7 +47,7 @@ export function registerTaskAttemptEndpoints(dependencies: AutomationStudioApiDe
 
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversationTaskAttempts, assistant: { input: listConversationTaskAttemptsInput, summary: "Lists the attempts made in a chat thread.", phrases: ["what did we try in this chat"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListConversationTaskAttempts",

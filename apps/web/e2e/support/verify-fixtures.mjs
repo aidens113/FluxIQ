@@ -13,7 +13,7 @@ import {
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
 const verifierTarget = process.env.FLUXIQ_E2E_VERIFY_TARGET;
-const verifierTargets = ["base", "empty", "ordinary", "scale", "global"];
+const verifierTargets = ["base", "empty", "ordinary", "scale", "global", "panel"];
 if (!verifierTarget) {
   for (const target of verifierTargets) {
     const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
@@ -55,6 +55,9 @@ for (const profile of ["empty", "ordinary", "scale"].filter((profile) => profile
   }
 }
 
+let panelFixture = null;
+if (verifierTarget === "panel") panelFixture = await verifyPanelFixture(manifest.panel);
+
 let documentationPages = 0;
 if (verifierTarget === "global") {
   for (const kind of manifest.globalStress.databaseKinds ?? []) {
@@ -71,12 +74,31 @@ if (verifierTarget === "global") {
 const result = {
   projects: verifiedProjects,
   phase8Projects,
+  panelFixture,
   databaseRecords: manifest.globalStress.databaseRecords ?? 0,
   documentationPages,
 };
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 await projectDatabasePool.closeAll();
 await studio.close();
+
+/** What the panel specs assume: the named Flows, Old search's runs (some passed, some failed), four editable steps, two model keys. */
+async function verifyPanelFixture(panel) {
+  if (!panel?.projectId) throw new Error("Fixture verification failed for panel: it is missing from the manifest (seed again).");
+  const flows = (await studio.listProjectArtifacts(panel.projectId)).flows;
+  const names = new Map(flows.map((flow) => [flow.flowId, flow.name]));
+  assertEqual(names.get(panel.oldSearchFlowId), "Old search", "panel Old search Flow name");
+  assertEqual(names.get(panel.spareFlowId), "Spare copy", "panel Spare copy Flow name");
+  const runs = await studio.listFlowRunSummaries({ projectId: panel.projectId, flowId: panel.oldSearchFlowId, limit: 100, offset: 0 });
+  assertEqual(runs.total, 12, "panel Old search runs");
+  const statuses = new Set(runs.runs.map((run) => run.status));
+  if (!statuses.has("failed") || !statuses.has("succeeded")) throw new Error(`Fixture verification failed for panel runs: wanted passed and failed runs, found ${[...statuses].join(", ")}`);
+  const graph = await studio.getFlow(panel.projectId, panel.editableFlowId);
+  assertEqual(graph.nodes.map((node) => node.label).join("|"), panel.stepLabels.join("|"), "panel editable step labels");
+  const keys = (await fluxiq.programs.secretKeys.snapshot()).keys.filter((key) => key.kind === "llm");
+  assertEqual(keys.map((key) => key.name).sort().join("|"), [...panel.modelKeyNames].sort().join("|"), "panel model keys");
+  return { projectId: panel.projectId, runs: runs.total, runStatuses: [...statuses], editableSteps: graph.nodes.length, modelKeys: keys.length };
+}
 
 async function verifyStudioProjectFixture(name, project) {
   if (!project?.id) throw new Error(`Fixture verification failed for ${name}: project is missing from manifest`);

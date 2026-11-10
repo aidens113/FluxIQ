@@ -1,5 +1,6 @@
 // Flow listings, metadata, create/read/save, settings, and graph editing.
 
+import { createFlowInput, getFlowInput, getFlowMetadataDetailInput, listFlowsInput, updateFlowSettingsInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
 import { updateFlowSettingsForRequest, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
@@ -30,11 +31,14 @@ const savedFlowResource = endpointResource.custom(["project/flow"], (request) =>
 /** update-flow-settings names its Flow by `flowId`, else by the Flow object it carries, as the handler does. */
 const flowSettingsResource = endpointResource.custom(["project/flow"], (request) => flowOfFlowObject(request, true));
 
+/** Who made a graph edit, as the history records it; a person when not said. */
+const GRAPH_PATCH_SOURCE_BY_MADE_BY: Record<string, string> = { person: "editor_patch", repair: "fluxiq_repair", assistant: "assistant_patch" };
+
 export function registerFlowEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlows,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlows, assistant: { input: listFlowsInput, summary: "Lists the Flows in a project.", phrases: ["show my flows","what flows do I have"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlows",
@@ -47,7 +51,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSummaries,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowSummaries, assistant: { hidden: "The same list as the plain Flow listing in a lighter form for screens; people ask for the Flow list." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowSummaries",
@@ -60,7 +64,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowMetadataPage,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowMetadataPage, assistant: { hidden: "A paged listing for the Flows screen; people ask for the Flow list, which needs no paging." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowMetadataPage",
@@ -73,7 +77,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowMetadataDetail,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowMetadataDetail, assistant: { input: getFlowMetadataDetailInput, summary: "Shows a Flow's details and settings.", phrases: ["show the settings of this flow","how is this flow set up"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlowMetadataDetail",
@@ -91,7 +95,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.createFlow, assistant: { input: createFlowInput, summary: "Creates a new, empty Flow in a project.", phrases: ["make a new flow","create a flow called"], contextArgs: { projectId: "projectId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CreateFlow",
@@ -104,7 +108,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow, assistant: { input: getFlowInput, summary: "Reads a Flow in full.", phrases: ["open this flow","show me everything in this flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetFlow",
@@ -117,7 +121,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveFlow, assistant: { hidden: "Saves a whole Flow document a screen built; a person asks for one change at a time, such as a rename or an instruction." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveFlow",
@@ -131,7 +135,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings, assistant: { input: updateFlowSettingsInput, summary: "Renames a Flow or changes its description or visibility.", phrases: ["rename this flow","change the flow description","make this flow private"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:UpdateFlowSettings",
@@ -147,7 +151,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.applyGraphPatch, assistant: { hidden: "Sends the graph editor's low-level edits with revision numbers; only the editor screen calls it." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ApplyGraphPatch",
@@ -162,12 +166,13 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       if (!mutationId) return { ok: false, error: "A graph mutation ID is required." };
       return {
         ok: true,
-        payload: await service.applyFlowGraphPatch({
+        payload: await service.flowGraphPatch.applyFlowGraphPatch({
           projectId: String(payload.projectId ?? ""),
           flowId: String(payload.flowId ?? ""),
           baseRevision,
           mutationId,
-          operations: payload.operations as Parameters<AutomationStudioService["applyFlowGraphPatch"]>[0]["operations"],
+          operations: payload.operations as Parameters<AutomationStudioService["flowGraphPatch"]["applyFlowGraphPatch"]>[0]["operations"],
+          source: GRAPH_PATCH_SOURCE_BY_MADE_BY[String((payload as { madeBy?: unknown }).madeBy ?? "")] ?? "editor_patch",
           message: typeof payload.message === "string" ? payload.message : "Save Flow graph"
         })
       };
@@ -175,7 +180,7 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getGraphViewport, assistant: { hidden: "Loads the part of the Flow canvas that is on screen; only the canvas calls it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetGraphViewport",

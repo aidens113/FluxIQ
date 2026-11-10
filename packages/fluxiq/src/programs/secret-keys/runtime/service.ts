@@ -16,6 +16,7 @@ import { CredentialChanges, type OpenedRecordSeal, type SecretKeyCredentialChang
 import { CredentialUnlocks, type SecretKeyHolderVouch } from "./unlocks/index.ts";
 import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type SecretRevealAuthorizationMetadata } from "./held-keys.ts";
 import { SecretKeyStore } from "./key-store.ts";
+import { ModelKeySettings } from "./model-key-settings.ts";
 import { SealUpgrades } from "./seal-upgrades.ts";
 import { SecretValueSealer } from "./value-sealer.ts";
 
@@ -110,6 +111,12 @@ export class SecretKeysService {
   private readonly ownsHeldKeys: boolean;
   private readonly sealer: SecretValueSealer;
   private readonly store: SecretKeyStore;
+  /**
+   * Which key is the default and which the panel assistant uses: read, set, and
+   * `resolveAssistant`, the key and model to call or a plain reason there is none.
+   * It names a key and never opens it: the sealed value stays with the unlock and reveal paths.
+   */
+  readonly modelKeys: ModelKeySettings;
   private readonly upgrades: SealUpgrades;
   private readonly credentialChanges: CredentialChanges;
   /** Unlocks that outlive a process, for a holder's credential (`./unlocks/`). */
@@ -127,6 +134,7 @@ export class SecretKeysService {
     this.now = options.now ?? Date.now;
     this.sealer = new SecretValueSealer(options.passwordKdf);
     this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
+    this.modelKeys = new ModelKeySettings({ repository: options.repository, kind: SecretKeysService.storeKind, store: this.store, now: this.now });
     this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder });
     this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, onResealed: (recordId, key) => this.quietly(this.credentialUnlocks.resealed(recordId, key)) });
     this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, onCommitted: (userId, keys, actorSessionId) => this.quietly(this.credentialUnlocks.passwordChanged(userId, keys, actorSessionId)) });
@@ -134,7 +142,9 @@ export class SecretKeysService {
 
   async snapshot(): Promise<SecretKeysSnapshot> {
     await this.store.load();
+    await this.modelKeys.load();
     return {
+      modelSettings: this.modelKeys.view(),
       keys: this.store.list()
         .map(toSummary)
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.name.localeCompare(right.name))
@@ -178,6 +188,8 @@ export class SecretKeysService {
     await this.boxForProver(createdBy, record, key);
     const unlockNeeded = this.holdForActor(record, key, input.actorSession, createdBy);
     await this.store.persist(id);
+    await this.modelKeys.load();
+    await this.modelKeys.ensureDefault();
     if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
     return toSummary(record);
   }
@@ -202,10 +214,14 @@ export class SecretKeysService {
     const actorUnlock = this.liveActorUnlock(input.actorSession);
     const kept = actorUnlock?.decryptionKeys.get(existing.id);
     const keptKey = kept ? Buffer.from(kept.decryptionKey) : undefined;
+    await this.modelKeys.load();
+    const wasDefault = this.modelKeys.defaultKey()?.id === existing.id;
     this.store.set(next);
     this.heldKeys.revokeKey(existing.id);
     if (actorUnlock && keptKey) actorUnlock.decryptionKeys.set(existing.id, { keyUpdatedAtMs: next.updatedAtMs, decryptionKey: keptKey });
     await this.store.persist(existing.id);
+    if (ModelKeySettings.isModelKey(existing) && !ModelKeySettings.isModelKey(next)) await this.modelKeys.keyLost({ id: existing.id, wasDefault, phrase: next.enabled ? "is no longer a model key" : "was disabled" });
+    else if (ModelKeySettings.isModelKey(next)) await this.modelKeys.ensureDefault();
     return toSummary(next);
   }
 
@@ -265,9 +281,13 @@ export class SecretKeysService {
 
   async deleteKey(id: string): Promise<boolean> {
     await this.store.load();
+    await this.modelKeys.load();
+    const wasDefault = this.modelKeys.defaultKey()?.id === id;
     this.heldKeys.revokeKey(id);
     await this.quietly(this.credentialUnlocks.dropKey(id));
-    return this.store.delete(id);
+    const deleted = await this.store.delete(id);
+    if (deleted) await this.modelKeys.keyLost({ id, wasDefault, phrase: "was removed" });
+    return deleted;
   }
 
   async resolveSecretValue(input: RevealSecretKeyInput): Promise<string> {
@@ -479,14 +499,15 @@ export class SecretKeysService {
   }
 
   /** A snapshot for one caller: each of their own keys says whether their unlock opens it, and which of their paired clients are locked. Nobody else's key says anything. */
-  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>; lockedClients: SecretKeyLockedClient[] }> {
-    const { keys } = await this.snapshot();
+  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>; modelSettings?: SecretKeysSnapshot["modelSettings"]; lockedClients: SecretKeyLockedClient[] }> {
+    const { keys, modelSettings } = await this.snapshot();
     await this.credentialUnlocks.load();
     const held = caller.sessionId === null ? undefined : this.heldKeys.session(caller.sessionId);
     const live = held?.userId === caller.userId && held.expiresAtMs > this.now() ? held : undefined;
     const unlockTicket = caller.holderId === undefined ? undefined : this.credentialUnlocks.unlockTicketFor(caller.holderId);
     return {
       ...(unlockTicket === undefined ? {} : { unlockTicket }),
+      ...(modelSettings ? { modelSettings } : {}),
       keys: keys.map((key) => {
         if (key.createdBy !== undefined && key.createdBy !== caller.userId) return key;
         const unlocked = live?.decryptionKeys.get(key.id)?.keyUpdatedAtMs === key.updatedAtMs;

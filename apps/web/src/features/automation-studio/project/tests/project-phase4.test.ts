@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioProjectDataAccess } from "../../cache/project-data-access";
 import { createAutomationProjectCatalogStore } from "../../stores";
@@ -123,25 +122,5 @@ describe("Automation Studio Phase 4 project ownership", () => {
       "delete-project-category",
       "reorder-project-categories"
     ]);
-  });
-
-  it("keeps modal typing and project API requests outside AutomationStudioLive", () => {
-    const root = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    const gate = readFileSync(new URL("../../live/components/AutomationStudioProjectGate.tsx", import.meta.url), "utf8");
-    const runtime = readFileSync(new URL("../../live/hooks/useAutomationProjectRuntime.ts", import.meta.url), "utf8");
-    const surface = readFileSync(new URL("../ProjectCatalogSurface.tsx", import.meta.url), "utf8");
-
-    expect(gate).toContain("AutomationProjectCatalogSurface");
-    expect(runtime).toContain("useAutomationProjectLifecycle");
-    expect(runtime).toContain("openingUiRevisionRef");
-    expect(runtime).toContain("options.workspace.getPrefsRevision() !== cacheHydrationRevision");
-    expect(runtime).toContain("options.hierarchy.getUiRevision() === cacheHierarchyRevision");
-    expect(root).not.toContain("useProjectController(");
-    expect(root).not.toContain("projectActionBusy");
-    expect(root).not.toContain('"create-project"');
-    expect(root).not.toContain('"update-project"');
-    expect(root).not.toContain('"get-project-hierarchy"');
-    expect(surface).toContain('selectProjectModalUi, "project-ui"');
-    expect(surface).toContain("projectName: state.projectName");
   });
 });

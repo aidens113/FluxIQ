@@ -1,4 +1,5 @@
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import { computeControlSnapshotInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   COMPUTE_CONTROL_ENDPOINTS,
@@ -21,6 +22,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.program(),
+    assistant: { input: computeControlSnapshotInput, summary: "Lists the connected hosts, the commands waiting for them and the leases they hold.", phrases: ["show connected hosts", "which hosts are connected"] },
     handler: async () => ({ ok: true, payload: await service.snapshot() })
   });
   registry.register({
@@ -31,6 +33,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:RegisterNode",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A host announces itself to the engine; only a client process calls this." },
     handler: async (request) => {
       const payload = request.payload as RegisterComputeNodeRequest | undefined;
       if (!payload?.id || !payload.label) return { ok: false, error: "id and label are required" };
@@ -45,6 +48,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:Heartbeat",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A host reports that it is alive; only a client process calls this." },
     handler: async (request) => {
       const payload = request.payload as ComputeHeartbeatRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -59,6 +63,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:Command",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "An operator queues a command for a host; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as ComputeControlCommandRequest | undefined;
       if (!payload?.targetComputeId || !payload.kind) {
@@ -75,6 +80,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:PollCommands",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A host asks for its waiting commands; only a client process calls this." },
     handler: async (request) => {
       const payload = request.payload as PollComputeCommandsRequest | undefined;
       if (!payload?.nodeId) return { ok: false, error: "nodeId is required" };
@@ -89,6 +95,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:CompleteCommand",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A host reports a command's result; only a client process calls this." },
     handler: async (request) => {
       const payload = request.payload as CompleteComputeCommandRequest | undefined;
       if (!payload?.commandId) return { ok: false, error: "commandId is required" };
@@ -103,6 +110,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:AcquireLease",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A client process takes a lease on a host; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as AcquireComputeLeaseRequest | undefined;
       if (!payload?.computeId || !payload.holder || !payload.purpose || !payload.ttlMs) {
@@ -119,6 +127,7 @@ export function registerComputeControlApi(registry: GlobalProgramApiRegistry, se
     action: "ops:ReleaseLease",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A client process gives a host lease back; a person does not ask for that in words." },
     handler: async (request) => {
       const payload = request.payload as ReleaseComputeLeaseRequest | undefined;
       if (!payload?.leaseId) return { ok: false, error: "leaseId is required" };

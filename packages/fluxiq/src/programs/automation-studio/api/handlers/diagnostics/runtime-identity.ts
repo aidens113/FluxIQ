@@ -6,7 +6,7 @@ import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 
 /** Authenticated, read-only projection of the retained executing service's build. */
 export function registerRuntimeIdentityEndpoint({ registry, service, clientGateway }: AutomationStudioApiDependencies): void {
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runtimeBuildIdentity, permission: "programs.read", classification: "read",
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runtimeBuildIdentity, assistant: { hidden: "An internal build check run by test and release tooling, not a request a person makes." }, permission: "programs.read", classification: "read",
     action: "studio:GetRuntimeBuildIdentity",
     accessLevel: "Read",
     resource: endpointResource.workspace(),

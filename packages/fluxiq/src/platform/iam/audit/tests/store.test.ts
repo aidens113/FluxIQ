@@ -54,6 +54,33 @@ describe("IamAuditStore", () => {
     expect(back).toEqual([...rows].reverse());
   });
 
+  it("round-trips a call made on the principal's behalf, and leaves the rest without `via`", async () => {
+    const rows: IamAuditRecord[] = [
+      record({ origin: "panel", via: "assistant" }),
+      record({ category: "deny", decision: "deny", time: T0 + 20, origin: "panel", via: "assistant" }),
+      record({ time: T0 + 30, origin: "panel" })
+    ];
+    await store.write(rows);
+    const back = await store.read();
+    expect(back).toEqual([...rows].reverse());
+    expect(back[0]).not.toHaveProperty("via");
+  });
+
+  it("round-trips how a confirmed act was consented to, with or without `via`", async () => {
+    const rows: IamAuditRecord[] = [
+      record({ origin: "panel", consent: "words" }),
+      record({ time: T0 + 20, origin: "panel", via: "assistant", consent: "words" }),
+      record({ time: T0 + 30, origin: "panel", via: "assistant", consent: "press" }),
+      record({ category: "deny", decision: "deny", time: T0 + 40, origin: "panel", consent: "press" }),
+      record({ time: T0 + 50, origin: "panel", via: "assistant" })
+    ];
+    await store.write(rows);
+    const back = await store.read();
+    expect(back).toEqual([...rows].reverse());
+    expect(back[0]).not.toHaveProperty("consent");
+    expect(back.at(-1)).not.toHaveProperty("via");
+  });
+
   it("partitions allow rows by UTC day across midnight", async () => {
     await store.write([record({ time: T0 + DAY - 1 }), record({ time: T0 + DAY }), record({ time: T0 + DAY + 5 })]);
     expect(store.allowTables()).toEqual(["allow_20261001", "allow_20261002"]);

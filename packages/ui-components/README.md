@@ -46,9 +46,9 @@ instead. `@fluxiq/ui-components/testing` is the small DOM the tests build on.
 
 ## Clients
 
-- **FluxIQ's panel** uses it as its only chat: the window over Automation Studio
-  (`ChatDock`) and the chat alone at `/programs/automation-studio/chat?projectId=`,
-  both through `apps/web/src/features/chat-widget`, a thin React host that supplies
+- **FluxIQ's panel** uses it as its only chat: the assistant dock (`ChatDock`) on
+  every panel page. The chat-only route `/programs/automation-studio/chat` was
+  deleted with the old Studio workspace. It mounts it through `apps/web/src/features/chat-widget`, a thin React host that supplies
   the transport, the PIN dialog, the attachment renderers and in-panel navigation.
 - **The web extension** mounts it from its `panel/chat` adapter, which supplies
   the extension's transport and host bindings.

@@ -2,6 +2,17 @@
 
 [Back to the Automation Studio overview](../automation-studio.md)
 
+> **Retired.** The Studio workspace shell this page describes (the
+> `/programs/automation-studio` route, its hierarchy sidebar, tabs and header,
+> the home launcher, the domain pages and the global conversation prompt) has
+> been deleted. The panel is now `/`, `/flows`, `/flows/<id>`,
+> `/flows/<id>/graph` (the graph editor, under Advanced), `/runs`,
+> `/runs/<id>`, `/data`, `/security` and `/settings`, with the assistant dock
+> beside them; the old routes redirect to the matching new page. The sections
+> below that describe the shell, its layout, its cache and its performance
+> budgets are kept as history of the old design and are not current. The chat
+> section ("The Chat UI") is current.
+
 Automation Studio is a long-lived, fullscreen client workspace. The route layer
 owns routing, authentication handoff, and the generic program shell. The feature
 under `apps/web/src/features/automation-studio/` owns project navigation,
@@ -739,8 +750,8 @@ project gate, project hierarchy, ordinary active view, and preview sheet are
 the named vertical scroll owners; table wrappers may additionally own
 horizontal scrolling. At 820 CSS pixels and below the hierarchy and secondary
 regions use drawers, while 320-pixel layouts stack form and pagination actions.
-The executable matrix and golden-state procedure are documented in
-[Web Panel responsive and visual certification](../../operations/web-panel-responsive-visual-certification.md).
+The responsive and visual certification runbook for this shell was retired with
+it.
 
 Hierarchy controls use explicit role classes: `tree-row-main`,
 `tree-row-label`, `tree-row-disclosure`, `tree-row-action`, and
@@ -794,8 +805,8 @@ accepted run, input and retained-warm p95 values are at most 13.7 ms and 12.9
 ms, project-entry p95 is at most 89.1 ms, listeners and subscriptions return to
 their post-warm baselines, final DOM remains at most 2,121 nodes, retained heap
 growth remains at most 2.65 MiB, and core-interaction long tasks and critical
-accessibility violations are zero. Exact protocol, environment, and evidence
-are recorded in [Web Panel Phase 8 browser and scale certification](../../operations/web-panel-phase8-browser-scale-certification.md).
+accessibility violations are zero. The phase 8 suite and its
+certification runbook were deleted with the old shell.
 
 This evidence is not permanent permission to skip browser measurement. Changes
 to interaction scheduling, mounted-view lifecycle, fixture loading, telemetry,
@@ -822,7 +833,7 @@ It imports no Node built-in and no browser-extension API, and the structure audi
 
 Two clients mount it today:
 
-- **Core's panel** (`apps/web/src/features/chat-widget/`): a thin React host that builds a `ChatTransport` over the real Automation Studio endpoints (`createProgramChatTransport`) and an activity port, and renders at `/programs/automation-studio/chat?projectId=`. The panel's own conversation UI is separate and unchanged.
+- **Core's panel** (`apps/web/src/features/chat-widget/`): a thin React host that builds a `ChatTransport` over the real Automation Studio endpoints (`createProgramChatTransport`) and an activity port, and renders as the assistant dock on every panel page. The old chat-only route `/programs/automation-studio/chat` was deleted.
 - **The web extension** (`panel/chat` in the downstream repository): an adapter that supplies the extension's transport and host bindings. The downstream repository's extension-client document describes that adapter.
 
 The widget is not part of `fluxiq`, and `fluxiq` does not import it.

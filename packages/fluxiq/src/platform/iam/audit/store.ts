@@ -1,5 +1,5 @@
 import type { FluxIQRequestOrigin } from "@fluxiq/contracts/iam";
-import type { IamAuditRecord } from "../types.ts";
+import type { IamAuditRecord, IamRequestConsent, IamRequestVia } from "../types.ts";
 import { IamAuditDatabase } from "./database.ts";
 import { IamAuditDictionary } from "./dictionary.ts";
 import type { IamAuditQuery } from "./query.ts";
@@ -24,7 +24,11 @@ type Encoded = { values: Array<number | null>; day: number };
  * Schema (all integers; strings live once in `dict`):
  * - `dict(id INTEGER PRIMARY KEY, value TEXT UNIQUE)`: principal, action,
  *   newline-joined resource list, matched statement (`policy` or
- *   `policy` + U+001F + `sid`, `""` for implicit), origin, IP prefix, and any
+ *   `policy` + U+001F + `sid`, `""` for implicit), origin (`origin` +
+ *   U+001F + `via` when the call was made on the principal's behalf, then
+ *   U+001F + `consent` when the row confirms an act, with `via` empty for the
+ *   person's own; rows written before either existed read back unchanged),
+ *   IP prefix, and any
  *   request id that is not a plain decimal number.
  * - `allow_YYYYMMDD(t, req, p, a, r, m, o, ip)`: one table per UTC day for
  *   category `allow`; no secondary index (the principal read scans one day's
@@ -124,7 +128,7 @@ export class IamAuditStore {
       dict.idOf(record.action),
       dict.idOf(record.resources.join("\n")),
       dict.idOf(encodeMatched(record.matched)),
-      dict.idOf(record.origin),
+      dict.idOf(encodeOrigin(record)),
       record.ipPrefix === null ? null : dict.idOf(record.ipPrefix)
     ];
     if (record.category === "allow") return { values: shared, day: Math.floor(time / DAY_SECONDS) };
@@ -173,6 +177,7 @@ export class IamAuditStore {
   private decode(row: Row, category: IamAuditRecord["category"], decision: "allow" | "deny"): IamAuditRecord {
     const dict = this.dictionary;
     const resources = dict.valueOf(row.r);
+    const origin = decodeOrigin(dict.valueOf(row.o));
     return {
       category,
       time: row.t,
@@ -182,8 +187,10 @@ export class IamAuditStore {
       resources: resources === "" ? [] : resources.split("\n"),
       decision,
       matched: decodeMatched(dict.valueOf(row.m)),
-      origin: dict.valueOf(row.o) as FluxIQRequestOrigin,
-      ipPrefix: row.ip === null ? null : dict.valueOf(row.ip)
+      origin: origin.origin,
+      ipPrefix: row.ip === null ? null : dict.valueOf(row.ip),
+      ...(origin.via === undefined ? {} : { via: origin.via }),
+      ...(origin.consent === undefined ? {} : { consent: origin.consent })
     };
   }
 
@@ -220,6 +227,20 @@ function decodeMatched(text: string): IamAuditRecord["matched"] {
   const separator = text.indexOf(SID_SEPARATOR);
   if (separator < 0) return { policy: text, sid: null };
   return { policy: text.slice(0, separator), sid: text.slice(separator + 1) };
+}
+
+function encodeOrigin(record: Pick<IamAuditRecord, "origin" | "via" | "consent">): string {
+  if (record.consent !== undefined) return [record.origin, record.via ?? "", record.consent].join(SID_SEPARATOR);
+  return record.via === undefined ? record.origin : `${record.origin}${SID_SEPARATOR}${record.via}`;
+}
+
+function decodeOrigin(text: string): { origin: FluxIQRequestOrigin; via?: IamRequestVia; consent?: IamRequestConsent } {
+  const [origin = "", via = "", consent = ""] = text.split(SID_SEPARATOR);
+  return {
+    origin: origin as FluxIQRequestOrigin,
+    ...(via === "" ? {} : { via: via as IamRequestVia }),
+    ...(consent === "" ? {} : { consent: consent as IamRequestConsent })
+  };
 }
 
 function tableName(day: number): string {

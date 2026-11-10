@@ -17,6 +17,9 @@ test("pending questions offer the answers Core accepts for their kind", () => {
   assert.deepEqual(askPresentation(ask({ kind: "confirm" })), {
     state: "choices", choices: [{ label: "Yes", kind: "grant" }, { label: "No", kind: "deny" }]
   });
+  assert.deepEqual(askPresentation(ask({ kind: "confirm", options: [{ id: "grant", label: "Allow" }, { id: "deny", label: "Don't" }] })), {
+    state: "choices", choices: [{ label: "Allow", kind: "grant" }, { label: "Don't", kind: "deny" }]
+  });
   assert.deepEqual(askPresentation(ask({ kind: "choice", options: [{ id: "csv", label: "CSV" }, { id: "json", label: "JSON" }] })), {
     state: "choices", choices: [{ label: "CSV", kind: "choice", value: "csv" }, { label: "JSON", kind: "choice", value: "json" }]
   });

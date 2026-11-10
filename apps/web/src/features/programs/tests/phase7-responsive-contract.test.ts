@@ -3,13 +3,11 @@ import { describe, expect, it } from "vitest";
 import { readCssManifest } from "../css-manifest-test-helper";
 
 const globalCss = readCssManifest(new URL("../../../app/globals.css", import.meta.url));
-const studioCss = readCssManifest(new URL("../../../app/programs/automation-studio/automation-studio.css", import.meta.url));
+const studioCss = readCssManifest(new URL("../../../app/(panel)/flows/[flowId]/graph/graph.css", import.meta.url));
 
 describe("Phase 7 responsive certification contracts", () => {
   it("removes the known fixed tall-shell assumptions", () => {
     const owners = [
-      "../../automation-studio/styles/workspace/01-shell.css",
-      "../../automation-studio/styles/workspace/02-project-browser.css",
       "../../automation-studio/styles/runtime/01-launch-history.css",
       "../../automation-studio/styles/instructions-settings-adaptations-problems/01-instructions-settings.css",
       "../../../app/styles/global-programs/01-identity-and-access.css",
@@ -25,10 +23,7 @@ describe("Phase 7 responsive certification contracts", () => {
     }
   });
 
-  it("declares dynamic viewport and deliberate Studio scroll owners", () => {
-    expect(studioCss).toContain("height: calc(100dvh - 49px)");
-    expect(studioCss).toContain("These are the deliberate vertical scroll owners");
-    expect(studioCss).toContain('.automation-mounted-view[data-active="true"]:not(.graph-body):not(.timeline-body)');
+  it("declares deliberate Studio view scroll owners", () => {
     expect(studioCss).toContain("scrollbar-gutter: stable");
     expect(studioCss).toContain(".automation-timeline-view:has(> .automation-timeline-toolbar)");
     expect(studioCss).toContain("grid-template-rows: auto auto minmax(360px, 1fr)");
@@ -36,13 +31,12 @@ describe("Phase 7 responsive certification contracts", () => {
   });
 
   it("covers short height, tablet, 320px mobile, and 200-percent-equivalent reflow", () => {
-    for (const css of [globalCss, studioCss]) {
+    for (const css of [globalCss]) {
       expect(css).toContain("@media (max-height: 600px)");
       expect(css).toContain("@media (max-width: 768px)");
       expect(css).toContain("@media (max-width: 390px)");
     }
     expect(globalCss).toContain("flex-direction: column");
-    expect(studioCss).toContain("width: 100vw");
   });
 
   it("normalizes every shared control and state family", () => {

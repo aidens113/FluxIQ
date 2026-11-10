@@ -55,13 +55,13 @@ describe("Automation Instructions workspace", () => {
         removeItem: (storageKey: string) => { values.delete(storageKey); }
       }
     } as any;
-    Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: fakeWindow });
     try {
       values.set(key, "{" + " ".repeat(INSTRUCTION_DRAFT_MAX_LOCAL_STORAGE_CHARS) + "}");
       expect(readStoredInstructionDraft(key)).toBeNull();
       expect(values.has(key)).toBe(false);
     } finally {
-      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+      Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: originalWindow });
     }
   });
   it("uses named object pickers and validates scoped instruction targets", () => {
@@ -147,7 +147,7 @@ describe("Automation Instructions workspace", () => {
   it("opens a usable editor from the brand-new Flow readiness action", async () => {
     const originalWindow = globalThis.window;
     const values = new Map<string, string>();
-    Object.defineProperty(globalThis, "window", { configurable: true, value: {
+    Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: {
       clearTimeout: globalThis.clearTimeout,
       localStorage: {
         getItem: (key: string) => values.get(key) ?? null,
@@ -184,7 +184,7 @@ describe("Automation Instructions workspace", () => {
       expect(renderer!.root.findAllByProps({ role: "tab" }).find((tab) => tab.children.includes("Editor"))?.props["aria-selected"]).toBe(true);
     } finally {
       if (renderer) await act(async () => renderer!.unmount());
-      Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+      Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: originalWindow });
     }
   });
 });

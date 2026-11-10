@@ -15,6 +15,8 @@ import type { SecretValueSealer } from "./value-sealer.ts";
  */
 export class SecretKeyStore {
   private readonly records = new Map<string, SecretKeyRecord>();
+  /** Rows beside the keys that are not keys (the model-key settings), as read. */
+  private readonly otherRows = new Map<string, unknown>();
   private readonly writes = new RecordWriteQueue();
   private readonly repository: Repository | undefined;
   private readonly kind: string;
@@ -34,6 +36,11 @@ export class SecretKeyStore {
       throw error;
     });
     return this.loading;
+  }
+
+  /** A stored row that is not a key, by id, as `load` read it. */
+  otherRow(id: string): unknown {
+    return this.otherRows.get(id);
   }
 
   get(id: string): SecretKeyRecord | undefined {
@@ -82,8 +89,10 @@ export class SecretKeyStore {
     if (!this.repository) return;
     const records = await this.repository.list({});
     this.records.clear();
+    this.otherRows.clear();
     for (const item of records) {
       if (isSecretKeyRecord(item.data, this.sealer)) this.records.set(item.id, item.data);
+      else this.otherRows.set(item.id, item.data);
     }
   }
 }

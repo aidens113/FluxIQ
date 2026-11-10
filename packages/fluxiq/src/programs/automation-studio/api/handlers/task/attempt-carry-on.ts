@@ -19,6 +19,7 @@ import { automationStudioAnswerFirstCarryOn } from "../../../../../framework/aut
 import { boundedIdentifier, generateFlowBootstrapAdaptationForRequest } from "../../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 import { registerRunTaskAgainEndpoint } from "./attempt-run-again.ts";
+import { carryOnTaskAttemptInput, type CarryOnTaskAttemptInput } from "@fluxiq/contracts/program-api-inputs";
 
 const FIELDS: ReadonlySet<string> = new Set(["projectId", "attemptId", "addUsd", "authSessionId"]);
 
@@ -28,7 +29,7 @@ export function registerCarryOnTaskAttemptEndpoint(dependencies: AutomationStudi
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.carryOnTaskAttempt, assistant: { input: carryOnTaskAttemptInput, summary: "Adds budget to an attempt that ran out and carries on.", phrases: ["add budget and carry on", "keep going with more budget"], contextArgs: { projectId: "projectId" }, spends: (input: CarryOnTaskAttemptInput) => input.addUsd },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CarryOnTaskAttempt",

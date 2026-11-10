@@ -25,7 +25,7 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
   };
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectParts,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listProjectParts, assistant: { hidden: "Project parts are saved Subflows, which are being retired; people work with whole Flows instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListProjectParts",
@@ -38,7 +38,7 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectPart,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProjectPart, assistant: { hidden: "Project parts are saved Subflows, which are being retired; people work with whole Flows instead." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProjectPart",
@@ -51,7 +51,7 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectPart,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.saveProjectPart, assistant: { hidden: "Project parts are saved Subflows, which are being retired; people work with whole Flows instead." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:SaveProjectPart",
@@ -64,7 +64,7 @@ export function registerProjectPartEndpoints(dependencies: AutomationStudioApiDe
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runProjectPart,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.runProjectPart, assistant: { hidden: "Project parts are saved Subflows, which are being retired; people work with whole Flows instead." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:RunProjectPart",

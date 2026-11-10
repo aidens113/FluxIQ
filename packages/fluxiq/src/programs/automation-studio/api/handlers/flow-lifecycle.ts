@@ -1,6 +1,7 @@
 // What happens to a flow after it is authored: compilation, conversion,
 // deletion, publication, node catalogues, migration, and legacy retirement.
 
+import { deleteFlowInput, deprecateFlowPublicationInput, inspectFlowDependenciesInput, listFlowPublicationsInput, publishFlowInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowIdProjectRequest, type FlowProjectRequest, type PublishFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
@@ -9,7 +10,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.compileFlowSource,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.compileFlowSource, assistant: { hidden: "Sent by the code editor when it saves a Flow's source text; a person edits the Flow in words or steps." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CompileFlowSource",
@@ -22,7 +23,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.convertFlowToVisual,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.convertFlowToVisual, assistant: { hidden: "A one-time conversion button in the code editor; not something a person asks the assistant for." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ConvertFlowToVisual",
@@ -35,7 +36,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteFlow, assistant: { input: deleteFlowInput, summary: "Deletes a Flow.", phrases: ["delete this flow","remove the flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "destructive",
     action: "studio:DeleteFlow",
@@ -48,7 +49,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.publishFlow,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.publishFlow, assistant: { input: publishFlowInput, summary: "Publishes a Flow as a named version.", phrases: ["publish this flow","release a new version of the flow"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:PublishFlow",
@@ -61,7 +62,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowPublications,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listFlowPublications, assistant: { input: listFlowPublicationsInput, summary: "Lists the versions a Flow was published as.", phrases: ["show published versions","what versions of this flow exist"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListFlowPublications",
@@ -71,7 +72,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deprecateFlowPublication,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deprecateFlowPublication, assistant: { input: deprecateFlowPublicationInput, summary: "Marks a published version as no longer to be used.", phrases: ["retire this version","stop using this published version"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:DeprecateFlowPublication",
@@ -81,7 +82,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowDependencies,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowDependencies, assistant: { input: inspectFlowDependenciesInput, summary: "Shows what a Flow uses and what uses it.", phrases: ["what depends on this flow","what does this flow use"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:InspectFlowDependencies",
@@ -91,7 +92,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPublishedFlowNodes,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPublishedFlowNodes, assistant: { hidden: "Fills the editor's palette of published Flows to drop onto a canvas; a person does not ask for it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListPublishedFlowNodes",
@@ -104,7 +105,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNativeNodeDefinitions,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNativeNodeDefinitions, assistant: { hidden: "Fills the editor's palette of step types; a person does not ask for it." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListNativeNodeDefinitions",
@@ -117,7 +118,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowMigration,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectFlowMigration, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." },
     permission: "flows.write",
     classification: "read",
     action: "studio:InspectFlowMigration",
@@ -130,7 +131,7 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateFlows,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.migrateFlows, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:MigrateFlows",
@@ -141,12 +142,12 @@ export function registerFlowLifecycleEndpoints(dependencies: AutomationStudioApi
       return { ok: true, payload: { migration: await service.migrateFlows(String(payload.projectId ?? "")) } };
     }
   });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectLegacyRetirement, permission: "programs.read", classification: "read", action: "studio:InspectLegacyRetirement", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.inspectLegacyRetirement(String(payload.projectId ?? "")) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.recordLegacyRetirementEvidence, permission: "flows.write", classification: "authoring", action: "studio:RecordLegacyRetirementEvidence", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.recordLegacyRetirementEvidence({ projectId: String(payload.projectId ?? ""), ...(Array.isArray(payload.importerEvidence) ? { importerEvidence: payload.importerEvidence as any } : {}), ...(Array.isArray(payload.intentionallyDeferred) ? { intentionallyDeferred: payload.intentionallyDeferred as any } : {}), ...(typeof payload.importerCoverageAcknowledged === "boolean" ? { importerCoverageAcknowledged: payload.importerCoverageAcknowledged } : {}) }) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportLegacyProject, permission: "programs.read", classification: "read", action: "studio:ExportLegacyProject", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { backup: await service.exportLegacyProject(String(payload.projectId ?? "")) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.verifyLegacyBackup, permission: "flows.write", classification: "authoring", action: "studio:VerifyLegacyBackup", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.verifyLegacyBackup(String(payload.projectId ?? ""), String(payload.backupId ?? "")) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.sealLegacyWrites, permission: "flows.write", classification: "destructive", action: "studio:SealLegacyWrites", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.sealLegacyWrites({ projectId: String(payload.projectId ?? ""), expectedSchemaVersion: String(payload.expectedSchemaVersion ?? "") }) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listLegacyRetirementAudit, permission: "programs.read", classification: "read", action: "studio:ListLegacyRetirementAudit", accessLevel: "List", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { events: await service.listLegacyRetirementAudit(String(payload.projectId ?? "")) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.planFlowMigrationRollback, permission: "programs.read", classification: "read", action: "studio:PlanFlowMigrationRollback", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { plan: await service.planFlowMigrationRollback(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
-  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.rollbackFlowMigration, permission: "flows.write", classification: "destructive", action: "studio:RollbackFlowMigration", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { plan: await service.rollbackFlowMigration(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.inspectLegacyRetirement, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "programs.read", classification: "read", action: "studio:InspectLegacyRetirement", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.inspectLegacyRetirement(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.recordLegacyRetirementEvidence, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "flows.write", classification: "authoring", action: "studio:RecordLegacyRetirementEvidence", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.recordLegacyRetirementEvidence({ projectId: String(payload.projectId ?? ""), ...(Array.isArray(payload.importerEvidence) ? { importerEvidence: payload.importerEvidence as any } : {}), ...(Array.isArray(payload.intentionallyDeferred) ? { intentionallyDeferred: payload.intentionallyDeferred as any } : {}), ...(typeof payload.importerCoverageAcknowledged === "boolean" ? { importerCoverageAcknowledged: payload.importerCoverageAcknowledged } : {}) }) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.exportLegacyProject, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "programs.read", classification: "read", action: "studio:ExportLegacyProject", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { backup: await service.exportLegacyProject(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.verifyLegacyBackup, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "flows.write", classification: "authoring", action: "studio:VerifyLegacyBackup", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.verifyLegacyBackup(String(payload.projectId ?? ""), String(payload.backupId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.sealLegacyWrites, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "flows.write", classification: "destructive", action: "studio:SealLegacyWrites", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { report: await service.sealLegacyWrites({ projectId: String(payload.projectId ?? ""), expectedSchemaVersion: String(payload.expectedSchemaVersion ?? "") }) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.listLegacyRetirementAudit, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "programs.read", classification: "read", action: "studio:ListLegacyRetirementAudit", accessLevel: "List", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { events: await service.listLegacyRetirementAudit(String(payload.projectId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.planFlowMigrationRollback, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "programs.read", classification: "read", action: "studio:PlanFlowMigrationRollback", accessLevel: "Read", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { plan: await service.planFlowMigrationRollback(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
+  registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.rollbackFlowMigration, assistant: { hidden: "Part of moving a project off its old storage format, which a migration tool does and a person does not ask for in words." }, permission: "flows.write", classification: "destructive", action: "studio:RollbackFlowMigration", accessLevel: "Write", resource: endpointResource.project(), handler: async (request) => { const payload = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {}; return { ok: true, payload: { plan: await service.rollbackFlowMigration(String(payload.projectId ?? ""), String(payload.migrationId ?? "")) } }; } });
 }

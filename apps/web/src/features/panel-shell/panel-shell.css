@@ -1,0 +1,118 @@
+/* The panel's frame. Wide: rail | page | assistant, under a top bar.
+   Phone (up to 720px): the rail is a bottom tab bar and the assistant a
+   full-height sheet behind a round button. Nothing here may scroll the page sideways. */
+
+.panel-shell {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr) 360px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "top top top" "rail page dock";
+  height: 100vh;
+  height: 100dvh;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.panel-topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.panel-brand { font-weight: 700; }
+.panel-project { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.panel-project select { min-width: 0; max-width: 240px; min-height: 36px; }
+.panel-topbar-facts { display: flex; align-items: center; gap: 16px; margin-left: auto; white-space: nowrap; }
+.panel-engine { display: inline-flex; align-items: center; gap: 6px; }
+.panel-engine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-subtle); }
+.panel-engine[data-tone="ok"] .panel-engine-dot { background: var(--color-success); }
+.panel-engine[data-tone="warn"] .panel-engine-dot { background: var(--color-warning); }
+
+.panel-rail {
+  grid-area: rail;
+  padding: 8px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+.panel-rail ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.panel-rail-link {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.panel-rail-link:hover { background: var(--color-selected-surface); }
+.panel-rail-link:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.panel-rail-link[aria-current="page"] { background: var(--color-selected-surface); color: var(--color-primary); font-weight: 650; }
+
+.panel-page { grid-area: page; min-width: 0; padding: 24px; overflow: auto; }
+.panel-page h1 { margin: 0 0 8px; }
+
+.panel-dock {
+  grid-area: dock;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+}
+.panel-dock-bar { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-border); }
+.panel-dock-where { color: var(--color-text-muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-dock-body { flex: 1 1 auto; min-height: 0; min-width: 0; }
+.panel-dock-close { display: none; min-height: 36px; }
+.panel-dock-button { display: none; }
+
+@media (max-width: 720px) {
+  .panel-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas: "top" "page" "rail";
+  }
+  .panel-topbar { flex-wrap: wrap; gap: 8px; padding: 8px 16px; }
+  .panel-topbar-facts { margin-left: 0; gap: 12px; }
+  .panel-page { padding: 16px; }
+
+  .panel-rail { border-right: 0; border-top: 1px solid var(--color-border); padding: 0; overflow: hidden; }
+  .panel-rail ul { flex-direction: row; gap: 0; }
+  .panel-rail li { flex: 1 1 0; min-width: 0; }
+  .panel-rail-link { justify-content: center; min-height: 48px; padding: 0 2px; border-radius: 0; font-size: 12px; }
+
+  .panel-dock {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    border-left: 0;
+    visibility: hidden;
+  }
+  .panel-dock[data-open="true"] { visibility: visible; }
+  .panel-dock-close { display: inline-flex; align-items: center; }
+  .panel-dock-button {
+    position: fixed;
+    right: 16px;
+    bottom: 72px;
+    z-index: 70;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: var(--color-text-inverse);
+    font-weight: 700;
+    box-shadow: var(--shadow-popover);
+  }
+  .panel-dock-button[aria-expanded="true"] { display: none; }
+}

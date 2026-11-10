@@ -2,9 +2,28 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 
+/** What the panel specs assume, seeded by `seed-fixtures.mjs` (`seedPanelFixture`). */
+export type PanelFixture = {
+  projectId: string;
+  projectName: string;
+  /** The Flow named "Old search", with twelve runs (two failed). */
+  oldSearchFlowId: string;
+  /** The Flow named "Spare copy": what "delete it" deletes once the person allows it. */
+  spareFlowId: string;
+  /** The top-level Flow named "Cheapest listings" and the Subflow graph Flow that holds its four editable steps. */
+  editableTopFlowId: string;
+  editableFlowId: string;
+  /** The four steps' words, in order. */
+  stepLabels: string[];
+  modelKeyNames: string[];
+};
+
 export type UiFixtureManifest = {
   schemaVersion: 1;
-  credentials: { username: string; password: string; securityPin: string };
+  /** The marked fixture directory the seed wrote. */
+  root: string;
+  panel?: PanelFixture;
+  credentials: { username: string; password: string };
   fixtureProfiles?: Record<string, Record<string, number>>;
   projects: {
     empty: FixtureProject;

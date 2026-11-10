@@ -13,6 +13,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automatio
 import { automationStudioWithWholeAttemptInputs } from "../../../../framework/automation-service/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
+import { listRuntimeSessionsInput, getRuntimeSessionInput } from "@fluxiq/contracts/program-api-inputs";
 
 /** The most a listing answer may serialise to; a page of summaries is a few kilobytes. */
 export const AUTOMATION_STUDIO_RUNTIME_SESSION_LISTING_MAX_BYTES = 4 * 1024 * 1024;
@@ -21,7 +22,7 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
   const { registry, service } = dependencies;
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRuntimeSessions, assistant: { input: listRuntimeSessionsInput, summary: "Lists a project's runs with their status, newest first.", phrases: ["what is running", "list the runs"], contextArgs: { projectId: "projectId", flowId: "flowId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListRuntimeSessions",
@@ -44,7 +45,7 @@ export function registerRuntimeSessionEndpoints(dependencies: AutomationStudioAp
   });
   registry.register({
     programId: "automation-studio",
-    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeSession,
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRuntimeSession, assistant: { input: getRuntimeSessionInput, summary: "Shows one run with its steps and what it found.", phrases: ["show that run", "what happened in the run"], contextArgs: { projectId: "projectId", runId: "runId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRuntimeSession",

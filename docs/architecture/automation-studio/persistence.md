@@ -768,26 +768,36 @@ Canonical Flow publication is exposed through `publish-flow`,
 `inspect-flow-dependencies`. Compatibility endpoints for learned task models
 and replay results remain available for non-UI/runtime work.
 
-### Which endpoints ask for the operator's PIN
+### Which endpoints need a confirmation
 
-The operator's PIN guards **destruction, not authorship**. Creating or editing
+A confirmation guards **destruction, not authorship**. Creating or editing
 user content is authorized by the caller's permission alone, so an unattended
 loop can build and edit Flows with nobody at the keyboard; removing persisted
-user data, or taking an irreversible action outside FluxIQ, additionally
-requires the PIN of a signed-in operator session.
+user data, or taking an irreversible action outside FluxIQ, additionally needs
+the person's confirmation. By default that is a press grant, not a PIN (user
+rule, 2026-11-03: no PIN on normal actions, never in the middle of a Flow; at
+most a PIN for a dangerous action the first time a person does it).
+
+A **press grant** is one use, lasts 60 seconds, and is bound to the session,
+the person, the endpoint and the exact payload (`PressGrantStore`,
+`packages/fluxiq/src/programs/_shared/press-grant/`). Only the person's own press
+mints one: `identity-access/mint-press-grant` from the panel, or, for the panel
+assistant, when the person's own words clearly asked for the action or they
+pressed Allow on its card. The assistant cannot mint one for itself, and a grant
+never stands in for a PIN: a person who turned a PIN on still gives it.
 
 The rule is declared, not remembered. Every registration passes a required
 `classification` to `GlobalProgramApiRegistry.register()`
 (`packages/fluxiq/src/programs/_shared/api.ts`), so a new endpoint cannot reach
 the wire unclassified — omitting the field is a compile error. `registry.call()`
 enforces it in one place, immediately after the permission check and before the
-handler runs; no handler takes a PIN of its own.
+handler runs (`confirmDestructiveCall`); no handler takes a PIN of its own.
 
 | Classification | What it means | What the registry adds |
 | --- | --- | --- |
 | `read` | Persists nothing. | Nothing. |
 | `authoring` | Creates or edits user content, or withdraws access without removing persisted data. | Nothing. |
-| `destructive` | Removes persisted user data, or acts irreversibly outside FluxIQ. | The operator's session PIN. |
+| `destructive` | Removes persisted user data, or acts irreversibly outside FluxIQ. | A press grant, or the person's PIN if they turned one on. |
 | `program-gated` | The owning program runs its own, stronger check inside the handler — password, PIN and authenticator code, or a time-boxed grant. | Nothing, so that one regime stays the single rule. |
 | `destructive-ungated` | Destructive, and nothing checks a credential. A declared gap, listed below. | Nothing. |
 
@@ -802,14 +812,15 @@ in the operator's real browser. The exact list is pinned by
 `packages/fluxiq/src/programs/tests/endpoint-classification.test.ts`, so moving
 an endpoint in or out of it fails a named test rather than passing silently.
 
-A gated endpoint needs a caller that asks for the PIN. In the panel that caller
-is `AuthorizationDialog`
-(`apps/web/src/features/programs/components/overlays`), used by the client
-gateway and by the Data window's dataset delete. A caller that posts a
-`destructive` endpoint without `authorizationPin` gets
-`{ ok: false, error: "PIN is required for this action" }` and the handler never
-runs, so a missing prompt shows up as a refused action rather than an unguarded
-deletion.
+A gated endpoint needs a caller that obtains the confirmation. In the panel the
+person's press of the action mints the grant and the call carries it as
+`pressGrant`; a person who turned a PIN on is asked for it instead and the call
+carries `authorizationPin`. A caller that posts a `destructive` endpoint with
+neither gets a plain refusal ("Press Allow to confirm this." or, for a person
+with a PIN, `PIN is required for this action`) and the handler never runs, so a
+missing confirmation shows up as a refused action rather than an unguarded
+deletion. A grant that was already used, ran out, or was for something else is
+refused the same way.
 
 Three deletions are deliberately **not** gated, because they are how a Flow is
 edited rather than removed: `delete-flow-map-route` and the delete action of
@@ -837,9 +848,9 @@ convenient one:
 - `delete-project-hierarchy-node` is an **autosave** path.
   `apps/web/src/features/automation-studio/hierarchy/useHierarchyPersistence.ts`
   posts it while the operator drags items around the workspace, so gating it
-  would put a PIN prompt in the middle of ordinary editing. A prompt that
-  appears during routine work trains people to enter their PIN reflexively,
-  which weakens it everywhere it actually matters — including in front of the
+  would put a confirmation in the middle of ordinary editing. A prompt that
+  appears during routine work trains people to answer it reflexively, which
+  weakens it everywhere it actually matters — including in front of the
   thirteen endpoints above.
 - Gating the bulk `save-project-hierarchy` while leaving the granular delete
   open would be a **bypass**, because the granular path can remove the same
@@ -864,9 +875,8 @@ They require the caller's `flows.write` permission and are `authoring`.
 None of the program endpoints is `destructive-ungated` any more (t809).
 `database-manager/run-migration` (runs or reverses a storage migration) and
 `deployment-sync/sync` and `deployment-sync/rollback` (perform and reverse a
-deployment) are `destructive`: the registry asks for the operator's session PIN.
-A caller must send `authorizationPin`, and the web route must stamp
-`authSessionId`: `withProgramAuthSession` (`packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`)
+deployment) are `destructive`: the registry asks for the confirmation described
+above. The web route must stamp `authSessionId`, which the grant is bound to: `withProgramAuthSession` (`packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`)
 stamps it for `automation-studio`, `identity-access`, `database-manager`, and
 `secret-keys`, and must also list `deployment-sync`.
 
@@ -889,10 +899,11 @@ The recommendation is to route the three `framework/setup` actions and
 them behind the program API so the classification covers them. Until then they
 remain the widest ungated write surface in the product.
 
-A PIN cannot be produced by a cold process: `authorizeSessionPin` verifies
-against a credential unlocked in the current process by a password sign-in, and
-no PIN verifier is persisted. That is the mechanical reason `destructive` is the
-boundary an unattended loop cannot cross on its own.
+Neither a PIN nor a press grant can be produced by a cold process. A PIN
+verifies only against a credential unlocked in the current process by a password
+sign-in, and no PIN verifier is persisted; a grant exists only in memory and
+only a signed-in person's own press mints one. That is the mechanical reason
+`destructive` is the boundary an unattended loop cannot cross on its own.
 
 Publication snapshots are stored with the Flow document and project Flow files.
 Each snapshot holds the immutable interface, dependency digests,

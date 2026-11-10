@@ -28,10 +28,13 @@ function datasetService(overrides: Record<string, unknown> = {}) {
     ...overrides
   };
   const assertProjectDomainAccess = vi.fn().mockResolvedValue(undefined);
-  // Deleting a run's captured rows is destructive, so the registry takes the
-  // operator's PIN before the handler runs. Every other dataset endpoint reads.
+  // Deleting a run's captured rows is destructive, so the registry takes a
+  // confirmation before the handler runs: here the PIN of a writer who turned
+  // one on (a person without one presses Allow; press-grant tests). Every
+  // other dataset endpoint reads.
   const authorizeSessionPin = vi.fn().mockResolvedValue({ authorized: true });
-  const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin } as never });
+  const validateSession = vi.fn(async (sessionId: string) => ({ session: { id: sessionId }, user: { id: sessionId.replace(/^session\./u, ""), pinConfigured: true }, role: { id: "admin" } }));
+  const registry = new GlobalProgramApiRegistry({ identityAccess: { authorizeSessionPin, validateSession } as never });
   registerAutomationStudioApi(registry, { assertProjectDomainAccess, runDatasets } as unknown as AutomationStudioService);
   return { registry, runDatasets, assertProjectDomainAccess, authorizeSessionPin };
 }

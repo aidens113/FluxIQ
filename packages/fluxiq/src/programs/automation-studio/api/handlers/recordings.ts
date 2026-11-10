@@ -1,6 +1,7 @@
 // The recording pipeline end to end: capture and entry append, finalization,
 // proposals, normalization, and the evidence and policy work mined from it.
 
+import { deleteRecordingInput, deleteRecordingsInput, generateRecordingProposalInput, getProposalInput, getRecordingCapturePolicyInput, getRecordingInput, reviewRecordingFlowProposalInput, updateRecordingInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingEntryRequest, type AppendRecordingMarkerRequest, type AppendRecordingNoteRequest, type ApprovePolicyProposalRequest, type CreateRecordingRequest, type DeleteRecordingRequest, type DeleteRecordingsRequest, type FinalizeRecordingRequest, type GetProposalRequest, type GetRecordingCapturePolicyRequest, type GetRecordingCapturePolicyResponse, type GetRecordingEntryStateRequest, type GetStateSnapshotRequest, type LearnTaskModelRequest, type MineRecordingEvidenceRequest, type NormalizeRecordingRequest, type NormalizedTimelineProjectRequest, type ProcessFinalizedRecordingRequest, type ProposePolicyFromModelRequest, type RecordingIdProjectRequest, type RecordingProjectRequest, type RemoveRecordingEntryRequest, type RemoveRecordingEntryResponse, type RepairRecordingStateIndexRequest, type ReplayPolicyAgainstRecordingRequest, type UpdateRecordingRequest } from "../../../../api-contracts/automation.ts";
 import { AUTOMATION_STUDIO_DEFAULT_RECORDING_CAPTURE_POLICY } from "@fluxiq/contracts/automation";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
@@ -27,6 +28,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingCapturePolicy,
+    assistant: { input: getRecordingCapturePolicyInput, summary: "Shows what a recording is allowed to capture.", phrases: ["what can a recording capture", "show the recording rules"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRecordingCapturePolicy",
@@ -43,6 +45,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecording,
+    assistant: { input: getRecordingInput, summary: "Reads a recording and the steps it captured.", phrases: ["show the steps of this recording", "what did this recording capture"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRecording",
@@ -56,6 +59,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getRecordingEntryState,
+    assistant: { hidden: "This reads the stored page state behind one recorded step for debugging, not something a person asks for." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetRecordingEntryState",
@@ -79,6 +83,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getStateSnapshot,
+    assistant: { hidden: "This reads one stored page snapshot for debugging, not something a person asks for." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetStateSnapshot",
@@ -100,6 +105,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.repairRecordingStateIndex,
+    assistant: { hidden: "This is an internal repair of a recording's lookup index that engineers run." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:RepairRecordingStateIndex",
@@ -120,6 +126,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecording,
+    assistant: { hidden: "A recording is started by the browser recorder, which opens its own session." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:CreateRecording",
@@ -133,6 +140,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateRecording,
+    assistant: { input: updateRecordingInput, summary: "Renames, annotates or archives a recording.", phrases: ["rename this recording", "archive this recording"], contextArgs: { projectId: "projectId" } },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:UpdateRecording",
@@ -146,6 +154,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecording,
+    assistant: { input: deleteRecordingInput, summary: "Deletes a recording and the proposals made from it.", phrases: ["delete this recording", "remove the recording"], contextArgs: { projectId: "projectId" } },
     permission: "runtime.control",
     classification: "destructive",
     action: "studio:DeleteRecording",
@@ -159,6 +168,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteRecordings,
+    assistant: { input: deleteRecordingsInput, summary: "Deletes several recordings at once.", phrases: ["delete these recordings", "clear out my old recordings"], contextArgs: { projectId: "projectId" }, target: { recordingIds: "recording" } },
     permission: "runtime.control",
     classification: "destructive",
     action: "studio:DeleteRecordings",
@@ -172,6 +182,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteProposal,
+    assistant: { hidden: "Proposals are cleared from the proposals screen; a person does not ask for it by name." },
     permission: "runtime.control",
     classification: "destructive",
     action: "studio:DeleteProposal",
@@ -192,6 +203,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getProposal,
+    assistant: { input: getProposalInput, summary: "Reads one proposal made from a recording.", phrases: ["show this proposal", "what does the proposal say"], contextArgs: { projectId: "projectId" } },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetProposal",
@@ -212,6 +224,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingEntry,
+    assistant: { hidden: "The browser recorder sends each captured step as it happens; a person never adds one by words." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:AppendRecordingEntry",
@@ -225,6 +238,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingNote,
+    assistant: { hidden: "The browser recorder sends notes as they are typed into it." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:AppendRecordingNote",
@@ -238,6 +252,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendRecordingMarker,
+    assistant: { hidden: "The browser recorder sends markers as the person presses its marker button." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:AppendRecordingMarker",
@@ -256,6 +271,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.removeRecordingEntry,
+    assistant: { hidden: "The browser recorder undoes a captured step with its own undo button while recording." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:RemoveRecordingEntry",
@@ -275,6 +291,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.finalizeRecording,
+    assistant: { hidden: "The browser recorder finishes a recording when the person presses its stop button." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:FinalizeRecording",
@@ -288,6 +305,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.processFinalizedRecording,
+    assistant: { hidden: "This runs automatically when a recording is finished; it is a stage of the pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ProcessFinalizedRecording",
@@ -301,6 +319,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateRecordingProposal,
+    assistant: { input: generateRecordingProposalInput, summary: "Proposes a Flow made from a recording.", phrases: ["turn this recording into a flow", "make a flow from my recording"], contextArgs: { projectId: "projectId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:GenerateRecordingProposal",
@@ -327,6 +346,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.normalizeRecording,
+    assistant: { hidden: "Cleaning up a recording's steps is an automatic stage of the recording pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:NormalizeRecording",
@@ -340,6 +360,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createNormalizationReview,
+    assistant: { hidden: "Reviewing the clean-up of a recording is an automatic stage of the recording pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CreateNormalizationReview",
@@ -353,6 +374,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelines,
+    assistant: { hidden: "Cleaned-up timelines are an internal stage of the recording pipeline that screens read." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListNormalizedTimelines",
@@ -366,6 +388,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listNormalizedTimelineSummaries,
+    assistant: { hidden: "Cleaned-up timelines are an internal stage of the recording pipeline that screens read." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListNormalizedTimelineSummaries",
@@ -379,6 +402,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getNormalizedTimeline,
+    assistant: { hidden: "A cleaned-up timeline is an internal stage of the recording pipeline that screens read." },
     permission: "programs.read",
     classification: "read",
     action: "studio:GetNormalizedTimeline",
@@ -392,6 +416,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listPipelineArtifacts,
+    assistant: { hidden: "The pipeline's working files are listed for the screens, not for a person to ask about." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListPipelineArtifacts",
@@ -405,6 +430,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.mineRecordingEvidence,
+    assistant: { hidden: "Mining a recording for evidence is an automatic stage of the recording pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:MineRecordingEvidence",
@@ -421,6 +447,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.learnTaskModel,
+    assistant: { hidden: "Learning a task model from evidence is an automatic stage of the recording pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:LearnTaskModel",
@@ -437,6 +464,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.proposePolicyFromModel,
+    assistant: { hidden: "Proposing a policy from a learned model is an automatic stage of the recording pipeline." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ProposePolicyFromModel",
@@ -454,6 +482,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.approvePolicyProposal,
+    assistant: { hidden: "Policy proposals belong to the older recording pipeline and are approved on its screen, not by words." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ApprovePolicyProposal",
@@ -473,6 +502,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.createRecordingFlowProposals,
+    assistant: { hidden: "Flow proposals are made automatically when a recording is processed; a person asks for one with the recording's own proposal request." },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:CreateRecordingFlowProposals",
@@ -486,6 +516,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewRecordingFlowProposal,
+    assistant: { input: reviewRecordingFlowProposalInput, summary: "Approves or rejects a proposed Flow made from a recording.", phrases: ["approve this proposal", "reject the proposed flow"], contextArgs: { projectId: "projectId" } },
     permission: "flows.write",
     classification: "authoring",
     action: "studio:ReviewRecordingFlowProposal",
@@ -502,6 +533,7 @@ export function registerRecordingEndpoints(dependencies: AutomationStudioApiDepe
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.replayPolicyAgainstRecording,
+    assistant: { hidden: "Replaying a policy against a recording is an internal check of the older recording pipeline." },
     permission: "runtime.control",
     classification: "authoring",
     action: "studio:ReplayPolicyAgainstRecording",

@@ -15,7 +15,6 @@ vi.mock("next/link", async () => {
   return { default: ({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => react.createElement("a", props, children) };
 });
 vi.mock("../../GlobalClientGatewayPairing", () => ({ GlobalClientGatewayPairing: () => null }));
-vi.mock("../../GlobalConversationPrompt", () => ({ GlobalConversationPrompt: () => null }));
 vi.mock("../../../features/programs/shared-ui", async () => {
   const real = await vi.importActual<typeof import("../../../features/programs/shared-ui")>("../../../features/programs/shared-ui");
   const react = await import("react");

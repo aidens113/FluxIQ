@@ -41,11 +41,4 @@ describe("canonical view diagnostics disclosure", () => {
     expect(source).not.toMatch(/<pre[^>]*>\s*\{?JSON\.stringify/);
     expect(source).not.toMatch(/(?:Technical metadata|Raw JSON|Implementation diagnostics)/i);
   });
-
-  it("keeps the allowlisted Data Inspector development-only", () => {
-    const inspector = readFileSync(new URL("../../development/DataInspector.tsx", import.meta.url), "utf8");
-    const composition = readFileSync(new URL("../../live/components/AutomationStudioWorkspaceComposition.tsx", import.meta.url), "utf8");
-    expect(inspector).toContain("Live development telemetry");
-    expect(composition).toContain('showDataInspector={process.env.NODE_ENV !== "production"}');
-  });
 });

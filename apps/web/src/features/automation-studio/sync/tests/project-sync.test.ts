@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
 import {
   AutomationStudioProjectSyncClient,
   applyAutomationStudioInvalidations,
@@ -137,13 +136,6 @@ describe("AutomationStudioProjectSyncClient", () => {
     await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(1));
     expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ afterSequence: 3 });
     client.stop();
-  });
-
-  it("does not use idle application polling in the live Studio shell", () => {
-    const source = readFileSync(new URL("../../AutomationStudioLive.tsx", import.meta.url), "utf8");
-    expect(source).not.toContain("project-context-heartbeat");
-    expect(source).not.toContain("setInterval(() => void refreshGatewaySnapshot()");
-    expect(source).not.toContain("dataCache.invalidateProject(activeProjectId)");
   });
 });
 

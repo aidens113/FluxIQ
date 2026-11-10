@@ -6,9 +6,10 @@
 
 import type { ChatResult } from "./result.ts";
 import type { ChatResultsPort } from "./results.ts";
+import type { ChatSelection } from "./selection.ts";
 
-/** Core's subject kinds a thread can be about. */
-export type ChatSubjectKind = "project" | "flow" | "run";
+/** Core's subject kinds a thread can be about. `panel`: the panel-wide thread, about no one project, Flow or run. */
+export type ChatSubjectKind = "project" | "flow" | "run" | "panel";
 
 /** Finds a subject's open thread. `subjectId` absent on the project's own thread: the project is the subject. */
 export type ChatThreadListQuery = {
@@ -27,8 +28,19 @@ export type ChatThreadReadQuery = {
   limit: number;
 };
 
-/** What is on screen when a person sends: what makes Core read "run it" as about this. */
-export type ChatOnScreen = { flowId?: string; runId?: string; recordingId?: string };
+/**
+ * What is on screen when a person sends: what makes Core read "run it" as about this.
+ * `page` is the panel page the person is on, in the client's own words (e.g. "flows").
+ * `selection` is what the person has picked there. A client that supplies neither
+ * sends neither; the chat never invents them.
+ */
+export type ChatOnScreen = {
+  flowId?: string;
+  runId?: string;
+  recordingId?: string;
+  page?: string;
+  selection?: ChatSelection;
+};
 
 /** A person's message: into `conversationId` when there is one, or into a thread opened with the subject and title. */
 export type ChatSend = {

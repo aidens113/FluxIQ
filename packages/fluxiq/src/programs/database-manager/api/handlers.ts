@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { databaseManagerSnapshotInput } from "@fluxiq/contracts/program-api-inputs";
 import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import { isJsonObject } from "../../../framework/persistence/program-state/storage.ts";
@@ -27,6 +28,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.program(),
+    assistant: { input: databaseManagerSnapshotInput, summary: "Lists the stores the engine keeps and how many records each holds.", phrases: ["show the engine's data stores"] },
     handler: async (request) => ({
       ok: true,
       payload: await service.snapshot(request.scope)
@@ -40,6 +42,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:AuthorizeStore",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "Opens a protected store with the person's password, PIN or authenticator code, which are never given to the assistant." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind || !isSensitiveDatabaseKind(payload.kind)) return { ok: false, error: "A sensitive store kind is required" };
@@ -62,6 +65,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:ListRecords",
     accessLevel: "List",
     resource: endpointResource.program(),
+    assistant: { hidden: "Reads raw engine records, which may be in a protected store that needs the person's credentials; it is an operator tool." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerStoreRequest | undefined;
       if (!payload?.kind) return { ok: false, error: "kind is required" };
@@ -79,6 +83,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:GetRecord",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "Reads one raw engine record, which may be in a protected store that needs the person's credentials; it is an operator tool." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -96,6 +101,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:PutRecord",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "Writes a raw engine record, which an operator does by hand and which may need the person's credentials." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerPutRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -115,6 +121,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:DeleteRecord",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "Deletes a raw engine record, which an operator does by hand and which may need the person's credentials." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRecordRequest | undefined;
       if (!payload?.kind || !payload.id) return { ok: false, error: "kind and id are required" };
@@ -133,6 +140,7 @@ export function registerDatabaseManagerApi(registry: GlobalProgramApiRegistry, s
     action: "ops:RunMigration",
     accessLevel: "Write",
     resource: endpointResource.program(),
+    assistant: { hidden: "A data migration is an operator step, never something a person asks for in words." },
     handler: async (request) => {
       const payload = request.payload as DatabaseManagerRunMigrationRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };

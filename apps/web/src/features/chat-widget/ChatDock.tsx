@@ -12,6 +12,7 @@
 // question in one key.
 
 import type { ChatAttachment } from "@fluxiq/ui-components";
+import type { PanelConversationOptions } from "./transport";
 import type { ConversationOnScreen } from "../automation-studio/conversation";
 import { ProgramChatWidget } from "./ProgramChatWidget";
 
@@ -21,6 +22,8 @@ export type ChatDockProps = {
   projectName?: string;
   /** What the panel has open, so "run it" means the Flow on screen. */
   onScreen?: ConversationOnScreen;
+  /** Present: the window is the panel-wide assistant. */
+  panel?: PanelConversationOptions;
   onOpenAttachment?(attachment: ChatAttachment): void;
   onSelectedConversationChange?(conversationId: string): void;
   /** Restored by whatever mounted the dock, so it reopens on the same thread. */

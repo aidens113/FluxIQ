@@ -8,8 +8,9 @@ const controllerSource = [
   "../hooks/useFlowEditorCanvasInteractions.ts"
 ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 const toolbarSource = readFileSync(new URL("../components/FlowGraphToolbar.tsx", import.meta.url), "utf8");
-const globalToolbarSource = readFileSync(new URL("../../workspace/shell/WorkspaceHeader.tsx", import.meta.url), "utf8");
-const graphRuntimeSource = readFileSync(new URL("../../live/hooks/useAutomationGraphRuntime.ts", import.meta.url), "utf8");
+// The graph page under a Flow's Advanced section holds the canvas now, and its Save button is the only one.
+const graphPageActionsSource = readFileSync(new URL("../../../../app/(panel)/flows/[flowId]/graph/host/GraphActions.tsx", import.meta.url), "utf8");
+const graphPageSaveSource = readFileSync(new URL("../../../../app/(panel)/flows/[flowId]/graph/host/use-flow-graph.ts", import.meta.url), "utf8");
 const dirtyGuardSource = readFileSync(new URL("../../workspace/DirtyViewGuard.tsx", import.meta.url), "utf8");
 const typeSource = readFileSync(new URL("../flow-editor-types.ts", import.meta.url), "utf8");
 
@@ -26,15 +27,15 @@ describe("Flow editor communication boundary", () => {
     expect(controllerSource).toContain("const saveFlowGraph = useCallback(async (authorizationPin?: string) =>");
     expect(controllerSource).toContain("await props.onSaveGraph");
     expect(controllerSource).not.toContain('key === "s"');
-    expect(graphRuntimeSource).not.toContain("window.prompt");
+    expect(graphPageSaveSource).not.toContain("window.prompt");
     // No PIN travels through the dirty-view channel any more: saving the
     // person's own unsaved work is the least gate-worthy action in the product,
     // and Core registers every endpoint a save reaches as `authoring`.
     expect(dirtyGuardSource).toContain("callbacks.current.save()");
     expect(dirtyGuardSource).not.toContain("Security PIN");
     expect(toolbarSource).not.toContain('aria-label="Save graph"');
-    expect(globalToolbarSource).toContain('aria-label="Save entire project"');
-    expect(globalToolbarSource).toContain("saveDirtyAutomationViews()");
-    expect(globalToolbarSource).not.toContain("Security PIN");
+    expect(graphPageActionsSource).toContain('saveActiveAutomationStudioGraph("")');
+    expect(graphPageActionsSource).not.toMatch(/PIN/u);
+    expect(graphPageSaveSource).not.toMatch(/PIN/u);
   });
 });

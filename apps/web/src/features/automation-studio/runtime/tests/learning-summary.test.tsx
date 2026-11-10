@@ -1,13 +1,23 @@
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RuntimeExecutionCommands } from "../runtime-host";
 
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("../RunHistory", () => ({ RunHistory: () => null }));
 
 import { FlowRunViewContent, RuntimePostRunSummary } from "../FlowRunView";
-Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true, window: globalThis });
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+
+// The panel times work with `window`; this suite runs in Node. Install it for this file only,
+// so a global `window` does not leak into suites that test for its absence.
+const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, "window");
+const previousWindow = (globalThis as any).window;
+beforeAll(() => { Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: globalThis }); });
+afterAll(() => {
+  if (hadWindow) Object.defineProperty(globalThis, "window", { configurable: true, writable: true, value: previousWindow });
+  else delete (globalThis as any).window;
+});
 
 afterEach(() => vi.useRealTimers());
 
