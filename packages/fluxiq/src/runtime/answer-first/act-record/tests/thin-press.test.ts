@@ -157,10 +157,13 @@ describe("two acts on one row (`../record.ts`, `matches`)", () => {
     expect(record.admit(onRow(icon("keep"))).kind).toBe("already_done");
   });
 
-  it("a named control and one with no words: two controls", () => {
+  // The one with no words may be a thinner form of the named one, which nothing here tells from another control, and a row's act
+  // done twice cannot be taken back. Until a control's kind stopped counting as its words, every web button said "button", so
+  // these two were held the same that way already; now it is said (`./kind-is-no-control-word.test.ts`).
+  it("a named control and one with no words: held the same, since it may be the named one's thinner form", () => {
     const record = withList();
     landed(record, onRow(ACCEPT));
-    expect(record.admit(onRow(icon("share"))).kind).toBe("run");
+    expect(record.admit(onRow(icon("share"))).kind).toBe("already_done");
   });
 
   it("the same control by hand and in a loop, where one form says nothing of it: still one act", () => {
