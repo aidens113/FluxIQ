@@ -40,7 +40,15 @@ const CHECK_RESULT: AutomationNodeExecutionResult = {
   failure: { category: "user_intervention_required", code: CHECK_CODE, retryable: false, stage: "execution" }
 };
 
-/** A host that executes page steps: those in `checked` meet a check, the rest read the page. */
+/**
+ * What the domain's floor says of each page step: a press, which commits. A
+ * press the check answered was made, so once the person clears the check the
+ * run goes on from it (`../person-cleared.ts`); a step whose act was not made
+ * runs again, which `./person-cleared.test.ts` covers.
+ */
+const PRESS_FLOOR = { effectClass: "commit" as const, permissionConsequences: [] };
+
+/** A host that executes page steps, each a press: those in `checked` meet a check, the rest read the page. */
 function pageHost(checked: ReadonlySet<string>, extra: AutomationStudioGraphExecutionOptions = {}): { executed: string[]; inputs: Record<string, Record<string, JsonValue>>; options: AutomationStudioGraphExecutionOptions } {
   const executed: string[] = [];
   const inputs: Record<string, Record<string, JsonValue>> = {};
@@ -55,6 +63,7 @@ function pageHost(checked: ReadonlySet<string>, extra: AutomationStudioGraphExec
         inputs[request.node.id] = request.inputs;
         return Promise.resolve({ result: checked.has(request.node.id) ? CHECK_RESULT : { status: "success", route: "success", outputs: { text: `read by ${request.node.id}` } } });
       },
+      resolveActionEffect: (node) => node.definitionId === "domain.page.step" ? PRESS_FLOOR : undefined,
       ...extra
     }
   };
@@ -169,7 +178,8 @@ describe("a step that meets something only a person can get past", () => {
   });
 
   it("fails as it always did when no parking port is bound: nobody asked, the ladder decides", async () => {
-    const host = pageHost(new Set(["check"]));
+    // A step with no floor, so the ladder, not the effect check a committing press's lost answer gets, decides.
+    const host = pageHost(new Set(["check"]), { resolveActionEffect: () => undefined });
 
     const trace = await runAutomationStudioGraph(pageFlow(["check", "read"]), host.options);
 

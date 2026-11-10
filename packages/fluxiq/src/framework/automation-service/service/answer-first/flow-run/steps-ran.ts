@@ -16,8 +16,10 @@
 // refusal before anything ran) the attempt has somewhere to carry on from.
 //
 // **A check a person cleared is a step that passed.** Its attempt keeps `failed` and the failure
-// the check gave (`engine/automation/person-needed.ts`), and the run went on down its `success`
-// route once the person pressed Continue. Read by its status alone it was told to the next round as
+// the check gave (`engine/automation/person-needed.ts`), and when it is the step's last attempt the run
+// went on down its `success` route once the person pressed Continue: a step run again after the check
+// has a later attempt of its own, and one held as Outcome uncertain is the failing step
+// (`engine/automation/person-cleared.ts`). Read by its status alone it was told to the next round as
 // "failed: The page needs a person before the step can go on" (scripted pair
 // `run-mwa86qgu-9ded690b`, step 4), which asks a model to do again a step the run already got past.
 

@@ -48,6 +48,8 @@ describe("what a run left", () => {
       now: () => 1_000,
       delay: () => Promise.resolve(),
       // The first step meets a check; the third fails on its own, so the run stops there.
+      // The first is a press the check answered: it was made, so once the check is cleared the run goes on from it (`engine/automation/person-cleared.ts`).
+      resolveActionEffect: (node) => node.id === "n1" ? { effectClass: "commit", permissionConsequences: [] } : undefined,
       nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "n2" ? { status: "success", route: "success", outputs: {} } : { status: "failed", route: "failed", outputs: {}, failure: request.node.id === "n1" ? { category: "user_intervention_required", code: "web.intervention.required", retryable: false, stage: "execution" } : { category: "target_not_found", code: "executor.target.gone", retryable: false, stage: "execution" } } }),
       parking: { open: () => undefined, awaitAnswer: (ask) => Promise.resolve({ askId: ask.askId, answeredAt: 1_005, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: null }) }
     });

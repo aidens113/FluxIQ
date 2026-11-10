@@ -12,6 +12,7 @@ import { executeAutomationStudioNode } from "./node-execution/index.ts";
 import { automationStudioPaceAfterRateLimit } from "./pacing/index.ts";
 import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
 import { automationStudioPersonNeededEnding } from "./person-needed.ts";
+import { automationStudioStepAfterPersonCleared } from "./person-cleared.ts";
 import type { AutomationStudioCapturedRecords } from "./records/index.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./regions/index.ts";
 import type { AutomationStudioCarriedIteration } from "../../runtime/parking/index.ts";
@@ -392,6 +393,12 @@ async function executeAutomationStudioGraph(
     let route = resumedRoute;
     let repeatSample: AutomationStudioRuntimeRepeatSample | undefined;
     resumedRoute = undefined;
+    // A run resumed by Continue on a person-needed ask judges the parked step as an in-place answer does (`person-cleared.ts`).
+    if (route === "success") {
+      const resumedCleared = await automationStudioStepAfterPersonCleared(ctx, currentNode, latestAttemptIndex(attempts, currentNode.id));
+      if (resumedCleared?.kind === "return") return resumedCleared.trace;
+      if (resumedCleared?.kind === "rerun") route = undefined;
+    }
     if (route === undefined) {
       // The region's checks, the arrival count, the node's pace and its readiness gate (`step-loop/arrival.ts`).
       const arriving: AutomationStudioFlowNode = currentNode;
@@ -507,6 +514,10 @@ async function executeAutomationStudioGraph(
       if (asked.kind === "return") return asked.trace;
       let routeOverride = asked.routeOverride;
       if (routeOverride !== undefined) ctx.runtimeRepeat.barrier();
+      // Continue on a check a person cleared is not the step's success: what its act came to is judged first (`person-cleared.ts`).
+      const personCleared = routeOverride === "success" ? await timing.phase("person-cleared", () => automationStudioStepAfterPersonCleared(ctx, node, attemptIndex)) : undefined;
+      if (personCleared?.kind === "return") return personCleared.trace;
+      if (personCleared?.kind === "rerun") continue;
       // A step that cannot run continues where the page is (`step-loop/state-route.ts`); an item found gone goes straight to its failure path.
       if (routeOverride === undefined && automationStudioCouldNotRun(attempt) && !gone) {
         const routed: Awaited<ReturnType<typeof automationStudioStepStateRoute>> = await timing.phase("state-route", () => automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy }));
@@ -588,4 +599,12 @@ async function executeAutomationStudioGraph(
   }
 
   return automationStudioEndedTrace(ctx, "failed", currentNode.id, `Maximum step count exceeded: ${ctx.maxSteps}.`);
+}
+
+/** The index of the node's latest attempt, -1 for none: a resumed run's parked attempt. */
+function latestAttemptIndex(attempts: readonly AutomationStudioNodeAttemptTrace[], nodeId: string): number {
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    if (attempts[index]!.nodeId === nodeId) return index;
+  }
+  return -1;
 }

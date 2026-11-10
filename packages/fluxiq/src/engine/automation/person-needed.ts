@@ -10,8 +10,11 @@
 // **What happens instead.** The executor raises Core's one person-needed ask
 // (`parking/person-needed-ask.ts`) as though the attempt had raised it, and its
 // ordinary parking carries it: held open in place when the port can, parked
-// durably when it cannot. Continue resumes down the node's `success` route and
-// the next node reads the page fresh; Stop, or nobody answering, goes down
+// durably when it cannot. Continue judges the step on the page the person left
+// (`person-cleared.ts`): a step whose act was not made runs again, one whose
+// effect the page shows gone runs again, a lasting act nothing settles is held,
+// and otherwise the run resumes down the node's `success` route and the next
+// node reads the page fresh. Stop, or nobody answering, goes down
 // `failed`, and a Flow with no failed route of its own ends there with an
 // ending that says a person was needed (`automationStudioPersonNeededEnding`).
 //

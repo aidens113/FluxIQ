@@ -41,14 +41,17 @@
 // false to a judge. The run's own step outcomes say what it ran.
 //
 // **A press that met a check only a person can clear (run-mwa19obz-abd5d558).** The page answered the press
-// with a robot check, the run asked the person, and it goes on down the step's own success route once they
-// clear it (`engine/automation/person-needed.ts`): the press reached the page, and the engine carries on as
-// though it had answered that it acted. So it is told as one that did, never held in doubt. Held, it read as
+// with a robot check, the run asked the person, and once they clear it the engine goes on from a press that
+// was made (`engine/automation/person-cleared.ts`): the press reached the page, and the engine carries on as
+// though it had answered that it acted. So it is told as one that did, never held in doubt. Where the page
+// then shows its effect gone, the engine presses it again, and nothing here refuses that: a plain press is
+// left out of every refusal, and the second press is settled by its own answer. Held, it read as
 // a lasting act that may have landed, and every later pass of a loop over it was refused as already done: the
 // saved Flow's Next page, after the person cleared the check its second press met, was skipped on each pass
 // after, the loop stood still on one page and the run ended `repeat.no_progress`, and the next round's run of
 // the Flow was refused its sort until a look, so its read read the list unsorted. One that says nothing was
-// sent (`effect: "unacted"`) is nothing on the record, as any such answer is.
+// sent (`effect: "unacted"`) is nothing on the record, as any such answer is, and the engine presses it again
+// once the check is cleared (`run-mwapfy0i-d64b26db`: a filter the check stood in front of was never pressed).
 //
 // **Except where the target itself says an act was made.** A failure stating `effect: "ambiguous"`
 // is the producer saying it acted and only the answer is missing, and its statement outranks what the
