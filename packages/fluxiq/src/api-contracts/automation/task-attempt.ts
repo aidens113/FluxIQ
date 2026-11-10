@@ -60,10 +60,15 @@ export type RemoveTaskRequest = { projectId: string; taskId: string };
 
 export type RemoveTaskResponse = { taskId: string; removed: true };
 
-/** `get-task-known-flow`: the Flow an identical task already lives under, for the chat to reuse. No `flowId` where there is none, or it is gone. */
-export type GetTaskKnownFlowRequest = { projectId: string; instructionText: string; startLocation?: string };
+/**
+ * `get-task-known-flow`: the Flow an identical task already lives under, for the chat to reuse. Asked by `flowId` instead of
+ * words (t885), whether a task lives under that Flow and where it starts, for the chat's Run of it. No `flowId` where there is
+ * none, or it is gone.
+ */
+export type GetTaskKnownFlowRequest = { projectId: string; instructionText: string; startLocation?: string } | { projectId: string; flowId: string };
 
-export type GetTaskKnownFlowResponse = { flowId?: string };
+/** `startLocation` only when asked by `flowId`, and only where the task kept one. */
+export type GetTaskKnownFlowResponse = { flowId?: string; startLocation?: string };
 
 /** `carry-on-task-attempt`: a press of "add budget and carry on". `addUsd` may be zero for an attempt a restart cut off. A refusal comes back as a sentence a person reads. */
 export type CarryOnTaskAttemptRequest = { projectId: string; attemptId: string; addUsd: number };

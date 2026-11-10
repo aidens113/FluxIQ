@@ -2,9 +2,9 @@
 // they have open: that it is a request to build one there, said only when the
 // capability that does it is offered and a page is on screen.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAutomationStudioPanelCapabilities } from "../../../../framework/automation-service/panel-capabilities/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE } from "../../commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE, AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW } from "../../commands/index.ts";
 import { automationStudioConversationInstructions, type AutomationStudioConversationDecisionContext } from "../index.ts";
 
 const CREATE_HERE = parseAutomationStudioPanelCapabilities([AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability]);
@@ -27,6 +27,27 @@ describe("the chat model's instructions about a described job", () => {
 
   it("say nothing of it when the capability is not offered", () => {
     expect(instructions({ capabilities: RUN_ONLY })).not.toContain(DESCRIBED_JOB);
+  });
+});
+
+// t885, run-mw9xfwvd-ccc692b2: "that no Flow above already does" read, to a smaller model, as "a Flow
+// above does it, so run it", and the same words typed again went to run.execute on the task's own Flow.
+describe("the chat model's instructions about a described job, in answer-first mode", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "answer-first"); });
+  afterEach(() => { vi.unstubAllEnvs(); });
+  const flows = [{ flowId: "flow.loans", name: "List the books on loan to member 12" }];
+
+  it("say a described job starts through create-here even when a Flow above was made from the same words, and is never a request to run one", () => {
+    const text = instructions({ capabilities: parseAutomationStudioPanelCapabilities([AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability, AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.capability]), flows });
+    expect(text).toContain(`${DESCRIBED_JOB} -- something to find, list, collect, fill in or buy on it -- is a task to do from this page: choose flow.createHere and pass their whole message, in their own words, as its instruction.`);
+    expect(text).toContain("That holds just the same when a Flow above was made from the same words before: flow.createHere finds that Flow, does the task with what it kept, and returns the result.");
+    expect(text).toContain("A job described again is never a request to run a Flow; run one only when they ask for a Flow to be run without describing a job.");
+    expect(text).not.toContain("that no Flow above already does");
+  });
+
+  it("say nothing of it when no page is open or the capability is not offered", () => {
+    expect(instructions({ onScreen: {}, flows })).not.toContain(DESCRIBED_JOB);
+    expect(instructions({ capabilities: RUN_ONLY, flows })).not.toContain(DESCRIBED_JOB);
   });
 });
 
