@@ -6,6 +6,7 @@ export { automationStudioAnswerFirstOutcomeOfAttempt } from "./outcome-of-attemp
 export { automationStudioAnswerFirstOutcomeOfRecord } from "./outcome-of-record.ts";
 export { automationStudioAnswerFirstOutcomesOfConversation } from "./outcomes-of-conversation.ts";
 export type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
+export { automationStudioAnswerFirstReplayVerdictRead, type AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.ts";
 export { automationStudioAnswerFirstAttemptStoreOf } from "./store-of.ts";
 export { AutomationStudioAnswerFirstAttemptStore } from "./store.ts";
 export { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";

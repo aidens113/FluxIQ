@@ -20,6 +20,7 @@ import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer
 import { emitAutomationStudioAttemptEnded } from "../../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts";
+import { automationStudioAnswerFirstReplayKept } from "../completion/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING, AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
@@ -108,6 +109,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
       ...(draftKept === undefined ? {} : { draftKept }),
+      ...automationStudioAnswerFirstReplayKept(run.completion.state),
       // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
       steps: run.steps
     });
