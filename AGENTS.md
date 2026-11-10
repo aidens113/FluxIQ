@@ -185,6 +185,13 @@ use it and we can update that chat UI centrally". Chat rendering, stream models 
 styles change in `packages/ui-components`, never in a client; a client supplies its
 transport and host bindings through the package's ports.
 
+**Fix the root cause, never cap the symptom (user, 2026-11-10):** "we should NEVER attempt
+to fix these problems by simply capping the symptoms. Instead we should come up with ways
+to fix the root cause, always". Lowering a timeout or a fixed wait, capping retries,
+calls, rounds or budget, suppressing a repeat, hiding an error, or special-casing one
+task, site or input is not a fix: trace why it happens and change that. If the cause is
+not yet fixable, report it plainly instead of shipping a cap.
+
 ## Code Structure
 
 Full methodology: [code structure](docs/architecture/code-structure.md).
