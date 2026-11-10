@@ -82,7 +82,7 @@ import { automationStudioAnswerFirstReadRows } from "./found-rows.ts";
 import { automationStudioAnswerFirstListAfterRead } from "./list-after-read.ts";
 import type { AutomationStudioAnswerFirstListPage, AutomationStudioAnswerFirstReadPage } from "./list-page.ts";
 import { automationStudioAnswerFirstProcessedRows } from "./processed-rows.ts";
-import { automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
+import { automationStudioAnswerFirstBatchLeftOut, automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
 import type { AutomationStudioAnswerFirstResultChange } from "./result-change.ts";
 import { automationStudioAnswerFirstResultDataset } from "./result-dataset.ts";
@@ -264,9 +264,12 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       held.rows = wholeOnce([...held.rows, ...batch.rows]);
       // A saved run's read says which page it read only where its answer did (`location`); its view stays unset, as a run's batches have never set it, so which list a later read joins is as before.
       const at = batch.location === undefined ? undefined : automationStudioAnswerFirstAddressSplit(batch.location);
-      if (batch.rows.length) held.pages.push({ rows: wholeOnce(batch.rows), ...(at ? { where: at.view } : {}), ...(at?.place !== undefined ? { place: at.place } : {}) });
-      // A run's later page that kept no row is told as read, as an exploring read's is (header).
-      else if (at?.place !== undefined && !held.pages.some((page) => page.place === at.place)) held.pages.push({ rows: [], where: at.view, place: at.place });
+      // And what its own conditions left out, where its answer said, as a read the model made says it (`./read-evidence.ts`, run-mwaudvnh-c208d32c).
+      const leftOut = automationStudioAnswerFirstBatchLeftOut(batch.leftOut);
+      const told = { ...(at ? { where: at.view } : {}), ...(at?.place !== undefined ? { place: at.place } : {}), ...(leftOut ? { leftOut } : {}) };
+      if (batch.rows.length) held.pages.push({ rows: wholeOnce(batch.rows), ...told });
+      // A run's later page that kept no row is told as read, as an exploring read's is (header); so is one that kept none and said what it left out.
+      else if (at?.place !== undefined ? !held.pages.some((page) => page.place === at.place) : leftOut !== undefined) held.pages.push({ rows: [], ...told });
       held.truncated ||= batch.truncated;
       ran.add(batch.datasetId);
       if (batch.rows.length) order.push(batch.datasetId);

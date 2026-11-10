@@ -99,7 +99,7 @@ export function libraryTargetNodes(target: LibraryTarget): AutomationStudioNativ
         if (target.page !== "account") return { status: "failed", route: "failed", message: "Page says: Nothing to see on Elm Street 4", failure: { category: "target_not_found", code: "library.list_not_on_page", retryable: false } };
         target.reads += 1;
         return { ...success(), effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput as JsonValue, records: shownRows(target) } }] };
-      })(),
+      }, { parameters })(),
       [RENEW_LOAN]: ({ signal, inputs, parameters }) => overOr(RENEW_LOAN, signal, () => pressLoan(target, inputs, parameters), { parameters, inputs })(),
       [RENEW_CARD]: ({ signal, parameters }) => overOr(RENEW_CARD, signal, () => pressCard(target), { parameters })(),
       [HOLD_SHELF]: ({ signal, parameters }) => overOr(HOLD_SHELF, signal, () => pressHold(target, parameters), { parameters })(),
