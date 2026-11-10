@@ -54,7 +54,7 @@ describe("what a run left", () => {
       parking: { open: () => undefined, awaitAnswer: (ask) => Promise.resolve({ askId: ask.askId, answeredAt: 1_005, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: null }) }
     });
     const outcome = automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: plan(keys), locator: locator(keys), saved: [], ended: { reachedEnd: false, code: "candidate.execution_incomplete", trace, graph } });
-    expect(outcome.steps[0]).toEqual({ position: 1, ran: "passed", happened: "It met a check only a person can complete; the person completed it, and the run went on from this step." });
+    expect(outcome.steps[0]).toEqual({ position: 1, ran: "passed", happened: "It met a check only a person can complete; the person completed it, and the run went on from this step.", personCleared: true });
     expect(outcome.steps[1]).toEqual({ position: 2, ran: "passed" });
     expect(outcome.failing?.position).toBe(3);
   });

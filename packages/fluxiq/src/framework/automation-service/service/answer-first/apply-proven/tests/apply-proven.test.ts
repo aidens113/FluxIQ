@@ -3,6 +3,7 @@
 // replaced (t870), through the real service, the real apply path and the real engine. Provider-free:
 // the model and the judge are scripts, on a lending library that counts presses.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "../../completion/index.ts";
 import { automationStudioAnswerFirstKnownFlow } from "../../route/index.ts";
 import { automationStudioAnswerFirstSavedStateOf } from "../../task-memory/index.ts";
 import { judgedNo } from "../../tests/endings/support.ts";
@@ -38,7 +39,7 @@ const spent = (attempt: { answer: { attempt: { spend: { calls: number; usd: numb
 const partNotWritten = (said: readonly string[]) => said.filter((line) => line.startsWith(PART_NOT_WRITTEN));
 
 describe("a whole run judged yes with no model", () => {
-  it("goes into the person's Flow with no question, leaves the answer as it was, and a whole attempt 3 costs the same", async () => {
+  it("goes into the person's Flow with no question, leaves the answer as it was, and a whole attempt 3 that ran as the judged run costs no model call", async () => {
     const { lane } = await appliedLane(cleanups);
     await lane.attempt(firstAttempt);
     expect(await stepsInTheFlow(lane)).toEqual([]);
@@ -67,9 +68,11 @@ describe("a whole run judged yes with no model", () => {
     const standing = await flowAsItStands(lane);
     const third = await lane.attempt({});
     expect(third.decisions).toHaveLength(0);
-    expect(third.judgeCalls).toHaveLength(1);
+    // The second attempt was this Flow's one judged whole run; the third ran exactly as it did, so it stands on that record (task speed S9).
+    expect(third.judgeCalls).toHaveLength(0);
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3 });
-    expect(spent(third)).toEqual(spent(second));
+    expect(third.answer.result).toMatchObject({ label: "confirmed", timesChecked: 1, checkedWhat: AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS });
+    expect(spent(third)).toEqual({ calls: 0, usd: 0, inputTokens: 0, outputTokens: 0 });
     expect(third.answer.result?.rows?.totalRows).toBe(second.answer.result?.rows?.totalRows);
     expect(lane.target.reads).toBe(2);
     // The same steps, already there: nothing is applied, and the Flow is not touched.

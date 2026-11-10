@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseAutomationStudioSavedState, parseAutomationStudioTaskAttempt, parseAutomationStudioTaskResult } from "@fluxiq/contracts/automation";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "../completion/index.ts";
 import { automationStudioAnswerFirstSavedStateOf, automationStudioAnswerFirstStepsDigest } from "../index.ts";
 import { savedStep } from "./fake-library-engine.ts";
 import { complete, LOOK_TOOL, RENEW_CARD, RENEW_LOAN, runNode, toolCall } from "./fake-library.ts";
@@ -180,13 +181,32 @@ describe("a later attempt at the same task", () => {
     await lane.attempt(firstAttempt);
     await lane.attempt({});
     expect((await lane.kept())?.best?.provenWhole).toBe(true);
-    const third = await lane.attempt({ judge: [judgedNo("Not what was asked.")], script: [readLoans("again", {}), complete("Listed by hand.")] });
+    // A proven Flow's run is judged only when it deviates (task speed S9): a person's Run again always does.
+    const third = await lane.attempt({ runAgain: true, judge: [judgedNo("Not what was asked.")], script: [readLoans("again", {}), complete("Listed by hand.")] });
     const told = toldTo(third.decisions[0])!;
     expect(told.lastCheck).toMatchObject({ verdict: "no" });
     expect(told.flowRun).toMatchObject({ happened: expect.stringMatching(/not accepted/u) });
     expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore", ordinal: 3 });
     expect(third.judgeCalls).toHaveLength(2);
     expect((await lane.kept())?.best?.provenWhole).toBe(false);
+  });
+
+  it("a whole run of a proven Flow that ran as its judged run stands on that record: no judge, no call, the proof and the read shape kept (task speed S9)", async () => {
+    const lane = await laterAttempts(cleanups);
+    await lane.attempt(firstAttempt);
+    const second = await lane.attempt({});
+    // The first whole run of the Flow is its one judged whole run.
+    expect(second.judgeCalls).toHaveLength(1);
+    const kept = (await lane.kept())?.best;
+    expect(kept).toMatchObject({ provenWhole: true, shape: { empty: false } });
+    expect(kept?.shape?.columns.length).toBeGreaterThan(0);
+    const third = await lane.attempt({});
+    expect(third.judgeCalls).toHaveLength(0);
+    expect(third.decisions).toHaveLength(0);
+    expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow", ordinal: 3, spend: { calls: 0 } });
+    expect(third.answer.result).toMatchObject({ label: "confirmed", timesChecked: 1, checkedWhat: AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS });
+    expect(third.answer.result?.rows?.totalRows).toBe(second.answer.result?.rows?.totalRows);
+    expect((await lane.kept())?.best?.provenWhole).toBe(true);
   });
 
   it("ends budget_out where the purse will not pay for the judge, and keeps what the run read", async () => {

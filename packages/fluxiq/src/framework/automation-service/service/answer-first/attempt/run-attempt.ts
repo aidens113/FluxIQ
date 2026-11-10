@@ -47,7 +47,7 @@ import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCallerApplied, automationStudioAnswerFirstScopeGate } from "../caller/index.ts";
-import { automationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
+import { automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayOf } from "../completion/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
 import { automationStudioAnswerFirstKnownParts } from "../../project-parts/index.ts";
 import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiveAttemptsOf } from "../interrupted/index.ts";
@@ -196,6 +196,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     ...(carried?.result ? { seed: { timesChecked: carried.result.timesChecked } } : {}),
     // A caller's own check and judge mode (`../completion/check.ts`); a chat attempt has the judge alone.
     ...(input.caller ? { confirm: { judge: input.caller.judge ?? "auto", check: input.caller.check } } : {}),
+    // A replay of the saved Flow that ran exactly as its judged whole run is accepted on its record; any deviation is judged (`../completion/replay-stands.ts`).
+    replay: () => automationStudioAnswerFirstReplayOf(run),
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],

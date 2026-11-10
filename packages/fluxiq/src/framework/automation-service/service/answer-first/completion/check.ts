@@ -9,7 +9,7 @@
 //     pass, judge not `always`         accepted, confirmed by the check, and the attempt is achieved
 //   judge `off` and no check           taken as it is, unverified: the rounds end, nothing confirmed
 //   a replay that ran as saved         accepted on its own record, no model call (`./replay-stands.ts`):
-//                                      one check, of the record against the Flow's judged whole run
+//                                      counted as one check, of the record; nothing is judged again
 //   one judge call
 //     yes                              accepted, and the attempt is achieved
 //     no, unsure                       refused with the screened reason; the digest is kept
@@ -70,6 +70,8 @@ import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstCallerCheckAnswer } from "./caller-check.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused-words.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "./on-record.ts";
+import { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
 import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 
@@ -88,8 +90,6 @@ const NOT_JUDGED = AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE;
 const CHECKED_NO = "answer_first.check_no";
 /** What a result the caller's check passed was checked by, in a person's words. */
 const BY_CALLER_CHECK = "The caller's own check of the result.";
-/** What a replay accepted on its record was checked by, in a person's words (`./replay-stands.ts`). */
-const ON_RECORD = "The saved Flow's run, step by step, against its judged whole run: every step ran as saved and read rows of the same shape.";
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
@@ -220,16 +220,16 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       // A replay that ran exactly as its judged whole run did is that result again (`./replay-stands.ts`).
       const replay = input.replay?.();
       if (replay) {
-        const shape = { columns: rows.columns.map((column) => column.id), empty: rows.totalRows === 0 };
-        const read = automationStudioAnswerFirstReplayStands(replay, { shape, judge: confirm?.judge });
+        const shape = automationStudioAnswerFirstReadShapeOf(rows);
+        const read = automationStudioAnswerFirstReplayStands(replay, { shape, judge: confirm?.judge, askedAgain: input.askedAgain === true });
         if (read.stands) {
           state.timesChecked += 1;
-          state.checkedWhat = ON_RECORD;
+          state.checkedWhat = AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS;
           state.achieved = true;
           state.onRecord = true;
           state.deviation = undefined;
           state.refused = undefined;
-          input.say("Checked", "Every step ran as it did when this was last checked, so the result stands.");
+          input.say("Ran as accepted", "Every step ran exactly as the run you accepted, so no check was needed.");
           return { ok: true };
         }
         state.deviation = read.deviation;
