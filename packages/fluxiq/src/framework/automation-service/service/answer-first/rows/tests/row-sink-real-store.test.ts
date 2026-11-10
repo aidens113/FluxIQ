@@ -113,6 +113,34 @@ describe("automationStudioAnswerFirstRowSink over the real run datasets", () => 
     expect(sink.summary().rows).toEqual(judged.rows);
   });
 
+  it("the columns the request names are the answer the store serves, judged and processed, and the read is collected whole (run-mwb2kkv5-1baeee11)", async () => {
+    const datasets = await open();
+    const sink = automationStudioAnswerFirstRowSink({
+      runId: RUN,
+      readRowsKey: READ_ROWS_KEY,
+      onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN),
+      reader: {
+        listDatasets: () => datasets.listRunDatasetsForVerification({ projectId: PROJECT, runId: RUN }),
+        getPage: (page) => datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: page.datasetId, limit: page.limit, ...(page.cursor !== undefined ? { cursor: page.cursor } : {}) })
+      },
+      instructionText: "List every shelf the shop sells. Give me a table with columns title and price, where price is written like 12.50."
+    });
+    const shelf = (n: number) => ({ ...item(n), link: `https://shop.example/shelf/${n}` });
+    await sink.fromCall(call("call.1"), liveAnswer([shelf(1), shelf(2)]));
+    const [stored] = await datasets.listRunDatasets({ projectId: PROJECT, runId: RUN });
+    // Collected whole: the link the read returned is stored with each row.
+    const collected = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored!.datasetId, limit: 10 });
+    expect(collected?.rows).toEqual([shelf(1), shelf(2)]);
+    // What the judge reads, the attempt still open, and what the person is shown once processed.
+    const judged = await sink.readBack();
+    expect(judged).toMatchObject({ fromStore: true, columns: [{ id: "title" }, { id: "price" }], rows: [item(1), item(2)] });
+    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
+    const answered = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored!.datasetId, limit: 10 });
+    expect(answered?.schema.fields.map((field) => field.id)).toEqual(["title", "price"]);
+    expect(answered?.rows).toEqual([item(1), item(2)]);
+    expect((await sink.readBack()).rows).toEqual(judged.rows);
+  });
+
   it("reports a store the real datasets refuse as data, and counts nothing", async () => {
     const datasets = await open();
     const sink = automationStudioAnswerFirstRowSink({ runId: RUN, readRowsKey: READ_ROWS_KEY, onRecordBatch: datasets.recordBatchHandler("project.unknown", RUN) });

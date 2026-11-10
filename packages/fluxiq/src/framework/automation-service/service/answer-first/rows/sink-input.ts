@@ -10,4 +10,9 @@ export type AutomationStudioAnswerFirstRowSinkInput = {
   onRecordBatch: (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary>;
   /** Reads the stored rows back for `readBack`; absent, `readBack` answers from what the sink stored. */
   reader?: AutomationStudioAnswerFirstRowReader | undefined;
+  /**
+   * The person's request, in their own words. Where it names its columns, the result answers with
+   * exactly those (`./row-sink.ts`, "The columns the person named"); absent, or naming none, nothing changes.
+   */
+  instructionText?: string | undefined;
 };
