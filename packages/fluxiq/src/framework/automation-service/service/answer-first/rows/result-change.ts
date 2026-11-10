@@ -17,7 +17,8 @@
 // changes are told; a read that carried its list on, or left the result where it was, adds nothing.
 // The words name no site, task or row: counts, a list's own columns and the call ids are the model's own.
 //
-// **And a read that did not change the result because it lacks a condition of it (run-mwaudvnh-c208d32c).** The
+// **And a read that did not change the result because it lacks a condition of it (run-mwaudvnh-c208d32c).** A read of
+// the result's own list, that is (`./row-sink.ts` says how it tells; run-mwb4bf67-3c240399): the
 // row sink keeps such a read's rows as a list of their own and leaves the result as it was (`./row-sink.ts`). The
 // read's answer then says so (`answer_first.result_list_kept`): the result's rows and reads, this read's own list,
 // the result's conditions it did not have (`missing`, the conditions as the model's own calls wrote them), and
@@ -51,10 +52,10 @@ export type AutomationStudioAnswerFirstResultChange =
     };
 
 const OTHER_LIST = "Core's note on the result, not on the page: this read was not asked the way the list the result held was, so its rows are a list of their own, and the result is now this list alone (rows, from the reads in pages). The list it replaced (replaced) is no longer the result: only this list's rows are in it. A read adds to a list only when it is asked as that list's reads were: the same record output name and columns, or, with no name, the same node, the same arguments apart from the page, the same columns and the same view of the site. So read every other page that holds rows the person asked for exactly as this read was asked; or, where the replaced list was the right one, read it again as it was asked. " +
-  "A read that lacks a condition the result's reads were asked under never replaces the result unless its record output says writeMode replace.";
+  "A read of the result's own list (its record output name, or the same view of the site) that lacks a condition the result's reads were asked under never replaces the result unless its record output says writeMode replace.";
 /** Why a read's rows did not become the result, and what to do (header). Generic: the conditions it names are the model's own. */
-const HELD_APART = "Core's note on the result, not on the page: the result did not change. Its rows met every condition the reads that made it were asked under (rows, from the reads in pages), and this read was not asked under every one of them (missing: each condition of the result this read did not have), so its rows may hold rows those conditions turn down. They are kept as a list of their own (apart), shown in this answer to look at, and are not the result. " +
-  "A read adds to or replaces the result only when it is asked under every condition of the result's reads, with or without more. To read more of the result, read exactly as its reads were asked. " +
+const HELD_APART = "Core's note on the result, not on the page: the result did not change. Its rows met every condition the reads that made it were asked under (rows, from the reads in pages), and this read of the same list was not asked under every one of them (missing: each condition of the result this read did not have), so its rows may hold rows those conditions turn down. They are kept as a list of their own (apart), shown in this answer to look at, and are not the result. " +
+  "A read of the result's own list adds to or replaces the result only when it is asked under every condition of the result's reads, with or without more; a read of another list is not held to them. To read more of the result, read exactly as its reads were asked. " +
   "Only where a condition of the result is itself wrong, turning down rows the person asked for, read again under the conditions the person asked for, with a record output that says writeMode replace: that read then becomes the result.";
 const STARTED_OVER = "Core's note on the result, not on the page: this read started its list over instead of adding to it (a page the list held read again with its rows moved, a read that said replace, another view of the site, or rows a sort or a filter changed), so the result now holds this read's rows alone (rows, from the reads in pages), and the rows the list held before (replaced) that this read did not return are no longer in it. Read again, exactly as this read was asked, every other page that holds rows the person asked for.";
 
