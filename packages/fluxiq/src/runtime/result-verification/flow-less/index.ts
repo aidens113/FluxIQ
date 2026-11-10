@@ -7,6 +7,7 @@
 export { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 export { automationStudioFlowLessJudge } from "./judge.ts";
 export { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
+export { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
 export { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 export { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 export { automationStudioFlowLessSummaryDigest } from "./summary-digest.ts";

@@ -25,6 +25,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../components/automation/index.ts";
 import type { AutomationStudioRecordBatch } from "../contracts.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../trace/index.ts";
+import { automationStudioRecordReadLocation } from "./read-location.ts";
 
 export type AutomationStudioRecordCaptureRequest = {
   effect: { type: string; payload?: JsonValue };
@@ -72,7 +73,7 @@ export function captureAutomationStudioRecordBatch(request: AutomationStudioReco
     ...dispatched,
     outputs: { ...outputs, result: replacedAtPath(outputs.result, segments, rows), records: rows }
   };
-  return parsed.output.purpose === "intermediate" ? { result } : { result, batch: recordBatch(request, parsed.output, validated) };
+  return parsed.output.purpose === "intermediate" ? { result } : { result, batch: recordBatch(request, parsed.output, validated, automationStudioRecordReadLocation(outputs.result, segments)) };
 }
 
 // Present and not null declares a record output, the rule the policy action and
@@ -144,7 +145,7 @@ function incompleteIntermediate(dispatched: AutomationNodeExecutionResult): Auto
     { category: "output_not_observed", code: "record_output.intermediate_incomplete", retryable: false, stage: "dispatch" });
 }
 
-function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId" | "attemptId" | "callFlowAttemptPath">, output: AutomationStudioRecordOutput, validated: AutomationStudioRecordValidationResult): AutomationStudioRecordBatch {
+function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId" | "attemptId" | "callFlowAttemptPath">, output: AutomationStudioRecordOutput, validated: AutomationStudioRecordValidationResult, location?: string): AutomationStudioRecordBatch {
   const batch: AutomationStudioRecordBatch = {
     nodeId: request.nodeId,
     attemptId: request.attemptId,
@@ -157,6 +158,7 @@ function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId
     invalidCount: validated.invalidCount,
     truncated: validated.truncated
   };
+  if (location !== undefined) batch.location = location;
   if (output.label !== undefined) batch.label = output.label;
   if (output.process !== undefined) batch.process = output.process;
   return batch;

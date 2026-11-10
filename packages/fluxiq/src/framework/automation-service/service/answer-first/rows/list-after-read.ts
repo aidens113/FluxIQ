@@ -48,12 +48,12 @@ export function automationStudioAnswerFirstListAfterRead(input: {
   /** This read's rows, none repeated whole. */
   read: readonly JsonObject[];
   columns: readonly string[];
-  evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says">;
+  evidence: Pick<AutomationStudioAnswerFirstReadEvidence, "place" | "says" | "list">;
   /** The read was of another view than the list's last. */
   moved: boolean;
 }): { over: boolean; pages: AutomationStudioAnswerFirstListPage[]; rows: JsonObject[] } {
   const { pages, held, read, columns, evidence, moved } = input;
-  const own: AutomationStudioAnswerFirstListPage = { rows: [...read], ...(evidence.place !== undefined ? { place: evidence.place } : {}) };
+  const own: AutomationStudioAnswerFirstListPage = { rows: [...read], ...(evidence.place !== undefined ? { place: evidence.place } : {}), ...(evidence.list !== undefined ? { where: evidence.list } : {}) };
   const ties = automationStudioAnswerFirstRowTies(held, read, columns);
   const known = ties.filter((tie) => tie !== undefined).length;
   const same = pages.findIndex((page) => page.rows.length === read.length && automationStudioAnswerFirstRowTies(page.rows, read, columns).every((tie, at) => tie === at));

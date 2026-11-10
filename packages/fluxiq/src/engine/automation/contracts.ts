@@ -673,6 +673,8 @@ export type AutomationStudioRecordBatch = {
   rows: JsonObject[];
   /** Rows the schema refused. */
   invalidCount: number;
+  /** The address the read's answer says it read, where it says one (`records/read-location.ts`): which page these rows came from. Never stored with the rows. */
+  location?: string;
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
   /**

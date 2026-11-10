@@ -21,6 +21,8 @@ export type AutomationStudioFlowLessSummary = {
   witnesses?: { before?: JsonObject; after?: JsonObject };
   /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and a short screened cut of what was found, the latest few. */
   looked?: readonly { where: string; found: string }[];
+  /** For a result made of rows: one entry per read that makes up the list, oldest first, with where it read (the view of the site and the place in it, where said) and how many rows it kept. The rows may come from pages the end view is not on. */
+  readPages?: readonly { where?: string; place?: string; kept: number }[];
   /** The person asked for it to be done once more (a Run again): the judge is told so (`./asked-again.ts`). Only a route sets it, never a model. */
   askedAgain?: true;
 };

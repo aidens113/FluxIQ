@@ -12,6 +12,7 @@
 //   the rows decide.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
+import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstPageWord } from "./page-word.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
 import type { AutomationStudioAnswerFirstRowCall } from "./rows-call.ts";
@@ -22,7 +23,7 @@ export function automationStudioAnswerFirstReadEvidenceOf(call: AutomationStudio
   const says = output?.writeMode === "append" || output?.writeMode === "replace" ? output.writeMode : undefined;
   const live = addressIn(answer, readRowsKey);
   const address = live ?? (isObject(call.value.from) && typeof call.value.from.location === "string" ? call.value.from.location : undefined);
-  const list = address === undefined ? undefined : split(address);
+  const list = address === undefined ? undefined : automationStudioAnswerFirstAddressSplit(address);
   const place = placeInCall(call.value) ?? (live === undefined ? undefined : list?.place);
   return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}) };
 }
@@ -42,23 +43,6 @@ function addressIn(answer: AutomationStudioLlmEvidenceToolExecutionResult, readR
   const from = answer.draft?.replay?.from;
   for (const said of [isObject(read) ? read.url : undefined, evidence.location, from?.location]) if (typeof said === "string" && said) return said;
   return undefined;
-}
-
-/** An address as the view it shows and where in it, page words apart: the fragment and the order of its query say neither. */
-function split(address: string): { view: string; place?: string } {
-  if (!URL.canParse(address)) return { view: address };
-  const url = new URL(address);
-  const places: string[] = [];
-  const kept: string[] = [];
-  for (const [name, value] of [...url.searchParams].sort(([one], [other]) => one.localeCompare(other))) {
-    const word = automationStudioAnswerFirstPageWord(name);
-    if (word === "place") places.push(`${name.toLowerCase()}=${value}`);
-    else if (!word) kept.push(`${name}=${value}`);
-  }
-  const inPath = /\/page\/(\d{1,9})(?=\/|$)/iu.exec(url.pathname);
-  if (inPath) places.push(`page=${inPath[1]}`);
-  const path = (inPath ? url.pathname.replace(inPath[0], "") : url.pathname).replace(/\/+$/u, "");
-  return { view: `${url.protocol}//${url.host}${path}?${kept.join("&")}`, ...(places.length ? { place: places.join("&") } : {}) };
 }
 
 /**

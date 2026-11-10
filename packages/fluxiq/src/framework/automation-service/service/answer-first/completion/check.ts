@@ -139,6 +139,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
   looked?: (() => readonly Look[]) | undefined;
+  /** The reads the result's rows came from, with where each read and how many rows it kept (`../rows/sink-type.ts`, `readPages`). Absent, none. */
+  readPages?: (() => NonNullable<AutomationStudioFlowLessSummary["readPages"]>) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
@@ -236,6 +238,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
   const endView = await input.endView();
   const witnesses = input.witnesses();
   const looked = shownLooks(input.looked?.() ?? []);
+  const readPages = input.readPages?.() ?? [];
   return {
     instructions: input.instructions,
     ...(rows.datasetId !== undefined ? { rows: { totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, rows: rows.rows } } : {}),
@@ -244,6 +247,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     ...(endView ? { endView } : {}),
     ...(Object.keys(witnesses).length ? { witnesses } : {}),
     ...(looked.length ? { looked } : {}),
+    ...(rows.datasetId !== undefined && readPages.length ? { readPages } : {}),
     ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
 }

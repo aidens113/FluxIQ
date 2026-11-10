@@ -44,7 +44,7 @@
 // changing within a run), and it then carries that list on or starts it over like any read. Two
 // things say it is another list even so: the model named it otherwise, or it read another view of
 // the site than the list's last read and shares no row. With neither, it can still take in another
-// list with the same columns (a run's own batches say no address): a list wrongly joined is rows a
+// list with the same columns (a run's own batches say no address of the view, only of the page they read, where the answer did): a list wrongly joined is rows a
 // judge can read and refuse, and a row wrongly dropped is a result lost. A read that does not join
 // is something else, and `./result-dataset.ts` says when it may become the result.
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, parseAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
@@ -52,6 +52,7 @@ import type { AutomationStudioRecordBatch } from "../../../../../engine/automati
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { stableJson } from "../../stable-json.ts";
+import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
 import { automationStudioAnswerFirstReadDatasetId } from "./dataset-of-read.ts";
 import { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
@@ -196,7 +197,11 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         held.pages = [];
       }
       held.rows = wholeOnce([...held.rows, ...batch.rows]);
-      if (batch.rows.length) held.pages.push({ rows: wholeOnce(batch.rows) });
+      // A saved run's read says which page it read only where its answer did (`location`); its view stays unset, as a run's batches have never set it, so which list a later read joins is as before.
+      if (batch.rows.length) {
+        const at = batch.location === undefined ? undefined : automationStudioAnswerFirstAddressSplit(batch.location);
+        held.pages.push({ rows: wholeOnce(batch.rows), ...(at ? { where: at.view } : {}), ...(at?.place !== undefined ? { place: at.place } : {}) });
+      }
       held.truncated ||= batch.truncated;
       ran.add(batch.datasetId);
       if (batch.rows.length) order.push(batch.datasetId);
@@ -206,6 +211,10 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       ran.clear();
     },
     readsAnswered: () => readsAnswered,
+    readPages: () => {
+      const id = resultDataset();
+      return (id === undefined ? [] : datasets.get(id)?.pages ?? []).map((page) => ({ ...(page.where !== undefined ? { where: page.where } : {}), ...(page.place !== undefined ? { place: page.place } : {}), kept: page.rows.length }));
+    },
     summary,
     async readBack() {
       const own = summary();
