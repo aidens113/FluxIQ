@@ -32,9 +32,25 @@
 // The conditions are worded from the call that asked for the read (its `where` and columns, found as a run's
 // are, `runtime/result-verification/read-account/read-parameters.ts`), never from words in the answer. Nothing
 // of it is screened here: the judge's copy screens every label and value it says (`flow-less/read-pages-shown.ts`).
+//
+// **And a saved Flow's own run (run-mwaudvnh-c208d32c).** Its reads reach the result as record batches, not calls,
+// and a batch carries the read's own account beside its rows where the answer held one (`AutomationStudioRecordBatch.leftOut`,
+// `engine/automation/records/read/left-out.ts`). `automationStudioAnswerFirstBatchLeftOut` reads it by the parser a run's
+// reads are read by (`SVC/summaries/extraction-summary.ts`): each condition's `aloneRows` is an `alone` set,
+// `togetherRows` a `together` set, `aloneObservations` what each condition found, and the conditions and columns are the
+// ones the read was dispatched with. Without it the judge was told what a Flow's read kept and never what it left out,
+// and refused a right replay twice over the ad cards it had rightly left out (judges 0131, 0182).
+//
+// **And which conditions it was asked under (`conditions`).** The `where` list the call asked, or the batch's read was
+// dispatched with (only where the batch carries its account, above; a batch without one says none), found as `leftOut`'s
+// are, each condition in a stable form. The row sink holds a list's conditions by them and lets a read's rows become
+// the result only where they include every condition of the result's (`./row-sink.ts`, run-mwaudvnh-c208d32c).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY, automationStudioResultReadParameters, type AutomationStudioFlowLessReadLeftOut } from "../../../../../runtime/result-verification/index.ts";
+import { stableJson } from "../../stable-json.ts";
+import { extractionSummaryFromOutputs } from "../../summaries/index.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstPageWord } from "./page-word.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
@@ -54,7 +70,18 @@ export function automationStudioAnswerFirstReadEvidenceOf(call: AutomationStudio
   const list = address === undefined ? undefined : automationStudioAnswerFirstAddressSplit(address);
   const place = placeInCall(call.value) ?? (live === undefined ? undefined : list?.place);
   const leftOut = leftOutOf(call, answer, readRowsKey);
-  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}), ...(leftOut ? { leftOut } : {}) };
+  const conditions = automationStudioAnswerFirstReadConditions(isObject(call.value.parameters) ? call.value.parameters : undefined);
+  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}), ...(leftOut ? { leftOut } : {}), ...(conditions.length ? { conditions } : {}) };
+}
+
+/**
+ * A read's `where` conditions, from the parameters it was asked or dispatched with (header): each in a
+ * stable form (keys sorted), once, sorted. Two reads share a condition only where they wrote it alike.
+ * None, or no read parameters in reach, is none.
+ */
+export function automationStudioAnswerFirstReadConditions(parameters: JsonObject | undefined): string[] {
+  const where = automationStudioResultReadParameters(parameters)?.where;
+  return Array.isArray(where) ? [...new Set(where.map((condition) => stableJson(condition)))].sort() : [];
 }
 
 function recordOutputOf(value: JsonObject): JsonObject | undefined {
@@ -104,6 +131,41 @@ function leftOutOf(call: AutomationStudioAnswerFirstRowCall, answer: AutomationS
   const said = replayed ? fromReadRows(replayed) : rejected ? fromRejectedRows(rejected, where, columns, read) : undefined;
   if (!said?.sets.length) return undefined;
   return { ...(where ? { where } : {}), ...(columns ? { columns } : {}), ...(said.found.some((values) => values !== undefined) ? { found: said.found } : {}), sets: said.sets };
+}
+
+/** What a saved Flow's read left out, as its record batch carries it (header), or `undefined` where it carries none or none was left out. */
+export function automationStudioAnswerFirstBatchLeftOut(carried: AutomationStudioRecordBatch["leftOut"]): AutomationStudioFlowLessReadLeftOut | undefined {
+  if (!carried) return undefined;
+  const conditions = objectAt(extractionSummaryFromOutputs({ result: { extraction: carried.extraction } }), "conditions");
+  if (!conditions) return undefined;
+  const asked = automationStudioResultReadParameters(carried.parameters);
+  const where = Array.isArray(asked?.where) ? asked.where : undefined;
+  const columns = isObject(asked?.fields) ? asked.fields : undefined;
+  const sets: LeftOutSet[] = [];
+  arrayAt(conditions, "aloneRows").forEach((rows, index) => {
+    const tested = testedColumn(where?.[index], columns);
+    const said = (Array.isArray(rows) ? rows : []).flatMap((row) => labelled(row, tested));
+    if (said.length) sets.push({ kind: "alone", conditions: [index], rows: said });
+  });
+  for (const entry of arrayAt(conditions, "togetherRows")) {
+    if (!isObject(entry)) continue;
+    const failed = arrayAt(entry, "failed").filter(isIndex);
+    const rows = arrayAt(entry, "rows").flatMap((row) => labelled(row, undefined));
+    if (failed.length && rows.length) sets.push({ kind: "together", conditions: failed, rows });
+  }
+  if (!sets.length) return undefined;
+  const found: (string[] | undefined)[] = [];
+  arrayAt(conditions, "aloneObservations").forEach((observations, index) => addFound(found, index, Array.isArray(observations) ? observations : []));
+  return { ...(where ? { where } : {}), ...(columns ? { columns } : {}), ...(found.some((values) => values !== undefined) ? { found } : {}), sets };
+}
+
+/** A row the parser led by its label, as a replay sends it: its label and, where it holds it, the value the condition tested. */
+function labelled(row: JsonValue, tested: string | undefined): JsonObject[] {
+  if (!isObject(row)) return [];
+  const [first] = Object.entries(row);
+  if (!first || typeof first[1] !== "string") return [];
+  const value = tested !== undefined && tested !== first[0] ? row[tested] : undefined;
+  return [{ [first[0]]: first[1], ...(typeof value === "string" && value ? { [tested!]: value } : {}) }];
 }
 
 /** A replayed read's `readRows` (header). */

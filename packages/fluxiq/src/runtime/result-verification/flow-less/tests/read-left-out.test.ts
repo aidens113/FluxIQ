@@ -37,6 +37,28 @@ describe("what each read kept and left out, as the judge is shown it", () => {
     ]);
   });
 
+  // run-mwaudvnh-c208d32c, judges 0241 and 0260: one label kept on page 1 and left out on page 2 was read as one item both kept and dropped.
+  it("says, in sameLabelKept, each left-out label that a read kept, on any page, and no other", () => {
+    const later = { kind: "alone" as const, conditions: [0], rows: [{ title: "Garden Birds" }, { title: "Atlas of Rivers" }] };
+    const sent = automationStudioFlowLessJudgedSummary(summary({ readPages: [
+      { where: "http://127.0.0.1:5000/catalogue?page=1", kept: 2, rows: KEPT },
+      { where: "http://127.0.0.1:5000/catalogue?page=2", kept: 0, leftOut: { ...LEFT_OUT, sets: [later, { kind: "alone", conditions: [1], rows: [{ title: "Night Sky", rating: "3.1" }] }] } }
+    ] }), []).sent as unknown as { readPages: { leftOut?: { rows: string[]; sameLabelKept?: string[] }[] }[] };
+    expect(sent.readPages[1]?.leftOut).toEqual([
+      expect.objectContaining({ rows: ["Garden Birds", "Atlas of Rivers"], sameLabelKept: ["Garden Birds"] }),
+      expect.objectContaining({ rows: ["Night Sky — rating: 3.1"], sameLabelKept: ["Night Sky"] })
+    ]);
+    // A label no read kept is not marked, and the first case's sets carry no marker at all.
+    expect(pageOf(summary({ readPages: [{ kept: 2, rows: KEPT, leftOut: LEFT_OUT }] })).leftOut).toEqual(expect.not.arrayContaining([expect.objectContaining({ sameLabelKept: expect.anything() })]));
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("Where a leftOut set gives sameLabelKept, each label named there is also the label of a row a read kept");
+  });
+
+  it("never marks a withheld label, though a read kept it", () => {
+    const secret = "sk-abcdef1234567890abcdef1234";
+    const page = pageOf(summary({ readPages: [{ kept: 1, rows: [{ title: secret, price: "$1" }], leftOut: { sets: [{ kind: "alone", conditions: [0], rows: [{ title: secret }] }] } }] }));
+    expect(page.leftOut).toEqual([expect.not.objectContaining({ sameLabelKept: expect.anything() })]);
+  });
+
   it("withholds a credential-shaped label and says the summary is withheld", () => {
     const secret = "sk-abcdef1234567890abcdef1234";
     const judged = automationStudioFlowLessJudgedSummary(summary({ readPages: [{ kept: 2, rows: KEPT, leftOut: { sets: [{ kind: "alone", conditions: [0], rows: [{ title: secret }] }] } }] }), []);

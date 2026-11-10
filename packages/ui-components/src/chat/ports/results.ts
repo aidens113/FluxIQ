@@ -48,6 +48,8 @@ export type ChatTaskAttemptFields = {
   liveSteps: number;
   simulation?: { verdict: "passed" | "failed" | "inconclusive" | "not_run"; flags: number };
   loopsCaught: Record<"exact_repeat" | "near_repeat" | "cycle" | "no_progress" | "same_fix" | "same_act", ChatAttemptLoopCount>;
+  /** The caller that drove this attempt from code turned checking off; its result stands unverified. Absent on every attempt a person started. */
+  checkingOff?: true;
   /** Lasting acts not tied to a row, a measure for testing: no card shows it. Absent reads as zero. */
   actsWithNoRow?: number;
   /** What a later attempt began from: the saved steps it found, by their digest, and what it did with them. A measure for proof: no card shows it. Absent where it found none. */
@@ -107,7 +109,7 @@ export type ChatTaskResult = {
 export type ChatSavedState =
   | { state: "ready"; trust: "provisional" | "established"; flowId: string; savedAtMs: number; lastWorkedAtMs: number; stepsDigest?: string; leftOut?: string[] }
   | { state: "partly_works"; trust: "unproven" | "provisional"; flowId: string; savedAtMs: number; simulation?: "passed" | "failed" | "inconclusive" | "not_run"; repaired?: true; stepsDigest?: string; leftOut?: string[] }
-  | { state: "notes_only"; trust: "unproven"; savedAtMs: number }
+  | { state: "notes_only"; trust: "unproven"; savedAtMs: number; why?: "still_waiting" | "not_assembled" | "not_saved"; earlierKept?: true }
   | { state: "needs_you"; trust: "unproven" | "provisional" | "established"; flowId?: string; savedAtMs: number };
 
 /**

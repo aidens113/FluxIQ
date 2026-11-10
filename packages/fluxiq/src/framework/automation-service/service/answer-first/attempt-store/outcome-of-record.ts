@@ -59,9 +59,21 @@ function savedOf(record: AutomationStudioAnswerFirstAttemptRecord, attempt: Auto
   const kept = automationStudioAnswerFirstKeptState({ steps: record.steps?.some(automationStudioFlowDraftStepIsProposed) === true, assembled: record.candidateId !== undefined });
   if (kept === undefined) return undefined;
   if (kept === "partly_works") return draftSavedOf(attempt, flowId, automationStudioAnswerFirstStepsDigest(record.steps?.filter(automationStudioFlowDraftStepIsProposed) ?? []), automationStudioAnswerFirstLeftOutSteps(record.steps ?? []));
-  const read = parseAutomationStudioSavedState({ state: "notes_only", trust: "unproven", savedAtMs: attempt.endedAtMs ?? attempt.startedAtMs });
+  const read = parseAutomationStudioSavedState({ state: "notes_only", trust: "unproven", savedAtMs: attempt.endedAtMs ?? attempt.startedAtMs, ...notesWhyOf(record, attempt) });
   if (!read.ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);
   return read.saved;
+}
+
+/**
+ * Why steps with no draft read as notes only, from what the record knows. An ending that tried to save a
+ * draft says why it could not. A row still going (working, or waiting for the person) has not tried: the
+ * draft is saved only when an attempt ends, so that is a wait and never a failed save, and the steps an
+ * earlier attempt saved, which this one started from, are still kept. An old ended row says nothing.
+ */
+function notesWhyOf(record: AutomationStudioAnswerFirstAttemptRecord, attempt: AutomationStudioTaskAttempt): { why?: "still_waiting" | "not_assembled" | "not_saved"; earlierKept?: true } {
+  if (record.draftKept !== undefined) return { why: record.draftKept };
+  if (attempt.status !== "working" && attempt.status !== "waiting_for_person") return {};
+  return { why: "still_waiting", ...(attempt.startedFrom !== undefined ? { earlierKept: true as const } : {}) };
 }
 
 function draftSavedOf(attempt: AutomationStudioTaskAttempt, flowId: string, stepsDigest: string, leftOut: readonly string[]): AutomationStudioSavedState {

@@ -11,4 +11,6 @@ export type AutomationStudioAnswerFirstAttemptRecord = {
   steps?: readonly AutomationStudioFlowDraftStep[];
   /** The draft saved through the candidate store, where it could be assembled. */
   candidateId?: string;
+  /** Why an ending that wrote steps has no draft: they did not fit together as a Flow, or saving it failed. Absent where a draft was saved, and on a row written before the attempt ended. */
+  draftKept?: "not_assembled" | "not_saved";
 };

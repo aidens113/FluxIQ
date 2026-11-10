@@ -22,8 +22,10 @@ function attempt(fields: Partial<AutomationStudioTaskAttempt> = {}): AutomationS
 
 const RESULT = (attemptId: string) => ({ attemptId, kind: "done_on_site", label: "confirmed", timesChecked: 1, source: "exploration", acts: [{ id: "act.1", what: "Renewed", where: "On the site", classes: ["modify_existing"], state: "landed" }] });
 
-function outcomeOf(fields: Partial<AutomationStudioTaskAttempt>, record: { steps?: typeof STEPS; candidateId?: string } = { steps: STEPS, candidateId: "candidate.1" }) {
-  const row = attempt(fields);
+function outcomeOf(fields: Partial<AutomationStudioTaskAttempt> | { endedAtMs: undefined; status: "working" }, record: { steps?: typeof STEPS; candidateId?: string; draftKept?: "not_assembled" | "not_saved" } = { steps: STEPS, candidateId: "candidate.1" }) {
+  const row = attempt(fields as Partial<AutomationStudioTaskAttempt>);
+  // A row still going has no ending time: `endedAtMs: undefined` in the fields takes it off.
+  if ("endedAtMs" in fields && fields.endedAtMs === undefined) delete (row as { endedAtMs?: number }).endedAtMs;
   const result = { ...RESULT(row.attemptId), source: row.path === "explore" ? "exploration" : "flow" };
   const kept: unknown = { attempt: row, result, ...record };
   return automationStudioAnswerFirstOutcomeOfRecord([kept as AutomationStudioAnswerFirstAttemptRecord], 0, FLOW);
@@ -65,6 +67,21 @@ describe("what an attempt left", () => {
   it("holds no digest for what was not saved as steps", () => {
     expect(outcomeOf({}, { steps: STEPS }).saved).toEqual({ state: "notes_only", trust: "unproven", savedAtMs: 2000 });
     expect(outcomeOf({}, {}).saved).toBeUndefined();
+  });
+
+  it("reads an attempt waiting for the person, with steps and no draft yet, as waiting and never as a failed save", () => {
+    const waiting = { status: "waiting_for_person", waitingFor: "stuck_in_a_loop", endedAtMs: undefined } as unknown as Partial<AutomationStudioTaskAttempt>;
+    expect(outcomeOf(waiting, { steps: STEPS }).saved).toEqual({ state: "notes_only", trust: "unproven", savedAtMs: 1000, why: "still_waiting" });
+    // Started from an earlier attempt's saved steps: they are still kept, and the line says so.
+    const from = { startedFrom: { route: "use", attemptId: "attempt.0", stepsDigest: DIGEST } } as Partial<AutomationStudioTaskAttempt>;
+    const resumed = outcomeOf({ ...waiting, ...from }, { steps: STEPS }).saved;
+    expect(resumed).toEqual({ state: "notes_only", trust: "unproven", savedAtMs: 1000, why: "still_waiting", earlierKept: true });
+    expect(parseAutomationStudioSavedState(resumed).ok).toBe(true);
+    expect(outcomeOf({ status: "working", endedAtMs: undefined }, { steps: STEPS }).saved).toMatchObject({ why: "still_waiting" });
+  });
+
+  it("says why an ended attempt kept notes only, where the record knows", () => {
+    for (const draftKept of ["not_assembled", "not_saved"] as const) expect(outcomeOf({}, { steps: STEPS, draftKept }).saved).toMatchObject({ state: "notes_only", why: draftKept });
   });
 
   it("carries what a later attempt began from, through the attempt's own parse", () => {

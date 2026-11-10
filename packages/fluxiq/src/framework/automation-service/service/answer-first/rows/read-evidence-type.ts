@@ -16,4 +16,6 @@ export type AutomationStudioAnswerFirstReadEvidence = {
   process?: unknown;
   /** What its own conditions left out, as its answer said it (`./read-evidence.ts`): what the judge is told of the page it read. */
   leftOut?: AutomationStudioFlowLessReadLeftOut;
+  /** Its `where` conditions as the call asked them, each once in a stable form (`./read-evidence.ts`); absent is none. What says whether its rows may become the result (`./row-sink.ts`). */
+  conditions?: readonly string[];
 };

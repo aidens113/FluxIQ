@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioRecordReadLocation } from "../read-location.ts";
+import { automationStudioRecordReadLocation } from "../location.ts";
 
 const PATH = ["result", "extracted"];
 
