@@ -28,6 +28,7 @@ import type { AutomationStudioConversation, AutomationStudioConversationStatus, 
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn } from "./turn.ts";
 import {
   interpretAutomationStudioConversationTurn,
+  automationStudioConversationKnownTaskReading,
   respondToAutomationStudioConversationTurn,
   automationStudioConversationSaysWhatToDo,
   automationStudioConversationModelTranscript,
@@ -357,12 +358,15 @@ export class AutomationStudioConversations {
     const earlier = await this.earlierTurns(input, turn.turnId);
     const onScreen = await this.onScreenWithSubject(input);
     const waiting = await this.waitingAsks(input);
-    const interpretation = await interpretAutomationStudioConversationTurn({
+    const context = { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text, waitingAsks: waiting.asks, waitingAsksWithheld: waiting.withheld };
+    // The exact words of a task with a saved Flow start it with no model call; anything else is read by the model (`instructions/known-task.ts`).
+    const known = await automationStudioConversationKnownTaskReading({ message: input.text, context, knownTask: input.knownTask });
+    const interpretation = "interpretation" in known ? known.interpretation : await interpretAutomationStudioConversationTurn({
       model: this.model,
       message: input.text,
       transcript: earlier.transcript,
       transcriptWithheld: earlier.withheld,
-      context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text, waitingAsks: waiting.asks, waitingAsksWithheld: waiting.withheld },
+      context,
       domainInstructions: this.domainInstructions(),
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})

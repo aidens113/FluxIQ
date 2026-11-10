@@ -12,5 +12,6 @@ export * from "./parse.ts";
 export * from "./prompt.ts";
 export * from "./fallback.ts";
 export * from "./interpret.ts";
+export * from "./known-task.ts";
 export * from "./respond.ts";
 export * from "./request.ts";

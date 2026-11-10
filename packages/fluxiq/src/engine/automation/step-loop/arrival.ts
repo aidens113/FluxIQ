@@ -2,6 +2,7 @@ import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/i
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { automationStudioAwaitNodeReadiness, type AutomationStudioReadinessOutcome } from "../recovery/index.ts";
 import { automationStudioRunWait } from "../pacing/index.ts";
+import { automationStudioOptionalStepNotShown } from "../state-routing/index.ts";
 import { automationStudioRecordedState, type AutomationStudioRecordedState } from "../transitions/index.ts";
 import { automationStudioNodeRetryPolicy, type AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
 import { automationStudioStepReacquire, type AutomationStudioStepReacquired } from "../target-reacquire/index.ts";
@@ -74,7 +75,11 @@ export async function automationStudioStepArrival(
   // recording is evidence the action was possible at that point. A gate
   // that judged the state and found it not met asks state routing first,
   // and a way on skips the dispatch entirely (`state-routing/`).
-  const readiness = await automationStudioAwaitNodeReadiness(node, options, `${node.id}.attempt.${ctx.nextAttemptNumber()}`);
+  const attemptId = `${node.id}.attempt.${ctx.nextAttemptNumber()}`;
+  const gated = await automationStudioAwaitNodeReadiness(node, options, attemptId);
+  // A sometimes-present step whose control the page does not show is passed over at once, never waited for (`state-routing/optional-not-shown.ts`).
+  const absent = gated === undefined && ctx.arrival.attempts === 1 ? await automationStudioOptionalStepNotShown({ flow: ctx.flow, node, values: ctx.values, options, attemptId }) : undefined;
+  const readiness = absent?.kind === "not_shown" ? absent.readiness : gated;
   await options.commandRun?.checkpoint();
   if (options.signal?.aborted) {
     return { kind: "return", trace: automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.") };
