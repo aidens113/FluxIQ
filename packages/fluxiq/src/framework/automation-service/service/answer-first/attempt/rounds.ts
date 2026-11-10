@@ -15,6 +15,10 @@
 // is never to burn a budget on a refusal, so it waits for them (`stuck_in_a_loop`), spending
 // nothing more, and a person who answers later carries it on.
 //
+// **A saved step run again runs with this attempt's inputs.** A caller's input values become each
+// bound step's default before the first round, since a round's own run of saved steps resolves them
+// against no inputs (`../flow-run/input-valued-steps.ts`).
+//
 // **A refusal before any model call** (`../../../../../runtime/answer-first/pre-model/`) has spent
 // nothing and tried nothing, so no attempt has really started: one a fresh round cannot change is
 // a setup step, `../setup/`'s to say. Once anything is spent it stays a fresh round, as anything
@@ -26,6 +30,7 @@ import { automationStudioAnswerFirstPreModelStep, type AutomationStudioAnswerFir
 import { automationStudioActivityAskPort } from "../../../../../runtime/automation-activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
+import { automationStudioAnswerFirstInputValuedSteps } from "../flow-run/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRound } from "./round.ts";
@@ -45,6 +50,12 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
   const { input } = run;
   const purse = input.creation.purse;
   if (purse.ceilingUsd <= 0) return "budget_out";
+  // A saved step a round runs again takes this attempt's input values, not those the Flow was learned with (`../flow-run/input-valued-steps.ts`).
+  const inputs = input.caller?.inputs;
+  if (inputs) {
+    run.steps = automationStudioAnswerFirstInputValuedSteps(run.steps, inputs);
+    run.startedWith = automationStudioAnswerFirstInputValuedSteps(run.startedWith, inputs);
+  }
   let note = firstNote;
   let idleRounds = 0;
   for (let ordinal = 1; ; ordinal += 1) {

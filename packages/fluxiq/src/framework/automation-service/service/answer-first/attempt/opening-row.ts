@@ -3,6 +3,7 @@
 // process that dies leaves it counted. Best effort: its ending writes this again, and says so if
 // that fails.
 
+import { automationStudioAnswerFirstKeptCallerOptions } from "../caller/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
@@ -12,6 +13,6 @@ export async function automationStudioAnswerFirstRecordOpening(run: AutomationSt
     ...current,
     flowId,
     ...(run.input.startLocation !== undefined ? { startLocation: run.input.startLocation } : {}),
-    attempts: [...current.attempts, { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), steps: [] }]
+    attempts: [...current.attempts, { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), ...(run.input.caller ? { caller: automationStudioAnswerFirstKeptCallerOptions(run.input.caller) } : {}), steps: [] }]
   })));
 }

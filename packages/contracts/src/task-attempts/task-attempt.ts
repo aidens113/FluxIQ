@@ -113,6 +113,13 @@ export type AutomationStudioTaskAttemptFields = {
   liveSteps: number;
   simulation?: AutomationStudioTaskAttemptSimulation;
   loopsCaught: AutomationStudioTaskAttemptLoopsCaught;
+  /**
+   * The caller that drove this attempt from code turned checking off: its judge `off` and no check
+   * of its own. Its result is then taken as it stands, labelled `unverified`, and the attempt may
+   * still be `achieved` (`./attempt-result-check.ts`). Never set by a person's Stop, and absent on
+   * every attempt a person started, which reads as checking on.
+   */
+  checkingOff?: true;
   /** How many lasting acts could not be tied to a row of their list, so that row may be pressed again: a known limit, measured here (never shown on a card). Absent reads as zero. */
   actsWithNoRow?: number;
   startedFrom?: AutomationStudioTaskAttemptStartedFrom;
@@ -132,7 +139,7 @@ export type AutomationStudioTaskAttemptParseResult =
   | { ok: true; attempt: AutomationStudioTaskAttempt }
   | { ok: false; issues: string[] };
 
-const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "actsWithNoRow", "startedFrom", "startedAtMs", "endedAtMs"]);
+const ATTEMPT_KEYS: ReadonlySet<string> = new Set(["taskId", "attemptId", "ordinal", "projectId", "flowId", "runId", "path", "status", "waitingFor", "spend", "budget", "liveSteps", "simulation", "loopsCaught", "checkingOff", "actsWithNoRow", "startedFrom", "startedAtMs", "endedAtMs"]);
 const SPEND_KEYS: ReadonlySet<string> = new Set(["calls", "inputTokens", "outputTokens", "usd", "ms"]);
 const BUDGET_KEYS: ReadonlySet<string> = new Set(["usd"]);
 const SIMULATION_KEYS: ReadonlySet<string> = new Set(["verdict", "flags"]);
@@ -183,6 +190,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (!isCount(liveSteps)) issues.add("task_attempt.invalid_live_steps");
   if (simulation === null) issues.add("task_attempt.invalid_simulation");
   if (loopsCaught === null) issues.add("task_attempt.invalid_loops_caught");
+  if (value.checkingOff !== undefined && value.checkingOff !== true) issues.add("task_attempt.invalid_checking_off");
   if (value.actsWithNoRow !== undefined && !isCount(value.actsWithNoRow)) issues.add("task_attempt.invalid_acts_with_no_row");
   if (startedFrom === null) issues.add("task_attempt.invalid_started_from");
   if (!isCount(startedAtMs)) issues.add("task_attempt.invalid_started_at");
@@ -199,6 +207,7 @@ function readAttempt(value: unknown, issues: Set<string>): AutomationStudioTaskA
   if (typeof flowId === "string") fields.flowId = flowId;
   if (typeof runId === "string") fields.runId = runId;
   if (simulation !== undefined) fields.simulation = simulation;
+  if (value.checkingOff === true) fields.checkingOff = true;
   if (isCount(value.actsWithNoRow)) fields.actsWithNoRow = value.actsWithNoRow;
   if (startedFrom !== undefined) fields.startedFrom = startedFrom;
   if (isCount(endedAtMs)) fields.endedAtMs = endedAtMs;

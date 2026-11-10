@@ -11,6 +11,9 @@ import { testGroupOptions } from "./tests/test-groups.ts";
 // `packages/client-gateway-websocket/vitest.config.ts` does the same.
 // `vitest.quality.config.ts` inherits it. Guarded by `tests/vitest-config.test.ts`.
 const contractsSource = fileURLToPath(new URL("../contracts/src/", import.meta.url));
+// `@fluxiq/sdk` likewise resolves to its source (the FluxNode acceptance test drives the real client),
+// because its `dist` is untracked and nothing in `vitest run` rebuilds it.
+const sdkSource = fileURLToPath(new URL("../sdk/src/index.ts", import.meta.url));
 const packageRoot = fileURLToPath(new URL(".", import.meta.url));
 
 // `pnpm test` runs this package in two groups, one after the other
@@ -25,6 +28,7 @@ const group = testGroupOptions(process.env.FLUXIQ_TEST_GROUP, packageRoot, confi
 export default defineConfig({
   resolve: {
     alias: [
+      { find: /^@fluxiq\/sdk$/u, replacement: sdkSource },
       { find: /^@fluxiq\/contracts$/u, replacement: `${contractsSource}index.ts` },
       { find: /^@fluxiq\/contracts\/(.+)$/u, replacement: `${contractsSource}$1.ts` }
     ]

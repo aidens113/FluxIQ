@@ -5,11 +5,11 @@
 // the consequences in Core's order and the sites lowercased and without repeats. A refusal throws,
 // which the service reports as the invalid input it is, before a purse opens or a call is made.
 
-import { fluxNodeScopeSchema } from "@fluxiq/contracts/fluxnode";
+import { fluxNodeScopeSchema, isJsonObject } from "@fluxiq/contracts/fluxnode";
 import { parseAutomationStudioPermittedConsequences } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstCallerScope, AutomationStudioAnswerFirstPersonAskSink } from "../../flow-bootstrap-commands/index.ts";
 
-const FIELDS: ReadonlySet<string> = new Set(["taskKey", "model", "budgetUsd", "judge", "check", "personAsk", "scope"]);
+const FIELDS: ReadonlySet<string> = new Set(["taskKey", "model", "budgetUsd", "judge", "check", "personAsk", "scope", "inputs"]);
 const SCOPE_FIELDS: ReadonlySet<string> = new Set(["permittedConsequences", "sites"]);
 const JUDGE_MODES: ReadonlySet<unknown> = new Set(["auto", "always", "off"]);
 const MOST_KEY_CHARS = 512;
@@ -20,7 +20,7 @@ export function automationStudioAnswerFirstCallerOptionsRead(given: unknown): Au
   const options = record(given, "Answer-first caller options must be an object.");
   for (const key of Object.keys(options)) if (!FIELDS.has(key)) throw new Error(`Answer-first caller options do not take "${key}".`);
   const read: AutomationStudioAnswerFirstCallerOptions = {};
-  const { taskKey, model, budgetUsd, judge, check, personAsk, scope } = options;
+  const { taskKey, model, budgetUsd, judge, check, personAsk, scope, inputs } = options;
   if (taskKey !== undefined) {
     if (typeof taskKey !== "string" || taskKey.trim().length === 0 || taskKey.length > MOST_KEY_CHARS) throw new Error(`Answer-first caller taskKey must be 1 to ${MOST_KEY_CHARS} characters, not blank.`);
     read.taskKey = taskKey;
@@ -44,6 +44,11 @@ export function automationStudioAnswerFirstCallerOptionsRead(given: unknown): Au
   }
   if (personAsk !== undefined) read.personAsk = sinkOf(personAsk);
   if (scope !== undefined) read.scope = scopeOf(scope);
+  // A copy, so the caller changing its object later changes nothing a run is using.
+  if (inputs !== undefined) {
+    if (!isJsonObject(inputs)) throw new Error("Answer-first caller inputs must be an object of JSON values, by input name.");
+    read.inputs = structuredClone(inputs);
+  }
   return read;
 }
 
