@@ -15,5 +15,6 @@ export * from "./loop-outcome.ts";
 export * from "./on-fail.ts";
 export * from "./on-retry.ts";
 export * from "./state-route.ts";
+export * from "./step-timing.ts";
 export * from "./success-check.ts";
 export * from "./uncertain-stop.ts";

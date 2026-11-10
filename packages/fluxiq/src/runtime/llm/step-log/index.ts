@@ -38,6 +38,9 @@
 //   `refused:<code>`), `gapStep`, `gap` (why it stopped, by code and field path)
 //   and the operation counts; never trace content,
 //   ids, page data or typed values.
+// - Flow folders `NNNN-flow-<definitionId>` time one pass of a Flow run over one
+//   node, which no tool call wraps (`flow-step.ts`): `meta.json` alone, kind `flow`,
+//   `toolId` the definition, `nodeId`, `status`, `resultCode` and `spans`.
 // - Note folders `NNNN-note` hold `meta.json` alone, kind `note`: one plain line (`line`) about
 //   something that happened, never page text (`note-step.ts`).
 // - `meta.json` is written last: a folder with it is complete. Every kind's
@@ -51,6 +54,7 @@
 // best-effort: a step log that cannot write never changes or fails a call.
 export * from "./answer-step.ts";
 export * from "./directory.ts";
+export * from "./flow-step.ts";
 export * from "./model-step.ts";
 export * from "./note-step.ts";
 export * from "./offline-trial-step.ts";
