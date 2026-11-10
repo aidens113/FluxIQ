@@ -57,8 +57,12 @@ export type AutomationStudioConversationDecision =
   | { kind: "clarify"; question: string }
   | { kind: "reply"; text: string };
 
-/** Who decided: the model, or Core matching the words itself because the model could not be used. */
-export type AutomationStudioConversationDecisionSource = "model" | "closest_match";
+/**
+ * Who decided: the model, Core matching the words itself because the model could not be used, or
+ * Core recognising the exact words of a task that already has a saved Flow, with no model asked
+ * (`known_task`, `./known-task.ts`).
+ */
+export type AutomationStudioConversationDecisionSource = "model" | "closest_match" | "known_task";
 
 /** A decision, how it was reached, and why the model was not the one to reach it when it was not. */
 export type AutomationStudioConversationInterpretation = {

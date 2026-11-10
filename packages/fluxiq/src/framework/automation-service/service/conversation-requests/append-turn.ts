@@ -1,6 +1,7 @@
 import type { ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
 import {
   automationStudioConversationCommandVocabulary,
+  automationStudioConversationKnownTask,
   startAutomationStudioConversationCommand,
   type AutomationStudioConversationFlowReference
 } from "../../../../runtime/conversations/index.ts";
@@ -33,12 +34,15 @@ export async function appendConversationTurnForRequest(
   if (Array.isArray(payload.capabilities)) {
     const onScreen = requestedOnScreen(payload.onScreen);
     const caller = request.actor ? service.conversations.callerFor(request.actor) : null;
+    // The exact words of a task with a saved Flow start it with no model call (task speed S6), asked through the same read route the command uses.
+    const lookup = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null });
     const answer = await service.conversations.respondToPersonTurn({
       ...personTurn,
       capabilities: automationStudioConversationCommandVocabulary(parseAutomationStudioPanelCapabilities(payload.capabilities)),
       flows: await projectFlows(service, projectId),
       onScreen,
-      caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null
+      caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null,
+      ...(lookup ? { knownTask: automationStudioConversationKnownTask(lookup) } : {})
     });
     const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls });
     const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;

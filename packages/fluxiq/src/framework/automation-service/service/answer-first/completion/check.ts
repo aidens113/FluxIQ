@@ -8,6 +8,8 @@
 //     no                               refused with its reason, as a judge's no; the digest is kept
 //     pass, judge not `always`         accepted, confirmed by the check, and the attempt is achieved
 //   judge `off` and no check           taken as it is, unverified: the rounds end, nothing confirmed
+//   a replay that ran as saved         accepted on its own record, no model call (`./replay-stands.ts`):
+//                                      one check, of the record against the Flow's judged whole run
 //   one judge call
 //     yes                              accepted, and the attempt is achieved
 //     no, unsure                       refused with the screened reason; the digest is kept
@@ -68,6 +70,8 @@ import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstCallerCheckAnswer } from "./caller-check.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS as WORDS } from "./refused-words.ts";
+import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
+import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE = "answer_first.not_judged";
@@ -84,6 +88,8 @@ const NOT_JUDGED = AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE;
 const CHECKED_NO = "answer_first.check_no";
 /** What a result the caller's check passed was checked by, in a person's words. */
 const BY_CALLER_CHECK = "The caller's own check of the result.";
+/** What a replay accepted on its record was checked by, in a person's words (`./replay-stands.ts`). */
+const ON_RECORD = "The saved Flow's run, step by step, against its judged whole run: every step ran as saved and read rows of the same shape.";
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
@@ -122,6 +128,10 @@ export type AutomationStudioAnswerFirstCompletionState = {
   /** What the result held at the latest check, for the model's refusal and the person's question. */
   held?: { rows: AutomationStudioAnswerFirstRowsSummary; acts: number } | undefined;
   purseRefused: boolean;
+  /** A replay accepted on its own record, with no judge call (`./replay-stands.ts`). */
+  onRecord?: true | undefined;
+  /** Why the latest replay offered was judged rather than taken on its record. */
+  deviation?: AutomationStudioAnswerFirstReplayDeviation | undefined;
 };
 
 export type AutomationStudioAnswerFirstCompletionCheck = {
@@ -149,6 +159,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   purse: Parameters<typeof automationStudioAnswerFirstKeepBackJudge>[0];
   say(title: string, text: string): void;
   seed?: Pick<AutomationStudioAnswerFirstCompletionState, "timesChecked"> | undefined;
+  /** The replay this completion closes, when it is a saved Flow's run (`./replay-record.ts`). Absent, or undefined when asked, the judge decides as before. */
+  replay?: (() => AutomationStudioAnswerFirstReplayRecord | undefined) | undefined;
 }): AutomationStudioAnswerFirstCompletionCheck {
   const state: AutomationStudioAnswerFirstCompletionState = { achieved: false, timesChecked: input.seed?.timesChecked ?? 0, refusedAgain: 0, purseRefused: false };
   const asks = automationStudioFlowBootstrapInstructionAsk(input.instructions);
@@ -204,6 +216,23 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
         state.refused = undefined;
         input.say("Not checked", "Checking is turned off for this task, so this is the result as it is, unchecked.");
         return { ok: true };
+      }
+      // A replay that ran exactly as its judged whole run did is that result again (`./replay-stands.ts`).
+      const replay = input.replay?.();
+      if (replay) {
+        const shape = { columns: rows.columns.map((column) => column.id), empty: rows.totalRows === 0 };
+        const read = automationStudioAnswerFirstReplayStands(replay, { shape, judge: confirm?.judge });
+        if (read.stands) {
+          state.timesChecked += 1;
+          state.checkedWhat = ON_RECORD;
+          state.achieved = true;
+          state.onRecord = true;
+          state.deviation = undefined;
+          state.refused = undefined;
+          input.say("Checked", "Every step ran as it did when this was last checked, so the result stands.");
+          return { ok: true };
+        }
+        state.deviation = read.deviation;
       }
       automationStudioAnswerFirstKeepBackJudge(input.purse, { summaryInputTokens: Math.ceil(JSON.stringify(summary).length / CHARS_PER_TOKEN) });
       input.say("Checking the result", "Checking what I have against what you asked for.");

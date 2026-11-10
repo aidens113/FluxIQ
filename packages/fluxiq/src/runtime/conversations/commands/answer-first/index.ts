@@ -4,6 +4,7 @@
 export { automationStudioConversationAttemptAnnounce } from "./announce.ts";
 export { automationStudioConversationAnswersFirst } from "./answers-first.ts";
 export { automationStudioConversationKnownFlow } from "./known-flow.ts";
+export { automationStudioConversationKnownTask } from "./known-task.ts";
 export { automationStudioConversationAttemptOutcome } from "./outcome.ts";
 export { AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY } from "./summary.ts";
 export { automationStudioConversationTaskOfFlow, type AutomationStudioConversationTaskOfFlow } from "./task-of-flow.ts";

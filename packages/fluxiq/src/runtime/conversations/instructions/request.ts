@@ -24,7 +24,18 @@ export type AutomationStudioConversationInstructionRequest = AutomationStudioCon
   caller?: AutomationStudioConversationCaller | null;
   /** Tests shorten the model's time budget; production takes the defaults. */
   limits?: Partial<AutomationStudioConversationInterpretLimits>;
+  /**
+   * Whether these exact words, on the page on screen, are a task that already has a saved Flow
+   * (`./known-task.ts`). Absent, every message is read by the model, as before.
+   */
+  knownTask?: AutomationStudioConversationKnownTask | undefined;
 };
+
+/**
+ * Whether a task with these words (folded as a task key folds them, on the page the request has on
+ * screen) already lives under a saved Flow. Answered by the caller, which can reach the task memory.
+ */
+export type AutomationStudioConversationKnownTask = (instructionText: string) => Promise<boolean>;
 
 /**
  * The person's turn, stored first, and what it became. `response` is null only

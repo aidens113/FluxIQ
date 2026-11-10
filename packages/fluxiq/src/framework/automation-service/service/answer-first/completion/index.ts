@@ -4,3 +4,6 @@ export { AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWE
 export { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS } from "./refused-words.ts";
 export { automationStudioAnswerFirstResultHolds } from "./result-holds.ts";
 export { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "./schema.ts";
+// A replay accepted on its own record when it ran as saved, and the judge asked when it deviated (task speed S9).
+export type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstReplayRecord, AutomationStudioAnswerFirstReplayStep } from "./replay-record.ts";
+export { AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";

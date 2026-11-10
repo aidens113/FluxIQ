@@ -29,3 +29,5 @@ export * from "./confirmation.ts";
 export * from "./execute.ts";
 export * from "./confirmed.ts";
 export * from "./start.ts";
+// The lookup a chat turn takes to start a known task with no model call (`./answer-first/known-task.ts`).
+export { automationStudioConversationKnownTask } from "./answer-first/index.ts";
