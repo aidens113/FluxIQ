@@ -1,6 +1,6 @@
-// How a replay was checked, as the attempt's row and the step files keep it (t897, `../replay-verdict.ts`).
+// How a replay was checked, as the completion hands it to the attempt's row and says it in the step files (t897, `../replay-verdict.ts`).
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, automationStudioAnswerFirstReplayKept, automationStudioAnswerFirstReplayVerdictOf, automationStudioAnswerFirstReplayVerdictRead } from "../index.ts";
+import { automationStudioAnswerFirstReplayKept, automationStudioAnswerFirstReplayVerdictOf } from "../index.ts";
 import { automationStudioAnswerFirstReplayVerdictNote } from "../replay-verdict.ts";
 
 describe("a replay's verdict", () => {
@@ -10,14 +10,6 @@ describe("a replay's verdict", () => {
     expect(automationStudioAnswerFirstReplayVerdictOf({})).toBeUndefined();
     expect(automationStudioAnswerFirstReplayKept({})).toEqual({});
     expect(automationStudioAnswerFirstReplayKept({ onRecord: true })).toEqual({ replay: { stood: true } });
-  });
-
-  it("reads back every deviation the rule names, and nothing else", () => {
-    for (const deviation of AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS) expect(automationStudioAnswerFirstReplayVerdictRead({ stood: false, deviation })).toEqual({ stood: false, deviation });
-    expect(automationStudioAnswerFirstReplayVerdictRead({ stood: true })).toEqual({ stood: true });
-    for (const bad of [null, [], "stood", { stood: true, deviation: "step_routed" }, { stood: false }, { stood: false, deviation: "page said so" }, { stood: false, deviation: "step_routed", extra: 1 }]) {
-      expect(automationStudioAnswerFirstReplayVerdictRead(bad), JSON.stringify(bad)).toBeUndefined();
-    }
   });
 
   it("is said in the step files in closed words, with the deviation's own word", () => {

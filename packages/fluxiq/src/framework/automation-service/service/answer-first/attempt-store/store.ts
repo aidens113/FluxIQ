@@ -24,7 +24,7 @@ import type { AutomationStudioProjectStore } from "../../projects/index.ts";
 import { AutomationStudioAnswerFirstAttemptLocator } from "./locator.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
-import { automationStudioAnswerFirstReplayVerdictRead } from "../completion/replay-verdict.ts";
+import { automationStudioAnswerFirstReplayVerdictRead } from "./replay-verdict.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";

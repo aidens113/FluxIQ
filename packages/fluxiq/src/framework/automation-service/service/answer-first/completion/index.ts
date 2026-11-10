@@ -11,4 +11,4 @@ export { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
 export { automationStudioAnswerFirstReplayOf } from "./replay-of.ts";
 export { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS } from "./on-record.ts";
 // What the replay came to, kept on the attempt's row and written to the step files (t897).
-export { automationStudioAnswerFirstReplayKept, automationStudioAnswerFirstReplayVerdictOf, automationStudioAnswerFirstReplayVerdictRead, type AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.ts";
+export { automationStudioAnswerFirstReplayKept, automationStudioAnswerFirstReplayVerdictOf } from "./replay-verdict.ts";

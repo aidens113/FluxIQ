@@ -12,11 +12,22 @@ export type AutomationStudioTaskOutcomeProvenance = {
 };
 
 /**
- * How an attempt's replay of its saved Flow was checked (task speed S9, t897): it stood on its own record
- * with no judge call, or it deviated from the accepted run and was judged. `deviation` is Core's closed
- * word for why (`AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS`).
+ * Every way a replay of a saved Flow can deviate from the run a person accepted, which sends it to the
+ * judge instead of standing on its record (task speed S9), in the order Core checks them
+ * (`framework/.../answer-first/completion/replay-stands.ts` says what each means).
  */
-export type AutomationStudioTaskOutcomeReplay = { stood: true } | { stood: false; deviation: string };
+export const AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS = [
+  "judge_always", "asked_again", "flow_not_proven", "flow_not_confirmed", "run_not_whole", "repaired", "step_failed", "step_routed",
+  "act_not_done", "check_cleared", "step_retried", "shape_unknown", "shape_differs"
+] as const;
+
+export type AutomationStudioTaskReplayDeviation = (typeof AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS)[number];
+
+/**
+ * How an attempt's replay of its saved Flow was checked (task speed S9, t897): it stood on its own record
+ * with no judge call, or it deviated from the accepted run and was judged, for the closed reason named.
+ */
+export type AutomationStudioTaskOutcomeReplay = { stood: true } | { stood: false; deviation: AutomationStudioTaskReplayDeviation };
 
 /** One attempt at a task and what goes with it. */
 export type AutomationStudioTaskOutcome = {

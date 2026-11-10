@@ -7,11 +7,13 @@
 // as a note when the completion decides (`./check.ts`).
 //
 // Absent where the attempt's completion closed no replay: an exploration, a repair, a carried-on
-// attempt, or a run that never reached a completion.
+// attempt, or a run that never reached a completion. The shape and its closed words are the contract's
+// (`AutomationStudioTaskOutcomeReplay`); the row reads it back in `../attempt-store/replay-verdict.ts`.
 
-import { AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
+import type { AutomationStudioTaskOutcomeReplay } from "../../../../../api-contracts/automation.ts";
+import type { AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 
-export type AutomationStudioAnswerFirstReplayVerdict = { stood: true } | { stood: false; deviation: AutomationStudioAnswerFirstReplayDeviation };
+type AutomationStudioAnswerFirstReplayVerdict = AutomationStudioTaskOutcomeReplay;
 
 /** The verdict a completion's state holds, or none where it closed no replay. */
 export function automationStudioAnswerFirstReplayVerdictOf(state: { onRecord?: true | undefined; deviation?: AutomationStudioAnswerFirstReplayDeviation | undefined }): AutomationStudioAnswerFirstReplayVerdict | undefined {
@@ -23,17 +25,6 @@ export function automationStudioAnswerFirstReplayVerdictOf(state: { onRecord?: t
 export function automationStudioAnswerFirstReplayKept(state: Parameters<typeof automationStudioAnswerFirstReplayVerdictOf>[0]): { replay?: AutomationStudioAnswerFirstReplayVerdict } {
   const replay = automationStudioAnswerFirstReplayVerdictOf(state);
   return replay ? { replay } : {};
-}
-
-/** A kept verdict read strictly, as a stored row is: anything else is no verdict this reads. */
-export function automationStudioAnswerFirstReplayVerdictRead(value: unknown): AutomationStudioAnswerFirstReplayVerdict | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { stood?: unknown; deviation?: unknown };
-  const keys = Object.keys(held);
-  if (held.stood === true && keys.length === 1) return { stood: true };
-  const known: readonly string[] = AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS;
-  if (held.stood === false && keys.length === 2 && typeof held.deviation === "string" && known.includes(held.deviation)) return { stood: false, deviation: held.deviation as AutomationStudioAnswerFirstReplayDeviation };
-  return undefined;
 }
 
 /** The step files' note for a verdict: a closed sentence and the closed word, nothing of the page. */
