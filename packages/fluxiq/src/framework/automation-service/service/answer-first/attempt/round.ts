@@ -123,7 +123,12 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     }),
     executeTool: input.routing.recording(person.executeTool)
   };
-  const signalled = automationStudioAnswerFirstLoopSignal({ askPerson: () => { run.askPerson = true; } });
+  const signalled = automationStudioAnswerFirstLoopSignal({
+    askPerson: (signal) => {
+      run.askPerson = true;
+      run.stuck = { finding: signal };
+    }
+  });
   try {
     const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
@@ -159,7 +164,8 @@ async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonO
   run.refusalEndedRound = true;
   if (rung === "ask_person") {
     run.askPerson = true;
-    run.askWords = AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.ask({ rows: state.held?.rows.totalRows ?? 0, acts: state.held?.acts ?? 0, answered: state.answerText !== undefined }, state.refused?.reason);
+    // The same completion again, past what the ladder allows: the question says so, with what the check said (`../loop-signal/stuck-question.ts`).
+    run.stuck = { finding: { pattern: "near_repeat", repeats: state.refusedAgain + 1, unchanged: ["rows", "acts"] }, completionRefused: { reason: state.refused?.reason } };
   }
   return { ok: true };
 }

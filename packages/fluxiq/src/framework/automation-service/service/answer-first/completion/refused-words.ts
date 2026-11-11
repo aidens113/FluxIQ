@@ -21,10 +21,6 @@ const NOT_NEW = "The check reads what you hold, never the draft, your summary or
 
 const SAID: Readonly<Record<"no" | "unsure", string>> = Object.freeze({ no: "said no to", unsure: "could not confirm" });
 
-function plural(count: number, one: string): string {
-  return `${count} ${one}${count === 1 ? "" : "s"}`;
-}
-
 export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
   /** A judge's no or unsure, as the model reads it: its reason whole, then what would change it. */
   judged: (reason: string): string => `${reason} ${NEW_EVIDENCE}`,
@@ -35,7 +31,7 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
 
   /** A completion over what the check last refused: what that was about, what would change it, and what repeating it leads to. */
   sameEvidence: (verdict: "no" | "unsure", reason: string): string =>
-    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} So get something new before you complete again: go to where what the check could not see is shown, and look, read or act there. Completing again with nothing new starts a fresh round, and the time after that the person is asked whether to keep going or to stop with what you hold.`,
+    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} So get something new before you complete again: go to where what the check could not see is shown, and look, read or act there. Completing again with nothing new starts a fresh round, and each time after that the round is stopped and the next must take a different way, while the person is asked what to do; you never wait for them.`,
 
   /** Said when any of these comes again over one draft, in place of the loop's words for a check that reads the draft (`../../../../../runtime/llm/decision-handlers/completion.ts`). */
   sentAgain: NOT_NEW,
@@ -43,14 +39,7 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
   /** A check that gave no answer is no refusal of what was sent: asking again is what it wants. */
   sentAgainUnjudged: "The check gave no answer, which is not a no: completing again asks it again.",
 
-  /** A fresh round after a refused repeat, in front of its evidence: `lastCheck` beside it holds the reason. */
-  freshRound: (personSaidKeepGoing: boolean): string =>
-    `Your completion was refused again over the same evidence, so this round starts fresh. lastCheck says what the check said. ${NEW_EVIDENCE} Completing again with nothing new stops and asks the person whether to keep going or to stop with what you hold.${personSaidKeepGoing ? " The person was asked and said to keep going, so get something new." : ""}`,
-
-  /** The person's question, with what is held and what the check said. No code in it: the reason is the check's screened words. */
-  ask: (held: { rows: number; acts: number; answered: boolean }, reason: string | undefined): string => {
-    const has = [...(held.rows ? [plural(held.rows, "row")] : []), ...(held.acts ? [`${plural(held.acts, "act")} on the site`] : []), ...(held.answered ? ["an answer in words"] : [])];
-    const what = has.length ? has.join(" and ") : "nothing confirmed yet";
-    return `The check keeps refusing what I have and I have found nothing new to change that, so I have stopped spending to ask. What I have: ${what}.${reason ? ` What the check said: ${reason}` : ""} Do you want me to keep going, or stop here with what I have?`;
-  }
+  /** A fresh round after a refused repeat, in front of its evidence: `lastCheck` beside it holds the reason, and `personSaid` the person's answer once they have given one. */
+  freshRound: (personAnswered: boolean): string =>
+    `Your completion was refused again over the same evidence, so this round starts fresh. lastCheck says what the check said. ${NEW_EVIDENCE} Completing again with nothing new stops this round too, and the next must take a different way; the person is asked what to do, and you never wait for them.${personAnswered ? " The person has answered: personSaid holds their words. Follow them to get something new." : ""}`
 });

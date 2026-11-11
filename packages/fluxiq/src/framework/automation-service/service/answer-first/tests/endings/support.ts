@@ -4,6 +4,7 @@
 
 import { expect } from "vitest";
 import type { AutomationStudioFlowPaths } from "../../../paths/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../../../service.ts";
 import { judgeReply } from "../../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstAttemptPorts, automationStudioAnswerFirstAttemptStoreOf } from "../../index.ts";
@@ -84,4 +85,29 @@ export function held(): { before: (service: AutomationStudioService, project: { 
       return found;
     }
   };
+}
+
+/**
+ * Holds the first model call of the round a stopped loop was steered onto (R7: steered, never
+ * parked), so a test can look at the attempt while it is still going and nothing waits on a
+ * person, then lets it go on. `steered` is that call's request.
+ */
+export function heldAtSteer(): { wrap: (provider: AutomationStudioLlmProvider) => AutomationStudioLlmProvider; steered: Promise<AutomationStudioLlmTaskRequest>; release: () => void } {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let reached: (request: AutomationStudioLlmTaskRequest) => void = () => undefined;
+  const steered = new Promise<AutomationStudioLlmTaskRequest>((resolve) => { reached = resolve; });
+  let holding = false;
+  const wrap = (provider: AutomationStudioLlmProvider): AutomationStudioLlmProvider => ({
+    ...provider,
+    runTask: async (request, execution) => {
+      if (!holding && JSON.stringify(request.context?.evidenceLoop?.evidence ?? []).includes("loopStopped")) {
+        holding = true;
+        reached(request);
+        await released;
+      }
+      return await provider.runTask(request, execution);
+    }
+  });
+  return { wrap, steered, release: () => release() };
 }
