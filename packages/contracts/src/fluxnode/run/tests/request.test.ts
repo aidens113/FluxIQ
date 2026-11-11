@@ -52,6 +52,12 @@ describe("overrides and options on a resume", () => {
     expect(codesOf({ name: "a", overrides: { pace: { minStepGapMs: 5 } } })).toEqual([]);
     expect(codesOf({ name: "a", overrides: { prompts: { "core.output_rules": { mode: "append", text: "x" } } } })).toEqual(["/overrides/prompts/core.output_rules overrides.section_locked"]);
   });
+
+  it("refuses overrides on an inline pipeline run, which takes options only", () => {
+    const pipeline = { name: "a.b", source: { kind: "input", field: "q" }, steps: [{ id: "top", kind: "limit", count: 1 }] };
+    expect(codesOf({ pipeline, inputs: { q: ["x"] }, overrides: { judgeCriteria: ["x"] } })).toEqual(["/overrides run_request.overrides_on_pipeline"]);
+    expect(codesOf({ pipeline, inputs: { q: ["x"] }, options: { retries: 5 } })).toEqual([]);
+  });
 });
 
 describe("checkFluxNodeRunInputs", () => {

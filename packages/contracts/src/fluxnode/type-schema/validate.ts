@@ -5,6 +5,7 @@
 import type { JsonValue } from "../../core.ts";
 import { findNonJsonPart, formatJsonPointer, jsonEqual } from "../json/index.ts";
 import { matchesJsonTypeFormat } from "./formats.ts";
+import { JSON_TYPE_SECRET_MIN_LENGTH } from "./secret-min-length.ts";
 import type { JsonTypeName, JsonTypeSchema } from "./type-schema.ts";
 
 /** Why a value failed its type. One code per keyword, plus `not_json` for a value no schema can describe. */
@@ -92,7 +93,7 @@ function checkString(schema: JsonTypeSchema, value: string, path: Array<string |
   const length = [...value].length;
   if (schema.minLength !== undefined && length < schema.minLength) push(errors, path, "min_length", `Expected at least ${schema.minLength} characters, got ${length}.`);
   if (schema.maxLength !== undefined && length > schema.maxLength) push(errors, path, "max_length", `Expected at most ${schema.maxLength} characters, got ${length}.`);
-  if (schema.format !== undefined && !matchesJsonTypeFormat(schema.format, value)) push(errors, path, "format", `Expected a ${schema.format}.`);
+  if (schema.format !== undefined && !matchesJsonTypeFormat(schema.format, value)) push(errors, path, "format", schema.format === "secret" ? `A secret is at least ${JSON_TYPE_SECRET_MIN_LENGTH} characters, since Core withholds its every occurrence in what the model reads.` : `Expected a ${schema.format}.`);
 }
 
 function checkNumber(schema: JsonTypeSchema, value: number, path: Array<string | number>, errors: JsonValueError[]): void {

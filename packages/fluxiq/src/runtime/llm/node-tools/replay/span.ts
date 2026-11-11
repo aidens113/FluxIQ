@@ -104,6 +104,7 @@ import type { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY } from "../../../result
 import type { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import { screenAutomationStudioLlmEvidence } from "../../harness/index.ts";
 import { automationStudioLlmStepLogScope } from "../../step-log/index.ts";
+import { automationStudioRunSecrets } from "../../../run-secrets/index.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY, type AutomationStudioFlowDraftReplayForward, type AutomationStudioFlowDraftReplayRowCounts } from "./forward.ts";
 import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
@@ -349,7 +350,8 @@ export function automationStudioFlowDraftReplayPassCall(
   const parameters = (scheduled?.input ?? step.ranWith)?.parameters;
   const pass: AutomationStudioNodeReplayPass = {};
   if (isRecord(parameters) && automationStudioFlowDraftHoldsBinding(parameters)) {
-    const resolved = resolveAutomationNodeParameterValues(parameters, { ...(earlier ?? {}), ...(row ? { item: row.item } : {}) });
+    // A run's secret input answers a binding to its name (`../../../run-secrets/`), so a build's test types the secret, never the stand-in the model wrote as its test value.
+    const resolved = resolveAutomationNodeParameterValues(parameters, { ...(automationStudioRunSecrets() ?? {}), ...(earlier ?? {}), ...(row ? { item: row.item } : {}) });
     if (resolved.missingPaths.length) return { unresolved: resolved.missingPaths };
     pass.parameters = resolved.values;
   }

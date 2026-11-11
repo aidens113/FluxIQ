@@ -5,10 +5,14 @@
 //
 // **A wait never outlives the run.** Stopping, or ending, settles every open wait with no answer, so a
 // check or a person's question nobody answered can only send the attempt round again or park it.
+//
+// **A secret input never leaves it** (`format: "secret"`, `./secrets/`): every event it tells and the result
+// it keeps show `[withheld]` wherever a secret's value would have been, whatever said it.
 
 import { fluxNodeAnswerFitsEvent, type FluxNodeCost, type FluxNodeOverrides, type FluxNodeEventAnswer, type FluxNodeOptions, type FluxNodeRunEvent, type FluxNodeRunResult, type FluxNodeRunStateBody, type FluxNodeRunSummary } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { FluxNodeServiceRefusal } from "./fluxnode-service.ts";
+import { fluxNodeWithheldForProgram } from "./secrets/index.ts";
 
 /** An event as a run tells it, before Core numbers and stamps it. */
 export type FluxNodeRunEventBody = FluxNodeRunEvent extends infer Event ? Event extends FluxNodeRunEvent ? Omit<Event, "runId" | "seq" | "at"> : never : never;
@@ -48,7 +52,8 @@ export class FluxNodeRun {
   /** The digest of the run's resolved overrides, once known and only when it had any, for its result. */
   overridesDigest: string | undefined;
 
-  constructor(readonly runId: string, readonly target: FluxNodeRunTarget, readonly carried: FluxNodeRunCarried, readonly eventsPath: string, private readonly now: () => number) {
+  /** `secrets`: the values of the run's secret inputs, withheld from every event and the result. */
+  constructor(readonly runId: string, readonly target: FluxNodeRunTarget, readonly carried: FluxNodeRunCarried, readonly eventsPath: string, private readonly now: () => number, private readonly secrets: readonly string[] = []) {
     this.startedAt = now();
   }
 
@@ -67,7 +72,7 @@ export class FluxNodeRun {
   /** Tells an event: numbered, stamped and kept, and every reader woken. Nothing after `ended`. */
   tell(body: FluxNodeRunEventBody): FluxNodeRunEvent | undefined {
     if (this.ended) return undefined;
-    const event = { ...body, runId: this.runId, seq: this.told.length + 1, at: this.now() } as FluxNodeRunEvent;
+    const event = fluxNodeWithheldForProgram({ ...body, runId: this.runId, seq: this.told.length + 1, at: this.now() } as FluxNodeRunEvent, this.secrets);
     this.told.push(event);
     for (const listener of [...this.listeners]) listener();
     return event;
@@ -128,8 +133,9 @@ export class FluxNodeRun {
   }
 
   /** The run's ending: its cost, then `ended`, the last event, and every wait settled. */
-  end(result: FluxNodeRunResult): void {
+  end(given: FluxNodeRunResult): void {
     if (this.ended) return;
+    const result = fluxNodeWithheldForProgram(given, this.secrets);
     this.spent = result.cost;
     for (const wait of [...this.waits.values()]) wait.settle(undefined);
     this.tell({ type: "cost", cost: result.cost, budgetUsd: this.budgetUsd ?? 0 });

@@ -36,7 +36,6 @@ export type FluxNodeServiceRefusal = {
   code: FluxNodeErrorCode;
   message: string;
   issues?: FluxNodeIssue[];
-  retryAfterMs?: number;
 };
 
 /** Every method answers this; a refusal is never a run ending (`FLUXNODE_RUN_STATUSES` are those). */

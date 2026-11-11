@@ -46,6 +46,7 @@
 // credential is not a node id.
 import type { JsonValue } from "../../../core/index.ts";
 import { FLUXIQ_RUNTIME_WITHHELD_VALUE, fluxiqRuntimeTextWithholding, type FluxIQRuntimeWithheldValues } from "../../../runtime/index.ts";
+import { automationStudioRunSecrets } from "../../../runtime/run-secrets/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../contracts.ts";
 import { isAutomationStudioRecordTraceMarker } from "../records/summary.ts";
 
@@ -117,7 +118,8 @@ export type AutomationStudioTraceWithholding = {
 };
 
 export function automationStudioTraceWithholding(): AutomationStudioTraceWithholding {
-  const withheld: WithheldValues = { texts: new Set<string>(), numbers: new Set<number>() };
+  // A run's secret inputs are withheld from the start, wherever they reach the trace (`runtime/run-secrets/`).
+  const withheld: WithheldValues = { texts: new Set<string>(Object.values(automationStudioRunSecrets() ?? {})), numbers: new Set<number>() };
   return {
     record(authored, resolved) {
       recordSuppliedValue(authored, resolved, withheld, 0);

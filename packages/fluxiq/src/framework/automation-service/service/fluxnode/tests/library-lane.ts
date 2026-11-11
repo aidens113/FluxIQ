@@ -12,7 +12,7 @@ import { parseFluxNodeRunRequest } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionResult, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { caller as modelCaller, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "../../answer-first/index.ts";
@@ -57,6 +57,10 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   /** The engine's own presses of "Find loans", with the title each ran with. */
   const engineFinds: unknown[] = [];
+  /** The record output's label each engine press of "Find loans" ran with: which version of a Flow a replay ran. */
+  const engineLabels: unknown[] = [];
+  /** What an engine press of "Find loans" answers instead, or waits for: the site changed under a saved Flow. */
+  const engine: { over?: ((parameters: Readonly<Record<string, unknown>>) => AutomationNodeExecutionResult | undefined | Promise<AutomationNodeExecutionResult | undefined>) | undefined } = {};
   let fluxNodes: FluxNodeService | undefined;
   const provider = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
@@ -75,18 +79,23 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider }), llmEvidenceRuntime: byHand });
   service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.find", packageVersion: "1.0.0", domainId: "library", nodes: [FIND_NODE] },
-    { packageId: "library.find", packageVersion: "1.0.0", implementations: { [FIND_LOANS]: ({ parameters }) => {
+    { packageId: "library.find", packageVersion: "1.0.0", implementations: { [FIND_LOANS]: async ({ parameters }) => {
       engineFinds.push(parameters.title);
-      return { status: "success", route: "success", outputs: { success: true }, effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput ?? LOANS_OUTPUT, records: loansWith(library, parameters.title) } }] };
+      engineLabels.push((parameters.recordOutput as JsonObject | undefined)?.label);
+      const over = await engine.over?.(parameters);
+      if (over) return over;
+      const found: AutomationNodeExecutionResult = { status: "success", route: "success", outputs: { success: true }, effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput ?? LOANS_OUTPUT, records: loansWith(library, parameters.title) } }] };
+      return found;
     } } }
   ));
   automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
-  fluxNodes = createFluxNodeService({ service, domainId: "library", modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
+  const made = () => createFluxNodeService({ service, domainId: "library", modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
+  fluxNodes = made();
   cleanups.push(async () => {
     await service.close();
     await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
-  const nodes = fluxNodes;
+  let nodes = fluxNodes;
 
   /** Starts a run with this script and these judge replies, answers what it asks with `answers`, and reads it to its end. */
   const run = async (body: unknown, given: { script?: readonly Decision[]; judge?: readonly unknown[]; answers?: (event: FluxNodeRunEvent) => FluxNodeEventAnswer | undefined; onStarted?: (state: FluxNodeRunStateBody) => void | Promise<void> } = {}) => {
@@ -126,7 +135,14 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     };
   };
 
-  return { service, fluxNodes: nodes, library, requests, engineFinds, run, arm };
+  /** A FluxNode service made again over the same Core, as a server restarted makes it: nothing held in memory, the registry read back from the Flows. */
+  const restart = (): FluxNodeService => {
+    nodes = made();
+    fluxNodes = nodes;
+    return nodes;
+  };
+
+  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engine, run, arm, restart };
 }
 
 /** Stops the run `runId` names, or every run still going where none is named: the program stopping what has no more to try. */

@@ -20,6 +20,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultEndView } from "../result-summary.ts";
+import { automationStudioJudgeCriteriaText, automationStudioOverriddenText } from "../../run-overrides/index.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 import { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
@@ -61,8 +62,12 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(ended.endView ? { endView: ended.endView } : {})
   };
   const { flowShape: _notShown, ...shown } = read;
+  // A run's extra criteria follow the question as a list, and are there only when the run has some.
+  const criteria = automationStudioJudgeCriteriaText();
+  // The question is an open section (`judge.question`): a run may add to it or put its own in its place.
+  const question = automationStudioOverriddenText("prompt", "judge.question", AUTOMATION_STUDIO_FLOW_LESS_QUESTION);
   const sent = {
-    question: AUTOMATION_STUDIO_FLOW_LESS_QUESTION,
+    question: criteria ? `${question}\n\n${criteria}` : question,
     ...(summary.askedAgain ? { askedAgain: AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } : {}),
     ...shown,
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),

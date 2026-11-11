@@ -68,5 +68,7 @@ describe("canonicalFluxNodeSpec", () => {
     expect(left).toBe(right);
     expect(JSON.parse(left)).toMatchObject({ name: "market.cheapest-listings", options: { retries: 4, judge: "off" }, hasCheck: false });
     expect(canonicalFluxNodeSpec(spec({ options: { retries: 5 } }))).not.toBe(left);
+    // Every option is in the form, so one added later (humanness) still tells two specs apart.
+    expect(canonicalFluxNodeSpec(spec({ options: { humanness: 40 } }))).not.toBe(canonicalFluxNodeSpec(spec({ options: { humanness: 0 } })));
   });
 });

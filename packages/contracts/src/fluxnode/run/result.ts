@@ -10,6 +10,8 @@ import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
 import { jsonValueSchema } from "../json/index.ts";
 import { jsonTypeSchemaSchema } from "../type-schema/index.ts";
 import { fluxNodeCostSchema } from "./cost.ts";
+import { FLUXNODE_RUN_PATH_KINDS } from "./path-kinds.ts";
+import { fluxNodeRunPinnedSchema } from "./pinned.ts";
 import { fluxNodeVerdictSchema } from "./verdict.ts";
 
 /**
@@ -23,10 +25,7 @@ export const FLUXNODE_RUN_STATUSES = Object.freeze(["achieved", "budget_out", "s
 
 export type FluxNodeRunStatus = (typeof FLUXNODE_RUN_STATUSES)[number];
 
-/** How the run got its result: replayed the learned Flow, repaired it, or explored. */
-export const FLUXNODE_RUN_PATH_KINDS = Object.freeze(["replayed", "repaired", "explored"] as const);
 
-export type FluxNodeRunPathKind = (typeof FLUXNODE_RUN_PATH_KINDS)[number];
 
 /** An opaque handle that continues a waiting or budget-out run: 16 to 512 of `A-Z a-z 0-9 . _ ~ -`. */
 export const fluxNodeResumeHandleSchema = z.string().regex(/^[A-Za-z0-9._~-]{16,512}$/u, "An opaque resume handle, as Core gave it.");
@@ -48,7 +47,8 @@ export const fluxNodeRunTimingsSchema = z
  * - `lineage`: where output values came from, at most 1000 entries; `datasets`: the
  *   datasets the run stored;
  * - `correlationId`: the caller's, echoed;
- * - `overridesDigest`: the digest of the run's resolved overrides, present only when it had any.
+ * - `overridesDigest`: the digest of the run's resolved overrides, present only when it had any;
+ * - `pinned`: present when the FluxNode is pinned: the version the run replayed, and any change it held.
  *
  * An `achieved` run's verdict is never `refuted`.
  */
@@ -71,7 +71,8 @@ export const fluxNodeRunResultSchema = z
     lineage: z.array(dataLineageSchema).max(1000).optional(),
     datasets: z.array(datasetRefSchema).max(64).optional(),
     correlationId: fluxNodeFieldSchemas.callerKey.optional(),
-    overridesDigest: fluxNodeFieldSchemas.sha256Hex.optional()
+    overridesDigest: fluxNodeFieldSchemas.sha256Hex.optional(),
+    pinned: fluxNodeRunPinnedSchema.optional()
   })
   .strict()
   .superRefine((result, context) => {

@@ -16,6 +16,7 @@ import type {
   FluxIQRuntimeTransport
 } from "./contracts.ts";
 import { type WithheldLookup, withheldCommand, withheldLookup, withheldResult } from "./attempt-withholding.ts";
+import { automationStudioWithRunSecretTexts } from "./run-secrets/index.ts";
 import type { RuntimeStore } from "./storage.ts";
 import { projectRuntimeTargetActionability } from "./result-control/index.ts";
 
@@ -193,7 +194,8 @@ export class RuntimeService {
     // runtime keeps. They are not handed on, the command the target executes
     // keeps every real value, and the caller receives the result as returned.
     const { withheldValues, withheldResultPayload, ...dispatchContext } = context;
-    const withheld = withheldLookup(withheldValues);
+    // A run's secret inputs too (`./run-secrets/`): a build's own exploration and tests dispatch with no list of their own.
+    const withheld = withheldLookup(automationStudioWithRunSecretTexts(withheldValues));
     const commandId = command.commandId ?? `command.${randomUUID()}`;
     const normalizedCommand = { ...command, commandId };
     const run = context.runId ? this.runs.get(context.runId) : undefined;

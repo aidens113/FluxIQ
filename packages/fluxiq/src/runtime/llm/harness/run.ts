@@ -8,6 +8,8 @@ import {
 import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
+import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
+import { automationStudioWithoutRunSecrets } from "../../run-secrets/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
@@ -33,14 +35,17 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   // the model's window less the reply. A flow bootstrap was held to 384
   // instruction tokens and its node catalog to 4,000 input tokens until
   // 2026-09-30; neither bound remains.
-  const context = packAutomationStudioLlmContext({
+  // A run's secret inputs are withheld from everything a model is sent, whatever carried them in: a page
+  // or a tool result that echoed one, a draft step that ran with one (`../../run-secrets/`).
+  const context = automationStudioWithoutRunSecrets(packAutomationStudioLlmContext({
     ...input,
     tokenBudget: tokenLimitResolution.limits.maxInputTokens
-  });
+  }));
   const expectedOutput = input.expectedOutput ?? expectedOutputForTask(input.taskKind);
   const requestId = validRequestIdentity(input.requestId) ? input.requestId : `llm.${input.taskKind}.${randomUUID()}`;
   const idempotencyKey = validRequestIdentity(input.idempotencyKey) ? input.idempotencyKey : requestId;
-  const timeoutMs = input.timeoutMs ?? AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS;
+  // A run's own per-call deadline (W3 overrides frame, bounded 1-45 s by the contract) wins over what the caller passed: answer-first passes the provider's timeout explicitly. The 45 s maximum below still refuses anything above it.
+  const timeoutMs = automationStudioRunOverrides()?.deadlines?.llmCallMs ?? input.timeoutMs ?? AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS;
   const maxEstimatedCostUsd = input.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD;
   const timeoutDiagnostics: AutomationStudioLlmDiagnostic[] = !Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
     ? [{ severity: "error", code: "llm.provider_invalid_timeout", message: `LLM timeout must be between 1 and ${AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS} milliseconds.`, path: "timeoutMs" }]

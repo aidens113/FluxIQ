@@ -33,6 +33,7 @@
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../../llm/verification-checked/index.ts";
+import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
@@ -80,7 +81,10 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;
-  const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? automationStudioResultVerificationDeadlineMs(input.timeoutMs), input.personHeldMs, () => expiry.abort());
+  // The check's deadline: the caller's, else the run's own (`judgeMs`), else today's derivation from the per-call timeout, which a run's `llmCallMs` replaces because the harness will use it for each call.
+  const deadlines = automationStudioRunOverrides()?.deadlines;
+  const callMs = deadlines?.llmCallMs ?? input.timeoutMs;
+  const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? deadlines?.judgeMs ?? automationStudioResultVerificationDeadlineMs(callMs), input.personHeldMs, () => expiry.abort());
   // A yes whose citations Core refutes is asked again, within this one check and its one deadline, until the refuted citations repeat.
   const tried = new Set<string>();
   let sentNow: AutomationStudioRunResultSummary = sent;
@@ -98,7 +102,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           resultSummary: sentNow,
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
-          ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+          ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
           signal,
           metadata: { source: SOURCE, expectedOutput: "diagnosis" }
         })

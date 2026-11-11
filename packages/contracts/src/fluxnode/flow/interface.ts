@@ -4,15 +4,16 @@
 
 import { z } from "zod";
 import { zodFromParser, type FluxNodeRawIssue } from "../issue/index.ts";
-import { jsonTypeSchemaSchema, readJsonTypeSchema, type JsonTypeSchema } from "../type-schema/index.ts";
+import { jsonTypeSchemaSchema, readJsonTypeSchema, type JsonTypeSchema, type JsonTypeSchemaReadOptions } from "../type-schema/index.ts";
 
 /**
  * Reads a Flow's input type: a schema in the subset whose `type` is exactly
  * `"object"`, because inputs are named, and a goal's `{placeholders}` name them. A
- * property declared as `{}` is an input with a name and no type.
+ * property declared as `{}` is an input with a name and no type. A secret input
+ * (`format: "secret"`) is a FluxNode's alone (`parseFluxNodeInputs`), which passes `secretInputs`.
  */
-export function readFlowInputs(value: unknown, issues: FluxNodeRawIssue[]): JsonTypeSchema | null {
-  const schema = readJsonTypeSchema(value, issues);
+export function readFlowInputs(value: unknown, issues: FluxNodeRawIssue[], options: JsonTypeSchemaReadOptions = {}): JsonTypeSchema | null {
+  const schema = readJsonTypeSchema(value, issues, options);
   if (schema === null) return null;
   if (schema.type !== "object") {
     issues.push({ path: ["type"], code: "flow_interface.inputs_not_object", message: 'Inputs are named, so their type is "type": "object" with each input under properties.' });
@@ -21,8 +22,8 @@ export function readFlowInputs(value: unknown, issues: FluxNodeRawIssue[]): Json
   return schema;
 }
 
-/** The input type as a zod schema. */
-export const flowInputsSchema = zodFromParser(readFlowInputs);
+/** The input type as a zod schema; a pipeline's, so it declares no secret. */
+export const flowInputsSchema = zodFromParser((value, issues) => readFlowInputs(value, issues));
 
 /** A Flow's interface. Both parts are optional: a Flow may take nothing and say what it produced only when it ends. */
 export const flowInterfaceSchema = z

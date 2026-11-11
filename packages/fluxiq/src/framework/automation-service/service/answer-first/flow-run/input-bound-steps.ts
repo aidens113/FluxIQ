@@ -13,10 +13,17 @@
 //
 // **What it leaves alone:** a value already bound, and the settings a step carries about itself
 // rather than about the task: the record output it writes to, the state it checks for, its retry.
+//
+// **A secret input keeps no default** (`runtime/run-secrets/`; a FluxNode's `format: "secret"`). Its value
+// is not among the attempt's inputs; it travels beside the run. A value equal to it binds to its name
+// with no fallback, and a binding already to its name loses any fallback it holds (a model's stand-in
+// test value), so the saved Flow, its export and its pinned copies never hold one. A run with no value
+// for it then has nothing to type, which fails the step rather than typing a remembered secret.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioRunSecrets } from "../../../../../runtime/run-secrets/index.ts";
 import { automationStudioFlowDraftIsBindingForm, AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationNodeStateBinding, isAutomationNodeParameterStateBinding } from "../../../nodes/index.ts";
+import { automationNodeStateBinding, isAutomationNodeParameterStateBinding, type AutomationNodeParameterStateBinding } from "../../../nodes/index.ts";
 
 /** The parameters a step holds about itself, never a value the task was given. */
 const OWN_SETTINGS: ReadonlySet<string> = new Set(["recordOutput", "ensureState", "expectedState", "retry"]);
@@ -25,25 +32,26 @@ const ROW_NAME = "item";
 /** As deep as the executor resolves a binding. */
 const MOST_DEPTH = 16;
 
-type Bindable = { text: Map<string, string>; numbers: Map<number, string> };
+type Bindable = { text: Map<string, string>; numbers: Map<number, string>; secrets: ReadonlySet<string> };
 
 /** The steps with each value equal to an input value bound to that input; a step with none comes back as it was. */
 export function automationStudioAnswerFirstInputBoundSteps(steps: readonly AutomationStudioFlowDraftStep[], inputs: Readonly<Record<string, JsonValue>> | undefined): AutomationStudioFlowDraftStep[] {
-  const bindable = bindableOf(inputs);
+  const secrets = automationStudioRunSecrets() ?? {};
+  const bindable = bindableOf({ ...(inputs ?? {}), ...secrets }, new Set(Object.keys(secrets)));
   if (bindable.text.size === 0 && bindable.numbers.size === 0) return [...steps];
   return steps.map((step) => boundStep(step, bindable));
 }
 
-function bindableOf(inputs: Readonly<Record<string, JsonValue>> | undefined): Bindable {
+function bindableOf(inputs: Readonly<Record<string, JsonValue>>, secrets: ReadonlySet<string>): Bindable {
   const text = new Map<string, string | null>();
   const numbers = new Map<number, string | null>();
-  for (const [name, value] of Object.entries(inputs ?? {})) {
+  for (const [name, value] of Object.entries(inputs)) {
     if (!AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME.test(name) || name === ROW_NAME) continue;
     // A second input with the same value makes it nobody's (null).
     if (typeof value === "string" && value.trim() !== "") text.set(value, text.has(value) ? null : name);
     else if (typeof value === "number" && Number.isFinite(value)) numbers.set(value, numbers.has(value) ? null : name);
   }
-  return { text: owned(text), numbers: owned(numbers) };
+  return { text: owned(text), numbers: owned(numbers), secrets };
 }
 
 function owned<Key>(map: Map<Key, string | null>): Map<Key, string> {
@@ -72,16 +80,26 @@ function boundCall(call: JsonObject, bindable: Bindable): JsonObject {
 }
 
 function boundValue(value: JsonValue, bindable: Bindable, depth: number): JsonValue {
-  if (depth > MOST_DEPTH || isAutomationNodeParameterStateBinding(value) || automationStudioFlowDraftIsBindingForm(value)) return value;
-  if (typeof value === "string") return bindingFor(bindable.text.get(value), value);
-  if (typeof value === "number") return depth === 1 ? bindingFor(bindable.numbers.get(value), value) : value;
+  if (depth > MOST_DEPTH || automationStudioFlowDraftIsBindingForm(value)) return value;
+  if (isAutomationNodeParameterStateBinding(value)) return withoutSecretFallback(value, bindable);
+  if (typeof value === "string") return bindingFor(bindable.text.get(value), value, bindable);
+  if (typeof value === "number") return depth === 1 ? bindingFor(bindable.numbers.get(value), value, bindable) : value;
   if (Array.isArray(value)) return list(value, bindable, depth);
   if (value !== null && typeof value === "object") return record(value, bindable, depth);
   return value;
 }
 
-function bindingFor(name: string | undefined, value: string | number): JsonValue {
-  return name === undefined ? value : automationNodeStateBinding(name, value) as unknown as JsonValue;
+function bindingFor(name: string | undefined, value: string | number, bindable: Bindable): JsonValue {
+  if (name === undefined) return value;
+  return automationNodeStateBinding(name, bindable.secrets.has(name) ? undefined : value) as unknown as JsonValue;
+}
+
+/** A binding to a secret input, or with a secret as its default, without that default; any other binding as it is. */
+function withoutSecretFallback(value: AutomationNodeParameterStateBinding, bindable: Bindable): JsonValue {
+  const { path, fallback } = value.$state;
+  if (fallback === undefined) return value;
+  const secret = bindable.secrets.has(path) || (typeof fallback === "string" && bindable.secrets.has(bindable.text.get(fallback) ?? ""));
+  return (secret ? automationNodeStateBinding(path) : value) as unknown as JsonValue;
 }
 
 function list(value: readonly JsonValue[], bindable: Bindable, depth: number): JsonValue {

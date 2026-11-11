@@ -1,6 +1,7 @@
 // The asserted string formats of the type subset. Pure checks with no dependency, the
 // same in a browser and in Node.
 
+import { JSON_TYPE_SECRET_MIN_LENGTH } from "./secret-min-length.ts";
 import type { JsonTypeFormat } from "./type-schema.ts";
 
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/u;
@@ -19,6 +20,10 @@ export function matchesJsonTypeFormat(format: JsonTypeFormat, value: string): bo
       return isUri(value);
     case "email":
       return value.length <= 254 && EMAIL.test(value);
+    case "secret":
+      // Any text of at least `JSON_TYPE_SECRET_MIN_LENGTH` characters: Core withholds every occurrence
+      // of a secret in what the model reads, so a shorter one would blank ordinary text.
+      return [...value].length >= JSON_TYPE_SECRET_MIN_LENGTH;
   }
 }
 
