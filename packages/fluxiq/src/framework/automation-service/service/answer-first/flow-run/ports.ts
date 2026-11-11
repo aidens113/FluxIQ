@@ -30,6 +30,12 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
     routing: Pick<AutomationStudioAnswerFirstAttemptInput["routing"], "signaturesOf">;
     cancellation: Pick<AutomationStudioAnswerFirstAttemptInput["cancellation"], "signal">;
   };
+  /**
+   * The task's own humanness level as it is stored (`../task-memory/memory.ts`), where it has one. The run's level is then
+   * resolved by precedence: the caller's `humanness`, this, the run Flow's `metadata.humanness`, the request's starting value
+   * (`input.humanness`), and with none of them no level at all (`./flow-run.ts`).
+   */
+  storedHumanness?: { task?: number | undefined } | undefined;
   /** The attempt's run: the rows the sink holds are stored under it. */
   runId: string;
   record: AutomationStudioAttemptActRecord;

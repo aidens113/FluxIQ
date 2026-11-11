@@ -165,6 +165,12 @@
             "description": "A chosen id for the Flow; leave it out to have one made.",
             "type": "string",
             "minLength": 1
+          },
+          "humanness": {
+            "description": "How human the Flow's input looks, a whole number from 0 to 100; leave it out for the Flow to use the person's starting value.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
           }
         },
         "required": [
@@ -3642,6 +3648,53 @@
         "required": [
           "projectId",
           "recordingId"
+        ]
+      }
+    },
+    {
+      "name": "automation-studio__update-task-settings",
+      "programId": "automation-studio",
+      "endpoint": "update-task-settings",
+      "summary": "Sets or removes a task's own humanness level.",
+      "phrases": [
+        "make this task act more human",
+        "set this task's humanness"
+      ],
+      "consequence": "change",
+      "contextArgs": {
+        "projectId": "projectId"
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "description": "The project the task belongs to.",
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "description": "The task.",
+            "type": "string",
+            "minLength": 1
+          },
+          "humanness": {
+            "description": "How human the task's runs look, a whole number from 0 to 100; null removes the task's own level, so its runs take the Flow's level or the person's starting value.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId",
+          "humanness"
         ]
       }
     },

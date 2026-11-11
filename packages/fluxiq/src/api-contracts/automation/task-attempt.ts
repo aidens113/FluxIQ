@@ -41,6 +41,8 @@ export type AutomationStudioProjectTask = {
   title?: string;
   /** The thread that holds the task's Flow now, for "open in chat". Absent where none is noted. */
   conversationId?: string;
+  /** The task's own humanness level, 0-100, where it has one (`update-task-settings`). Absent: its runs take the Flow's level or the person's starting value. */
+  humanness?: number;
   attemptCount: number;
   latest: AutomationStudioTaskOutcome;
 };
@@ -54,6 +56,16 @@ export type ListProjectTasksResponse = { tasks: AutomationStudioProjectTask[]; n
 export type RenameTaskRequest = { projectId: string; taskId: string; title: string };
 
 export type RenameTaskResponse = { taskId: string; title: string };
+
+/**
+ * `update-task-settings`: the task's own humanness level, a whole number from 0 to 100, or `null` to remove it so its runs
+ * take the Flow's level or the person's starting value again. A task Core does not hold is refused. Touches only the task's
+ * memory entry, never a Flow, a saved part or a result.
+ */
+export type UpdateTaskSettingsRequest = { projectId: string; taskId: string; humanness: number | null };
+
+/** The task's level as it now stands: `null` where it has none of its own. */
+export type UpdateTaskSettingsResponse = { taskId: string; humanness: number | null };
 
 /** `remove-task`: forgets the task's memory entry (its notes, the steps it remembers and its attempt index) and nothing else. Its Flow, saved parts, results and attempt rows stay. */
 export type RemoveTaskRequest = { projectId: string; taskId: string };

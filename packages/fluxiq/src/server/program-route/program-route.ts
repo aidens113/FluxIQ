@@ -119,8 +119,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "list-flow-subflows",
     // A project's tasks with their latest attempt (`read`), from what each task remembers. Not projected: it is what the two reads above answer, listed.
     "list-project-tasks",
-    // A person's own name for a task, and forgetting one, `authoring` (programs.write). Narrowed: the project, the task and a name. Each touches only the task's memory entry, never a Flow, a saved part, a result or an attempt.
+    // A person's own name for a task, its own humanness level, and forgetting one, `authoring` (programs.write). Narrowed: the project, the task and a name or a level. Each touches only the task's memory entry, never a Flow, a saved part, a result or an attempt.
     "rename-task",
+    "update-task-settings",
     "remove-task",
     // Carrying a budget-out or cut-off attempt on (t869), `authoring` under `flows.write`. It spends the person's own key, as the chat's build does,
     // and goes on through the same generation. Narrowed: an attempt id, a project and an amount, never a Flow, a mode, a grant or a session.
@@ -312,6 +313,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "carry-on-task-attempt") return narrowCarryOnTaskAttempt(payload);
   if (name === "run-task-again") return narrowRunTaskAgain(payload);
   if (name === "rename-task") return narrowTaskMemory(payload, ["projectId", "taskId", "title"]);
+  if (name === "update-task-settings") return narrowTaskMemory(payload, ["projectId", "taskId", "humanness"]);
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);

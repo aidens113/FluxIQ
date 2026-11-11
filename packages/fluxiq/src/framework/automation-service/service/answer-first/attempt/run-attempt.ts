@@ -137,7 +137,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const acts = automationStudioAnswerFirstRunActStoreOf(input.owner, stores);
   const carried = hold ? automationStudioAnswerFirstCarriedOpening(hold) : undefined;
   const opening = hold && carried
-    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, seedFrom: attemptId, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined }
+    ? { taskId: hold.taskId, memory: automationStudioAnswerFirstTaskMemoryOf(input.owner, stores), route: carried.route, ordinal: carried.ordinal, steps: carried.steps, seed: hold.acts, seedFrom: attemptId, actsHeldHere: true, startedFrom: carried.startedFrom, setAside: hold.kept?.acts?.attemptId === attemptId ? hold.kept.acts.earlier : undefined, humanness: hold.kept?.humanness }
     : await automationStudioAnswerFirstOpening(input, { store: automationStudioAnswerFirstAttemptsRead(input.owner, stores), acts }, again);
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
@@ -254,6 +254,12 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   if (opening.seed || opening.actsHeldHere || again) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
   if (carried) await carriedOn(run, carried);
   else await automationStudioAnswerFirstRecordOpening(run);
+  // A task with no level of its own starts from the person's starting value (the request's), once: a level it has, set by
+  // the person or taken at an earlier attempt, is never replaced. A write it misses is made by the next attempt.
+  const startingValue = input.humanness;
+  if (startingValue !== undefined && opening.humanness === undefined) {
+    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => (current.humanness === undefined ? { ...current, humanness: startingValue } : current)));
+  }
   run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });
   return run;
 }

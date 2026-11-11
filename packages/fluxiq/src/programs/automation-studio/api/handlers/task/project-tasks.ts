@@ -1,7 +1,7 @@
 // A project's tasks, read from what each task remembers (`answer-first/task-memory`): the list with each task's
-// latest attempt, a person's own name for a task, and forgetting one.
+// latest attempt, a person's own name for a task, a task's own settings (its humanness level), and forgetting one.
 //
-// **Rename and remove touch only the task's own memory entry.** Never a Flow, a saved part, a result or an attempt
+// **Rename, settings and remove touch only the task's own memory entry.** Never a Flow, a saved part, a result or an attempt
 // row. Removing leaves the attempts readable by Flow and by thread (the chat still tells them) and leaves the Flow
 // and its saved parts as they were; what goes is the task's notes, the steps it remembers for a later attempt, and
 // the index lines that name its attempts. A repeat of the same words then starts a new entry, and works out its
@@ -11,14 +11,15 @@
 
 import { endpointResource } from "../../../../_shared/iam/index.ts";
 import type { ProgramApiResponse } from "../../../../_shared/api.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type ListProjectTasksRequest, type RemoveTaskRequest, type RenameTaskRequest } from "../../../../../api-contracts/automation.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ListProjectTasksRequest, type RemoveTaskRequest, type RenameTaskRequest, type UpdateTaskSettingsRequest } from "../../../../../api-contracts/automation.ts";
 import { AutomationStudioAnswerFirstAttemptLocatorUnreadable, AutomationStudioAnswerFirstAttemptsUnreadable } from "../../../../../framework/automation-service/service/answer-first/attempt-store/index.ts";
 import { automationStudioAnswerFirstProjectTasks, automationStudioAnswerFirstTaskMemoryOf } from "../../../../../framework/automation-service/service/answer-first/task-memory/index.ts";
 import { boundedIdentifier } from "../../../../../framework/automation-service/service/flow-bootstrap-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
 import { automationStudioApiTaskOutcomesWithProvenance } from "./attempt-provenance.ts";
 import { automationStudioApiTaskOutcomeSource } from "./attempt-store.ts";
-import { listProjectTasksInput, renameTaskInput, removeTaskInput } from "@fluxiq/contracts/program-api-inputs";
+import { humannessSchema } from "@fluxiq/contracts/automation";
+import { listProjectTasksInput, renameTaskInput, removeTaskInput, updateTaskSettingsInput } from "@fluxiq/contracts/program-api-inputs";
 
 const UNREADABLE = "What was kept of your tasks could not be read, so I cannot list them.";
 const NOT_FOUND = "I could not find that task.";
@@ -73,6 +74,32 @@ export function registerProjectTaskEndpoints(dependencies: AutomationStudioApiDe
       if (!(await memory.get(projectId, taskId))) return { ok: false, error: NOT_FOUND, errorCode: "task.not_found" };
       await memory.update(projectId, taskId, (current) => ({ ...current, title }));
       return { ok: true, payload: { taskId, title } };
+    }
+  });
+
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, assistant: { input: updateTaskSettingsInput, summary: "Sets or removes a task's own humanness level.", phrases: ["make this task act more human", "set this task's humanness"], contextArgs: { projectId: "projectId" } },
+    permission: "programs.write",
+    classification: "authoring",
+    action: "studio:UpdateTaskSettings",
+    accessLevel: "Write",
+    resource: endpointResource.project(),
+    handler: async (request) => {
+      const payload = bodyOf<UpdateTaskSettingsRequest>(request.payload);
+      const projectId = boundedIdentifier(payload.projectId, "Project");
+      await service.assertProjectDomainAccess(projectId, request.scope.domainId);
+      const taskId = boundedIdentifier(payload.taskId, "Task");
+      // `null` removes the task's own level; anything else must be a level a save would take. A missing field is neither.
+      const humanness = payload.humanness === null ? null : humannessSchema.safeParse(payload.humanness);
+      if (humanness !== null && !humanness.success) return { ok: false, error: "A task's humanness is a whole number from 0 to 100, or null to remove it.", errorCode: "task.humanness_invalid" };
+      const memory = memoryOf();
+      if (!(await memory.get(projectId, taskId))) return { ok: false, error: NOT_FOUND, errorCode: "task.not_found" };
+      const kept = await memory.update(projectId, taskId, (current) => {
+        const { humanness: _earlier, ...rest } = current;
+        return humanness === null ? rest : { ...rest, humanness: humanness.data };
+      });
+      return { ok: true, payload: { taskId, humanness: kept.humanness ?? null } };
     }
   });
 

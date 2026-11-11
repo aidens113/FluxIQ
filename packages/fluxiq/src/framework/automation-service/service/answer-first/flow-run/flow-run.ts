@@ -35,14 +35,20 @@
 // **A step on a control an earlier attempt saw flip checks before it presses** (`./stated-toggles.ts`),
 // a person's Run again included: that press empties the act record, not the states. What this run
 // sees flip goes to the same record, for the draft this attempt saves.
+//
+// **How human the run acts is resolved by precedence** (`resolveHumanness`): a caller's own level, then the
+// task's stored level, then the run Flow's stored level, then the request's starting value. With none of them
+// the options carry no level, which is today's path exactly. A stored 0 wins over a starting value.
 
 import { createHash } from "node:crypto";
+import { resolveHumanness } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
+import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
 import { automationStudioAnswerFirstReplayScope, type AutomationStudioAnswerFirstReplayScope } from "../caller/index.ts";
 import { automationStudioAnswerFirstRunActGate } from "../run-acts/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
@@ -114,7 +120,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
   let askedNobody = false;
   const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; }, halt);
-  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking);
+  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking, automationStudioFlowHumanness(parentFlow.metadata));
   // Outside the act gate, so a step the scope refuses is no act of the attempt's.
   const options = scope ? scope.gated(own) : own;
   const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
@@ -137,13 +143,13 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * its record, and not the engine's parking port but the attempt's own, which puts only a check only a
  * person can clear to the person, so a step that asks anything else stops the run and asks nobody
  * (`./person-check-port.ts`, `./permission.ts`). A caller's input values are the run's inputs, so a
- * step bound to one runs with this attempt's value (`./input-bound-steps.ts`).
+ * step bound to one runs with this attempt's value (`./input-bound-steps.ts`). `flowHumanness` is the run Flow's
+ * own stored level (header).
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined): AutomationStudioGraphExecutionOptions {
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, flowHumanness: number | undefined): AutomationStudioGraphExecutionOptions {
   const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal });
   const inputs = ports.input.caller?.inputs;
-  // The caller's own level wins over the generate request's (W2 humanness).
-  const humanness = ports.input.caller?.humanness ?? ports.input.humanness;
+  const humanness = resolveHumanness({ runOption: ports.input.caller?.humanness, task: ports.storedHumanness?.task, flow: flowHumanness, startingValue: ports.input.humanness });
   const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch), ...(parking ? { parking } : {}), ...(inputs ? { inputs: { ...given.inputs, ...structuredClone(inputs) } } : {}), ...(humanness !== undefined ? { humanness } : {}) };
   return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
 }

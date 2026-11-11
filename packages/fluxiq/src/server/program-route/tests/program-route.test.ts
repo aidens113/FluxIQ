@@ -70,6 +70,7 @@ describe("a paired client on the program route", () => {
         "list-flow-subflows",
         "list-project-tasks",
         "rename-task",
+        "update-task-settings",
         "remove-task",
         "carry-on-task-attempt",
         "run-task-again",
@@ -190,6 +191,15 @@ describe("a paired client on the program route", () => {
     expect(rename({ projectId: "p", taskId: "t", title: "x", flowId: "f" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(remove({ projectId: "p", taskId: "t", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(remove(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+  });
+
+  it("sets a task's humanness by project, task and level only", () => {
+    const settings = (payload: unknown) => narrowPairedClientRequest("automation-studio", "update-task-settings", payload);
+    expect(settings({ projectId: "p", taskId: "t", humanness: 40 })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t", humanness: 40 } });
+    expect(settings({ projectId: "p", taskId: "t", humanness: null })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t", humanness: null } });
+    expect(settings({ projectId: "p", taskId: "t", humanness: 40, flowId: "f" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(settings({ projectId: "p", taskId: "t", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(settings(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 
   it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {
