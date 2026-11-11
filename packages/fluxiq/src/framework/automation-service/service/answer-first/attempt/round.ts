@@ -19,7 +19,7 @@ import type { AutomationStudioAnswerFirstRoundEnd } from "../../../../../runtime
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns, automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftStepCopy, automationStudioFlowDraftStepId } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../../../runtime/llm/decision-handlers/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
@@ -91,9 +91,9 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     askedRepeats: (act) => run.asked(act.act),
     forwardRun: {
       ...automationStudioAttemptActForward(run.record),
-      // How far forward runs got, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
+      // Which steps forward runs got through, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
       passed: (step, _row, answer) => {
-        if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardReached = Math.max(run.forwardReached, step.position);
+        if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardPassed.add(automationStudioFlowDraftStepId(step));
       }
     },
     lastingActs: () => (lasting ??= run.permissions.instructedLastingActs(automationStudioInstructedActs(input.instructionText))),
