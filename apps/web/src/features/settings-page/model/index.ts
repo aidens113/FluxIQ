@@ -7,4 +7,5 @@ export { keyRows, type KeyRow } from "./key-rows";
 export { mayChooseWorkspaceKeys } from "./may-choose-workspace-keys";
 export { EMPTY_NEW_KEY, NEW_KEY_PROVIDERS, canSaveNewKey, newKeyPayload, type NewKeyForm } from "./new-key";
 export { removeKey, type RemoveOutcome, type RemoveProof } from "./remove-key";
+export { workspaceKeyStatus, type WorkspaceKeyStatus } from "./workspace-key-status";
 export type { SettingsCallPayload, SettingsCallResult, SettingsKey, SettingsModelChoices, SettingsPort } from "./types";

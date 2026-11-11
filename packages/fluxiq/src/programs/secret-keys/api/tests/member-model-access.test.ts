@@ -52,7 +52,8 @@ describe("reading the assistant's model (service)", () => {
     const chosen = await call("set-assistant-model", owner, { keyId: key.id, model: MODEL });
     expect(chosen.ok, chosen.error).toBe(true);
 
-    const expected = { defaultKeyId: key.id, assistantKeyId: key.id, assistantModel: MODEL, assistantProvider: "Anthropic", assistantAllowanceUsd: null };
+    // Chosen by the owner, and not offered: the owner never offered it, so it pays only for the owner's messages.
+    const expected = { defaultKeyId: key.id, assistantKeyId: key.id, assistantModel: MODEL, assistantProvider: "Anthropic", assistantKeyChosen: true, assistantKeyOffered: false, assistantAllowanceUsd: null };
     for (const caller of [owner, member, reader]) {
       const answer = await call("get-assistant-model", caller);
       expect(answer, caller.userId).toEqual({ ok: true, payload: expected });

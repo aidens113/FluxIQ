@@ -6,6 +6,10 @@ export type KeyRow = {
   provider: string;
   status: "On" | "Off";
   isDefault: boolean;
+  /** The signed-in person added it, so they may offer it to the workspace. */
+  heldByYou: boolean;
+  /** Its holder offered it to the workspace. */
+  offered: boolean;
   /** Said only when the engine knows it; absent otherwise. */
   lastUsed?: string;
 };
@@ -25,6 +29,8 @@ export function keyRows(keys: readonly SettingsKey[], defaultKeyId: string | nul
     provider: key.provider?.trim() || "Not set",
     status: key.enabled ? "On" : "Off",
     isDefault: key.id === effective?.id,
+    heldByYou: key.heldByYou === true,
+    offered: key.offeredToWorkspace === true,
     ...(key.lastUsedAtMs ? { lastUsed: formatTime(key.lastUsedAtMs) } : {})
   }));
 }

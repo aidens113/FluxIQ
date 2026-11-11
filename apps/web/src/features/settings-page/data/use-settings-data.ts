@@ -15,6 +15,8 @@ export type SettingsData = {
   allowance: SettingsAllowance | null;
   /** Each action answers with an error sentence, or "" when it worked. */
   setDefault(keyId: string): Promise<string>;
+  /** The person offers their own key to the workspace, or withdraws it. */
+  offer(keyId: string, offered: boolean): Promise<string>;
   saveAssistant(pick: { keyId: string; model: string }): Promise<string>;
   saveAllowance(usd: number | null): Promise<string>;
   addKey(form: NewKeyForm): Promise<string>;
@@ -78,6 +80,7 @@ export function useSettingsData(port: SettingsPort, options: SettingsDataOptions
   return {
     loading, loadError, keys, choices, allowance,
     setDefault: (keyId) => change(() => port.call("secret-keys", "set-default-key", { id: keyId })),
+    offer: (keyId, offered) => change(() => port.call("secret-keys", "offer-key", { id: keyId, offered })),
     saveAssistant: (pick) => change(() => port.call("secret-keys", "set-assistant-model", assistantModelPayload(pick))),
     saveAllowance: (usd) => change(() => port.call("automation-studio", "set-panel-assistant-allowance", { allowanceUsd: usd })),
     addKey: (form) => change(() => port.call("secret-keys", "create-key", newKeyPayload(form))),

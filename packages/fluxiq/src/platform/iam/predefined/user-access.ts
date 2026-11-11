@@ -57,7 +57,10 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  *   workspace FRN; the filter then shows only what `OwnData` allows.
  * - `WorkspaceSettingReads`: the workspace settings a person reads to use it
  *   (`IAM_USER_WORKSPACE_SETTING_READS`: which provider and model the assistant
- *   uses, and what one message to it may spend), on the workspace FRN. Changing
+ *   uses, and what one message to it may spend), on the workspace FRN, and
+ *   only when `fluxiq:RequestOrigin` is `panel`: Settings and the dock read
+ *   them, and a paired browser's credential is refused them by IAM itself, as
+ *   it is the panel assistant's own endpoints. Changing
  *   them, and the workspace's default key, are the workspace's decisions and
  *   are not granted. Nothing else is granted on the workspace FRN: an
  *   unfiltered list across the workspace, and an action on no specific
@@ -103,7 +106,8 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Sid: "WorkspaceSettingReads",
     Effect: "Allow",
     Action: [...IAM_USER_WORKSPACE_SETTING_READS],
-    Resource: IAM_WORKSPACE_PATTERNS.workspace
+    Resource: IAM_WORKSPACE_PATTERNS.workspace,
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
   },
   {
     Sid: "SelfService",

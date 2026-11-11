@@ -1,6 +1,7 @@
 /**
  * The workspace-wide settings `FluxIQUserAccess` lets a person read to use the
- * workspace, on the workspace FRN. Named one by one; reads only.
+ * workspace, on the workspace FRN, from the panel only (`WorkspaceSettingReads`
+ * requires `fluxiq:RequestOrigin` `panel`). Named one by one; reads only.
  *
  * - `secrets:GetAssistantModel`: which key's provider and which model the
  *   panel assistant answers with (Secret Keys' model settings). Its answer is

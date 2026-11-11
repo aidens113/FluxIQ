@@ -24,6 +24,10 @@ export type SettingsKey = {
   provider?: string | undefined;
   enabled: boolean;
   lastUsedAtMs?: number | undefined;
+  /** The signed-in person added this key: theirs to offer to the workspace. Said by the server only of the caller's own keys. */
+  heldByYou?: boolean | undefined;
+  /** Its holder offered it to the workspace, so it may pay for other people's messages once it is chosen. */
+  offeredToWorkspace?: boolean | undefined;
 };
 
 /** What `snapshot` and `get-assistant-model` say about the default and the assistant's pick. */
@@ -34,6 +38,10 @@ export type SettingsModelChoices = {
   assistantModel: string | null;
   /** The provider of the key the assistant uses now, as that key names it; null with no model key. */
   assistantProvider?: string | null | undefined;
+  /** An owner or administrator chose the key the assistant uses now as the workspace's key. */
+  assistantKeyChosen?: boolean | undefined;
+  /** The holder of the key the assistant uses now offered it to the workspace. */
+  assistantKeyOffered?: boolean | undefined;
   assistantAllowanceUsd: number | null;
   /**
    * Whether this person may change the workspace's choices: the default key,

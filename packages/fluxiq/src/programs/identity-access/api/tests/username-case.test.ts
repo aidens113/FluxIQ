@@ -1,10 +1,12 @@
 // The create-user and update-user endpoints compare sign-in names ignoring
 // case, as sign-in does: a name another person has in any case is refused by
-// name (`identity.username_taken`) and nothing is written; a person's own name
-// resent in another case is not a change, so it asks for no proof, and for a
-// person whose name is held here it is written as sent. Account holders'
-// names are covered in authority-held-elsewhere.test.ts. Dummy values only;
-// scrypt at N=2^10.
+// name (`identity.username_taken`) and nothing is written. A name that differs
+// from the person's stored one only by case is a rename like any other: it
+// asks for no proof and is written as sent, whether the caller re-cases their
+// own name or, as an administrator, someone else's (with no authority owner
+// set, everyone's name is held here). Account holders' names, and a host whose
+// provisioning holds them, are covered in authority-held-elsewhere.test.ts.
+// Dummy values only; scrypt at N=2^10.
 
 import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
@@ -28,7 +30,7 @@ async function setup() {
   const proof = { authSessionId: login.session.id, authorizationPassword: PASSWORD };
   const call = (endpoint: string, payload: Record<string, unknown>) => registry.call({ programId: "identity-access", endpoint, scope: {}, actor, payload });
   const person = async (id: string) => (await service.snapshot()).users.find((user) => user.id === id);
-  return { service, proof, call, person };
+  return { service, session: login.session, proof, call, person };
 }
 
 describe("create-user", () => {
@@ -59,17 +61,40 @@ describe("update-user", () => {
     expect(await person(VIEWER)).toMatchObject({ username: "plain-viewer", displayName: "Plain Viewer" });
   });
 
-  it("takes a person's own name in another case as unchanged: no proof is asked, beside an unchanged role and on/off", async () => {
+  it("asks no proof for re-casing another person's name beside their unchanged role and on/off, and writes it as sent", async () => {
     const { call, person } = await setup();
 
     const answer = await call("update-user", { id: VIEWER, username: "PLAIN-VIEWER", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" });
 
-    expect(answer).toMatchObject({ ok: true, payload: { roleId: "viewer", enabled: true, displayName: "Renamed Viewer" } });
+    expect(answer).toMatchObject({ ok: true, payload: { username: "PLAIN-VIEWER", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" } });
     expect(answer).not.toHaveProperty("requiresRecheck");
-    expect(await person(VIEWER)).toMatchObject({ roleId: "viewer", enabled: true, displayName: "Renamed Viewer" });
+    expect(await person(VIEWER)).toMatchObject({ username: "PLAIN-VIEWER", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" });
   });
 
-  it("writes a re-cased own name as sent for a person whose name is held here", async () => {
+  it("saves the caller's own re-cased name as sent, as the same person, found by sign-in in either case", async () => {
+    const { service, session, call, person } = await setup();
+    const before = await person(CALLER);
+
+    const answer = await call("update-user", { id: CALLER, username: "Caller-Admin" });
+
+    expect(answer).toMatchObject({ ok: true, payload: { id: CALLER, username: "Caller-Admin" } });
+    expect(answer).not.toHaveProperty("requiresRecheck");
+    const after = await person(CALLER);
+    expect(after).toEqual({ ...before, username: "Caller-Admin", updatedAtMs: after?.updatedAtMs });
+    expect((await service.validateSession(session.id))?.user.id).toBe(CALLER);
+    for (const username of ["caller-admin", "CALLER-ADMIN", "Caller-Admin"]) {
+      expect((await service.authenticate({ username, password: PASSWORD })).user.id).toBe(CALLER);
+    }
+  });
+
+  it("refuses the caller re-casing their own name onto another person's, by name, and changes nothing", async () => {
+    const { call, person } = await setup();
+
+    expect(await call("update-user", { id: CALLER, username: "Plain-Viewer" })).toMatchObject({ ok: false, errorCode: IdentityUsernameTakenError.code });
+    expect((await person(CALLER))?.username).toBe("caller-admin");
+  });
+
+  it("writes another person's re-cased name as sent when their name is held here", async () => {
     const { service, call, person } = await setup();
     const update = vi.spyOn(service, "updateUser");
 

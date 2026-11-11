@@ -5062,6 +5062,12 @@
       "reason": "Needs the person's password to delete a key, which is never given to the assistant."
     },
     {
+      "name": "secret-keys__offer-key",
+      "programId": "secret-keys",
+      "endpoint": "offer-key",
+      "reason": "Lets a person's own key pay for other people's messages, so the person decides it themselves in Settings; the assistant never does it for them."
+    },
+    {
       "name": "secret-keys__reveal-key",
       "programId": "secret-keys",
       "endpoint": "reveal-key",

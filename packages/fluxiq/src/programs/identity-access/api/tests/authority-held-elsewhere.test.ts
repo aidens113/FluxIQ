@@ -10,10 +10,9 @@
 // letting it through; and the snapshot marks each person exactly as
 // `update-user` decides, so a client never offers a refused change. A value
 // equal to the stored one is not a change: resending it is neither refused,
-// nor asked for proof, nor written, for anyone. A sign-in name equal to the
-// stored one ignoring case is the same name: an account holder may resend
-// their email in any case, and nothing is written for it. Dummy values only;
-// scrypt at N=2^10.
+// nor asked for proof, nor written, for anyone. Re-casing another person's
+// sign-in name is a sign-in name change like any other; re-casing one's own
+// is covered in own-name-recase.test.ts. Dummy values only; scrypt at N=2^10.
 
 import { describe, expect, it, vi } from "vitest";
 import { MemoryIamAuditSink } from "../../../../platform/iam/index.ts";
@@ -189,17 +188,15 @@ describe("update-user with values equal to the stored ones", () => {
     expect((await state(holder)).user).toMatchObject({ username: "holder@example.test", displayName: "Account Holder" });
   });
 
-  it("lets an account holder resend their sign-in name in another case, and writes no name for it", async () => {
+  it("refuses re-casing an account holder's sign-in name by someone else, by name, as any change of it, and writes nothing", async () => {
     const { identity, holder, updateUser, state } = await setup();
     const update = vi.spyOn(identity, "updateUser");
 
     const answer = await updateUser({ id: holder, username: "HOLDER@Example.Test", displayName: "Renamed Holder" });
 
-    expect(answer).toMatchObject({ ok: true, payload: { username: "holder@example.test", displayName: "Renamed Holder" } });
-    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("username");
-    const after = await state(holder);
-    expect(after.user?.username).toBe("holder@example.test");
-    expect(after.user?.username).toBe(after.account?.email);
+    expect(answer).toMatchObject({ ok: false, errorCode: IdentityAuthorityManagedError.code });
+    expect(update).not.toHaveBeenCalled();
+    expect((await state(holder)).user).toMatchObject({ username: "holder@example.test", displayName: "Account Holder" });
   });
 
   it("refuses renaming a person without an account onto an account holder's email in another case, by name", async () => {
@@ -279,7 +276,7 @@ describe("the authority owner", () => {
     expect((await identity.snapshot()).users.find((user) => user.id === OLDER_PERSON)?.roleId).toBe("viewer");
   });
 
-  it("takes a sign-in name resent in another case as unchanged when it cannot answer, and writes no name", async () => {
+  it("refuses re-casing someone else's sign-in name when it cannot answer, as any change of it, and changes nothing", async () => {
     const identity = new IdentityAccessService({ passwordKdf: WEAK_KDF });
     await identity.upsertUser({ id: CALLER, username: "caller-admin", displayName: "Caller Admin", roleId: "admin", password: PASSWORD });
     await identity.upsertUser({ id: OLDER_PERSON, username: "older-viewer", displayName: "Older Viewer", roleId: "viewer", password: PASSWORD });
@@ -291,7 +288,8 @@ describe("the authority owner", () => {
 
     const answer = await registry.call({ programId: "identity-access", endpoint: "update-user", scope: {}, actor, payload: { id: OLDER_PERSON, username: "Older-Viewer", displayName: "Renamed" } });
 
-    expect(answer).toMatchObject({ ok: true, payload: { username: "older-viewer", displayName: "Renamed" } });
+    expect(answer).toMatchObject({ ok: false, errorCode: IdentityAuthorityUncheckedError.code });
+    expect((await identity.snapshot()).users.find((user) => user.id === OLDER_PERSON)).toMatchObject({ username: "older-viewer", displayName: "Older Viewer" });
   });
 
   it("is set once: the same owner again is a no-op, and another is refused", async () => {

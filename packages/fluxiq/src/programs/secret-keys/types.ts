@@ -84,10 +84,12 @@ export type ModelKeySettingsRecord = {
   /** The key chosen or promoted as default; read only while it is still an enabled model key. */
   defaultKeyId?: string | undefined;
   /**
-   * Who made `defaultKeyId` the default: the person who chose it, or the creator
-   * of the workspace's first model key. Absent when it was promoted on its own
-   * (a lost default passing on) or chosen before this was recorded. Only a
-   * default its own owner chose pays for other people's assistant messages.
+   * Who chose `defaultKeyId` as the default with `set-default-key` (or chose
+   * "the default key" for the assistant, which pins the default it named): an
+   * owner or administrator, since both are decided on the workspace. Absent
+   * while the default is only the oldest model key, and when it passed on by
+   * itself (a lost default). A default nobody chose pays for nobody else's
+   * assistant messages.
    */
   defaultChosenBy?: string | undefined;
   /** Said when the default changed on its own, until the person picks a default. */
@@ -96,6 +98,14 @@ export type ModelKeySettingsRecord = {
   assistantKeyId?: string | undefined;
   /** Who chose the assistant's key (or chose "the default key" for it). Cleared when that key stops being a model key. */
   assistantChosenBy?: string | undefined;
+  /**
+   * The keys their holders offered to the workspace: each holder's own act
+   * (`offer-key`), for their own key and no other. Without one a key never
+   * pays for another person's assistant message, whoever chose it. An offer
+   * goes when its holder withdraws it, or when the key stops being a model key
+   * (removed, turned off or changed), and is never moved to another key.
+   */
+  keyOffers?: SecretKeyOffer[] | undefined;
   /** The model id for that key's provider; absent means the provider's normal model. */
   assistantModel?: string | undefined;
   /** The provider `assistantModel` was chosen for, so a model is never sent to another provider. */
@@ -104,6 +114,9 @@ export type ModelKeySettingsRecord = {
   assistantAllowanceUsd?: number | undefined;
   updatedAtMs: number;
 };
+
+/** A holder's offer of their own key to the workspace: the key, who offered it (its holder then), and when. */
+export type SecretKeyOffer = { keyId: string; holderId: string; atMs: number };
 
 /** The model-key choices as a client shows them: no ids of values, only which key. */
 export type ModelKeySettingsView = {
@@ -117,24 +130,37 @@ export type ModelKeySettingsView = {
    * own key list does not hold the workspace's key see which provider answers.
    */
   assistantProvider: string | null;
+  /**
+   * Whether an owner or administrator chose the key the assistant uses now as
+   * the workspace's key (`set-default-key`, `set-assistant-model`). False for a
+   * default that is only the oldest key or passed on by itself, and with no key.
+   */
+  assistantKeyChosen: boolean;
+  /** Whether the holder of the key the assistant uses now offered it to the workspace (`offer-key`). False with no key. */
+  assistantKeyOffered: boolean;
   /** The per-message spending allowance a person chose for the assistant, in US dollars; null means the assistant's default. */
   assistantAllowanceUsd: number | null;
 };
 
 /**
  * What the panel assistant should call, or a plain reason there is none. Never
- * carries a secret value. `ownerId` is the key's creator (absent for a legacy
- * key nobody is stamped on); `sharedByOwner` says its owner chose it as the
- * workspace's key (`ModelKeySettings.resolveAssistant`), which is the only way
- * it may pay for another person's message.
+ * carries a secret value. `ownerId` is the key's holder, its creator (absent
+ * for a legacy key nobody is stamped on). It pays for another person's message
+ * only when both hold (`ModelKeySettings.resolveAssistant`):
+ * `chosenForWorkspace`, an owner or administrator chose it as the workspace's
+ * key, and `offeredByHolder`, its holder offered it to the workspace.
  */
 export type AssistantModelChoice =
-  | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined; ownerId?: string | undefined; sharedByOwner: boolean }
+  | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined; ownerId?: string | undefined; chosenForWorkspace: boolean; offeredByHolder: boolean }
   | { ok: false; reason: string };
 
 export type SecretKeysSnapshot = {
-  /** `unlocked` is said only on a snapshot read for a caller, and only of that caller's own keys. */
-  keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>;
+  /**
+   * `unlocked` and `heldByYou` are said only on a snapshot read for a caller,
+   * and only of that caller's own keys. `offeredToWorkspace`: its holder offered
+   * it to the workspace (said of every model key).
+   */
+  keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
   /** Which key is the default, and the assistant's choice. */
   modelSettings?: ModelKeySettingsView;
 };

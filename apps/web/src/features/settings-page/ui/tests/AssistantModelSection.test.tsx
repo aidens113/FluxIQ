@@ -12,7 +12,7 @@ function data(keys: SettingsKey[], choices: SettingsModelChoices): SettingsData 
   return { loading: false, loadError: "", keys, choices, allowance: null, setDefault: refused, saveAssistant: refused, saveAllowance: refused, addKey: refused, remove: async () => ({ kind: "failed", error: "" }) } as unknown as SettingsData;
 }
 
-const TEAM: SettingsModelChoices = { defaultKeyId: "team", assistantKeyId: "team", assistantModel: "claude-haiku-5-5", assistantProvider: "Anthropic", assistantAllowanceUsd: null };
+const TEAM: SettingsModelChoices = { defaultKeyId: "team", assistantKeyId: "team", assistantModel: "claude-haiku-5-5", assistantProvider: "Anthropic", assistantKeyChosen: true, assistantKeyOffered: true, assistantAllowanceUsd: null };
 
 describe("AssistantModelSection", () => {
   it("shows a member the workspace's provider and model, with no control to change the key or model", () => {
@@ -34,5 +34,25 @@ describe("AssistantModelSection", () => {
     const html = renderToStaticMarkup(createElement(AssistantModelSection, { data: data([own], TEAM) }));
     expect(html.match(/<select/g)).toHaveLength(2);
     expect(html).not.toContain("this workspace’s");
+  });
+
+  it("tells a member in plain words that no key pays for their messages until an owner or administrator chooses one", () => {
+    const html = renderToStaticMarkup(createElement(AssistantModelSection, { data: data([], { ...TEAM, assistantKeyChosen: false, assistantKeyOffered: false }) }));
+    expect(html).toContain("No key pays for your messages to the assistant yet. An owner or administrator of this workspace chooses one in Settings");
+    expect(html).not.toContain("this workspace’s Anthropic key");
+    expect(html).not.toContain("<select");
+  });
+
+  it("tells a member when the chosen key has not been offered by the person who added it", () => {
+    const html = renderToStaticMarkup(createElement(AssistantModelSection, { data: data([], { ...TEAM, assistantKeyOffered: false }) }));
+    expect(html).toContain("has not been offered to it by the person who added it");
+    expect(html).not.toContain("<select");
+  });
+
+  it("says nothing of choosing or offering to a person whose own key the assistant uses, chosen or not", () => {
+    const own: SettingsKey = { id: "team", name: "Team key", kind: "llm", provider: "Anthropic", enabled: true, heldByYou: true };
+    const html = renderToStaticMarkup(createElement(AssistantModelSection, { data: data([own], { ...TEAM, assistantKeyChosen: false, assistantKeyOffered: false }) }));
+    expect(html.match(/<select/g)).toHaveLength(2);
+    expect(html).not.toContain("No key pays");
   });
 });

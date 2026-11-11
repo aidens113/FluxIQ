@@ -97,7 +97,8 @@ describe("a registry deciding through the filter", () => {
   for (const profile of ["local", "self-hosted", "service"] as const) {
     it(`${profile}: an allowed write and every refusal persist; an allowed read does not`, async () => {
       const kept = new MemoryIamAuditSink();
-      const registry = new GlobalProgramApiRegistry({
+      // Annotated: the filter's predicate reads `reads`, which is computed from this registry, so an inferred type would be circular (TS7022).
+      const registry: GlobalProgramApiRegistry = new GlobalProgramApiRegistry({
         iam: {
           profile,
           audit: new IamDecisionAuditFilter(kept, (action) => reads.has(action)),
@@ -106,7 +107,7 @@ describe("a registry deciding through the filter", () => {
       });
       registry.register(getFlow);
       registry.register(saveFlow);
-      const reads = new Set(iamReadActionsOf(registry.endpoints()));
+      const reads: ReadonlySet<string> = new Set(iamReadActionsOf(registry.endpoints()));
       const call = (endpoint: string, who: ProgramApiActor) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: who, payload: {} });
 
       expect((await call("get-flow", WRITER)).ok).toBe(true);

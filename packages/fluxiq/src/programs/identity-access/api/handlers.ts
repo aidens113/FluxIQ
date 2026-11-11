@@ -68,40 +68,38 @@ async function authorityRefusal(service: IdentityAccessService, payload: UpdateI
 }
 
 /**
- * `payload` without the fields whose value equals the person's stored one: a
- * value resent unchanged is not a change, so it is not asked about
- * (`authorityRefusal`), not rechecked (`changesAuthority`) and not written.
- * Every later decision then goes by presence on what is left, which is
- * exactly what would change. Display name, role and on/off are compared
- * exactly. A sign-in name is compared ignoring case (`usernameKey`, as sign-in
- * and the uniqueness check compare it): one that differs from the stored name
- * only by case is the same sign-in name, so it is never refused. Where the
- * name is held elsewhere (an account holder's is their account email) it is
- * dropped and nothing is written for it; where it is held here, the new case
- * is written as sent, so a person's own name can still be re-cased. The
- * stored person is read in this request; a dropped field is never written, so
- * a change that lands after the read is not overwritten by it. A person not
- * found is returned whole, so the request fails in `updateUser` as it did
- * before.
+ * What an `update-user` request changes, read against the person's stored
+ * values in this request. `changes` is `payload` without the fields equal to
+ * the stored ones: a value resent unchanged is not a change, so it is not
+ * asked about (`authorityRefusal`), not rechecked (`changesAuthority`) and not
+ * written. All four fields are compared exactly, so a sign-in name that
+ * differs from the stored one only by case stays in `changes` and is written
+ * as sent. `recasesOwnName` says it is the caller's own name in another case
+ * (equal under `usernameKey`, as sign-in and the uniqueness check compare
+ * names): the same sign-in name of the same person, so no change of
+ * authority, for an account holder (whose sign-in name is their account
+ * email, the same address in any case) as for anyone. Re-casing another
+ * person's name is a sign-in name change like any other. A dropped field is
+ * never written, so a change that lands after the read is not overwritten by
+ * it. A person not found is returned whole, so the request fails in
+ * `updateUser` as it did before.
  */
-async function withoutUnchangedFields(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<UpdateIdentityUserRequest> {
+async function changedFields(service: IdentityAccessService, payload: UpdateIdentityUserRequest, callerId: string | undefined): Promise<{ changes: UpdateIdentityUserRequest; recasesOwnName: boolean }> {
   const stored = (await service.snapshot()).users.find((user) => user.id === payload.id);
-  if (!stored) return payload;
+  if (!stored) return { changes: payload, recasesOwnName: false };
   const changes = { ...payload };
-  if (changes.username !== undefined && usernameKey(changes.username) === usernameKey(stored.username)) {
-    const recased = changes.username !== stored.username;
-    if (!recased || (await authorityRefusal(service, { id: payload.id, username: changes.username })) !== null) delete changes.username;
-  }
+  if (changes.username === stored.username) delete changes.username;
   if (changes.displayName === stored.displayName) delete changes.displayName;
   if (changes.roleId === stored.roleId) delete changes.roleId;
   if (changes.enabled === stored.enabled) delete changes.enabled;
-  return changes;
+  const recasesOwnName = changes.username !== undefined && callerId === stored.id && usernameKey(changes.username) === usernameKey(stored.username);
+  return { changes, recasesOwnName };
 }
 
 /**
  * Whether an account update changes what the account can do, rather than how it
  * reads. Presence decides it, on a request already stripped of unchanged
- * values (`withoutUnchangedFields`), so it carries only the fields being
+ * values (`changedFields`), so it carries only the fields being
  * changed.
  */
 function changesAuthority(payload: UpdateIdentityUserRequest): boolean {
@@ -175,11 +173,14 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       const requested = request.payload as UpdateIdentityUserRequest | undefined;
       if (!requested?.id) return { ok: false, error: "id is required" };
       // A field equal to the person's stored value is not a change: resending
-      // an unchanged sign-in name (in any case), role or on/off is neither
-      // refused nor rechecked. A real change is decided as below, and a
-      // sign-in name another person has, ignoring case, is refused by name
-      // when it is written (`written`).
-      const payload = await withoutUnchangedFields(service, requested);
+      // an unchanged sign-in name, role or on/off is neither refused nor
+      // rechecked. A person re-casing their own sign-in name keeps the same
+      // name, so it is not asked about either, and is written as sent. A real
+      // change is decided as below, and a sign-in name another person has,
+      // ignoring case, is refused by name when it is written (`written`).
+      const { changes: payload, recasesOwnName } = await changedFields(service, requested, request.actor?.userId);
+      const authorityChange = { ...payload };
+      if (recasesOwnName) delete authorityChange.username;
       // The gate is on the fields that move authority, not on the endpoint: a
       // role change grants it, and an enable or disable hands it back or takes
       // it from someone relying on it. A disabled administrator that can be
@@ -191,8 +192,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       // status). Refused by name (`errorCode`) before any credential is spent:
       // a change here would disagree with provisioning's record, and the next
       // provisioning change would undo a role or on/off. Their display name
-      // stays open, as anyone's does.
-      const heldElsewhere = await authorityRefusal(service, payload);
+      // stays open, as anyone's does, and so does re-casing their own sign-in
+      // name: the same address, so provisioning's record still holds.
+      const heldElsewhere = await authorityRefusal(service, authorityChange);
       if (heldElsewhere) return heldElsewhere;
       if (changesAuthority(payload)) {
         const refusal = await recheckCredentials(service, payload);

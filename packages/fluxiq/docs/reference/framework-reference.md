@@ -7,10 +7,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 793
-- Class: 45
+- Public declarations: 803
+- Class: 49
 - Object: 89
-- Type: 514
+- Type: 520
 - Value: 145
 
 ## Public Declarations
@@ -72,7 +72,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `adoptUncommittedFluxIQStorage` | Value | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
 | `AdvanceProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
 | `assertFlowLlmExecutionSettings` | Value | `packages/fluxiq/src/framework/automation-service/service/flow-settings-requests/llm-execution-settings.ts` | - |
-| `AssistantModelChoice` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | What the panel assistant should call, or a plain reason there is none. Never carries a secret value. |
+| `AssistantModelChoice` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | What the panel assistant should call, or a plain reason there is none. Never carries a secret value. `ownerId` is the key's holder, its creator (absent for a legacy key nobody is stamped on). It pays for another person's message only when both hold (`ModelKeySettings.resolveAssistant`): `chosenForWorkspace`, an owner or administrator chose it as the workspace's key, and `offeredByHolder`, its holder offered it to the workspace. |
 | `atomicWriteJson` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `authorizeProgramPin` | Value | `packages/fluxiq/src/programs/_shared/authorization.ts` | - |
 | `AUTOMATION_STUDIO_PROGRAM` | Object | `packages/fluxiq/src/programs/automation-studio/metadata.ts` | - |
@@ -554,13 +554,19 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `HeldKeys` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | Custody of password-derived keys held after a successful check: session unlocks and one-use reveal authorizations. Invariant: every held key opens its record's current seal. Rotation, metadata edits, and deletion revoke a key's holders; a re-seal or credential change replaces their keys. Every buffer dropped or replaced is zeroed. A `SecretKeysService` creates its own, or is given one that outlives it (a workspace manager's, so evicting an idle instance does not lock its users' keys). Expiry timers come from here and hold only this custody and an id, never the service that asked for them or the password that unlocked them. |
 | `IDENTITY_ACCESS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `IDENTITY_ACCESS_PROGRAM` | Object | `packages/fluxiq/src/programs/identity-access/metadata.ts` | - |
+| `IdentityAccessListedUser` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A person as the `snapshot` endpoint lists them. `authorityHeldElsewhere` is true exactly when `update-user` would refuse to change their sign-in name, role or on/off (`IdentityAuthorityDelegation`): an account holder, whose three are provisioning's, or a person the owner could not answer for. A client offers those changes only when it is false. |
+| `IdentityAccessListing` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | The snapshot as the `snapshot` endpoint answers it: each person marked as an `IdentityAccessListedUser`. |
 | `IdentityAccessPanel` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts` | - |
 | `IdentityAccessService` | Class | `packages/fluxiq/src/programs/identity-access/runtime/service.ts` | - |
 | `IdentityAccessServiceOptions` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
 | `IdentityAccessSnapshot` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
-| `IdentityAccessSnapshotResponse` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
+| `IdentityAccessSnapshotResponse` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | Each person carries `authorityHeldElsewhere`: whether `update-user` refuses their sign-in name, role and on/off. |
 | `IdentityAccessStore` | Type | `packages/fluxiq/src/programs/identity-access/storage/contracts.ts` | - |
 | `IdentityAccessViewState` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts` | - |
+| `IdentityAuthorityDelegation` | Class | `packages/fluxiq/src/programs/identity-access/runtime/authority/delegation.ts` | Where a person's authority (sign-in name, sign-in role and on/off) is held: here, or with the one owner a host hands it to (`holdElsewhere`), its account provisioning. One source of truth per person: an account holder's role is a projection of their memberships' policies, their on/off follows their account's status and their sign-in name is their account's email, all written only by provisioning, so the `update-user` endpoint asks `refuseChangeHeldElsewhere` before it changes any of the three and refuses an account holder's. Provisioning writes through `IdentityAccessService.updateUser`, which never asks. |
+| `IdentityAuthorityManagedError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/authority/managed-error.ts` | The refusal of an Identity Access sign-in name, role or on/off change for a person whose authority is held elsewhere (`IdentityAuthorityOwner`): a person with a platform account. Their sign-in role is derived from their workspace memberships' policies, whether they may sign in from their account's status, and their sign-in name is their account's email, so a change made here would disagree with provisioning's record and the role or on/off would be undone by the next provisioning change. Its `code` is what a caller matches on; the registry answers it as the response's `errorCode`. |
+| `IdentityAuthorityOwner` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | Who holds a person's authority (their sign-in name, sign-in role and whether they may sign in) when Identity Access does not: the host's account provisioning, for a person with a platform account, whose role is derived from their workspace memberships' policies and whose sign-in name is their account email. `holdsAuthorityOf` is true for such a person; the `update-user` endpoint then refuses to change their sign-in name, role or on/off (`IdentityAuthorityManagedError`), while provisioning keeps writing them through the service directly. An answer that cannot be had (a throw) refuses the change too: it is never read as "no account". |
+| `IdentityAuthorityUncheckedError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/authority/unchecked-error.ts` | The refusal of an Identity Access sign-in name, role or on/off change when the authority owner (`IdentityAuthorityOwner`) could not say whether the person's authority is held elsewhere. Failing closed: an unreadable answer is never read as "held here", so nothing changes until it can be checked. Carries no detail of the failure. |
 | `IdentityCredentialChange` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A password change announced to credential-change subscribers, such as a program that re-seals data under the new password. `currentPassword` is set only for a self-service change, where the account's own current password was proven for it; an administrator's reset of another account carries none, so data sealed under the old password cannot be recovered. |
 | `IdentityCredentialChangeSubscriber` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | The credential-change port. Every subscriber `prepare`s before the credential is written, and a `prepare` that throws refuses the change. After the write each subscriber is sent `commit`; when a `prepare` or the write fails, each subscriber asked to prepare is sent `abort` instead. |
 | `IdentityLastAdministratorError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/last-administrator-error.ts` | The refusal to disable, delete or demote the last enabled administrator (`updateUser`, `deleteUser`). Its `code` is what a caller outside this program matches on -- platform provisioning answers it as `last_administrator` -- so it never parses the message. |
@@ -574,6 +580,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `IdentitySessionTarget` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A session to revoke: its raw id, or (administrators only) the digest the panel lists it by. |
 | `IdentitySetPasswordAuthorized` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A password change by someone proving themselves on a session of theirs: the person, or an administrator. |
 | `IdentityTwoFactorResetError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/two-factor-reset-error.ts` | The refusal of `resetPassword` (a welcome or reset link, or an operator's reset) for an account with two-factor sign-in whose credential is sealed and not unlocked in this process. The authenticator secret is inside the seal, so the reset could only go ahead by turning two-factor off, and a link or an operator command alone must never do that. Nothing is changed; a signed-in administrator resets such an account (`setPasswordAuthorized`). Its `code` is what platform provisioning matches on (answered as `two_factor`), never the message. |
+| `IdentityUsernameTakenError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/username-taken-error.ts` | The refusal of a sign-in name another person already has, ignoring case (`refuseTakenUsername`): sign-in matches names ignoring case, so two people whose names differ only by case could not both sign in by name. Nothing is changed. Its `code` is what a caller outside this program matches on; the `create-user` and `update-user` endpoints answer it as the response's `errorCode`, never by parsing the message. |
 | `IdentityUserUpdate` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | The fields of an account an administrator may change. |
 | `initializeFluxIQLayoutV3` | Value | `packages/fluxiq/src/framework/layout-v3/initialize.ts` | - |
 | `initializeFluxIQStorage` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
@@ -617,6 +624,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `normalizeDomainId` | Value | `packages/fluxiq/src/domains/index.ts` | - |
 | `normalizeFluxIQStatus` | Value | `packages/fluxiq/src/ui/index.ts` | - |
 | `notTriedOutcome` | Value | `packages/fluxiq/src/ui/activity-status/not-tried.ts` | - |
+| `OfferSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The holder offers their own key to the workspace (`offered` true) or withdraws it (false). |
+| `OfferSecretKeyResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The reply of `offer-key`. |
 | `opensActivityAttempt` | Value | `packages/fluxiq/src/ui/activity-status/attempt/opens.ts` | - |
 | `OutputAdapter` | Type | `packages/fluxiq/src/io/index.ts` | - |
 | `OutputDispatchRequest` | Type | `packages/fluxiq/src/io/index.ts` | - |
@@ -742,6 +751,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeyKind` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeyLockedClient` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A locked paired client as its person chooses among them. |
 | `SecretKeyMutationResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
+| `SecretKeyOffer` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A holder's offer of their own key to the workspace: the key, who offered it (its holder then), and when. |
 | `secretKeyPairedHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-unlocks.ts` | - |
 | `secretKeyPanelHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-unlocks.ts` | - |
 | `SecretKeyRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
@@ -783,7 +793,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `systemActivityClock` | Object | `packages/fluxiq/src/ui/activity-status/clock.ts` | The service worker's own clock. |
 | `systemClock` | Object | `packages/fluxiq/src/core/index.ts` | - |
 | `TotpConfirmRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
-| `TotpRequiredError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/service.ts` | - |
+| `TotpRequiredError` | Class | `packages/fluxiq/src/programs/identity-access/runtime/totp-required-error.ts` | The refusal of a sign-in (`IdentityAccessService.authenticate`) whose password was right but whose authenticator code is missing or wrong, so a client asks for the code rather than reporting bad credentials. |
 | `translateClientGatewayTraceCommandIds` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/command-id-translation.ts` | - |
 | `TrialState` | Type | `packages/fluxiq/src/ui/activity-status/candidate-trial.ts` | What a build's test of its Flow makes of one event. |
 | `TrustedModuleBuildIdentity` | Type | `packages/fluxiq/src/runtime/build-identity/modules/types.ts` | Optional provenance supplied only by trusted, locally loaded runtime modules. |

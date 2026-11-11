@@ -63,6 +63,8 @@ describe("the workspace's default and assistant key (service)", () => {
     const byOwner = await call("set-default-key", owner, { id: ownersSecond.id });
     expect(byOwner.ok, byOwner.error).toBe(true);
     expect(byOwner.payload).toMatchObject({ defaultKeyId: ownersSecond.id });
+    // Another person's key is chosen for the workspace only once its holder offered it (key-offers.test.ts).
+    expect(await call("offer-key", member, { id: membersKey.id, offered: true })).toMatchObject({ ok: true });
     const byAdministrator = await call("set-default-key", administrator, { id: membersKey.id });
     expect(byAdministrator.ok, byAdministrator.error).toBe(true);
     expect(byAdministrator.payload).toMatchObject({ defaultKeyId: membersKey.id });

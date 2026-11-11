@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { compileIamPolicySet, evaluateIamRequest } from "../../evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../frn/index.ts";
 import type { IamPrincipal } from "../../types.ts";
-import { IAM_USER_ACCESS } from "../index.ts";
+import { IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../index.ts";
 
 const WS = "ws-1";
 const ALICE: IamPrincipal = { type: "user", id: "alice", workspaceId: WS, frn: iamPrincipalFrn("user", WS, "alice") };
@@ -64,6 +64,13 @@ describe("FluxIQUserAccess panel assistant", () => {
     expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn(WS))).toBe("allow");
     expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn("ws-2"))).toBe("deny");
     expect(decide("studio:GetPanelAssistantAllowance", ALICE_USER, "alice")).toBe("deny");
+  });
+
+  it("grants the workspace setting reads only from the panel, so a paired browser's credential is refused them by IAM", () => {
+    for (const action of IAM_USER_WORKSPACE_SETTING_READS) {
+      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe("allow");
+      for (const origin of ["extension-chat", "api", "schedule", "cli", "provisioning"] as const) expect(decideFrom(origin, action, iamWorkspaceFrn(WS)), `${origin} ${action}`).toBe("deny");
+    }
   });
 
   it("withholds setting the allowance, which is one record for the whole workspace", () => {

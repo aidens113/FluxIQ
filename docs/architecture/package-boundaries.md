@@ -233,11 +233,18 @@ Added only; nothing a client already imports changed shape.
 - **`update-user`.** A field equal to the person's stored value is not a
   change: the endpoint drops it before deciding anything, so resending an
   unchanged `username`, `roleId` or `enabled` is neither refused nor
-  rechecked. `displayName`, `roleId` and `enabled` are compared exactly. A
-  `username` is compared ignoring case (`toLowerCase`, the folding sign-in
-  already used), so an account holder may resend their email in any case and
-  nothing is written for it; for a person whose name is held here, a re-cased
-  own name is written as sent. Sign-in names are unique ignoring case: the
+  rechecked. All four fields are compared exactly, so a `username` that
+  differs from the stored one only by case is written as sent. Anyone may
+  re-case their own sign-in name (the caller is the person, and the new name
+  equals the stored one ignoring case, `toLowerCase`, the folding sign-in
+  uses): it is the same name of the same person (same id, sessions,
+  memberships and account), so it is not a change of authority, is never
+  refused as held elsewhere and asks no proof, an account holder's included.
+  An account holder's account email is not rewritten: the platform store
+  keeps every email trimmed and lower-cased and nothing compares it to the
+  sign-in name in a case-sensitive way. Re-casing another person's name is a
+  sign-in name change like any other: refused for an account holder, written
+  for anyone else. Sign-in names are unique ignoring case: the
   service refuses a write that would give a person a name another person has
   in any case (`IdentityUsernameTakenError`, which `create-user` and
   `update-user` answer as `errorCode: "identity.username_taken"`), on every
@@ -255,8 +262,8 @@ Added only; nothing a client already imports changed shape.
   `identity.authority_unchecked`, and the answer never echoes the cause.
   Provisioning stays the only writer of their role (`setPolicies`) and on/off
   (`disableAccount`, `enableAccount`), and their sign-in name stays their
-  account email; it writes through `IdentityAccessService.updateUser`, which
-  never asks. A person without an account changes through `update-user` as
+  account email (in whatever case they re-case it to); it writes through
+  `IdentityAccessService.updateUser`, which never asks. A person without an account changes through `update-user` as
   before.
 - **`snapshot`.** The endpoint's `IdentityAccessSnapshotResponse` is now an
   `IdentityAccessListing`: each user is an `IdentityAccessListedUser` with

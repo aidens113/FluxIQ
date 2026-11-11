@@ -4,9 +4,10 @@
 // per-person panel databases:
 //
 // - `FluxIQUserAccess` grants every panel endpoint a person needs for their
-//   own chats, and withholds `set-panel-assistant-allowance`, which changes one
-//   record for the whole workspace; every registered panel endpoint is one or
-//   the other;
+//   own chats (`OwnPanelAssistant`, on their own user), lets them read the
+//   allowance on the workspace (`WorkspaceSettingReads`), and withholds
+//   `set-panel-assistant-allowance`, which changes one record for the whole
+//   workspace; every registered panel endpoint is one or the other;
 // - a second person under it never reads, answers, renames, deletes, sends
 //   into or reads an attachment of the first person's thread: each answers
 //   exactly as a thread that does not exist, and the thread is left as it was;
@@ -42,11 +43,15 @@ const BOBS_PROJECT = "b-project.one";
 const E = PANEL_ASSISTANT_ENDPOINTS;
 const action = (endpoint: string): string => iamActionName(iamProgramService("automation-studio"), endpoint);
 
-/** What `FluxIQUserAccess` grants a person for their own chats (`OwnPanelAssistant`), and what it withholds. */
-const GRANTED = [E.listThreads, E.getThread, E.getThreadAttachment, E.openThread, E.renameThread, E.deleteThread, E.send, E.answer, E.getAllowance];
+/** What `FluxIQUserAccess` grants a person for their own chats (`OwnPanelAssistant`, on their own user). */
+const OWN_CHATS = [E.listThreads, E.getThread, E.getThreadAttachment, E.openThread, E.renameThread, E.deleteThread, E.send, E.answer];
+/** What it grants on the workspace, where the allowance is one record for everyone (`WorkspaceSettingReads`). */
+const WORKSPACE_READS = [E.getAllowance];
+const GRANTED = [...OWN_CHATS, ...WORKSPACE_READS];
+/** What it withholds: changing the allowance changes it for everyone. */
 const WITHHELD = [E.setAllowance];
 /** What `FluxIQReadOnlyAccess` reaches: the reads its generated list holds. */
-const READ_ONLY = [E.listThreads, E.getThread, E.getThreadAttachment, E.getAllowance];
+const READ_ONLY: readonly string[] = [E.listThreads, E.getThread, E.getThreadAttachment, E.getAllowance];
 
 /** A proposal whose one new step is "Start the post", as `getFlowBootstrapAdaptation` answers it. */
 const PROPOSAL = { status: "proposed", topology: { subflows: [{ subflow: { name: "Main" }, graphFlow: { flowId: "flow.1", nodes: [{ id: "node.1", label: "Start the post", definitionId: "builtin.click", parameterValues: {} }], edges: [] } }] } } as unknown as AutomationStudioBootstrapAdaptation;
@@ -116,7 +121,7 @@ describe("the predefined policies over the panel assistant's endpoints (service)
     expect([...registered].sort(), "decide each new panel endpoint in platform/iam/predefined/user-access.ts (OWN_PANEL_ASSISTANT)").toEqual([...GRANTED, ...WITHHELD].sort());
   });
 
-  it("FluxIQUserAccess lets a person use every granted endpoint on their own chats, decided by OwnPanelAssistant, and withholds setting the allowance", async () => {
+  it("FluxIQUserAccess lets a person use every granted endpoint on their own chats, decided by OwnPanelAssistant, reads the allowance on the workspace, and withholds setting it", async () => {
     const planted = await plantAlicesThread();
     const { call, assistant, decisions } = world([IAM_USER_ACCESS]);
 
@@ -136,11 +141,20 @@ describe("the predefined policies over the panel assistant's endpoints (service)
     expect(await call(E.getAllowance, alice, {})).toMatchObject({ ok: true, payload: { allowanceUsd: 0.5, chosen: false } });
     expect(await call(E.deleteThread, alice, { conversationId: scratch })).toEqual({ ok: true, payload: { deleted: true, conversationId: scratch } });
 
-    // Each call's decision on the person's own user is OwnPanelAssistant's; a project-bound attachment is decided again on its project, by OwnData.
-    for (const endpoint of GRANTED) {
+    // Each chat call's decision on the person's own user is OwnPanelAssistant's; a project-bound attachment is decided again on its project, by OwnData.
+    for (const endpoint of OWN_CHATS) {
       const own = decisions("alice", endpoint).filter((row) => row.resources.some((frn) => frn.startsWith("frn:fluxiq:iam:")));
       expect(own.length, endpoint).toBeGreaterThan(0);
       for (const row of own) expect([row.decision, row.matched], endpoint).toEqual(["allow", { policy: "FluxIQUserAccess", sid: "OwnPanelAssistant" }]);
+    }
+    // The allowance is read on the workspace, by WorkspaceSettingReads, and on no person's user.
+    for (const endpoint of WORKSPACE_READS) {
+      const rows = decisions("alice", endpoint);
+      expect(rows.length, endpoint).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect([row.decision, row.matched], endpoint).toEqual(["allow", { policy: "FluxIQUserAccess", sid: "WorkspaceSettingReads" }]);
+        expect(row.resources.some((frn) => frn.includes(":user/")), endpoint).toBe(false);
+      }
     }
     expect(decisions("alice", E.getThreadAttachment).find((row) => row.resources.some((frn) => frn.includes(":project/")))).toMatchObject({ decision: "allow", matched: { policy: "FluxIQUserAccess", sid: "OwnData" } });
 
