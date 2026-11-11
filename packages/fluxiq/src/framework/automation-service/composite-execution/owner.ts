@@ -97,7 +97,7 @@ export class AutomationStudioCanonicalExecution {
   // The run's root frame and the holder its frames share, unless a caller framed it already (C1).
   const invocation = options.invocation ?? automationStudioRootInvocation(flow, options, runSubflow);
   const rootOptions: AutomationStudioGraphExecutionOptions = { ...options, invocation, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) };
-  const trace = await runAutomationStudioChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
+  const trace = await runAutomationStudioChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun, options.startTimer);
   if (trace.failure?.code !== "run.outcome_uncertain") await options.commandRun?.checkpoint();
   onExecutedTrace?.(executedTrace(trace), trace);
   return trace;

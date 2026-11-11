@@ -27,6 +27,38 @@ import { ATLAS, BIRDS, CLOCKS, DUNES, forwardFrom, ON_THE_CARD, pressCardByHand,
 
 vi.setConfig({ testTimeout: 180_000 });
 
+/**
+ * The run deadlines in force, held: a deadline here passes when the case says it does, never by the wall clock.
+ * The live environment every run's options come from (`../../runtime-session/graph-options.ts`) is the real one
+ * but for its timer: a run's deadline (`engine/automation/composite/child-bounds.ts`) is held until
+ * `deadlinePasses` lets it go, and every other wait runs on the real clock as before. Until 2026-11-11 a 400 ms
+ * deadline was meant to cut one press that never answered, but it also had to cover everything the run did before
+ * that press, and on a loaded machine it cut the run first (t904: the held-row case pressed Birds again).
+ */
+const deadlines = vi.hoisted(() => ({ held: new Set<() => void>() }));
+vi.mock("../../../environment/live.ts", async (original) => {
+  const { automationStudioLiveRunEnvironment: live } = await original<typeof import("../../../environment/live.ts")>();
+  const startTimer = (wait: { readonly kind: string }, delayMs: number, fire: () => void): { cancel(): void } => {
+    if (wait.kind !== "run_deadline") {
+      const timer = setTimeout(fire, delayMs);
+      return { cancel: () => clearTimeout(timer) };
+    }
+    deadlines.held.add(fire);
+    return { cancel: () => { deadlines.held.delete(fire); } };
+  };
+  return { automationStudioLiveRunEnvironment: Object.freeze({ ...live, startTimer }) };
+});
+/** A press the page never answers: it is sent, and the run's deadline then passes while it is pending. */
+const deadlinePasses = (): Promise<never> => {
+  setTimeout(() => {
+    for (const fire of [...deadlines.held]) {
+      deadlines.held.delete(fire);
+      fire();
+    }
+  }, 0);
+  return new Promise<never>(() => undefined);
+};
+
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
@@ -43,6 +75,7 @@ const loans = { instruction: LOAN_TASK, ...PERMITTED };
 const pressedLoans = { ...loans, runAgain: true };
 const look = (callId = "look") => toolCall(callId, LOOK_TOOL, {});
 const failed = (failure: JsonObject, message = "Page says: something went wrong on Elm Street 4") => ({ status: "failed" as const, route: "failed", message, failure: { category: "action_failed", code: "library.press_failed", ...failure } as AutomationStudioFailureRecord });
+/** Gives the Flow's runs a deadline, which passes only where a press never answers (`deadlinePasses`). */
 const shortRuns = async (lane: Lane) => {
   const flow = await lane.service.getFlow(lane.projectId, "flow.loans");
   await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...flow!, executionDefaults: { timeoutMs: 400 } } });
@@ -240,7 +273,7 @@ describe("(c) the press landed and the answer is lost to the run's deadline", ()
       return (async () => {
         seen.onRecord = (await lane.actsOn())?.acts.map((act) => act.state);
         pressCard(target);
-        return await new Promise<never>(() => undefined);
+        return await deadlinePasses();
       })();
     });
     site.blind = true;
@@ -272,7 +305,7 @@ describe("(c) the press landed and the answer is lost to the run's deadline", ()
     await lane.attempt(cardFirstAttempt());
     await shortRuns(lane);
     // Sent, and the page never took it.
-    over(({ nodeId }) => nodeId === RENEW_CARD ? new Promise(() => undefined) : undefined);
+    over(({ nodeId }) => nodeId === RENEW_CARD ? deadlinePasses() : undefined);
     const told = shownTo();
     const second = await lane.attempt({ ...pressedCard, script: [
       told.then(pressCardByHand("refused", ON_THE_CARD, {})),
@@ -291,14 +324,15 @@ describe("(c) the press landed and the answer is lost to the run's deadline", ()
 });
 
 describe("what a look can and cannot do", () => {
+  // What a look opens does not depend on how the answer was lost, so it is lost to an error after the press, which
+  // holds the act as (b) proves, rather than to a deadline: no clock is involved (t904).
   const landedAndLost = async () => {
     const parts = await siteLane(cleanups);
     await parts.lane.attempt(cardFirstAttempt());
-    await shortRuns(parts.lane);
     parts.over(({ nodeId }) => {
       if (nodeId !== RENEW_CARD) return undefined;
       pressCard(parts.target);
-      return new Promise(() => undefined);
+      return failed({ retryable: true });
     });
     return parts;
   };
@@ -339,11 +373,11 @@ describe("what a look can and cannot do", () => {
   it("a held row stays out of a forward run whatever was looked at", async () => {
     const { lane, target, over } = await siteLane(cleanups);
     await lane.attempt(honestFirstAttempt());
-    await shortRuns(lane);
+    // Held by an answer lost to an error after the press, as (b) proves it holds: no clock is involved (t904).
     over((request) => {
       if (request.nodeId !== RENEW_LOAN || itemOf(request) !== BIRDS) return undefined;
       pressLoan(target, request.inputs ?? {}, request.parameters ?? {});
-      return new Promise(() => undefined);
+      return failed({ retryable: true });
     });
     const from = target.library.calls.length;
     await lane.attempt({ ...pressedLoans, script: [look("first"), look("second"), forwardFrom(READ_STEP), complete("Renewed every loan.")] });
@@ -421,7 +455,7 @@ describe("(e) the same on a repeat over rows: other rows go ahead, and only the 
   const cases: Array<[string, () => ReturnType<typeof failed> | Promise<never>]> = [
     ["an error", () => failed({ retryable: true })],
     ["a throw", () => { throw new Error("The line went dead."); }],
-    ["the run's deadline", () => new Promise<never>(() => undefined)]
+    ["the run's deadline", () => deadlinePasses()]
   ];
   for (const [what, answer] of cases) {
     it(`the answer lost to ${what}: a forward run does the rows not reached, never the one in doubt and never the one done`, async () => {

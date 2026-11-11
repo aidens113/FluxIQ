@@ -37,7 +37,7 @@ export async function executeWithRegionTimeout(run: (signal: AbortSignal) => Pro
 }
 
 /** The region timeout on the real clock, as it always ran. */
-function startRealRegionTimer(_wait: { readonly kind: "region_timeout" }, delayMs: number, fire: () => void): { cancel(): void } {
+function startRealRegionTimer(_wait: { readonly kind: "region_timeout" | "run_deadline" }, delayMs: number, fire: () => void): { cancel(): void } {
   const handle = setTimeout(fire, delayMs);
   return { cancel: () => clearTimeout(handle) };
 }
