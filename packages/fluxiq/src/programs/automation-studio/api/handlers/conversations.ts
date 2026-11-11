@@ -17,7 +17,14 @@
 //
 // Reads take `programs.read`; writing a turn or answering an ask takes
 // `programs.write` and is `authoring`, not `destructive`, because most answers
-// commit nothing and a refusal never does. No answer to a permission ask or to
+// commit nothing and a refusal never does. Renaming and deleting a thread are
+// `authoring` too, as deleting a Flow is: a person's own chat history, removed
+// from the chat itself, never takes a PIN, and nothing outside FluxIQ is acted
+// on. Both are decided by IAM on the thread's project, the resource a thread's
+// owner comes from (a project's child carries its project's owner), and a
+// thread the caller may not change is answered as one that does not exist
+// (`service/conversation-requests/thread-of-request.ts` in the framework).
+// No answer to a permission ask or to
 // a question a run waits on takes a PIN: it is a step inside a Flow or a chat,
 // and the person's press stands, signed in or paired. The one exception is a
 // `panel-command.` confirmation, a one-off command from chat whose PIN is
@@ -36,8 +43,8 @@ import { getConversationInput, listConversationsInput } from "@fluxiq/contracts/
 import { authorizeProgramPin, type ProgramPinAuthorizationPayload } from "../../../_shared/authorization.ts";
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import type { IdentityAccessService } from "../../../identity-access/index.ts";
-import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
-import type { GlobalProgramApiRegistry } from "../../../_shared/api.ts";
+import { AUTOMATION_STUDIO_ENDPOINTS, type ConversationAnswerRequest, type ConversationAttachmentRequest, type ConversationDeleteRequest, type ConversationListRequest, type ConversationOpenRequest, type ConversationReadRequest, type ConversationRenameRequest, type ConversationTurnAppendRequest } from "../../../../api-contracts/automation.ts";
+import type { GlobalProgramApiRegistry, ProgramApiRequest } from "../../../_shared/api.ts";
 import type { AutomationStudioConversations } from "../../../../framework/automation-service/index.ts";
 import {
   automationStudioPanelCommandAnswerNeedsPin,
@@ -47,9 +54,13 @@ import {
 import {
   answerConversationAskForRequest,
   appendConversationTurnForRequest,
+  deleteConversationForRequest,
   listConversationsForRequest,
+  renameConversationForRequest,
   requestedSubject,
-  type AutomationStudioConversationRequestService
+  type AutomationStudioConversationProjectGate,
+  type AutomationStudioConversationRequestService,
+  type AutomationStudioConversationRunLinks
 } from "../../../../framework/automation-service/service/conversation-requests/index.ts";
 
 /**
@@ -68,6 +79,12 @@ export type AutomationStudioConversationApiDependencies = {
   readonly service: AutomationStudioConversationRequestService & AutomationStudioConversationAttachmentReads;
   /** What checks the PIN on an answer that needs one. Absent, such an answer is refused, as a destructive endpoint is. */
   readonly identityAccess?: IdentityAccessService | undefined;
+  /**
+   * Whether a run Core keeps a record of still uses a thread, which refuses its
+   * deletion. Read only when a delete asks; absent, every delete is refused,
+   * since nothing could rule such a run out.
+   */
+  readonly runLinks?: AutomationStudioConversationRunLinks | undefined;
 };
 
 export function registerAutomationStudioConversationEndpoints(dependencies: AutomationStudioConversationApiDependencies): void {
@@ -132,9 +149,45 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const conversation = await conversations().openConversation({
         projectId,
         subject: requestedSubject(payload.subjectKind, payload.subjectId) ?? { kind: "project", id: projectId },
-        title: typeof payload.title === "string" && payload.title ? payload.title : null
+        title: typeof payload.title === "string" && payload.title ? payload.title : null,
+        ...(payload.fresh === true ? { fresh: true } : {})
       });
       return { ok: true, payload: { conversation } };
+    }
+  });
+
+  // A person's own name for a thread. Without a project, the thread is looked
+  // for in the projects the caller may change, each decided as this call is.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameConversation,
+    assistant: { hidden: "A person renames a thread from the chat's own thread list." },
+    permission: "programs.write",
+    classification: "authoring",
+    action: "studio:RenameConversation",
+    accessLevel: "Write",
+    resource: projectOrWorkspace(),
+    handler: async (request) => {
+      const payload = conversationPayload<ConversationRenameRequest>(request.payload);
+      const mayChange = projectGate(registry, request, "studio:RenameConversation");
+      return { ok: true, payload: await renameConversationForRequest(service, request.scope.domainId, payload, mayChange) };
+    }
+  });
+
+  // Removing a thread with everything said and asked in it, refused while a run still uses it.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteConversation,
+    assistant: { hidden: "A person deletes a thread from the chat's own thread list." },
+    permission: "programs.write",
+    classification: "authoring",
+    action: "studio:DeleteConversation",
+    accessLevel: "Write",
+    resource: projectOrWorkspace(),
+    handler: async (request) => {
+      const payload = conversationPayload<ConversationDeleteRequest>(request.payload);
+      const mayChange = projectGate(registry, request, "studio:DeleteConversation");
+      return { ok: true, payload: await deleteConversationForRequest(service, request.scope.domainId, payload, { mayChange, runLinks: dependencies.runLinks }) };
     }
   });
 
@@ -224,6 +277,22 @@ async function authorizeAnswer(dependencies: AutomationStudioConversationApiDepe
   const ask = await dependencies.service.conversations.getAsk({ projectId, askId: String(payload.askId ?? "") });
   if (ask?.status !== "pending" || !automationStudioPanelCommandAnswerNeedsPin(ask, String(payload.kind ?? ""))) return;
   await authorizeProgramPin(dependencies.identityAccess, payload as ProgramPinAuthorizationPayload);
+}
+
+/** The project a call names, or the workspace when it names none: a call across projects decides each one in its handler. */
+function projectOrWorkspace(): ReturnType<typeof endpointResource.custom> {
+  return endpointResource.custom(["project"], (request) => {
+    const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
+    return projectId === null || projectId === undefined || projectId === "" ? { kind: "workspace" } : { kind: "project", projectId: String(projectId) };
+  });
+}
+
+/** Whether this caller may take `action` on a project, decided by IAM as a call naming that project would be. */
+function projectGate(registry: GlobalProgramApiRegistry, request: ProgramApiRequest, action: string): AutomationStudioConversationProjectGate {
+  return async (projectId) => {
+    if (!request.actor) return false;
+    return (await registry.authorize({ actor: request.actor, action, permission: "programs.write", resources: { kind: "project", projectId }, programId: "automation-studio" })).allowed;
+  };
 }
 
 function conversationPayload<TRequest>(payload: unknown): Partial<TRequest> {

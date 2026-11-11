@@ -75,6 +75,15 @@ export type ChatAnswer = {
 /** Every thread a person can see: across all their projects when `projectId` is absent. */
 export type ChatThreadCatalogQuery = { projectId?: string; limit: number };
 
+/** Opens a new thread, never an existing one (Core's open-conversation with `fresh: true`). */
+export type ChatNewThreadRequest = { projectId?: string; subjectKind?: ChatSubjectKind; subjectId?: string; title?: string };
+
+/** Gives a thread the person's own name for it. */
+export type ChatRenameThreadRequest = { projectId?: string; conversationId: string; title: string };
+
+/** Deletes a thread. Core refuses one whose work is still running (code `conversation_run_active`) with a sentence the chat shows. */
+export type ChatDeleteThreadRequest = { projectId?: string; conversationId: string };
+
 /** Core's conversation. Each `conversation`/`conversations` field holds Core's record as it answered it. */
 export type ChatConversationPort = {
   listThreads(query: ChatThreadListQuery): Promise<ChatResult<{ conversations?: unknown }>>;
@@ -85,6 +94,12 @@ export type ChatConversationPort = {
   answer(answer: ChatAnswer): Promise<ChatResult<unknown>>;
   /** Every thread, for the thread list (`ChatThreadsOptions`). Absent: the chat shows one thread at a time. */
   listAllThreads?(query: ChatThreadCatalogQuery): Promise<ChatResult<{ conversations?: unknown }>>;
+  /** The thread list's New chat. Absent: the list offers none. */
+  newThread?(request: ChatNewThreadRequest): Promise<ChatResult<{ conversation?: unknown }>>;
+  /** The thread list's Rename. Absent: the list offers none. */
+  renameThread?(request: ChatRenameThreadRequest): Promise<ChatResult<{ conversation?: unknown }>>;
+  /** The thread list's Delete. Absent: the list offers none. */
+  deleteThread?(request: ChatDeleteThreadRequest): Promise<ChatResult<{ deleted?: boolean }>>;
 };
 
 /**

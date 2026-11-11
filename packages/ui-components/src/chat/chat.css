@@ -3,11 +3,15 @@
    the bottom. No header and no card chrome: the host owns the top bar. Colours
    come from theme/tokens.css only, so light and dark follow the tokens.
 
-   Self-contained: everything the chat draws is styled here, under
-   `.chat-panel`, and nothing outside it is touched. The page-level resets the
-   chat relies on are scoped with `:where()` so they keep the specificity of the
-   bare selectors they replace. Classes with no rule are hooks only (the Lab
-   and the tests find elements by them): see `view/tests/styles.test.ts`. */
+   Self-contained: everything the chat draws is styled here or in the sheets
+   imported below, under `.chat-panel`, and nothing outside it is touched. The
+   page-level resets the chat relies on are scoped with `:where()` so they keep
+   the specificity of the bare selectors they replace. Classes with no rule are
+   hooks only (the Lab and the tests find elements by them): see
+   `view/tests/styles.test.ts`. A host imports this sheet alone. */
+
+/* The conversation list: its "Chats" button, drawer or column, search and rows. */
+@import "./view/thread-list/thread-list.css";
 
 :where(.chat-panel), :where(.chat-panel) *, :where(.chat-panel) *::before, :where(.chat-panel) *::after { box-sizing: border-box; }
 :where(.chat-panel) button, :where(.chat-panel) input, :where(.chat-panel) select, :where(.chat-panel) textarea { font: inherit; }
@@ -585,15 +589,6 @@
 .chat-work-action:hover { background: var(--hover); }
 .chat-work-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* The thread list: one line over the stream, a picker when there are several threads, else the chat's name. */
-.chat-thread-header { display: flex; flex: 0 0 auto; align-items: center; min-height: 40px; border-bottom: 1px solid var(--divider); padding: 0 12px; }
-.chat-thread-picker { display: block; width: 100%; min-width: 0; }
-.chat-thread-select {
-  width: 100%; min-height: 30px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface);
-  color: var(--text); padding: 0 8px; font-size: 13px;
-}
-.chat-thread-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.chat-thread-title { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .chat-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); border: 0; white-space: nowrap; }
 
 /* Turns the chat keeps off the top of a long thread, behind one control. */

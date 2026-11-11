@@ -8,54 +8,41 @@ import { emptyStateModel } from "../empty-state-model.ts";
 import { createEmptyState } from "../empty-state.ts";
 import { createThreadHeader } from "../thread-header.ts";
 
-const OPTIONS = [{ conversationId: "a", label: "Alpha (waiting on you)" }, { conversationId: "b", label: "Bravo" }];
-
-test("with several threads the header is a picker labelled Thread, and a pick is heard", async () => {
+test("in a drawer the header is a Chats button naming the chat, with how many wait, that opens the list", async () => {
   await withFakeDocument(() => {
-    const picked: string[] = [];
-    const header = createThreadHeader((id) => picked.push(id));
+    let toggled = 0;
+    const header = createThreadHeader("drawer", () => (toggled += 1), "list-1");
     const root = fake(header.element);
-    header.update({ options: OPTIONS, selectedId: "b", title: "Bravo", showTitle: true });
+    header.update({ title: "Bravo", showTitle: true, open: false, waiting: 2 });
+    const button = root.byClass("chat-thread-toggle")[0]!;
+    assert.equal(fake(header.toggle), button);
     assert.equal(root.hidden, false);
-    assert.equal(root.byClass("chat-thread-picker")[0]!.hidden, false);
-    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true, "the picker names the thread; the title is not said twice");
-    assert.equal(root.byClass("chat-sr-only")[0]!.textContent, "Thread");
-    const select = root.byClass("chat-thread-select")[0]!;
-    assert.deepEqual(select.querySelectorAll("option").map((option) => [option.value, option.textContent]), [["a", "Alpha (waiting on you)"], ["b", "Bravo"]]);
-    assert.equal(select.value, "b");
-    select.value = "a";
-    select.dispatch("change");
-    assert.deepEqual(picked, ["a"]);
+    assert.equal(button.getAttribute("aria-controls"), "list-1");
+    assert.equal(button.getAttribute("aria-expanded"), "false");
+    assert.equal(root.byClass("chat-thread-toggle-label")[0]!.textContent, "Chats");
+    assert.equal(root.byClass("chat-thread-title")[0]!.textContent, "Bravo");
+    assert.equal(root.byClass("chat-thread-badge")[0]!.textContent, "2 waiting");
+    button.dispatch("click");
+    assert.equal(toggled, 1);
+    header.update({ title: "Bravo", showTitle: false, open: true, waiting: 0 });
+    assert.equal(button.getAttribute("aria-expanded"), "true");
+    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true, "a host that takes the name hears it instead");
+    assert.equal(root.byClass("chat-thread-badge")[0]!.hidden, true, "nothing waits");
+    assert.equal(root.hidden, false, "the button stays: it is the way to the list");
   });
 });
 
-test("with one thread or none the header is the chat's name in words, or nothing when a host takes the name", async () => {
+test("in a column the header is the chat's name in words, or nothing when a host takes the name", async () => {
   await withFakeDocument(() => {
-    const header = createThreadHeader(() => undefined);
+    const header = createThreadHeader("column", () => undefined, "list-2");
     const root = fake(header.element);
-    header.update({ options: OPTIONS.slice(0, 1), selectedId: "a", title: "Company website", showTitle: true });
+    assert.equal(header.toggle, undefined);
+    header.update({ title: "Company website", showTitle: true, open: true, waiting: 1 });
     assert.equal(root.hidden, false);
-    assert.equal(root.byClass("chat-thread-picker")[0]!.hidden, true);
-    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, false);
-    assert.equal(root.byClass("chat-thread-title")[0]!.textContent, "Company website");
-    header.update({ options: [], selectedId: undefined, title: "All projects", showTitle: true });
-    assert.equal(root.byClass("chat-thread-title")[0]!.textContent, "All projects");
-    header.update({ options: [], selectedId: undefined, title: "All projects", showTitle: false });
+    assert.equal(root.textContent, "Company website");
+    assert.equal(root.querySelectorAll("button").length, 0, "no Refresh control and no toggle");
+    header.update({ title: "All projects", showTitle: false, open: true, waiting: 1 });
     assert.equal(root.hidden, true);
-    header.update({ options: OPTIONS, selectedId: "a", title: "Alpha", showTitle: false });
-    assert.equal(root.hidden, false, "a picker is still drawn");
-  });
-});
-
-test("the picker's options are rebuilt only when they change, so an open picker keeps its place", async () => {
-  await withFakeDocument(() => {
-    const header = createThreadHeader(() => undefined);
-    const select = fake(header.element).byClass("chat-thread-select")[0]!;
-    header.update({ options: OPTIONS, selectedId: "a", title: "x", showTitle: false });
-    const first = select.querySelectorAll("option")[0];
-    header.update({ options: OPTIONS, selectedId: "b", title: "x", showTitle: false });
-    assert.equal(select.querySelectorAll("option")[0], first);
-    assert.equal(select.value, "b");
   });
 });
 

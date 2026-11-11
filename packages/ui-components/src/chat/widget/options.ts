@@ -29,7 +29,11 @@ export type ChatWidgetOptions = {
    * With `threads`, leave it out: the first status is what scopes the latest chat to the host's project.
    */
   ownerKey?: string;
-  /** Holds a list of Core's threads, with a picker, instead of one thread at a time (needs `conversation.listAllThreads`). */
+  /**
+   * Holds a list of Core's threads instead of one thread at a time (needs `conversation.listAllThreads`): a
+   * conversation list with search, as a drawer or a column (`layout`), with New chat, Rename and Delete where
+   * the conversation port carries `newThread`, `renameThread` and `deleteThread`.
+   */
   threads?: ChatThreadsOptions;
   /** What the empty chat says instead of its onboarding about the page. */
   welcome?: ChatWelcome;
