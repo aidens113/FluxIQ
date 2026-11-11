@@ -272,6 +272,80 @@ describe("a paired client on the program route", () => {
       expect(accepted.ok && Object.keys(accepted.payload as object)).toEqual(["projectId", "flowId", "flow"]);
     });
 
+    describe("reading it", () => {
+      const read = (payload: unknown) => narrowPairedClientRequest("automation-studio", "get-flow-metadata-detail", payload);
+      const readRefusal = (error: string) => ({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's Flow settings read ${error}` });
+      const project = (response: { ok: boolean; payload?: unknown; error?: string; errorCode?: string }) => projectPairedClientResponse("automation-studio", "get-flow-metadata-detail", response);
+      const detail = (metadata: Record<string, unknown>) => ({
+        flowId: "flow.one", name: "Pay the invoices", description: "Every Monday", visibility: "project", status: "draft", graphRevision: 4,
+        settings: { interventionMode: "fully_adaptive", executionDefaults: { timeoutMs: 9000 }, training: {}, adaptation: { policyId: "policy.x" }, llm: { provider: "host", model: "model-do-not-leak", secretKeyId: "secret:do-not-leak", execution: { budgetUsd: 7 } }, safety: {} },
+        inputs: [{ portId: "account", name: "account", required: true, defaultValue: "ACCT-do-not-leak", description: "" }],
+        outputs: [{ portId: "total", name: "total", required: false, defaultValue: null, description: "" }],
+        variables: [{ variableId: "token", name: "token", initialValue: "VAR-do-not-leak", description: "" }],
+        errors: [{ errorId: "e", code: "e", description: "", metadata: { note: "err-do-not-leak" } }],
+        flowSizeSettings: { maxNodesPerSubflow: 150 },
+        metadata,
+      });
+
+      it("takes exactly a project and a Flow, both strings, and hands on only those", () => {
+        expect(read({ projectId: "p", flowId: "flow.one" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one" } });
+        for (const field of ["flow", "inputs", "variables", "name", "metadata", "includeSettings", "anything"]) {
+          expect(read({ projectId: "p", flowId: "flow.one", [field]: "x" }), field).toEqual(readRefusal(`may not carry ${field}.`));
+        }
+        expect(read(JSON.parse('{"projectId":"p","flowId":"flow.one","__proto__":{"x":1}}'))).toEqual(readRefusal("may not carry __proto__."));
+        expect(read({ projectId: "p" })).toEqual(readRefusal("must name its Flow by a string flowId."));
+        expect(read({ projectId: "p", flowId: 7 })).toEqual(readRefusal("must name its Flow by a string flowId."));
+        expect(read({ flowId: "flow.one" })).toEqual(readRefusal("must name its project by a string projectId."));
+        expect(read({ projectId: "", flowId: "flow.one" })).toEqual(readRefusal("must name its project by a string projectId."));
+        // A GET carries no body, so a token's read is refused there rather than handed an empty project.
+        expect(read(undefined)).toEqual(readRefusal("must name a project and a Flow."));
+        expect(read([])).toEqual(readRefusal("must name a project and a Flow."));
+        expect(JSON.stringify(read({ projectId: "p", flowId: "flow.one", name: "do-not-echo" }))).not.toContain("do-not-echo");
+      });
+
+      it("answers the Flow's id and its humanness, and nothing else of the detail", () => {
+        const projected = project({ ok: true, payload: { flow: detail({ humanness: 40, llmModel: "model-do-not-leak", flowSizeSettings: { maxNodesPerSubflow: 150 }, trainingModeSettings: { resultCheck: { authorization: "auth-do-not-leak" } } }) } });
+        expect(projected).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+        for (const leaked of ["Pay the invoices", "do-not-leak", "timeoutMs", "budgetUsd", "maxNodesPerSubflow", "settings", "inputs", "variables"]) {
+          expect(JSON.stringify(projected), leaked).not.toContain(leaked);
+        }
+      });
+
+      it("answers empty metadata for a Flow with no level, or a level that is not a number", () => {
+        expect(project({ ok: true, payload: { flow: detail({ llmModel: "m" }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        const { metadata: _metadata, ...noMetadata } = detail({});
+        expect(project({ ok: true, payload: { flow: noMetadata } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        for (const humanness of ["40", null, { level: 40 }, true]) {
+          expect(project({ ok: true, payload: { flow: detail({ humanness }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        }
+        expect(project({ ok: true, payload: { flow: detail({ humanness: 0 }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 0 } } } });
+      });
+
+      it("answers a Flow the detail does not describe as null, and a refusal as its sentence and code alone", () => {
+        for (const payload of [{ flow: null }, {}, undefined, { flow: [] }, { flow: { flowId: 7, metadata: { humanness: 40 } } }]) {
+          expect(project({ ok: true, payload })).toEqual({ ok: true, payload: { flow: null } });
+        }
+        expect(project({ ok: false, error: "Flow not found.", errorCode: "flow.not_found", payload: { flow: detail({ humanness: 40 }) } })).toEqual({ ok: false, error: "Flow not found.", errorCode: "flow.not_found" });
+        expect(project({ ok: false })).toEqual({ ok: false });
+      });
+
+      it("rebuilds the answer, so a top-level field beside the payload is not handed on", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40 }), extra: "payload-do-not-leak" }, extra: "top-do-not-leak" } as { ok: boolean; payload?: unknown };
+        expect(project(response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+      });
+
+      it("cuts the answer to setting the level the same way, since it is the same detail read back", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40, llmModel: "model-do-not-leak" }) } };
+        expect(projectPairedClientResponse("automation-studio", "update-flow-settings", response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+      });
+
+      it("projects the endpoint however its name is spelled, as the registry matches it", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40 }) } };
+        expect(projectPairedClientResponse(" Automation-Studio ", " GET-FLOW-METADATA-DETAIL ", response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+        expect(narrowPairedClientRequest(" Automation-Studio ", " GET-FLOW-METADATA-DETAIL ", { projectId: "p", flowId: "f", name: "x" })).toMatchObject({ ok: false });
+      });
+    });
+
     it("leaves a cookie caller's settings change as it was: narrowing is the token's alone", () => {
       // The route narrows only a paired client's body (`handle-program-request.ts`, narrowPost); a person's goes to the handler as sent.
       expect(withProgramAuthSession("automation-studio", change({ name: "Renamed", metadata: { flowSizeSettings: {} } }), "trusted")).toEqual(change({ name: "Renamed", metadata: { flowSizeSettings: {} } }, { authSessionId: "trusted" }));

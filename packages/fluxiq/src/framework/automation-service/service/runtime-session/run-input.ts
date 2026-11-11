@@ -22,6 +22,8 @@ export type AutomationStudioRuntimeSessionRunInput = {
     idempotencyKey?: string;
     /** A person asked the model into this run: who (whose key pays) and what for. Nothing is authorized by it. */
     llmExecution?: AutomationStudioRuntimeSessionLlm;
+    /** The signed-in person the run is for, from the authenticated request only (never its body): read only for their stored starting humanness when the request carried none. */
+    personUserId?: string;
     /** The lasting consequences the person already allowed this run's actions to have. Anything else is asked about act by act. */
     permittedConsequences?: AutomationStudioActionConsequence[];
     useReusableContext?: true; /** Which of this run's result checks `llmExecution`'s caller pays for; absent is every one (`resolveAutomationStudioResultCheckProvider`). */ resultCheckCallerPays?: AutomationStudioResultCheckCallerPays;

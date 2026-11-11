@@ -11,8 +11,9 @@ describe("the humanness seed a run starts with", () => {
     expect(automationStudioHumannessSeeded(given, 5)).toBe(given);
   });
   it("follows from the run's start above 0", () => {
-    expect(automationStudioHumannessSeeded({ humanness: 40 }, 5).humannessSeed).toBe(automationStudioHumannessSeeded({ humanness: 40 }, 5).humannessSeed);
-    expect(automationStudioHumannessSeeded({ humanness: 40 }, 5).humannessSeed).not.toBe(automationStudioHumannessSeeded({ humanness: 40 }, 6).humannessSeed);
+    const forty: { humanness: number; humannessSeed?: number } = { humanness: 40 };
+    expect(automationStudioHumannessSeeded(forty, 5).humannessSeed).toBe(automationStudioHumannessSeeded(forty, 5).humannessSeed);
+    expect(automationStudioHumannessSeeded(forty, 5).humannessSeed).not.toBe(automationStudioHumannessSeeded(forty, 6).humannessSeed);
   });
 });
 

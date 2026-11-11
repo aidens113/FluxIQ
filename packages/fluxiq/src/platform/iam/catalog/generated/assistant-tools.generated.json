@@ -5013,6 +5013,12 @@
       "reason": "Turns off a person's authenticator and needs the caller's own credentials, which are never given to the assistant."
     },
     {
+      "name": "identity-access__get-my-preferences",
+      "programId": "identity-access",
+      "endpoint": "get-my-preferences",
+      "reason": "A person's own settings, read on their settings page; the assistant has no use for them."
+    },
+    {
       "name": "identity-access__lock-vault",
       "programId": "identity-access",
       "endpoint": "lock-vault",
@@ -5041,6 +5047,12 @@
       "programId": "identity-access",
       "endpoint": "unlock-vault",
       "reason": "Takes the person's vault password, PIN or authenticator code, which are never given to the assistant."
+    },
+    {
+      "name": "identity-access__update-my-preferences",
+      "programId": "identity-access",
+      "endpoint": "update-my-preferences",
+      "reason": "A person's own settings, changed by them on their settings page, never by the assistant."
     },
     {
       "name": "production-runner__advance",

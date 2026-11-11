@@ -48,7 +48,23 @@ async function route() {
       readJson: async () => (body === undefined ? undefined : JSON.parse(JSON.stringify(body))),
     };
     const response = await handleProgramRequest(request, { fluxiq });
-    return { status: response.status, body: JSON.parse(response.body) as { ok: boolean; error?: string; errorCode?: string; payload?: any } };
+    return { status: response.status, raw: response.body, body: JSON.parse(response.body) as { ok: boolean; error?: string; errorCode?: string; payload?: any } };
+  };
+  // Input defaults, variable initial values and other settings beside the level, written through the real store, so the detail holds them.
+  const seed = async (humanness?: number) => {
+    const saved = await service.getFlow(project.id, flow.flowId);
+    const metadata = { ...(saved.metadata ?? {}), llmModel: "model-do-not-leak", flowSizeSettings: { maxNodesPerSubflow: 150 }, ...(humanness === undefined ? {} : { humanness }) };
+    await service.saveFlow({
+      projectId: project.id,
+      flow: {
+        ...saved,
+        description: "Description-do-not-leak",
+        interface: { inputs: [{ id: "account", name: "account", valueType: { kind: "string" }, defaultValue: "ACCT-do-not-leak" }], outputs: [] },
+        variables: [{ id: "token", name: "token", valueType: { kind: "string" }, initialValue: "VAR-do-not-leak" }],
+        executionDefaults: { ...(saved.executionDefaults ?? {}) },
+        metadata,
+      },
+    });
   };
   const change = (flowPatch: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ projectId: project.id, flowId: flow.flowId, flow: flowPatch, ...extra });
   const stored = async () => {
@@ -59,7 +75,7 @@ async function route() {
     await service.close();
     await rm(rootDir, { recursive: true, force: true });
   };
-  return { project, flow, call, send, change, stored, cleanup };
+  return { project, flow, call, send, change, stored, seed, cleanup };
 }
 
 describe("a paired client on a Flow's humanness, through the program route", () => {
@@ -70,6 +86,88 @@ describe("a paired client on a Flow's humanness, through the program route", () 
       expect(read.status, read.body.error).toBe(200);
       expect(read.body.payload.flow.flowId).toBe(flow.flowId);
       expect(read.body.payload.flow.metadata?.humanness).toBeUndefined();
+    } finally { await cleanup(); }
+  });
+
+  it("answers a token's read with the Flow's id and level alone, never its defaults, initial values or other settings", async () => {
+    const { flow, project, send, seed, call, cleanup } = await route();
+    try {
+      await seed(40);
+      call.mockClear();
+      const read = await send("get-flow-metadata-detail", { projectId: project.id, flowId: flow.flowId });
+      expect(read.status, read.body.error).toBe(200);
+      expect(read.body).toEqual({ ok: true, payload: { flow: { flowId: flow.flowId, metadata: { humanness: 40 } } } });
+      // The handler did read the whole detail; the route cut it down on the way back.
+      const handled = await call.mock.results[0]?.value;
+      expect(JSON.stringify(handled)).toContain("ACCT-do-not-leak");
+      expect(JSON.stringify(handled)).toContain("VAR-do-not-leak");
+      for (const leaked of ["do-not-leak", "Humanness Flow", "maxNodesPerSubflow", "settings", "inputs", "variables"]) expect(read.raw, leaked).not.toContain(leaked);
+    } finally { await cleanup(); }
+  });
+
+  it("answers a token's read of a Flow with no level as empty metadata", async () => {
+    const { flow, project, send, seed, cleanup } = await route();
+    try {
+      await seed();
+      const read = await send("get-flow-metadata-detail", { projectId: project.id, flowId: flow.flowId });
+      expect(read.status, read.body.error).toBe(200);
+      expect(read.body).toEqual({ ok: true, payload: { flow: { flowId: flow.flowId, metadata: {} } } });
+    } finally { await cleanup(); }
+  });
+
+  it("refuses a token's read naming anything beside its project and Flow, before the handler runs", async () => {
+    const { flow, project, send, call, cleanup } = await route();
+    try {
+      for (const field of ["flow", "includeInputs", "name"]) {
+        const refused = await send("get-flow-metadata-detail", { projectId: project.id, flowId: flow.flowId, [field]: true });
+        expect(refused.status, field).toBe(403);
+        expect(refused.body).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's Flow settings read may not carry ${field}.` });
+      }
+      expect((await send("get-flow-metadata-detail", undefined, "token", "GET")).status).toBe(403);
+      expect(call).not.toHaveBeenCalled();
+    } finally { await cleanup(); }
+  });
+
+  it("answers a signed-in person's cookie read with the whole detail, exactly as the handler returned it", async () => {
+    const { flow, project, send, seed, call, cleanup } = await route();
+    try {
+      await seed(40);
+      call.mockClear();
+      const read = await send("get-flow-metadata-detail", { projectId: project.id, flowId: flow.flowId, includeAnything: true }, "cookie");
+      expect(read.status, read.body.error).toBe(200);
+      const handled = await call.mock.results[0]?.value;
+      expect(read.raw).toBe(JSON.stringify(handled));
+      expect(read.body.payload.flow).toMatchObject({ flowId: flow.flowId, name: "Humanness Flow", description: "Description-do-not-leak", metadata: { humanness: 40 } });
+      expect(read.body.payload.flow.inputs).toEqual([expect.objectContaining({ name: "account", defaultValue: "ACCT-do-not-leak" })]);
+      expect(read.body.payload.flow.variables).toEqual([expect.objectContaining({ name: "token", initialValue: "VAR-do-not-leak" })]);
+    } finally { await cleanup(); }
+  });
+
+  it("answers a token's level change with the same projection, so re-sending the level reads nothing the read withholds", async () => {
+    const { flow, send, change, seed, call, cleanup } = await route();
+    try {
+      await seed(40);
+      call.mockClear();
+      const set = await send("update-flow-settings", change({ metadata: { humanness: 40 } }));
+      expect(set.status, set.body.error).toBe(200);
+      expect(set.body).toEqual({ ok: true, payload: { flow: { flowId: flow.flowId, metadata: { humanness: 40 } } } });
+      expect(JSON.stringify(await call.mock.results[0]?.value)).toContain("ACCT-do-not-leak");
+      for (const leaked of ["do-not-leak", "Humanness Flow", "maxNodesPerSubflow"]) expect(set.raw, leaked).not.toContain(leaked);
+      const cleared = await send("update-flow-settings", change({ metadata: { humanness: null } }));
+      expect(cleared.body).toEqual({ ok: true, payload: { flow: { flowId: flow.flowId, metadata: {} } } });
+    } finally { await cleanup(); }
+  });
+
+  it("answers a signed-in person's cookie settings change with the whole detail, exactly as the handler returned it", async () => {
+    const { send, change, seed, call, cleanup } = await route();
+    try {
+      await seed(40);
+      call.mockClear();
+      const set = await send("update-flow-settings", change({ metadata: { humanness: 30 } }), "cookie");
+      expect(set.status, set.body.error).toBe(200);
+      expect(set.raw).toBe(JSON.stringify(await call.mock.results[0]?.value));
+      expect(set.raw).toContain("ACCT-do-not-leak");
+      expect(set.raw).toContain("VAR-do-not-leak");
     } finally { await cleanup(); }
   });
 

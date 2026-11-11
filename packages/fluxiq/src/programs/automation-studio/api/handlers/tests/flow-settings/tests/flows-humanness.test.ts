@@ -109,24 +109,29 @@ describe("create-flow with a starting humanness", () => {
     } finally { await cleanup(); }
   });
 
-  it("stores 40 with exactly a plain create's writes: the same revision, never a second save", async () => {
+  it("stores 40 in the creating write: one createFlow call carrying it, and no more saves than a plain create", async () => {
     const { cleanup, project, create, service } = await humannessApi();
     try {
+      const creates = vi.spyOn(service, "createFlow"), saves = vi.spyOn(service, "saveFlow");
       const plain: any = await create({ name: "Plain", flowId: "flow.plain.writes" });
+      const plainSaves = saves.mock.calls.length;
       const human: any = await create({ name: "Plain", flowId: "flow.human.writes", humanness: 40 });
+      // The same saves as a plain create: the settings update the handler used to make was one more.
+      expect(saves.mock.calls.length - plainSaves).toBe(plainSaves);
       expect(plain.ok, plain.error).toBe(true);
       expect(human.ok, human.error).toBe(true);
       expect(human.payload.flow.metadata.humanness).toBe(40);
-      const stored = await service.getFlow(project.id, "flow.human.writes");
+      expect(creates).toHaveBeenCalledTimes(2);
+      expect(creates.mock.calls[1]![0]).toMatchObject({ flowId: "flow.human.writes", humanness: 40 });
+      expect("humanness" in creates.mock.calls[0]![0]).toBe(false);
+      const stored = await service.getFlow(project.id, "flow.human.writes"), plainStored = await service.getFlow(project.id, "flow.plain.writes");
       expect(stored.metadata?.humanness).toBe(40);
-      // One write each: a second settings save would have moved the revision on.
-      expect(stored.revision).toBe((await service.getFlow(project.id, "flow.plain.writes")).revision);
       const strip = (flow: any) => {
-        const { flowId, createdAt, updatedAt, revision, ...rest } = flow;
+        const { flowId, createdAt, updatedAt, ...rest } = flow;
         const { humanness: _level, ...metadata } = rest.metadata ?? {};
         return JSON.parse(JSON.stringify({ ...rest, metadata }).replaceAll(flowId, "<id>"));
       };
-      expect(strip(stored)).toEqual(strip(await service.getFlow(project.id, "flow.plain.writes")));
+      expect(strip(stored)).toEqual(strip(plainStored));
     } finally { await cleanup(); }
   });
 

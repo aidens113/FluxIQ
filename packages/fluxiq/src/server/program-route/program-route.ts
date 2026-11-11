@@ -123,7 +123,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "rename-task",
     "update-task-settings",
     "remove-task",
-    // A Flow's own humanness (t898): its settings detail, `read`; setting or clearing the level, `authoring` (flows.write), narrowed to exactly `flow.metadata.humanness`.
+    // A Flow's own humanness (t898): reading it, `read`, narrowed to `{ projectId, flowId }` and projected to the Flow's id and level alone
+    // (its inputs' defaults, its variables' initial values and every other setting stay cookie-only); setting or clearing the level,
+    // `authoring` (flows.write), narrowed to exactly `flow.metadata.humanness` and answered with the same projection as the read.
     "get-flow-metadata-detail",
     "update-flow-settings",
     // Carrying a budget-out or cut-off attempt on (t869), `authoring` under `flows.write`. It spends the person's own key, as the chat's build does,
@@ -319,6 +321,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "rename-task") return narrowTaskMemory(payload, ["projectId", "taskId", "title"]);
   if (name === "update-task-settings") return narrowTaskMemory(payload, ["projectId", "taskId", "humanness"]);
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
+  if (name === "get-flow-metadata-detail") return narrowFlowHumannessRead(payload);
   if (name === "update-flow-settings") return narrowFlowHumanness(payload);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
@@ -420,10 +423,28 @@ function narrowFlowHumanness(payload: unknown): PairedClientRequestNarrowing {
   return { ok: true, payload: { projectId: body.projectId, flowId: body.flowId, flow: { ...(namesFlow ? { flowId: body.flowId } : {}), metadata: { humanness } } } };
 }
 
+const FLOW_HUMANNESS_READ = "A paired client's Flow settings read";
+
+/**
+ * A Flow settings read by token is exactly `{ projectId, flowId }`, both
+ * strings: the handler reads nothing else, so any other key is refused by name
+ * rather than passed on for a later handler to start reading. The answer is
+ * cut to the Flow's humanness on the way back (`projectPairedClientResponse`).
+ */
+function narrowFlowHumannessRead(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden(`${FLOW_HUMANNESS_READ} must name a project and a Flow.`);
+  const refused = unlistedField(body, ["projectId", "flowId"], "", FLOW_HUMANNESS_READ);
+  if (refused) return refused;
+  if (typeof body.projectId !== "string" || !body.projectId) return forbidden(`${FLOW_HUMANNESS_READ} must name its project by a string projectId.`);
+  if (typeof body.flowId !== "string" || !body.flowId) return forbidden(`${FLOW_HUMANNESS_READ} must name its Flow by a string flowId.`);
+  return { ok: true, payload: { projectId: body.projectId, flowId: body.flowId } };
+}
+
 /** The refusal naming the first key of `record` not in `allowed`, by its path, or null. */
-function unlistedField(record: Record<string, unknown>, allowed: readonly string[], path: string): PairedClientRequestNarrowing | null {
+function unlistedField(record: Record<string, unknown>, allowed: readonly string[], path: string, subject = FLOW_HUMANNESS_CHANGE): PairedClientRequestNarrowing | null {
   const field = Object.keys(record).find((key) => !allowed.includes(key));
-  return field === undefined ? null : forbidden(`${FLOW_HUMANNESS_CHANGE} may not carry ${path}${field}.`);
+  return field === undefined ? null : forbidden(`${subject} may not carry ${path}${field}.`);
 }
 
 function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {
@@ -476,17 +497,33 @@ function forbidden(error: string): PairedClientRequestNarrowing {
   return { ok: false, errorCode: "authorization.forbidden", error };
 }
 
+/** A program endpoint's answer, as the route writes it. */
+type ProgramAnswer = { ok: boolean; payload?: unknown; error?: string; errorCode?: string };
+
+/** The token-reachable endpoints whose answer is a Flow's whole settings detail. */
+const FLOW_HUMANNESS_DETAIL_ENDPOINTS: readonly string[] = ["get-flow-metadata-detail", "update-flow-settings"];
+
 /**
  * What a paired client is answered, where the endpoint's full answer holds
- * more than a token should read. The secret-keys snapshot is cut to whether a
- * key of each kind and provider exists, is enabled, and opens for this client:
- * never its id, name,
- * scope, description, dates or metadata (where a fingerprint or hint would
- * live), and never a value, which the snapshot does not hold either. Every
- * other answer passes unchanged.
+ * more than a token should read. Matched as the registry matches an endpoint,
+ * trimmed and case-blind, so no spelling of the name reaches the handler and
+ * skips this. Every other answer passes unchanged.
+ *
+ * - The secret-keys snapshot is cut to whether a key of each kind and provider
+ *   exists, is enabled, and opens for this client: never its id, name, scope,
+ *   description, dates or metadata (where a fingerprint or hint would live),
+ *   and never a value, which the snapshot does not hold either.
+ * - A Flow's settings detail is cut to its humanness (t898): see
+ *   `projectFlowHumannessDetail`. Setting the level answers with the same
+ *   detail (`updateFlowSettingsForRequest` reads it back after the save), so
+ *   its answer is cut the same way: otherwise a token could re-send the
+ *   current level and read everything the read withholds.
  */
-export function projectPairedClientResponse<TResponse extends { ok: boolean; payload?: unknown }>(programId: string, endpoint: string, response: TResponse): TResponse {
-  if (programId.trim().toLowerCase() !== "secret-keys" || endpoint.trim().toLowerCase() !== "snapshot" || !response.ok) return response;
+export function projectPairedClientResponse(programId: string, endpoint: string, response: ProgramAnswer): ProgramAnswer {
+  const program = programId.trim().toLowerCase();
+  const name = endpoint.trim().toLowerCase();
+  if (program === "automation-studio" && FLOW_HUMANNESS_DETAIL_ENDPOINTS.includes(name)) return projectFlowHumannessDetail(response);
+  if (program !== "secret-keys" || name !== "snapshot" || !response.ok) return response;
   const keys = payloadRecord(response.payload)?.keys;
   // No snapshot list means readiness is unknown, not that no key exists.
   if (!Array.isArray(keys)) return { ...response, payload: {} };
@@ -507,4 +544,26 @@ export function projectPairedClientResponse<TResponse extends { ok: boolean; pay
         }),
     },
   };
+}
+
+/**
+ * A Flow's settings detail, as a paired client reads it: exactly `{ flow: {
+ * flowId, metadata: { humanness? } } }`, the level only when the Flow has one.
+ * The detail also holds the Flow's name, description, inputs and their
+ * default values, variables and their initial values, and every other setting
+ * (its model, cost and size limits, its check's authorization), which stay the
+ * signed-in person's cookie alone. The answer is rebuilt from those two
+ * fields, never copied and pruned, so a field the handler adds later is not
+ * handed out by default. A refusal keeps only its sentence and its code; a
+ * Flow the detail does not describe reads as `{ flow: null }`, as it does for
+ * a cookie. A level that is not a number is left out rather than passed on.
+ */
+function projectFlowHumannessDetail(response: ProgramAnswer): ProgramAnswer {
+  if (!response.ok) {
+    return { ok: false, ...(typeof response.error === "string" ? { error: response.error } : {}), ...(typeof response.errorCode === "string" ? { errorCode: response.errorCode } : {}) };
+  }
+  const flow = payloadRecord(payloadRecord(response.payload)?.flow);
+  if (!flow || typeof flow.flowId !== "string") return { ok: true, payload: { flow: null } };
+  const humanness = payloadRecord(flow.metadata)?.humanness;
+  return { ok: true, payload: { flow: { flowId: flow.flowId, metadata: typeof humanness === "number" ? { humanness } : {} } } };
 }
