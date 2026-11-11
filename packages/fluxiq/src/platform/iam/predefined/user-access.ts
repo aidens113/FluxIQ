@@ -10,6 +10,30 @@ import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 // another when a user reaches any unfiltered one (programs/_shared/tests).
 const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:Projects", "secrets:Snapshot"];
 
+// The panel assistant's endpoints a person needs for their own chats in the
+// dock: list, read, open, rename and delete their threads, read a turn's
+// attachment, send a message, answer the assistant's Allow card, and read the
+// spending allowance. Named one by one, never `*Panel*`. Each registration
+// declares `endpointResource.selfUser()` and the handler looks only in the
+// caller's own panel database, so another person's thread answers as a missing
+// one. An attachment that is a project's record is decided again on that
+// project (`OwnData`). Not `studio:SetPanelAssistantAllowance`: the allowance
+// is one record for the whole workspace (Secret Keys' model settings, beside
+// the workspace's assistant key), so setting it changes what every person's
+// messages may spend. A test of the panel endpoints fails when one is neither
+// here nor named as withheld (programs/automation-studio/api/panel-assistant/tests).
+const OWN_PANEL_ASSISTANT: readonly string[] = [
+  "studio:ListPanelThreads",
+  "studio:GetPanelThread",
+  "studio:GetPanelThreadAttachment",
+  "studio:OpenPanelThread",
+  "studio:RenamePanelThread",
+  "studio:DeletePanelThread",
+  "studio:SendPanelMessage",
+  "studio:AnswerPanelAsk",
+  "studio:GetPanelAssistantAllowance"
+];
+
 /**
  * `FluxIQUserAccess`: the own-data rule. What a user reaches is what they
  * own, plus creating and listing in the workspace, plus managing their own
@@ -37,6 +61,11 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
  *   also names browser management (covered by `OwnData` on the caller's own
  *   `gateway` browsers) and a deletion request, which has no action yet.
+ * - `OwnPanelAssistant`: the panel assistant's endpoints for the caller's own
+ *   chats (`OWN_PANEL_ASSISTANT`), on `user/${fluxiq:PrincipalId}`, which each
+ *   declares, and only when `fluxiq:RequestOrigin` is `panel`: a paired
+ *   browser's call carries `extension-chat`, so its credential never reaches
+ *   them through this statement (the handlers refuse it as well).
  * - No `ops:*`, `platform:*`: a user never reaches operator programs.
  */
 export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1", [
@@ -76,5 +105,12 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
       "iam:MintPressGrant"
     ],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}"
+  },
+  {
+    Sid: "OwnPanelAssistant",
+    Effect: "Allow",
+    Action: [...OWN_PANEL_ASSISTANT],
+    Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
   }
 ]);

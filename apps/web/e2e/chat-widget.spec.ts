@@ -301,10 +301,11 @@ test("the chat alone: the old chat page lands on the panel with the Assistant op
   await shot(page, "chat-alone", info);
 });
 
-// Last, because it fails on the product today (see the report): a panel thread's reference to a proposal is read through
-// `get-conversation-attachment`, a project endpoint, with the thread's project id `panel`, so the dock draws "Proposed Flow
-// change could not be read here." where the old project chat drew the table.
+// A panel thread belongs to no project and a turn's reference to a proposal (`flow.<id>:adaptation.<id>`) does not name
+// one, so the dock reads it in the project the person has open (`get-panel-thread-attachment`). The test opens the small
+// project, which holds the seeded proposal, as a person would from the top bar.
 test("U5: a reference to a real proposal is resolved by Core and drawn in words, with no id on screen", async ({ page }, info) => {
+  await page.getByRole("combobox", { name: "Project" }).selectOption(seeded.projectId);
   await openChat(page);
   await pickThread(page, seeded.threads.planning);
   await expect(dock(page).getByText("Here is the change I would make to the Flow.")).toBeVisible({ timeout: SLOW });

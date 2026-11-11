@@ -65,7 +65,7 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
   const options = useMemo(() => panelChatOptions({
     asks: createPanelAskPort(setRequest),
     attachments: createPanelAttachmentPort({
-      read: readAttachment(studio),
+      read: readAttachment(studio, latest.current.panel ? { panel: { openProjectId: () => latest.current.projectId ?? undefined } } : {}),
       open: (attachment: ChatAttachment) => latest.current.onOpenAttachment?.(attachment),
       canOpen: () => latest.current.onOpenAttachment !== undefined
     }),

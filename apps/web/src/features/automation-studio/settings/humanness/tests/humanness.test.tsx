@@ -12,7 +12,8 @@ vi.mock("../../../../programs/shared-ui", async (importOriginal) => {
 });
 
 import { FlowSettingsViewContent, buildFlowSettingsSavePayload, flowSettingsDraftFromFlow, flowSettingsFlowFromDetail } from "../../index";
-import { HUMANNESS_MAX, HUMANNESS_MIN, HumannessSetting, humannessAfterKey, humannessSavePayload } from "../index";
+import { FakeElement, withFakeDocument } from "@fluxiq/ui-components/testing";
+import { HumannessSetting, humannessSavePayload } from "../index";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -26,73 +27,67 @@ const flowOf = (metadata: Record<string, unknown> = {}): any => ({
   flowId: "flow.one", name: "Flow", updatedAt: 7, source: { mode: "visual" }, executionDefaults: {}, interface: { inputs: [], outputs: [] }, metadata
 });
 
-function render(value: number | null) {
+const settle = async () => { await act(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 0)); }); };
+
+async function render(value: number | null, starting?: number) {
   const onChange = vi.fn();
+  const host = new FakeElement("div");
   let renderer!: ReactTestRenderer;
-  act(() => { renderer = create(<HumannessSetting value={value} onChange={onChange} />); });
-  const slider = () => renderer.root.find((node) => node.type === "input" && node.props.type === "range");
-  const button = (label: string) => renderer.root.find((node) => node.type === "button" && textOf(node).startsWith(label));
-  return { renderer, onChange, slider, button };
+  await act(async () => { renderer = create(<HumannessSetting value={value} starting={starting} onChange={onChange} />, { createNodeMock: () => host }); });
+  const slider = () => host.descendants().find((element) => element.className.includes("humanness-range"))!;
+  const clear = () => host.byClass("humanness-clear")[0]!;
+  return { renderer, host, onChange, slider, clear };
 }
 
 describe("the humanness control", () => {
-  it("says it uses the starting value when there is none, and offers to set one", () => {
-    const view = render(null);
-    expect(textOf(view.renderer.toJSON())).toContain("Uses the starting value");
-    expect(view.renderer.root.findAll((node) => node.type === "input")).toHaveLength(0);
-    act(() => view.button("Set a value").props.onClick());
-    expect(view.onChange).toHaveBeenCalledWith(0);
+  it("mounts the shared control, not a panel-local slider", async () => {
+    await withFakeDocument(async () => {
+      const view = await render(42);
+      expect(view.host.children).toHaveLength(1);
+      expect(view.host.children[0]!.className).toBe("humanness");
+      expect(view.host.textContent).toContain("Fastest");
+      expect(view.host.textContent).toContain("Most human-like");
+      expect(view.slider().value).toBe("42");
+      await act(async () => view.renderer.unmount());
+      expect(view.host.children).toHaveLength(0);
+    });
   });
 
-  it("shows the number, labelled ends and a slider bounded 0 to 100", () => {
-    const view = render(42);
-    const text = textOf(view.renderer.toJSON());
-    expect(text).toContain("42");
-    expect(text).toContain("Fastest");
-    expect(text).toContain("Most human-like");
-    expect(view.slider().props.min).toBe(0);
-    expect(view.slider().props.max).toBe(100);
-    expect(view.slider().props.value).toBe(42);
+  it("says it uses the starting value when there is none", async () => {
+    await withFakeDocument(async () => {
+      const view = await render(null);
+      expect(view.host.textContent).toContain("Uses your starting value (0)");
+      const given = await render(null, 35);
+      expect(given.host.textContent).toContain("Uses your starting value (35)");
+    });
   });
 
-  it("sends the number when the slider moves, held to the bounds", () => {
-    const view = render(42);
-    act(() => view.slider().props.onChange({ target: { value: "60" } }));
-    expect(view.onChange).toHaveBeenLastCalledWith(60);
-    act(() => view.slider().props.onChange({ target: { value: "250" } }));
-    expect(view.onChange).toHaveBeenLastCalledWith(100);
-    act(() => view.slider().props.onChange({ target: { value: "-4" } }));
-    expect(view.onChange).toHaveBeenLastCalledWith(0);
+  it("sends the number when the slider is set", async () => {
+    await withFakeDocument(async () => {
+      const view = await render(null, 35);
+      const slider = view.slider();
+      slider.value = "60";
+      await act(async () => slider.dispatch("change"));
+      await settle();
+      expect(view.onChange).toHaveBeenLastCalledWith(60);
+    });
   });
 
-  it("clears back to the starting value", () => {
-    const view = render(42);
-    act(() => view.button("Use the starting value").props.onClick());
-    expect(view.onChange).toHaveBeenLastCalledWith(null);
+  it("sends null when cleared back to the starting value", async () => {
+    await withFakeDocument(async () => {
+      const view = await render(42, 35);
+      await act(async () => view.clear().dispatch("click"));
+      await settle();
+      expect(view.onChange).toHaveBeenLastCalledWith(null);
+    });
   });
 
-  it("steps from the keyboard and stops at 0 and 100", () => {
-    const view = render(50);
-    const press = (key: string) => {
-      const preventDefault = vi.fn();
-      act(() => view.slider().props.onKeyDown({ key, preventDefault }));
-      return preventDefault;
-    };
-    const expectAfter = (key: string, expected: number) => {
-      press(key);
-      expect(view.onChange).toHaveBeenLastCalledWith(expected);
-    };
-    expectAfter("ArrowRight", 51);
-    expectAfter("ArrowLeft", 49);
-    expectAfter("PageUp", 60);
-    expectAfter("PageDown", 40);
-    expectAfter("Home", 0);
-    expectAfter("End", 100);
-    const calls = view.onChange.mock.calls.length;
-    expect(press("a")).not.toHaveBeenCalled();
-    expect(view.onChange.mock.calls.length).toBe(calls);
-    expect(humannessAfterKey(100, "ArrowUp")).toBe(HUMANNESS_MAX);
-    expect(humannessAfterKey(0, "ArrowDown")).toBe(HUMANNESS_MIN);
+  it("shows a value read again", async () => {
+    await withFakeDocument(async () => {
+      const view = await render(40);
+      await act(async () => view.renderer.update(<HumannessSetting value={null} starting={10} onChange={view.onChange} />));
+      expect(view.host.textContent).toContain("Uses your starting value (10)");
+    });
   });
 });
 
@@ -121,7 +116,7 @@ describe("humanness in the Flow settings draft and save", () => {
 });
 
 describe("humanness in the Settings view", () => {
-  async function mount(detailMetadata: Record<string, unknown>) {
+  async function mount(detailMetadata: Record<string, unknown>, host: FakeElement) {
     const detail = { flowId: "flow.one", name: "Flow", updatedAt: 8, settings: { llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek", execution: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }, inputs: [], outputs: [], metadata: detailMetadata };
     const commands = {
       loadFlow: vi.fn(async () => ({ ok: true, payload: { flow: detail } })),
@@ -131,32 +126,35 @@ describe("humanness in the Settings view", () => {
     };
     let renderer!: ReactTestRenderer;
     await act(async () => {
-      renderer = create(<FlowSettingsViewContent commands={commands as any} flow={{ flowId: "flow.one", name: "Flow", updatedAt: 7, metadata: { summaryOnly: true }, source: { mode: "visual" } }} projectId="project.one" />);
+      renderer = create(<FlowSettingsViewContent commands={commands as any} flow={{ flowId: "flow.one", name: "Flow", updatedAt: 7, metadata: { summaryOnly: true }, source: { mode: "visual" } }} projectId="project.one" />, { createNodeMock: () => host });
     });
     const button = (label: string) => renderer.root.find((node) => node.type === "button" && textOf(node).startsWith(label));
     return { renderer, commands, button };
   }
-  const withWindow = async (run: () => Promise<void>) => {
+  const withWindow = async (run: (host: FakeElement) => Promise<void>) => {
     const previous = (globalThis as any).window;
     (globalThis as any).window = { requestAnimationFrame: () => 1, cancelAnimationFrame: () => undefined };
-    try { await run(); } finally { if (previous === undefined) delete (globalThis as any).window; else (globalThis as any).window = previous; }
+    try { await withFakeDocument(() => run(new FakeElement("div"))); } finally { if (previous === undefined) delete (globalThis as any).window; else (globalThis as any).window = previous; }
   };
+  const rangeOf = (host: FakeElement) => host.descendants().find((element) => element.className.includes("humanness-range"))!;
 
-  it("shows the starting value, sets a number, and sends it through the save", () => withWindow(async () => {
-    const view = await mount({});
-    expect(textOf(view.renderer.toJSON())).toContain("Uses the starting value");
-    await act(async () => view.button("Set a value").props.onClick());
-    const slider = view.renderer.root.find((node) => node.type === "input" && node.props.type === "range");
-    await act(async () => slider.props.onChange({ target: { value: "70" } }));
+  it("shows the starting value, sets a number, and sends it through the save", () => withWindow(async (host) => {
+    const view = await mount({}, host);
+    expect(host.textContent).toContain("Uses your starting value");
+    const slider = rangeOf(host);
+    slider.value = "70";
+    await act(async () => slider.dispatch("change"));
+    await settle();
     expect(textOf(view.renderer.toJSON())).toContain("Unsaved changes");
     await act(async () => view.button("Save Settings").props.onClick());
     expect((view.commands.saveFlow.mock.calls[0] as any[])[0].flow.metadata.humanness).toBe(70);
   }));
 
-  it("clears a stored value by sending null", () => withWindow(async () => {
-    const view = await mount({ humanness: 40 });
-    expect(view.renderer.root.find((node) => node.type === "input" && node.props.type === "range").props.value).toBe(40);
-    await act(async () => view.button("Use the starting value").props.onClick());
+  it("clears a stored value by sending null", () => withWindow(async (host) => {
+    const view = await mount({ humanness: 40 }, host);
+    expect(rangeOf(host).value).toBe("40");
+    await act(async () => host.byClass("humanness-clear")[0]!.dispatch("click"));
+    await settle();
     await act(async () => view.button("Save Settings").props.onClick());
     expect((view.commands.saveFlow.mock.calls[0] as any[])[0].flow.metadata.humanness).toBeNull();
   }));

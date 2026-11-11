@@ -60,12 +60,36 @@ describe("Delete", () => {
 });
 
 describe("the panel assistant's thread list", () => {
-  it("opens a new chat through its own endpoint and offers no rename or delete, which Core has none for", async () => {
-    const api = fakeProgramApi({ "open-panel-thread": { ok: true, payload: { conversation: NEW } } });
-    const conversation = createPanelConversationPort(api, { onScreen: () => ({}) });
+  const panel = (answers: Parameters<typeof fakeProgramApi>[0] = {}) => {
+    const api = fakeProgramApi(answers);
+    return { api, conversation: createPanelConversationPort(api, { onScreen: () => ({}) }) };
+  };
+
+  it("opens a new chat through its own endpoint", async () => {
+    const { api, conversation } = panel({ "open-panel-thread": { ok: true, payload: { conversation: NEW } } });
     expect(await conversation.newThread!({ title: "Hello" })).toEqual({ ok: true, value: { conversation: NEW } });
     expect(api.sentTo("open-panel-thread")).toEqual([{ title: "Hello" }]);
-    expect(conversation.renameThread).toBeUndefined();
-    expect(conversation.deleteThread).toBeUndefined();
+  });
+
+  it("renames through rename-panel-thread with the trimmed name, naming no project", async () => {
+    const { api, conversation } = panel({ "rename-panel-thread": { ok: true, payload: { conversation: NEW } } });
+    expect(await conversation.renameThread!({ projectId: "panel", conversationId: "conv-9", title: "  Loans  " })).toEqual({ ok: true, value: { conversation: NEW } });
+    expect(api.sentTo("rename-panel-thread")).toEqual([{ conversationId: "conv-9", title: "Loans" }]);
+    expect(api.sentTo("rename-conversation")).toEqual([]);
+  });
+
+  it("refuses an empty name without asking Core", async () => {
+    const { api, conversation } = panel();
+    expect(await conversation.renameThread!({ conversationId: "conv-9", title: " " })).toMatchObject({ ok: false, code: "invalid_request" });
+    expect(api.calls).toEqual([]);
+  });
+
+  it("deletes through delete-panel-thread and passes Core's refusal of a thread still in use", async () => {
+    const { api, conversation } = panel({ "delete-panel-thread": { ok: true, payload: { deleted: true, conversationId: "conv-9" } } });
+    expect(await conversation.deleteThread!({ conversationId: "conv-9" })).toEqual({ ok: true, value: { deleted: true, conversationId: "conv-9" } });
+    expect(api.sentTo("delete-panel-thread")).toEqual([{ conversationId: "conv-9" }]);
+    expect(api.sentTo("delete-conversation")).toEqual([]);
+    api.answer("delete-panel-thread", { ok: false, status: 409, errorCode: "conversation_run_active", error: "A message is still being worked on." });
+    expect(await conversation.deleteThread!({ conversationId: "conv-9" })).toMatchObject({ ok: false, code: "conversation_run_active", sentence: "A message is still being worked on." });
   });
 });

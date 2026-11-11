@@ -1,54 +1,53 @@
 "use client";
 
-import { HUMANNESS_DEFAULT, HUMANNESS_MAX, HUMANNESS_MIN, clampHumanness, humannessAfterKey } from "./humanness-model";
+import "@fluxiq/ui-components/styles/chat.css";
+import { createHumannessControl, type HumannessControl } from "@fluxiq/ui-components";
+import { useEffect, useRef } from "react";
 
 /**
- * The humanness control: a 0-100 slider with its number, or "Uses the starting value" when this
- * Flow (or task) has no value of its own. `value` is null for that case; `onChange(null)` clears
- * a set value back to it. Built here for the hosted panel; W4 may move it into ui-components so
- * the extension shares it.
+ * The humanness control of `@fluxiq/ui-components`, hosted in a form. The control sends a level
+ * through a `commit`; here that commit only hands the level to the form's draft (`onChange`: a
+ * number, or null to use the starting value), and the form's own Save sends it. `value` is the
+ * draft's level, null when the Flow has none of its own. `starting` is the person's starting
+ * value for the wording "Uses your starting value (N)"; the panel does not read it yet, so it
+ * reads as 0, the last step of the precedence.
  */
-export function HumannessSetting(props: { value: number | null; onChange(value: number | null): void; subject?: string; disabled?: boolean }) {
-  const subject = props.subject ?? "Flow";
-  const value = props.value;
-  return (
-    <div className="automation-settings-humanness">
-      {value !== null ? <>
-        <div className="automation-settings-inline-fields">
-          <label>
-            <span>Humanness</span>
-            <input
-              aria-label="Humanness"
-              aria-valuemax={HUMANNESS_MAX}
-              aria-valuemin={HUMANNESS_MIN}
-              aria-valuenow={value}
-              aria-valuetext={`${value} of ${HUMANNESS_MAX}`}
-              disabled={props.disabled}
-              max={HUMANNESS_MAX}
-              min={HUMANNESS_MIN}
-              step={1}
-              type="range"
-              value={value}
-              onChange={(event) => props.onChange(clampHumanness(Number(event.target.value)))}
-              onKeyDown={(event) => {
-                const next = humannessAfterKey(value, event.key);
-                if (next === null) return;
-                event.preventDefault();
-                props.onChange(next);
-              }}
-            />
-          </label>
-          <output aria-label="Humanness value" data-humanness-value>{value}</output>
-        </div>
-        <div className="automation-settings-inline-fields" aria-hidden>
-          <span>Fastest</span>
-          <span>Most human-like</span>
-        </div>
-        <button disabled={props.disabled} type="button" onClick={() => props.onChange(null)}>Use the starting value</button>
-      </> : <>
-        <p>Uses the starting value</p>
-        <button disabled={props.disabled} type="button" onClick={() => props.onChange(HUMANNESS_DEFAULT)}>Set a value for this {subject}</button>
-      </>}
-    </div>
-  );
+export function HumannessSetting(props: { value: number | null; onChange(value: number | null): void; starting?: number | undefined }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const controlRef = useRef<HumannessControl | null>(null);
+  const latest = useRef(props);
+  latest.current = props;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const control = createHumannessControl({
+      level: levelOf(latest.current),
+      label: "Humanness",
+      settleMs: 300,
+      commit: async (humanness) => {
+        latest.current.onChange(humanness);
+        return { ok: true, value: humanness === null ? {} : { humanness } };
+      }
+    });
+    controlRef.current = control;
+    host.append(control.element);
+    return () => {
+      control.dispose();
+      control.element.remove();
+      if (controlRef.current === control) controlRef.current = null;
+    };
+  }, []);
+
+  const { value, starting } = props;
+  useEffect(() => {
+    controlRef.current?.show(levelOf({ value, starting }));
+  }, [value, starting]);
+
+  return <div className="automation-settings-humanness" ref={hostRef} />;
+}
+
+function levelOf(props: { value: number | null; starting?: number | undefined }): { own?: number; starting: number } {
+  const starting = props.starting ?? 0;
+  return props.value === null ? { starting } : { own: props.value, starting };
 }
