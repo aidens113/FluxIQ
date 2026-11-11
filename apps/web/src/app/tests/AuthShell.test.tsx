@@ -64,7 +64,7 @@ describe("initial sign-in destination", () => {
     let finish!: (value: Response) => void;
     const pending = new Promise<Response>((resolve) => { finish = resolve; });
     const fetcher = vi.fn().mockReturnValueOnce(pending).mockResolvedValueOnce(response({ ok: true }));
-    const { location } = await mountLogin("/programs/docs?doc=old", fetcher);
+    const { location } = await mountLogin("/data?doc=old", fetcher);
     let request!: Promise<void>; await act(async () => { request = loginRenderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }); });
     if (change === "path") location.pathname = "/get-started";
     else if (change === "query") location.search = "?doc=current";
@@ -88,7 +88,7 @@ describe("initial sign-in destination", () => {
     expect(loginRenderer!.root.findAllByType("button").find((button) => button.props.type === "submit")!.props.disabled).toBe(false);
     await submitLogin(); expect(fetcher).toHaveBeenCalledTimes(3); expect(location.href).toBe("/get-started?domainId=current");
   });
-  it.each(["/", "/domains/web?scope=team#programs", "/get-started?domainId=web", "/programs/docs?domainId=web&doc=a%2Fb#chapter", "/programs/automation-studio?project=p&flow=f&subflow=s&view=runtime-debug&detail=run%3Ar&start=describe&domainId=web&extra=1&extra=2#keep"])("returns to the actual requested local destination %s", async (target) => {
+  it.each(["/", "/domains/web?scope=team#programs", "/get-started?domainId=web", "/data?domainId=web&doc=a%2Fb#chapter", "/programs/automation-studio?project=p&flow=f&subflow=s&view=runtime-debug&detail=run%3Ar&start=describe&domainId=web&extra=1&extra=2#keep"])("returns to the actual requested local destination %s", async (target) => {
     const { location, fetcher } = await mountLogin(target);
     expect(fetcher).not.toHaveBeenCalled();
     await submitLogin();
@@ -101,7 +101,7 @@ describe("initial sign-in destination", () => {
   });
   it("keeps the destination through an authenticator challenge, refusal and retry", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(response({ requiresTotp: true }, 401)).mockResolvedValueOnce(response({ requiresTotp: true }, 401)).mockResolvedValueOnce(response({ ok: true }));
-    const target = "/programs/docs?domainId=web&doc=guide#section";
+    const target = "/data?domainId=web&doc=guide#section";
     const { location } = await mountLogin(target, fetcher);
     await submitLogin(); expect(location.href).toBe(`https://panel.invalid${target}`);
     await act(async () => loginRenderer!.root.findByProps({ name: "totp" }).props.onChange({ target: { value: "123456" } }));
@@ -132,24 +132,24 @@ describe("initial sign-in destination", () => {
     const fetcher = vi.fn();
     if (stage === "setup") fetcher.mockResolvedValueOnce(response({ payload: { requiresCredentialSetup: true, user: { id: "user.setup" } } }));
     fetcher.mockReturnValueOnce(pending);
-    const { location } = await mountLogin("/programs/docs?doc=old", fetcher);
+    const { location } = await mountLogin("/data?doc=old", fetcher);
     if (stage === "setup") { await submitLogin(); await enterReplacement(); }
     let request!: Promise<void>; await act(async () => { request = loginRenderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }); });
     await act(async () => loginRenderer!.unmount()); loginRenderer = undefined;
     await act(async () => { finish(response({ ok: true })); await request; });
-    expect(location.href).toBe("https://panel.invalid/programs/docs?doc=old");
+    expect(location.href).toBe("https://panel.invalid/data?doc=old");
   });
   it.each(["login", "setup"])("drops late %s completion after actual query navigation", async (stage) => {
     let finish!: (value: Response) => void; const pending = new Promise<Response>((resolve) => { finish = resolve; });
     const fetcher = vi.fn();
     if (stage === "setup") fetcher.mockResolvedValueOnce(response({ payload: { requiresCredentialSetup: true, user: { id: "user.setup" } } }));
     fetcher.mockReturnValueOnce(pending);
-    const { location } = await mountLogin("/programs/docs?doc=old", fetcher);
+    const { location } = await mountLogin("/data?doc=old", fetcher);
     if (stage === "setup") { await submitLogin(); await enterReplacement(); }
     let request!: Promise<void>; await act(async () => { request = loginRenderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }); });
-    location.search = "?doc=new"; location.href = "https://panel.invalid/programs/docs?doc=new";
+    location.search = "?doc=new"; location.href = "https://panel.invalid/data?doc=new";
     await act(async () => { finish(response({ ok: true })); await request; });
-    expect(location.href).toBe("https://panel.invalid/programs/docs?doc=new");
+    expect(location.href).toBe("https://panel.invalid/data?doc=new");
     expect(JSON.stringify(loginRenderer!.toJSON())).not.toContain("Password updated");
   });
   it.each([
@@ -161,7 +161,7 @@ describe("initial sign-in destination", () => {
     const fetcher = vi.fn();
     if (stage === "setup") fetcher.mockResolvedValueOnce(response({ payload: { requiresCredentialSetup: true, user: { id: "user.setup" } } }));
     fetcher.mockReturnValueOnce(pending);
-    const { location } = await mountLogin("/programs/docs?doc=old", fetcher);
+    const { location } = await mountLogin("/data?doc=old", fetcher);
     if (stage === "setup") { await submitLogin(); await enterReplacement(); }
     let request!: Promise<void>; await act(async () => { request = loginRenderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }); });
     if (change === "path") location.pathname = "/get-started";

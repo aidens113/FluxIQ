@@ -15,6 +15,7 @@ import {
   type CredentialKey,
   type SealedCredentialRecord
 } from "./credential-seal.ts";
+import { IdentityAuthorityDelegation } from "./authority/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
@@ -78,6 +79,8 @@ export class IdentityAccessService {
   /** Raw ids of the sessions this process saw, in memory only, and who is told when one is revoked. */
   private readonly revocations: IdentitySessionRevocations;
   private readonly credentialAttempts = new IdentityCredentialAttempts();
+  /** Where account holders' role and on/off are held; the `update-user` endpoint asks it first. */
+  readonly authority = new IdentityAuthorityDelegation();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {

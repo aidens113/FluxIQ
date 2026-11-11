@@ -1,4 +1,4 @@
-import type { IdentityAccessSnapshot } from "../types.ts";
+import type { IdentityAccessListing } from "../types.ts";
 
 export const IDENTITY_ACCESS_ENDPOINTS = {
   snapshot: "snapshot",
@@ -15,7 +15,8 @@ export const IDENTITY_ACCESS_ENDPOINTS = {
   lockVault: "lock-vault"
 } as const;
 
-export type IdentityAccessSnapshotResponse = IdentityAccessSnapshot;
+/** Each person carries `authorityHeldElsewhere`: whether `update-user` refuses their sign-in name, role and on/off. */
+export type IdentityAccessSnapshotResponse = IdentityAccessListing;
 
 export type CreateIdentityUserRequest = {
   username: string;

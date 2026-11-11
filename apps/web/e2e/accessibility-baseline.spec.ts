@@ -130,14 +130,18 @@ async function writeArtifact(testInfo: TestInfo, name: string, value: unknown): 
   await writeFile(testInfo.outputPath(`${name}.json`), `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-const operationalPrograms = ["background-tasks", "compute-control", "database-manager", "deployment-sync", "docs", "identity-access", "production-runner", "secret-keys"] as const;
+const panelScreens = [
+  "security", "security/keys", "security/sign-in", "settings",
+  "settings/background-tasks", "settings/compute-control", "settings/database-manager", "settings/deployment-sync",
+  "settings/docs", "settings/production-runner", "settings/runtime"
+] as const;
 
-test("gates global programs for blocking axe violations and 200 percent horizontal overflow", async ({ page }, testInfo) => {
+test("gates the panel screens for blocking axe violations and 200 percent horizontal overflow", async ({ page }, testInfo) => {
   const manifest = await readUiFixtureManifest();
   await authenticate(page, manifest);
   const results: Record<string, unknown> = {};
-  for (const programId of operationalPrograms) {
-    await page.goto(`/programs/${programId}`, { waitUntil: "domcontentloaded" });
+  for (const programId of panelScreens) {
+    await page.goto(`/${programId}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("main")).toBeVisible();
     const axe = await analyzeAxe(page);
     expect(blockingViolations(axe.violations), programId + " has blocking accessibility violations").toEqual([]);
@@ -147,7 +151,7 @@ test("gates global programs for blocking axe violations and 200 percent horizont
     results[programId] = { axe, overflow };
     await page.evaluate(() => { document.documentElement.style.zoom = "1"; });
   }
-  await writeArtifact(testInfo, "global-program-accessibility-zoom", results);
+  await writeArtifact(testInfo, "panel-screen-accessibility-zoom", results);
 });
 
 function blockingViolations(violations: Array<{ impact?: string | null; id: string }>) {

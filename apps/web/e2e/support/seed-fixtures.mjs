@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { createAutomationStudioLargeProjectFixture } from "fluxiq/automation";
+import { CLIENT_GATEWAY_PROTOCOL_VERSION } from "fluxiq/client-gateway";
 
 const FIXTURE_MARKER = "fluxiq-e2e-fixture-v1";
 const FIXED_NOW_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
@@ -59,6 +60,15 @@ const EDITABLE_STEPS = [
   { label: "Read the first result", parameters: { count: 1 } },
 ];
 const MODEL_KEY_NAMES = ["Fixture key (Anthropic)", "Fixture key (DeepSeek)"];
+// The Data screen's table (stored under the Old search Flow's newest run) and the paired browser Security lists.
+const DATASET_ID = "fixture-listings";
+const DATASET_NAME = "Fixture listings";
+const DATASET_ROWS = [
+  { title: "Oak chair", price: "42.00", seller: "North Shop" },
+  { title: "Pine table", price: "118.50", seller: "Hill Furniture" },
+  { title: "Walnut shelf", price: "76.25", seller: "North Shop" },
+];
+const PAIRED_CLIENT_NAME = "Fixture browser";
 
 const fastStudioOnly = process.env.FLUXIQ_E2E_FAST_STUDIO === "true";
 
@@ -144,7 +154,8 @@ const manifest = {
 };
 
 await writeFile(path.join(fixtureRoot, "fixture-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+// The gateway keeps timers once a browser is paired, so the seed ends itself after its output drains.
+process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`, () => process.exit(0));
 
 /**
  * What the panel specs assume, in a project of its own so the counts the older fixtures verify never move: Flows
@@ -171,9 +182,13 @@ async function seedPanelFixture(categoryId) {
   if (!editableFlowId) throw new Error("The panel fixture's editable Flow has no Subflow graph to hold its steps.");
   const graph = await studio.getFlow(projectId, editableFlowId);
   await studio.saveFlow({ projectId, flow: withEditableSteps(graph) });
+  const dataset = await seedDataset(projectId, seeded.flowIds[0]);
+  await seedPairedClient();
   return {
     projectId,
     projectName: seeded.name,
+    dataset,
+    pairedClientName: PAIRED_CLIENT_NAME,
     oldSearchFlowId: seeded.flowIds[0],
     spareFlowId: seeded.flowIds[1],
     editableTopFlowId,
@@ -181,6 +196,41 @@ async function seedPanelFixture(categoryId) {
     stepLabels: EDITABLE_STEPS.map((step) => step.label),
     modelKeyNames: MODEL_KEY_NAMES,
   };
+}
+
+/** One table of collected rows under the Old search Flow's newest run, stored the way a run stores them (no model, no browser). */
+async function seedDataset(projectId, flowId) {
+  const runs = await studio.listFlowRunSummaries({ projectId, flowId, limit: 100, offset: 0 });
+  const run = [...runs.runs].sort((a, b) => b.startedAt - a.startedAt || String(a.runId).localeCompare(String(b.runId)))[0];
+  if (!run) throw new Error("The panel fixture's Old search Flow has no run to hold a dataset.");
+  const schema = {
+    schemaVersion: "0.1",
+    fields: [
+      { id: "title", label: "Title", valueType: "string", required: true },
+      { id: "price", label: "Price", valueType: "string", required: true },
+      { id: "seller", label: "Seller", valueType: "string", required: true },
+    ],
+  };
+  await studio.runDatasets.recordBatchHandler(projectId, run.runId)({
+    nodeId: "node.fixture.read", attemptId: "attempt.fixture.1", batchKey: "attempt.fixture.1",
+    datasetId: DATASET_ID, label: DATASET_NAME, writeMode: "append", schema, rows: DATASET_ROWS, invalidCount: 0, truncated: false,
+  });
+  await studio.runDatasets.processEndedRunDatasets({ projectId, runId: run.runId });
+  return { projectId, flowId, runId: run.runId, datasetId: DATASET_ID, name: DATASET_NAME, columns: schema.fields.map((field) => field.label), rows: DATASET_ROWS };
+}
+
+/** One browser paired with the fixture's person, the way the gateway pairs one: it says hello, the person approves. */
+async function seedPairedClient() {
+  const gateway = fluxiq.programs.clientGateway;
+  await gateway.ready();
+  const session = gateway.connect({ socket: { send: () => undefined } });
+  await gateway.receive(session.sessionId, {
+    id: "message.fixture.hello", type: "client.hello", protocolVersion: CLIENT_GATEWAY_PROTOCOL_VERSION, timestamp: FIXED_NOW_MS,
+    payload: { clientId: "client.fixture.browser", clientType: "extension", name: PAIRED_CLIENT_NAME },
+  });
+  const pairing = gateway.snapshot().pairings.find((item) => item.requestedBySessionId === session.sessionId);
+  if (!pairing) throw new Error("The fixture browser's pairing request was not recorded.");
+  await gateway.approvePairing(pairing.pairingCode, { approvedByUserId: FIXTURE_USERNAME });
 }
 
 function withEditableSteps(flow) {

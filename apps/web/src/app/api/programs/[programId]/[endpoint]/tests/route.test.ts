@@ -38,6 +38,8 @@ const ALLOWLISTED = [
   "get-conversation",
   "append-turn",
   "answer-ask",
+  "rename-conversation",
+  "delete-conversation",
   "list-runtime-sessions",
   "cancel-runtime-session",
   "cancel-flow-bootstrap",
@@ -75,6 +77,8 @@ const CLASSIFICATIONS: Record<string, string> = {
   "get-conversation": "read",
   "append-turn": "authoring",
   "answer-ask": "authoring",
+  "rename-conversation": "authoring",
+  "delete-conversation": "authoring",
   "list-runtime-sessions": "read",
   "cancel-runtime-session": "authoring",
   "cancel-flow-bootstrap": "authoring",
@@ -213,7 +217,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -238,6 +242,41 @@ describe("a paired client's bearer token", () => {
     for (const extra of [{ flowId: "flow-1" }, { authoringMode: "candidate" }, { permittedConsequences: ["delete"] }]) {
       const response = await POST(tokenRequest("carry-on-task-attempt", { body: { projectId: "project-1", attemptId: "attempt-1", addUsd: 1, ...extra } }), params("carry-on-task-attempt"));
       expect(response.status).toBe(403);
+    }
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("forwards a thread's rename and delete as the person who approved the pairing, with only the project, the thread and the name", async () => {
+    for (const [endpoint, body] of [
+      ["rename-conversation", { conversationId: "conv-1", title: "Loans" }],
+      ["delete-conversation", { conversationId: "conv-1" }]
+    ] as const) {
+      call.mockClear();
+      const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
+      expect(response.status).toBe(200);
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ programId: "automation-studio", endpoint, payload: body }));
+    }
+  });
+
+  it("refuses a rename or delete that carries anything beyond what it needs, and Core is never called", async () => {
+    const refused: Array<[string, Record<string, unknown>]> = [
+      ["rename-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans", status: "closed" }],
+      ["rename-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans", flowId: "flow-1" }],
+      ["delete-conversation", { projectId: "project-1", conversationId: "conv-1", force: true }],
+      ["delete-conversation", { projectId: "project-1", conversationId: "conv-1", title: "Loans" }]
+    ];
+    for (const [endpoint, body] of refused) {
+      const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
+      expect({ endpoint, status: response.status }).toEqual({ endpoint, status: 403 });
+      expect(await response.json()).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    }
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("refuses a rename or delete whose body is not an object, and Core is never called", async () => {
+    for (const endpoint of ["rename-conversation", "delete-conversation"]) {
+      const response = await POST(tokenRequest(endpoint, { body: ["conv-1"] }), params(endpoint));
+      expect({ endpoint, status: response.status }).toEqual({ endpoint, status: 403 });
     }
     expect(call).not.toHaveBeenCalled();
   });

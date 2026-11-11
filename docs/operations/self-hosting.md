@@ -247,6 +247,7 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 | `FLUXIQ_EMAIL_SENDER` | `file` (outbox under `/data`) | `none`, `file` or `file:<dir>` |
 | `FLUXIQ_INSTANCE_NAME` | `FluxIQ` | The name discovery gives the extension |
 | `FLUXIQ_SIGN_UP_URL` | none | Where the extension sends someone without an account |
+| `FLUXIQ_PANEL_PRESET` | `full` | Which panel screens and Settings tools show: `full`, `data-collection` or `task-automation` (see Customise The Panel) |
 | `FLUXIQ_WORKSPACE_IDLE_MS`, `FLUXIQ_WORKSPACE_CACHE_MAX` | 15 minutes, 100 | How long and how many workspaces stay loaded (`service`) |
 | `FLUXIQ_CLIENT_GATEWAY_*` limits | 16 MiB frames, hello within 10 s, 50 messages/s, bursts of 200 off `local` | Gateway limits; see the resolver |
 | `FLUXIQ_PROVISIONING_*` | off | The provisioning listener (above) |
@@ -254,6 +255,36 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 The image also sets `HOSTNAME=0.0.0.0`, `PORT=3000`,
 `FLUXIQ_CLIENT_GATEWAY_HOST=0.0.0.0`, `FLUXIQ_CLIENT_GATEWAY_PORT=4777` and
 `FLUXIQ_GATEWAY_SERVER_MODULE`; leave them as they are.
+
+## Customise The Panel
+
+One deployment can show the panel customised for one use case: a brand and a
+preset of screens. Both are read on the server, so there is no flash.
+
+**Branding** comes from the product manifest a host module registers
+(`FLUXIQ_HOST_MODULE`, `registerFluxIQPlatform(platform).setProduct(...)`):
+`name`, `shortName`, `assets.logo` (the mark, served at
+`/product/assets/<name>` from the module's assets directory), `assets.favicon`
+and `brand.light` (`primary`, `primaryHover`, `focus`). The panel maps the
+accent onto its own tokens (`--accent`, `--accent-hover`, `--accent-text`,
+`--accent-ink`, `--focus`); no other colour changes, and an accent that fails
+the contrast check refuses the manifest at startup. With no product the panel
+is stock FluxIQ: the name "FluxIQ" and the FluxIQ mark (`/fluxiq-mark.svg`).
+
+**Presets** choose the screens and Settings tools a deployment lists, set with
+`FLUXIQ_PANEL_PRESET` (default `full`; an unknown name stops the panel with an
+error that lists the choices).
+
+| Preset | Screens | Settings tools |
+| --- | --- | --- |
+| `full` | Home, Flows, Runs, Data, Security, Settings | all seven |
+| `data-collection` | Home, Flows, Runs, Data, Security, Settings | Docs, Runtime |
+| `task-automation` | Home, Flows, Runs, Security, Settings | Background Tasks, Production Runner, Docs, Runtime |
+
+Home, Security and Settings are in every preset, so an administrator can always
+reach sign-in, keys and settings. A hidden screen or tool is not only unlinked:
+its route answers not found. A preset only hides; it grants nothing, and
+permissions (IAM) are checked on every request as before.
 
 ## Secrets
 

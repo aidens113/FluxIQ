@@ -3,15 +3,17 @@
 .security h2, .security h3 { margin: 0; }
 .security-section { display: grid; gap: 12px; min-width: 0; }
 .security-note { margin: 0; opacity: 0.85; }
-.security-error { color: var(--danger, #b42318); opacity: 1; }
+.security-error { color: var(--danger); opacity: 1; }
 .security-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.security-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, rgba(127, 127, 127, 0.35)); border-radius: 8px; overflow-wrap: anywhere; }
+.security-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; border: 1px solid var(--divider); border-radius: 8px; overflow-wrap: anywhere; }
 .security-title { font-weight: 600; }
 .security-muted { opacity: 0.75; font-size: 0.9rem; }
 .security-state { font-weight: 600; }
-.security-state[data-tone="ok"] { color: var(--success, #067647); }
-.security-state[data-tone="warn"] { color: var(--warning, #b54708); }
+.security-state[data-tone="ok"] { color: var(--success); }
+.security-state[data-tone="warn"] { color: var(--warning); }
 .security-sessions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .security-session, .security-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .security-button { min-height: 36px; padding: 0 12px; cursor: pointer; }
-.security-danger { color: var(--danger, #b42318); }
+.security-danger { color: var(--danger); }
+.security-back { justify-self: start; }
+.security > .program-technical-button { justify-self: start; }

@@ -24,12 +24,17 @@ own resources.
 profile (`resolveFluxIQProfile(process.env)`, so `FLUXIQ_PROFILE` unset is
 `local`) and the `iam` option it is given (`FluxIQOptions.iam`): a local or
 self-hosted install decides exactly as before, and `service` decides by the
-policies `iam.source` attaches, recording each decision in `iam.audit`. Under
+policies `iam.source` attaches. On every profile each decision is recorded in
+`iam.audit` when one is given, and the web server gives one on every profile:
+its route decisions are persisted for every allowed state change and every
+refusal, while allowed reads are not persisted (see [Audit](#audit) and
+[Web workspace manager](#web-workspace-manager)). Under
 `service` the same runtime also bounds the client gateway's ended sessions to
 one hour (`endedSessionMaxAgeMs`). `PlatformServices.workspaceIam(workspaceId)`
 returns the per-workspace `IamStore` provisioning attaches member policies to,
-which the web workspace manager passes as its lazy `iam.source`. Every service
-workspace, including the primary, shares the root-owned buffered decision audit.
+which the web workspace manager passes as its lazy `iam.source`. Every
+workspace, on every profile and including the primary, shares the root-owned
+buffered decision audit.
 
 The plan's terms (principals, FRNs, policy kinds, actions) are in the
 [hosted production plan](../working/hosted-production-plan.md), "Permissions
@@ -48,7 +53,7 @@ sit in `iam/types.ts`.
 | `evaluate/` | Pure, deterministic policy evaluation. | `compileIamPolicySet`, `evaluateIamRequest`, `iamTrustAllows` |
 | `predefined/` | The seven FluxIQ-managed policies. | `IAM_PREDEFINED_POLICY_DEFINITIONS`, `resolveIamPredefinedPolicy`, one constant per policy |
 | `store/` | Persist policies, attachments, groups, roles, service identities. | `IamStore`, `IamStoreError`, `IamRecordRepository` |
-| `audit/` | Compact, day-partitioned decision log. | `IamAuditStore`, `BufferedIamAuditSink`, `MemoryIamAuditSink`, `iamIpPrefix` |
+| `audit/` | Compact, day-partitioned decision log, and the filter that keeps changes and refusals. | `IamAuditStore`, `BufferedIamAuditSink`, `MemoryIamAuditSink`, `iamIpPrefix`, `IamDecisionAuditFilter`, `iamReadActionsOf` |
 | `authorize/` | Resolve, evaluate, audit: the one entry point. | `IamAuthorizer`, `IamRequestAuthorizer`, `IamPolicySource` |
 | `catalog/` | Generate the action catalog from endpoint registrations. | `generateIamActionCatalog`, `IAM_READ_ONLY_ACTIONS`, `IAM_DESTRUCTIVE_ACTIONS` |
 | `parity/` | Prove IAM agrees with today's role checks. | `compareIamRoleParity` |
@@ -271,6 +276,17 @@ overlapping the range and return newest first. `expire` drops whole allow-day
 tables older than the allow retention and deletes aged rows from `long`
 according to its own retention. `iamIpPrefix` records a network prefix, not
 the full address. `MemoryIamAuditSink` is the in-process sink for tests.
+
+**What is persisted.** `IamDecisionAuditFilter(target, isRead)` sits in front
+of a sink and keeps every `deny` (a refused read included), every
+`iam-change`, and every `allow` of an action that changes state; it drops the
+`allow` of a read. It passes kept records through unchanged, and never awaits
+or throws: if `isRead` throws, the row is kept. `iamReadActionsOf(endpoints)`
+names the reads among a registry's endpoints: the actions whose catalog level
+(`iamEndpointAccessLevel`) is `Read` or `List`, counted as a read only when
+every program that registers the action registers it as one; an unknown
+classification is kept. The web server builds its `iam.audit` from these on
+every profile (see [Web workspace manager](#web-workspace-manager)).
 
 ## Authorizer
 
@@ -827,6 +843,44 @@ operation and shutdown prevents a replacement. Changing the host root requires
 a runtime restart; reload refuses it before closing the current primary, keeping
 tenant storage and audit ownership on one root.
 
+**IAM options per workspace.** `lib/fluxiq.ts` gives each instance its `iam`
+option from `workspaceIam(tenancy, workspaceId, deps)`
+(`lib/workspaces/iam-options.ts`). Under `multi` (`service`) that is
+`serviceWorkspaceIam`: decisions by the policies of the workspace's IAM store.
+Under `single` (`local`, `self-hosted`) it is `{ workspaceId, audit }` only, so
+decisions are made exactly as before, by the runtime's own profile and the
+caller's permissions, and only the audit is added.
+
+**Route decisions persisted on every profile.** Every instance records into
+one `WorkspaceDecisionAudit` (`lib/workspaces/decision-audit.ts`), which wraps
+the root-owned buffered sink (reached through a `DeferredIamAuditSink`, so the
+platform services are composed on first use) in `IamDecisionAuditFilter`. It
+persists each allowed decision of an action that changes state (a registry
+endpoint at `Write` or `PermissionsManagement` level, or an app route whose
+method is not `GET`) and every refusal, a refused read included. Allowed reads
+are not persisted. The reads are the app routes' `GET` actions
+(`appRouteReadActions()`), known from the start, and each instance's
+registered `Read` and `List` actions, learned (`learn(registry)`) as the
+instance opens and before it serves anything; until then an allowed decision
+of its actions is kept rather than dropped. Recording never awaits, so no
+request waits for storage. The Activity log reads these rows.
+
+**Account holders' authority.** As each instance opens (the primary, each
+reload and each tenant), `lib/fluxiq.ts` also hands its Identity Access
+authority over account holders to provisioning:
+`identityAccess.authority.holdElsewhere(platformAuthorityOwner)`
+(`server/provisioning-listener/platform-authority-owner.ts`). A person "has an
+account" when the platform store holds one for them, the same rule
+`/api/accounts/members` uses. For such a person, `update-user` refuses a
+sign-in name, role or sign-in on/off change with
+`identity.authority_managed_by_provisioning`, and the identity `snapshot`
+endpoint marks them `authorityHeldElsewhere`, so the Security sign-in page
+offers none of those controls and says "Managed under Access" instead. Their
+role and on/off are changed through provisioning (`setPolicies`,
+`disableAccount`, `enableAccount`), and their sign-in name stays their account
+email. Installing the owner as each instance opens, not lazily, leaves no
+window in which such a change gets through.
+
 ## Model keys
 
 Where a model call finds its key is now owner-aware. In
@@ -1136,4 +1190,8 @@ never imports `@fluxiq/contracts`).
 - **`platform:*Account*`** in the provisioner matches the ten provisioning
   actions of the frozen contract, every one of which names `Account`.
 - **Audit.** Non-decimal request ids are costly; multiple processes writing one
-  audit file, and expiry over a full 90 days of data, are untested.
+  audit file, and expiry over a full 90 days of data, are untested. Under
+  `service` a list a member can only partly see still persists one deny row
+  per hidden item (`filter`), the largest remaining source of audit volume.
+  Allowed rows flush up to 1 second after denials, so store order within one
+  second is not call order.

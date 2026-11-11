@@ -2,8 +2,9 @@
 // `FluxIQUserAccess`. Bob never reaches a route on Alice's project, by cookie
 // or by his paired browser, while Alice does; no one reaches a framework
 // (operator) route, not even an administrator's policy, because
-// `FluxIQServiceGuardrail` denies `ops:*`; and a list across the workspace,
-// which would show other users' items, is refused to a user.
+// `FluxIQServiceGuardrail` denies `ops:*`; a list across the workspace,
+// which would show other users' items, is refused to a user; and people and
+// the activity log are an administrator's alone.
 
 import { GlobalProgramApiRegistry } from "fluxiq";
 import { IAM_ADMINISTRATOR_ACCESS, IAM_USER_ACCESS } from "fluxiq/platform";
@@ -11,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", async () => (await import("./app-route-fixture")).nextHeadersMock());
 vi.mock("../../../lib/fluxiq", async () => (await import("./app-route-fixture")).fluxiqModuleMock());
+vi.mock("../../../server/provisioning-listener", async () => (await import("./app-route-fixture")).provisioningListenerMock());
+vi.mock("../security/server/platform-audit-reader", async () => (await import("./app-route-fixture")).platformAuditReaderMock());
 
 import { APP_ROUTE_IAM_CONTRACTS } from "../../../lib/app-route-iam";
 import { APP_ROUTE_CALLS } from "./app-route-calls";
@@ -81,6 +84,21 @@ describe("app routes on the service profile", () => {
         const seen = await call(name, { kind: "cookie", person });
         expect([person, seen.outcome, seen.error?.startsWith("Not authorized: ops:")]).toEqual([person, "forbidden", true]);
       }
+    });
+  }
+
+  const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit");
+
+  it("covers every people and activity route", () => {
+    expect(PEOPLE_AND_ACTIVITY).toHaveLength(9);
+  });
+
+  for (const contract of PEOPLE_AND_ACTIVITY) {
+    const name = `${contract.method} ${contract.path}${contract.variant === undefined ? "" : ` (${contract.variant})`}`;
+    it(`${name}: allows an administrator's policy and refuses a hosted user's, by cookie only`, async () => {
+      await expect(call(name, { kind: "cookie", person: "admin" })).resolves.toEqual({ outcome: "allowed" });
+      for (const person of ["alice", "bob"] as const) await expect(call(name, { kind: "cookie", person })).resolves.toEqual({ outcome: "forbidden", error: `Not authorized: ${contract.action}` });
+      await expect(call(name, { kind: "token", person: "admin" })).resolves.toEqual({ outcome: "unauthenticated" });
     });
   }
 

@@ -2,10 +2,10 @@
 .automation-state-control select {
   min-width: min(360px, 44vw);
   min-height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 6px 28px 6px 9px;
   font: inherit;
 }
@@ -15,9 +15,9 @@
   flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
+  background: var(--surface-muted);
 }
 
 .automation-state-toolbar .segmented-control button {
@@ -25,13 +25,13 @@
   border: 0;
   border-radius: calc(var(--radius-control) - 2px);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 4px 8px;
   cursor: pointer;
 }
 
 .automation-state-toolbar .segmented-control button[aria-pressed="true"] {
-  background: var(--color-primary);
+  background: var(--accent);
   color: white;
   font-weight: var(--font-weight-bold);
 }
@@ -61,9 +61,9 @@
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: var(--shadow-sm);
 }
 
@@ -72,13 +72,13 @@
   border: 0;
   border-radius: calc(var(--radius-control) - 2px);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 4px 8px;
   cursor: pointer;
 }
 
 .automation-state-surface-tabs button[aria-pressed="true"] {
-  background: var(--color-primary);
+  background: var(--accent);
   color: white;
   font-weight: var(--font-weight-bold);
 }
@@ -89,11 +89,11 @@
 
 .automation-state-table tbody tr:hover,
 .automation-state-table tbody tr:focus-visible {
-  background: var(--surface-selected);
+  background: var(--accent-soft);
 }
 
 .automation-state-table tbody tr:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -101,7 +101,7 @@
   max-width: 100%;
   border: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--accent-text);
   padding: 0;
   overflow-wrap: anywhere;
   font: inherit;
@@ -117,8 +117,8 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-left: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-state-evidence-inspector > header,
@@ -126,13 +126,13 @@
   display: grid;
   gap: var(--space-dense);
   padding: var(--space-dense);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-state-evidence-inspector > header span,
 .automation-state-evidence-inspector dt,
 .automation-state-evidence-list small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -158,7 +158,7 @@
 .automation-state-evidence-links a {
   border: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--accent-text);
   padding: 0;
   font: inherit;
   font-weight: var(--font-weight-bold);
@@ -175,10 +175,10 @@
   display: grid;
   gap: 2px;
   width: 100%;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 7px 8px;
   text-align: left;
   cursor: pointer;
@@ -186,8 +186,8 @@
 
 .automation-state-evidence-list > button[aria-pressed="true"],
 .automation-state-evidence-list > button:hover {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 @media (max-width: 900px) {
@@ -199,7 +199,7 @@
   .automation-state-evidence-inspector {
     width: 100%;
     max-height: 42vh;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 }

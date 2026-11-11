@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { allowanceWords } from "../allowance-words";
 import { parseAllowance } from "../allowance-input";
-import { ENGINE_TOOLS, engineToolHref } from "../engine-tools";
 import { EMPTY_NEW_KEY, canSaveNewKey, newKeyPayload } from "../new-key";
 
 describe("the allowance a person types", () => {
@@ -35,11 +34,3 @@ describe("adding a key", () => {
   });
 });
 
-describe("engine tools", () => {
-  it("link the nine existing program pages unchanged", () => {
-    expect(ENGINE_TOOLS.map(engineToolHref)).toEqual([
-      "/programs/background-tasks", "/programs/deployment-sync", "/programs/database-manager", "/programs/docs", "/programs/runtime",
-      "/programs/compute-control", "/programs/production-runner", "/programs/identity-access", "/programs/secret-keys"
-    ]);
-  });
-});

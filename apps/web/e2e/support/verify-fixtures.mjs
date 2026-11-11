@@ -97,7 +97,12 @@ async function verifyPanelFixture(panel) {
   assertEqual(graph.nodes.map((node) => node.label).join("|"), panel.stepLabels.join("|"), "panel editable step labels");
   const keys = (await fluxiq.programs.secretKeys.snapshot()).keys.filter((key) => key.kind === "llm");
   assertEqual(keys.map((key) => key.name).sort().join("|"), [...panel.modelKeyNames].sort().join("|"), "panel model keys");
-  return { projectId: panel.projectId, runs: runs.total, runStatuses: [...statuses], editableSteps: graph.nodes.length, modelKeys: keys.length };
+  const stored = await studio.runDatasets.getRunDatasetPage({ projectId: panel.dataset.projectId, runId: panel.dataset.runId, datasetId: panel.dataset.datasetId, limit: 200 });
+  assertEqual(stored?.rows?.length, panel.dataset.rows.length, "panel dataset rows");
+  await fluxiq.programs.clientGateway.ready();
+  const paired = fluxiq.programs.clientGateway.snapshot().trustedClients.filter((client) => client.name === panel.pairedClientName && client.status === "active");
+  assertEqual(paired.length, 1, "panel paired browsers");
+  return { projectId: panel.projectId, datasetRows: stored.rows.length, pairedBrowsers: paired.length, runs: runs.total, runStatuses: [...statuses], editableSteps: graph.nodes.length, modelKeys: keys.length };
 }
 
 async function verifyStudioProjectFixture(name, project) {

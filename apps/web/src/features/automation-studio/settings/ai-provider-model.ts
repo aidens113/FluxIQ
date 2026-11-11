@@ -29,8 +29,8 @@ export type AiProviderKeyAvailability = {
 /** Compatibility type for existing DeepSeek callers. */
 export type DeepSeekKeyAvailability = AiProviderKeyAvailability;
 
-/** Where keys are added and managed: the existing Secret Keys program, the only secret store. */
-export const AI_PROVIDER_SECRET_KEYS_HREF = "/programs/secret-keys";
+/** Where keys are added and managed: the Keys page under Security, the only secret store. */
+export const AI_PROVIDER_SECRET_KEYS_HREF = "/security/keys";
 export const AI_PROVIDER_ADAPTATION_OFF_EXPLANATION = "Off: runs use only the steps FluxIQ has already learned and never call the model; if a page has changed, the run stops instead of adapting.";
 export const AI_PROVIDER_ADAPTATION_ON_EXPLANATION = "On: when a page changes, FluxIQ asks the selected model to repair the step, then reuses the fix so later runs do not need AI.";
 

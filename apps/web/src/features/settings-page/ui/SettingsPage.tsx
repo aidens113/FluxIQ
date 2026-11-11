@@ -4,12 +4,15 @@ import { useState } from "react";
 import { PublishPanelPage } from "../../panel-shell";
 import { useSettingsData, useSettingsPort } from "../data";
 import { AiKeysSection } from "./AiKeysSection";
+import { AppearanceSection } from "../appearance";
 import { AllowanceSection } from "./AllowanceSection";
+import type { EngineTool } from "../model";
 import { AssistantModelSection } from "./AssistantModelSection";
 import { EngineToolsSection } from "./EngineToolsSection";
 import "./settings-page.css";
 
-export function SettingsPage() {
+/** `engineTools`: the Advanced tools the deployment's panel preset lists; the route passes them from the server. */
+export function SettingsPage(props: { engineTools?: readonly EngineTool[] }) {
   const data = useSettingsData(useSettingsPort());
   const [selectedId, setSelectedId] = useState("");
   const selected = data.keys.some((key) => key.id === selectedId) ? selectedId : "";
@@ -26,7 +29,8 @@ export function SettingsPage() {
           <AllowanceSection data={data} />
         </>
       )}
-      <EngineToolsSection />
+      <AppearanceSection />
+      <EngineToolsSection {...(props.engineTools ? { tools: props.engineTools } : {})} />
     </div>
   );
 }

@@ -19,7 +19,7 @@ describe("panelOnboardingCards", () => {
   it("offers only the key card without a product or key", () => {
     const cards = panelOnboardingCards({ product: null, hasModelKey: false });
     expect(cards.map((card) => card.id)).toEqual(["add-model-key"]);
-    expect(cards[0]!.actions).toEqual([{ label: "Add a key", href: "/programs/secret-keys", external: false }]);
+    expect(cards[0]!.actions).toEqual([{ label: "Add a key", href: "/security/keys", external: false }]);
   });
   it("offers one external action per store, then the key card", () => {
     const cards = panelOnboardingCards({ product: WITH_STORES, hasModelKey: false });

@@ -1,6 +1,7 @@
 export * from "./api/contracts.ts";
 export * from "./api/handlers.ts";
 export * from "./metadata.ts";
+export * from "./runtime/authority/index.ts";
 export * from "./runtime/last-administrator-error.ts";
 export * from "./runtime/providers/index.ts";
 export * from "./runtime/roles.ts";

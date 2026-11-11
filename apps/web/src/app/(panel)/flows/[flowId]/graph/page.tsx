@@ -1,4 +1,5 @@
 import { FlowGraphPage } from "./host";
+import { requirePanelScreen } from "../../../../product";
 
 type FlowGraphRouteProps = {
   params: Promise<{ flowId: string }>;
@@ -7,6 +8,7 @@ type FlowGraphRouteProps = {
 
 /** A Flow's graph editor, under the Flow's Advanced section: `/flows/<id>/graph?project=<id>`. */
 export default async function PanelFlowGraphPage(props: FlowGraphRouteProps) {
+  requirePanelScreen("flows");
   const { flowId } = await props.params;
   const query = await props.searchParams;
   const projectId = typeof query.project === "string" && query.project ? query.project : undefined;

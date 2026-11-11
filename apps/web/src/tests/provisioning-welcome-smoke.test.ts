@@ -32,7 +32,7 @@ describe("provisioning to welcome to sign-in", () => {
 
       const welcomeToken = harness.latestToken("welcomeUrl");
       const password = `smoke-${randomBytes(12).toString("hex")}`;
-      const request = new Request("https://app.example.test/welcome/submit", { method: "POST", headers: { "content-type": "application/json", origin: "https://app.example.test" }, body: JSON.stringify({ token: welcomeToken, password }) });
+      const request = new Request("https://app.example.test/welcome/submit", { method: "POST", headers: { "content-type": "application/json", host: "app.example.test", origin: "https://app.example.test" }, body: JSON.stringify({ token: welcomeToken, password }) });
       const welcomed = await submitWelcome(request, { links: harness.services.links, provisioning: harness.services.provisioning, identityAccess: harness.identityAccess, secretKeys: harness.secretKeys });
       expect(welcomed.status).toBe(200);
       expect((await harness.identityAccess.validateSession(welcomed.session?.id))?.user.id).toBe(answer.result.userId);

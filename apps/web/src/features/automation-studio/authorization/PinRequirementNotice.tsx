@@ -2,7 +2,7 @@
 
 import { InlineNotice } from "../../programs/shared-ui";
 
-export const AUTOMATION_IDENTITY_ACCESS_HREF = "/programs/identity-access";
+export const AUTOMATION_IDENTITY_ACCESS_HREF = "/security/sign-in";
 
 /**
  * Shown where a PIN is genuinely required - a delete - and the account has none

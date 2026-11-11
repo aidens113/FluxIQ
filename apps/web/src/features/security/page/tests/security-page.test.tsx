@@ -39,13 +39,27 @@ describe("keys", () => {
 
 describe("access", () => {
   const access = { people: [{ id: "u1", name: "Ana", username: "ana", roleId: "admin", permissions: ["identity.manage"], enabled: true, sessions: [{ digest: "d1", expiresAt: 5 }] }], otherSessions: [] };
-  it("lists people with roles, sessions and a place for the later admin tools", () => {
+  it("lists people with roles, sessions and a place for the admin tools", () => {
     const html = renderToStaticMarkup(createElement(PeopleList, { access, onRevoke: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
     expect(html).toContain("Ana");
     expect(html).toContain("role admin");
     expect(html).toContain("Sign out");
     expect(html).toContain('data-slot="access-admin"');
     expect(html).not.toContain("d1");
+  });
+  it("shows each person's access controls and the admin tools only when given them", () => {
+    const plain = renderToStaticMarkup(createElement(PeopleList, { access, onRevoke: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
+    expect(plain).not.toContain("ACTIONS-u1");
+    expect(plain).not.toContain("ADMIN-TOOLS");
+    const managed = renderToStaticMarkup(createElement(PeopleList, {
+      access,
+      onRevoke: async (): Promise<ChangeResult> => "done",
+      onDone: () => undefined,
+      actions: (personId: string) => createElement("span", null, `ACTIONS-${personId}`),
+      admin: createElement("p", null, "ADMIN-TOOLS")
+    }));
+    expect(managed).toContain("ACTIONS-u1");
+    expect(managed).toMatch(/data-slot="access-admin"[^>]*><p>ADMIN-TOOLS<\/p>/u);
   });
   it("offers Forget only for a browser still trusted", () => {
     const rows = [
@@ -58,8 +72,8 @@ describe("access", () => {
 });
 
 describe("activity", () => {
-  it("is unavailable in plain words", () => {
-    expect(renderToStaticMarkup(createElement(ActivitySection))).toContain("not available yet");
+  it("starts by loading the log", () => {
+    expect(renderToStaticMarkup(createElement(ActivitySection))).toContain("Loading activity");
   });
 });
 

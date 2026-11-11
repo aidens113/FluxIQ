@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ConfirmButton } from "../confirm";
 import type { ChangeResult } from "../data";
 import type { AccessRows, SessionRow } from "../model";
@@ -16,8 +17,13 @@ function Sessions(props: { sessions: SessionRow[]; onRevoke: (digest: string) =>
   );
 }
 
-/** People, their roles and their sign-in sessions. Adding people and editing roles are a later brief's: their place is the note at the end. */
-export function PeopleList(props: { access: AccessRows; onRevoke: (digest: string) => Promise<ChangeResult>; onDone: () => void }) {
+/**
+ * People, their roles and their sign-in sessions. For an administrator,
+ * `actions` adds each person's access controls (role, turn off or on, remove)
+ * and `admin` fills the place at the end (inviting people, invites waiting);
+ * without them, as for anyone else, the list only shows.
+ */
+export function PeopleList(props: { access: AccessRows; onRevoke: (digest: string) => Promise<ChangeResult>; onDone: () => void; actions?: ((personId: string) => ReactNode) | undefined; admin?: ReactNode }) {
   const { people, otherSessions } = props.access;
   return (
     <>
@@ -29,6 +35,7 @@ export function PeopleList(props: { access: AccessRows; onRevoke: (digest: strin
               <span className="security-muted">{person.username} · role {person.roleId}{person.enabled ? "" : " · turned off"}</span>
               {person.permissions.length > 0 ? <span className="security-muted">Can: {person.permissions.join(", ")}</span> : null}
               <Sessions sessions={person.sessions} onRevoke={props.onRevoke} onDone={props.onDone} />
+              {props.actions?.(person.id) ?? null}
             </li>
           ))}
         </ul>
@@ -39,7 +46,7 @@ export function PeopleList(props: { access: AccessRows; onRevoke: (digest: strin
           <Sessions sessions={otherSessions} onRevoke={props.onRevoke} onDone={props.onDone} />
         </div>
       ) : null}
-      <p className="security-note" data-slot="access-admin">Adding people, inviting them and changing roles will be here.</p>
+      <div className="security-section" data-slot="access-admin">{props.admin ?? null}</div>
     </>
   );
 }

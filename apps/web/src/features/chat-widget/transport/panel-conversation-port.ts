@@ -1,6 +1,6 @@
 // The panel-wide thread's conversation, over the assistant's own endpoints
 // (`list-panel-threads`, `get-panel-thread`, `send-panel-message`,
-// `answer-panel-ask`). Only the transport's panel branch uses it; project
+// `answer-panel-ask`, and `open-panel-thread` for New chat). Only the transport's panel branch uses it; project
 // threads keep `conversation-port.ts` and its endpoints.
 //
 // A panel thread belongs to no project, so no request names one. Every send
@@ -49,6 +49,11 @@ export function createPanelConversationPort(api: ProgramCommandTransport, option
       if (!sent.ok) return chatFailure(sent);
       const conversation = sent.payload?.conversation;
       return { ok: true, value: conversation === undefined ? {} : { conversation } };
+    },
+
+    // Core's assistant has no rename or delete of its own, so the list offers neither here.
+    async newThread(request) {
+      return chatResult(await api.post<{ conversation?: unknown }>("open-panel-thread", request.title ? { title: request.title } : {}));
     },
 
     async answer(answer) {

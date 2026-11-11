@@ -3,6 +3,9 @@
 // fixture's FluxIQ. Import it after mocking `next/headers` and `lib/fluxiq`
 // with `app-route-fixture`, so the routes load against the fixture.
 
+import { POST as inviteMember } from "../accounts/invite/route";
+import { POST as changeMember } from "../accounts/member/route";
+import { GET as listMembers } from "../accounts/members/route";
 import { POST as approvePairing } from "../client-gateway/approve-pairing/route";
 import { POST as setStudioContext } from "../client-gateway/automation-studio-context/route";
 import { POST as dismissPairing } from "../client-gateway/dismiss-pairing/route";
@@ -17,7 +20,8 @@ import { GET as streamRunDataset } from "../programs/automation-studio/run-datas
 import { GET as readStateAsset, PUT as writeStateAsset } from "../programs/automation-studio/state-assets/[projectId]/[sha256]/route";
 import { GET as programDirectory } from "../programs/route";
 import { GET as listRecordings } from "../recordings/route";
-import { FIXTURE_SHA, routeRequest, type RouteCaller } from "./app-route-fixture";
+import { GET as readAudit } from "../security/audit/route";
+import { FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
 
 /** The project-scoped calls name this project; `a-` projects are alice's, `b-` bob's. */
 export type RouteProject = { projectId: string };
@@ -26,6 +30,12 @@ type RouteCall = (caller: RouteCaller, target: RouteProject) => Promise<Response
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
 const HTML = new TextEncoder().encode("<!doctype html><p>snapshot</p>");
+/** A dummy password: the fixture accepts any re-proof. */
+const PROOF = { password: "a dummy password" };
+
+function memberChange(action: string): RouteCall {
+  return (caller) => changeMember(routeRequest(caller, "/api/accounts/member", { method: "POST", json: { action, userId: INVITEE.id, role: "read-only", proof: PROOF } }));
+}
 
 /** Keyed `METHOD path` (and ` (variant)`), as the IAM table names the route. */
 export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
@@ -59,6 +69,20 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
     writeStateAsset(routeRequest(caller, `/api/programs/automation-studio/state-assets/${target.projectId}/${FIXTURE_SHA}`, { method: "PUT", bytes: PNG }), {
       params: Promise.resolve({ projectId: target.projectId, sha256: FIXTURE_SHA })
     }),
-  "GET /api/recordings": (caller) => listRecordings(routeRequest(caller, "/api/recordings"))
+  "GET /api/recordings": (caller) => listRecordings(routeRequest(caller, "/api/recordings")),
+  // Takes no request either: the cookie is all it reads.
+  "GET /api/accounts/members": (caller) => {
+    routeRequest(caller, "/api/accounts/members");
+    return listMembers();
+  },
+  "POST /api/accounts/invite": (caller) =>
+    inviteMember(routeRequest(caller, "/api/accounts/invite", { method: "POST", json: { email: "new@example.test", displayName: "New", role: "read-only", proof: PROOF } })),
+  "POST /api/accounts/member (set-role)": memberChange("set-role"),
+  "POST /api/accounts/member (turn-off)": memberChange("turn-off"),
+  "POST /api/accounts/member (turn-on)": memberChange("turn-on"),
+  "POST /api/accounts/member (remove)": memberChange("remove"),
+  "POST /api/accounts/member (resend-invite)": memberChange("resend-invite"),
+  "POST /api/accounts/member (revoke-invite)": memberChange("revoke-invite"),
+  "GET /api/security/audit": (caller) => readAudit(routeRequest(caller, "/api/security/audit"))
 };
 

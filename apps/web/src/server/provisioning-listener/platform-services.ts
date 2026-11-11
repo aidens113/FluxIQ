@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { SQLiteRepository } from "fluxiq/database-manager";
-import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type PlatformServices } from "fluxiq/platform";
+import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type IamAuditQuery, type IamAuditRecord, type PlatformServices } from "fluxiq/platform";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { getFluxIQAfterReload } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
@@ -39,6 +39,21 @@ export async function getPlatformIamAuditSink(): Promise<BufferedIamAuditSink> {
   const platformDir = path.join(fluxiq.paths.fluxiq, "platform");
   mkdirSync(platformDir, { recursive: true });
   return (await platformAudit(fluxiq.paths.fluxiq, platformDir)).sink;
+}
+
+/**
+ * Reads the platform IAM audit, newest first, for the Security screen's
+ * Activity route. It flushes the buffered sink first so the last second's
+ * decisions are included; a failed flush is the sink's to report (it keeps the
+ * rows and throws from its own next flush) and does not stop the read.
+ */
+export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAuditRecord[]> {
+  const fluxiq = await getFluxIQAfterReload({ allowDuringShutdown: true });
+  const platformDir = path.join(fluxiq.paths.fluxiq, "platform");
+  mkdirSync(platformDir, { recursive: true });
+  const audit = await platformAudit(fluxiq.paths.fluxiq, platformDir);
+  await audit.sink.flush().catch(/* best-effort: the sink keeps the rows and throws from its next flush */ () => undefined);
+  return audit.store.read(query);
 }
 
 /** Closes an already-open root audit after all workspaces have drained. Opens nothing at shutdown. */

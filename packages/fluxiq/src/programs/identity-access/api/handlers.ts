@@ -11,6 +11,7 @@ import {
   type UpdateIdentityUserRequest,
   type VaultUnlockRequest
 } from "./contracts.ts";
+import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "../runtime/authority/index.ts";
 import type { IdentityAccessService } from "../runtime/service.ts";
 
 /**
@@ -49,6 +50,22 @@ async function recheckCredentials(service: IdentityAccessService, payload: Crede
 }
 
 /**
+ * The named refusal of a sign-in name, role or on/off change for a person
+ * whose authority is held elsewhere (`IdentityAuthorityDelegation`), or `null`
+ * when it is held here or the update changes none of the three. Only the delegation's own two refusals are answered; anything else
+ * propagates, as any handler error does.
+ */
+async function authorityRefusal(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<{ ok: false; error: string; errorCode: string } | null> {
+  try {
+    await service.authority.refuseChangeHeldElsewhere(payload);
+    return null;
+  } catch (error) {
+    if (error instanceof IdentityAuthorityManagedError || error instanceof IdentityAuthorityUncheckedError) return { ok: false, error: error.message, errorCode: error.code };
+    throw error;
+  }
+}
+
+/**
  * Whether an account update changes what the account can do, rather than how it
  * reads. Presence decides it, as the request carries only the fields being
  * changed.
@@ -67,9 +84,12 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     accessLevel: "Read",
     resource: endpointResource.workspace(),
     assistant: { input: identityAccessSnapshotInput, summary: "Lists the people, their roles and the sign-in sessions.", phrases: ["who has access", "show sign-in sessions", "list the people"] },
+    // Each person is marked with whether `update-user` would refuse their
+    // sign-in name, role and on/off, so a client never offers a change that
+    // will be refused.
     handler: async () => ({
       ok: true,
-      payload: await service.snapshot()
+      payload: await service.authority.listing(await service.snapshot())
     })
   });
   registry.register({
@@ -101,7 +121,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:UpdateUser",
     accessLevel: "PermissionsManagement",
     resource: endpointResource.user("id"),
-    assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in.", phrases: ["rename this person", "change this person's display name"] },
+    assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in. A person with an account keeps their account email as their sign-in name, so only their display name changes here.", phrases: ["rename this person", "change this person's display name"] },
     handler: async (request) => {
       const payload = request.payload as UpdateIdentityUserRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
@@ -110,6 +130,15 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       // it from someone relying on it. A disabled administrator that can be
       // switched on again with nothing proved is a dormant escalation. A
       // rename or display-name edit changes no authority and stays open.
+      //
+      // An account holder's sign-in name, role and on/off are provisioning's
+      // (their account email, their memberships' policies and their account's
+      // status). Refused by name (`errorCode`) before any credential is spent:
+      // a change here would disagree with provisioning's record, and the next
+      // provisioning change would undo a role or on/off. Their display name
+      // stays open, as anyone's does.
+      const heldElsewhere = await authorityRefusal(service, payload);
+      if (heldElsewhere) return heldElsewhere;
       if (changesAuthority(payload)) {
         const refusal = await recheckCredentials(service, payload);
         if (refusal) return refusal;

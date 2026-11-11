@@ -15,6 +15,7 @@
 //                   `open-conversation` first (Core continues the subject's open
 //                   thread when there is one), then the same
 //   answer          `answer-ask` (`answer-ask.ts`)
+//   newThread, renameThread, deleteThread   the thread list's controls (`thread-changes.ts`)
 
 import type { ChatConversationPort } from "@fluxiq/ui-components";
 import { commitConversationChanged, sendConversationInstruction } from "../../automation-studio/conversation";
@@ -24,6 +25,7 @@ import { chatFailure } from "./chat-failure";
 import { chatResult } from "./chat-result";
 import type { ProgramChatTransportOptions } from "./options";
 import { projectFor } from "./project-for";
+import { createThreadChanges } from "./thread-changes";
 
 const NO_MESSAGE = "There is no message to send.";
 const OPENED_NOTHING = "FluxIQ opened a conversation but did not say which one.";
@@ -104,7 +106,9 @@ export function createConversationPort(api: ProgramCommandTransport, options: Pi
       };
     },
 
-    answer: (answer) => answerAsk(api, options, answer)
+    answer: (answer) => answerAsk(api, options, answer),
+
+    ...createThreadChanges(api, options)
   };
 }
 
