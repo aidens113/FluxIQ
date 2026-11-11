@@ -22,7 +22,7 @@ With `b = level / 100`:
 
 | Where | What | Shape |
 | --- | --- | --- |
-| Core, before each node's first arrival (`engine/automation/pacing/human-pause.ts`) | A pause; never on a retry of the same node | `1000·b·(0.8·E + R)` ms, where `E` is exponential with mean 1 and `R` is a reading pause of `2·(0.5 + u)` taken with chance `0.2·b`. The mean is about 8 ms at level 1 and about 1.2 s at level 100. |
+| Core, before each first arrival at a node that acts on the world (`engine/automation/pacing/arrival-pause.ts`, `human-pause.ts`) | A pause; never on a retry of the same node, and never before Core's own built-ins that only steer the run (control, data, database, flow, logic, math, random, routine, timing). A domain's nodes and Core's policy actions are the ones that pause. | `1000·b·(0.8·E + R)` ms, where `E` is exponential with mean 1 and `R` is a reading pause of `2·(0.5 + u)` taken with chance `0.2·b`. The mean is about 8 ms at level 1 and about 1.2 s at level 100. |
 | Content script, click (`content/action-runtime/humanness/`, extension) | The press point | Near the centre, inset 20% per side (at least 2 px), within 40 px, spread `0.4 × reach × b`. Used only when the gate accepted the centre, and re-hit-tested (see below). |
 | Content script, typing | A gap before each character after the first | Right-skewed, mean `160 ms × b`, with a 5% chance of a hesitation of 2-6 gaps. Number and date inputs keep their whole-value path. |
 | Content script, scroll | One dwell after the scroll | Right-skewed, mean `900 ms × b`. A scroll-until-stable dwells once, after its last pass. |
@@ -52,7 +52,7 @@ Every random choice comes from a seeded generator, `humannessRandom(seed)` (mulb
 
 ## A developer's least step gap
 
-A FluxNode developer can set `pace.minStepGapMs` in the run's overrides (W3's FluxNode overrides; the run frame is `runtime/run-overrides`). It is a floor on the pause before each node's first arrival, at every level: at level 0 the run waits exactly that floor and nothing else. With no floor and level 0, the run awaits nothing.
+A FluxNode developer can set `pace.minStepGapMs` in the run's overrides (W3's FluxNode overrides; the run frame is `runtime/run-overrides`). It is a floor on the pause before each first arrival at a node that acts on the world, at every level: at level 0 the run waits exactly that floor and nothing else. With no floor and level 0, the run awaits nothing.
 
 ## Where the level travels
 
