@@ -34,6 +34,8 @@ export type AutomationStudioGraphExecutionOptions = {
   declaredInputDefaults?: Record<string, JsonValue>;
   variables?: Record<string, JsonValue>;
   maxSteps?: number;
+  /** How human the run's input looks, a whole number 0 to 100; absent means 0, today's path exactly. Nothing reads it yet. */
+  humanness?: number;
   random?: () => number;
   now?: () => number;
   /** Fixed epoch milliseconds for relative task dates; live timing still uses now(). */

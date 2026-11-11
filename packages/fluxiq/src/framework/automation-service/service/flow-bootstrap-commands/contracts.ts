@@ -186,6 +186,8 @@ export type AutomationStudioAnswerFirstCallerOptions = {
   taskKey?: string;
   /** The model this attempt's calls ask for, in place of the Flow's `llmModel`. */
   model?: string;
+  /** How human the attempt's input looks, a whole number 0 to 100; absent means 0, today's path. */
+  humanness?: number;
   /** The attempt's whole allowance in dollars, which may be above the $5 default. A Flow limit a person chose, the host's total and a Lab ceiling still hold it lower. */
   budgetUsd?: number;
   /** When the judge runs: `auto`, only when there is no `check` (the default); `always`, after a passing check too; `off`, never, and with no check the result is taken unverified. */
