@@ -3,7 +3,9 @@
 // draft a part run is keyed on, and the one resend a refusal invites -- with,
 // for an unchanged read, the condition that left out no row (t693) -- and
 // whether a call wrote its step rather than ran it (t707 D1) -- and the
-// revision an unchanged submission's refusal named as standing (t738).
+// revision an unchanged submission's refusal named as standing (t738) -- and
+// what a node call asks with how long it waits taken out, by what each node's
+// definition declares as timing (R6).
 export * from "./candidate-feedback.ts";
 export * from "./covered-refused.ts";
 export * from "./draft-key.ts";
@@ -15,5 +17,7 @@ export * from "./permission-refused.ts";
 export * from "./resend-admission.ts";
 export * from "./retry-later.ts";
 export * from "./searching.ts";
+export * from "./timing-free.ts";
+export * from "./timing-of-nodes.ts";
 export * from "./unchanged-standing.ts";
 export * from "./written-call.ts";

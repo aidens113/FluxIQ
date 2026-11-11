@@ -392,6 +392,17 @@ describe("a rerun of a read whose argument an earlier identical read on its page
     expect(resolved).toEqual({ request: undefined, refused: [{ step: 12, reason: "changes_nothing" }] });
   });
 
+  // Run `run-mwc60eal-4c9fdf6f`: a caller that puts no page back runs the rerun where the page stands, so it is checked there.
+  it("is checked on the page as it is now, not its step's own, for a caller that puts no page back", () => {
+    const ranAlready = guard("failed");
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(12, { extractList: { ...columns, where } })], [filtered, listing], offered, ranAlready, undefined, { rerunsInPlace: true });
+
+    expect(ranAlready).toHaveBeenCalledTimes(1);
+    expect(ranAlready.mock.calls[0]![2]).toBeUndefined();
+    expect(resolved.refused).toEqual([]);
+    expect(resolved.request).toMatchObject({ step: 12, callId: "rerun.12" });
+  });
+
   it("of a press is still refused when the earlier identical press changed nothing there", () => {
     const pressAt = (position: number, target: string): AutomationStudioFlowDraftStep => ({
       ...step(position, "web.dom.click", "core.run_node"), effect: "mutate", effectApplied: false, stateBefore: "suggestions", replay: { from: { location: "suggestions" } },

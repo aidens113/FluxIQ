@@ -11,6 +11,7 @@ import type { AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/i
 import type { AutomationStudioAnswerFirstAttemptPrior } from "../carry-on/index.ts";
 import type { AutomationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "../flow-run/index.ts";
+import type { AutomationStudioAnswerFirstStuck } from "../loop-signal/index.ts";
 import type { AutomationStudioAnswerFirstRoute } from "../route/index.ts";
 import type { AutomationStudioAnswerFirstRowSink, AutomationStudioAnswerFirstSession } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptProvenance, AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
@@ -75,10 +76,12 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   backoffs: number;
   /** Time spent waiting on a person or a silent service, which a round's own clock leaves out. */
   waitedMs: number;
-  /** Loop detection's last rung fired: the next thing the attempt does is ask. */
+  /** Loop detection's last rung fired: the next round is steered onto a different way, and the person is asked without waiting (`./rounds.ts`). */
   askPerson: boolean;
-  /** What that question says, where it has more to say than that the attempt is stuck. */
-  askWords?: string | undefined;
+  /** What the last rung stopped on, which the person's question is built from (`../loop-signal/stuck-question.ts`). */
+  stuck?: AutomationStudioAnswerFirstStuck | undefined;
+  /** The person's own words, each time they answered a question the attempt posted when it was stuck: every later round is told them as guidance. */
+  personSaid?: string[] | undefined;
   /** The latest decision's number in its round, for the step log of what follows from it. */
   decidedAt?: number | undefined;
   /** A completion refused again ended this round (`./round.ts`): it reads as a round that kept repeating itself. */

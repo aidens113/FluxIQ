@@ -66,4 +66,31 @@ describe("the note for a refused repeat", () => {
       expect(automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, candidate: true, undrafted: true })).toEqual(candidate);
     }
   });
+
+  // run-mwc6ut8u-52e3c1b3 (R6): a press back to a view the window no longer held was refused as same_result with no word that it could be recalled.
+  it("points a same_result refusal at core.recall_result with sameAsCall, where the loop offers it", () => {
+    const earlier = { callId: "later_week_4", outcome: "same_result" as const, resultCode: "web.action.completed" };
+    const offered = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, recallOffered: true });
+    expect(offered).toMatchObject({ sameAsCall: "later_week_4", then: { outcome: "same_result" } });
+    expect(String(offered.instruction)).toContain('core.recall_result with {"callId": <sameAsCall>} shows the page that call ended on');
+    expect(String(offered.instruction)).not.toMatch(/how long a call waits/u);
+    const waited = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { ...earlier, timingLeftOut: true }, recallOffered: true });
+    expect(String(waited.instruction)).toMatch(/Changing only how long a call waits does not make it a different call/u);
+    expect(waited.then).toEqual({ outcome: "same_result", resultCode: "web.action.completed" });
+    const absent = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, recallOffered: false });
+    expect(String(absent.instruction)).not.toMatch(/recall_result/u);
+    const unsaid = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier });
+    expect(String(unsaid.instruction)).toMatch(/where core\.recall_result is among your tools/u);
+    const undrafted = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier, recallOffered: true, undrafted: true });
+    expect(String(undrafted.instruction)).toMatch(/recall_result/u);
+    expect(String(undrafted.instruction)).not.toMatch(/amend the draft/u);
+    expect(String(undrafted.instruction)).toMatch(/end this work where it stands/u);
+  });
+
+  it("keeps recall out of the note for a call that failed or changed nothing", () => {
+    for (const outcome of ["failed", "changed_nothing"] as const) {
+      const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { callId: "c1", outcome }, recallOffered: true });
+      expect(String(note.instruction), outcome).not.toMatch(/recall_result/u);
+    }
+  });
 });

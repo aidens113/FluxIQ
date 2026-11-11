@@ -5,5 +5,10 @@
 
 export const AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING = "It needs a person to clear a check on the page before it can go on.";
 
-/** The same, for an attempt that kept getting stuck with nobody to ask whether to go on: it stopped spending and waits (`./interrupted-view.ts`). */
+/**
+ * The same, as rows written before R7 hold it: an attempt that kept getting stuck parked there. No
+ * attempt parks on a loop now (`../attempt/rounds.ts`, steered and never parked), so nothing new
+ * writes these words, but `./interrupted-view.ts` still reads them on those older rows, and they
+ * must stay exactly as those rows hold them.
+ */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING = "It kept getting stuck and there was nobody to ask whether to keep going, so it stopped here without spending more.";
