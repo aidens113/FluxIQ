@@ -67,4 +67,10 @@ describe("a run's executor options and its environment", () => {
     expect(rest(withEnvironment)).toEqual(rest(without));
     expect(rest(without)).toEqual({ inputs: { query: "lamps" }, signal: input.signal, maxSteps: 12, onRecordBatch: input.onRecordBatch });
   });
+
+  it("carry the run's humanness when its request set one, 0 included, and no key when it set none", () => {
+    expect(automationStudioRunGraphOptions({ ...base(), humanness: 60 }).humanness).toBe(60);
+    expect(automationStudioRunGraphOptions({ ...base(), humanness: 0 }).humanness).toBe(0);
+    expect(automationStudioRunGraphOptions(base())).not.toHaveProperty("humanness");
+  });
 });

@@ -22,6 +22,8 @@ import type { AutomationStudioParkingPort } from "../../../../../runtime/automat
 export type AutomationStudioAnswerFirstAttemptInput = {
   /** The generate call's own input: what the answer is held under for a Stop (`./stop-answer.ts`). */
   request: object;
+  /** How human the run acts, 0-100, as the generate request said it (validated by its reader); a caller's own `caller.humanness` wins. Absent means 0. */
+  humanness?: number | undefined;
   /** The service, as the key of its per-service stores and ports (`../attempt-store/store-of.ts`, `./ports.ts`), and by what applying a proven Flow calls on it (`../apply-proven/flow-writer.ts`). */
   owner: AutomationStudioAnswerFirstFlowWriter;
   stores: {

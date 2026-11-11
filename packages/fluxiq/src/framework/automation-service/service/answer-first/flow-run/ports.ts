@@ -25,7 +25,7 @@ export type AutomationStudioAnswerFirstFlowRunEngine = {
 
 export type AutomationStudioAnswerFirstFlowRunPorts = {
   /** `caller`, where a caller drove the attempt: its `inputs` are the run's inputs (`./input-bound-steps.ts`). */
-  input: Pick<AutomationStudioAnswerFirstAttemptInput, "projectId" | "flowId" | "registry" | "resolution" | "binding" | "instructionText" | "instructionIds" | "startLocation" | "caller"> & {
+  input: Pick<AutomationStudioAnswerFirstAttemptInput, "projectId" | "flowId" | "registry" | "resolution" | "binding" | "instructionText" | "instructionIds" | "startLocation" | "caller" | "humanness"> & {
     size?: AutomationStudioAnswerFirstAttemptInput["size"];
     routing: Pick<AutomationStudioAnswerFirstAttemptInput["routing"], "signaturesOf">;
     cancellation: Pick<AutomationStudioAnswerFirstAttemptInput["cancellation"], "signal">;

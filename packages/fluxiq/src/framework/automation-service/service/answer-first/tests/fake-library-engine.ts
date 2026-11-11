@@ -214,6 +214,8 @@ export type FlowRunFixtureOptions = {
   instruction?: string;
   /** The Flow's size bounds, where its setting raised them. */
   size?: AutomationStudioAnswerFirstFlowRunPorts["input"]["size"];
+  /** The level the generate request set, as the attempt input carries it. */
+  humanness?: number;
 };
 
 /** A real service on the fake target, and the Flow run stage's ports over it, with no model anywhere. */
@@ -258,7 +260,8 @@ export async function flowRunFixture(options: FlowRunFixtureOptions, cleanups: (
     projectId: project.id, flowId: flow.flowId, registry, resolution, binding: { ...fakeLibraryBinding(target.library), ...options.binding },
     instructionText, instructionIds: ["instruction.task"], startLocation: options.startLocation,
     routing: { signaturesOf: () => undefined }, cancellation: { signal: () => stop.signal },
-    ...(options.size ? { size: options.size } : {})
+    ...(options.size ? { size: options.size } : {}),
+    ...(options.humanness !== undefined ? { humanness: options.humanness } : {})
   };
   const engineOf = () => {
     const engine = automationStudioAnswerFirstFlowRunEngineOf({ ...input, owner: service });

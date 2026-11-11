@@ -54,6 +54,8 @@ type RunGraphOptionsInput = {
   parking?: AutomationStudioGraphExecutionOptions["parking"];
   /** Where the run's clock, waits and randomness come from; absent, the live environment. */
   environment?: AutomationStudioRunEnvironment | undefined;
+  /** How human the person wants the run to act, 0-100, when the run's request set it; absent leaves the options as they were (level 0). */
+  humanness?: number | undefined;
 };
 
 /** What a real run names to carry an attempt's acts: the service whose store holds them, and which Flow and run. */
@@ -98,5 +100,6 @@ function runGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExec
   if (input.maxSteps !== undefined) options.maxSteps = input.maxSteps;
   if (input.onRecordBatch) options.onRecordBatch = input.onRecordBatch;
   if (input.parking) options.parking = input.parking;
+  if (input.humanness !== undefined) options.humanness = input.humanness;
   return automationStudioEnvironmentExecutorOptions(options, input.environment ?? automationStudioLiveRunEnvironment);
 }
