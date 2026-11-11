@@ -1,4 +1,5 @@
 import { fluxiqRuntimeTextWithholding } from "../../../../../runtime/index.ts";
+import { withheldData } from "./withheld-data.ts";
 
 /** An event's or a result's own ids, enums, digests and times, which the API matches on: never data a secret could reach, kept whole so the protocol still reads. */
 const KEPT_TEXT = new Set(["runId", "eventId", "flowId", "stepId", "name", "specHash", "flowPath", "status", "path", "type", "state", "need", "resumeHandle", "correlationId", "overridesDigest"]);
@@ -20,16 +21,9 @@ export function fluxNodeWithheldForProgram<T>(value: T, secrets: readonly string
 
 /** An event or a result: its own fields kept, everything else withheld as data; an `ended` event's result is a result. */
 function own(value: unknown, text: (text: string) => string): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return data(value, text, 0);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return withheldData(value, text, 0);
   return Object.fromEntries(Object.entries(value).map(([key, item]) => {
     if (KEPT_WHOLE.has(key) || (KEPT_TEXT.has(key) && typeof item === "string")) return [key, item];
-    return [key, key === "result" ? own(item, text) : data(item, text, 0)];
+    return [key, key === "result" ? own(item, text) : withheldData(item, text, 0)];
   }));
-}
-
-function data(value: unknown, text: (text: string) => string, depth: number): unknown {
-  if (typeof value === "string") return text(value);
-  if (!value || typeof value !== "object" || depth > 64) return value;
-  if (Array.isArray(value)) return value.map((item) => data(item, text, depth + 1));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [text(key), data(item, text, depth + 1)]));
 }

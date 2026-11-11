@@ -35,7 +35,12 @@ async function filesHolding(root: string, text: string): Promise<string[]> {
   for (const entry of await readdir(root, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
     const file = path.join(entry.parentPath, entry.name);
-    if ((await readFile(file)).includes(text)) found.push(path.relative(root, file));
+    // A file Core removes between the listing and the read (a journal, a temp file) holds nothing to find.
+    const bytes = await readFile(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return Buffer.alloc(0);
+      throw error;
+    });
+    if (bytes.includes(text)) found.push(path.relative(root, file));
   }
   return found;
 }

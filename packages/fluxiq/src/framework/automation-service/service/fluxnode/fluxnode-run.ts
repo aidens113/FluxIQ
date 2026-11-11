@@ -53,8 +53,14 @@ export class FluxNodeRun {
   overridesDigest: string | undefined;
 
   /** `secrets`: the values of the run's secret inputs, withheld from every event and the result. */
-  constructor(readonly runId: string, readonly target: FluxNodeRunTarget, readonly carried: FluxNodeRunCarried, readonly eventsPath: string, private readonly now: () => number, private readonly secrets: readonly string[] = []) {
+  constructor(readonly runId: string, readonly target: FluxNodeRunTarget, readonly carried: FluxNodeRunCarried, readonly eventsPath: string, private readonly now: () => number, private secrets: readonly string[] = []) {
     this.startedAt = now();
+  }
+
+  /** More secret values to withhold from every event told and the result from now on: a pipeline's mapped calls bring theirs as they are made. */
+  withhold(more: readonly string[]): void {
+    const fresh = more.filter((text) => text !== "" && !this.secrets.includes(text));
+    if (fresh.length) this.secrets = [...this.secrets, ...fresh];
   }
 
   get result(): FluxNodeRunResult | undefined {

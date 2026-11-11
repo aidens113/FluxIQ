@@ -18,7 +18,10 @@ import type { FluxNodePipelineContext } from "./fluxnode-pipeline-context.ts";
 import { PipelineCallEnded } from "./call-ended.ts";
 import { fluxNodePipelineResult, type PipelineResultInput } from "./result.ts";
 import { pipelineSdkPort } from "./sdk-port.ts";
+import { PipelineSecrets } from "./pipeline-secrets.ts";
 import { PipelineSpend } from "./spend.ts";
+import { fluxNodePipelineStateWithoutSecrets } from "./secret-safe-state.ts";
+import { withheldDatasetWriter } from "./withheld-dataset-writer.ts";
 import type { FluxNodeRegisteredPipeline } from "./registered-pipeline.ts";
 
 const NO_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu;
@@ -29,12 +32,14 @@ export async function runFluxNodePipeline(context: FluxNodePipelineContext, run:
   const options = resolveFluxNodeOptions(undefined, run.carried.options);
   run.budgetUsd = options.budgetUsd;
   const spend = new PipelineSpend();
+  // The secret values record fields give mapped calls, withheld from here on everywhere the pipeline keeps or shows them (`./pipeline-secrets.ts`).
+  const secrets = new PipelineSecrets((texts) => run.withhold(texts));
   const abort = new AbortController();
   run.whenStopped(() => abort.abort());
   const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => run.stop("The run's time ran out."), options.timeoutMs);
   const ports: PipelineRunContext["ports"] = {
-    callFlow: fluxNodeFlowCaller({ flows: context.flows, runChild: context.runChild, parent: run, spend }),
-    writeDataset: context.datasets.writerFor(run.runId), readDataset: context.datasets.read, state: context.state, sdk: pipelineSdkPort(run), now: context.now,
+    callFlow: fluxNodeFlowCaller({ flows: context.flows, runChild: context.runChild, parent: run, spend, secrets }),
+    writeDataset: withheldDatasetWriter(context.datasets.writerFor(run.runId), secrets), readDataset: context.datasets.read, state: await fluxNodePipelineStateWithoutSecrets(context.state, pipeline, context.flows), sdk: pipelineSdkPort(run), now: context.now,
     ...(context.fetch === undefined ? {} : { fetch: context.fetch }), ...(context.writeFile === undefined ? {} : { writeFile: context.writeFile })
   };
   const finished = (fields: Omit<PipelineResultInput, "run" | "registered" | "path" | "cost" | "resumeHandle" | "endedAt">): FluxNodeRunOutcome => ({

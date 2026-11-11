@@ -5,3 +5,4 @@ export { fluxNodeSecretGoalInputs } from "./goal-inputs.ts";
 export { fluxNodeInputsWithoutSecrets } from "./without-secrets.ts";
 export { fluxNodeWithheldForProgram } from "./withheld-for-program.ts";
 export { fluxNodeWithoutSecretDefaults } from "./secret-defaults.ts";
+export { fluxNodeWithheldRecords } from "./withheld-records.ts";
