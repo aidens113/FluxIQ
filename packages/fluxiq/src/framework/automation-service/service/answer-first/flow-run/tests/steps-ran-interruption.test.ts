@@ -30,7 +30,7 @@ function ran(banner: Partial<AutomationStudioFlowDraftStep>) {
     { ...savedStep(3, "domain.library.read_loans"), id: "d3" }
   ] as AutomationStudioFlowDraftStep[];
   const trace = { attempts: [attempt("n1"), attempt("n2", { reason: "target_absent", code: "executor.state.absent", notDone: true }), attempt("n3")] };
-  return automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: plan, locator, saved, ended: { reachedEnd: true, trace, graph } as never });
+  return automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: plan, locator, saved, ended: { reachedEnd: true, trace, graph } as unknown as Parameters<typeof automationStudioAnswerFirstFlowRunStepsRan>[0]["ended"] });
 }
 
 const SHAPE = { columns: ["title"], empty: false };
