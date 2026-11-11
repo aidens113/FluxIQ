@@ -4,7 +4,7 @@
 // left, so a judge shown only that page said "unknown" of rows it could not place (run-mwa19obz-abd5d558,
 // judge 0032: "the only page shown is page 3 ... pages 1 and 2 are not shown", the rows having been read
 // from them). Core already holds where each read read and how many rows it kept (the row sink's pages);
-// this says them, one entry each, bounded, with no page text. An address that a screen drops is withheld
+// this says them, one entry each, every read and nothing cut, with no page text. An address that a screen drops is withheld
 // here, and the summary is then marked withheld, as a screened `looked` line is.
 //
 // **Which rows each read kept, and what it left out (run-mwaknxf9-7549d126).** A site that lists one product
@@ -31,16 +31,10 @@ import { automationStudioResultConditionName, automationStudioResultReadAloneRow
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
 
-/** The latest reads shown, and how much of an address, a place and a value a condition read. */
-const READS_SHOWN = 40;
-const WHERE_CHARS = 300;
-const PLACE_CHARS = 80;
-const FOUND_CHARS = 200;
-
 type ShownLeftOut = { by: string; rows: string[]; sameLabelKept?: string[] };
 type ShownPage = { where?: string; place?: string; kept: number; keptRows?: string[]; leftOut?: ShownLeftOut[] };
 
-export type AutomationStudioFlowLessReadPagesShown = { pages: ShownPage[]; notShown?: number; withheld: boolean };
+export type AutomationStudioFlowLessReadPagesShown = { pages: ShownPage[]; withheld: boolean };
 
 /** The reads of a result made of rows, each as one entry; none for a result with no rows or no read that said where. */
 export function automationStudioFlowLessReadPagesShown(
@@ -50,8 +44,8 @@ export function automationStudioFlowLessReadPagesShown(
 ): AutomationStudioFlowLessReadPagesShown {
   const reads = summary.rows ? summary.readPages ?? [] : [];
   let withheld = false;
-  const line = (text: string, most: number): string => {
-    const screened = screen(cut(text, most));
+  const line = (text: string): string => {
+    const screened = screen(text);
     if (screened.withheld) withheld = true;
     return screened.text;
   };
@@ -60,18 +54,18 @@ export function automationStudioFlowLessReadPagesShown(
   };
   const labelColumn = summary.rows?.columns[0]?.id;
   const keptByLabel = keptLabelTest(reads.flatMap((read) => read.rows ?? []), labelColumn);
-  const shown = reads.slice(-READS_SHOWN).map((read): ShownPage => {
+  const shown = reads.map((read): ShownPage => {
     const keptRows = read.rows && labelColumn !== undefined ? labels(read.rows, labelColumn, deniedKeys, onWithheld) : undefined;
-    const leftOut = read.leftOut ? leftOutShown(read.leftOut, deniedKeys, (text) => line(text, FOUND_CHARS), onWithheld, keptByLabel) : undefined;
+    const leftOut = read.leftOut ? leftOutShown(read.leftOut, deniedKeys, line, onWithheld, keptByLabel) : undefined;
     return {
-      ...(read.where ? { where: line(read.where, WHERE_CHARS) } : {}),
-      ...(read.place ? { place: line(read.place, PLACE_CHARS) } : {}),
+      ...(read.where ? { where: line(read.where) } : {}),
+      ...(read.place ? { place: line(read.place) } : {}),
       kept: Number.isSafeInteger(read.kept) && read.kept >= 0 ? read.kept : 0,
       ...(keptRows?.length ? { keptRows } : {}),
       ...(leftOut?.length ? { leftOut } : {})
     };
   });
-  return { pages: shown, ...(reads.length > shown.length ? { notShown: reads.length - shown.length } : {}), withheld };
+  return { pages: shown, withheld };
 }
 
 /** Each kept row by its label, its value in the result's first column, screened as a left-out row's label is. */
@@ -139,12 +133,6 @@ function conditionWording(condition: JsonValue | undefined, columns: JsonObject 
   const field = condition.field;
   const column = typeof field === "string" && columns ? Object.entries(columns).find(([key, read]) => key === field || read === field)?.[0] : undefined;
   return automationStudioResultReadConditionText(column === undefined ? condition : { ...condition, field: column }, columns, deniedKeys);
-}
-
-/** At most `most` characters, by code point, with `…` where it was cut. */
-function cut(text: string, most: number): string {
-  const characters = [...text];
-  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function isRecord(value: unknown): value is JsonObject {

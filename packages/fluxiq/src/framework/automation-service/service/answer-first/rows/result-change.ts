@@ -15,6 +15,9 @@
 // `resultList`: what the result holds now (its rows and the reads it came from) and what it held just
 // before (rows, columns, reads, and the call that last read it), with what to do. Only these two
 // changes are told; a read that carried its list on, or left the result where it was, adds nothing.
+// A pass of a run (a saved step's replay) that only carried its list on stamps the result's rows and reads after it
+// (`carried_on`, counts only, no words), so the run's note (`runtime/llm/node-tools/run/result-list.ts`) states the result
+// as the sink holds it after the run, not as the first pass that switched it left it (run-mwbk0twg).
 // The words name no site, task or row: counts, a list's own columns and the call ids are the model's own.
 //
 // **And a read that did not change the result because it lacks a condition of it (run-mwaudvnh-c208d32c).** A read of
@@ -41,6 +44,12 @@ export type AutomationStudioAnswerFirstResultChange =
       before: { rows: number; columns: string[]; pages: AutomationStudioAnswerFirstReadPage[]; lastReadBy?: string };
     }
   | {
+      /** `carried_on`: a run's pass added to the result's list; counts only, so a run's note can state the result as it stands after its last pass. */
+      kind: "carried_on";
+      /** The result after the read. */
+      now: Held;
+    }
+  | {
       /** `held_apart`: this read lacks a condition of the result, so its rows are a list of their own and the result is as it was. */
       kind: "held_apart";
       /** The result, unchanged by the read. */
@@ -62,7 +71,9 @@ const STARTED_OVER = "Core's note on the result, not on the page: this read star
 /** The answer with Core's note on the result beside what the domain answered (header). */
 export function automationStudioAnswerFirstResultChangeTold(answer: AutomationStudioLlmEvidenceToolExecutionResult, change: AutomationStudioAnswerFirstResultChange): AutomationStudioLlmEvidenceToolExecutionResult {
   const result = { rows: change.now.rows, pages: change.now.pages.map(shown) };
-  const note: JsonObject = change.kind === "held_apart"
+  const note: JsonObject = change.kind === "carried_on"
+    ? { code: "answer_first.result_list_carried_on", ...result }
+    : change.kind === "held_apart"
     ? { code: "answer_first.result_list_kept", ...result, apart: { rows: change.apart.rows, pages: change.apart.pages.map(shown) }, missing: [...change.missing], instruction: HELD_APART }
     : {
         code: change.kind === "other_list" ? "answer_first.result_list_replaced" : "answer_first.result_list_started_over",
