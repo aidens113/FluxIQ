@@ -8,12 +8,10 @@ export function writeFluxNodeRefusal(response: ServerResponse, refusal: FluxNode
     error: {
       code: refusal.code,
       message: refusal.message,
-      ...(refusal.issues && refusal.issues.length > 0 ? { issues: refusal.issues.slice(0, 200) } : {}),
-      ...(refusal.retryAfterMs === undefined ? {} : { retryAfterMs: refusal.retryAfterMs })
+      ...(refusal.issues && refusal.issues.length > 0 ? { issues: refusal.issues.slice(0, 200) } : {})
     }
   };
   const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store", ...refusal.headers };
-  if (refusal.retryAfterMs !== undefined) headers["retry-after"] = String(Math.max(1, Math.ceil(refusal.retryAfterMs / 1000)));
   if (response.headersSent) {
     response.destroy();
     return;

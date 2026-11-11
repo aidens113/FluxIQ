@@ -43,6 +43,7 @@ import { automationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioRunOverrides, runWithAutomationStudioRunOverrides } from "../../../../../runtime/run-overrides/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
@@ -74,6 +75,14 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 import { automationStudioAnswerFirstHoldAnswer } from "./stop-answer.ts";
 
 export async function runAutomationStudioAnswerFirstAttempt(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
+  // A person's press on a FluxNode's attempt comes from the panel, outside `runFluxNode`, so the overrides frame is not set: the attempt's
+  // kept options carry it (`../caller/kept.ts`) and it is set here. A frame already set (a FluxNode run's own) is never wrapped or replaced.
+  const frame = given.caller?.runOverrides;
+  if (frame === undefined || automationStudioRunOverrides() !== undefined) return await attemptRun(given);
+  return await runWithAutomationStudioRunOverrides(frame, () => attemptRun(given));
+}
+
+async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   // The library is offered here, once, before anything runs: no part that can be offered leaves `given` as it is (`../../project-parts/known-parts.ts`).
   // A caller's grant and person port, where it brought them (`../caller/applied.ts`); a chat attempt's input is left as it is.
   const input = automationStudioAnswerFirstCallerApplied(await automationStudioAnswerFirstKnownParts(given));
@@ -163,6 +172,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const sink = automationStudioAnswerFirstRowSink({
     runId,
     readRowsKey: input.binding?.readRowsKey,
+    // The columns the person named are the result's, and no others (`../rows/row-sink.ts`, run-mwb2kkv5-1baeee11).
+    instructionText: input.instructionText,
     // A host with no project store has nowhere to put rows: the sink's own account is all there is, and a read-back answers from it.
     onRecordBatch: datasets.available ? datasets.recordBatchHandler(projectId, runId) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
     reader: {
@@ -202,6 +213,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
       personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
+      // The judge's request is built to the attempt model's window, as every round's is; a routed judge model's own window still wins (`runtime/llm/harness/served-limits.ts`).
+      ...(input.provider.tokenLimits ? { tokenLimits: input.provider.tokenLimits } : {}),
       ...(cancellation.signal() ? { signal: cancellation.signal() } : {}),
       run: async (request) => {
         const judged = await input.runHarness(request);
@@ -244,7 +257,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const arrived = (carried?.prior.liveSteps ?? 0) > 0;
   const run: AutomationStudioAnswerFirstAttemptRun = {
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
-    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardReached: 0, askedAgain: again !== undefined || carried?.askedAgain === true,
+    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardPassed: new Set(), askedAgain: again !== undefined || carried?.askedAgain === true,
     attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
     record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },

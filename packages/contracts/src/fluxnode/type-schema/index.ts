@@ -4,5 +4,6 @@
 export * from "./canonical.ts";
 export * from "./formats.ts";
 export * from "./parse.ts";
+export * from "./secret-min-length.ts";
 export * from "./type-schema.ts";
 export * from "./validate.ts";

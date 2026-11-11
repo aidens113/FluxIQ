@@ -233,7 +233,7 @@ function unboundedLoopIssues(subflow: AutomationStudioFlowBootstrapSubflow, subf
       const ordered = [...component].sort((a, b) => (indexOf.get(a) ?? 0) - (indexOf.get(b) ?? 0));
       return authoringError(
         "flow_draft.loop_unbounded",
-        `The nodes ${ordered.map((key) => `"${key}"`).join(", ")} go round in a loop that no For Each or Repeat bounds, so a run could go round it for ever. Repeat a span with \`repeat over:\` once for each row of a listing, or \`repeat while:\` with a last step that answers ended or a \`repeat most:\`.`,
+        `The nodes ${ordered.map((key) => `"${key}"`).join(", ")} go round in a loop that no For Each or Repeat bounds, so a run could go round it for ever. Repeat a span with \`repeat over:\` once for each row of a listing, or \`repeat while:\` naming a last step that answers ended when there is nothing more.`,
         `plan.subflows.${subflowIndex}.nodes.${indexOf.get(ordered[0]!) ?? 0}`
       );
     });

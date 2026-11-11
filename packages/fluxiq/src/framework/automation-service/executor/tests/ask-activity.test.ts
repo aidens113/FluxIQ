@@ -17,9 +17,16 @@ let seen: ClientGatewayActivity[] = [];
 /** The ids of the asks the run opened, in order; each wait mints a fresh `person-needed.<uuid>`. */
 let opened: string[] = [];
 let unsubscribe: () => void = () => undefined;
+/**
+ * Whether the person has completed the robot check. Continue says they did, and a step whose check was
+ * cleared runs again on the page they left (`engine/automation/person-cleared.ts`), so the check must be
+ * gone once they press it: a stand-in that raised it on every call would be a check nobody can clear.
+ */
+let checkCleared = false;
 beforeEach(() => {
   seen = [];
   opened = [];
+  checkCleared = false;
   unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
 });
 afterEach(() => unsubscribe());
@@ -57,7 +64,7 @@ const CHECK_RESULT: AutomationNodeExecutionResult = {
 const options: AutomationStudioGraphExecutionOptions = {
   now: () => NOW,
   delay: () => Promise.resolve(),
-  nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "check" ? CHECK_RESULT : { status: "success", route: "success", outputs: {} } })
+  nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "check" && !checkCleared ? CHECK_RESULT : { status: "success", route: "success", outputs: {} } })
 };
 
 /** A port's `open`, which notes the ask id so the rows can be checked against it. */
@@ -69,12 +76,13 @@ function choice(askId: string, value: string): AutomationStudioAskAnswer {
   return { askId, answeredAt: NOW + 5, kind: "choice", value, actorId: null };
 }
 
-/** A port that holds the run open and answers the same way; `null` is nobody answering. */
+/** A port that holds the run open and answers the same way; `null` is nobody answering. Continue comes once the person completed the check. */
 function inPlace(value: string | null, during?: () => void): AutomationStudioParkingPort {
   return {
     open,
     awaitAnswer: (ask) => {
       during?.();
+      if (value === AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION) checkCleared = true;
       return Promise.resolve(value === null ? undefined : choice(ask.askId, value));
     }
   };
@@ -139,6 +147,7 @@ describe("a run's wait on the person, in the activity stream", () => {
     const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open } }));
     expect(parked.status).toBe("waiting");
     expect(opened).toEqual([parked.parked!.ask.askId]);
+    checkCleared = true;
     const resumed = await inRun(() => resumeAutomationStudioGraph({ flow, trace: parked, resumption: { kind: "answer", answer: choice(parked.parked!.ask.askId, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION) }, options }));
     expect((resumed as { trace: AutomationStudioGraphExecutionTrace }).trace.status).toBe("succeeded");
     expect(askRows()).toEqual([

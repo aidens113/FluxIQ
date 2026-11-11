@@ -59,3 +59,12 @@ describe("defineFluxNode", () => {
     expect(node.spec.hasCheck).toBe(false);
   });
 });
+
+describe("defineFluxNode overrides", () => {
+  it("puts typed overrides on the spec and refuses a locked section", () => {
+    const base = { name: "demo.with-overrides", runtime: "web" as const, goal: "Read the title.", start: "https://example.test/", scope: { sites: ["example.test"], acts: ["read" as const] } };
+    const node = defineFluxNode({ ...base, overrides: { prompts: { "explorer.role.task": { mode: "append", text: "Prefer the header." } }, judgeCriteria: ["Not empty."] } });
+    expect(node.spec.overrides).toEqual({ prompts: { "explorer.role.task": { mode: "append", text: "Prefer the header." } }, judgeCriteria: ["Not empty."] });
+    expect(() => defineFluxNode({ ...base, overrides: { prompts: { "core.output_rules": { mode: "replace", text: "x" } } } })).toThrow(SdkError);
+  });
+});

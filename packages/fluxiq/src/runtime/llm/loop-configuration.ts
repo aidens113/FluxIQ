@@ -22,7 +22,7 @@ import type { AutomationStudioLlmUsageSummary } from "./harness/index.ts";
 import type { AutomationStudioLlmStepLogPageReader } from "./step-log/index.ts";
 import type { AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopAttemptRecord, AutomationStudioLlmLoopSignal, AutomationStudioLlmLoopSignalAnswer } from "./repeat-guard/loop-detection/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
-import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftLoopNeverEnds, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-authoring/draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioRunEnvironment } from "../../framework/automation-service/environment/index.ts";
@@ -382,6 +382,17 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * `../flow-draft/amendment/types.ts`; week report W1). Absent, every claim is made.
      */
     claimRefused?: AutomationStudioFlowDraftClaimRefused;
+    /**
+     * Asked of each repeat an `amend_draft` writes that runs its span again
+     * while the span's last step succeeds: assembly's own refusal when the
+     * loop could end only by failing -- its last step can answer no route that
+     * ends it, and no `most` the person gave bounds it -- which is then taken
+     * back and told `repeat_never_ends` with that sentence, naming the nodes
+     * that do end one (`./harness-options/draft-acts.ts`,
+     * `../flow-authoring/draft/amendment/types.ts`). Absent, the loop is
+     * refused only when the Flow is assembled.
+     */
+    loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds;
     /** The route the person named, or that they named none, shown with the draft once known (`./harness-options/draft-route.ts`). */
     route?: () => AutomationStudioFlowDraftRoute | undefined;
     /**
@@ -481,6 +492,15 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * `node-tools/replay-draft.ts`). Absent (an instruction-only build), none.
    */
   partOf?: AutomationStudioFlowDraftDryRunGateInput["partOf"];
+  /**
+   * The columns the instruction names, as the caller read them once with
+   * `automationStudioFlowBootstrapInstructionColumns(instructionText)`: the dry
+   * run, a part run and a forward run send every read the record output the
+   * saved Flow's assembly gives it, so a replayed read declares the person's
+   * columns and no others (`node-tools/replay/replay.ts`, run-mwb2kkv5-1baeee11).
+   * Absent or empty, nothing changes.
+   */
+  namedColumns?: AutomationStudioFlowDraftDryRunGateInput["namedColumns"];
   signal?: AbortSignal;
 };
 

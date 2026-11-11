@@ -18,9 +18,10 @@ import { automationStudioAnswerFirstSystemInstructions } from "../../../../../ru
 import type { AutomationStudioAnswerFirstRoundEnd } from "../../../../../runtime/answer-first/keep-going/index.ts";
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/automation-parking/index.ts";
-import { automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioFlowBootstrapInstructionColumns, automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioFlowDraftStepCopy, automationStudioFlowDraftStepId } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
+import { runWithAutomationStudioLlmModelRole } from "../../../../../runtime/llm/role-routing/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../../../runtime/llm/decision-handlers/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
@@ -91,12 +92,14 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     askedRepeats: (act) => run.asked(act.act),
     forwardRun: {
       ...automationStudioAttemptActForward(run.record),
-      // How far forward runs got, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
+      // Which steps forward runs got through, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
       passed: (step, _row, answer) => {
-        if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardReached = Math.max(run.forwardReached, step.position);
+        if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardPassed.add(automationStudioFlowDraftStepId(step));
       }
     },
     lastingActs: () => (lasting ??= run.permissions.instructedLastingActs(automationStudioInstructedActs(input.instructionText))),
+    // The columns the person named: a forward run's read declares them as the saved Flow's does (`runtime/llm/node-tools/replay/replay.ts`).
+    namedColumns: automationStudioFlowBootstrapInstructionColumns(input.instructionText),
     draft: {
       maxAmendments: input.limits.loop.maxIterations,
       ...(run.steps.length ? { seed: run.steps } : {}),
@@ -106,6 +109,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       },
       actsMissing: acts.actsMissing,
       claimRefused: acts.claimRefused,
+      // A while-loop that could end only by failing is refused as written, not after the answer (run `run-mwblz4aq-0baa810a`).
+      loopNeverEnds: acts.loopNeverEnds,
       ...(acts.route ? { route: acts.route } : {})
     },
     completionSchema: AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA,
@@ -119,7 +124,10 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
   };
   const signalled = automationStudioAnswerFirstLoopSignal({ askPerson: () => { run.askPerson = true; } });
   try {
-    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
+    const loopInput = { ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result: JsonObject) => checked(run, result) };
+    // A round repairing the saved Flow calls the repair model: after its run broke (the path says so until a fresh round replaces it, `./rounds.ts`), or as the first round of a repair route, whose saved steps did not assemble (`../route/`). A fresh exploration stays on the explore model.
+    const repairing = run.path === "run_flow_then_repair" || (run.route.kind === "repair" && round.ordinal === 1);
+    const result = await (repairing ? runWithAutomationStudioLlmModelRole("repair", () => runAutomationStudioLlmEvidenceLoop(loopInput)) : runAutomationStudioLlmEvidenceLoop(loopInput));
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
     automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
     if (run.refusalEndedRound) {

@@ -39,4 +39,15 @@ export type ModelProvider<Request extends ModelRequest = ModelRequest> = {
    * not say is reserved at the call's ceiling.
    */
   estimateCostUsd?(tokens: { inputTokens: number; outputTokens: number }): number;
+  /**
+   * The provider that serves `request`, where this one hands requests to others
+   * by what they ask: a run's model per role (`../../llm/role-routing/`). A
+   * provider is bound to one model, so `metadata`, `measureInput` and
+   * `estimateCostUsd` speak for the model that serves; whoever measures, prices
+   * or names a call asks this first (`../../llm/harness/run.ts`), and the call is
+   * then held, charged and recorded at the model that served it. A decorator
+   * forwards it, applying itself to what it answers. Optional: a provider that
+   * does not say serves every request itself.
+   */
+  servedBy?(request: Request): ModelProvider<Request>;
 };

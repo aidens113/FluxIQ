@@ -20,11 +20,23 @@ export type JsonTypeName = (typeof JSON_TYPE_NAMES)[number];
  * - `date-time`: RFC 3339, such as `2026-11-09T14:30:00Z` or `...+01:00`;
  * - `date`: a calendar date, `2026-11-09`;
  * - `uri`: an absolute URI with a scheme and no whitespace;
- * - `email`: an address with a local part and a dotted domain.
+ * - `email`: an address with a local part and a dotted domain;
+ * - `secret`: any text, which Core withholds: a FluxNode input only (`JSON_TYPE_SECRET_FORMAT`).
  */
-export const JSON_TYPE_FORMATS = Object.freeze(["date-time", "date", "uri", "email"] as const);
+export const JSON_TYPE_FORMATS = Object.freeze(["date-time", "date", "uri", "email", "secret"] as const);
 
 export type JsonTypeFormat = (typeof JSON_TYPE_FORMATS)[number];
+
+/**
+ * The format that marks a FluxNode input as a secret, such as a password or an API key. Any text
+ * fits it; what it changes is what Core does with the value: no model is shown it (the goal names
+ * the input instead, and Core enters it), no saved Flow, export or pinned file holds it, and every
+ * step file, trace, event and result shows `[withheld]` in its place. Allowed only on a string input
+ * declared directly under a FluxNode's `inputs.properties` (`parseFluxNodeInputs`), with no
+ * `default`, `examples`, `const` or `enum` beside it; refused on an output, a pipeline's inputs, a
+ * data step's type and any nested value, since each of those is returned or stored as it is.
+ */
+export const JSON_TYPE_SECRET_FORMAT = "secret" satisfies JsonTypeFormat;
 
 /**
  * A schema in the supported subset. `{}` accepts any JSON value. A value that may be

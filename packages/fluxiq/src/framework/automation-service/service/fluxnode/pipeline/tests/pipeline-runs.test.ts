@@ -129,6 +129,10 @@ describe("a pipeline maps a FluxNode over records", () => {
 
     const refused = await lane.fluxNodes.start(OWNER, { pipeline: parsedPipeline(REPORT), inputs: { titles: "not a list" } });
     expect(refused).toMatchObject({ ok: false, refusal: { code: "invalid_inputs" } });
+
+    // A registered name that holds a pipeline takes no overrides either (the contract refuses an inline one).
+    const byName = await lane.fluxNodes.start(OWNER, { name: "library.loan-report", inputs: TITLES, overrides: { judgeCriteria: ["Every title is listed."] } });
+    expect(byName).toMatchObject({ ok: false, refusal: { code: "invalid_request", issues: [{ path: "/overrides", code: "run_request.overrides_on_pipeline" }] } });
   });
 
   it("ends stopped when the program stops it while a callback waits", async () => {

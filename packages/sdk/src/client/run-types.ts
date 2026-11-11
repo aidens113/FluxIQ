@@ -2,6 +2,7 @@
 
 import type { JsonObject } from "@fluxiq/contracts/core";
 import type { FluxNodeOptions, FluxNodeRunEvent, FluxNodeRunResult } from "@fluxiq/contracts/fluxnode";
+import type { FluxNodeOverridesInput } from "../define/index.ts";
 
 /** The `person_needed` event: only a person can go on. */
 export type PersonNeeded = Extract<FluxNodeRunEvent, { type: "person_needed" }>;
@@ -14,7 +15,9 @@ export type TransformFunction = (records: JsonObject[]) => JsonObject[] | Promis
 
 /**
  * - `signal`: aborting it stops the run, which then ends `stopped` with what it has;
- * - `overrides`: run options that replace the declared ones (`retries` stays at least 3);
+ * - `overrides`: this run's options (`retries`, `judge`, `budgetUsd`, `model`, `mode`, `timeoutMs`; `retries` stays at least 3)
+ *   and FluxNode overrides (`prompts`, `judgeCriteria`, `tools`, `models`, `deadlines`, `retryWaits`, `pace`), each replacing
+ *   the declared one. The SDK sends the first group as `options`, the second as `overrides`. Not offered on a resume;
  * - `onPersonNeeded`: answers a person-only moment; without it the run ends `waiting_for_person`
  *   with a resume handle;
  * - `onEvent`: sees every event, for progress;
@@ -23,7 +26,7 @@ export type TransformFunction = (records: JsonObject[]) => JsonObject[] | Promis
  */
 export type RunOptions = {
   signal?: AbortSignal;
-  overrides?: FluxNodeOptions;
+  overrides?: FluxNodeOptions & FluxNodeOverridesInput;
   onPersonNeeded?: (event: PersonNeeded) => PersonAnswer | Promise<PersonAnswer>;
   onEvent?: (event: FluxNodeRunEvent) => void;
   transforms?: Record<string, TransformFunction>;

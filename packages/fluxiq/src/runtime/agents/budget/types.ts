@@ -60,6 +60,8 @@ export type AutomationStudioLlmBuildPurseCall = {
   judge?: boolean | undefined;
   /** The provider's price, kept so the purse can price the judging reserve and a round's least decision before either is asked for. */
   price?: AutomationStudioLlmBuildPursePrice | undefined;
+  /** The price of a judge's call, where a run judges on a model of its own (`../../llm/role-routing/`): what the judging reserve is priced at before a judge has been. Absent, `price`. */
+  judgePrice?: AutomationStudioLlmBuildPursePrice | undefined;
 };
 
 /**

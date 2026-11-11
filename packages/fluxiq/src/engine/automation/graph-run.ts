@@ -30,6 +30,7 @@ import type { FluxIQRuntimeWithheldValues } from "../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepAnnounced, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../../runtime/activity/index.ts";
 import { automationStudioReferenceNow } from "../../runtime/reference-time/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP } from "../../runtime/repeat/index.ts";
+import { automationStudioRunSecrets } from "../../runtime/run-secrets/index.ts";
 import { automationStudioRuntimeRepeatGuard } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
@@ -164,6 +165,10 @@ async function runGraphToTrace(
   seed: AutomationStudioGraphRunSeed | undefined,
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioGraphExecutionTrace> {
+  // A run's secret inputs travel beside it, never in its inputs (`runtime/run-secrets/`); here they answer a
+  // binding to their name like any input, and an input the run was given by that name wins.
+  const secrets = automationStudioRunSecrets();
+  if (secrets) options = { ...options, inputs: { ...secrets, ...(options.inputs ?? {}) } };
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
   const repeatTraceProvenance = automationStudioRuntimeRepeatTraceProvenance.frame(options.invocation);

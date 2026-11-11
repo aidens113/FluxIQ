@@ -58,10 +58,9 @@ async function refusal(response: Response): Promise<FluxNodeApiError> {
     const message = typeof loose?.message === "string" ? loose.message : `The engine answered ${response.status}.`;
     return new FluxNodeApiError({ status: response.status, apiCode: code, message });
   }
-  const { code, message, issues, retryAfterMs } = parsed.data.error;
+  const { code, message, issues } = parsed.data.error;
   const details: ConstructorParameters<typeof FluxNodeApiError>[0] = { status: response.status, apiCode: code, message };
   if (issues !== undefined) details.issues = issues;
-  if (retryAfterMs !== undefined) details.retryAfterMs = retryAfterMs;
   return new FluxNodeApiError(details);
 }
 

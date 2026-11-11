@@ -20,14 +20,22 @@
 // is asked once for that attempt and answers `seen`. A step's own `done when:` is still
 // read, as it should be: it asks about the page.
 //
-// **What follows a step not done again.** A lasting one (its act has a class, or its step declares or
-// claims one) says `skipped: "already_done"` among its outputs, the engine's closed word for a step
-// that sent nothing because its lasting act was done. A plain press not done again (a banner's
-// "No thanks" carried from an earlier attempt) says nothing: removing a cover brings about no page
-// of its own, so what follows it is not this case. The steps written on the page
-// that act brings about (the drawer an Add opens, the page a dialog's Done goes to) find that page
-// never came, and the run passes over each one whose control is missing and that does no lasting
-// act, instead of stopping on it (`engine/automation/state-routing/not-arisen.ts`).
+// **What follows a step not done again.** It says `skipped: "already_done"` among its outputs, the
+// engine's closed word for a step that sent nothing because its act was done. Every act this gate
+// refuses is one the record holds as having changed something that stays: declared or claimed, or a
+// press that declared nothing but whose answer said it changed something that stays, held on repeat
+// (`runtime/answer-first/act-record/seed.ts`). A press that only moved the view is never carried, so
+// it is never refused here and is pressed as often as the Flow says. So each act refused here brought
+// about a state of its own, and the steps written on the page it brings about (the drawer an Add
+// opens, the page a dialog's Done goes to) find that page never came: the run passes over each one
+// whose control is missing and that does no lasting act, instead of stopping on it
+// (`engine/automation/state-routing/not-arisen.ts`). Until t897 a refused press with no class of its
+// own said nothing, as if it only removed a cover, so a held press's follow-on step failed on its
+// missing control and the attempt explored from there (`run-mwb5cnxg-003415b4`). That run's held press
+// was a composer's prompt the record should never have held: the press closed one dialog and opened
+// another on the same handles, and the domain read that as a line that now reads otherwise. How
+// precisely a press is held is the act record's reading (`act-record/gate/read-answer.ts`) of what the
+// domain states; this gate trusts it.
 //
 // **What it does not do.** A matching step keeps nothing the first press produced, since
 // the record holds no page values: a later step bound to its output finds none, and says
@@ -68,13 +76,11 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../../components/automation/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { emitAutomationStudioActivityStepSkipped } from "../../../../../runtime/automation-activity/index.ts";
-import { AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT, AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { automationStudioAnswerFirstRunActSettling } from "./settling.ts";
 
 /** Where a node a build wrote keeps its plan key (`flow-bootstrap/adaptation.ts`). */
 const SYMBOLIC_KEY_METADATA = "bootstrapSymbolicKey";
-/** Where a node keeps the consequences its step declared (`engine/automation/defensive/lasting-act.ts`). */
-const DECLARED_CONSEQUENCES_METADATA = AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY;
 const POLICY_OUTPUT_EFFECT = "policy.output.dispatch";
 /** The port a loop hands its current row to (`engine/.../zero-pass-loop.ts`). */
 const ROW_PORT = "item";
@@ -157,7 +163,7 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     admitted = 0;
     const label = request.node.label?.trim();
     told(request.node.id, label || act.what);
-    return { result: skippedResult(label || act.what, act, settling !== undefined, act.classes.length > 0 || claimsAct(request.node) || declaresAct(request.node)) };
+    return { result: skippedResult(label || act.what, act, settling !== undefined) };
   }) as Native;
   if (dispatcher) gated.effectDispatcher = (async (effect, context) => {
     skipped = false;
@@ -186,7 +192,7 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     }
     skipped = true;
     told(outputId, act.what);
-    return skippedResult(act.what, act, settling !== undefined, act.classes.length > 0);
+    return skippedResult(act.what, act, settling !== undefined);
   }) as Dispatcher;
   const host = options.hostRuntime;
   if (host?.routeEffectSeen) {
@@ -210,10 +216,10 @@ function told(ref: string, subject: string): void {
   emitAutomationStudioActivityStepSkipped({ nodeId: ref, said: `Already done: ${subject}`, skipped: { reason: "already_done", subject } });
 }
 
-/** A lasting act's step says it sent nothing because the act was done (header, "What follows a step not done again"). */
-function skippedResult(subject: string, act: AutomationStudioAttemptAct, inTheAttempt: boolean, lasting: boolean): { status: "success"; route: string; outputs: Record<string, JsonValue>; effects: []; message: string } {
+/** A step not done again says it sent nothing because its act was done (header, "What follows a step not done again"). */
+function skippedResult(subject: string, act: AutomationStudioAttemptAct, inTheAttempt: boolean): { status: "success"; route: string; outputs: Record<string, JsonValue>; effects: []; message: string } {
   const may = act.state === "may_have_landed" ? "may already have happened" : "already happened";
-  return { status: "success", route: "success", outputs: lasting ? { skipped: AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT } : {}, effects: [], message: `Already done: ${subject}: it ${may} ${inTheAttempt ? "earlier in this task" : "while the task was being worked out"}, so this run did not do it again.` };
+  return { status: "success", route: "success", outputs: { skipped: AUTOMATION_STUDIO_ALREADY_DONE_OUTPUT }, effects: [], message: `Already done: ${subject}: it ${may} ${inTheAttempt ? "earlier in this task" : "while the task was being worked out"}, so this run did not do it again.` };
 }
 
 /** The closed word a dispatch's answer carries of a pass's row (`domain/src/actions/types.ts`), read as its target's measurement is, wherever the answer holds it. */
@@ -230,12 +236,6 @@ function rowLeftBehind(): AutomationNodeExecutionResult {
 /** The step was refused before anything was sent: failed, as a thing that certainly did not happen, and may be tried again. */
 function notRecorded(): AutomationNodeExecutionResult {
   return { status: "failed", route: "failed", outputs: {}, effects: [], message: NOT_RECORDED_SAID, failure: { category: "ambiguous_or_unknown", code: NOT_RECORDED_CODE, retryable: true, stage: "dispatch", effect: "unacted" } };
-}
-
-/** Whether the step declares a lasting consequence of its own (`engine/automation/defensive/lasting-act.ts`). */
-function declaresAct(node: { metadata?: Record<string, unknown> | undefined }): boolean {
-  const declared = node.metadata?.[DECLARED_CONSEQUENCES_METADATA];
-  return Array.isArray(declared) && declared.some((consequence) => typeof consequence === "string" && consequence.length > 0);
 }
 
 /** The names a Flow step goes by across a revision (`./mergers/from-trial-ledger.ts`). */

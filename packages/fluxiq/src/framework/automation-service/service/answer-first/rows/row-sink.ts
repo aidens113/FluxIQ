@@ -48,6 +48,17 @@
 // judge can read and refuse, and a row wrongly dropped is a result lost. A read that does not join
 // is something else, and `./result-dataset.ts` says when it may become the result.
 //
+// **A saved step's replay is the read it replays (run-mwb9b59w-aa0784db).** A forward run, a dry run or a part run
+// sends a step again as its saved Flow will: the call its step keeps, with the record output assembly derives for
+// it, under the person's named columns. The read the model made had none of that, so by name and columns the replay
+// was another list, and a forward run's re-read of the result's own list replaced it as "a list of its own"
+// (`answer_first.result_list_replaced`). So each read the model made is keyed by the step it is
+// (`automationStudioAnswerFirstRecordedReadKey`, `./dataset-of-read.ts`), and a replay of that step goes into that read's
+// list, ahead of any other rule, as the same read again: it carries the list on or starts it over like any read.
+// Only where it meets the list's conditions and its rows fit the list's schema; a replay that returns fewer of its
+// columns (the named ones) is still that list, its rows tied by the columns they share (`./row-ties.ts`). A replay of
+// a step no read of this exploration made (a seeded Flow's) is as before.
+//
 // **A further page of a list that kept no row is still a page read (run-mwaf6gnt-638d90a0).** A list
 // read in pages whose later page held nothing its conditions keep answers no rows, and stored nothing,
 // so `readPages` named page 1 alone: two judges in a row answered unknown, "only page 1 was read, page 2
@@ -85,8 +96,11 @@
 // nobody asked for, to the chat, the store and the judge alike, while its saved Flow dropped it. So a read's processing, and a
 // run's batch's, gains `columns` -- how a record output says which columns are its answer -- set to the ones the request
 // names, in its order (`askedColumns`). The batch is stored with it: its rows are collected whole, and the store's answer (its
-// page and export), this summary and the read-back show those columns; as the contract says of any `columns`, they are then
-// also the default dedupe key. A `where` the processing declared over a column left out stays shown, as the contract requires.
+// page and export), this summary and the read-back show those columns. The contract makes any `columns` the default dedupe
+// key, and that would merge two distinct rows alike in every named column (two listings told apart only by their links) into
+// one, an answer silently a row short; so the row's identity stays every stored column, as it was before the columns were
+// set, unless the processing declared its own dedupe. A `where` the processing declared over a column left out stays shown,
+// as the contract requires.
 // Only where every named column is a stored column, met exactly or with case and separators set aside as the build matches one:
 // a name none meets may be a column stored under another name ("url" read as `link`), and dropping the rest would drop a
 // column the person asked for. Nothing changes with no instruction, one that names no column, processing that declares its
@@ -102,7 +116,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../..
 import { stableJson } from "../../stable-json.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 import { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
-import { automationStudioAnswerFirstReadDatasetId } from "./dataset-of-read.ts";
+import { automationStudioAnswerFirstReadDatasetId, automationStudioAnswerFirstRecordedReadKey } from "./dataset-of-read.ts";
 import { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
 import { automationStudioAnswerFirstReadRows } from "./found-rows.ts";
 import { automationStudioAnswerFirstListAfterRead } from "./list-after-read.ts";
@@ -159,6 +173,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const ran = new Set<string>();
   /** Reads that answered, rows or none, not lost to the store (`readsAnswered`). */
   let readsAnswered = 0;
+  /** The list each read the model made went to, by the saved step it is: what a replay of that step reads (header). */
+  const recorded = new Map<string, string>();
   /** The columns the person's request names, read once (header). */
   const named = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
 
@@ -173,6 +189,16 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
     if (validated.invalidCount > 0) return undefined;
     const shares = automationStudioAnswerFirstRowTies(held.rows, validated.rows, held.schema.fields.map((field) => field.id)).some((tie) => tie !== undefined);
     return movedFrom(held, evidence) && !shares ? undefined : { datasetId: latest, held, validated };
+  };
+
+  /** A saved step's replay as the read it replays (header): that read's list and the rows as they fit it, or `undefined`. */
+  const replayed = (call: AutomationStudioAnswerFirstRowCall, columns: readonly string[], found: readonly unknown[], evidence: AutomationStudioAnswerFirstReadEvidence) => {
+    if (typeof call.value.replay !== "string") return undefined;
+    const datasetId = recorded.get(automationStudioAnswerFirstRecordedReadKey(call));
+    const held = datasetId === undefined ? undefined : datasets.get(datasetId);
+    if (datasetId === undefined || !held || !meets(evidence.conditions, held.conditions) || !held.schema.fields.some((field) => columns.includes(field.id))) return undefined;
+    const validated = validateAutomationStudioRecords(found, held.schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
+    return validated.invalidCount > 0 ? undefined : { datasetId, held, validated };
   };
 
   /** A read that answered no rows, kept as an empty page of the list it is the same read of, at a place that list has not read (header). */
@@ -251,7 +277,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       const was = standing();
       const columns = automationStudioAnswerFirstReadColumns(objects);
       const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, input.readRowsKey);
-      const join = joined(columns, found, evidence);
+      // A replay of a step the model read goes into that read's list first; else the latest run's list it fits whole (header).
+      const join = replayed(call, columns, found, evidence) ?? joined(columns, found, evidence);
       const idOf = (named: string | undefined) => automationStudioAnswerFirstReadDatasetId({ toolId: call.toolId, value: call.value, columns, named, list: evidence.list, lookUp: evidence.lookUp });
       const asNamed = join?.datasetId ?? idOf(evidence.named);
       // Never into a list whose conditions it lacks, short of `replace`: it is then a list of its own, as if unnamed (header).
@@ -290,6 +317,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       readsAnswered += 1;
       const held: Held = known ?? { schema, rows: [], truncated: false, pages: [], lookUp: evidence.lookUp, sent: sending, conditions: evidence.conditions, ...(join ? {} : { idColumns: columns }), ...(datasetId === asNamed ? { named: evidence.named } : {}) };
       datasets.set(datasetId, held);
+      // The step this read is, as its replays will send it (header).
+      if (typeof call.value.replay !== "string" && answer.draft?.ranWith !== undefined) recorded.set(automationStudioAnswerFirstRecordedReadKey({ toolId: call.toolId, value: answer.draft.ranWith }), datasetId);
       if (evidence.list !== undefined) held.view = evidence.list;
       if (after) {
         if (known) held.conditions = after.over ? evidence.conditions : common(held.conditions, evidence.conditions);
@@ -400,7 +429,9 @@ function askedColumns(named: AutomationStudioFlowBootstrapInstructionColumnList,
   const filtered = (process?.where ?? []).map((condition) => condition.field).filter((field, at, all) => !matched.includes(field) && all.indexOf(field) === at);
   const columns = [...matched, ...filtered];
   if (columns.length === stored.length && columns.every((column, at) => stored[at] === column)) return process;
-  const parsed = parseAutomationStudioRecordProcessing({ ...(process ?? {}), columns }, schema);
+  // A row is still told apart by every column it stores, not by the fewer it shows (header); a declared dedupe stands.
+  const dedupe = process?.dedupe ?? { by: stored };
+  const parsed = parseAutomationStudioRecordProcessing({ ...(process ?? {}), dedupe, columns }, schema);
   return parsed.ok ? parsed.processing : process;
 }
 

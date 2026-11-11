@@ -23,8 +23,15 @@ const NOW = 1_000;
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;
+/**
+ * Whether the person has completed the robot check. Continue says they did, and a step whose check was
+ * cleared runs again on the page they left (`engine/automation/person-cleared.ts`), so the check must be
+ * gone once they press it: a stand-in that raised it on every call would be a check nobody can clear.
+ */
+let checkCleared = false;
 beforeEach(() => {
   seen = [];
+  checkCleared = false;
   unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
 });
 afterEach(() => unsubscribe());
@@ -53,7 +60,7 @@ const CHECK_RESULT: AutomationNodeExecutionResult = {
 const options: AutomationStudioGraphExecutionOptions = {
   now: () => NOW,
   delay: () => Promise.resolve(),
-  nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "check" ? CHECK_RESULT : { status: "success", route: "success", outputs: {} } })
+  nativeNodeExecutor: (request) => Promise.resolve({ result: request.node.id === "check" && !checkCleared ? CHECK_RESULT : { status: "success", route: "success", outputs: {} } })
 };
 
 async function inRun<T>(fn: () => Promise<T>): Promise<T> {
@@ -85,10 +92,14 @@ describe("the step count a run shows", () => {
     const parked = await inRun(() => runAutomationStudioGraph(flow, { ...options, parking: { open: () => undefined } }));
     expect(parked.status).toBe("waiting");
     const askId = parked.parked!.ask.askId;
+    checkCleared = true;
     const resumed = await inRun(() => resumeAutomationStudioGraph({ flow, trace: parked, resumption: { kind: "answer", answer: { askId, answeredAt: NOW + 5, kind: "choice", value: AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, actorId: null } }, options }));
     expect((resumed as { trace: AutomationStudioGraphExecutionTrace }).trace.status).toBe("succeeded");
+    // Once the person cleared the check, the step runs again on the page they left (`engine/automation/person-cleared.ts`),
+    // and says its card again at the same place in the count: still step 2 of 3, never 3 of 4.
     expect(steps().map(([node, index, count]) => [node, index, count])).toEqual([
       ["a", 1, 3],
+      ["check", 2, 3],
       ["check", 2, 3],
       ["read", 3, 3]
     ]);

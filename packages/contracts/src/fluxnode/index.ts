@@ -4,6 +4,7 @@
 //
 // - exact types: the JSON Schema subset, its parser, validator and canonical form;
 // - Flows: paths, automatic placement, FluxNode names, Call Flow, a Flow's interface;
+// - overrides: prompts, judge criteria, tool descriptions, models, deadlines, waits and pace;
 // - the FluxNode spec, its options, scope, goal placeholders and spec hash;
 // - runs: request, result, verdict, cost, events, answers and error codes;
 // - data: lineage, dataset references, expressions, data steps, sinks and pipelines;
@@ -16,6 +17,7 @@ export * from "./flow/index.ts";
 export * from "./http/index.ts";
 export type { FluxNodeIssue, FluxNodeIssuePath, FluxNodeParseResult } from "./issue/index.ts";
 export * from "./json/index.ts";
+export * from "./overrides/index.ts";
 export * from "./run/index.ts";
 export * from "./spec/index.ts";
 export * from "./type-schema/index.ts";

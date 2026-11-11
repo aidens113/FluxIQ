@@ -1,6 +1,7 @@
 // The step log's credential screen: key and bearer-token shapes are replaced,
 // and ordinary page text that only resembles them is written exactly as sent.
 import { describe, expect, it } from "vitest";
+import { runWithAutomationStudioRunSecrets } from "../../../run-secrets/index.ts";
 import { AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED, automationStudioLlmStepLogScreen } from "../index.ts";
 
 describe("the step log's credential screen", () => {
@@ -24,5 +25,11 @@ describe("the step log's credential screen", () => {
     ]) {
       expect(automationStudioLlmStepLogScreen(text)).toEqual({ text, redacted: false });
     }
+  });
+
+  it("withholds a run's secret inputs, whatever their shape, and only inside that run", () => {
+    const text = '{"parameters":{"text":"hunter2"},"said":"Typed hunter2."}';
+    expect(runWithAutomationStudioRunSecrets({ password: "hunter2" }, () => automationStudioLlmStepLogScreen(text))).toEqual({ text: '{"parameters":{"text":"[withheld]"},"said":"Typed [withheld]."}', redacted: true });
+    expect(automationStudioLlmStepLogScreen(text)).toEqual({ text, redacted: false });
   });
 });

@@ -34,6 +34,8 @@ export type AutomationStudioGraphExecutionOptions = {
   declaredInputDefaults?: Record<string, JsonValue>;
   variables?: Record<string, JsonValue>;
   maxSteps?: number;
+  /** How human the run's input looks, a whole number 0 to 100; absent means 0, today's path exactly. Nothing reads it yet. */
+  humanness?: number;
   random?: () => number;
   now?: () => number;
   /** Fixed epoch milliseconds for relative task dates; live timing still uses now(). */
@@ -53,8 +55,12 @@ export type AutomationStudioGraphExecutionOptions = {
    * or a simulator supplies its own so a backoff costs no wall clock.
    */
   delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
-  /** The region timeout's timer, `ClientGatewayTimerSource`-shaped: real `setTimeout` when absent, as before; an offline environment's virtual timers (P4 "Virtual clock", `./region-execution.ts`). */
-  startTimer?: (wait: { readonly kind: "region_timeout" }, delayMs: number, fire: () => void) => { cancel(): void };
+  /**
+   * The timer a region's timeout and the run's own deadline run on, `ClientGatewayTimerSource`-shaped: real
+   * `setTimeout` when absent, as before; an offline environment's virtual timers (P4 "Virtual clock",
+   * `../regions/execution.ts`, `../composite/child-bounds.ts`); a test's, so a deadline passes exactly when it means.
+   */
+  startTimer?: (wait: { readonly kind: "region_timeout" | "run_deadline" }, delayMs: number, fire: () => void) => { cancel(): void };
   /**
    * The retry policy every node of this run starts from, overriding Core's
    * default of three attempts at 250 ms, 1 s and 2 s. A Flow's own metadata and

@@ -11,8 +11,11 @@
 // name, under its `dataPipelineHash`, in the same registry, so it runs by name as a FluxNode does.
 //
 // Registering is serial, so two registrations of one new spec make one Flow.
+//
+// **A pin is kept here too** (`./pin/`): in the same `fluxNode` metadata, under `pin` and `versions`, written
+// through `resay`, which is serial with registering, so the pin is read back from the Flow after a restart.
 
-import { dataPipelineHash, fluxNodeNameToFlowPath, fluxNodeSpecHash, parseDataPipeline, parseFluxNodeSpec, type DataPipeline, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
+import { canonicalFluxNodeSpec, dataPipelineHash, fluxNodeNameToFlowPath, fluxNodeSpecHash, parseDataPipeline, parseFluxNodeSpec, type DataPipeline, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import { compilePipeline } from "../pipelines/index.ts";
@@ -44,9 +47,12 @@ export class FluxNodeOwnerFlows {
 
   constructor(private readonly service: AutomationStudioService, private readonly domainId: string | null | undefined, private readonly now: () => number) {}
 
-  /** Registers `spec`: the same name and hash answer what is there; a new one makes its Flow. */
+  /**
+   * Registers `spec`: the same name and hash answer what is there, with the spec it now says when only its non-identity
+   * parts (options, check, uses, and whatever the canonical form later covers) changed; a new hash makes its Flow.
+   */
   async register(spec: FluxNodeSpec): Promise<{ registered: FluxNodeRegisteredSpec; created: boolean; previousSpecHash?: string }> {
-    return await this.registerNamed(spec.name, async () => await fluxNodeSpecHash(spec), async (specHash) => await this.flowFor(spec, specHash));
+    return await this.registerNamed(spec.name, async () => await fluxNodeSpecHash(spec), async (specHash) => await this.flowFor(spec, specHash), async (held) => await this.respecified(held, spec));
   }
 
   /** Registers `pipeline` as `register` does a spec: its hash is `dataPipelineHash`, and its Flow is the compiled pipeline. */
@@ -61,6 +67,24 @@ export class FluxNodeOwnerFlows {
     if (!named) return { missing: "name" };
     const found = named.specs.get(specHash ?? named.latest);
     return found ? { found } : { missing: "hash" };
+  }
+
+  /** What the Flow's `fluxNode` metadata says now, read from the Flow, so what another write left is seen. */
+  async said(registered: FluxNodeRegistered): Promise<JsonObject> {
+    return saidOf(await this.service.getFlow(registered.projectId, registered.flowId), registered);
+  }
+
+  /**
+   * Changes the Flow's `fluxNode` metadata: `change` gets what it says now and answers what it says next (nothing writes
+   * nothing) and a value. Serial with registering, so a respecified spec and a pin never write over each other.
+   */
+  async resay<T>(registered: FluxNodeRegistered, change: (said: JsonObject) => Promise<{ said?: JsonObject | undefined; value: T }>): Promise<T> {
+    return await this.serially(async () => {
+      const flow = await this.service.getFlow(registered.projectId, registered.flowId);
+      const changed = await change(saidOf(flow, registered));
+      if (changed.said) await this.service.saveFlow({ projectId: registered.projectId, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), [METADATA_KEY]: changed.said } } });
+      return changed.value;
+    });
   }
 
   /** Saves `goal` as the Flow's instruction when its words changed. */
@@ -81,13 +105,18 @@ export class FluxNodeOwnerFlows {
    * The registry step both kinds share. `T` is the kind the caller registers: a name and hash held already
    * are of that kind, because a spec's hash and a pipeline's cannot be the same value.
    */
-  private async registerNamed<T extends FluxNodeRegistered>(name: string, hashOf: () => Promise<string>, make: (specHash: string) => Promise<T>): Promise<{ registered: T; created: boolean; previousSpecHash?: string }> {
+  private async registerNamed<T extends FluxNodeRegistered>(name: string, hashOf: () => Promise<string>, make: (specHash: string) => Promise<T>, update?: (held: T) => Promise<T>): Promise<{ registered: T; created: boolean; previousSpecHash?: string }> {
     return await this.serially(async () => {
       await this.projectId();
       const specHash = await hashOf();
       const named = this.byName.get(name);
       const held = named?.specs.get(specHash);
-      if (held) return { registered: held as T, created: false };
+      if (held) {
+        // The hash covers identity only, so the same name and hash can still carry a different spec; it is `update` that tells.
+        const current = update ? await update(held as T) : (held as T);
+        if (current !== held) named!.specs.set(specHash, current);
+        return { registered: current, created: false };
+      }
       const registered = await make(specHash);
       const previous = named?.latest;
       if (named) {
@@ -107,7 +136,8 @@ export class FluxNodeOwnerFlows {
   /** The owner project's id: found by its name and mark, else made, and its Flows read back once. */
   private async projectId(): Promise<string> {
     this.owner ??= (async () => {
-      const { projects } = await this.service.listProjects();
+      const { projects } = await this.service.listProjects(this.domainId ?? null);
+      // Listed by the domain: a list with none holds only projects without one, so a domain-scoped owner project was never found again.
       const found = projects.find((project) => project.name === PROJECT_NAME && project.description === PROJECT_MARK && (this.domainId == null || project.domainId === this.domainId));
       const project = found ?? await this.service.createProject({ name: PROJECT_NAME, description: PROJECT_MARK, ...(this.domainId ? { domainId: this.domainId } : {}) });
       if (found) await this.readBack(project.id);
@@ -147,6 +177,20 @@ export class FluxNodeOwnerFlows {
     return parsed.ok ? { name: parsed.value.name, specHash, spec: parsed.value, projectId, flowId, flowPath: fluxNodeNameToFlowPath(parsed.value.name), registeredAt: createdAt } : undefined;
   }
 
+  /**
+   * The held registration at the spec `spec` now says: itself when the canonical text is the same (nothing written),
+   * else the same Flow, hash and registration time with the new spec in the Flow's metadata. A pipeline's hash covers the
+   * whole pipeline, so it has no such update.
+   */
+  private async respecified(held: FluxNodeRegistered, spec: FluxNodeSpec): Promise<FluxNodeRegisteredSpec> {
+    if (!("spec" in held) || canonicalFluxNodeSpec(held.spec) === canonicalFluxNodeSpec(spec)) return held as FluxNodeRegisteredSpec;
+    const flow = await this.service.getFlow(held.projectId, held.flowId);
+    const said = flow.metadata?.[METADATA_KEY];
+    const base: JsonObject = typeof said === "object" && said !== null && !Array.isArray(said) ? said : { name: held.name, specHash: held.specHash, flowPath: held.flowPath };
+    await this.service.saveFlow({ projectId: held.projectId, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), [METADATA_KEY]: { ...base, spec: JSON.parse(JSON.stringify(spec)) as JsonValue } } } });
+    return { ...held, spec };
+  }
+
   /** A new Flow for the pipeline: its compiled graph, saying in its metadata what it is. */
   private async pipelineFlowFor(pipeline: DataPipeline, specHash: string): Promise<FluxNodeRegisteredPipeline> {
     const projectId = await this.projectId();
@@ -172,4 +216,10 @@ export class FluxNodeOwnerFlows {
     const saved = await this.service.saveFlow({ projectId, flow: { ...made, metadata: { ...(made.metadata ?? {}), [METADATA_KEY]: said } } });
     return { name: spec.name, specHash, spec, projectId, flowId: saved.flowId, flowPath, registeredAt: this.now() };
   }
+}
+
+/** A Flow's `fluxNode` metadata, or what it would say where it says nothing readable. */
+function saidOf(flow: { metadata?: JsonObject | undefined }, registered: FluxNodeRegistered): JsonObject {
+  const said = flow.metadata?.[METADATA_KEY];
+  return typeof said === "object" && said !== null && !Array.isArray(said) ? said : { name: registered.name, specHash: registered.specHash, flowPath: registered.flowPath };
 }

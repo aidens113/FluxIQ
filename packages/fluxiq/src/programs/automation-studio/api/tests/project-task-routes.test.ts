@@ -16,7 +16,13 @@ import { cacheActor } from "../handlers/tests/test-actor.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
-const SOON = Date.now() + 1_000;
+/**
+ * How far after its thread was noted a task's first attempt starts. Attempts are read back by the span
+ * the thread held the Flow from (`noteConversation` stamps it with the clock), so their times are taken
+ * from the clock when the task is written, never when the file loaded: a slow machine that spent seconds
+ * on the earlier tests would otherwise start them before the thread held the Flow.
+ */
+const SOON = 1_000;
 const TRIED = { version: 1 as const, tried: [], approaches: 0 };
 
 function attempt(projectId: string, flowId: string, taskId: string, attemptId: string, ordinal: number, startedAtMs: number): AutomationStudioTaskAttempt {
@@ -38,10 +44,11 @@ async function world() {
   const store = automationStudioAnswerFirstAttemptStoreOf(service, { paths: service.projectPaths, flows: service.flowPaths, projects: service.projects });
   const memory = automationStudioAnswerFirstTaskMemoryOf(service, { paths: service.projectPaths, projects: service.projects });
   const call = (endpoint: string, payload: Record<string, unknown>) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: cacheActor("user.reader"), payload }) as Promise<{ ok: boolean; payload?: any; error?: string; errorCode?: string }>;
-  /** A task that ran twice on its Flow: a row for each attempt, and the task's own memory of both. */
+  /** A task that ran twice on its Flow, its first attempt `at` ms after now: a row for each attempt, and the task's own memory of both. */
   const task = async (taskId: string, flowId: string, at: number, conversationId?: string) => {
     if (conversationId) await store.locator.noteConversation(project.id, conversationId, flowId);
-    for (const [n, started] of [[1, at], [2, at + 5_000]] as const) {
+    const noted = Date.now();
+    for (const [n, started] of [[1, noted + at], [2, noted + at + 5_000]] as const) {
       const attemptId = `${taskId}.attempt.${n}`;
       await store.save(project.id, flowId, { attempt: attempt(project.id, flowId, taskId, attemptId, n, started), tried: TRIED, result: { attemptId, kind: "plain_answer", label: "confirmed", timesChecked: 1, source: "exploration", acts: [], answerText: { text: "Three loans.", author: "model" }, checkedWhat: "The list of loans." } as AutomationStudioTaskResult });
       await memory.update(project.id, taskId, (current) => ({ ...current, flowId, attempts: [...current.attempts, { attemptId, flowId, ordinal: n, route: "build", steps: [] }] }));

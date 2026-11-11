@@ -91,6 +91,8 @@ type RunFlowLoop = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** The scoped task part, shared with the whole dry run's record defaults. */
   partOf?: AuthoringPartOfStep | undefined;
+  /** The columns the instruction names, so a read in the range declares the saved Flow's columns (`./flow-part.ts`). */
+  namedColumns?: readonly string[] | undefined;
   /** The forward run (`../replay/forward.ts`): `core.run_flow` is then offered with the dry run off, and runs forward. */
   forward?: AutomationStudioFlowDraftReplayForward | undefined;
   /** Which keys of a result are a view of the page, so a forward run's answer can show the page it left (`./flow-part.ts`). */
@@ -120,7 +122,7 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool(loop.forward !== undefined)] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.forward ? { forward: loop.forward } : {}), ...(look ? { look } : {}) })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}), ...(loop.partOf ? { partOf: loop.partOf } : {}), ...(loop.namedColumns ? { namedColumns: loop.namedColumns } : {}), ...(loop.forward ? { forward: loop.forward } : {}), ...(look ? { look } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID

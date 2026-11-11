@@ -1,4 +1,5 @@
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { automationStudioWithoutRunSecrets } from "../run-secrets/index.ts";
 import { boundedAutomationStudioActivity } from "./bounded.ts";
 import type { AutomationStudioActivityInput, AutomationStudioActivityListener, AutomationStudioActivitySnapshot } from "./contracts.ts";
 import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
@@ -17,9 +18,15 @@ export class AutomationStudioActivityHub {
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
+  /**
+   * The one place every event passes before it is stored or handed to a subscriber (`emit.ts` is its only
+   * caller), so the current run's secrets (`../run-secrets/`) are withheld from every string of it here,
+   * before the bound can cut one in half. The emit runs inside the run's async context, through awaits,
+   * callbacks and timers; with no secrets in context the input is untouched.
+   */
   publish(input: AutomationStudioActivityInput): ClientGatewayActivity {
     this.sequence += 1;
-    const event: ClientGatewayActivity = { ...boundedAutomationStudioActivity(input), sequence: this.sequence, at: this.now().toISOString() };
+    const event: ClientGatewayActivity = { ...boundedAutomationStudioActivity(automationStudioWithoutRunSecrets(input)), sequence: this.sequence, at: this.now().toISOString() };
     const recent = this.byProject.get(event.subject.projectId) ?? [];
     recent.push(event);
     if (recent.length > AUTOMATION_STUDIO_ACTIVITY_LIMITS.recent) recent.splice(0, recent.length - AUTOMATION_STUDIO_ACTIVITY_LIMITS.recent);

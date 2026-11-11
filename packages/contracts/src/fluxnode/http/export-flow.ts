@@ -7,9 +7,13 @@ import { z } from "zod";
 import { fluxNodeFieldSchemas } from "../fields/index.ts";
 import { flowPathSchema, fluxNodeNameSchema } from "../flow/index.ts";
 import { jsonObjectSchema } from "../json/index.ts";
+import { fluxNodeFlowProposalSchema } from "../run/index.ts";
 
-/** The request body: which spec's Flow (the latest when absent), and whether to pin it. */
-export const fluxNodeExportFlowRequestSchema = z.object({ specHash: fluxNodeFieldSchemas.sha256Hex.optional(), pin: z.boolean().default(false) }).strict();
+/**
+ * The request body: which spec's Flow (the latest when absent), whether to pin it, and which
+ * waiting proposal to adopt with the pin (`proposal`; the newest when absent and one waits).
+ */
+export const fluxNodeExportFlowRequestSchema = z.object({ specHash: fluxNodeFieldSchemas.sha256Hex.optional(), pin: z.boolean().default(false), proposal: fluxNodeFieldSchemas.id.optional() }).strict();
 
 export type FluxNodeExportFlowRequest = z.infer<typeof fluxNodeExportFlowRequestSchema>;
 
@@ -19,7 +23,9 @@ export const FLUXNODE_FLOW_EXPORT_FORMAT = "fluxiq.fluxnode-flow";
 /**
  * The exported Flow: which FluxNode and spec it serves, the Flow's id, path and
  * version, whether it is now pinned, when it was exported, and the Flow document
- * itself, which this contract carries without reading.
+ * itself, which this contract carries without reading. `stepsDigest` is the
+ * version's identity (the digest of the steps a replay runs); `proposals` are the
+ * changes a pinned FluxNode's runs held, oldest first, each waiting for a pin.
  */
 export const fluxNodeFlowExportSchema = z
   .object({
@@ -32,6 +38,8 @@ export const fluxNodeFlowExportSchema = z
     flowVersion: z.number().int().min(1),
     pinned: z.boolean(),
     exportedAt: fluxNodeFieldSchemas.epochMs,
+    stepsDigest: fluxNodeFieldSchemas.sha256Hex.optional(),
+    proposals: z.array(fluxNodeFlowProposalSchema).max(64).optional(),
     flow: jsonObjectSchema
   })
   .strict();
