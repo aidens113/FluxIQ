@@ -86,6 +86,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** The scoped task part, so the partial replay writes the saved Flow's record output. */
   partOf?: AuthoringPartOfStep | undefined;
+  /** The columns the instruction names, so a read in the range declares the saved Flow's columns, as the dry run's does. */
+  namedColumns?: readonly string[] | undefined;
   /**
    * The forward run (t861, plan D2, `../replay/forward.ts`): the range runs on the rows not yet done, a lasting step
    * acts for real on one, and the answer says what it did instead of calling itself a test. Absent, this is the
@@ -128,6 +130,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
     ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.partOf ? { partOf: input.partOf } : {}),
+    ...(input.namedColumns ? { namedColumns: input.namedColumns } : {}),
     ...(input.forward ? { forward: input.forward } : {}),
     // A step the Flow does not always run goes on, as the Flow would; one with
     // nothing to run it with stops the run whatever it says about when it runs.

@@ -481,6 +481,15 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * `node-tools/replay-draft.ts`). Absent (an instruction-only build), none.
    */
   partOf?: AutomationStudioFlowDraftDryRunGateInput["partOf"];
+  /**
+   * The columns the instruction names, as the caller read them once with
+   * `automationStudioFlowBootstrapInstructionColumns(instructionText)`: the dry
+   * run, a part run and a forward run send every read the record output the
+   * saved Flow's assembly gives it, so a replayed read declares the person's
+   * columns and no others (`node-tools/replay/replay.ts`, run-mwb2kkv5-1baeee11).
+   * Absent or empty, nothing changes.
+   */
+  namedColumns?: AutomationStudioFlowDraftDryRunGateInput["namedColumns"];
   signal?: AbortSignal;
 };
 

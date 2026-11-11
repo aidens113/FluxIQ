@@ -212,7 +212,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
   // The build's lasting acts, read once, whichever of the dry run, a part run or a rerun's put-back first sends steps again (`./node-tools/replay-draft.ts`).
   let lasting: Promise<ReadonlySet<string>> | undefined; const readLasting = input.lastingActs; const lastingActs = readLasting ? () => (lasting ??= readLasting()) : undefined;
-  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && (input.dryRun !== false || input.forwardRun !== undefined), ...(input.forwardRun ? { forward: input.forwardRun, ...(input.observedStateKeys ? { observedStateKeys: input.observedStateKeys } : {}) } : {}), ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}), ...(input.partOf ? { partOf: input.partOf } : {}) });
+  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && (input.dryRun !== false || input.forwardRun !== undefined), ...(input.forwardRun ? { forward: input.forwardRun, ...(input.observedStateKeys ? { observedStateKeys: input.observedStateKeys } : {}) } : {}), ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}), ...(input.partOf ? { partOf: input.partOf } : {}), ...(input.namedColumns ? { namedColumns: input.namedColumns } : {}) });
   if ("issue" in limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting, undefined, undefined, undefined, "issue" in limits ? limits.issue : automationStudioLlmEvidenceLoopToolSetIssue(input.tools)); // Named: the limits' check or the tool set's (`./configuration-issue/`, t584).
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
@@ -364,7 +364,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     ...(input.observeTest ? { observed: input.observeTest } : {}),
     ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.testEndView ? { endView: input.testEndView } : {}),
-    ...(input.partOf ? { partOf: input.partOf } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {}), ...(input.namedColumns ? { namedColumns: input.namedColumns } : {}), // The record output the saved Flow has (`./loop-configuration.ts`).
     ...(input.signal ? { signal: input.signal } : {})
   });
   const draftOf = (toolId: string): string | undefined => input.requestContextKey?.(toolId) ?? (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // Memo and repeat identity share the backend target key; part runs retain their draft key.
@@ -405,7 +405,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     try {
       // A rerun runs from its step's own page, never from where the last call left it; a carried step from where its node started in the repaired run (`./node-tools/step-place.ts`, t194 C-D).
       const seedStartedOn = rerunReplaces && input.draft ? input.draft.seedStartedOn : undefined; // Every seeded step's start page: the seeded steps before it on its page are done again first (t443, R4b).
-      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, seedStartedOn, steps: draftSteps, now: handling.repeats.state(), callId, value: decision.input, executeTool: input.executeTool, signal: input.signal, nodeOf: input.nodeOf, definitionOf: input.definitionOf, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
+      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, seedStartedOn, steps: draftSteps, now: handling.repeats.state(), callId, value: decision.input, executeTool: input.executeTool, signal: input.signal, nodeOf: input.nodeOf, definitionOf: input.definitionOf, partOf: input.partOf, namedColumns: input.namedColumns, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
       if (member) ran = await member.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });

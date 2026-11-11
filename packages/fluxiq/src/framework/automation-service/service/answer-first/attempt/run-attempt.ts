@@ -163,6 +163,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const sink = automationStudioAnswerFirstRowSink({
     runId,
     readRowsKey: input.binding?.readRowsKey,
+    // The columns the person named are the result's, and no others (`../rows/row-sink.ts`, run-mwb2kkv5-1baeee11).
+    instructionText: input.instructionText,
     // A host with no project store has nowhere to put rows: the sink's own account is all there is, and a read-back answers from it.
     onRecordBatch: datasets.available ? datasets.recordBatchHandler(projectId, runId) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
     reader: {

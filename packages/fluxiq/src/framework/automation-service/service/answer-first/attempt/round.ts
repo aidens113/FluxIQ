@@ -18,7 +18,7 @@ import { automationStudioAnswerFirstSystemInstructions } from "../../../../../ru
 import type { AutomationStudioAnswerFirstRoundEnd } from "../../../../../runtime/answer-first/keep-going/index.ts";
 import { automationStudioActivityAskPort, observeAutomationStudioEvidenceLoop } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/automation-parking/index.ts";
-import { automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import { automationStudioFlowBootstrapInstructionColumns, automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../../../runtime/llm/decision-handlers/index.ts";
@@ -97,6 +97,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       }
     },
     lastingActs: () => (lasting ??= run.permissions.instructedLastingActs(automationStudioInstructedActs(input.instructionText))),
+    // The columns the person named: a forward run's read declares them as the saved Flow's does (`runtime/llm/node-tools/replay/replay.ts`).
+    namedColumns: automationStudioFlowBootstrapInstructionColumns(input.instructionText),
     draft: {
       maxAmendments: input.limits.loop.maxIterations,
       ...(run.steps.length ? { seed: run.steps } : {}),

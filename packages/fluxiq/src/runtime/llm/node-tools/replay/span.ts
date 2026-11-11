@@ -333,7 +333,8 @@ export function automationStudioFlowDraftReplayStoredRecords(answer: AutomationS
  * explored row. `unresolved` names the paths nothing answered; nothing is
  * sent then. Nothing at all for a step with nothing to run it with. With the
  * node's full `definition`, the call carries the record output assembly writes
- * on the step's node, as the stored Flow's does.
+ * on the step's node, as the stored Flow's does; with the whole draft (`steps`),
+ * a read a repeat walks keeps the row fields that repeat reads (`./row-fields.ts`).
  */
 export function automationStudioFlowDraftReplayPassCall(
   step: AutomationStudioFlowDraftStep,
@@ -342,7 +343,9 @@ export function automationStudioFlowDraftReplayPassCall(
   node?: AutomationStudioFlowDraftReplayNode,
   earlier?: Record<string, JsonValue>,
   definition?: AutomationStudioNodeDefinition,
-  partOf?: AuthoringPartOfStep
+  partOf?: AuthoringPartOfStep,
+  namedColumns?: readonly string[],
+  steps?: readonly AutomationStudioFlowDraftStep[]
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
@@ -354,7 +357,7 @@ export function automationStudioFlowDraftReplayPassCall(
     pass.parameters = resolved.values;
   }
   if (row?.takesRow) pass.item = row.item;
-  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition, partOf) : automationStudioNodeReplayStepCall(step, pass, definition, partOf);
+  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition, partOf, namedColumns, steps) : automationStudioNodeReplayStepCall(step, pass, definition, partOf, namedColumns, steps);
   if (!value) return undefined;
   if (pass.item !== undefined) delete value.produced;
   return { value };
@@ -369,6 +372,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   /** Which plan part each member serves, so the test writes the record output the saved Flow has (`../../flow-bootstrap/record-defaults/`). */
   partOf?: AuthoringPartOfStep | undefined;
+  /** The columns the instruction names, so a pass's read declares the saved Flow's columns (`./replay.ts`). */
+  namedColumns?: readonly string[] | undefined;
   /** `row` is the row of a list's pass, absent elsewhere; a forward run reads it (`./forward.ts`). */
   modeOf(step: AutomationStudioFlowDraftStep, row?: JsonObject): AutomationStudioFlowDraftReplayMode;
   callIdOf(step: AutomationStudioFlowDraftStep): string;
@@ -451,7 +456,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       let cameBack = false;
       // No lasting act is sent after this, and a pass that got past its first step still comes back (`./forward.ts`).
       for (const later of plan.members.slice(after + 1).filter(declaresNothing)) {
-        const back = automationStudioFlowDraftReplayPassCall(later, "replay", { item: row!, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf?.(later.actionId)) }, input.nodeOf?.(later.actionId), earlier, input.definitionOf?.(later.actionId), input.partOf);
+        const back = automationStudioFlowDraftReplayPassCall(later, "replay", { item: row!, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf?.(later.actionId)) }, input.nodeOf?.(later.actionId), earlier, input.definitionOf?.(later.actionId), input.partOf, input.namedColumns);
         const answer = back && "value" in back ? await sendPass(pass, `${input.callIdOf(later)}.pass.${pass}`, later, back.value) : undefined;
         cameBack = later === plan.members.at(-1) && answer?.readable === true && automationStudioNodeReplayStatus(answer.result.resultCode, "replay") === "replayed";
       }
@@ -461,7 +466,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       const mode = input.modeOf(member, row);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf);
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId), input.partOf, input.namedColumns);
       if (ownPass && at === 0 && elsewhere && built && "value" in built) built.value[AUTOMATION_STUDIO_NODE_REPLAY_REACH_KEY] = true;
       if (leftBehind && !declaresNothing(member)) {
         passes.get(member)!.push({ pass, status: "failed", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.unreproducible });

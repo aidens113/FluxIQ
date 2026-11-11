@@ -73,7 +73,10 @@
 // step by (`./draft-step.ts`). A record output the step ran with is sent as
 // assembly reads it (a label-only one gains the step's id there, so sending it
 // raw would save the test's rows elsewhere). A call made without a definition
-// is sent unchanged.
+// is sent unchanged. Given the whole draft, a read a repeat walks also keeps each
+// row field the repeat's steps read, as assembly keeps it on the saved Flow's node
+// (`./row-fields.ts`, run-mwb9b59w-aa0784db): narrowed to the named columns without
+// it, the forward run's passes found no row address to open.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
@@ -90,6 +93,7 @@ import {
 } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioRouteSignaturesValue } from "../../../../framework/automation-service/route-state/signatures/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep } from "../draft-step.ts";
+import { automationStudioFlowDraftReplayRowFieldsKept } from "./row-fields.ts";
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KEY = "replay";
@@ -190,12 +194,18 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * `partOf`, when the caller knows the plan part each step serves, derives the
  * record output as assembly does from it (`../../flow-bootstrap/record-defaults`),
  * so the test and the Flow agree; absent, nothing changes.
+ * `namedColumns`, the columns the instruction names (`../../../flow-authoring/bootstrap/answerability/instruction-columns.ts`),
+ * go to the same derivation as assembly gives them, so a replayed read declares the saved Flow's columns; absent,
+ * nothing changes.
+ * `steps`, the whole draft, keeps in a read's record output the row fields a repeat over it reads (`./row-fields.ts`).
  */
 export function automationStudioNodeReplayStepCall(
   step: AutomationStudioFlowDraftStep,
   pass: AutomationStudioNodeReplayPass = {},
   definition?: AutomationStudioNodeDefinition,
-  partOf?: AuthoringPartOfStep
+  partOf?: AuthoringPartOfStep,
+  namedColumns?: readonly string[],
+  steps?: readonly AutomationStudioFlowDraftStep[]
 ): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
@@ -203,7 +213,7 @@ export function automationStudioNodeReplayStepCall(
   return {
     ...ranWith,
     ...passed(pass),
-    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf, namedColumns, steps),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
     ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(scheduled || step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
@@ -225,7 +235,9 @@ export function automationStudioNodeReplayVerifyCall(
   step: AutomationStudioFlowDraftStep,
   pass: AutomationStudioNodeReplayPass = {},
   definition?: AutomationStudioNodeDefinition,
-  partOf?: AuthoringPartOfStep
+  partOf?: AuthoringPartOfStep,
+  namedColumns?: readonly string[],
+  steps?: readonly AutomationStudioFlowDraftStep[]
 ): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
@@ -233,7 +245,7 @@ export function automationStudioNodeReplayVerifyCall(
   return {
     ...ranWith,
     ...passed(pass),
-    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition, partOf, namedColumns, steps),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
     ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...recordedEffect(step)
@@ -263,7 +275,7 @@ function passed(pass: AutomationStudioNodeReplayPass): JsonObject {
  * a call to another node, no parameters, or a record output assembly leaves as it is.
  * Never the step's own object: the call is a copy, and the draft keeps what ran.
  */
-function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonObject, definition: AutomationStudioNodeDefinition | undefined, partOf: AuthoringPartOfStep | undefined): JsonObject {
+function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonObject, definition: AutomationStudioNodeDefinition | undefined, partOf: AuthoringPartOfStep | undefined, namedColumns: readonly string[] | undefined, steps: readonly AutomationStudioFlowDraftStep[] | undefined): JsonObject {
   const parameters = call.parameters;
   if (!definition || !isObject(parameters)) return {};
   const node = typeof call.node === "string" ? call.node : step.actionId;
@@ -281,13 +293,17 @@ function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonOb
       fallbackName: written.description || definition.label,
       stepId: automationStudioFlowDraftStepId(step),
       part: partOf?.(automationStudioFlowDraftStepId(step)),
+      // The columns the person named, as assembly is given them (`normalise.ts`): one function, one schema.
+      namedColumns,
       path: `replay.parameters.${parameter.id}`
     });
     if (!isObject(assembled.value) || JSON.stringify(assembled.value) === JSON.stringify(sent[parameter.id])) continue;
     sent[parameter.id] = assembled.value;
     added = true;
   }
-  return added ? { parameters: sent } : {};
+  // The row fields a repeat over this read reads, kept as assembly keeps them (see the header).
+  const kept = steps ? automationStudioFlowDraftReplayRowFieldsKept({ steps, step, definition, parameters: sent }) : sent;
+  return added || kept !== sent ? { parameters: kept } : {};
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
