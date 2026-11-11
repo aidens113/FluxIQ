@@ -72,12 +72,13 @@ describe("what looks found, as the judge is shown them", () => {
     expect(automationStudioFlowLessSummaryDigest(summary(undefined))).not.toBe(one);
   });
 
-  it("shows the latest few, each cut short", async () => {
-    const many = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/bookings/${index}/`, found: `${index} ${"word ".repeat(400)}` }));
+  it("sends every look whole: a 2,000-character look and every one of many looks", async () => {
+    const long = { where: `http://127.0.0.1:5000/bookings/${"x".repeat(400)}`, found: `Hall plan ${"word ".repeat(400).trim()}` };
+    expect([...long.found].length).toBeGreaterThan(1_500);
+    const many = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/bookings/${index}/`, found: `${index} ${"word ".repeat(400).trim()}` }));
+    expect(lookedOf(await sentFor([long]))).toEqual([long]);
     const shown = lookedOf(await sentFor(many))!;
-    expect(shown).toHaveLength(6);
-    expect(shown[0]!.where).toBe("http://127.0.0.1:5000/bookings/4/");
-    for (const look of shown) expect([...look.found].length).toBeLessThanOrEqual(600);
+    expect(shown).toEqual(many);
   });
 
   it("never sends a credential-shaped line, and says something was withheld", async () => {

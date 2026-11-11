@@ -73,6 +73,13 @@ export type AutomationNodeParameter = {
    * the parameter is shown.
    */
   shownToModel?: false;
+  /**
+   * `true` for a parameter that bounds how long the node waits for its act,
+   * not what the act asks: the same call with another value acts on the same
+   * thing. The repeat guard leaves it out of a call's identity
+   * (`runtime/llm/repeat-guard/timing-free.ts`), except after a timeout.
+   */
+  timing?: true;
   example?: JsonValue;
   constraints?: {
     minimum?: number;

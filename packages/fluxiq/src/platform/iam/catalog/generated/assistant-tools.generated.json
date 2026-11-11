@@ -165,6 +165,12 @@
             "description": "A chosen id for the Flow; leave it out to have one made.",
             "type": "string",
             "minLength": 1
+          },
+          "humanness": {
+            "description": "How human the Flow's input looks, a whole number from 0 to 100; leave it out for the Flow to use the person's starting value.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
           }
         },
         "required": [
@@ -3646,6 +3652,53 @@
       }
     },
     {
+      "name": "automation-studio__update-task-settings",
+      "programId": "automation-studio",
+      "endpoint": "update-task-settings",
+      "summary": "Sets or removes a task's own humanness level.",
+      "phrases": [
+        "make this task act more human",
+        "set this task's humanness"
+      ],
+      "consequence": "change",
+      "contextArgs": {
+        "projectId": "projectId"
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "description": "The project the task belongs to.",
+            "type": "string",
+            "minLength": 1
+          },
+          "taskId": {
+            "description": "The task.",
+            "type": "string",
+            "minLength": 1
+          },
+          "humanness": {
+            "description": "How human the task's runs look, a whole number from 0 to 100; null removes the task's own level, so its runs take the Flow's level or the person's starting value.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "projectId",
+          "taskId",
+          "humanness"
+        ]
+      }
+    },
+    {
       "name": "background-tasks__detail",
       "programId": "background-tasks",
       "endpoint": "detail",
@@ -4990,6 +5043,12 @@
       "reason": "Turns off a person's authenticator and needs the caller's own credentials, which are never given to the assistant."
     },
     {
+      "name": "identity-access__get-my-preferences",
+      "programId": "identity-access",
+      "endpoint": "get-my-preferences",
+      "reason": "A person's own settings, read on their settings page; the assistant has no use for them."
+    },
+    {
       "name": "identity-access__lock-vault",
       "programId": "identity-access",
       "endpoint": "lock-vault",
@@ -5018,6 +5077,12 @@
       "programId": "identity-access",
       "endpoint": "unlock-vault",
       "reason": "Takes the person's vault password, PIN or authenticator code, which are never given to the assistant."
+    },
+    {
+      "name": "identity-access__update-my-preferences",
+      "programId": "identity-access",
+      "endpoint": "update-my-preferences",
+      "reason": "A person's own settings, changed by them on their settings page, never by the assistant."
     },
     {
       "name": "production-runner__advance",

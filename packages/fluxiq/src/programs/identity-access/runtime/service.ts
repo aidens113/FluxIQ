@@ -24,6 +24,7 @@ import { runCredentialChange } from "./run-credential-change.ts";
 import { digestSessionId } from "./session-digest.ts";
 import { IdentityTwoFactorResetError } from "./two-factor-reset-error.ts";
 import { withCredentialStatus } from "./with-credential-status.ts";
+import { IdentityPersonalPreferences, withoutPersonalPreferences } from "./preferences/index.ts";
 import { deleteStoredSessions, IdentityCredentialAttempts, IdentitySessionRevocations, resolveSessionRevocation } from "./sessions/index.ts";
 import {
   credentialMetadata,
@@ -59,6 +60,8 @@ export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export class IdentityAccessService {
   private readonly users = new Map<string, User>();
+  /** The person's own preferences, on their User record (`IdentityPersonalPreferences`); others' views of a user leave them out. */
+  readonly preferences = new IdentityPersonalPreferences({ users: this.users, ready: () => this.load(), persist: () => this.persist() });
   private readonly roles = new Map<string, Role>();
   private readonly credentials = new Map<string, UserCredential>();
   private readonly credentialMetadata = new Map<string, CredentialMetadata>();
@@ -132,6 +135,7 @@ export class IdentityAccessService {
       roleId: params.roleId,
       enabled: params.enabled ?? existing?.enabled ?? true,
       totpEnabled: params.totpEnabled ?? existing?.totpEnabled ?? false,
+      ...(existing?.startingHumanness === undefined ? {} : { startingHumanness: existing.startingHumanness }),
       createdAtMs: existing?.createdAtMs ?? now,
       updatedAtMs: now
     };
@@ -139,7 +143,7 @@ export class IdentityAccessService {
     if (params.password) await this.setCredentialHash(user.id, "passwordHash", params.password);
     if (params.pin) await this.setCredentialHash(user.id, "pinHash", params.pin);
     await this.persist();
-    return user;
+    return withoutPersonalPreferences(user);
   }
 
   async updateUser(params: IdentityUserUpdate): Promise<User> {
@@ -164,7 +168,7 @@ export class IdentityAccessService {
     await this.persist();
     // Disabling takes the person's keys with it, in memory and in every browser, as provisioning's disable does.
     if (existing.enabled && !next.enabled) await this.revokeUserSessions(next.id);
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   /** Removes an account, its credential and its sessions (announced as revoked); false if unknown; refuses the final enabled admin, as `updateUser` does. */
@@ -299,7 +303,7 @@ export class IdentityAccessService {
     const next = { ...user, totpEnabled: true, updatedAtMs: Date.now() };
     this.users.set(userId, next);
     await this.persist();
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   async disableTotp(userId: string): Promise<User> {
@@ -313,7 +317,7 @@ export class IdentityAccessService {
     const next = { ...user, totpEnabled: false, updatedAtMs: Date.now() };
     this.users.set(userId, next);
     await this.persist();
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   async authenticate(params: { username: string; password: string; totp?: string; ttlMs?: number; nowMs?: number }): Promise<{ session: Session; user: User; role: Role }> {
@@ -500,7 +504,7 @@ export class IdentityAccessService {
       .filter((session) => session.expiresAtMs > nowMs)
       .map((session) => ({ id: session.digest, userId: session.userId, expiresAtMs: session.expiresAtMs }));
     return {
-      users: [...this.users.values()].map((user) => withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id))).sort((left, right) => left.username.localeCompare(right.username)),
+      users: [...this.users.values()].map((user) => withoutPersonalPreferences(withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id)))).sort((left, right) => left.username.localeCompare(right.username)),
       roles: [...this.roles.values()].sort((left, right) => left.id.localeCompare(right.id)),
       sessions,
       vault: this.vault

@@ -1,9 +1,12 @@
 import type { GlobalProgramApiRegistry, ProgramApiResponse } from "../../_shared/api.ts";
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import { identityAccessSnapshotInput, renameIdentityUserInput, revokeIdentitySessionInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   IDENTITY_ACCESS_ENDPOINTS,
+  IDENTITY_PREFERENCES_ERRORS,
   type CreateIdentityUserRequest,
+  type MyPreferencesResponse,
   type RevokeSessionRequest,
   type SessionRequest,
   type SetIdentitySecretRequest,
@@ -119,6 +122,38 @@ async function written(write: () => Promise<unknown>): Promise<ProgramApiRespons
     if (error instanceof IdentityUsernameTakenError) return { ok: false, error: error.message, errorCode: error.code };
     throw error;
   }
+}
+
+/** A preferences request's refusal, by its named code. */
+type PreferencesRefusal = { ok: false; error: string; errorCode: string };
+
+const SELF_ONLY: PreferencesRefusal = {
+  ok: false,
+  error: "Preferences are only ever your own: the request may carry startingHumanness and nothing else, never a person.",
+  errorCode: IDENTITY_PREFERENCES_ERRORS.selfOnly
+};
+const STARTING_HUMANNESS_INVALID: PreferencesRefusal = {
+  ok: false,
+  error: "startingHumanness is a whole number from 0 to 100, or null to clear it.",
+  errorCode: IDENTITY_PREFERENCES_ERRORS.startingHumannessInvalid
+};
+
+/**
+ * A preferences request's fields, or its refusal. The person is never read
+ * from the payload: any field but `startingHumanness` (`userId`, `id`, `user`,
+ * the caller's own id included) refuses the request, except the panel route's
+ * own `authSessionId`, which must be the caller's session. `fields` lists what
+ * this endpoint takes.
+ */
+function readPreferencesPayload(payload: unknown, sessionId: string, fields: readonly string[]): { ok: true; body: Record<string, unknown> } | PreferencesRefusal {
+  if (payload === undefined || payload === null) return { ok: true, body: {} };
+  if (typeof payload !== "object" || Array.isArray(payload)) return SELF_ONLY;
+  const body = payload as Record<string, unknown>;
+  for (const key of Object.keys(body)) {
+    if (key === "authSessionId" && body.authSessionId === sessionId) continue;
+    if (!fields.includes(key)) return SELF_ONLY;
+  }
+  return { ok: true, body };
 }
 
 export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, service: IdentityAccessService): void {
@@ -377,5 +412,50 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     // No recheck: locking only takes access away, and a lock must never be the
     // step that fails when an operator is trying to shut the vault.
     handler: async () => ({ ok: true, payload: await service.lockVault() })
+  });
+  // The caller's own preferences. Every signed-in person holds `programs.read`
+  // (the viewer role holds nothing else), so the permission is no gate between
+  // people: the endpoint is, as it reads and writes only `request.actor.userId`
+  // and refuses a payload naming anyone. The resource is the caller's own user.
+  registry.register({
+    programId: "identity-access",
+    endpoint: IDENTITY_ACCESS_ENDPOINTS.getMyPreferences,
+    permission: "programs.read",
+    classification: "read",
+    action: "iam:GetMyPreferences",
+    accessLevel: "Read",
+    resource: endpointResource.selfUser(),
+    assistant: { hidden: "A person's own settings, read on their settings page; the assistant has no use for them." },
+    handler: async (request) => {
+      const actor = request.actor;
+      if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
+      const read = readPreferencesPayload(request.payload, actor.sessionId, []);
+      if (!read.ok) return read;
+      const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.startingHumanness(actor.userId) };
+      return { ok: true, payload };
+    }
+  });
+  registry.register({
+    programId: "identity-access",
+    endpoint: IDENTITY_ACCESS_ENDPOINTS.updateMyPreferences,
+    permission: "programs.read",
+    classification: "authoring",
+    action: "iam:UpdateMyPreferences",
+    accessLevel: "Write",
+    resource: endpointResource.selfUser(),
+    assistant: { hidden: "A person's own settings, changed by them on their settings page, never by the assistant." },
+    // No recheck: it changes how the person's own runs are paced, nothing any
+    // other person relies on, and grants no authority.
+    handler: async (request) => {
+      const actor = request.actor;
+      if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
+      const read = readPreferencesPayload(request.payload, actor.sessionId, ["startingHumanness"]);
+      if (!read.ok) return read;
+      if (!Object.hasOwn(read.body, "startingHumanness")) return STARTING_HUMANNESS_INVALID;
+      const value = read.body.startingHumanness;
+      if (value !== null && !humannessSchema.safeParse(value).success) return STARTING_HUMANNESS_INVALID;
+      const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.setStartingHumanness(actor.userId, value as number | null) };
+      return { ok: true, payload };
+    }
   });
 }

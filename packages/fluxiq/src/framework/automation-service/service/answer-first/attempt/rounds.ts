@@ -10,10 +10,19 @@
 //
 // **A person-only check with nobody to ask** is the one way out short of an ending: without a
 // thread, nobody can clear it and every round would meet it again. The attempt stays
-// `waiting_for_person`, honestly, with what it has, and returns. So does one that kept getting
-// stuck (loop detection's last rung) with nobody to ask whether to keep going: the person's rule
-// is never to burn a budget on a refusal, so it waits for them (`stuck_in_a_loop`), spending
-// nothing more, and a person who answers later carries it on.
+// `waiting_for_person`, honestly, with what it has, and returns.
+//
+// **A stuck attempt is steered, never parked (R7, run-mwc6ut8u-52e3c1b3).** At loop detection's
+// last rung the round has already ended. The attempt used to park there (`stuck_in_a_loop`) until
+// a person answered "keep going or stop", and three live runs sat parked until their proof gave
+// up. Now the next round starts at once, steered onto a different way: its note says the loop
+// was stopped, what was tried, and to take another way (`../loop-signal/stuck-steer.ts`), and the
+// record counts a fresh start. Where a person can be asked, the same moment posts them a real
+// question, built from the loop's own evidence (`./stuck-ask.ts`,
+// `../loop-signal/stuck-question.ts`), and never waits for it. Their words, whenever they come,
+// go on the attempt (`personSaid`) and every later round is told them as guidance
+// (`./round-note.ts`). With nobody to ask, the attempt steers in the same way and posts nothing.
+// Only the result, the budget or the person's Stop ends it.
 //
 // **A saved step run again runs with this attempt's inputs.** A caller's input values become each
 // bound step's default before the first round, since a round's own run of saved steps resolves them
@@ -27,17 +36,16 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioAnswerFirstBackoff, automationStudioAnswerFirstNext, type AutomationStudioAnswerFirstRoundEnd } from "../../../../../runtime/answer-first/keep-going/index.ts";
 import { automationStudioAnswerFirstPreModelStep, type AutomationStudioAnswerFirstPreModelStep } from "../../../../../runtime/answer-first/pre-model/index.ts";
-import { automationStudioActivityAskPort } from "../../../../../runtime/automation-activity/index.ts";
 import { parseAutomationStudioFlowBootstrapGenerationError } from "../../../../../runtime/flow-authoring/bootstrap/generation-failure/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
 import { automationStudioAnswerFirstInputValuedSteps } from "../flow-run/index.ts";
-import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
+import { automationStudioAnswerFirstStuckQuestion, automationStudioAnswerFirstStuckSteer } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRound } from "./round.ts";
 import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
-import { automationStudioAnswerFirstAskStuck } from "./stuck-ask.ts";
+import { automationStudioAnswerFirstStuckAsking, type AutomationStudioAnswerFirstStuckAsking } from "./stuck-ask.ts";
 
 /** How the rounds ended: an ending, or the one wait nothing here can end. `taken_unverified` is a caller's result taken unchecked, its judge off and no check (`../completion/check.ts`): a result, never a failure. */
 export type AutomationStudioAnswerFirstRoundsEnding = "achieved" | "taken_unverified" | "budget_out" | "stopped_by_person" | "waiting_for_check";
@@ -56,6 +64,30 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
     run.steps = automationStudioAnswerFirstInputValuedSteps(run.steps, inputs);
     run.startedWith = automationStudioAnswerFirstInputValuedSteps(run.startedWith, inputs);
   }
+  // The stuck question, posted and never waited on; closed however the rounds end (`./stuck-ask.ts`).
+  const asking = automationStudioAnswerFirstStuckAsking({
+    port: input.personAsk?.port,
+    signal: input.cancellation.signal(),
+    heard: (words) => {
+      (run.personSaid ??= []).push(words);
+      automationStudioAnswerFirstSay("Got your answer", HEARD);
+    },
+    failed: () => automationStudioAnswerFirstSay("Could not reach you", UNREACHED)
+  });
+  try {
+    return await rounds(run, asking, firstNote);
+  } finally {
+    await asking.close();
+  }
+}
+
+/** Said when the person's answer arrives: later rounds follow it. */
+const HEARD = "FluxIQ will follow what you said from its next step on.";
+/** Said when the question could not be posted or its answer read: the attempt goes on as it would have. */
+const UNREACHED = "FluxIQ could not post its question to you or read your answer, so it carries on without it.";
+
+async function rounds(run: AutomationStudioAnswerFirstAttemptRun, asking: AutomationStudioAnswerFirstStuckAsking, firstNote: JsonObject | undefined): Promise<AutomationStudioAnswerFirstRoundsEnding | "setup_needed"> {
+  const purse = run.input.creation.purse;
   let note = firstNote;
   let idleRounds = 0;
   for (let ordinal = 1; ; ordinal += 1) {
@@ -82,31 +114,25 @@ export async function automationStudioAnswerFirstRounds(run: AutomationStudioAns
       await wait(run, next.waitMs);
       continue;
     }
-    const asked = run.askPerson;
-    // Nobody to ask: another round would spend on a refusal it will meet again. It waits, says why, and spends nothing more.
-    if (asked && !run.input.personAsk?.port.awaitAnswer) {
-      run.askPerson = false;
-      run.waitingFor = "stuck_in_a_loop";
-      return "waiting_for_check";
-    }
-    if (asked && await askedToStop(run)) return "stopped_by_person";
+    // Loop detection's last rung: steered onto a different way, never parked (header, R7).
+    const steer = run.askPerson ? await steerStuck(run, asking) : undefined;
     idleRounds = purse.spentCalls() === spentBefore ? idleRounds + 1 : 0;
     if (idleRounds > 0) await wait(run, automationStudioAnswerFirstBackoff(idleRounds - 1).waitMs);
     if (stopped(run)) return "stopped_by_person";
     automationStudioAnswerFirstSay("Carrying on", next.why);
     // A fresh round is no longer a repair of the step the Flow stopped at (`./path.ts`).
     if (run.path === "run_flow_then_repair") run.path = "run_flow_then_explore";
-    note = automationStudioAnswerFirstRoundNote(run, { ...next.note, ...refusedAgainNote(run, asked) });
+    note = automationStudioAnswerFirstRoundNote(run, { ...next.note, ...refusedAgainNote(run), ...(steer ? { loopStopped: steer } : {}) });
   }
 }
 
-/** What a fresh round is told when its completion was refused over the same evidence: what would change that, and what the result holds. It says a person's answer only where the person was asked about this. */
-function refusedAgainNote(run: AutomationStudioAnswerFirstAttemptRun, asked: boolean): JsonObject {
+/** What a fresh round is told when its completion was refused over the same evidence: what would change that, and what the result holds. It points at the person's answer once there is one. */
+function refusedAgainNote(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const { refusedAgain, held } = run.completion.state;
   if (refusedAgain === 0) return {};
   return {
     completionRefused: {
-      words: AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.freshRound(asked),
+      words: AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS.freshRound((run.personSaid?.length ?? 0) > 0),
       ...(held ? { resultHolds: automationStudioAnswerFirstResultHolds(held, run.input.binding?.deniedEvidenceKeys ?? []) } : {})
     }
   };
@@ -130,15 +156,32 @@ async function wait(run: AutomationStudioAnswerFirstAttemptRun, ms: number): Pro
   await run.ports.sleep(ms, run.input.cancellation.signal());
 }
 
-/** Loop detection's last rung: stop spending and ask (`./stuck-ask.ts`). True when the person said to stop. */
-async function askedToStop(run: AutomationStudioAnswerFirstAttemptRun): Promise<boolean> {
+/**
+ * Loop detection's last rung (header, R7): a fresh start on the record, the person asked where
+ * they can be and no question of theirs is still open, and the steer the next round is told. It
+ * never waits and never parks.
+ */
+async function steerStuck(run: AutomationStudioAnswerFirstAttemptRun, asking: AutomationStudioAnswerFirstStuckAsking): Promise<JsonObject> {
   run.askPerson = false;
-  run.waitingFor = "stuck_in_a_loop";
-  await automationStudioAnswerFirstKeep(run);
-  const { personAsk, cancellation } = run.input;
-  const port = personAsk ? automationStudioActivityAskPort(automationStudioAnswerFirstUnboundedPort(personAsk.port, (_state, waited) => { run.waitedMs += waited; }), "building") : undefined;
-  const answer = await automationStudioAnswerFirstAskStuck(port, cancellation.signal(), run.askWords);
-  run.askWords = undefined;
-  run.waitingFor = undefined;
-  return answer === "stop";
+  // The question says what was tried so far; the fresh start it announces goes on the record after it.
+  const posted = await asking.post(stuckQuestion(run));
+  run.tried.approachChanged();
+  run.stuck = undefined;
+  automationStudioAnswerFirstSay("Trying a different way", posted ? STEERED_ASKED : STEERED);
+  return automationStudioAnswerFirstStuckSteer(asking.open());
+}
+
+/** Said as the attempt steers itself: what it does, in the person's words. */
+const STEERED = "FluxIQ kept repeating itself, so it stopped that and is trying a different way.";
+const STEERED_ASKED = "FluxIQ kept repeating itself, so it stopped that and is trying a different way. It has asked you a question in case you can help, and carries on meanwhile.";
+
+/** The person's question, from what the last rung stopped on and what the attempt has tried and holds (`../loop-signal/stuck-question.ts`). */
+function stuckQuestion(run: AutomationStudioAnswerFirstAttemptRun): string {
+  const { held, answerText } = run.completion.state;
+  return automationStudioAnswerFirstStuckQuestion({
+    stuck: run.stuck ?? { finding: { pattern: "exact_repeat", repeats: 0, unchanged: [] } },
+    caught: run.loopsCaught,
+    tried: run.tried.data(),
+    held: { rows: held?.rows.totalRows ?? run.sink.summary().totalRows, acts: held?.acts ?? run.record.acts().length, answered: answerText !== undefined }
+  });
 }

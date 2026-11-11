@@ -69,7 +69,8 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  *   (`OwnPanelAssistant`'s `SendPanelMessage`), and `OwnData` never reaches
  *   another person's key, so it is never revealed, listed or changed.
  * - `SelfService`: the actions that change only the caller's own credentials,
- *   and a person's own unlock of their own keys with their own password, on
+ *   the caller's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`:
+ *   their starting humanness), and a person's own unlock of their own keys with their own password, on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
  *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
@@ -123,7 +124,9 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
       "iam:RevokeSession",
       "iam:UnlockVault",
       "iam:LockVault",
-      "iam:MintPressGrant"
+      "iam:MintPressGrant",
+      "iam:GetMyPreferences",
+      "iam:UpdateMyPreferences"
     ],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}"
   },

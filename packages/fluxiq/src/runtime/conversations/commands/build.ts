@@ -194,7 +194,8 @@ export async function buildAutomationStudioFlowFromConversation(
     // starts; the page on screen is a creation's starting point.
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
-    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
+    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }),
+    ...(context.humanness === undefined ? {} : { humanness: context.humanness })
   });
   if (!response.ok) return failedBuild(response);
   if (candidateMode) {
@@ -251,7 +252,8 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
     authoringMode: "configured",
     ...(startLocation ? { startLocation } : {}),
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
-    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls })
+    ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }),
+    ...(context.humanness === undefined ? {} : { humanness: context.humanness })
   });
   if (!response.ok) return failedBuild(response);
   const setup = (response.payload as { setupNeeded?: { say?: unknown } } | undefined)?.setupNeeded?.say;

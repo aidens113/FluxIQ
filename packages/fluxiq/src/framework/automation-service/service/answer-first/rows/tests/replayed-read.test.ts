@@ -48,8 +48,8 @@ describe("a forward run's replay of the read that built the result", () => {
     const first = await through(sink, call("read-atlases", "core.run_node", ASKED), handRead(rows));
     const again = await through(sink, replayCall("forward.10", ["title", "year", "link"]), replayedAnswer(rows));
     expect(again.stored?.datasetId).toBe(first.stored?.datasetId);
-    expect(again.stored?.resultChanged).toBeUndefined();
-    expect(again.note).toBeUndefined();
+    expect(again.stored?.resultChanged).toMatchObject({ kind: "carried_on" }); // counts only: no switch is told
+    expect(again.note).toMatchObject({ code: "answer_first.result_list_carried_on", rows: 3 });
     expect(sink.summary()).toMatchObject({ datasetId: first.stored?.datasetId, totalRows: 3 });
     expect(new Set(store.batches.map((batch) => batch.datasetId)).size).toBe(1);
   });
@@ -61,7 +61,7 @@ describe("a forward run's replay of the read that built the result", () => {
     const narrowed = rows.map((row) => shown(row, ["title", "year"]));
     const again = await through(sink, replayCall("forward.10", ["title", "year"]), replayedAnswer(narrowed));
     expect(again.stored?.datasetId).toBe(first.stored?.datasetId);
-    expect(again.note).toBeUndefined();
+    expect(again.note).toMatchObject({ code: "answer_first.result_list_carried_on", rows: 3 });
     const summary = sink.summary();
     expect(summary).toMatchObject({ datasetId: first.stored?.datasetId, totalRows: 3 });
     expect(summary.columns.map((column) => column.id)).toEqual(["title", "year"]);

@@ -3,7 +3,7 @@
 import { createFlowInput, getFlowInput, getFlowMetadataDetailInput, listFlowsInput, updateFlowSettingsInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
-import { updateFlowSettingsForRequest, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
+import { updateFlowSettingsForRequest, withFlowHumanness, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";
 import type { ProgramApiRequest } from "../../../_shared/api.ts";
@@ -90,7 +90,8 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       const detail = await service.getFlowMetadataDetail(projectId, flowId);
       // A detail exists only for a Flow that does, so its read is not guarded:
       // a Flow that cannot be read must not report the default size as stored.
-      return { ok: true, payload: { flow: withFlowSizeSettings(detail, detail ? await service.getFlow(projectId, flowId) : null) } };
+      const stored = detail ? await service.getFlow(projectId, flowId) : null;
+      return { ok: true, payload: { flow: withFlowHumanness(withFlowSizeSettings(detail, stored), stored) } };
     }
   });
   registry.register({
@@ -103,7 +104,8 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<CreateFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
-      return { ok: true, payload: { flow: await service.createFlow({ projectId: String(payload.projectId ?? ""), name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}) }) } };
+      // A starting level is the new Flow's own from the write that creates it (`service/flows/creation.ts`), which refuses one no run could use before anything is written.
+      return { ok: true, payload: { flow: await service.createFlow({ projectId: String(payload.projectId ?? ""), name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}), ...(payload.humanness !== undefined ? { humanness: payload.humanness } : {}) }) } };
     }
   });
   registry.register({

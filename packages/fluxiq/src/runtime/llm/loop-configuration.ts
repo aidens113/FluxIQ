@@ -438,6 +438,13 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    */
   forwardRun?: AutomationStudioFlowDraftReplayForward;
   /**
+   * This caller puts no page back (answer-first, plan D1): a model's rerun of a step runs from the page as it stands,
+   * with no reset and no earlier step done again, a lasting act's included; its answer says the page its step started
+   * on and that it ran here, and the step records that it ran in place (`./node-tools/step-place.ts`, `forward_run`;
+   * run `run-mwc60eal-4c9fdf6f`). Every call still passes the caller's act gate. Absent, a rerun is put back first.
+   */
+  rerunsInPlace?: true;
+  /**
    * This loop authors a Flow that is finished only once a run of the whole
    * Flow from its start was judged to do what was asked (user, 2026-10-02,
    * t244): the build's every round. A completion whose Flow the dry run cannot

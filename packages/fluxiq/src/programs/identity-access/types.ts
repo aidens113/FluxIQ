@@ -45,6 +45,13 @@ export type User = {
   totpEnabled: boolean;
   passwordConfigured?: boolean;
   pinConfigured?: boolean;
+  /**
+   * The person's own starting humanness (an integer 0-100; absent = none): what a run of
+   * theirs whose request carries no starting value uses. Read and set only by the person
+   * (`get-my-preferences`, `update-my-preferences`); it comes back with their own session
+   * (`validateSession`) and never with anyone else's view of them (`withoutPersonalPreferences`).
+   */
+  startingHumanness?: number;
   createdAtMs: number;
   updatedAtMs: number;
 };

@@ -12,7 +12,7 @@ import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStud
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../../runtime/parking/index.ts";
 import { nodeAttemptFromResult } from "../trace/index.ts";
 import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioObstruction, AutomationStudioRecordBatch } from "../index.ts";
-import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "../defensive/index.ts";
+import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY, automationStudioFaultFromThrownError, automationStudioNodeActLasts, automationStudioNodeExplicitLastingRisk, automationStudioNodeMutates, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "../defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "../host-state/index.ts";
 import { collectWiredNodeInputs } from "../graph-navigation/index.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "../records/index.ts";
@@ -46,7 +46,7 @@ import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
 // `obstruction` keeps the layer the latest dispatch that reported one says
 // stood over the page (`./obstruction-of.ts`, CC7), a failed dispatch's too.
-type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string; consumer?: object; cleared?: AutomationStudioClearedLayer[]; obstruction?: AutomationStudioObstruction };
+type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; node?: AutomationStudioFlowNode; attemptId: string; consumer?: object; cleared?: AutomationStudioClearedLayer[]; obstruction?: AutomationStudioObstruction };
 type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];
 const RECORDS_WRITE_EFFECT = "records.write";
 const PERSIST_FAILED_MESSAGE = "The output ran, but the records it returned could not be saved.";
@@ -196,7 +196,7 @@ export class AutomationStudioNodeAttemptExecution {
       }) : undefined);
       if (native) {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
-        const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
+        const target: RecordCaptureTarget = { runState, nodeId: node.id, node: executionNode, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
         const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, definition?.outputs ?? native.declaredOutputs);
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
@@ -245,7 +245,7 @@ export class AutomationStudioNodeAttemptExecution {
       };
       if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute) runState.dispatchedActions.add(node.id);
       let result = await definition.execute(context);
-      const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
+      const target: RecordCaptureTarget = { runState, nodeId: node.id, node: executionNode, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
     } catch (error) {
@@ -325,7 +325,7 @@ export class AutomationStudioNodeAttemptExecution {
           const combined = combineAutomationStudioResolvedActionEffects([target.runState.actionEffects.get(target.nodeId), outputFloor]);
           if (combined) target.runState.actionEffects.set(target.nodeId, combined);
         }
-        const dispatchContext = this.effectDispatchContext(options, withholding);
+        const dispatchContext = this.effectDispatchContext(options, withholding, this.misclickAllowed(options, target, effect));
         target.runState.dispatchedActions.add(target.nodeId);
         const dispatcher = options.effectDispatcher;
         const reported = await automationStudioLlmStepLogSpans.time("dispatch", async () => await dispatcher(effect, issued ? { ...dispatchContext, commandContext: issued.context } : dispatchContext));
@@ -532,10 +532,30 @@ export class AutomationStudioNodeAttemptExecution {
   // dispatcher that saves its own record of the command -- the framework
   // runtime's command attempt -- withholds the values the trace withholds. A dispatch with
   // neither a reference, signal nor a withheld value gets no context, as before.
-  private static effectDispatchContext(options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): EffectDispatchContext {
+  private static effectDispatchContext(options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, misclick = false): EffectDispatchContext {
     const withheldValues = withholding.values();
     const withholds = withheldValues.texts.length > 0 || withheldValues.numbers.length > 0;
-    if (options.referenceNow === undefined && !options.signal && !withholds) return undefined;
-    return { ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
+    if (options.referenceNow === undefined && !options.signal && !withholds && options.humanness === undefined) return undefined;
+    return { ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}), ...(options.humanness !== undefined ? { humanness: options.humanness } : {}), ...(misclick ? { humannessMisclick: true as const } : {}) };
+  }
+
+  // Whether the client may precede this dispatch's press with one misclick (H4).
+  // Only above humanness 0, and only on a node Core *knows* is not lasting: its
+  // step declared an empty consequence list -- the step answering `none`, never
+  // a list that is simply missing -- and nothing marks the node, its resolved
+  // action-effect floor or the dispatched output as acting on the world
+  // (`../defensive/lasting-act.ts`, `../defensive/node-side-effect.ts`).
+  private static misclickAllowed(options: AutomationStudioGraphExecutionOptions, target: RecordCaptureTarget, effect: { type: string; payload?: JsonValue }): boolean {
+    if (options.humanness === undefined || !(options.humanness > 0) || !target.node) return false;
+    const declared = target.node.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
+    if (!Array.isArray(declared) || declared.length > 0) return false;
+    const actionEffect = target.runState.actionEffects.get(target.nodeId);
+    const lasting = (node: AutomationStudioFlowNode) => automationStudioNodeActLasts(node, actionEffect) || automationStudioNodeMutates(node, actionEffect) || automationStudioNodeExplicitLastingRisk(node);
+    if (lasting(target.node)) return false;
+    // The dispatched output is judged too, with its own metadata over the node's.
+    const payload = effect.payload && typeof effect.payload === "object" && !Array.isArray(effect.payload) ? effect.payload : undefined;
+    if (!payload) return true;
+    const outputMetadata = payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? payload.metadata : {};
+    return !lasting({ id: target.nodeId, definitionId: "builtin.policy.action", parameterValues: payload, metadata: { ...(target.node.metadata ?? {}), ...outputMetadata } });
   }
 }

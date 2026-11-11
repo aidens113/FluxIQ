@@ -52,6 +52,8 @@ export type AutomationStudioAnswerFirstOpening = {
   /** This Flow already holds an act record, which from now on would read as this attempt's. */
   actsHeldHere: boolean;
   startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
+  /** The task's own humanness level as it was kept, where it has one: a task without one takes the person's starting value (`./run-attempt.ts`). */
+  humanness?: number | undefined;
 };
 
 type Stores = { store: Pick<AutomationStudioAnswerFirstAttemptStore, "list">; acts: AutomationStudioAnswerFirstRunActStore };
@@ -74,6 +76,7 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
     ...(again ? { setAside: carried?.data } : { seed: carried?.data, seedFrom: carried?.from }),
     // A record nobody can read is held here too: this attempt's own replaces it.
     actsHeldHere: !here.ok || here.value !== undefined,
+    ...(kept?.humanness !== undefined ? { humanness: kept.humanness } : {}),
     ...(route.kind === "build" ? {} : { startedFrom: { attemptId: route.saved.attemptId, flowId: route.saved.flowId, stepsDigest: route.saved.stepsDigest, steps: route.saved.steps.length, notes: route.notes.length, provenWhole: route.saved.provenWhole } })
   };
 }

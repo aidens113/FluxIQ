@@ -67,7 +67,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     const task = await automationStudioConversationTaskOfFlow(context, flowId);
     if (task) return await taskRun(context, progress, flowId, task);
     // What reading the message cost travels with the run: the Flow's spend in a Lab-scoped run (t438).
-    const reading = { ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }), ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }) };
+    const reading = { ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }), ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }), ...(context.humanness === undefined ? {} : { humanness: context.humanness }) };
     const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", ...reading });
     const answer = (response.payload ?? {}) as RunAnswer;
     const runId = typeof answer.runtimeSession?.runId === "string" ? answer.runtimeSession.runId : undefined;
