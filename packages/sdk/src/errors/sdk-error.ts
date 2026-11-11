@@ -10,6 +10,7 @@ import type { FluxNodeIssue } from "@fluxiq/contracts/fluxnode";
  * - `connection`, `protocol`: the engine could not be reached, or answered something the contracts do not describe;
  * - `stream_lost`: the event stream ended before the run did and could not be resumed;
  * - `aborted`: the program's `AbortSignal` was already aborted;
+ * - `run_request.options_on_resume`, `run_request.overrides_on_resume`: a resume was given options or overrides, which it keeps from its first run (the contracts' own refusal codes);
  * - `cli`: a command line the CLI could not follow.
  */
 export type SdkErrorCode =
@@ -24,6 +25,8 @@ export type SdkErrorCode =
   | "protocol"
   | "stream_lost"
   | "aborted"
+  | "run_request.options_on_resume"
+  | "run_request.overrides_on_resume"
   | "cli";
 
 /** An error with a stable `code`, the `issues` behind it when there are some, and a `hint` saying what to do. */

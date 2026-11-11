@@ -2,6 +2,7 @@
 // them; `resolveFluxNodeOptions` fills what neither says with Core's defaults.
 
 import { z } from "zod";
+import { FLUXNODE_MODEL_ID_PATTERN } from "./model-id-pattern.ts";
 
 /** The standing floor of retries per step: the first attempt plus 3. A caller may raise it, never lower it. */
 export const FLUXNODE_MIN_RETRIES = 3;
@@ -40,7 +41,7 @@ export const fluxNodeOptionsSchema = z
     retries: z.number().int().min(FLUXNODE_MIN_RETRIES, `retries is at least ${FLUXNODE_MIN_RETRIES}: the first attempt plus 3 is the floor on every step.`).max(100),
     judge: z.enum(FLUXNODE_JUDGE_MODES),
     budgetUsd: z.number().finite().nonnegative().max(100_000),
-    model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u, "A model id is 1 to 128 of letters, digits, \".\", \"_\", \":\", \"/\" and \"-\"."),
+    model: z.string().regex(FLUXNODE_MODEL_ID_PATTERN, "A model id is 1 to 128 of letters, digits, \".\", \"_\", \":\", \"/\" and \"-\"."),
     mode: z.enum(FLUXNODE_RUN_MODES),
     timeoutMs: z.number().int().positive().max(7 * 24 * 60 * 60 * 1000)
   })

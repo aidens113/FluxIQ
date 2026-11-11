@@ -66,7 +66,8 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
   const runs = new FluxNodeRunRegistry();
   const context: FluxNodeRunContext = {
     service: source.service, flows, modelCaller: source.modelCaller ?? OWNER, now,
-    startLocationOf: source.startLocationOf ?? ((spec) => spec.start), personWaitMs: source.personWaitMs ?? PERSON_WAIT_MS
+    startLocationOf: source.startLocationOf ?? ((spec) => spec.start), personWaitMs: source.personWaitMs ?? PERSON_WAIT_MS,
+    judgedWith: (flowId) => runs.judgedWith(flowId)
   };
 
   const pipelines: FluxNodePipelineContext = {
@@ -150,7 +151,7 @@ type Target = { registered: FluxNodeRegistered; carried: FluxNodeRunCarried } | 
 
 /** What a request runs: an inline spec, registered on the way; a registered name; or the run a resume handle continues. */
 async function targetOf(flows: FluxNodeOwnerFlows, runs: FluxNodeRunRegistry, request: FluxNodeRunRequest): Promise<Target> {
-  const carried = (inputs: JsonObject): FluxNodeRunCarried => ({ inputs, ...(request.options === undefined ? {} : { options: request.options }), ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) });
+  const carried = (inputs: JsonObject): FluxNodeRunCarried => ({ inputs, ...(request.options === undefined ? {} : { options: request.options }), ...(request.overrides === undefined ? {} : { overrides: request.overrides }), ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) });
   if (request.spec !== undefined) return { registered: (await flows.register(request.spec)).registered, carried: carried(request.inputs ?? {}) };
   if (request.pipeline !== undefined) return { registered: (await flows.registerPipeline(request.pipeline)).registered, carried: carried(request.inputs ?? {}) };
   if (request.name !== undefined) {
@@ -160,7 +161,7 @@ async function targetOf(flows: FluxNodeOwnerFlows, runs: FluxNodeRunRegistry, re
   }
   const held = request.resumeHandle === undefined ? undefined : runs.resumable(request.resumeHandle);
   if (!held) return { refusal: { code: "unknown_run", message: "That resume handle names no run this engine can continue." } };
-  // The same inputs, key and options; a correlation id given now ties this run in, else the first one's.
+  // The same inputs, key, options and overrides; a correlation id given now ties this run in, else the first one's.
   return { registered: held.registered, carried: { ...held.run.carried, ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) } };
 }
 
@@ -181,6 +182,7 @@ async function finish(context: FluxNodeRunContext, pipelines: FluxNodePipelineCo
   try {
     const outcome = isRegisteredPipeline(registered) ? await runFluxNodePipeline(pipelines, run, registered, resumeHandle) : await runFluxNode(context, run, registered, resumeHandle);
     if (outcome.learned) runs.learned(registered.flowId, outcome.learned);
+    if (outcome.judgeDigest !== undefined && outcome.result.status === "achieved" && outcome.result.verdict.by === "judge") runs.judged(registered.flowId, outcome.judgeDigest);
     run.end(outcome.result);
   } catch (error) {
     run.tell({ type: "step", flowId: registered.flowId, stepId: "fluxnode.run", label: `Core could not run this FluxNode (${error instanceof Error ? error.name : "unknown error"}).`, state: "failed" });

@@ -33,6 +33,8 @@ export type FluxNodeCallerOptionsInput = {
   inputs: JsonObject;
   bridge: FluxNodeCheckBridge | undefined;
   personAsk: AutomationStudioAnswerFirstPersonAskSink;
+  /** The run's judge criteria differ from those the Flow was last judged with: the judge runs again (unless it is off). */
+  judgeChanged?: boolean | undefined;
 };
 
 export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): AutomationStudioAnswerFirstCallerOptions {
@@ -43,8 +45,10 @@ export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): Automa
     taskKey: options.mode === "explore" ? `${key}:explore:${input.runId}` : key,
     ...(options.model === undefined ? {} : { model: options.model }),
     budgetUsd: options.budgetUsd,
-    judge: bridge && options.judge === "auto" && !spec.hasCheck ? "always" : options.judge,
+    judge: input.judgeChanged === true && options.judge !== "off" ? "always" : bridge && options.judge === "auto" && !spec.hasCheck ? "always" : options.judge,
     ...(bridge ? { check: bridge.check } : {}),
+    // `humanness` lands on both option types with lane t898 (11252f094); this line does not typecheck until it merges.
+    ...(options.humanness === undefined ? {} : { humanness: options.humanness }),
     personAsk: input.personAsk,
     scope: { permittedConsequences, ...(spec.scope.sites === undefined ? {} : { sites: [...spec.scope.sites] }) },
     inputs: structuredClone(input.inputs)

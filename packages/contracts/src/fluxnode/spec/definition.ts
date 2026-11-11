@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { flowInputNames, flowInputsSchema, fluxNodeNameSchema } from "../flow/index.ts";
 import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
+import { fluxNodeOverridesSchema } from "../overrides/index.ts";
 import { jsonTypeSchemaSchema } from "../type-schema/index.ts";
 import { readFluxNodeGoal } from "./goal.ts";
 import { fluxNodeOptionsSchema } from "./options.ts";
@@ -26,7 +27,8 @@ const NO_CONTROL = /^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u;
  * - `scope`: the standing grant (`fluxNodeScopeSchema`);
  * - `hasCheck`: whether the program registered a check, run before any judge;
  * - `uses`: other FluxNodes this one calls, by name; never itself;
- * - `options`: `fluxNodeOptionsSchema`, every one optional.
+ * - `options`: `fluxNodeOptionsSchema`, every one optional;
+ * - `overrides`: `fluxNodeOverridesSchema`, how Core does the work; not part of the spec hash.
  *
  * Unknown keys are refused.
  */
@@ -45,7 +47,8 @@ export const fluxNodeSpecSchema = z
       .max(FLUXNODE_SPEC_LIMITS.usesMax)
       .transform((names) => [...new Set(names)])
       .optional(),
-    options: fluxNodeOptionsSchema.optional()
+    options: fluxNodeOptionsSchema.optional(),
+    overrides: fluxNodeOverridesSchema.optional()
   })
   .strict()
   .superRefine((spec, context) => {

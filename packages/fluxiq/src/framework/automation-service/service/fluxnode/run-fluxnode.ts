@@ -12,8 +12,9 @@
 // **The goal, filled with the inputs, is the Flow's instruction** (`./owner-flows.ts`): the words the
 // attempt explores on. The inputs themselves go with the attempt, so a saved Flow replays on them.
 
-import { fillFluxNodeGoal, resolveFluxNodeOptions, type FluxNodeRunResult, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
+import { fillFluxNodeGoal, resolveFluxNodeOptions, resolveFluxNodeOverrides, type FluxNodeRunResult, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
+import { runWithAutomationStudioRunOverrides } from "../../../../runtime/run-overrides/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../flow-bootstrap-commands/index.ts";
 import { fluxNodeCallerOptions, fluxNodePermittedConsequences } from "./caller-options.ts";
@@ -21,6 +22,7 @@ import { fluxNodeCheckBridge, fluxNodePersonSink, fluxNodeStepEvents } from "./e
 import type { FluxNodeRun } from "./fluxnode-run.ts";
 import type { FluxNodeOwnerFlows, FluxNodeRegisteredSpec } from "./owner-flows.ts";
 import { fluxNodeResultOf } from "./result-of.ts";
+import { fluxNodeRunOverridesFrame } from "./overrides-frame.ts";
 
 /** How often a Stop that found no attempt registered yet is tried again. */
 const STOP_RETRY_MS = 25;
@@ -34,6 +36,8 @@ export type FluxNodeRunContext = {
   startLocationOf: (spec: FluxNodeSpec) => string | undefined;
   /** How long a `person_needed` event waits for the program's answer before the run waits for a person instead. */
   personWaitMs: number;
+  /** The judge-part digest of the latest run on this Flow that a judge confirmed, when one did. */
+  judgedWith?: ((flowId: string) => string | undefined) | undefined;
   now: () => number;
 };
 
@@ -41,6 +45,8 @@ export type FluxNodeRunOutcome = {
   result: FluxNodeRunResult;
   /** The learned Flow the attempt saved, when it saved one. */
   learned?: { candidateId: string; revision?: number | undefined; digest?: string | undefined } | undefined;
+  /** This run's judge-part digest of its overrides, to record when a judge confirmed it. */
+  judgeDigest?: string | undefined;
 };
 
 export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun, registered: FluxNodeRegisteredSpec, resumeHandle: string): Promise<FluxNodeRunOutcome> {
@@ -48,9 +54,15 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   const inputs = run.carried.inputs;
   const options = resolveFluxNodeOptions(spec.options, run.carried.options);
   run.budgetUsd = options.budgetUsd;
+  const resolved = await resolveFluxNodeOverrides(spec.overrides, run.carried.overrides);
+  const hasOverrides = spec.overrides !== undefined || run.carried.overrides !== undefined;
+  run.overridesDigest = hasOverrides ? resolved.digest : undefined;
+  const frame = fluxNodeRunOverridesFrame(resolved.overrides, options.retries, run.overridesDigest);
+  // A Flow last judged on other criteria is judged again, since an exact replay is otherwise taken without the judge.
+  const judgeChanged = (context.judgedWith?.(registered.flowId) ?? (await resolveFluxNodeOverrides(undefined, undefined)).judgeDigest) !== resolved.judgeDigest;
   const bridge = spec.outputs !== undefined || spec.hasCheck ? fluxNodeCheckBridge(run, spec, inputs) : undefined;
-  const personAsk = fluxNodePersonSink(run, context.personWaitMs, context.now);
-  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs, bridge, personAsk });
+  const personAsk = fluxNodePersonSink(run, resolved.overrides.deadlines.personWaitMs ?? context.personWaitMs, context.now);
+  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs, bridge, personAsk, judgeChanged });
   const goal = fillFluxNodeGoal(spec.goal, inputs);
   if (!goal.ok) throw new Error(`fluxnode.goal_unfilled: ${goal.issues.map((issue) => issue.code).join(", ")}`);
   const attempt = { over: false };
@@ -59,14 +71,16 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   let answered: AutomationStudioGenerateFlowBootstrapAdaptationAnswered | undefined;
   try {
     if (!run.stopRequested) {
-      await context.flows.instruct(registered, goal.value);
-      run.whenStopped(() => cancelUntilLanded(context.service, registered, attempt));
-      const start = context.startLocationOf(spec);
-      const generated = await context.service.generateFlowBootstrapAdaptation({
-        projectId: registered.projectId, flowId: registered.flowId, caller: context.modelCaller, authoringMode: "answer-first",
-        permittedConsequences: fluxNodePermittedConsequences(spec.scope.acts), ...(start === undefined ? {} : { startLocation: start })
-      }, callerOptions);
-      answered = generated.status === "answered" ? generated : undefined;
+      await runWithAutomationStudioRunOverrides(frame, async () => {
+        await context.flows.instruct(registered, goal.value);
+        run.whenStopped(() => cancelUntilLanded(context.service, registered, attempt));
+        const start = context.startLocationOf(spec);
+        const generated = await context.service.generateFlowBootstrapAdaptation({
+          projectId: registered.projectId, flowId: registered.flowId, caller: context.modelCaller, authoringMode: "answer-first",
+          permittedConsequences: fluxNodePermittedConsequences(spec.scope.acts), ...(start === undefined ? {} : { startLocation: start })
+        }, callerOptions);
+        answered = generated.status === "answered" ? generated : undefined;
+      });
     }
   } finally {
     attempt.over = true;
@@ -75,7 +89,7 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   }
   const result = await fluxNodeResultOf({ run, spec, inputs, answered, bridge, owner: context.service, resumeHandle, endedAt: context.now() });
   const learned = answered?.candidateId === undefined ? undefined : { candidateId: answered.candidateId, revision: answered.revision, digest: answered.digest };
-  return { result, ...(learned ? { learned } : {}) };
+  return { result, ...(learned ? { learned } : {}), judgeDigest: resolved.judgeDigest };
 }
 
 /** Cancels the attempt on its Flow, again and again until one was registered to cancel or the attempt is over. */

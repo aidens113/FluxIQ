@@ -14,3 +14,5 @@ export * from "./keys/index.ts";
 export * from "./pipeline/index.ts";
 export * from "./schema/index.ts";
 export * from "./session/index.ts";
+export { FLUXNODE_CORE_TOOL_POLICIES, FLUXNODE_PROMPT_SECTIONS } from "@fluxiq/contracts/fluxnode";
+export type { FluxNodeOptions, FluxNodeOverrides, FluxNodePromptSectionId, FluxNodeTextOverride } from "@fluxiq/contracts/fluxnode";

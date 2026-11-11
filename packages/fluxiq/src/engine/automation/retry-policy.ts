@@ -5,6 +5,7 @@ import type { AutomationStudioResolvedActionEffect } from "../../components/auto
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../components/automation/control-flow/index.ts";
 import { AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, automationStudioAttemptFaultIsAbsorbed } from "./defensive/index.ts";
+import { automationStudioRunOverrides } from "../../runtime/run-overrides/index.ts";
 
 /**
  * How many times one node may be attempted, and how long the run waits between
@@ -42,11 +43,39 @@ export type AutomationStudioNodeRetryPolicy = {
  * time. Settings stored before 2026-10-07 carry `maxRetriesPerAction: 2` from
  * the old default of three attempts; the floor keeps those Flows from running
  * one retry short.
+ *
+ * A run may raise this floor for itself (W3, t899): see
+ * `automationStudioRunNodeRetryPolicy`, which every path reads in its place.
  */
 export const AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY: AutomationStudioNodeRetryPolicy = Object.freeze({
   maxAttempts: 4,
   backoffMs: Object.freeze([250, 1_000, 2_000])
 });
+
+/**
+ * Core's default policy as the current run sets it (W3, t899), read by every
+ * attempt path: a graph run's floor below, and a node run outside a graph run
+ * (`./outside-graph/retries.ts`).
+ *
+ * A run's overrides frame (`runWithAutomationStudioRunOverrides`) may raise the
+ * attempts every node gets and give the waits between them. Its attempts are a
+ * floor, never fewer than the default's, and are not held to
+ * `MAX_DECLARED_ATTEMPTS`: that bound keeps a malformed document from pinning a
+ * run, and a frame is a caller's validated setting, not a document. Without a
+ * frame, or for what a frame leaves out, this is the default above, the very
+ * object. The frame lives in the run's own async chain, so two runs in one
+ * process each read their own.
+ */
+export function automationStudioRunNodeRetryPolicy(): AutomationStudioNodeRetryPolicy {
+  const frame = automationStudioRunOverrides();
+  if (!frame) return AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
+  const asked = frame.nodeAttempts;
+  const fallback = AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
+  const maxAttempts = typeof asked === "number" && Number.isFinite(asked) ? Math.max(fallback.maxAttempts, Math.floor(asked)) : fallback.maxAttempts;
+  const waits = (frame.retryWaits?.backoffMs ?? []).filter((entry) => Number.isFinite(entry) && entry >= 0);
+  if (maxAttempts === fallback.maxAttempts && !waits.length) return fallback;
+  return { maxAttempts, backoffMs: waits.length ? waits : fallback.backoffMs };
+}
 
 /**
  * A container's policy: one attempt. A Call Subflow node runs a whole Subflow
@@ -64,9 +93,11 @@ const MAX_DECLARED_ATTEMPTS = 25;
 /**
  * The policy this node runs under -- a Call Subflow container excepted, which
  * runs once while its child steps keep their own -- its own declaration first, then a Retry node
- * guarding its branch, then the Flow's, then the run's, then Core's default;
- * never fewer attempts than that default, and capped by the run's
- * `maxRetriesPerAction` allowance only above it.
+ * guarding its branch, then the Flow's, then the run's, then Core's default as
+ * the run sets it (`automationStudioRunNodeRetryPolicy`); never fewer attempts
+ * than that default, and capped by the run's `maxRetriesPerAction` allowance
+ * only above it. A declaration that names attempts but no waits takes the
+ * run's waits.
  *
  * The cap is why `maxRetriesPerAction` is now read here. It was a budget whose
  * only effect was to *remove* the Flow's own authored failed route once a node
@@ -80,13 +111,14 @@ export function automationStudioNodeRetryPolicy(
   options: AutomationStudioGraphExecutionOptions
 ): AutomationStudioNodeRetryPolicy {
   if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) return CONTAINER_RETRY_POLICY;
-  const asked = declaredRetryPolicy(node.parameterValues?.retry)
-    ?? declaredRetryPolicy(node.metadata?.retry)
+  const runDefault = automationStudioRunNodeRetryPolicy();
+  const asked = declaredRetryPolicy(node.parameterValues?.retry, runDefault.backoffMs)
+    ?? declaredRetryPolicy(node.metadata?.retry, runDefault.backoffMs)
     ?? branchRetryPolicy(flow, node)
-    ?? declaredRetryPolicy(flow.metadata?.retry)
-    ?? boundedPolicy(options.retryPolicy)
-    ?? AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
-  const floor = AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts;
+    ?? declaredRetryPolicy(flow.metadata?.retry, runDefault.backoffMs)
+    ?? boundedPolicy(options.retryPolicy, runDefault.backoffMs)
+    ?? runDefault;
+  const floor = runDefault.maxAttempts;
   const declared = asked.maxAttempts >= floor ? asked : { maxAttempts: floor, backoffMs: asked.backoffMs };
   const allowance = options.recoveryBudget?.maxRetriesPerAction;
   if (allowance === undefined || !Number.isFinite(allowance)) return declared;
@@ -180,13 +212,13 @@ function retryNodeRetryPolicy(retryNode: AutomationStudioFlowNode): AutomationSt
 }
 
 /** A declared policy, in either the `{maxAttempts, backoffMs}` shape or the Retry node's `{attempts, delayMs}` one. */
-function declaredRetryPolicy(value: JsonValue | undefined): AutomationStudioNodeRetryPolicy | undefined {
+function declaredRetryPolicy(value: JsonValue | undefined, defaultBackoffMs: readonly number[]): AutomationStudioNodeRetryPolicy | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const declared = value as JsonObject;
   const attempts = boundedAttempts(declared.maxAttempts ?? declared.attempts);
   if (attempts === undefined) return undefined;
   const backoffMs = declaredBackoff(declared.backoffMs ?? declared.delayMs, attempts);
-  return { maxAttempts: attempts, backoffMs: backoffMs ?? AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.backoffMs };
+  return { maxAttempts: attempts, backoffMs: backoffMs ?? defaultBackoffMs };
 }
 
 function declaredBackoff(value: JsonValue | undefined, attempts: number): readonly number[] | undefined {
@@ -200,12 +232,12 @@ function declaredBackoff(value: JsonValue | undefined, attempts: number): readon
 }
 
 /** A policy the caller supplied directly, held to the same bounds as a declared one. */
-function boundedPolicy(policy: AutomationStudioNodeRetryPolicy | undefined): AutomationStudioNodeRetryPolicy | undefined {
+function boundedPolicy(policy: AutomationStudioNodeRetryPolicy | undefined, defaultBackoffMs: readonly number[]): AutomationStudioNodeRetryPolicy | undefined {
   if (!policy) return undefined;
   const attempts = boundedAttempts(policy.maxAttempts);
   if (attempts === undefined) return undefined;
   const waits = policy.backoffMs.filter((entry) => Number.isFinite(entry) && entry >= 0);
-  return { maxAttempts: attempts, backoffMs: waits.length ? waits : AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.backoffMs };
+  return { maxAttempts: attempts, backoffMs: waits.length ? waits : defaultBackoffMs };
 }
 
 function boundedAttempts(value: JsonValue | undefined): number | undefined {
