@@ -4,6 +4,7 @@ import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
+import { automationStudioFlowDraftRepeatIsWhile } from "../routing.ts";
 import { automationStudioFlowDraftSecondCopy } from "../second-copy.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
@@ -26,6 +27,7 @@ import type {
   AutomationStudioFlowDraftAmendment,
   AutomationStudioFlowDraftAmendmentRefusal,
   AutomationStudioFlowDraftClaimRefused,
+  AutomationStudioFlowDraftLoopNeverEnds,
   AutomationStudioFlowDraftUnreachedStep
 } from "./types.ts";
 
@@ -80,16 +82,29 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
  * step (`./types.ts`, week report W1): a claim it refuses is not made and is
  * reported `act_not_done_there`, and the rest of that amendment still applies,
  * as with `act_on_a_read`.
+ *
+ * `options.loopNeverEnds`, when given, is asked of each repeat an amendment
+ * writes that runs its span again while the span's last step succeeds
+ * (`./types.ts`): a loop it refuses -- one assembly would refuse, whose last
+ * step can answer no route that ends it and which has no `most` the person
+ * gave -- is taken back and reported `repeat_never_ends`, with assembly's own
+ * sentence, so the model fixes the loop in the decision after rather than
+ * meeting the refusal only when the Flow is assembled.
  */
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
   amendments: readonly AutomationStudioFlowDraftAmendment[],
-  options: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined } = {}
+  options: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined; loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined } = {}
 ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const claims: { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[] = [];
   const shown = automationStudioFlowDraftShownNumbering(steps);
+  // The number the model wrote for the step now at `position`, which a move earlier in this decision may have changed (`./said-numbers.ts`, t285 gap 2).
+  const shownAt = (position: number): number => {
+    const there = steps.find((each) => each.position === position);
+    return there ? shown.number(there) : position;
+  };
   const written: AutomationStudioFlowDraftWrittenRepeat[] = [];
   let movedStep = false;
   // Each step's way to its page as the decision found it, and the steps it took out (`./strand-check.ts`).
@@ -204,6 +219,18 @@ export function applyAutomationStudioFlowDraftAmendments(
       const previous = step.routing;
       const settings = step.settings;
       const routed = automationStudioFlowDraftAmendmentRoute(steps, step, amendment, shown);
+      // A loop that could end only by failing is put back as it was and refused
+      // with assembly's sentence, which names the nodes that do end one
+      // (`./types.ts`, run `run-mwblz4aq-0baa810a`). Never offered a count.
+      const neverEnds = routed.ok && automationStudioFlowDraftRepeatIsWhile(step.routing) ? options.loopNeverEnds?.(steps, step) : undefined;
+      if (neverEnds !== undefined) {
+        if (previous === undefined) delete step.routing;
+        else step.routing = previous;
+        if (settings === undefined) delete step.settings;
+        else step.settings = settings;
+        refused.push({ step: amendment.step, reason: "repeat_never_ends", said: automationStudioFlowDraftSaidInNumbers(neverEnds, shownAt) });
+        continue;
+      }
       if (routed.ok) {
         applied += 1;
         // Checked once the decision's moves are done (`./repeat-revalidation.ts`).
@@ -237,13 +264,9 @@ export function applyAutomationStudioFlowDraftAmendments(
     // (`./said-numbers.ts`, t285 gap 2).
     const claimRefusal = claimed === undefined ? undefined : options.claimRefused?.(steps, step, claimed);
     if (claimRefusal) {
-      const written = (position: number): number => {
-        const there = steps.find((each) => each.position === position);
-        return there ? shown.number(there) : position;
-      };
       refused.push({
-        step: amendment.step, reason: "act_not_done_there", act: claimRefusal.act, said: automationStudioFlowDraftSaidInNumbers(claimRefusal.said, written),
-        ...(claimRefusal.instead !== undefined && steps.some((each) => each.position === claimRefusal.instead) ? { instead: written(claimRefusal.instead) } : {})
+        step: amendment.step, reason: "act_not_done_there", act: claimRefusal.act, said: automationStudioFlowDraftSaidInNumbers(claimRefusal.said, shownAt),
+        ...(claimRefusal.instead !== undefined && steps.some((each) => each.position === claimRefusal.instead) ? { instead: shownAt(claimRefusal.instead) } : {})
       });
     }
     const act = claimRefusal ? undefined : claimed;

@@ -342,13 +342,20 @@ export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
  * (`../script-statements/repeat-order.ts`), so the sentence again names the listing's
  * sort as the order a repeat visits, says rows the sort cannot read go last,
  * and keeps the limit of the same N for saving only the acted rows.
+ *
+ * **A while-loop ends by its last step, never by a count (run
+ * `run-mwblz4aq-0baa810a`).** The text offered `repeat most: <passes>` as the
+ * way out for a last step that cannot answer ended, with `repeat most: 20` as
+ * its example; a build capped a press at 20 passes and spent 19 on nothing.
+ * The loop now ends only when its last step answers ended, a step that cannot
+ * is refused, and `repeat most:` is said to be only a count the person gave.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
   "`repeat over: <label>` runs the span once for each row the labelled listing step read. The listing is written before the span and runs once; it never repeats itself. A step inside the span that presses a row's control finds that row's own control on each pass.",
   "`repeat through: <label>` names the span's last step; without it the span is the step that says repeat, alone.",
-  "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended -- a next-page step does when there is no further page -- or after `repeat most: <passes>`; a last step that cannot answer ended needs repeat most.",
-  "`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`. A span whose last step answers ended -- a next-page step -- needs none. Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.",
+  "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended because there is nothing more -- a next-page step does when there is no further page -- so the labelled step must be one whose node can answer ended. A last step that cannot, such as a plain press, would end the loop only by failing, and that repeat is refused: end the span with a step that answers ended instead.",
+  "`repeat most:` is only for a count the person's own instruction gives, never the way a loop ends. Beside `repeat while:` it goes on the span's first step, never under its last, and stops after that many passes. Beside `repeat over:` it acts on only the listing's first rows, in their order, and then the Flow goes on: `repeat over: bookmarks` then `repeat most: 2` does the span for the first two bookmarks.",
   "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
   "An `optional: yes` step may stand inside a span: it is done on the passes that need it and gone past on the others. A step written directly after an optional step with `only after: <its label>` runs only on the passes where that step was done, and so does each step after it with the same line; then the pass goes on where it was. Keep them in the same span, its `repeat through:` naming the last of them. A step that does what the request asks never takes `optional:` or `only after:`: a step behind `only after: <label>` runs only on passes where <label> was done, so on a pass where <label> finds nothing to press the act is passed over and never done; keep both for a banner or popup the page only sometimes shows.",
   "`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step: each pass then starts at least that long after the one before. Write `6 s`, `1500 ms` or `1 min`; a bare number is seconds.",

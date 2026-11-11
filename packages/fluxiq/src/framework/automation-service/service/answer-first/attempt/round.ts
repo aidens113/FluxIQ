@@ -108,6 +108,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       },
       actsMissing: acts.actsMissing,
       claimRefused: acts.claimRefused,
+      // A while-loop that could end only by failing is refused as written, not after the answer (run `run-mwblz4aq-0baa810a`).
+      loopNeverEnds: acts.loopNeverEnds,
       ...(acts.route ? { route: acts.route } : {})
     },
     completionSchema: AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA,

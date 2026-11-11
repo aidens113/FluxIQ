@@ -94,8 +94,9 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // The steps already out before the edit, so a drop of one is known to change nothing (`keepOnly` below).
   const outBefore = new Set(draftSteps.filter((step) => step.disposition !== "kept").map((step) => step.position));
   amendmentMemory.before(iteration, draftSteps);
-  // A claim the act judge would reject is refused as it is made (`act_not_done_there`, week report W1).
-  const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now, { claimRefused: context.input.draft ? context.input.draft.claimRefused : undefined });
+  // A claim the act judge would reject is refused as it is made (`act_not_done_there`, week report W1),
+  // and so is a loop that could end only by failing (`repeat_never_ends`, run `run-mwblz4aq-0baa810a`).
+  const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now, amendmentChecks(context));
   // Edits that put the draft back exactly as it stood changed nothing about the Flow.
   const sameDraftAs = rerun.request || !amended.applied ? undefined : amendmentMemory.after(iteration, draftSteps);
   // **Every refusal of this decision on one path, the draft's and the
@@ -251,7 +252,7 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
   if (held.retained) tellRetained(context, iteration, held.retained, attempt);
   // Held claims go to the act judge too, as the decision's others did (t285 gap 1).
-  const settled = held.amendments.settle(context.draftSteps, rerun, { claimRefused: context.input.draft ? context.input.draft.claimRefused : undefined });
+  const settled = held.amendments.settle(context.draftSteps, rerun, amendmentChecks(context));
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const given = context.amendmentMemory.refusals(refused);
   const refusals = [...held.refusals, ...given];
@@ -306,6 +307,16 @@ function correctRerunRow(context: AutomationStudioLlmEvidenceDecisionHandlerCont
   if (row.draftChange) row.draftChange = { ...row.draftChange, appliedCount: applied };
   if (row.progress) row.progress = { ...row.progress, draftState: "unchanged" };
   automationStudioLlmStepLogAnswer(row, process.env, AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE);
+}
+
+/**
+ * The checks the loop's caller gives every amendment of a decision, applied at
+ * once or held for its rerun: the act judge (`draft.claimRefused`) and the loop
+ * check (`draft.loopNeverEnds`), each absent when the caller gave none.
+ */
+function amendmentChecks(context: AutomationStudioLlmEvidenceDecisionHandlerContext): Pick<NonNullable<Parameters<typeof applyAutomationStudioFlowDraftAmendments>[2]>, "claimRefused" | "loopNeverEnds"> {
+  const draft = context.input.draft;
+  return draft ? { claimRefused: draft.claimRefused, loopNeverEnds: draft.loopNeverEnds } : { claimRefused: undefined, loopNeverEnds: undefined };
 }
 
 /**

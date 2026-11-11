@@ -382,8 +382,11 @@ describe("a written loop the graph cannot honour is refused where it is said", (
         ]
       }]
     };
-    expect(errors(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan, registry, resolution })).map((issue) => `${issue.code} @ ${issue.path}`))
-      .toEqual(["flow_draft.loop_unbounded @ plan.subflows.0.nodes.1"]);
+    const issues = errors(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan, registry, resolution }));
+    expect(issues.map((issue) => `${issue.code} @ ${issue.path}`)).toEqual(["flow_draft.loop_unbounded @ plan.subflows.0.nodes.1"]);
+    // Run `run-mwblz4aq-0baa810a`: a loop ends by its last step answering ended, never by a count it was not given.
+    expect(issues[0]!.message).toContain("`repeat while:` naming a last step that answers ended when there is nothing more");
+    expect(issues[0]!.message).not.toMatch(/repeat most|\bmost\b/u);
   });
 });
 

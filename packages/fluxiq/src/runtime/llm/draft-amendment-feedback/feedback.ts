@@ -99,6 +99,8 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       ...(refusal.reason === "act_not_done_there" && refusal.act !== undefined ? { act: refusal.act } : {}),
       ...(refusal.reason === "act_not_done_there" && refusal.said !== undefined ? { said: refusal.said } : {}),
       ...(refusal.reason === "act_not_done_there" && refusal.instead !== undefined ? { instead: refusal.instead } : {}),
+      // A loop that could end only by failing: assembly's own sentence, naming the library's nodes that end one (`../harness-options/draft-acts.ts`).
+      ...(refusal.reason === "repeat_never_ends" && refusal.said !== undefined ? { said: refusal.said } : {}),
       // What the step offers instead, from the step the bind examined (`../flow-draft/bindable/paths.ts`, run B7).
       ...(refusal.reason === "bind_new_key" && refusal.bindable ? { bindable: refusal.bindable } : {}),
       // A repeat Core took off was never sent, so it is never sent again (header).

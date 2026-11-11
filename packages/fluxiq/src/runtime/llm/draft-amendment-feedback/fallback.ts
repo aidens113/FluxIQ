@@ -52,7 +52,10 @@ export function fallback(refusal: AutomationStudioFlowDraftAmendmentRefusal, ste
       return `Step ${n} did something else and does not do ${act}, so ${act} was not recorded on step ${n}: ${there}; do not name ${act} on step ${n} again.`;
     },
     settings_rewrite_run: () => `Step ${n} keeps what it ran with. To act on another control or with another value, run that call as a new step with add true and its act; to correct step ${n}'s own argument, rerun it: ${rerun}.`,
-    repeat_taken_off: () => `Step ${n}'s repeat was taken off after this decision's moves, so it now runs once. If it should still repeat, send {"step": ${n}, "change": "repeat", "over": <the listing>} with the listing before it, in the numbers the draft now shows.`
+    repeat_taken_off: () => `Step ${n}'s repeat was taken off after this decision's moves, so it now runs once. If it should still repeat, send {"step": ${n}, "change": "repeat", "over": <the listing>} with the listing before it, in the numbers the draft now shows.`,
+    // Assembly's own sentence when there is one: it names the library's nodes that end a loop (`../harness-options/draft-acts.ts`).
+    repeat_never_ends: () => refusal.said?.trim()
+      || `Step ${n}'s repeat was not made: its span's last step cannot answer that there is nothing more, so the loop could end only by failing. Run the step that answers ended when there is nothing more as a new call with add true, as the span's last step, and send {"step": ${n}, "change": "repeat", "while": <that step>}; or leave step ${n} to run once.`
   };
   return ways[refusal.reason]();
 }
