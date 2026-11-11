@@ -38,9 +38,23 @@ overrides: {
 Each role is optional. A role you leave out uses `options.model`, or the engine's default. A
 run's `models` merge with the declared ones leaf by leaf.
 
-**Coming soon.** `overrides.models` is in the contract today: it is validated, merged and
-recorded in the run's digest. The engine does not route each role to its own model yet. That
-lands with the next release. Until then, use `options.model` to choose one model for the run.
+Each model call goes to its role's model:
+
+- `explore` serves the reading of your goal, every decision while the run works the task out,
+  and the drafting of the Flow.
+- `judge` serves every call that reads the result against what was asked.
+- `repair` serves the calls that diagnose and fix a Flow step that broke (`core.in_run_repair`).
+  When a saved Flow breaks part way through a FluxNode run, the run works on to its result with
+  its own decisions, and those are `explore` calls today.
+
+Every model a run names is checked when the run starts. An id the engine cannot use ends the run
+the same way an unknown `options.model` does, before any call is made. A role never falls back
+to another model.
+
+**One budget.** `budgetUsd` is the run's only purse, whatever models it uses. Each call is held
+and charged at the price of the model that served it, so a judge on a dearer model costs what that
+model costs. The engine keeps back enough of the purse to judge the result, priced at the judge's
+model.
 
 ## Cost levers
 

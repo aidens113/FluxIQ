@@ -157,7 +157,10 @@ overrides: { models: { explore: "claude-sonnet-5-5", judge: "claude-haiku-5-5", 
 ```
 
 A model id per role, each optional. A model id is 1 to 128 of letters, digits, `.`, `_`, `:`,
-`/` and `-`, starting with a letter or digit. See [choosing models](../guides/choosing-models.md).
+`/` and `-`, starting with a letter or digit. A role left out uses `options.model`, or the
+engine's default. Each call goes to its role's model and is charged to the run's one budget at
+that model's price. A model id the engine cannot use ends the run as an unknown `options.model`
+does, before any call. See [choosing models](../guides/choosing-models.md).
 
 ## Deadlines
 
@@ -209,7 +212,9 @@ too.
 
 - Read by the engine today: retries and retry waits, every deadline (model call, judge,
   model silence, person wait), every open and append-only prompt section, tool descriptions,
-  the judge's question and `judgeCriteria`, and the digest in the step log's prompt version.
+  the judge's question and `judgeCriteria`, per-role `models`, and the digest in the step log's
+  prompt version.
 - `pace` is read by the engine's pacing, which is landing with the humanness work.
-- Per-role models are in the contract and are validated and recorded. Per-role routing lands
-  with the next release; until then `options.model` chooses the model for every role.
+- `models.repair` serves the calls that diagnose and fix a broken Flow step. A saved Flow that
+  breaks part way through a FluxNode run is worked on with the run's own decisions, which use the
+  `explore` model today.

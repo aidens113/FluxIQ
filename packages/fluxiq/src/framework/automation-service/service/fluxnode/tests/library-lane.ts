@@ -19,6 +19,7 @@ import { automationStudioAnswerFirstAttemptPorts } from "../../answer-first/inde
 import { fakeLibrary, fakeLibraryBinding, judgedYes, LOOK_TOOL, runNode, toolCall, type FakeLibrary } from "../../answer-first/tests/fake-library.ts";
 import { LOANS_OUTPUT } from "../../answer-first/tests/fake-library-engine.ts";
 import { createFluxNodeService, type FluxNodeCaller, type FluxNodeService } from "../index.ts";
+import { fluxNodePricedModels } from "./priced-models.ts";
 
 export const FIND_LOANS = "domain.library.find_loans";
 export const OWNER: FluxNodeCaller = { principal: "owner", policy: "FluxNodeRunner", via: "open_mode" };
@@ -50,7 +51,7 @@ type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonO
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 
 /** One service on one library, with the FluxNode service over it. */
-export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number } = {}) {
+export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-fluxnode-"));
   const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; runId?: string } = { script: [], judge: [], decided: 0 };
@@ -62,7 +63,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   /** What an engine press of "Find loans" answers instead, or waits for: the site changed under a saved Flow. */
   const engine: { over?: ((parameters: Readonly<Record<string, unknown>>) => AutomationNodeExecutionResult | undefined | Promise<AutomationNodeExecutionResult | undefined>) | undefined } = {};
   let fluxNodes: FluxNodeService | undefined;
-  const provider = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
+  const answer = async (request: AutomationStudioLlmTaskRequest): Promise<unknown> => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
     if (request.taskKind === "loop_verification") {
@@ -74,9 +75,11 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     if (current.decided >= current.script.length && fluxNodes) void stopRunning(fluxNodes, current.runId);
     current.decided += 1;
     return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: USAGE };
-  });
+  };
+  const provider = mockProvider(answer);
+  const priced = options.models ? fluxNodePricedModels(options.models, answer) : undefined;
   const byHand = fakeLibraryBinding(library, ({ value }) => (value.node === FIND_LOANS ? foundByHand(library, value) : undefined));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider }), llmEvidenceRuntime: byHand });
+  const service = new AutomationStudioService({ dataDir, llmProviderResolver: priced?.resolver ?? (() => ({ provider })), llmEvidenceRuntime: byHand });
   service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.find", packageVersion: "1.0.0", domainId: "library", nodes: [FIND_NODE] },
     { packageId: "library.find", packageVersion: "1.0.0", implementations: { [FIND_LOANS]: async ({ parameters }) => {
@@ -142,7 +145,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     return nodes;
   };
 
-  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engine, run, arm, restart };
+  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engine, run, arm, restart, served: priced?.served ?? [], priced: priced?.priced ?? [] };
 }
 
 /** Stops the run `runId` names, or every run still going where none is named: the program stopping what has no more to try. */

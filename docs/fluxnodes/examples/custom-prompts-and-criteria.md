@@ -64,8 +64,8 @@ console.log(run.overridesDigest);     // the same digest for every run that used
   reads, so the next run is judged again (see [judging results](../guides/judging-results.md#re-judging-when-criteria-change)).
 - `judgeCriteria` need `judge` to run, so the node sets `judge: "always"`.
 - `core.run_flow` is an open tool. `core.run_node` could only be appended to.
-- `models` per role is in the contract. The engine routes each role to its own model with the
-  next release. Until then, set `options.model`. See [choosing models](../guides/choosing-models.md).
+- `models` routes each role to its own model: here the judge can run on a different model from
+  the one that explores. See [choosing models](../guides/choosing-models.md).
 
 ## Change it for one run
 

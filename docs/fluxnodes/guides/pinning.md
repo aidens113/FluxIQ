@@ -97,7 +97,7 @@ result carries `pinned` with no `held`.
 - A proposal costs model calls each time it is found again. While the pinned Flow keeps breaking,
   each run repairs it again. Review and adopt the proposal, or fix the site, to stop paying for
   the same repair.
-- A proposal may keep the step that broke and add its fix after it. Read its steps in the export
-  before you adopt it.
+- A proposal replaces the step that broke with its fix. Read its steps in the export before you
+  adopt it.
 - The exported file holds the Flow's steps as the engine saved them. Read it before you commit it,
   as you would any file that came from a run on a real site.

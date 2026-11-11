@@ -71,7 +71,7 @@ describe("a pinned FluxNode replays exactly its pinned Flow, and its changes wai
     const repaired = await lane.run({ name: NAME, inputs: { title: "Birds" } }, { script: [findByTitle("Birds"), complete("Found the loans.")], answers: passing });
     expectShapes(repaired);
     expect(repaired.result).toMatchObject({ status: "achieved", flowId, verdict: { label: "confirmed", by: "check" } });
-    expect(repaired.result.path).not.toBe("replayed");
+    expect(repaired.result.path).toBe("repaired");
     expect(repaired.result.outputs).toEqual({ loans: [{ title: "Birds of the Coast", due: "2030-01-02" }] });
     expect(lane.engineLabels).toContain(LOANS_OUTPUT.label);
     const held = repaired.result.pinned?.held;
@@ -107,7 +107,7 @@ describe("a pinned FluxNode replays exactly its pinned Flow, and its changes wai
     expect(await learnedDigest(lane)).toBe(held?.proposal.stepsDigest);
 
     // The FluxNode service made again (nothing in memory): the pin is read back from the Flow, and a replay runs the adopted
-    // version. The attempt's fix kept the step that broke and added its own after it, so that version presses both labels.
+    // version. The attempt's fix replaces the step that broke (t885: a hand fix is a repair), so that version presses only the fix.
     lane.restart();
     expect(await exported(lane, { pin: false })).toMatchObject({ pinned: true, flowVersion: 2, stepsDigest: held?.proposal.stepsDigest });
     const fromAdopted = lane.engineLabels.length;
@@ -115,7 +115,7 @@ describe("a pinned FluxNode replays exactly its pinned Flow, and its changes wai
     expect(after.asked).toHaveLength(0);
     expect(after.result).toMatchObject({ status: "achieved", path: "replayed", pinned: { flowVersion: 2, stepsDigest: held?.proposal.stepsDigest } });
     expect(after.result.outputs).toEqual({ loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] });
-    expect(lane.engineLabels.slice(fromAdopted)).toEqual([LOANS_OUTPUT.label, BY_TITLE.label]);
+    expect(lane.engineLabels.slice(fromAdopted)).toEqual([BY_TITLE.label]);
   });
 
   it("holds the change of a run that was going when the pin landed, and sets the learned Flow back to the pin", async () => {

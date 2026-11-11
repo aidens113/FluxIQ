@@ -73,7 +73,11 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   // sent or billed: it was the larger measure here until t748, so the window
   // counted a catalog the model never reads, and pricing it (until t254) held
   // each build decision about 12,800 tokens over what the provider would read.
-  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider);
+  // Measured, held, charged, sent and recorded by the model that serves it: a
+  // run may give each role its own (`../role-routing/`, `servedBy`), and a
+  // provider is bound to one model. A provider that does not route serves itself.
+  const served = input.provider?.servedBy?.(request) ?? input.provider;
+  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, served);
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
   // sent, and only when one was made: absent stays absent, never an empty list.
@@ -122,7 +126,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       intervention: interventionFromLlmResult(input, request, diagnostics, now())
     };
   }
-  if (input.dryRun || !input.provider) {
+  if (input.dryRun || !input.provider || !served) {
     const diagnostics = [
       ...context.instructions.diagnostics,
       { severity: input.dryRun ? "info" as const : "error" as const, code: input.dryRun ? "llm.dry_run" : "llm.provider_missing", message: input.dryRun ? "Dry run recorded without invoking an LLM provider." : "No LLM provider is configured." }
@@ -148,15 +152,15 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       // The request's own worst case, under its ceiling: a small call is not
       // held at the price of a full window, which at the window profile is
       // the whole run purse (then $0.25) and refused every call after the first.
-      , maxEstimatedCostUsd: reservedCostUsd(input.provider, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
+      , maxEstimatedCostUsd: reservedCostUsd(served, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.
       , call: {
         taskKind: request.taskKind,
         ...(input.stage ? { stage: input.stage } : {}),
         promptVersion: request.promptVersion,
-        provider: input.provider.metadata.provider,
-        model: input.provider.metadata.model
+        provider: served.metadata.provider,
+        model: served.metadata.model
       }
     })
     : null;
@@ -167,7 +171,10 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // when that would cross the build's ceiling. A judge's call
   // (`loop_verification`, made only by `../../result-verification/verify.ts`)
   // draws on the judging reserve the purse keeps back from every other call.
-  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
+  // That reserve is priced, before a judge has been, by the model a judge's call
+  // would be served by, which is not this call's where a run judges on its own.
+  const judgedBy = input.provider.servedBy?.({ ...request, taskKind: "loop_verification" }) ?? served;
+  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: served, judgePricing: judgedBy, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
   if (held && !held.ok && reservation?.ok) reservation.lease.release();
   // A reservation the run's budget or the build's purse refused ends the call
   // here, before the provider is invoked. Nothing about a provider may be
@@ -199,7 +206,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // was read by nothing and a rate limit ended a whole build
   // (`../provider-retry/call.ts`).
   const call = await automationStudioLlmProviderCall({
-    provider: input.provider,
+    provider: served,
     request,
     now,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -258,7 +265,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     return {
       ok: false,
       request,
-      provider: input.provider.metadata,
+      provider: served.metadata,
       // The failure's own account of how far the call got, not this function's
       // guess: a pre-flight refusal inside the adapter never sent anything, a
       // transport error did, and a deadline cannot say.
@@ -266,7 +273,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       ...(failure.refusal ? { providerRefusal: failure.refusal } : {}),
       ...retryStated,
       diagnostics,
-      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata)
+      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata)
     };
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
@@ -281,7 +288,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));
     if (held?.ok) held.hold.settle(reported);
-    return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
+    return { ok: false, request, provider: served.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
   const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics, ...retryDiagnostics];
@@ -296,12 +303,12 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     ok,
     request,
     ...(providerResult.response ? { response: providerResult.response } : {}),
-    provider: input.provider.metadata,
+    provider: served.metadata,
     providerInvocation: "attempted",
     ...(providerResult.usage ? { usage: providerResult.usage } : {}),
     ...retryStated,
     diagnostics,
-    intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, input.provider.metadata, providerResult.usage)
+    intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, served.metadata, providerResult.usage)
   };
 }
 
