@@ -5,6 +5,7 @@
 
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskAttemptPath, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows, type AutomationStudioTaskResultSource } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstResult } from "../../../../../runtime/answer-first/result/index.ts";
+import { automationStudioAnswerFirstReplayKept } from "../completion/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -100,7 +101,7 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
     const waiting = run.waitingFor !== undefined;
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.sink.summary());
-    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps });
+    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...automationStudioAnswerFirstReplayKept(run.completion.state) });
     if (waiting) await run.input.stores.datasets.processEndedRunDatasets({ projectId: run.input.projectId, runId: run.runId });
     return { ok: true };
   } catch (error) {
