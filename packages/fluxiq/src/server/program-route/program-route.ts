@@ -341,7 +341,9 @@ function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing
   if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
   // `authorizedDomainIds` would let the run act in domains beyond the one the
   // pairing bound (`runtime/composite-execution/owner.ts`), so a token never names any.
-  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs", "authorizedDomainIds"] as const) {
+  // Whose key pays and acts (`llmExecution`) and whose preferences the run reads
+  // (`personUserId`) come from the authenticated caller alone; a token naming either is refused.
+  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs", "authorizedDomainIds", "llmExecution", "personUserId"] as const) {
     if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
   }
   if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {

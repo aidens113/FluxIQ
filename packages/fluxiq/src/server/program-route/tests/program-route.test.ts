@@ -395,6 +395,15 @@ describe("a paired client on the program route", () => {
     }
   });
 
+  it("refuses a run naming whose key pays and acts, or whose preferences it reads, with or without an intent: both come from the authenticated caller alone", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
+    const other = { actorUserId: "user.other", actorSessionId: "session.other", intent: "explore_and_adapt" };
+    for (const intent of [{}, { runIntent: "explore_and_adapt" }]) {
+      expect(narrow({ projectId: "p", flowId: "flow.one", ...intent, llmExecution: other })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry llmExecution." });
+      expect(narrow({ projectId: "p", flowId: "flow.one", ...intent, personUserId: "user.other" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry personUserId." });
+    }
+  });
+
   it("lets a paired client's run carry the explore_and_adapt intent, alone, under the Flow's own mode", () => {
     const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
     expect(narrow({ projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" } });
