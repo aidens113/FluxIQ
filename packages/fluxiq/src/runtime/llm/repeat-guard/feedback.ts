@@ -4,6 +4,7 @@
 // value.
 
 import type { JsonObject } from "../../../core/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../evidence-recall/tool-id.ts";
 import { automationStudioLlmEvidenceCandidateRepeatInstruction } from "./candidate-feedback.ts";
 import { automationStudioLlmEvidenceRepeatCoveredRefused } from "./covered-refused.ts";
 import { automationStudioLlmLoopRefusalInstruction } from "./loop-detection/feedback.ts";
@@ -30,6 +31,33 @@ const INSTRUCTION = "You already made this exact call -- the same tool with the 
   + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
   + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
   + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+
+/**
+ * Said instead for a call made again from the page where the identical call
+ * before it ended on the same page as the one before that (`same_result`).
+ * Run-mwc6ut8u-52e3c1b3 (R6): a press between two views was refused this way
+ * many times, the view it led to had left the window, and nothing said it could
+ * be had back, so the model changed a wait bound to get past the refusal.
+ * `core.recall_result` shows the page `sameAsCall` ended on without going
+ * there; it is named only where the loop offers it.
+ */
+function sameResultInstruction(recall: "offered" | "unknown" | "absent", timingLeftOut: boolean): string {
+  const recallWords = recall === "offered"
+    ? `What that page showed is not lost: ${RECALL_CALL} shows the page that call ended on, without going there or acting again. `
+    : recall === "unknown"
+      ? `What that page showed need not be lost: where ${AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID} is among your tools, ${RECALL_CALL} shows the page that call ended on, without going there or acting again. `
+      : "";
+  return "You already made this exact call -- the same tool with the same input -- from this exact page, and it ended on the same page as the same call before it (then.outcome). "
+    + "Making it again from this page ends there again, so it was not run and cost nothing but this decision. "
+    + recallWords
+    + (timingLeftOut ? "Changing only how long a call waits does not make it a different call. " : "")
+    + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
+    + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
+    + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+}
+
+/** How the recall is asked for: the earlier call's id is sameAsCall beside this instruction. */
+const RECALL_CALL = `${AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID} with {"callId": <sameAsCall>}`;
 
 /** Said instead for a call the permission gate refused (`./permission-refused.ts`, t471): no other input or page gets past it. */
 const PERMISSION_INSTRUCTION = "You already made this exact call, and it was refused because it needs a person's permission that it does not have (then.resultCode, then.resultReason): "
@@ -102,8 +130,9 @@ function failedAmendmentInstruction(rerunStep: number | undefined): string {
 }
 
 /** The instruction for one earlier outcome: a look, a part run, an amendment, a handle never shown, a covered press, or any other call. */
-function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rerunStep?: number): string {
+function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rerunStep?: number, recall: "offered" | "unknown" | "absent" = "unknown"): string {
   if (earlier.outcome === "same_answer") return LOOK_INSTRUCTION;
+  if (earlier.outcome === "same_result") return sameResultInstruction(recall, earlier.timingLeftOut === true);
   if (earlier.outcome === "same_draft") return DRAFT_INSTRUCTION;
   if (earlier.outcome === "same_amendment") return earlier.rerunFailed ? failedAmendmentInstruction(rerunStep) : AMENDMENT_INSTRUCTION;
   if (earlier.handleUnshown) return HANDLE_UNSHOWN_INSTRUCTION;
@@ -144,7 +173,10 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   candidate?: boolean | undefined;
   /** The loop drafts nothing (`draft: false`) and is no candidate: no draft to amend, and nothing tested or judged when its round ends (`UNDRAFTED_WORDS`). */
   undrafted?: boolean | undefined;
+  /** Whether the loop offers `core.recall_result`, which a `same_result` refusal points at; unsaid, it is named as offered only where it is. */
+  recallOffered?: boolean | undefined;
 }): JsonObject {
+  const recall = input.recallOffered === undefined ? "unknown" : input.recallOffered ? "offered" : "absent";
   const loop = refusedOnALoop(input.earlier) ? automationStudioLlmLoopRefusalInstruction({ pattern: input.earlier.outcome, repeats: input.earlier.repeats, toolIds: input.earlier.toolIds }, input.candidate === true || input.undrafted === true ? "undrafted" : "drafted") : undefined;
   const candidate = input.candidate === true && !loop
     ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier, inARow: input.inARow, maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW })
@@ -165,6 +197,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
     // A loop that drafts nothing has no draft to change first, though its tools may be keyed on what they test or dispatch (t849).
-    instruction: loop ?? (candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep)) : instructionFor(input.earlier, input.rerunStep))
+    instruction: loop ?? (candidate ? candidate.instruction : input.undrafted === true ? undrafted(instructionFor(input.earlier.outcome === "same_draft" ? { ...input.earlier, outcome: "changed_nothing" } : input.earlier, input.rerunStep, recall)) : instructionFor(input.earlier, input.rerunStep, recall))
   };
 }

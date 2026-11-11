@@ -79,7 +79,7 @@ import {
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "../models/failures/index.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "../models/failures/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard, automationStudioLlmEvidenceTimingOfNodes, automationStudioLlmLoopWatch } from "./repeat-guard/index.ts";
 import { createAutomationStudioLlmRerunProvenance, type AutomationStudioLlmRerunScope } from "./rerun-provenance/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID } from "./node-reruns/index.ts";
 import { automationStudioLlmEvidenceBatchMember, automationStudioLlmEvidenceToolAdmission, automationStudioLlmEvidenceToolWithdrawal, automationStudioLlmPriorNodesLoop, automationStudioLlmPriorNodesSettlementContext, automationStudioLlmPriorNodesUnsettled } from "./prior-nodes/index.ts";
@@ -369,9 +369,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
   });
   const draftOf = (toolId: string): string | undefined => input.requestContextKey?.(toolId) ?? (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // Memo and repeat identity share the backend target key; part runs retain their draft key.
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
-  const repeatGuard = automationStudioLlmEvidenceRepeatGuard({ draftOf });
+  const repeatGuard = automationStudioLlmEvidenceRepeatGuard({ draftOf, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }); // Timing parameters leave both repeat keys (`./repeat-guard/timing-free.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
-    loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
+    loops: automationStudioLlmLoopWatch({ record: input.attemptRecord, holds: (toolId, value, state) => repeatGuard.blocks(toolId, value, state) !== undefined, refuseActs: input.loopSignal !== undefined, askedRepeats: input.askedRepeats, timingOf: automationStudioLlmEvidenceTimingOfNodes(input.definitionOf) }), loopOverdue: (iteration) => automationStudioLlmEvidenceLoopOverdue(handling, iteration), contextOf: draftOf, input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: repeatGuard, looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
   };
