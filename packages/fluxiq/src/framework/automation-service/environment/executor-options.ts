@@ -15,15 +15,16 @@ import type { AutomationStudioRunEnvironment } from "./environment.ts";
  * whatever `random` they already had; an offline environment's own `random`
  * is always taken, so its runs are reproducible.
  *
- * Its region timeout timer (`startTimer`, P4 "Virtual clock") likewise: an
- * offline environment's own is taken, so a region outlasting its timeout in
- * virtual time times out there; a live run's is left as it was, so its region
- * timeout stays the executor's real timer.
+ * Its timer for a region's timeout and the run's deadline (`startTimer`, P4
+ * "Virtual clock") is taken wherever the environment has one, so a region
+ * outlasting its timeout in virtual time times out there. The live environment
+ * has none, so a live run's timers stay the executor's real ones; a live
+ * environment a test stands in may name its own.
  */
 export function automationStudioEnvironmentExecutorOptions(options: AutomationStudioGraphExecutionOptions, environment: AutomationStudioRunEnvironment): AutomationStudioGraphExecutionOptions {
   const placed: AutomationStudioGraphExecutionOptions = { ...options, now: environment.now, delay: environment.delay };
+  if (environment.startTimer) placed.startTimer = environment.startTimer;
   if (environment.kind === "live") return placed;
   placed.random = environment.random;
-  if (environment.startTimer) placed.startTimer = environment.startTimer;
   return placed;
 }
