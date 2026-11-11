@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
@@ -47,6 +48,21 @@ export default function nextConfig(phase: string): NextConfig {
         { source: "/get-started/:path*", destination: "/", permanent: false }
       ];
     },
-    ...(phase === PHASE_PRODUCTION_BUILD ? { typescript: { tsconfigPath: "tsconfig.build.json" } } : {})
+    ...(phase === PHASE_PRODUCTION_BUILD ? { typescript: { tsconfigPath: "tsconfig.build.json" } } : {}),
+    ...(process.env.FLUXIQ_WEB_STANDALONE === "1" ? standaloneOutput() : {})
   };
+}
+
+/**
+ * The container image's build (`deploy/docker/Dockerfile`) sets
+ * `FLUXIQ_WEB_STANDALONE=1`: Next then also writes `.next/standalone`, a
+ * server holding only the files it traced, so the image carries no workspace
+ * install. Tracing starts at the repository root because the panel reaches
+ * Core's packages through pnpm's workspace links above `apps/web`. Every
+ * other build, and `next dev`, are unchanged. Next compiles this file as
+ * CommonJS from `apps/web` (`next/dist/build/next-config-ts`), so `__dirname`
+ * is `apps/web`.
+ */
+function standaloneOutput(): Pick<NextConfig, "output" | "outputFileTracingRoot"> {
+  return { output: "standalone", outputFileTracingRoot: path.join(__dirname, "..", "..") };
 }
