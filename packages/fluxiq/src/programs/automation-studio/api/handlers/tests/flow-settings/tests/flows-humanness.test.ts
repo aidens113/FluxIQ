@@ -109,7 +109,28 @@ describe("create-flow with a starting humanness", () => {
     } finally { await cleanup(); }
   });
 
-  it.each([101, -1, 2.5, "50"])("refuses %j and creates nothing", async (value) => {
+  it("stores 40 with exactly a plain create's writes: the same revision, never a second save", async () => {
+    const { cleanup, project, create, service } = await humannessApi();
+    try {
+      const plain: any = await create({ name: "Plain", flowId: "flow.plain.writes" });
+      const human: any = await create({ name: "Plain", flowId: "flow.human.writes", humanness: 40 });
+      expect(plain.ok, plain.error).toBe(true);
+      expect(human.ok, human.error).toBe(true);
+      expect(human.payload.flow.metadata.humanness).toBe(40);
+      const stored = await service.getFlow(project.id, "flow.human.writes");
+      expect(stored.metadata?.humanness).toBe(40);
+      // One write each: a second settings save would have moved the revision on.
+      expect(stored.revision).toBe((await service.getFlow(project.id, "flow.plain.writes")).revision);
+      const strip = (flow: any) => {
+        const { flowId, createdAt, updatedAt, revision, ...rest } = flow;
+        const { humanness: _level, ...metadata } = rest.metadata ?? {};
+        return JSON.parse(JSON.stringify({ ...rest, metadata }).replaceAll(flowId, "<id>"));
+      };
+      expect(strip(stored)).toEqual(strip(await service.getFlow(project.id, "flow.plain.writes")));
+    } finally { await cleanup(); }
+  });
+
+  it.each([101, -1, 2.5, "50", null])("refuses %j and creates nothing", async (value) => {
     const { cleanup, create, service, project } = await humannessApi();
     try {
       const before = (await service.listFlows(project.id)).length;

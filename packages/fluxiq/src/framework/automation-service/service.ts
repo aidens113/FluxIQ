@@ -1317,7 +1317,7 @@ export class AutomationStudioService {
     });
   }
 
-  async createFlow(input: { projectId: string; name?: unknown; description?: unknown; flowId?: string }): Promise<AutomationStudioFlowArtifact> {
+  async createFlow(input: { projectId: string; name?: unknown; description?: unknown; flowId?: string; humanness?: unknown }): Promise<AutomationStudioFlowArtifact> {
     return await this.flowCreation.createFlow(input);
   }
 

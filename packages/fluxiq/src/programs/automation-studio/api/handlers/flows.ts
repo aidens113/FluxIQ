@@ -3,7 +3,7 @@
 import { createFlowInput, getFlowInput, getFlowMetadataDetailInput, listFlowsInput, updateFlowSettingsInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
-import { assertFlowHumanness, updateFlowSettingsForRequest, withFlowHumanness, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
+import { updateFlowSettingsForRequest, withFlowHumanness, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";
 import type { ProgramApiRequest } from "../../../_shared/api.ts";
@@ -104,13 +104,8 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
     resource: endpointResource.project(),
     handler: async (request) => {
       const payload = (request.payload && typeof request.payload === "object" ? request.payload : {}) as Partial<CreateFlowRequest> & { authSessionId?: unknown; authorizationPin?: unknown };
-      try { assertFlowHumanness(payload.humanness); } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
-      const projectId = String(payload.projectId ?? "");
-      const created = await service.createFlow({ projectId, name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}) });
-      // A starting level becomes the new Flow's own, stored beside its other settings.
-      if (typeof payload.humanness !== "number") return { ok: true, payload: { flow: created } };
-      await updateFlowSettingsForRequest(service, projectId, created.flowId, { flow: { metadata: { humanness: payload.humanness } } });
-      return { ok: true, payload: { flow: await service.getFlow(projectId, created.flowId) } };
+      // A starting level is the new Flow's own from the write that creates it (`service/flows/creation.ts`), which refuses one no run could use before anything is written.
+      return { ok: true, payload: { flow: await service.createFlow({ projectId: String(payload.projectId ?? ""), name: payload.name, description: payload.description, ...(typeof payload.flowId === "string" ? { flowId: payload.flowId } : {}), ...(payload.humanness !== undefined ? { humanness: payload.humanness } : {}) }) } };
     }
   });
   registry.register({
