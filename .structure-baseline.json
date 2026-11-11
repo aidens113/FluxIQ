@@ -208,8 +208,7 @@
       "apps/web/src/features/automation-studio/subflows/SubflowsView.tsx::components": 2,
       "apps/web/src/features/automation-studio/sync/project-sync.ts::classes": 2,
       "apps/web/src/lib/login-attempts.ts::classes": 2,
-      "packages/fluxiq/src/framework/persistence/automation/project/database.ts::classes": 2,
-      "packages/fluxiq/src/programs/identity-access/runtime/service.ts::classes": 2
+      "packages/fluxiq/src/framework/persistence/automation/project/database.ts::classes": 2
     },
     "failure-as-empty": {
       "packages/fluxiq/src/framework/automation-service/service.ts": 16,

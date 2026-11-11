@@ -14,7 +14,9 @@ export function AiKeysSection(props: { data: SettingsData; selectedId: string; o
   const [removing, setRemoving] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
-  const rows = keyRows(data.keys, data.choices.defaultKeyId, when);
+  // A person who does not choose the workspace's default is shown it only on the key the server names, never a stand-in.
+  const choosesDefault = data.choices.mayChoose !== false;
+  const rows = keyRows(data.keys, data.choices.defaultKeyId, when).map((row) => (choosesDefault || row.id === data.choices.defaultKeyId ? row : { ...row, isDefault: false }));
   const target = rows.find((row) => row.id === removing);
   async function makeDefault(keyId: string) {
     setBusy(true);
@@ -34,9 +36,11 @@ export function AiKeysSection(props: { data: SettingsData; selectedId: string; o
   return (
     <section aria-labelledby="settings-ai-keys">
       <h2 id="settings-ai-keys">AI keys</h2>
-      <p>The assistant and your Flows use an AI provider through a key you add here. By default they use the first key you added; pick another below any time.</p>
+      {choosesDefault
+        ? <p>The assistant and your Flows use an AI provider through a key you add here. By default they use the first key you added; pick another below any time.</p>
+        : <p>The assistant and your Flows use an AI provider through a key. Add your own keys here; this workspace&rsquo;s owner chooses its default key.</p>}
       {data.choices.defaultNotice ? <p role="status" className="settings-notice">{data.choices.defaultNotice.message}</p> : null}
-      <KeyList rows={rows} selectedId={props.selectedId} busy={busy} onSelect={props.onSelect} onDefault={(id) => void makeDefault(id)} onRemove={startRemoving} />
+      <KeyList rows={rows} selectedId={props.selectedId} busy={busy} onSelect={props.onSelect} onDefault={choosesDefault ? (id) => void makeDefault(id) : undefined} onRemove={startRemoving} />
       {target ? (
         <RemoveKeyConfirm
           key={target.id}

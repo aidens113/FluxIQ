@@ -9,8 +9,8 @@ import { useEffect, useRef } from "react";
  * through a `commit`; here that commit only hands the level to the form's draft (`onChange`: a
  * number, or null to use the starting value), and the form's own Save sends it. `value` is the
  * draft's level, null when the Flow has none of its own. `starting` is the person's starting
- * value for the wording "Uses your starting value (N)"; the panel does not read it yet, so it
- * reads as 0, the last step of the precedence.
+ * value for the wording "Uses your starting value (N)"; the host reads it from the person's
+ * preferences and, with none stored, passes nothing, which reads as 0 (the last step of the precedence).
  */
 export function HumannessSetting(props: { value: number | null; onChange(value: number | null): void; starting?: number | undefined }) {
   const hostRef = useRef<HTMLDivElement | null>(null);

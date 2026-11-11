@@ -32,5 +32,14 @@ export type SettingsModelChoices = {
   defaultNotice?: { message: string; atMs: number } | undefined;
   assistantKeyId: string | null;
   assistantModel: string | null;
+  /** The provider of the key the assistant uses now, as that key names it; null with no model key. */
+  assistantProvider?: string | null | undefined;
   assistantAllowanceUsd: number | null;
+  /**
+   * Whether this person may change the workspace's choices: the default key,
+   * and the assistant's key and model. The panel's own fact about the signed-in
+   * person (`mayChooseWorkspaceKeys`), never part of the server's answer; the
+   * server decides each change on the workspace in any case. Absent means they may.
+   */
+  mayChoose?: boolean | undefined;
 };

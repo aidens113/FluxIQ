@@ -16,6 +16,7 @@ import { flowResultCheckErrors, flowResultCheckSummary } from "./flow-result-che
 import { flowSettingsNotPersisted } from "./persistence-check";
 import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
 import { HumannessSetting, humannessFromStored } from "./humanness";
+import { startingHumannessFrom } from "../../settings-page/humanness";
 import { AiProviderSettingsSection } from "./AiProviderSettingsSection";
 import { AI_PROVIDER_SECRET_KEYS_HREF, aiProviderKeyAvailability } from "./ai-provider-model";
 import { useDirtyViewRegistration } from "../workspace/DirtyViewGuard";
@@ -54,6 +55,15 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
   const [settingsLoading, setSettingsLoading] = useState(Boolean(props.projectId && props.flow?.flowId));
   const [settingsLoadError, setSettingsLoadError] = useState("");
   const [settingsLoadRevision, setSettingsLoadRevision] = useState(0);
+  // The person's own starting value, read once; unavailable (or none) reads as 0, the last step of the precedence.
+  const [startingHumanness, setStartingHumanness] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void props.commands.loadMyPreferences?.().then((result) => {
+      if (!cancelled && result.ok) setStartingHumanness(startingHumannessFrom(result.payload?.startingHumanness));
+    });
+    return () => { cancelled = true; };
+  }, [props.commands]);
   const [llmSecrets, setLlmSecrets] = useState<any[]>([]);
   const [llmSecretsLoading, setLlmSecretsLoading] = useState(false);
   const [llmSecretsError, setLlmSecretsError] = useState("");
@@ -260,7 +270,7 @@ export function FlowSettingsViewContent(props: FlowSettingsViewProps & { command
         </section>
         <section className="automation-settings-panel" id="flow-settings-humanness">
           <header><strong>Humanness</strong><span>0 is fastest with no added waits; higher looks more like a person, for sites that limit how fast you may go</span></header>
-          <HumannessSetting value={draft.humanness === "" ? null : humannessFromStored(Number(draft.humanness))} onChange={(value) => updateDraft("humanness", value === null ? "" : String(value))} />
+          <HumannessSetting value={draft.humanness === "" ? null : humannessFromStored(Number(draft.humanness))} onChange={(value) => updateDraft("humanness", value === null ? "" : String(value))} starting={startingHumanness ?? 0} />
         </section>
         <section className="automation-settings-panel" id="flow-settings-safety">
           <header><strong>Safety</strong><span>Deterministic gates that remain in force around learned behavior</span></header>

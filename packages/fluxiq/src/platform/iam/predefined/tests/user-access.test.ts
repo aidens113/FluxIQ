@@ -47,10 +47,10 @@ describe("FluxIQUserAccess panel assistant", () => {
     for (const action of PANEL_ASSISTANT_GRANTED) expect(decide(action, ALICE_USER, "alice"), action).toBe("allow");
   });
 
-  it("allows none of them on another person's user FRN, on the workspace FRN, or on Studio content", () => {
+  it("allows none of them on another person's user FRN or on Studio content, and only the allowance read on the workspace FRN", () => {
     for (const action of PANEL_ASSISTANT_GRANTED) {
       expect(decide(action, BOB_USER, "bob"), action).toBe("deny");
-      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe("deny");
+      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe(action === "studio:GetPanelAssistantAllowance" ? "allow" : "deny");
       expect(decide(action, `frn:fluxiq:studio:${WS}:*`), action).toBe("deny");
     }
   });
@@ -61,13 +61,45 @@ describe("FluxIQUserAccess panel assistant", () => {
     }
   });
 
+  it("reads the allowance on the workspace FRN, where it is one record for everyone, and in no other workspace", () => {
+    expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn(WS))).toBe("allow");
+    expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn("ws-2"))).toBe("deny");
+  });
+
   it("withholds setting the allowance, which is one record for the whole workspace", () => {
     expect(decide("studio:SetPanelAssistantAllowance", ALICE_USER, "alice")).toBe("deny");
+    expect(decide("studio:SetPanelAssistantAllowance", BOB_USER, "bob")).toBe("deny");
     expect(decide("studio:SetPanelAssistantAllowance", iamWorkspaceFrn(WS))).toBe("deny");
   });
 
   it("keeps a project-bound attachment to projects the person owns (OwnData)", () => {
     expect(decide("studio:GetPanelThreadAttachment", `frn:fluxiq:studio:${WS}:project/p1`, "alice")).toBe("allow");
     expect(decide("studio:GetPanelThreadAttachment", `frn:fluxiq:studio:${WS}:project/p2`, "bob")).toBe("deny");
+  });
+});
+
+describe("FluxIQUserAccess and the workspace's assistant key", () => {
+  // A key the workspace's owner made: `secrets:key/<id>`, owned by them.
+  const OWNERS_KEY = `frn:fluxiq:secrets:${WS}:key/k1`;
+
+  it("reads which provider and model the assistant uses, on the workspace FRN, and in no other workspace", () => {
+    expect(decide("secrets:GetAssistantModel", iamWorkspaceFrn(WS))).toBe("allow");
+    expect(decide("secrets:GetAssistantModel", iamWorkspaceFrn("ws-2"))).toBe("deny");
+  });
+
+  it("never changes the choice, and never reveals, lists, changes or uses another person's key directly", () => {
+    expect(decide("secrets:SetAssistantModel", iamWorkspaceFrn(WS))).toBe("deny");
+    for (const action of ["secrets:RevealKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey", "secrets:SetDefaultKey", "secrets:SetAssistantModel", "secrets:GetAssistantModel"]) {
+      expect(decide(action, OWNERS_KEY, "owner"), action).toBe("deny");
+    }
+    // The database manager's record reads, which could read the key store's rows, are an operator program's.
+    for (const action of ["ops:GetRecord", "ops:ListRecords"]) expect(decide(action, iamWorkspaceFrn(WS)), action).toBe("deny");
+  });
+
+  it("never makes a key the workspace's default, which `set-default-key` decides on the workspace FRN, while managing their own key", () => {
+    expect(decide("secrets:SetDefaultKey", iamWorkspaceFrn(WS))).toBe("deny");
+    const ALICES_KEY = `frn:fluxiq:secrets:${WS}:key/k2`;
+    for (const action of ["secrets:RevealKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey"]) expect(decide(action, ALICES_KEY, "alice"), action).toBe("allow");
+    expect(decide("secrets:CreateKey", iamWorkspaceFrn(WS))).toBe("allow");
   });
 });

@@ -3,6 +3,7 @@
 // the password rule, and email delivery that reports rather than throws.
 export * from "./create-provisioning-context.ts";
 export * from "./deliver-provisioning-email.ts";
+export * from "./is-username-taken.ts";
 export * from "./is-weak-password.ts";
 export * from "./last-administrator-refusal.ts";
 export * from "./provisioning-lifetimes.ts";

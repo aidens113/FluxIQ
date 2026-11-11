@@ -13,7 +13,13 @@ import { expect, test, type Page } from "@playwright/test";
 import { readUiFixtureManifest, type UiFixtureManifest } from "./support/app-fixture";
 import { assistantDock, signInToPanel, writeAssistantScript } from "./support/panel-fixture";
 
-type Seeded = { projectId: string; emptyProjectId: string; threads: { permission: string; destructive: string; planning: string } };
+type Seeded = {
+  projectId: string;
+  emptyProjectId: string;
+  threads: { permission: string; destructive: string; planning: string };
+  /** The small project's own threads, listed in the dock once the project is open. */
+  projectThreads: { choice: string; open: string };
+};
 
 const webRoot = path.resolve(import.meta.dirname, "..");
 const fixtureRoot = path.resolve(process.env.FLUXIQ_E2E_FIXTURE_ROOT ?? path.join(webRoot, ".e2e-host"));
@@ -189,6 +195,57 @@ test("A1, A3, A4: a card whose consequence is destructive settles on one press, 
   await expect(page.getByRole("dialog").filter({ hasText: "Confirm this answer" })).toBeHidden();
   await expect(chat.getByRole("button", { name: "Allow", exact: true })).toBeHidden({ timeout: 30_000 });
   await expect(chat.getByRole("button", { name: "Don't allow" })).toBeHidden();
+});
+
+/** The person opens the small project in the top bar, so its threads join their own in the dock's list. */
+async function openSmallProject(page: Page): Promise<void> {
+  await page.getByRole("combobox", { name: "Project" }).selectOption(seeded.projectId);
+}
+
+test("the dock lists the open project's threads beside the person's own, and only its own with no project open", async ({ page }) => {
+  await openChat(page);
+  await showThreadList(page);
+  await expect(threadRow(page, seeded.threads.permission)).toBeVisible({ timeout: SLOW });
+  await expect(threadRow(page, seeded.projectThreads.choice)).toHaveCount(0);
+  await openSmallProject(page);
+  // Opening a project is a new owner of the chat: it opens on the project's latest thread with the list put away, so a
+  // narrow dock's drawer is opened again, as a person would, before its rows can be seen.
+  await showThreadList(page);
+  await expect(threadRow(page, seeded.projectThreads.choice)).toBeVisible({ timeout: SLOW });
+  await expect(threadRow(page, seeded.projectThreads.open)).toBeVisible();
+  await expect(threadRow(page, seeded.threads.permission)).toBeVisible();
+});
+
+test("A1, A3, A4: a project thread's choice whose options are destructive settles on one press, with no PIN", async ({ page }, info) => {
+  await openSmallProject(page);
+  await openChat(page);
+  await pickThread(page, seeded.projectThreads.choice);
+  const chat = dock(page);
+  await expect(chat.getByText("FluxIQ is asking you to choose.")).toBeVisible({ timeout: 30_000 });
+  await expect(chat.getByRole("list", { name: "Consequences requiring approval" })).toContainText("delete or remove something");
+  await shot(page, "project-choice-ask", info);
+  // Nothing inside a chat asks for a PIN: the press is the answer, taken by the project's conversation.
+  await chat.getByRole("button", { name: "Clear the oldest" }).click();
+  await expect(page.getByRole("dialog").filter({ hasText: "Confirm this answer" })).toBeHidden();
+  await expect(chat.getByRole("button", { name: "Clear the oldest" })).toBeHidden({ timeout: 30_000 });
+  await expect(chat.getByRole("button", { name: "Clear both" })).toBeHidden();
+});
+
+test("A2: a project thread's open ask takes words and answers", async ({ page }, info) => {
+  await openSmallProject(page);
+  await openChat(page);
+  await pickThread(page, seeded.projectThreads.open);
+  const chat = dock(page);
+  const answer = chat.getByRole("textbox", { name: "Your answer" });
+  await expect(answer).toBeVisible({ timeout: 30_000 });
+  const send = chat.getByRole("button", { name: "Send answer" });
+  await expect(send).toBeDisabled();
+  await answer.fill("Weekly roundup");
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(chat.getByRole("textbox", { name: "Your answer" })).toBeHidden({ timeout: 30_000 });
+  await expect(chat.getByRole("button", { name: "Send answer" })).toHaveCount(0);
+  await shot(page, "project-open-ask-answered", info);
 });
 
 test("C4, C1: nothing from the conversation is kept in browser storage; a typed send is answered by the scripted assistant", async ({ page }, info) => {

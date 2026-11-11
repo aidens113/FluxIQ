@@ -166,12 +166,16 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     classification: "program-gated",
     action: "secrets:SetDefaultKey",
     accessLevel: "Write",
-    resource: endpointResource.key("id"),
-    assistant: { input: setDefaultKeyInput, summary: "Makes one of the person's model keys the default key.", phrases: ["use this key by default", "make this the default key"], contextArgs: { id: "keyId" } },
+    // The default is one choice for the whole workspace (every person's
+    // assistant and new Flows use it), so it is decided on the workspace, as
+    // `set-assistant-model` is, never on the key: owning a key must not let a
+    // person make it everyone's default.
+    resource: endpointResource.workspace(),
+    assistant: { input: setDefaultKeyInput, summary: "Makes one of the person's model keys the default key.", phrases: ["use this key by default", "make this the default key"], contextArgs: { id: "keyId" }, target: { id: "key" } },
     handler: async (request) => {
       const input = setDefaultKeyInput.read(request.payload);
       if (!input.ok) return { ok: false, error: "id is required" };
-      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setDefault(input.value.id) }));
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setDefault(input.value.id, request.actor?.userId) }));
     }
   });
   registry.register({
@@ -192,6 +196,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     classification: "program-gated",
     action: "secrets:SetAssistantModel",
     accessLevel: "Write",
+    // The assistant's key and model are the workspace's choice: decided on the workspace.
     resource: endpointResource.workspace(),
     assistant: { input: setAssistantModelInput, summary: "Chooses the key and model the assistant uses; with neither, it uses the default key and that provider's normal model.", phrases: ["use a different model", "change the assistant's key"], contextArgs: { keyId: "keyId" }, target: { keyId: "key" } },
     handler: async (request) => {
@@ -203,7 +208,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
         const owner = (await service.getKeySummary(keyId))?.createdBy;
         if (owner !== undefined && owner !== request.actor.userId) return { ok: false, error: "That key belongs to someone else." };
       }
-      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setAssistant({ keyId, model }) }));
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setAssistant({ keyId, model, chosenBy: request.actor?.userId }) }));
     }
   });
 }

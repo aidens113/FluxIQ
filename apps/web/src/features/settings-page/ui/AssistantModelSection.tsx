@@ -19,7 +19,11 @@ export function AssistantModelSection(props: { data: SettingsData }) {
   return (
     <section aria-labelledby="settings-assistant">
       <h2 id="settings-assistant">The assistant</h2>
-      {choice.keys.length === 0 ? <p>Add an AI key above to turn the assistant on.</p> : (
+      {choice.workspace ? (
+        <p className="settings-assistant-row">
+          The assistant uses this workspace&rsquo;s {choice.workspace.provider || "AI"} key, with {choice.workspace.model || <>the provider&rsquo;s usual model</>}. The workspace&rsquo;s owner chooses them.
+        </p>
+      ) : choice.keys.length === 0 ? <p>Add an AI key above to turn the assistant on.</p> : (
         <div className="settings-assistant-row">
           <span>The assistant uses</span>
           <label>Key

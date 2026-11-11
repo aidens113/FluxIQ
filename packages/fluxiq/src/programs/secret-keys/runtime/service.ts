@@ -190,6 +190,7 @@ export class SecretKeysService {
     await this.store.persist(id);
     await this.modelKeys.load();
     await this.modelKeys.ensureDefault();
+    await this.modelKeys.keyCreated(record);
     if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
     return toSummary(record);
   }

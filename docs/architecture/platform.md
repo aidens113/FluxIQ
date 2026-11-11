@@ -183,7 +183,7 @@ the generated lists" use `IAM_READ_ONLY_ACTIONS` and `IAM_DESTRUCTIVE_ACTIONS`.
 | `FluxIQOwnerFullAccess` | identity | `Allow *` on the workspace content and the workspace FRN, no condition, so it takes the fast path. Reaches nothing outside the workspace. |
 | `FluxIQAdministratorAccess` | identity | An unconditional `Allow *` on the workspace content, and `Allow` of the `studio`, `secrets`, `gateway`, `iam` and `ops` services on the workspace FRN. No `platform:*` (platform FRNs have no workspace segment, so the content grant cannot reach them). It reaches every endpoint today's admin does, and the content grant makes it full access, so the single local owner, who is `admin` today, keeps the list fast path. |
 | `FluxIQReadOnlyAccess` | identity | Exactly the 98 read-only actions, one statement per service, on the same two resources. Built from the generated list. |
-| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. Self-service password, PIN, TOTP, session and vault actions, and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`, `GetPanelAssistantAllowance`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
+| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`, `GetPanelAssistantAllowance`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. `GetPanelAssistantAllowance` is in both lists until its endpoint declares the workspace (W4, t900); the user-FRN copy goes then. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed or chosen by them. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
 | `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace. Denies all `iam` actions, `secrets:RevealKey` and the 16 destructive actions. A connected browser acts as its user, narrowed by this. |
 | `FluxIQProvisioner` | identity | For the website's provisioning identity: allows `platform:*Account*` on account FRNs; denies everything on any FRN with a workspace segment and on workspace FRNs. |
 | `FluxIQServiceGuardrail` | guardrail | `Deny ops:*` and `Deny platform:*`. Keeps operator actions (including database migration and node registration) out of a hosted workspace. |
@@ -476,8 +476,9 @@ an edited role, an unmapped role and a `user` role, under `local` and
 (`api-iam-escalation.test.ts`) runs `service` with two `FluxIQUserAccess`
 users: neither reaches the other's project or its children, any operator
 endpoint, `iam:Snapshot`, `CreateUser` or `UpdateUser`, or any unfiltered
-action on the workspace other than a create, and each list shows only the
-caller's own items.
+action on the workspace other than a create and the named setting reads
+(`IAM_USER_WORKSPACE_SETTING_READS`, each a registered read the user is
+allowed), and each list shows only the caller's own items.
 
 Result: for all 236 registrations, admin and viewer have 0 mismatches
 (472 pairs, 944 decisions; 340 pairs allowed and 132 refused today). The
@@ -574,7 +575,11 @@ is decided on `account/unresolved`.
 
 Over `http` a password is refused as an unknown field, `setPassword` is
 `operation_unavailable`, an existing email answers `{status: "exists"}` instead of
-`email_taken`, and a `userId` comes back only for `created`. In-process callers
+`email_taken`, and a `userId` comes back only for `created`. An email a person without an
+account already signs in with, in any case, is an email in use the same way: identity
+access refuses the user (`IdentityUsernameTakenError`, code `identity.username_taken`)
+before writing it, and `createAccount` answers `email_taken` in-process or `exists` with
+the account-exists mail over HTTP, with nothing written. In-process callers
 may pass a password once and see `email_taken`. An input issue names the field
 with a fixed message and never echoes a value.
 
@@ -915,6 +920,47 @@ Where a model call finds its key is now owner-aware. In
 
 The Flow's key comes from the `flowSecretKeyId({projectId, flowId})` option of the
 session key provider resolver, then from the request's `llmSecretKeyId` metadata.
+
+**The workspace's assistant key.** The panel assistant (the dock) answers with the key
+Secret Keys resolves for it (`ModelKeySettings.resolveAssistant`: the key chosen for the
+assistant, else the workspace's default key), whoever sends. In
+`runtime/conversations/assistant/model/key-model-source.ts`:
+
+- The sender's own key, or a legacy key nobody is stamped on, is released to the sender's
+  own unlock, as before.
+- Another person's key is released only when its owner chose it for the workspace
+  (`sharedByOwner`), and then server-side, for that one call, to **the owner's own live
+  panel unlock** (`fallbackUnlockFor(owner, null)`, never a paired browser's), the only
+  thing that can open a key sealed under the owner's password. The sender never holds,
+  reads or names the value; what IAM decides for them is `studio:SendPanelMessage` on
+  their own user.
+- "Chose it" is recorded beside the choice (`defaultChosenBy`, `assistantChosenBy`, from
+  the acting user of `set-default-key` and `set-assistant-model`, never a payload). The
+  workspace's first model key counts as its creator's choice, since adding it makes it the
+  default every person sees. A default that passed to a key on its own (the old one was
+  removed or disabled), a key someone else made the default, and a choice recorded before
+  this, are not shared: a sender other than the owner gets a plain sentence and no call is
+  made. So an owner or administrator who can set any key as the default still cannot
+  spend a member's key.
+- When no unlock of the owner holds the key, the call ends with the typed
+  `AutomationStudioSecretsLockedError` (`secrets.locked`) and no other key is tried. The
+  provider adapters turn a throw from the key lookup into a generic provider error, so the
+  model source remembers the lock and rethrows the typed error, for the owner's own
+  messages as well. The dock says it in the thread.
+- `get-assistant-model` (and the snapshot's `modelSettings`) carries `assistantProvider`,
+  the provider of the key in use, so Settings shows a member which provider and model
+  answer without listing a key that is not theirs, and offers no control to change it.
+- **The default key and the assistant's key are the workspace's choices.** `set-default-key`
+  and `set-assistant-model` both declare `endpointResource.workspace()`, so IAM decides
+  `secrets:SetDefaultKey` and `secrets:SetAssistantModel` on the workspace FRN, never on the
+  key: owning a key does not let a person make it everyone's default. Hosted, the Owner
+  and Administrator policies allow them and `FluxIQUserAccess` does not; local and
+  self-hosted, the role's `secrets.manage` decides (`admin` yes, `viewer` no). A person's
+  own key management (create, rename, rotate, reveal, delete) is unchanged, decided on the
+  key under `OwnData`. Settings hides both controls from a person whose role lacks
+  `secrets.manage` (`mayChooseWorkspaceKeys`), once the page is given the role's
+  permissions (`useSettingsData(port, { mayChooseForWorkspace })`); without it the page
+  offers them and the server refuses.
 
 **Unlock resolution happens on every model call.** The caller's own session is only
 the preferred one. If it was signed out, a panel caller's resolver tries

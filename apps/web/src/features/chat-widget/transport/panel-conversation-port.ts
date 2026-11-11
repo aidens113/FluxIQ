@@ -19,6 +19,8 @@ const NO_TITLE = "A chat needs a name.";
 export type PanelConversationOptions = {
   /** The page and selection the person has open now. */
   onScreen(): ChatOnScreen;
+  /** The project the person has open: its threads join the list beside their own. Absent, or none open: their own alone. */
+  openProject?(): { projectId: string; name?: string | undefined } | undefined;
 };
 
 export function createPanelConversationPort(api: ProgramCommandTransport, options: PanelConversationOptions): ChatConversationPort {

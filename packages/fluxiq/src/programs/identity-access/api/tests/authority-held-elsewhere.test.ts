@@ -10,8 +10,10 @@
 // letting it through; and the snapshot marks each person exactly as
 // `update-user` decides, so a client never offers a refused change. A value
 // equal to the stored one is not a change: resending it is neither refused,
-// nor asked for proof, nor written, for anyone. Dummy values only; scrypt at
-// N=2^10.
+// nor asked for proof, nor written, for anyone. A sign-in name equal to the
+// stored one ignoring case is the same name: an account holder may resend
+// their email in any case, and nothing is written for it. Dummy values only;
+// scrypt at N=2^10.
 
 import { describe, expect, it, vi } from "vitest";
 import { MemoryIamAuditSink } from "../../../../platform/iam/index.ts";
@@ -21,6 +23,7 @@ import { MemoryRecordRepository } from "../../../../platform/provisioning/tests/
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
 import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "../../runtime/authority/index.ts";
 import { IdentityAccessService } from "../../runtime/service.ts";
+import { IdentityUsernameTakenError } from "../../runtime/username-taken-error.ts";
 import type { IdentityAuthorityOwner } from "../../types.ts";
 import type { IdentityAccessSnapshotResponse } from "../contracts.ts";
 import { registerIdentityAccessApi } from "../handlers.ts";
@@ -180,10 +183,32 @@ describe("update-user with values equal to the stored ones", () => {
   it("still refuses an account holder's real sign-in name change by name, even beside an unchanged role", async () => {
     const { holder, updateUser, state } = await setup();
 
-    const answer = await updateUser({ id: holder, username: "Holder@example.test", roleId: "viewer", displayName: "Renamed Holder" });
+    const answer = await updateUser({ id: holder, username: "someone.else@example.test", roleId: "viewer", displayName: "Renamed Holder" });
 
     expect(answer).toMatchObject({ ok: false, errorCode: IdentityAuthorityManagedError.code });
     expect((await state(holder)).user).toMatchObject({ username: "holder@example.test", displayName: "Account Holder" });
+  });
+
+  it("lets an account holder resend their sign-in name in another case, and writes no name for it", async () => {
+    const { identity, holder, updateUser, state } = await setup();
+    const update = vi.spyOn(identity, "updateUser");
+
+    const answer = await updateUser({ id: holder, username: "HOLDER@Example.Test", displayName: "Renamed Holder" });
+
+    expect(answer).toMatchObject({ ok: true, payload: { username: "holder@example.test", displayName: "Renamed Holder" } });
+    expect(update.mock.calls[0]?.[0]).not.toHaveProperty("username");
+    const after = await state(holder);
+    expect(after.user?.username).toBe("holder@example.test");
+    expect(after.user?.username).toBe(after.account?.email);
+  });
+
+  it("refuses renaming a person without an account onto an account holder's email in another case, by name", async () => {
+    const { updateUser, state } = await setup();
+
+    const answer = await updateUser({ id: OLDER_PERSON, username: "Holder@Example.test" });
+
+    expect(answer).toMatchObject({ ok: false, errorCode: IdentityUsernameTakenError.code });
+    expect((await state(OLDER_PERSON)).user?.username).toBe("older-viewer");
   });
 
   it("lets an account holder resend their unchanged role and on/off, with no proof, and still refuses a real one", async () => {
@@ -252,6 +277,21 @@ describe("the authority owner", () => {
     expect(answer).toMatchObject({ ok: false, errorCode: IdentityAuthorityUncheckedError.code });
     expect(answer.error).not.toContain("store unreadable");
     expect((await identity.snapshot()).users.find((user) => user.id === OLDER_PERSON)?.roleId).toBe("viewer");
+  });
+
+  it("takes a sign-in name resent in another case as unchanged when it cannot answer, and writes no name", async () => {
+    const identity = new IdentityAccessService({ passwordKdf: WEAK_KDF });
+    await identity.upsertUser({ id: CALLER, username: "caller-admin", displayName: "Caller Admin", roleId: "admin", password: PASSWORD });
+    await identity.upsertUser({ id: OLDER_PERSON, username: "older-viewer", displayName: "Older Viewer", roleId: "viewer", password: PASSWORD });
+    identity.authority.holdElsewhere({ holdsAuthorityOf: async () => { throw new Error("store unreadable"); } });
+    const registry = new GlobalProgramApiRegistry();
+    registerIdentityAccessApi(registry, identity);
+    const login = await identity.authenticate({ username: "caller-admin", password: PASSWORD });
+    const actor: ProgramApiActor = { sessionId: login.session.id, userId: login.user.id, roleId: login.role.id, permissions: login.role.permissions };
+
+    const answer = await registry.call({ programId: "identity-access", endpoint: "update-user", scope: {}, actor, payload: { id: OLDER_PERSON, username: "Older-Viewer", displayName: "Renamed" } });
+
+    expect(answer).toMatchObject({ ok: true, payload: { username: "older-viewer", displayName: "Renamed" } });
   });
 
   it("is set once: the same owner again is a no-op, and another is refused", async () => {

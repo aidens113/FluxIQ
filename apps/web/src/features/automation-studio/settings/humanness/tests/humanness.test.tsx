@@ -116,13 +116,14 @@ describe("humanness in the Flow settings draft and save", () => {
 });
 
 describe("humanness in the Settings view", () => {
-  async function mount(detailMetadata: Record<string, unknown>, host: FakeElement) {
+  async function mount(detailMetadata: Record<string, unknown>, host: FakeElement, startingHumanness?: number | "unavailable") {
     const detail = { flowId: "flow.one", name: "Flow", updatedAt: 8, settings: { llm: { provider: "deepseek", model: "deepseek-flash", secretKeyId: "key.deepseek", execution: { tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2000, maxTotalTokens: 10000 }, maxCalls: 1, timeoutMs: 20000, maxEstimatedCostUsd: 0.25, retryCount: 0 } } }, inputs: [], outputs: [], metadata: detailMetadata };
     const commands = {
       loadFlow: vi.fn(async () => ({ ok: true, payload: { flow: detail } })),
       listLlmSecrets: vi.fn(async () => ({ ok: true, payload: { keys: [{ id: "key.deepseek", name: "DeepSeek key", kind: "llm", enabled: true, provider: "DeepSeek", scope: "global" }] } })),
       listPublications: vi.fn(async () => ({ ok: true, payload: { publications: [] } })),
-      saveFlow: vi.fn(async () => ({ ok: true, payload: { flow: { ...detail, updatedAt: 9 } } }))
+      saveFlow: vi.fn(async () => ({ ok: true, payload: { flow: { ...detail, updatedAt: 9 } } })),
+      loadMyPreferences: vi.fn(async () => startingHumanness === "unavailable" ? { ok: false, error: "No such endpoint." } : { ok: true, payload: { startingHumanness: startingHumanness ?? null } })
     };
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -148,6 +149,22 @@ describe("humanness in the Settings view", () => {
     expect(textOf(view.renderer.toJSON())).toContain("Unsaved changes");
     await act(async () => view.button("Save Settings").props.onClick());
     expect((view.commands.saveFlow.mock.calls[0] as any[])[0].flow.metadata.humanness).toBe(70);
+  }));
+
+  it("shows the person's starting value as N in Flow settings", () => withWindow(async (host) => {
+    await mount({}, host, 35);
+    expect(host.textContent).toContain("Uses your starting value (35)");
+    expect(rangeOf(host).value).toBe("35");
+  }));
+
+  it("reads the starting value as 0 when the preferences are not available yet", () => withWindow(async (host) => {
+    await mount({}, host, "unavailable");
+    expect(host.textContent).toContain("Uses your starting value (0)");
+  }));
+
+  it("reads the starting value as 0 when the person has none", () => withWindow(async (host) => {
+    await mount({}, host);
+    expect(host.textContent).toContain("Uses your starting value (0)");
   }));
 
   it("clears a stored value by sending null", () => withWindow(async (host) => {

@@ -233,8 +233,19 @@ Added only; nothing a client already imports changed shape.
 - **`update-user`.** A field equal to the person's stored value is not a
   change: the endpoint drops it before deciding anything, so resending an
   unchanged `username`, `roleId` or `enabled` is neither refused nor
-  rechecked, and is not written. Values are compared exactly, as the service
-  stores them as sent. A request for an unknown person is decided as before
+  rechecked. `displayName`, `roleId` and `enabled` are compared exactly. A
+  `username` is compared ignoring case (`toLowerCase`, the folding sign-in
+  already used), so an account holder may resend their email in any case and
+  nothing is written for it; for a person whose name is held here, a re-cased
+  own name is written as sent. Sign-in names are unique ignoring case: the
+  service refuses a write that would give a person a name another person has
+  in any case (`IdentityUsernameTakenError`, which `create-user` and
+  `update-user` answer as `errorCode: "identity.username_taken"`), on every
+  caller's path, provisioning's `createAccount` included. A person may keep
+  their own name in any case, and names stored before the rule that differ
+  only by case are left as they are: each person can still be updated, and
+  only a move onto another person's name is refused. Stored names are not yet
+  normalised. A request for an unknown person is decided as before
   and fails as not found. For a person the owner holds (one with a platform
   account), a request that changes `username`, `roleId` or `enabled` is refused
   with `{ ok: false, error, errorCode: "identity.authority_managed_by_provisioning" }`,

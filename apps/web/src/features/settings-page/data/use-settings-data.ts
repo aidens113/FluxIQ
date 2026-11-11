@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { assistantModelPayload, newKeyPayload, removeKey, type NewKeyForm, type RemoveOutcome, type RemoveProof, type SettingsKey, type SettingsModelChoices, type SettingsPort } from "../model";
 
 export type SettingsAllowance = { allowanceUsd: number; chosen: boolean; defaultUsd: number };
@@ -10,6 +10,7 @@ export type SettingsData = {
   /** Plain words when the page could not read what it needs; empty otherwise. */
   loadError: string;
   keys: SettingsKey[];
+  /** The server's answer, with `mayChoose` set from the hook's options (never from the server). */
   choices: SettingsModelChoices;
   allowance: SettingsAllowance | null;
   /** Each action answers with an error sentence, or "" when it worked. */
@@ -20,15 +21,26 @@ export type SettingsData = {
   remove(keyId: string, proof?: RemoveProof): Promise<RemoveOutcome>;
 };
 
-const NO_CHOICES: SettingsModelChoices = { defaultKeyId: null, assistantKeyId: null, assistantModel: null, assistantAllowanceUsd: null };
+const NO_CHOICES: SettingsModelChoices = { defaultKeyId: null, assistantKeyId: null, assistantModel: null, assistantProvider: null, assistantAllowanceUsd: null };
 const COULD_NOT = "That did not work. Try again.";
 
+/**
+ * What the panel knows about the signed-in person. `mayChooseForWorkspace`:
+ * whether they may change the workspace's default key and the assistant's key
+ * and model (`mayChooseWorkspaceKeys` of their role's permissions); left out,
+ * the page offers both and the server decides.
+ */
+export type SettingsDataOptions = { mayChooseForWorkspace?: boolean | undefined };
+
 /** Reads what Settings shows and runs its changes through the port, reading again after each one. */
-export function useSettingsData(port: SettingsPort): SettingsData {
+export function useSettingsData(port: SettingsPort, options: SettingsDataOptions = {}): SettingsData {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [keys, setKeys] = useState<SettingsKey[]>([]);
-  const [choices, setChoices] = useState<SettingsModelChoices>(NO_CHOICES);
+  const [answer, setAnswer] = useState<SettingsModelChoices>(NO_CHOICES);
+  const mayChoose = options.mayChooseForWorkspace ?? true;
+  // The server's answer never carries `mayChoose`; the panel's own fact is laid over it.
+  const choices = useMemo<SettingsModelChoices>(() => ({ ...answer, mayChoose }), [answer, mayChoose]);
   const [allowance, setAllowance] = useState<SettingsAllowance | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -52,7 +64,7 @@ export function useSettingsData(port: SettingsPort): SettingsData {
     }
     setLoadError("");
     setKeys(snapshot.payload.keys);
-    if (model.ok && model.payload) setChoices(model.payload);
+    if (model.ok && model.payload) setAnswer(model.payload);
     if (spend.ok && spend.payload) setAllowance(spend.payload);
   }, [port]);
   useEffect(() => { void refresh(); }, [refresh]);

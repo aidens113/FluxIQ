@@ -2,5 +2,6 @@ export { chatFailure, type ChatFailure } from "./chat-failure";
 export { chatResult } from "./chat-result";
 export type { ProgramChatTransportOptions } from "./options";
 export { createProgramChatTransport } from "./program-chat-transport";
+export { createComposedConversationPort, type ComposedConversationOptions } from "./composed-conversation-port";
 export { createPanelConversationPort, type PanelConversationOptions } from "./panel-conversation-port";
 export { createThreadChanges } from "./thread-changes";

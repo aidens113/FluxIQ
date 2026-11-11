@@ -63,10 +63,11 @@ describe("the panel's attachment port", () => {
       expect(result).toMatchObject({ ok: true });
     });
 
-    it("prefers a real project the context names over the open one", async () => {
-      const api = fakeProgramApi({ "get-panel-thread-attachment": answer });
-      await readAttachment(api, { panel: { openProjectId: () => "project.small" } })({ ...turn, projectId: "project.named" });
-      expect(api.sentTo("get-panel-thread-attachment")).toEqual([{ conversationId: "panel-1", turnId: "turn.1", projectId: "project.named" }]);
+    it("keeps get-conversation-attachment, in its own project, for a project thread listed beside the panel's", async () => {
+      const api = fakeProgramApi({ "get-conversation-attachment": answer });
+      await readAttachment(api, { panel: { openProjectId: () => "project.small" } })({ ...turn, conversationId: "conv.p", projectId: "project.named" });
+      expect(api.sentTo("get-conversation-attachment")).toEqual([{ projectId: "project.named", conversationId: "conv.p", turnId: "turn.1" }]);
+      expect(api.sentTo("get-panel-thread-attachment")).toEqual([]);
     });
 
     it("names no project when none is open, so Core serves a navigation and refuses a proposal in its own words", async () => {

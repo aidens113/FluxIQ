@@ -1,4 +1,5 @@
 import { defineIamPredefinedPolicy } from "./define-predefined-policy.ts";
+import { IAM_USER_WORKSPACE_SETTING_READS } from "./user-workspace-setting-reads.ts";
 import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 
 // The list endpoints across the workspace whose registration declares a
@@ -22,6 +23,10 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
 // the workspace's assistant key), so setting it changes what every person's
 // messages may spend. A test of the panel endpoints fails when one is neither
 // here nor named as withheld (programs/automation-studio/api/panel-assistant/tests).
+// `studio:GetPanelAssistantAllowance` is also read on the workspace FRN
+// (`IAM_USER_WORKSPACE_SETTING_READS`), where the allowance endpoints move; its
+// copy here keeps the endpoint working while it still declares the caller's own
+// user, and goes when it declares the workspace.
 const OWN_PANEL_ASSISTANT: readonly string[] = [
   "studio:ListPanelThreads",
   "studio:GetPanelThread",
@@ -51,9 +56,17 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  *   project, under `OwnData`.
  * - `WorkspaceFilteredLists`: the workspace-wide list endpoints whose
  *   registration filters its items (`FILTERED_WORKSPACE_LISTS`), on the
- *   workspace FRN; the filter then shows only what `OwnData` allows. Nothing
- *   else is granted on the workspace FRN: an unfiltered list across the
- *   workspace, and an action on no specific resource, are denied.
+ *   workspace FRN; the filter then shows only what `OwnData` allows.
+ * - `WorkspaceSettingReads`: the workspace settings a person reads to use it
+ *   (`IAM_USER_WORKSPACE_SETTING_READS`: which provider and model the assistant
+ *   uses, and what one message to it may spend), on the workspace FRN. Changing
+ *   them, and the workspace's default key, are the workspace's decisions and
+ *   are not granted. Nothing else is granted on the workspace FRN: an
+ *   unfiltered list across the workspace, and an action on no specific
+ *   resource, are denied. Sending to the assistant on the workspace's key needs
+ *   no key action: the key is released server-side for that one call
+ *   (`OwnPanelAssistant`'s `SendPanelMessage`), and `OwnData` never reaches
+ *   another person's key, so it is never revealed, listed or changed.
  * - `SelfService`: the actions that change only the caller's own credentials,
  *   and a person's own unlock of their own keys with their own password, on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
@@ -86,6 +99,12 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Sid: "WorkspaceFilteredLists",
     Effect: "Allow",
     Action: [...FILTERED_WORKSPACE_LISTS],
+    Resource: IAM_WORKSPACE_PATTERNS.workspace
+  },
+  {
+    Sid: "WorkspaceSettingReads",
+    Effect: "Allow",
+    Action: [...IAM_USER_WORKSPACE_SETTING_READS],
     Resource: IAM_WORKSPACE_PATTERNS.workspace
   },
   {

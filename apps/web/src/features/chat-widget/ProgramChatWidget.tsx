@@ -57,7 +57,14 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
     secretKeys,
     onScreen: () => latest.current.onScreen ?? {},
     // The panel-wide assistant talks to the panel's own endpoints; whether this chat is that one is fixed when it is made.
-    ...(latest.current.panel ? { panel: { onScreen: () => latest.current.panel?.onScreen() ?? {} } } : {})
+    // The open project's threads join the person's own in the list, so choices and questions raised in them are answered here.
+    ...(latest.current.panel ? { panel: {
+      onScreen: () => latest.current.panel?.onScreen() ?? {},
+      openProject: () => {
+        const projectId = latest.current.projectId;
+        return projectId ? { projectId, name: latest.current.projectName ?? undefined } : undefined;
+      }
+    } } : {})
   }), [studio, secretKeys]);
 
   // The chat reads its options once, when it is made; a later change of the requested thread is not a new chat.

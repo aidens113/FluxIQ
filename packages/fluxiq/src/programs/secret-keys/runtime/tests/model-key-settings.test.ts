@@ -118,7 +118,8 @@ describe("the assistant's model", () => {
     const { service, add } = workspace();
     const first = await add("First", { provider: "alpha" });
     const choice = await service.modelKeys.resolveAssistant();
-    expect(choice).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha" });
+    // A key nobody is stamped on is nobody's to share.
+    expect(choice).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha", sharedByOwner: false });
     expect(JSON.stringify(choice)).not.toContain("dummy-First");
   });
 
@@ -155,7 +156,7 @@ describe("the assistant's model", () => {
     const second = await add("Second");
     await service.modelKeys.setAssistant({ keyId: second.id, model: "m" });
     await service.updateKey({ id: second.id, enabled: false });
-    expect(await service.modelKeys.resolveAssistant()).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha" });
+    expect(await service.modelKeys.resolveAssistant()).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha", sharedByOwner: false });
     expect((await service.modelKeys.read()).assistantKeyId).toBeNull();
   });
 });
@@ -178,5 +179,66 @@ describe("the assistant's spending allowance", () => {
     await expect(service.modelKeys.setAssistantAllowance(-1)).rejects.toThrow("zero or more");
     await expect(service.modelKeys.setAssistantAllowance(Number.NaN)).rejects.toThrow("zero or more");
     expect(await service.modelKeys.setAssistantAllowance(0)).toBe(0);
+  });
+});
+
+describe("the workspace's key: only one its own owner chose pays for other people", () => {
+  function people() {
+    const { service, repository } = workspace();
+    let at = 5000;
+    const add = (name: string, createdBy: string, provider = "Anthropic") =>
+      service.createKey({ name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider, createdBy, nowMs: (at += 10) });
+    const shared = async () => {
+      const choice = await service.modelKeys.resolveAssistant();
+      return choice.ok ? { keyId: choice.keyId, ownerId: choice.ownerId, sharedByOwner: choice.sharedByOwner } : choice;
+    };
+    return { service, repository, add, shared };
+  }
+
+  it("is the first model key, by its creator's own act of adding it, and says its provider", async () => {
+    const { service, add, shared } = people();
+    const team = await add("Team", "owner");
+    await add("Mine", "member");
+    expect(await shared()).toEqual({ keyId: team.id, ownerId: "owner", sharedByOwner: true });
+    expect((await service.modelKeys.read()).assistantProvider).toBe("Anthropic");
+  });
+
+  it("is never a key someone else made the default, and is again once its owner picks it", async () => {
+    const { service, add, shared } = people();
+    await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setDefault(mine.id, "owner");
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", sharedByOwner: false });
+    await service.modelKeys.setDefault(mine.id, "member");
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", sharedByOwner: true });
+  });
+
+  it("is never a default that passed to a key on its own", async () => {
+    const { service, add, shared } = people();
+    const team = await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.deleteKey(team.id);
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", sharedByOwner: false });
+  });
+
+  it("follows who picked the assistant's own key, and who picked \"the default key\" for it", async () => {
+    const { service, add, shared } = people();
+    const team = await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setAssistant({ keyId: mine.id, chosenBy: "owner" });
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", sharedByOwner: false });
+    await service.modelKeys.setAssistant({ keyId: team.id, chosenBy: "owner" });
+    expect(await shared()).toEqual({ keyId: team.id, ownerId: "owner", sharedByOwner: true });
+    // The default passed on by itself, then its owner chose "the default key" for the assistant.
+    await service.modelKeys.setDefault(mine.id, "owner");
+    await service.modelKeys.setAssistant({ chosenBy: "member" });
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", sharedByOwner: true });
+  });
+
+  it("keeps who chose across a restart", async () => {
+    const { repository, add } = people();
+    const team = await add("Team", "owner");
+    const reopened = new SecretKeysService({ repository, passwordKdf: weakKdf });
+    expect(await reopened.modelKeys.resolveAssistant()).toMatchObject({ ok: true, keyId: team.id, ownerId: "owner", sharedByOwner: true });
   });
 });

@@ -3840,7 +3840,7 @@
       "name": "identity-access__update-user",
       "programId": "identity-access",
       "endpoint": "update-user",
-      "summary": "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in.",
+      "summary": "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in. A person with an account keeps their account email as their sign-in name, so only their display name changes here.",
       "phrases": [
         "rename this person",
         "change this person's display name"

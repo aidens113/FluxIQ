@@ -13,6 +13,10 @@
 //     fold and Show me has somewhere to scroll
 //   - "Planning notes": a person's turn, a reference to a real proposal Core holds on a Flow of its own, an adaptation
 //     reference, the panel's own `panel-capability-result` record after a person's turn, and no question
+// and, in the small project (listed in the dock beside them once the person opens it, answered through the project's
+// own conversation, never the panel's):
+//   - "Cleanup choice": a choice ask whose options are destructive (consequence delete)
+//   - "Project questions": an open ask that takes the person's own words
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -126,7 +130,24 @@ await threads.append(PERSON, { conversationId: planning, author: "person", text:
 await say(planning, "Anything else you want changed?");
 
 await threads.close();
-const seeded = { projectId, emptyProjectId: manifest.projects.empty.id, threads: { permission: build, destructive: run, planning } };
+
+// The small project's own threads, written through Core's conversations collaborator, the writer Core's own runs speak through.
+const conversations = studio.conversations;
+const choice = conversations.writerFor({ projectId, subject: { kind: "run", id: "run.e2e.cleanup-choice" }, title: "Cleanup choice" });
+await choice.say("The run reached the old drafts list.");
+await choice.ask({
+  text: "Two drafts match. Which should I clear?",
+  ask: {
+    askId: "ask.e2e.which-draft", kind: "choice", parks: true,
+    options: [{ id: "oldest", label: "Clear the oldest", route: null }, { id: "all", label: "Clear both", route: null }],
+    consequences: ["delete"]
+  }
+});
+const questions = conversations.writerFor({ projectId, subject: { kind: "project", id: projectId }, title: "Project questions" });
+await questions.ask({ text: "What should the weekly post be called?", ask: { askId: "ask.e2e.name", kind: "open", parks: true } });
+const projectThreads = { choice: await choice.conversationId(), open: await questions.conversationId() };
+
+const seeded = { projectId, emptyProjectId: manifest.projects.empty.id, threads: { permission: build, destructive: run, planning }, projectThreads };
 await writeFile(path.join(fixtureRoot, "chat-threads-manifest.json"), `${JSON.stringify(seeded, null, 2)}\n`, "utf8");
 process.stdout.write(`${JSON.stringify(seeded, null, 2)}\n`);
 await fluxiq.close?.();

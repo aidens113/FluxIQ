@@ -1,4 +1,4 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import type { GlobalProgramApiRegistry, ProgramApiResponse } from "../../_shared/api.ts";
 import { identityAccessSnapshotInput, renameIdentityUserInput, revokeIdentitySessionInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
@@ -13,6 +13,8 @@ import {
 } from "./contracts.ts";
 import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "../runtime/authority/index.ts";
 import type { IdentityAccessService } from "../runtime/service.ts";
+import { IdentityUsernameTakenError } from "../runtime/username-taken-error.ts";
+import { usernameKey } from "../runtime/usernames/index.ts";
 
 /**
  * The refusal an endpoint returns when the calling session has not just
@@ -70,18 +72,26 @@ async function authorityRefusal(service: IdentityAccessService, payload: UpdateI
  * value resent unchanged is not a change, so it is not asked about
  * (`authorityRefusal`), not rechecked (`changesAuthority`) and not written.
  * Every later decision then goes by presence on what is left, which is
- * exactly what would change. Compared exactly, because `updateUser` stores
- * each value as sent (no trimming or case folding): a value that would be
- * stored differently is a change. The stored person is read in this request;
- * a dropped field is never written, so a change that lands after the read is
- * not overwritten by it. A person not found is returned whole, so the request
- * fails in `updateUser` as it did before.
+ * exactly what would change. Display name, role and on/off are compared
+ * exactly. A sign-in name is compared ignoring case (`usernameKey`, as sign-in
+ * and the uniqueness check compare it): one that differs from the stored name
+ * only by case is the same sign-in name, so it is never refused. Where the
+ * name is held elsewhere (an account holder's is their account email) it is
+ * dropped and nothing is written for it; where it is held here, the new case
+ * is written as sent, so a person's own name can still be re-cased. The
+ * stored person is read in this request; a dropped field is never written, so
+ * a change that lands after the read is not overwritten by it. A person not
+ * found is returned whole, so the request fails in `updateUser` as it did
+ * before.
  */
 async function withoutUnchangedFields(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<UpdateIdentityUserRequest> {
   const stored = (await service.snapshot()).users.find((user) => user.id === payload.id);
   if (!stored) return payload;
   const changes = { ...payload };
-  if (changes.username === stored.username) delete changes.username;
+  if (changes.username !== undefined && usernameKey(changes.username) === usernameKey(stored.username)) {
+    const recased = changes.username !== stored.username;
+    if (!recased || (await authorityRefusal(service, { id: payload.id, username: changes.username })) !== null) delete changes.username;
+  }
   if (changes.displayName === stored.displayName) delete changes.displayName;
   if (changes.roleId === stored.roleId) delete changes.roleId;
   if (changes.enabled === stored.enabled) delete changes.enabled;
@@ -96,6 +106,21 @@ async function withoutUnchangedFields(service: IdentityAccessService, payload: U
  */
 function changesAuthority(payload: UpdateIdentityUserRequest): boolean {
   return payload.roleId !== undefined || payload.enabled !== undefined;
+}
+
+/**
+ * The response for a write of a person: the written person, or the named
+ * refusal of a sign-in name another person already has ignoring case
+ * (`IdentityUsernameTakenError`, answered as `errorCode`). Anything else
+ * propagates, as any handler error does.
+ */
+async function written(write: () => Promise<unknown>): Promise<ProgramApiResponse> {
+  try {
+    return { ok: true, payload: await write() };
+  } catch (error) {
+    if (error instanceof IdentityUsernameTakenError) return { ok: false, error: error.message, errorCode: error.code };
+    throw error;
+  }
 }
 
 export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, service: IdentityAccessService): void {
@@ -134,7 +159,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       // creating an administrator outright cannot ask for less.
       const refusal = await recheckCredentials(service, payload);
       if (refusal) return refusal;
-      return { ok: true, payload: await service.upsertUser(payload) };
+      return written(() => service.upsertUser(payload));
     }
   });
   registry.register({
@@ -150,8 +175,10 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       const requested = request.payload as UpdateIdentityUserRequest | undefined;
       if (!requested?.id) return { ok: false, error: "id is required" };
       // A field equal to the person's stored value is not a change: resending
-      // an unchanged sign-in name, role or on/off is neither refused, nor
-      // rechecked, nor written. A real change is decided as below.
+      // an unchanged sign-in name (in any case), role or on/off is neither
+      // refused nor rechecked. A real change is decided as below, and a
+      // sign-in name another person has, ignoring case, is refused by name
+      // when it is written (`written`).
       const payload = await withoutUnchangedFields(service, requested);
       // The gate is on the fields that move authority, not on the endpoint: a
       // role change grants it, and an enable or disable hands it back or takes
@@ -171,7 +198,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
         const refusal = await recheckCredentials(service, payload);
         if (refusal) return refusal;
       }
-      return { ok: true, payload: await service.updateUser(payload) };
+      return written(() => service.updateUser(payload));
     }
   });
   registry.register({

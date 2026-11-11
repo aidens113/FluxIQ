@@ -4,6 +4,7 @@ export { assistantChoice, type AssistantChoice } from "./assistant-choice";
 export { assistantModelPayload } from "./assistant-model-payload";
 export { ENGINE_TOOLS, SECURITY_TOOLS, SETTINGS_TOOLS, settingsTool, type EngineTool } from "./engine-tools";
 export { keyRows, type KeyRow } from "./key-rows";
+export { mayChooseWorkspaceKeys } from "./may-choose-workspace-keys";
 export { EMPTY_NEW_KEY, NEW_KEY_PROVIDERS, canSaveNewKey, newKeyPayload, type NewKeyForm } from "./new-key";
 export { removeKey, type RemoveOutcome, type RemoveProof } from "./remove-key";
 export type { SettingsCallPayload, SettingsCallResult, SettingsKey, SettingsModelChoices, SettingsPort } from "./types";

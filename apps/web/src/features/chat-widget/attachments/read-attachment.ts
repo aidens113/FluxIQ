@@ -4,7 +4,7 @@
 // unwraps that itself.
 //
 // A project thread's turn is read in the thread's own project
-// (`get-conversation-attachment`). A panel thread belongs to no project, so the
+// (`get-conversation-attachment`), in the docked Assistant too. A panel thread belongs to no project, so the
 // context's project is the literal `panel`, which names nothing: its turn is
 // read through `get-panel-thread-attachment`, which takes the project holding
 // what the reference names (a proposed Flow change) from the host, the project
@@ -25,8 +25,9 @@ export type ReadAttachmentOptions = {
 
 export function readAttachment(api: ProgramCommandTransport, options: ReadAttachmentOptions = {}): (context: ChatAttachmentContext) => Promise<ChatResult<unknown>> {
   return async (context) => {
-    if (options.panel) {
-      const projectId = realProject(context.projectId) ?? realProject(options.panel.openProjectId());
+    // A panel thread's turn names no project; a project thread's (listed beside them when a project is open) does.
+    if (options.panel && realProject(context.projectId) === undefined) {
+      const projectId = realProject(options.panel.openProjectId());
       return chatResult(await api.post("get-panel-thread-attachment", {
         conversationId: context.conversationId,
         turnId: context.turnId,

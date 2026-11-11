@@ -67,11 +67,13 @@ export class ModelKeySettings {
 
   view(): ModelKeySettingsView {
     const notice = this.record?.defaultNotice;
+    const effective = this.assistantKey() ?? this.defaultKey();
     return {
       defaultKeyId: this.defaultKey()?.id ?? null,
       ...(notice ? { defaultNotice: notice } : {}),
       assistantKeyId: this.assistantKey()?.id ?? null,
-      assistantModel: this.assistantModelFor(this.assistantKey() ?? this.defaultKey()) ?? null,
+      assistantModel: this.assistantModelFor(effective) ?? null,
+      assistantProvider: effective?.provider?.trim() || null,
       assistantAllowanceUsd: this.record?.assistantAllowanceUsd ?? null
     };
   }
@@ -91,27 +93,49 @@ export class ModelKeySettings {
     return this.record?.assistantAllowanceUsd;
   }
 
-  /** The key and model the assistant should call, or a plain reason there is none. Carries no value. */
+  /**
+   * The key and model the assistant should call, or a plain reason there is
+   * none. Carries no value. Names the key's owner, and whether that owner chose
+   * it as the workspace's key (`sharedByOwner`), which is what lets it pay for
+   * another person's message: never a key someone else picked for them, nor a
+   * default that passed to it on its own.
+   */
   async resolveAssistant(): Promise<AssistantModelChoice> {
     await this.load();
     const key = this.assistantKey() ?? this.defaultKey();
     if (!key) return { ok: false, reason: "Add a model key in Settings to use the assistant." };
     const model = this.assistantModelFor(key);
-    return { ok: true, keyId: key.id, keyName: key.name, ...(key.provider ? { provider: key.provider } : {}), ...(model ? { model } : {}) };
+    return { ok: true, keyId: key.id, keyName: key.name, ...(key.provider ? { provider: key.provider } : {}), ...(model ? { model } : {}), ...(key.createdBy ? { ownerId: key.createdBy } : {}), sharedByOwner: this.chosenByOwner(key) };
   }
 
-  /** Makes a model key the default, and clears the notice about the last change. Refuses a key that is missing, disabled or not a model key. */
-  async setDefault(id: string): Promise<ModelKeySettingsView> {
+  /**
+   * Makes a model key the default, and clears the notice about the last change.
+   * Refuses a key that is missing, disabled or not a model key. `chosenBy` is the
+   * person choosing (the acting user, never a payload).
+   */
+  async setDefault(id: string, chosenBy?: string): Promise<ModelKeySettingsView> {
     await this.load();
     const refusal = refusalFor(this.store.get(id), "use as the default");
     if (refusal) throw new Error(refusal);
-    this.update({ defaultKeyId: id, defaultNotice: undefined });
+    this.update({ defaultKeyId: id, defaultChosenBy: chosenBy, defaultNotice: undefined });
     await this.persist();
     return this.view();
   }
 
-  /** Sets the assistant's key (none: the default key) and model (none: the provider's normal one). */
-  async setAssistant(input: { keyId?: string | undefined; model?: string | undefined }): Promise<ModelKeySettingsView> {
+  /**
+   * After a key was created: the workspace's first model key, while no default is
+   * recorded, becomes the default by its creator's own act of adding it (Settings
+   * already shows it as "the default key"), so it is recorded as theirs.
+   */
+  async keyCreated(key: SecretKeyRecord): Promise<void> {
+    await this.load();
+    if (this.record?.defaultKeyId !== undefined || !key.createdBy || this.defaultKey()?.id !== key.id) return;
+    this.update({ defaultKeyId: key.id, defaultChosenBy: key.createdBy });
+    await this.persist();
+  }
+
+  /** Sets the assistant's key (none: the default key) and model (none: the provider's normal one). `chosenBy` is the acting user. */
+  async setAssistant(input: { keyId?: string | undefined; model?: string | undefined; chosenBy?: string | undefined }): Promise<ModelKeySettingsView> {
     await this.load();
     const keyId = input.keyId?.trim() || undefined;
     const chosen = keyId === undefined ? undefined : this.store.get(keyId);
@@ -123,7 +147,7 @@ export class ModelKeySettings {
     if (model !== undefined && model.length > MAX_MODEL_ID_LENGTH) throw new Error("That model name is too long.");
     const key = chosen ?? this.defaultKey();
     if (model !== undefined && !key) throw new Error("Add a model key in Settings before choosing a model.");
-    this.update({ assistantKeyId: keyId, assistantModel: model, assistantModelProvider: model === undefined ? undefined : providerOf(key) });
+    this.update({ assistantKeyId: keyId, assistantChosenBy: input.chosenBy, assistantModel: model, assistantModelProvider: model === undefined ? undefined : providerOf(key) });
     await this.persist();
     return this.view();
   }
@@ -136,7 +160,7 @@ export class ModelKeySettings {
    */
   async ensureDefault(): Promise<void> {
     if (this.record?.defaultKeyId === undefined || this.defaultKeyIsValid()) return;
-    this.update({ defaultKeyId: this.modelKeys()[0]?.id });
+    this.update({ defaultKeyId: this.modelKeys()[0]?.id, defaultChosenBy: undefined });
     await this.persist();
   }
 
@@ -150,6 +174,8 @@ export class ModelKeySettings {
     if (loss.wasDefault) {
       const next = this.modelKeys().find((key) => key.id !== loss.id);
       patch.defaultKeyId = next?.id;
+      // Passed on by itself, so nobody chose it: it pays for no one else's messages until its owner picks it.
+      patch.defaultChosenBy = undefined;
       patch.defaultNotice = {
         message: next
           ? `Your default key ${loss.phrase}, so ${next.name} is now the default.`
@@ -157,7 +183,7 @@ export class ModelKeySettings {
         atMs: this.now()
       };
     }
-    if (this.record?.assistantKeyId === loss.id) Object.assign(patch, { assistantKeyId: undefined, assistantModel: undefined, assistantModelProvider: undefined });
+    if (this.record?.assistantKeyId === loss.id) Object.assign(patch, { assistantKeyId: undefined, assistantChosenBy: undefined, assistantModel: undefined, assistantModelProvider: undefined });
     if (Object.keys(patch).length === 0) return;
     this.update(patch);
     await this.persist();
@@ -167,6 +193,21 @@ export class ModelKeySettings {
     const chosen = this.record?.defaultKeyId;
     const key = chosen === undefined ? undefined : this.store.get(chosen);
     return key !== undefined && ModelKeySettings.isModelKey(key);
+  }
+
+  /**
+   * Whether `key`, the one the assistant uses now, was chosen for the workspace by
+   * its own owner: picked for the assistant by them, or the default they chose
+   * (or added first), or "the default key" picked for the assistant by them when
+   * the default is theirs. A key with no owner stamp is nobody's to share.
+   */
+  private chosenByOwner(key: SecretKeyRecord): boolean {
+    const owner = key.createdBy;
+    const record = this.record;
+    if (!owner || !record) return false;
+    if (this.assistantKey()?.id === key.id) return record.assistantChosenBy === owner;
+    if (record.defaultKeyId === key.id && record.defaultChosenBy === owner) return true;
+    return record.assistantKeyId === undefined && record.assistantChosenBy === owner;
   }
 
   private assistantKey(): SecretKeyRecord | undefined {

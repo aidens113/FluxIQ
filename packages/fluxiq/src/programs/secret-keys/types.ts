@@ -83,10 +83,19 @@ export type ModelKeySettingsRecord = {
   id: string;
   /** The key chosen or promoted as default; read only while it is still an enabled model key. */
   defaultKeyId?: string | undefined;
+  /**
+   * Who made `defaultKeyId` the default: the person who chose it, or the creator
+   * of the workspace's first model key. Absent when it was promoted on its own
+   * (a lost default passing on) or chosen before this was recorded. Only a
+   * default its own owner chose pays for other people's assistant messages.
+   */
+  defaultChosenBy?: string | undefined;
   /** Said when the default changed on its own, until the person picks a default. */
   defaultNotice?: { message: string; atMs: number } | undefined;
   /** The key the assistant uses; absent means "the default key". */
   assistantKeyId?: string | undefined;
+  /** Who chose the assistant's key (or chose "the default key" for it). Cleared when that key stops being a model key. */
+  assistantChosenBy?: string | undefined;
   /** The model id for that key's provider; absent means the provider's normal model. */
   assistantModel?: string | undefined;
   /** The provider `assistantModel` was chosen for, so a model is never sent to another provider. */
@@ -102,13 +111,25 @@ export type ModelKeySettingsView = {
   defaultNotice?: { message: string; atMs: number } | undefined;
   assistantKeyId: string | null;
   assistantModel: string | null;
+  /**
+   * The provider of the key the assistant uses now (the chosen one, else the
+   * default), as the key names it; null with no model key. Lets a person whose
+   * own key list does not hold the workspace's key see which provider answers.
+   */
+  assistantProvider: string | null;
   /** The per-message spending allowance a person chose for the assistant, in US dollars; null means the assistant's default. */
   assistantAllowanceUsd: number | null;
 };
 
-/** What the panel assistant should call, or a plain reason there is none. Never carries a secret value. */
+/**
+ * What the panel assistant should call, or a plain reason there is none. Never
+ * carries a secret value. `ownerId` is the key's creator (absent for a legacy
+ * key nobody is stamped on); `sharedByOwner` says its owner chose it as the
+ * workspace's key (`ModelKeySettings.resolveAssistant`), which is the only way
+ * it may pay for another person's message.
+ */
 export type AssistantModelChoice =
-  | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined }
+  | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined; ownerId?: string | undefined; sharedByOwner: boolean }
   | { ok: false; reason: string };
 
 export type SecretKeysSnapshot = {
