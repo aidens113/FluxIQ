@@ -163,6 +163,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const sink = automationStudioAnswerFirstRowSink({
     runId,
     readRowsKey: input.binding?.readRowsKey,
+    // The columns the person named are the result's, and no others (`../rows/row-sink.ts`, run-mwb2kkv5-1baeee11).
+    instructionText: input.instructionText,
     // A host with no project store has nowhere to put rows: the sink's own account is all there is, and a read-back answers from it.
     onRecordBatch: datasets.available ? datasets.recordBatchHandler(projectId, runId) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
     reader: {
@@ -244,7 +246,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const arrived = (carried?.prior.liveSteps ?? 0) > 0;
   const run: AutomationStudioAnswerFirstAttemptRun = {
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
-    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardReached: 0, askedAgain: again !== undefined || carried?.askedAgain === true,
+    taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardPassed: new Set(), askedAgain: again !== undefined || carried?.askedAgain === true,
     attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
     record, tried, asked, sink, session: ending, witnesses, completion, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },

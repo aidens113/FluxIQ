@@ -39,7 +39,8 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
     });
     if (!verdict.ok) {
       // Codes belong in a step log, which a person does not read: without them nobody can say why a draft saved nothing.
-      automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${verdict.codes.join(", ") || "no code given"}`);
+      // Each issue's code and where it is, as the next attempt's opening prints them (`./opening.ts`): which step, and not only that some step failed.
+      automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${[...verdict.codes, ...verdict.issues.map((issue) => `${issue.code} at ${issue.path}`)].join(", ") || "no code given"}`);
       return { kind: "kept", why: "not_assembled", codes: verdict.codes };
     }
     const stated = statedOf(run, verdict);

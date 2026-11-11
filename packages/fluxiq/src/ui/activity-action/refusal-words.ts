@@ -49,6 +49,8 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     // An act claimed on a step that did something else -- chose an option, closed something in the
     // way, went to another page -- is not recorded there (`flow-draft/amendment/apply.ts`, week report W1).
     act_not_done_there: "that step did something else, such as choosing one of the options, and did not do the action itself",
+    // A repeat whose last step could never say there is nothing more, so it would end only by failing (`flow-draft/amendment/apply.ts`).
+    repeat_never_ends: "that repeat could never end on its own: its last step cannot tell when there is nothing more",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

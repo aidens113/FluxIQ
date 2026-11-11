@@ -171,6 +171,8 @@ export type AutomationStudioFlowDraftReplayInput = {
    * `undefined` for a step, a call carries what assembly derives without a part.
    */
   partOf?: AuthoringPartOfStep | undefined;
+  /** The columns the instruction names, so a replayed read declares the saved Flow's columns (`./replay.ts`). Absent, nothing changes. */
+  namedColumns?: readonly string[] | undefined;
   signal?: AbortSignal;
 };
 
@@ -251,13 +253,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
     ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
-    ...(input.partOf ? { partOf: input.partOf } : {})
+    ...(input.partOf ? { partOf: input.partOf } : {}),
+    ...(input.namedColumns ? { namedColumns: input.namedColumns } : {})
   });
   return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
 }
 
 /** What a run of steps done again needs: the executor, the draft, and the steps. */
-export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf" | "definitionOf" | "partOf"> & {
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf" | "definitionOf" | "partOf" | "namedColumns"> & {
   /** The whole draft: what says which steps the Flow would not always run. */
   steps: readonly AutomationStudioFlowDraftStep[];
   /** The proposed steps to do again, in order, from where the target now stands. */
@@ -358,6 +361,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
         nodeOf: input.nodeOf,
         definitionOf: input.definitionOf,
         partOf: input.partOf,
+        namedColumns: input.namedColumns,
         modeOf: modeFor,
         callIdOf: input.callIdOf,
         send: (callId, member, value) => send(callId, member, value, passExcusable, false),
@@ -389,7 +393,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = modeFor(step);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf);
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf, input.namedColumns, input.steps);
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     // A list read before the range is read on its own page (`./forward-range.ts`).

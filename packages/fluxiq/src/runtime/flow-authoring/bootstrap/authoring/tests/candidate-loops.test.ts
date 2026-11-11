@@ -306,6 +306,10 @@ describe("a written loop the graph cannot honour is refused where it is said", (
   it("refuses an unbounded repeat while, and takes it once repeat most bounds it", () => {
     const pressing = LANE_C.map((line) => line === "  node: web.dom.next_page" ? "  node: web.dom.click" : line === `  nextPage: ${NEXT}` ? "  selector: a.next" : line);
     expect(refusals(pressing)).toEqual(["flow_script.repeat_while_never_ends @ flow.line.10"]);
+    // Run `run-mwblz4aq-0baa810a`: the refusal names the nodes that answer ended, from the registry, and never offers repeat most.
+    const message = errors(written(pressing.join("\n")).issues).find((issue) => issue.code === "flow_script.repeat_while_never_ends")!.message;
+    expect(message).toContain('end the span with a step that answers ended (in this library: web.output.dom-next_page, "Next Page")');
+    expect(message).not.toMatch(/repeat most|to bound it/u);
     const bounded = refusals([...pressing.slice(0, 10), "  repeat most: 5", ...pressing.slice(10)]);
     expect(bounded).toEqual([]);
     expect(refusals([...pressing.slice(0, 10), "  repeat most: lots", ...pressing.slice(10)])).toEqual(["flow_script.repeat_invalid @ flow.line.10"]);
@@ -378,8 +382,11 @@ describe("a written loop the graph cannot honour is refused where it is said", (
         ]
       }]
     };
-    expect(errors(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan, registry, resolution })).map((issue) => `${issue.code} @ ${issue.path}`))
-      .toEqual(["flow_draft.loop_unbounded @ plan.subflows.0.nodes.1"]);
+    const issues = errors(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan, registry, resolution }));
+    expect(issues.map((issue) => `${issue.code} @ ${issue.path}`)).toEqual(["flow_draft.loop_unbounded @ plan.subflows.0.nodes.1"]);
+    // Run `run-mwblz4aq-0baa810a`: a loop ends by its last step answering ended, never by a count it was not given.
+    expect(issues[0]!.message).toContain("`repeat while:` naming a last step that answers ended when there is nothing more");
+    expect(issues[0]!.message).not.toMatch(/repeat most|\bmost\b/u);
   });
 });
 

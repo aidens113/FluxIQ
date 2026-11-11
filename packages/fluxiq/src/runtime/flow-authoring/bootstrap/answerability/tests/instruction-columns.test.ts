@@ -66,3 +66,28 @@ describe("a list whose closing item runs on", () => {
     }
   });
 });
+
+// Run `run-mwblz4aq-0baa810a`: the last column was followed by a colon and its
+// explanation, the reader took "date: author is ..." as a closing item that ran
+// on, and every leading-words candidate kept the colon, so no column was read.
+describe("a colon after a listed column", () => {
+  it("ends the list at that column, so its explanation is not read as one", () => {
+    const columns = automationStudioFlowBootstrapInstructionColumns("Give me one row per entry with columns author, comment and date: author is who wrote it, comment is its text, and date is the day it was posted.");
+    expect([...columns]).toEqual(["author", "comment", "date"]);
+    expect(columns.cutShort).toBeUndefined();
+  });
+
+  it("ends the list at a colon after an item that is not the last", () => {
+    expect(automationStudioFlowBootstrapInstructionColumns("columns author, comment: the whole text, and date")).toEqual(["author", "comment"]);
+  });
+
+  it("reads a list the colon opens", () => {
+    expect(automationStudioFlowBootstrapInstructionColumns("Use these columns: author, comment and date.")).toEqual(["author", "comment", "date"]);
+  });
+
+  it("trims trailing punctuation from a leading-words candidate of an item that runs on", () => {
+    // "date -" was offered as it stood before; a name never ends in punctuation.
+    expect(automationStudioFlowBootstrapInstructionColumns("columns author and date - the day it was posted as written").cutShort)
+      .toEqual({ named: ["author"], leading: ["date - the", "date"] });
+  });
+});

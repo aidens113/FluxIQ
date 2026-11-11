@@ -39,7 +39,13 @@ export type AutomationStudioFlowDraftAmendment = {
    * `through`, which defaults to it.
    */
   while?: number;
-  /** `repeat` with `while`: the most passes, 1 to 500, the Repeat node's default when absent; with a repeat over a listing: act on only its first N rows, 1 to 10,000. */
+  /**
+   * `repeat` with `while`: the most passes, 1 to 500, and only a count the
+   * person's own instruction gives -- a while-loop ends when its last step
+   * answers ended, never at a bound, and one with neither is refused as it is
+   * written (`repeat_never_ends`). With a repeat over a listing: act on only
+   * its first N rows, 1 to 10,000.
+   */
   most?: number;
   /**
    * `add` or `keep` only: the instructed act (`a1`, `a2` ...) this step does,
@@ -73,7 +79,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there" | "repeat_never_ends";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -119,10 +125,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    */
   act?: string;
   /**
-   * `act_not_done_there` only: the act judge's sentence for the step -- what
-   * it did instead of the act, and where to name the act -- the same sentence
-   * the checklist says as `todoSaid`
+   * `act_not_done_there`: the act judge's sentence for the step -- what it did
+   * instead of the act, and where to name the act -- the same sentence the
+   * checklist says as `todoSaid`
    * (`../../flow-bootstrap/instructed-acts/claim-verdict.ts`, week report W1).
+   * `repeat_never_ends`: assembly's own sentence for the loop -- why its last
+   * step cannot end it, the library's nodes that can, and the amendments that
+   * fix it -- the same one the Flow would be refused with
+   * (`AutomationStudioFlowDraftLoopNeverEnds`).
    */
   said?: string;
   /**
@@ -207,3 +217,20 @@ export type AutomationStudioFlowDraftClaimRefused = (
  * its page while exploring (possibly none), all in the draft's shown numbers.
  */
 export type AutomationStudioFlowDraftUnreachedStep = { step: number; after: number; reachedBy: number[] };
+
+/**
+ * Asked when an amendment writes a repeat that runs its span again while the
+ * span's last step succeeds: assembly's own refusal of that loop, as the Flow
+ * would be refused with it, or nothing when it stands. A loop ends when its
+ * last step answers ended because there is nothing more; a last step whose
+ * node can answer no such route, with no `most` the person gave, would end
+ * only by failing, and is refused as it is written (`repeat_never_ends`)
+ * rather than at assembly, after the answer, where the model never saw it
+ * (`../../llm/harness-options/draft-acts.ts`, run `run-mwblz4aq-0baa810a`).
+ * `step` is the step carrying the repeat, in `steps` as they stand when it is
+ * asked; the sentence names steps by their `position` there.
+ */
+export type AutomationStudioFlowDraftLoopNeverEnds = (
+  steps: readonly AutomationStudioFlowDraftStep[],
+  step: AutomationStudioFlowDraftStep
+) => string | undefined;

@@ -12,9 +12,11 @@ const PLAN = { plan: { schemaVersion: "0.1" }, risk: "low", subflows: [] };
 
 vi.mock("../../../../../../runtime/llm/index.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../../../../runtime/llm/index.ts")>()),
-  checkAutomationStudioFlowBootstrapCompletion: async (input: { result: { summary: string } }) => (verdictFor.refuse ? { ok: false, codes: ["draft.refused"] } : { ok: true, summary: input.result.summary, buildPlan: PLAN })
+  checkAutomationStudioFlowBootstrapCompletion: async (input: { result: { summary: string } }) => (verdictFor.refuse ? { ok: false, codes: ["draft.refused"], issues: [REFUSED_AT] } : { ok: true, summary: input.result.summary, buildPlan: PLAN })
 }));
 const verdictFor = { refuse: false };
+/** What a refused verdict always carries beside its codes: each issue and where it is. */
+const REFUSED_AT = { severity: "error", code: "draft.refused", message: "Step 4 cannot be written down.", path: "draft.steps.4" };
 
 type Parts = NonNullable<AutomationStudioAnswerFirstAttemptRun["input"]["parts"]>;
 type Saved = Parameters<Parts["saveDraft"]>[0];
@@ -66,7 +68,7 @@ describe("an answer-first draft's save", () => {
     expect(calls).toEqual([]);
   });
 
-  it("writes the refusal's codes to the step log as a plain note", async () => {
+  it("writes the refusal's codes, and each issue's code and step, to the step log as a plain note", async () => {
     const directory = mkdtempSync(path.join(tmpdir(), "fluxiq-draft-refused-"));
     vi.stubEnv("FLUXIQ_LLM_STEP_LOG_DIR", directory);
     verdictFor.refuse = true;
@@ -75,6 +77,9 @@ describe("an answer-first draft's save", () => {
       const notes = readdirSync(directory).filter((name) => /^\d{4,}-note$/u.test(name)).map((name) => JSON.parse(readFileSync(path.join(directory, name, "meta.json"), "utf8")) as { line: string });
       expect(notes).toHaveLength(1);
       expect(notes[0]!.line).toContain("draft.refused");
+      expect(notes[0]!.line).toContain("draft.refused at draft.steps.4");
+      // Never the issue's words: a step log names where, and a refusal's words may quote a value.
+      expect(notes[0]!.line).not.toContain("cannot be written down");
     } finally {
       verdictFor.refuse = false;
       vi.unstubAllEnvs();

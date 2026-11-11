@@ -248,6 +248,8 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   definitionOf?: AutomationStudioFlowDraftReplayInput["definitionOf"];
   /** Which plan part each step serves, so the replay writes the record output the saved Flow has (`./replay-draft.ts`, K5). */
   partOf?: AutomationStudioFlowDraftReplayInput["partOf"];
+  /** The columns the instruction names, so a replayed read declares the saved Flow's columns (`./replay/replay.ts`). */
+  namedColumns?: AutomationStudioFlowDraftReplayInput["namedColumns"];
   signal?: AbortSignal;
 };
 
@@ -390,6 +392,7 @@ export function automationStudioFlowDraftDryRunGate(
         ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
         ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
         ...(input.partOf ? { partOf: input.partOf } : {}),
+        ...(input.namedColumns ? { namedColumns: input.namedColumns } : {}),
         ...(input.signal ? { signal: input.signal } : {})
       }), (ran) => `attempt=${attempts} ok=${ran.verdict.ok} steps=${ran.verdict.outcomes.length} reset=${ran.verdict.reset}`);
     } catch {

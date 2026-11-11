@@ -3,7 +3,7 @@
 // nothing, and the attempt then starts as a first one would.
 //
 // **Where it starts.** Saved steps are assembled now, against the binding as it stands, and the
-// route is read from that (`../route/`). `related` is the steps of this Flow's latest attempt at
+// route is read from that (`../route/`), with what the assembly refused where they did not. `related` is the steps of this Flow's latest attempt at
 // another task: a known start for a `build`, never run on its own.
 //
 // **Which attempt this is** counts the task's attempts across Flows, because the chat makes a new
@@ -88,7 +88,8 @@ async function routeOf(input: AutomationStudioAnswerFirstAttemptInput, taskId: s
   const related = [...rows].reverse().find((row) => row.attempt.taskId !== taskId && row.steps?.length);
   return automationStudioAnswerFirstRoute({
     memory: kept, projectId: input.projectId, flowId: input.flowId, taskId,
-    assemble: () => (assembled?.ok ? { ok: true } : { ok: false, codes: assembled?.codes ?? [] }),
+    // What the assembly refused, at which step, goes with a repair to the model that repairs the steps (`./round-note.ts`).
+    assemble: () => (assembled?.ok ? { ok: true } : { ok: false, codes: assembled?.codes ?? [], ...(assembled?.told ? { told: assembled.told } : {}) }),
     ...(related?.steps ? { related: { steps: [...related.steps], flowId: input.flowId } } : {})
   });
 }
