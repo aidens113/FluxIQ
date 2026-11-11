@@ -43,9 +43,9 @@ Each model call goes to its role's model:
 - `explore` serves the reading of your goal, every decision while the run works the task out,
   and the drafting of the Flow.
 - `judge` serves every call that reads the result against what was asked.
-- `repair` serves the calls that diagnose and fix a Flow step that broke (`core.in_run_repair`).
-  When a saved Flow breaks part way through a FluxNode run, the run works on to its result with
-  its own decisions, and those are `explore` calls today.
+- `repair` serves the calls that diagnose and fix a Flow step that broke (`core.in_run_repair`),
+  and the decisions of the round that repairs a saved Flow that broke part way through a run.
+  Anything the run works out fresh stays with `explore`.
 
 Every model a run names is checked when the run starts. An id the engine cannot use ends the run
 the same way an unknown `options.model` does, before any call is made. A role never falls back

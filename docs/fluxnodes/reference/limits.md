@@ -76,6 +76,31 @@ Every bound in one place. A value outside its bound is refused with a named code
 
 Text may hold newlines and tabs, and no other control character.
 
+## Model requests
+
+| What | Bound |
+| --- | --- |
+| One model request | The context window of the model that serves it, less the room kept for its reply |
+| Elements, rows or pages sent | No count limit |
+
+With `overrides.models`, each role's requests are built to its own model's window, not the
+explore model's. A judge on a smaller model gets a request sized to that model.
+
+When what a run got does not fit the judge's window whole, the judge is still asked. Core
+summarises evidence items one at a time until the request fits, and never drops one silently:
+
+1. The views of the site go first: the start, the end, and the end view.
+2. Then what was looked at, the pages read, the acts, and the model's own words.
+3. The rows go last: first down to their labels, then down to counts.
+
+Each summarised item stays in its place as `core.summarised`. It says what the item held,
+in counts only. A `summarised` entry at the end of the request names every item that was
+summarised and how many there were. It also tells the judge that a yes must stand on what
+was shown whole.
+
+If even the shortest form does not fit, the request is refused for its size and the check
+counts as not judged.
+
 ## Run results and events
 
 | What | Bound |

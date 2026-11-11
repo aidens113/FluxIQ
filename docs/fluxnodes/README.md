@@ -140,6 +140,3 @@ Examples
 ## Coming soon
 
 - Ready-made person-needed handlers (notify a person, wait for the answer).
-- Repairs on their own model. `overrides.models` routes `explore` and `judge` today; a saved Flow
-  that breaks during a run is fixed by `explore` calls until repair rounds route to `repair`. See
-  [choosing models](guides/choosing-models.md).

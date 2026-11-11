@@ -23,6 +23,11 @@
 // could only be settled by asking the judge again, and no reply here can ask; and no
 // computed facts, which read a Flow's own record.
 //
+// **Sized to the model that judges.** A run may judge on a model of its own, and the
+// request is built to that model's window (`../../llm/harness/sized-request.ts`). What
+// does not fit it whole is sent in a shorter form that says what it summarised
+// (`./window-fitting.ts`), never refused by size and read as not judged.
+//
 // **What a call that gave nothing is.** `not_judged`, never a throw and never a no: it
 // says nothing about the answer. Only a cancellation throws, for the attempt to end
 // on the person's Stop.
@@ -40,6 +45,7 @@ import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
+import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
@@ -100,6 +106,8 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           ...(input.runId ? { runId: input.runId } : {}),
           instructions: [asked(input)],
           resultSummary: sentNow,
+          // Where the judging model's window cannot hold it whole, it is sent in the first shorter form that fits, each saying what it summarised (`./window-fitting.ts`).
+          resultSummaryFitting: automationStudioFlowLessSummaryFitting(sentNow),
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
           ...(callMs !== undefined ? { timeoutMs: callMs } : {}),

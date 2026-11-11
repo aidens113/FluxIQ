@@ -1,5 +1,6 @@
 import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import type { AutomationStudioLlmProvider } from "../harness/index.ts";
+import { automationStudioLlmProviderWithTokenLimits } from "../harness/served-limits.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "../resolver-contract.ts";
 import { automationStudioLlmProviderRoutedByRole } from "./provider.ts";
 
@@ -23,7 +24,10 @@ type Resolved = AutomationStudioLlmProviderResolution | AutomationStudioLlmProvi
  * nothing here, so a role model that cannot be resolved fails the attempt
  * exactly as an unknown `options.model` does, before any call. Nothing falls
  * back to another model. The explore resolution's limits and timeout are the
- * attempt's; a role's own are not read, since the attempt has one purse.
+ * attempt's. A role's own token limits -- its model's window -- go with its
+ * provider (`../harness/served-limits.ts`), so each request is built to the
+ * window of the model that serves it; its call, cost and run-token limits are
+ * not read, since the attempt has one purse.
  */
 export async function automationStudioLlmRoleRoutedResolution<Result extends Resolved>(
   resolver: (input: AutomationStudioLlmProviderResolverInput) => Result | Promise<Result>,
@@ -44,7 +48,7 @@ export async function automationStudioLlmRoleRoutedResolution<Result extends Res
   const roleProvider = async (modelId: string | undefined): Promise<AutomationStudioLlmProvider | undefined> => {
     if (byModel.has(modelId)) return byModel.get(modelId);
     const resolved = await resolver(asked(modelId));
-    const provider = resolved && "provider" in resolved ? resolved.provider : undefined;
+    const provider = resolved && "provider" in resolved ? withOwnLimits(resolved) : undefined;
     byModel.set(modelId, provider);
     return provider;
   };
@@ -52,4 +56,9 @@ export async function automationStudioLlmRoleRoutedResolution<Result extends Res
   const repair = await roleProvider(models.repair ?? request.modelId);
   if (!judge || !repair) return undefined;
   return { ...explore, provider: automationStudioLlmProviderRoutedByRole({ explore: explore.provider, judge, repair }) };
+}
+
+/** A role's provider, saying its model's token limits where its resolution gave them. */
+function withOwnLimits(resolved: AutomationStudioLlmProviderResolution): AutomationStudioLlmProvider {
+  return resolved.tokenLimits ? automationStudioLlmProviderWithTokenLimits(resolved.provider, resolved.tokenLimits) : resolved.provider;
 }
