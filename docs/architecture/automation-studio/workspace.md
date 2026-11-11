@@ -838,6 +838,27 @@ Two clients mount it today:
 
 The widget is not part of `fluxiq`, and `fluxiq` does not import it.
 
+### The assistant dock's threads
+
+The dock talks in panel threads: the panel assistant's own chats, one database per person outside every project (`runtime/conversations/assistant/store/`). Its endpoints are `automation-studio/<name>` (`programs/automation-studio/api/panel-assistant/`). Each declares `endpointResource.selfUser()`, takes the user from the signed-in actor and never from the payload, refuses a paired client (the extension keeps its own threads), and is hidden from the assistant's tools:
+
+| Endpoint | Body | Answer |
+| --- | --- | --- |
+| `list-panel-threads` | `{ limit? }` | `{ conversations }` |
+| `get-panel-thread` | `{ conversationId, sinceTurnId?, limit? }` | `{ conversation }` |
+| `get-panel-thread-attachment` | `{ conversationId, turnId, projectId? }` | `{ attachment: { attachment, payload } \| null }` |
+| `open-panel-thread` | `{ title? }` | `{ conversation }` |
+| `rename-panel-thread` | `{ conversationId, title }` | `{ conversation }` |
+| `delete-panel-thread` | `{ conversationId }` | `{ deleted: true, conversationId }` |
+| `send-panel-message` | `{ text, conversationId?, title?, onScreen? }` | `{ conversation, turn }` |
+| `answer-panel-ask` | `{ askId, kind: "grant" \| "deny" }` | `{ ask }` |
+| `get-panel-assistant-allowance`, `set-panel-assistant-allowance` | `{ allowanceUsd? }` | `{ allowanceUsd, chosen, defaultUsd }` |
+
+- **Attachments** follow `get-conversation-attachment`'s contract: null for a turn the person's threads do not hold or a turn that shows nothing, and a thrown refusal, never an empty payload, for a kind that cannot be served. A `panel.client-action` turn answers the navigation its reference holds. A kind that refers to a project's record, such as `flow-graph-diff`, is read only in the project `projectId` names, with the same resolver and limits as a project thread's. That project is decided by IAM through the registry as a call of `studio:GetPanelThreadAttachment` naming it, and its domain scope is asserted before anything in it is read. Without a project, or with the thread's own `panel`, it is refused.
+- **Rename and delete** are `programs.write` and `authoring`, with no PIN, as `rename-conversation` and `delete-conversation` are. They use the same codes. A rename trims the title and checks it before the thread: `conversation_title_required`, or `conversation_title_too_long` over 200. A thread the person does not have is `conversation_not_found`. Because the only database looked in is the caller's own, another person's thread answers exactly as a missing id. A delete removes the thread, its turns, its asks, the mutation records that carried them, and the calls its cards waited on, in one transaction. The waiting calls go through the panel database's `9004` trigger. The delete is refused with `conversation_run_active` while a message's or an answered card's work still uses the thread (`runtime/conversations/assistant/thread-use.ts`). That in-process work is the whole of a panel thread's link to work: its cards never park a run, and runs or builds a tool starts write into their own project's threads.
+- None of these is on the paired-client allowlist.
+- Under the `service` IAM profile, `FluxIQUserAccess` grants none of these actions: they evaluate on the caller's `iam` user resource, which neither its `OwnData` nor its `SelfService` statement covers. A person needs a policy granting them on `user/${fluxiq:PrincipalId}`.
+
 ## Change Checklist
 
 Before accepting an Automation Studio web architecture change:

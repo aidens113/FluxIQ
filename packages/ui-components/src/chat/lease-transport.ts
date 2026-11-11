@@ -26,7 +26,7 @@ function leased<Args extends unknown[], Value>(
 
 /** A copy of `transport` whose requests are answered only while `valid()` holds. */
 export function leaseTransport(transport: ChatTransport, valid: () => boolean): ChatTransport {
-  const { conversation, activity, runs, recordings, models, changes, results } = transport;
+  const { conversation, activity, runs, recordings, models, changes, results, taskSettings } = transport;
   const { listAllThreads, newThread, renameThread, deleteThread } = conversation;
   const setOverlay = activity.setOverlay;
   const openInstructions = runs.openInstructions;
@@ -64,6 +64,12 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
         exportRows: leased(valid, (query) => results.exportRows(query)),
         runAgain: leased(valid, (query) => results.runAgain(query)),
         ...(addBudgetAndCarryOn === undefined ? {} : { addBudgetAndCarryOn: leased(valid, (query) => addBudgetAndCarryOn.call(results, query)) })
+      }
+    }),
+    ...(taskSettings === undefined ? {} : {
+      taskSettings: {
+        read: leased(valid, (task) => taskSettings.read(task)),
+        setHumanness: leased(valid, (request) => taskSettings.setHumanness(request))
       }
     })
   };

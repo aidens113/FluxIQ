@@ -37,6 +37,13 @@ const PASSWORD = "a-long-test-password";
 const lowCost = { passwordKdf: { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } } } as const;
 const ON_OLD_SEARCH = { page: "flows", selection: { projectId: "p.1", flowId: "flow.old" } };
 
+/** These cases read no project attachment. */
+const NO_PROJECT_READS = { getFlowBootstrapAdaptation: unused, getFlow: unused, assertProjectDomainAccess: unused };
+
+async function unused(): Promise<never> {
+  throw new Error("Not read in these cases.");
+}
+
 let rootDir = "";
 let current: PanelAssistant<ProgramApiActor> | undefined;
 
@@ -58,7 +65,7 @@ async function setup(decisions: ReadonlyArray<unknown | (() => unknown)>) {
   registry.register({ ...studio, endpoint: "carry-on-task-attempt", permission: "flows.write", classification: "authoring", resource: endpointResource.project(), assistant: { input: carryOnTaskAttemptInput, summary: "Adds budget to an attempt that ran out and carries on.", contextArgs: { projectId: "projectId" }, spends: (input: CarryOnTaskAttemptInput) => input.addUsd }, handler: handlers.carryOn });
   registry.register({ ...studio, endpoint: "update-flow-settings", permission: "flows.write", classification: "authoring", resource: endpointResource.projectChild("flow", "flowId"), assistant: { input: updateFlowSettingsInput, summary: "Changes a Flow's settings.", contextArgs: { projectId: "projectId", flowId: "flowId" } }, handler: handlers.settings });
   registry.register({ ...studio, endpoint: "start-runtime-session", permission: "flows.write", classification: "authoring", resource: endpointResource.project(), assistant: { input: startRuntimeSessionInput, summary: "Starts a run of a Flow.", contextArgs: { projectId: "projectId", flowId: "flowId" } }, handler: handlers.start });
-  const assistant = registerPanelAssistantEndpoints({ registry, service: { projectPaths: { root: path.join(rootDir, "programs", "automation-studio", "projects") } } });
+  const assistant = registerPanelAssistantEndpoints({ registry, service: { projectPaths: { root: path.join(rootDir, "programs", "automation-studio", "projects") }, ...NO_PROJECT_READS } });
   current = assistant;
   let asked = 0;
   const model: PanelAssistantModel = {

@@ -28,6 +28,11 @@
   --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
   font-family: var(--font-sans);
+  /* Native controls and scrollbars in the brand rather than the system's blue
+     and light grey: checkboxes, radios and ranges take the amber accent, and
+     scrollbars the edge hairline. Both inherit, so they hold in every theme. */
+  accent-color: var(--accent);
+  scrollbar-color: var(--edge) transparent;
 
   --canvas: #0c0d0f;
   --surface: #111214;
@@ -165,4 +170,9 @@
     --send-off: #e6e1d7;
     --send-off-text: #5c584f;
   }
+}
+
+/* Selected text, as the website marks it: amber, softened. */
+::selection {
+  background-color: color-mix(in oklab, var(--accent) 35%, transparent);
 }
