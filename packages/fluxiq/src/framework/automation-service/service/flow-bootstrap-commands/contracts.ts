@@ -50,6 +50,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
    * always has.
    */
   startLocation?: string;
+  /** How human the build's input looks, a whole number 0 to 100 (`humannessSchema`), read from the request. Absent means 0. */
+  humanness?: number;
   /**
    * How long the build waits for a person to answer a permission question
    * before carrying on without an answer.

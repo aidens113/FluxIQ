@@ -142,6 +142,8 @@ export type ClientGatewayActionCommand = {
   target?: JsonObject;
   timeoutMs?: number;
   metadata?: JsonObject;
+  /** How human the run's input looks, a whole number 0 to 100 (`humannessSchema`). Present only when the run's options set it, 0 included; absent means the client's own setting, else 0. */
+  humanness?: number;
   /** Absent when no host lease is in force: the command runs as it always has. */
   lease?: ClientGatewayHostLease;
   /**

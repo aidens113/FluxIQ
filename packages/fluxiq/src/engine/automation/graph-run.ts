@@ -1,3 +1,4 @@
+import { humannessSeedOf, normalizeHumanness } from "@fluxiq/contracts/runtime";
 import type { JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowDocument } from "../../flows/executable/graph/index.ts";
 import type { AutomationStudioFlowNode } from "../../flows/executable/graph/index.ts";
@@ -136,7 +137,7 @@ async function runGraphFromSeed(
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
   const { referenceNow: suppliedReferenceNow, ...baseOptions } = options;
   const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
-  const executionOptions = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
+  const executionOptions = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}), ...(normalizeHumanness(options.humanness) > 0 && options.humannessSeed === undefined ? { humannessSeed: humannessSeedOf(`run:${startedAt}`) } : {}) };
   try {
     await options.commandRun?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
@@ -204,7 +205,8 @@ async function runGraphToTrace(
   // and discarded is the shape of bug this repository keeps meeting.
   // The paces it held nodes to ride beside it: a learned one is what a promotion writes back.
   const defence = runState.defence.summary(), pace = runState.pace.summary();
-  const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
+  const humanness = normalizeHumanness(options.humanness) > 0 ? { level: normalizeHumanness(options.humanness), seed: options.humannessSeed ?? 0 } : undefined;
+  const defended = defence || pace || humanness ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}), ...(humanness ? { humanness } : {}) } : executed;
   const withheld = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
   const saved = automationStudioTraceWithLifecycle(withheld, lifecycle, options.invocation);
   repeatTraceProvenance.copy(trace, defended);

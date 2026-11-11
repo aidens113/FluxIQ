@@ -535,7 +535,7 @@ export class AutomationStudioNodeAttemptExecution {
   private static effectDispatchContext(options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding): EffectDispatchContext {
     const withheldValues = withholding.values();
     const withholds = withheldValues.texts.length > 0 || withheldValues.numbers.length > 0;
-    if (options.referenceNow === undefined && !options.signal && !withholds) return undefined;
-    return { ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}) };
+    if (options.referenceNow === undefined && !options.signal && !withholds && options.humanness === undefined) return undefined;
+    return { ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}), ...(options.signal ? { signal: options.signal } : {}), ...(withholds ? { withheldValues } : {}), ...(options.humanness !== undefined ? { humanness: options.humanness } : {}) };
   }
 }

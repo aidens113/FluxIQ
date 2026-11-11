@@ -77,7 +77,7 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
 }
 
 export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService, outputTargetPreparer?: OutputTargetPreparer) {
-  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; humanness?: number; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     let action = policyActionFromPayload(payload);
@@ -97,6 +97,7 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       actionType: outputId,
       parameters: action.parameters as JsonObject,
       ...(typeof payload.timeoutMs === "number" ? { timeoutMs: payload.timeoutMs } : {}),
+      ...(context?.humanness !== undefined ? { humanness: context.humanness } : {}),
       metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
     }, {
       ...(context?.commandContext ? { commandContext: context.commandContext } : {}),

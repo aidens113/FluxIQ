@@ -69,6 +69,8 @@ export type FluxIQRuntimeCommand = {
   target?: JsonObject;
   timeoutMs?: number;
   metadata?: JsonObject;
+  /** How human the run's input looks, 0 to 100; present only when the run's options set it. */
+  humanness?: number;
 };
 
 export type FluxIQRuntimeCommandStatus =
