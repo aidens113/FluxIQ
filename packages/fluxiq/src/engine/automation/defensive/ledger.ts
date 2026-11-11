@@ -1,5 +1,5 @@
 import type { AutomationStudioFaultAssessment } from "./contracts.ts";
-import { AUTOMATION_STUDIO_MAX_RUN_RETRY_WAIT_MS } from "./retry-wait.ts";
+import { automationStudioRunRetryWaitAllowanceMs } from "./retry-wait.ts";
 
 /** How many fault entries one run keeps in full. Past this the count still rises; the list stops growing. */
 const MAXIMUM_LEDGER_ENTRIES = 200;
@@ -106,7 +106,7 @@ export function automationStudioDefenceLedger(): AutomationStudioDefenceLedger {
         refusedCount,
         faultCount,
         waitedMs: runWaited,
-        waitBudgetMs: AUTOMATION_STUDIO_MAX_RUN_RETRY_WAIT_MS,
+        waitBudgetMs: automationStudioRunRetryWaitAllowanceMs(),
         entries: [...entries],
         ...(continuedPastNodeIds.length ? { continuedPastNodeIds: [...continuedPastNodeIds] } : {})
       };

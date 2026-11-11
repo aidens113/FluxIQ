@@ -5,7 +5,6 @@ export type FluxNodeHttpRefusal = {
   code: FluxNodeErrorCode;
   message: string;
   issues?: FluxNodeIssue[];
-  retryAfterMs?: number;
   status?: number;
   headers?: Record<string, string>;
 };

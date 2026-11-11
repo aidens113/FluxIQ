@@ -29,6 +29,14 @@ export type PanelAssistantTurnEnding =
 /** What a message's work came to: how it ended, what it spent, and what the dock should show. */
 export type PanelAssistantTurnOutcome = { ending: PanelAssistantTurnEnding; spentUsd: number; clientActions: PanelAssistantClientAction[] };
 
+/**
+ * What a step shows beside its words. A navigation (`panel.client-action`)
+ * carries the whole action; any other kind refers to a project's record and
+ * names that project, which is stored with the reference
+ * (`../attachments/project-ref.ts`).
+ */
+export type PanelAssistantTurnAttachment = AutomationStudioConversationAttachment & { projectId?: string };
+
 /** One message's work in flight. */
 export type PanelAssistantTurnState<TActor extends PanelAssistantActor> = {
   programs: PanelAssistantPrograms<TActor>;
@@ -44,6 +52,6 @@ export type PanelAssistantTurnState<TActor extends PanelAssistantActor> = {
   /** What this message's work has told the model, after the thread itself. */
   entries: PanelAssistantModelTurn[];
   clientActions: PanelAssistantClientAction[];
-  /** Writes one turn of the assistant's into the thread. */
-  post(text: string, attachment?: AutomationStudioConversationAttachment): Promise<void>;
+  /** Writes one turn of the assistant's into the thread; a project-bound attachment is stored with its project. */
+  post(text: string, attachment?: PanelAssistantTurnAttachment): Promise<void>;
 };

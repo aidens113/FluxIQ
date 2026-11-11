@@ -26,8 +26,8 @@ function leased<Args extends unknown[], Value>(
 
 /** A copy of `transport` whose requests are answered only while `valid()` holds. */
 export function leaseTransport(transport: ChatTransport, valid: () => boolean): ChatTransport {
-  const { conversation, activity, runs, recordings, models, changes, results } = transport;
-  const listAllThreads = conversation.listAllThreads;
+  const { conversation, activity, runs, recordings, models, changes, results, taskSettings } = transport;
+  const { listAllThreads, newThread, renameThread, deleteThread } = conversation;
   const setOverlay = activity.setOverlay;
   const openInstructions = runs.openInstructions;
   const addBudgetAndCarryOn = results?.addBudgetAndCarryOn;
@@ -37,7 +37,10 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
       readThread: leased(valid, (query) => conversation.readThread(query)),
       send: leased(valid, (message) => conversation.send(message)),
       answer: leased(valid, (answer) => conversation.answer(answer)),
-      ...(listAllThreads === undefined ? {} : { listAllThreads: leased(valid, (query) => listAllThreads.call(conversation, query)) })
+      ...(listAllThreads === undefined ? {} : { listAllThreads: leased(valid, (query) => listAllThreads.call(conversation, query)) }),
+      ...(newThread === undefined ? {} : { newThread: leased(valid, (request) => newThread.call(conversation, request)) }),
+      ...(renameThread === undefined ? {} : { renameThread: leased(valid, (request) => renameThread.call(conversation, request)) }),
+      ...(deleteThread === undefined ? {} : { deleteThread: leased(valid, (request) => deleteThread.call(conversation, request)) })
     },
     activity: {
       read: leased(valid, () => activity.read()),
@@ -61,6 +64,12 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
         exportRows: leased(valid, (query) => results.exportRows(query)),
         runAgain: leased(valid, (query) => results.runAgain(query)),
         ...(addBudgetAndCarryOn === undefined ? {} : { addBudgetAndCarryOn: leased(valid, (query) => addBudgetAndCarryOn.call(results, query)) })
+      }
+    }),
+    ...(taskSettings === undefined ? {} : {
+      taskSettings: {
+        read: leased(valid, (task) => taskSettings.read(task)),
+        setHumanness: leased(valid, (request) => taskSettings.setHumanness(request))
       }
     })
   };

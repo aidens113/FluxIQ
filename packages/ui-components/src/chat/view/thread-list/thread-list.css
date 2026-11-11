@@ -1,0 +1,91 @@
+/* The conversation list (`threads/`, `view/thread-list/`), imported by chat.css so a host still
+   imports chat.css alone. Under the same rules as chat.css: colours from theme/tokens.css only, and
+   nothing outside the chat's own classes (`view/tests/styles.test.ts` reads both sheets).
+
+   In a drawer (the default, for a narrow host) a "Chats" button over the thread names the chat on
+   screen and opens the list in the thread's place; in a column (`layout: "column"`) the list stands
+   left of the thread and the line over it is the chat's name. */
+.chat-thread-header { display: flex; flex: 0 0 auto; align-items: center; min-height: 44px; border-bottom: 1px solid var(--divider); padding: 0 8px; }
+.chat-thread-header[data-layout="column"] { padding: 0 16px; }
+.chat-thread-title { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.chat-thread-toggle {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 32px;
+  border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--text); padding: 4px 10px; font-size: 13px;
+}
+.chat-thread-toggle:hover { background: var(--hover); }
+.chat-thread-toggle[aria-expanded="true"] { border-color: var(--accent-edge); background: var(--accent-wash); }
+.chat-thread-toggle svg { flex: 0 0 auto; color: var(--muted); }
+.chat-thread-toggle[aria-expanded="true"] svg:last-child { transform: rotate(180deg); }
+.chat-thread-toggle-label { flex: 0 0 auto; font-weight: 650; }
+.chat-thread-toggle .chat-thread-title { color: var(--text-soft); font-weight: 500; }
+.chat-thread-toggle .chat-thread-title::before { content: "\00B7"; margin-right: 8px; color: var(--text-dim); }
+.chat-thread-badge { flex: 0 0 auto; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); padding: 1px 8px; font-size: 11.5px; font-weight: 650; }
+
+/* The list itself. Open in a drawer, it takes the thread's place until a chat is picked or Escape closes it. */
+.chat-thread-nav { display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.chat-thread-nav[data-layout="drawer"] { flex: 1 1 auto; }
+.chat-thread-nav[data-layout="drawer"]:not([hidden]) ~ .chat-main,
+.chat-thread-nav[data-layout="drawer"]:not([hidden]) ~ .chat-dock,
+.chat-thread-nav[data-layout="drawer"]:not([hidden]) ~ .chat-pending { display: none; }
+.chat-panel[data-thread-layout="column"] { flex-direction: row; }
+.chat-thread-nav[data-layout="column"] { flex: 0 0 clamp(220px, 28%, 300px); border-right: 1px solid var(--divider); background: var(--surface-muted); }
+.chat-body { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+.chat-thread-tools { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: var(--space-2); padding: 12px 12px 8px; }
+.chat-thread-new {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 32px; border: 1px solid var(--accent-edge);
+  border-radius: 8px; background: var(--accent); color: var(--accent-ink); padding: 4px 12px; font-size: 13px; font-weight: 650;
+}
+.chat-thread-new:hover:not(:disabled) { background: var(--accent-hover); }
+.chat-thread-search {
+  flex: 1 1 140px; min-width: 0; min-height: 32px; border: 1px solid var(--divider); border-radius: 8px;
+  background: var(--surface); color: var(--text); padding: 4px 10px; font-size: 13px;
+}
+.chat-thread-search::placeholder { color: var(--text-dim); }
+.chat-thread-notice {
+  margin: 0 12px 8px; border-left: 3px solid var(--danger); border-radius: 4px; background: var(--danger-soft);
+  color: var(--danger-text); padding: 6px 10px; font-size: 12.5px; line-height: 1.45;
+}
+.chat-thread-rows { flex: 1 1 auto; min-height: 0; margin: 0; padding: 0 6px 8px; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.chat-thread-row { position: relative; display: flex; align-items: center; gap: 4px; border-radius: 8px; padding-right: 4px; }
+.chat-thread-row:hover { background: var(--hover); }
+.chat-thread-row[data-selected="true"] { background: var(--accent-row); }
+.chat-thread-row[data-selected="true"]::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: 0; width: 2px; border-radius: 2px; background: var(--accent); }
+.chat-thread-row[data-mode="confirm"] { flex-wrap: wrap; }
+.chat-thread-open {
+  display: grid; flex: 1 1 auto; gap: 2px; min-width: 0; border: 0; border-radius: 8px; background: none;
+  color: var(--text); padding: 8px 10px; text-align: left;
+}
+.chat-thread-name { overflow: hidden; font-size: 13.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.chat-thread-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); font-size: 12px; }
+.chat-thread-when { font-variant-numeric: tabular-nums; }
+.chat-thread-waiting { color: var(--warning-text); font-weight: 650; }
+.chat-thread-waiting::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--warning); vertical-align: middle; }
+/* Rename and Delete show on hover, on focus and on the chat on screen; always on a touch screen. */
+.chat-thread-actions { display: flex; flex: 0 0 auto; gap: 2px; opacity: 0; }
+.chat-thread-row:hover .chat-thread-actions, .chat-thread-row:focus-within .chat-thread-actions, .chat-thread-row[data-selected="true"] .chat-thread-actions { opacity: 1; }
+@media (hover: none) { .chat-thread-actions { opacity: 1; } }
+.chat-thread-rename, .chat-thread-delete, .chat-thread-confirm-cancel {
+  min-height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); padding: 2px 8px; font-size: 12px; font-weight: 600;
+}
+.chat-thread-rename:hover:not(:disabled), .chat-thread-confirm-cancel:hover { background: var(--surface-raised); color: var(--text); }
+.chat-thread-delete:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger-text); }
+.chat-thread-rename-input {
+  flex: 1 1 auto; min-width: 0; min-height: 34px; margin: 4px; border: 1px solid var(--accent-edge); border-radius: 6px;
+  background: var(--surface); color: var(--text); padding: 4px 8px; font-size: 13.5px;
+}
+.chat-thread-confirm { display: flex; flex: 1 0 100%; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 6px 8px 10px; }
+.chat-thread-confirm-text { margin-right: auto; color: var(--danger-text); font-size: 12px; font-weight: 600; }
+.chat-thread-confirm-delete {
+  min-height: 28px; border: 1px solid var(--danger); border-radius: 6px; background: var(--danger-soft); color: var(--danger-text);
+  padding: 2px 10px; font-size: 12px; font-weight: 650;
+}
+.chat-thread-none { margin: 0; padding: 12px 16px; color: var(--muted); font-size: 13px; }
+.chat-thread-more {
+  align-self: center; margin: 4px 0 12px; border: 1px solid var(--divider); border-radius: 999px; background: none;
+  color: var(--muted); padding: 4px 12px; font-size: 12.5px;
+}
+.chat-thread-more:hover { background: var(--hover); color: var(--text); }
+/* One amber ring for every control of the list, drawn inside it so the scrolling list never clips it. */
+.chat-thread-header button:focus-visible, .chat-thread-nav button:focus-visible, .chat-thread-nav input:focus-visible {
+  outline: var(--focus-width) solid var(--focus); outline-offset: -2px;
+}

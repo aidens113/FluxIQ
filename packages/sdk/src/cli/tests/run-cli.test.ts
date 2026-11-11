@@ -83,6 +83,13 @@ describe("fluxiq pin", () => {
     expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ format: "fluxiq.fluxnode-flow", pinned: true, name: "market.cheapest-listings" });
     expect(output).toContain("Pinned market.cheapest-listings");
   });
+
+  it("adopts the proposal --proposal names, sending its id with the pin", async () => {
+    await runOnce();
+    expect(await runCli(["pin", "market.cheapest-listings", "--proposal", "prop_1"], io())).toBe(0);
+    const sent = engine?.requests.filter((request) => request.path.endsWith("/export")).at(-1);
+    expect(sent?.body).toEqual({ pin: true, proposal: "prop_1" });
+  });
 });
 
 describe("fluxiq learn", () => {

@@ -36,4 +36,19 @@ describe("the pages a result's rows were read from", () => {
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("readPages lists the reads the rows in recordSets came from");
     expect(automationStudioFlowLessSummaryDigest(summary({ rows: ROWS, readPages: READS }))).not.toBe(automationStudioFlowLessSummaryDigest(summary({ rows: ROWS })));
   });
+
+  it("shows every read, however many, and every address, place and left-out label whole", () => {
+    const reads = Array.from({ length: 55 }, (_, index) => ({ where: `http://127.0.0.1:5000/bookings?month=may&page=${index}&${"q".repeat(320)}`, place: `page=${index} ${"p".repeat(120)}`, kept: 1 }));
+    const shown = sentOf(summary({ rows: ROWS, readPages: reads }));
+    expect(shown.readPages).toEqual(reads);
+    expect(shown).not.toHaveProperty("readPagesNotShown");
+  });
+
+  it("shows a 300-character left-out label whole", () => {
+    const label = `Seat ${"A".repeat(295)}`;
+    expect(label.length).toBe(300);
+    const read: NonNullable<AutomationStudioFlowLessSummary["readPages"]>[number] = { where: "http://127.0.0.1:5000/seats", kept: 1, leftOut: { sets: [{ kind: "alone", conditions: [0], rows: [{ seat: label }] }] } };
+    const pages = sentOf(summary({ rows: ROWS, readPages: [read] })).readPages as { leftOut?: { rows: string[] }[] }[];
+    expect(JSON.stringify(pages[0]!.leftOut)).toContain(label);
+  });
 });

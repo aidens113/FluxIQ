@@ -8,11 +8,12 @@ import {
 import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
-import { packAutomationStudioLlmContext } from "./context-packet.ts";
+import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "../../models/limits/index.ts";
-import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmUsageSummary } from "./provider.ts";
 import { interventionFromLlmResult } from "./intervention.ts";
+import { automationStudioLlmSizedRequest } from "./sized-request.ts";
+import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import { isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { automationStudioLlmScreenedProviderThrow } from "./throw-screen.ts";
 import { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
@@ -21,44 +22,25 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, A
 import {
   AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_ESTIMATED_COST_USD,
   AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD,
-  resolveAutomationStudioLlmTokenLimits,
   validateAutomationStudioLlmUsage
 } from "../../models/limits/index.ts";
 
 export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult> {
   const now = input.now ?? Date.now;
-  const tokenLimitResolution = resolveAutomationStudioLlmTokenLimits(input.tokenLimits);
+  const expectedOutput = input.expectedOutput ?? expectedOutputForTask(input.taskKind);
+  const requestId = validRequestIdentity(input.requestId) ? input.requestId : `llm.${input.taskKind}.${randomUUID()}`;
+  const idempotencyKey = validRequestIdentity(input.idempotencyKey) ? input.idempotencyKey : requestId;
+  // A run's own per-call deadline (W3 overrides frame, bounded 1-45 s by the contract) wins over what the caller passed: answer-first passes the provider's timeout explicitly. The 45 s maximum below still refuses anything above it.
+  const timeoutMs = automationStudioRunOverrides()?.deadlines?.llmCallMs ?? input.timeoutMs ?? AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS;
+  const maxEstimatedCostUsd = input.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD;
+  const timeoutDiagnostics: AutomationStudioLlmDiagnostic[] = !Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
+    ? [{ severity: "error", code: "llm.provider_invalid_timeout", message: `LLM timeout must be between 1 and ${AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS} milliseconds.`, path: "timeoutMs" }]
+    : [];
   // The instructions are carried whole whatever the task (`./instruction.ts`):
   // the budget they are reported against is the request's own input limit,
   // the model's window less the reply. A flow bootstrap was held to 384
   // instruction tokens and its node catalog to 4,000 input tokens until
   // 2026-09-30; neither bound remains.
-  const context = packAutomationStudioLlmContext({
-    ...input,
-    tokenBudget: tokenLimitResolution.limits.maxInputTokens
-  });
-  const expectedOutput = input.expectedOutput ?? expectedOutputForTask(input.taskKind);
-  const requestId = validRequestIdentity(input.requestId) ? input.requestId : `llm.${input.taskKind}.${randomUUID()}`;
-  const idempotencyKey = validRequestIdentity(input.idempotencyKey) ? input.idempotencyKey : requestId;
-  const timeoutMs = input.timeoutMs ?? AUTOMATION_STUDIO_LLM_DEFAULT_TIMEOUT_MS;
-  const maxEstimatedCostUsd = input.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_ESTIMATED_COST_USD;
-  const timeoutDiagnostics: AutomationStudioLlmDiagnostic[] = !Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS
-    ? [{ severity: "error", code: "llm.provider_invalid_timeout", message: `LLM timeout must be between 1 and ${AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS} milliseconds.`, path: "timeoutMs" }]
-    : [];
-  let request: AutomationStudioLlmTaskRequest = {
-    requestId,
-    idempotencyKey,
-    timeoutMs,
-    estimatedInputTokens: 0,
-    taskKind: input.taskKind,
-    promptVersion: context.promptVersion,
-    context,
-    expectedOutput,
-    tokenLimits: tokenLimitResolution.limits,
-    maxEstimatedCostUsd,
-    ...(input.dryRun ? { dryRun: true } : {}),
-    ...(input.metadata ? { metadata: input.metadata } : {})
-  };
   // What the request measures, stated on any refusal below: a request over the
   // model's context window is refused loudly and never trimmed to fit. One
   // estimator (UTF-8 bytes / 3) for the harness and the adapter alike, applied
@@ -68,12 +50,18 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   // sent or billed: it was the larger measure here until t748, so the window
   // counted a catalog the model never reads, and pricing it (until t254) held
   // each build decision about 12,800 tokens over what the provider would read.
-  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider);
+  // Built to the limits of, measured, held, charged, sent and recorded by the
+  // model that serves it: a run may give each role its own (`../role-routing/`,
+  // `servedBy`), and a provider is bound to one model. A provider that does not
+  // route serves itself (`./sized-request.ts`).
+  const sized = automationStudioLlmSizedRequest(input, { requestId, idempotencyKey, timeoutMs, expectedOutput, maxEstimatedCostUsd }, packAutomationStudioLlmContext);
+  const { context, tokenLimitResolution, served } = sized;
+  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = sized.measured;
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
   // sent, and only when one was made: absent stays absent, never an empty list.
-  request = {
-    ...request,
+  const request: AutomationStudioLlmTaskRequest = {
+    ...sized.request,
     estimatedInputTokens,
     ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: Object.freeze([...input.deniedEvidenceKeys]) } : {})
   };
@@ -117,7 +105,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       intervention: interventionFromLlmResult(input, request, diagnostics, now())
     };
   }
-  if (input.dryRun || !input.provider) {
+  if (input.dryRun || !input.provider || !served) {
     const diagnostics = [
       ...context.instructions.diagnostics,
       { severity: input.dryRun ? "info" as const : "error" as const, code: input.dryRun ? "llm.dry_run" : "llm.provider_missing", message: input.dryRun ? "Dry run recorded without invoking an LLM provider." : "No LLM provider is configured." }
@@ -143,15 +131,15 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       // The request's own worst case, under its ceiling: a small call is not
       // held at the price of a full window, which at the window profile is
       // the whole run purse (then $0.25) and refused every call after the first.
-      , maxEstimatedCostUsd: reservedCostUsd(input.provider, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
+      , maxEstimatedCostUsd: reservedCostUsd(served, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.
       , call: {
         taskKind: request.taskKind,
         ...(input.stage ? { stage: input.stage } : {}),
         promptVersion: request.promptVersion,
-        provider: input.provider.metadata.provider,
-        model: input.provider.metadata.model
+        provider: served.metadata.provider,
+        model: served.metadata.model
       }
     })
     : null;
@@ -162,7 +150,10 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // when that would cross the build's ceiling. A judge's call
   // (`loop_verification`, made only by `../../result-verification/verify.ts`)
   // draws on the judging reserve the purse keeps back from every other call.
-  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
+  // That reserve is priced, before a judge has been, by the model a judge's call
+  // would be served by, which is not this call's where a run judges on its own.
+  const judgedBy = input.provider.servedBy?.({ ...request, taskKind: "loop_verification" }) ?? served;
+  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: served, judgePricing: judgedBy, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
   if (held && !held.ok && reservation?.ok) reservation.lease.release();
   // A reservation the run's budget or the build's purse refused ends the call
   // here, before the provider is invoked. Nothing about a provider may be
@@ -194,7 +185,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
   // was read by nothing and a rate limit ended a whole build
   // (`../provider-retry/call.ts`).
   const call = await automationStudioLlmProviderCall({
-    provider: input.provider,
+    provider: served,
     request,
     now,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -253,7 +244,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     return {
       ok: false,
       request,
-      provider: input.provider.metadata,
+      provider: served.metadata,
       // The failure's own account of how far the call got, not this function's
       // guess: a pre-flight refusal inside the adapter never sent anything, a
       // transport error did, and a deadline cannot say.
@@ -261,7 +252,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       ...(failure.refusal ? { providerRefusal: failure.refusal } : {}),
       ...retryStated,
       diagnostics,
-      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata)
+      intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata)
     };
   }
   let providerResult: ReturnType<typeof parseAutomationStudioLlmProviderResult>;
@@ -276,7 +267,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     const diagnostics = [...context.instructions.diagnostics, { severity: "error" as const, code: "llm_output.invalid_provider_result", message: "LLM provider result parsing failed." }, ...retryDiagnostics];
     if (reservation?.ok) reservation.lease.complete(reported, callOutcome(diagnostics));
     if (held?.ok) held.hold.settle(reported);
-    return { ok: false, request, provider: input.provider.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, input.provider.metadata) };
+    return { ok: false, request, provider: served.metadata, providerInvocation: "attempted", ...retryStated, diagnostics, intervention: interventionFromLlmResult(input, request, diagnostics, now(), undefined, served.metadata) };
   }
   const usageDiagnostics = validateAutomationStudioLlmUsage(providerResult.usage, request.tokenLimits);
   const diagnostics = [...context.instructions.diagnostics, ...providerResult.diagnostics, ...usageDiagnostics, ...retryDiagnostics];
@@ -291,12 +282,12 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     ok,
     request,
     ...(providerResult.response ? { response: providerResult.response } : {}),
-    provider: input.provider.metadata,
+    provider: served.metadata,
     providerInvocation: "attempted",
     ...(providerResult.usage ? { usage: providerResult.usage } : {}),
     ...retryStated,
     diagnostics,
-    intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, input.provider.metadata, providerResult.usage)
+    intervention: interventionFromLlmResult(input, request, diagnostics, now(), providerResult.response, served.metadata, providerResult.usage)
   };
 }
 
@@ -348,50 +339,6 @@ function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount
       }))
     }
   }];
-}
-
-/**
- * The request's size and its price measure, by Core's one estimator.
- *
- * **Size** (`estimatedInputTokens`, `estimatedInputBytes`) and **price**
- * (`pricedInputTokens`) are one measure: the messages the provider will send,
- * which is what it reads, bills and refuses on, so the harness's
- * context-window refusal never passes a request the adapter's would refuse.
- * The packed request stands in only where the provider gives no measure, since
- * then nothing better is known. The packed request carries the full node
- * catalog where the provider sends names and the described nodes only: priced
- * as input it put about 30% on every build decision's hold (t254,
- * `reports/t254-purse-hold-investigation.md` in the extension repository), and
- * counted toward the window as the larger measure it refused requests whose
- * sent messages fit, whenever a node gained a parameter (t748). Catalog text
- * the provider does send -- names, described nodes, a one-shot build's whole
- * catalog -- is in its messages and counts.
- *
- * Both count UTF-8 bytes / 3 (`../token-estimation.ts`). That over-counts every
- * call observed: across 206 live calls on 2026-10-03 the densest was 3.24
- * bytes per token (median 3.72), so the price measure ran 1.08-1.32 times the
- * provider's reported input. It is not a proof -- text that tokenizes more
- * densely than 3 bytes a token would be under-counted, and the purse would
- * count the breach only after the call -- but no tokenizer is shipped (t254
- * P2, declined), and bytes / 3 has held on every call recorded.
- *
- * A provider's measure that throws, or is not whole numbers, is not a size; the
- * packed request stands for both and the provider refuses the request by its
- * own code.
- */
-function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined): { estimatedInputTokens: number; estimatedInputBytes: number; pricedInputTokens: number } {
-  const packedBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
-  const packed = { estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(packedBytes), estimatedInputBytes: packedBytes };
-  let sent: { estimatedInputTokens: number; estimatedInputBytes: number } | undefined;
-  try {
-    sent = provider?.measureInput?.(request);
-  } catch {
-    sent = undefined;
-  }
-  if (!sent || !Number.isSafeInteger(sent.estimatedInputTokens) || !Number.isSafeInteger(sent.estimatedInputBytes) || sent.estimatedInputTokens < 0) {
-    return { ...packed, pricedInputTokens: packed.estimatedInputTokens };
-  }
-  return { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes, pricedInputTokens: sent.estimatedInputTokens };
 }
 
 /**

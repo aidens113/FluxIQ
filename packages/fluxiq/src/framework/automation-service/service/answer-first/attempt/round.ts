@@ -21,6 +21,7 @@ import { automationStudioPersonNeededToolCalls } from "../../../../../runtime/au
 import { automationStudioFlowBootstrapInstructionColumns, automationStudioInstructedActs } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowDraftStepCopy, automationStudioFlowDraftStepId } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftReplayClearedCode, automationStudioLlmProviderWithDomainInstructions, automationStudioNodeReplayStatus, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceLoopResult } from "../../../../../runtime/llm/index.ts";
+import { runWithAutomationStudioLlmModelRole } from "../../../../../runtime/llm/role-routing/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_SENT_AGAIN_KEY } from "../../../../../runtime/llm/decision-handlers/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE, AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstResultHolds } from "../completion/index.ts";
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
@@ -130,7 +131,10 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     }
   });
   try {
-    const result = await runAutomationStudioLlmEvidenceLoop({ ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result) => checked(run, result) });
+    const loopInput = { ...observeAutomationStudioEvidenceLoop(loop), ...signalled, checkCompletion: (result: JsonObject) => checked(run, result) };
+    // A round repairing the saved Flow calls the repair model: after its run broke (the path says so until a fresh round replaces it, `./rounds.ts`), or as the first round of a repair route, whose saved steps did not assemble (`../route/`). A fresh exploration stays on the explore model.
+    const repairing = run.path === "run_flow_then_repair" || (run.route.kind === "repair" && round.ordinal === 1);
+    const result = await (repairing ? runWithAutomationStudioLlmModelRole("repair", () => runAutomationStudioLlmEvidenceLoop(loopInput)) : runAutomationStudioLlmEvidenceLoop(loopInput));
     run.steps = result.steps.map((step) => automationStudioFlowDraftStepCopy(step));
     automationStudioAnswerFirstAddLoopsCaught(run.loopsCaught, result.trace);
     if (run.refusalEndedRound) {

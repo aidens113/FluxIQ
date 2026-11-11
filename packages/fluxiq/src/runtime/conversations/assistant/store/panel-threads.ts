@@ -62,6 +62,26 @@ export class PanelAssistantThreads {
     });
   }
 
+  /** One turn of a thread, or null when the person has no such thread or the thread no such turn. */
+  turn(userId: string, input: { conversationId: string; turnId: string }): Promise<AutomationStudioConversationTurn | null> {
+    return this.with(userId, ({ threads }) => threads.getTurn(input.conversationId, input.turnId));
+  }
+
+  /** Gives a thread the person's own name; the store refuses a thread they do not have as `conversation_not_found`. */
+  rename(userId: string, input: { conversationId: string; title: string }): Promise<PanelAssistantConversation> {
+    return this.with(userId, async ({ threads }) => panelConversation(await threads.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title })));
+  }
+
+  /**
+   * Removes a thread with its turns, its asks, the records that carried them
+   * and the calls its cards waited on (`./migrations.ts`, `9004`), in one
+   * transaction. Each removal is its own mutation, so a thread opened again
+   * under the same id can be removed again.
+   */
+  delete(userId: string, input: { conversationId: string }): Promise<{ deleted: true; conversationId: string }> {
+    return this.with(userId, ({ threads }) => threads.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId }));
+  }
+
   /** The newest `count` turns of a thread, oldest first: what the model reads. */
   recent(userId: string, conversationId: string, count: number): Promise<AutomationStudioConversationTurn[]> {
     return this.with(userId, ({ threads }) => threads.recentTurns(conversationId, count));

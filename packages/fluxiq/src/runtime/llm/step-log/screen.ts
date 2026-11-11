@@ -1,3 +1,6 @@
+import { fluxiqRuntimeTextWithholding } from "../../text-withholding.ts";
+import { automationStudioRunSecrets } from "../../run-secrets/index.ts";
+
 /** What a credential-shaped run of text is written as. */
 export const AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED = "[redacted-credential]";
 
@@ -20,8 +23,11 @@ const CREDENTIAL_SHAPES = /(?<![A-Za-z0-9_-])sk-(?:[A-Za-z0-9]+-)*[A-Za-z0-9]{20
  * result or a model's answer is still not written down.
  */
 export function automationStudioLlmStepLogScreen(text: string): { text: string; redacted: boolean } {
-  let redacted = false;
-  const screened = text.replace(CREDENTIAL_SHAPES, () => {
+  // A run's secret inputs first (`../../run-secrets/`): a step file never holds one, wherever it showed.
+  const secrets = automationStudioRunSecrets();
+  const withheld = secrets ? fluxiqRuntimeTextWithholding(Object.values(secrets))(text) : text;
+  let redacted = withheld !== text;
+  const screened = withheld.replace(CREDENTIAL_SHAPES, () => {
     redacted = true;
     return AUTOMATION_STUDIO_LLM_STEP_LOG_REDACTED;
   });

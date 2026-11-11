@@ -14,3 +14,6 @@ export { PipelineSpend } from "./spend.ts";
 export type { FluxNodeRegistered } from "./registered.ts";
 export type { FluxNodeRegisteredPipeline } from "./registered-pipeline.ts";
 export { runFluxNodePipeline } from "./run-fluxnode-pipeline.ts";
+export { PipelineSecrets } from "./pipeline-secrets.ts";
+export { fluxNodePipelineStateWithoutSecrets } from "./secret-safe-state.ts";
+export { withheldDatasetWriter } from "./withheld-dataset-writer.ts";

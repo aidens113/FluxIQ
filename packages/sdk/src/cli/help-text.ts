@@ -6,7 +6,8 @@ export const HELP_TEXT = `fluxiq: the FluxIQ SDK's command line
   fluxiq dev [flags]                   Start the local engine (runs the engine package's own \`fluxiq dev\`)
   fluxiq runs [--name n] [--state s]   List runs, newest first
   fluxiq inspect <runId> [--events]    Show one run: state, result, and with --events its events
-  fluxiq pin <name> [--out file]       Pin a FluxNode's learned Flow and write it to fluxiq/pinned/<name>.flow.json
+  fluxiq pin <name> [--proposal id] [--out file]
+                                       Pin a FluxNode's learned Flow (or adopt a held proposal) and write it to fluxiq/pinned/<name>.flow.json
   fluxiq learn <module> --samples f    Run a FluxNode over sample inputs before deployment
 
 Flags for every command that calls the engine: --url <address>, --profile <name>, --json.

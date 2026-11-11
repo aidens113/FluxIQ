@@ -1,6 +1,6 @@
 // The asserted string formats.
 import { describe, expect, it } from "vitest";
-import { matchesJsonTypeFormat } from "../index.ts";
+import { JSON_TYPE_SECRET_MIN_LENGTH, matchesJsonTypeFormat, validateJsonValue } from "../index.ts";
 
 describe("matchesJsonTypeFormat", () => {
   it("checks date-time as RFC 3339, calendar and clock included", () => {
@@ -34,5 +34,19 @@ describe("matchesJsonTypeFormat", () => {
     expect(matchesJsonTypeFormat("email", "someone@localhost")).toBe(false);
     expect(matchesJsonTypeFormat("email", "a..b@example.com")).toBe(false);
     expect(matchesJsonTypeFormat("email", "no-at.example.com")).toBe(false);
+  });
+});
+
+describe("the secret format", () => {
+  it("takes any text of at least the minimum length, counted in characters", () => {
+    expect(matchesJsonTypeFormat("secret", "a1b2")).toBe(true);
+    expect(matchesJsonTypeFormat("secret", "a1b")).toBe(false);
+    expect(matchesJsonTypeFormat("secret", "🔑🔑🔑🔑")).toBe(true);
+    expect(JSON_TYPE_SECRET_MIN_LENGTH).toBe(4);
+  });
+
+  it("names why a short secret is refused", () => {
+    const errors = validateJsonValue({ type: "string", format: "secret" }, "abc");
+    expect(errors.map((error) => error.message)).toEqual([expect.stringContaining("at least 4 characters")]);
   });
 });

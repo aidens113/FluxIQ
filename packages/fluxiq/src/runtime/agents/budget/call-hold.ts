@@ -8,6 +8,8 @@ import type { AutomationStudioLlmBuildPurseHold, AutomationStudioLlmBuildPurseRe
 
 type HoldInput = {
   provider: Pick<ModelProvider, "estimateCostUsd">;
+  /** The model a judge's call is served by, where a run judges on a model of its own: what the judging reserve is priced at. Absent, `provider`. */
+  judgePricing?: Pick<ModelProvider, "estimateCostUsd"> | undefined;
   estimatedInputTokens: number;
   maxOutputTokens: number;
   judge?: boolean | undefined;
@@ -59,14 +61,16 @@ function carvedFrom(build: AutomationStudioLlmBuildPurse | undefined, flow: Auto
 }
 
 function holdOn(purse: AutomationStudioLlmBuildPurse, input: HoldInput): ReturnType<AutomationStudioLlmBuildPurse["hold"]> {
-  const { provider } = input;
+  const { provider, judgePricing } = input;
   return purse.hold({
     projectedCostUsd: automationStudioLlmProjectedCallCostUsd(provider, input.estimatedInputTokens, input.maxOutputTokens),
     estimatedInputTokens: input.estimatedInputTokens,
     maxOutputTokens: input.maxOutputTokens,
     ...(input.judge ? { judge: true } : {}),
     // The provider's price, so the purse can size the judging reserve before a judge has been priced.
-    price: (inputTokens, outputTokens) => automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens)
+    price: (inputTokens, outputTokens) => automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens),
+    // Where another model judges, the reserve is priced at that one's.
+    ...(judgePricing && judgePricing !== provider ? { judgePrice: (inputTokens: number, outputTokens: number) => automationStudioLlmProjectedCallCostUsd(judgePricing, inputTokens, outputTokens) } : {})
   });
 }
 function refusalDiagnostic(refusal: AutomationStudioLlmBuildPurseRefusal, scope: "active" | "owner"): AutomationStudioLlmDiagnostic {

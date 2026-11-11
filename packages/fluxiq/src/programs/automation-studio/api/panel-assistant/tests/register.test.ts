@@ -31,6 +31,13 @@ const lowCost = { passwordKdf: { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 
 
 type Setup = Awaited<ReturnType<typeof setup>>;
 
+/** These cases read no project attachment. */
+const NO_PROJECT_READS = { getFlowBootstrapAdaptation: unused, getFlow: unused, assertProjectDomainAccess: unused };
+
+async function unused(): Promise<never> {
+  throw new Error("Not read in these cases.");
+}
+
 let rootDir = "";
 /** The assistant the running case registered, closed after it. */
 let current: PanelAssistant<ProgramApiActor> | undefined;
@@ -50,7 +57,7 @@ async function setup(decisions: readonly unknown[]) {
   registry.register({ programId: "automation-studio", endpoint: "rename-flow", permission: "flows.write", classification: "authoring", assistant: { input: updateFlowSettingsInput, summary: "Renames a Flow.", contextArgs: { projectId: "projectId", flowId: "flowId" } }, handler: handlers.rename });
   registry.register({ programId: "automation-studio", endpoint: "delete-flow", permission: "flows.write", classification: "destructive", resource: endpointResource.projectChild("flow", "flowId"), assistant: { input: deleteFlowInput, summary: "Deletes a Flow.", contextArgs: { projectId: "projectId", flowId: "flowId" } }, handler: handlers.delete });
   registry.register({ programId: "automation-studio", endpoint: "purge-project-caches", permission: "secrets.manage", classification: "authoring", assistant: { input: listFlowsInput, summary: "Purges a project's caches.", contextArgs: { projectId: "projectId" } }, handler: handlers.purge });
-  const assistant = registerPanelAssistantEndpoints({ registry, service: { projectPaths: { root: path.join(rootDir, "programs", "automation-studio", "projects") } } });
+  const assistant = registerPanelAssistantEndpoints({ registry, service: { projectPaths: { root: path.join(rootDir, "programs", "automation-studio", "projects") }, ...NO_PROJECT_READS } });
   const requests: unknown[] = [];
   const model: PanelAssistantModel = {
     name: "scripted",

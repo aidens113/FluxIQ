@@ -2,6 +2,7 @@ import { automationStudioFlowBootstrapCatalogNames } from "../../flow-authoring/
 import type { AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import { automationStudioLlmPlaceDescribedNodes } from "./described-nodes.ts";
 import { automationStudioLlmLiftDraftGuide } from "./draft-guide.ts";
+import { automationStudioOverriddenText } from "../../run-overrides/index.ts";
 import { automationStudioLlmTaskOutputSchema } from "./output-schema.ts";
 import { automationStudioLlmTaskSystemPrompt } from "./system-prompt.ts";
 
@@ -153,7 +154,8 @@ function providerEvidenceDecisionPayload(
         // Withdrawn only in the wrap-up and after an ignored redirect.
         tools: loop.tools.map((tool) => ({
           toolId: tool.toolId,
-          description: tool.description,
+          // The one place a tool's description reaches a model, so the one place a run's override applies; its input schema never does.
+          description: automationStudioOverriddenText("tool", tool.toolId, tool.description),
           ...(tool.effect ? { effect: tool.effect } : {}),
           ...(tool.repeatPolicy ? { repeatPolicy: tool.repeatPolicy } : {})
         })),

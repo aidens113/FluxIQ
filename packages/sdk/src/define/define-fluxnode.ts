@@ -10,7 +10,8 @@ import type { FluxNode, FluxNodeDefinition } from "./types.ts";
 
 /**
  * Declares a FluxNode. `inputs` and `outputs` take zod schemas (converted to the
- * contracts' JSON Schema subset) or raw JSON Schema; both are optional. With a zod
+ * contracts' JSON Schema subset) or raw JSON Schema; both are optional. An input
+ * declared with `secret()` (or `format: "secret"`) is withheld by Core. With a zod
  * `outputs`, `run` returns those types. A `check` stays in this process.
  */
 export function defineFluxNode<I extends TypeSchemaInput | undefined = undefined, O extends TypeSchemaInput | undefined = undefined>(definition: FluxNodeDefinition<I, O>): FluxNode<I, O> {
@@ -22,9 +23,10 @@ export function defineFluxNode<I extends TypeSchemaInput | undefined = undefined
     scope: definition.scope,
     hasCheck: definition.check !== undefined
   };
-  if (definition.inputs !== undefined) draft.inputs = typeSchemaFrom(definition.inputs, "inputs");
+  if (definition.inputs !== undefined) draft.inputs = typeSchemaFrom(definition.inputs, "inputs", { fluxNodeInputs: true });
   if (definition.outputs !== undefined) draft.outputs = typeSchemaFrom(definition.outputs, "outputs");
   if (definition.options !== undefined) draft.options = definition.options;
+  if (definition.overrides !== undefined) draft.overrides = definition.overrides;
   if (definition.uses !== undefined) draft.uses = definition.uses.map((use) => (typeof use === "string" ? use : use.name));
   const parsed = parseFluxNodeSpec(draft);
   if (!parsed.ok) {
