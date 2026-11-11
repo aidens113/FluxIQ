@@ -123,6 +123,9 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "rename-task",
     "update-task-settings",
     "remove-task",
+    // A Flow's own humanness (t898): its settings detail, `read`; setting or clearing the level, `authoring` (flows.write), narrowed to exactly `flow.metadata.humanness`.
+    "get-flow-metadata-detail",
+    "update-flow-settings",
     // Carrying a budget-out or cut-off attempt on (t869), `authoring` under `flows.write`. It spends the person's own key, as the chat's build does,
     // and goes on through the same generation. Narrowed: an attempt id, a project and an amount, never a Flow, a mode, a grant or a session.
     "carry-on-task-attempt",
@@ -158,9 +161,10 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
 
 /**
  * The permissions a paired client's actor may hold: exactly those the
- * allowlisted endpoints require. `flows.write` is here only because
- * `generate-recording-proposal` and `review-recording-flow-proposal` require
- * it; no other `flows.write` endpoint is on the allowlist.
+ * allowlisted endpoints require. `flows.write` is here only because the
+ * recording proposal and its review, a task's carry-on and Run again, saving a
+ * part and a Flow's humanness (`update-flow-settings`) require it, and each of
+ * those is narrowed so it reaches nothing else of a Flow.
  */
 const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
 
@@ -315,6 +319,7 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "rename-task") return narrowTaskMemory(payload, ["projectId", "taskId", "title"]);
   if (name === "update-task-settings") return narrowTaskMemory(payload, ["projectId", "taskId", "humanness"]);
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
+  if (name === "update-flow-settings") return narrowFlowHumanness(payload);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
@@ -373,6 +378,52 @@ function narrowTaskMemory(payload: unknown, allowed: readonly string[]): PairedC
     if (!allowed.includes(field)) return forbidden(`A paired client's task change may not carry ${field}.`);
   }
   return { ok: true, payload: body };
+}
+
+const FLOW_HUMANNESS_CHANGE = "A paired client's Flow settings change";
+
+/** The keys a paired client's Flow settings change may carry, level by level. */
+const FLOW_HUMANNESS_FIELDS = { body: ["projectId", "flowId", "flow"], flow: ["flowId", "metadata"], metadata: ["humanness"] } as const;
+
+/**
+ * A Flow settings change by token is exactly `{ projectId, flowId, flow: {
+ * flowId?, metadata: { humanness } } }`. `update-flow-settings` would
+ * otherwise rename the Flow, rewrite its interface or execution defaults, and
+ * merge any metadata key over the stored ones (its model, cost and size
+ * limits, its check's authorization), so every other key at every level is
+ * refused by its path, and the payload handed on is rebuilt from the accepted
+ * fields alone. `flow.flowId`, when present, must name the Flow `flowId` does,
+ * so IAM's resource and the handler cannot read different Flows. The level's
+ * bounds stay the handler's (`assertFlowHumanness`); here it is a number, or
+ * null to clear it.
+ */
+function narrowFlowHumanness(payload: unknown): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden(`${FLOW_HUMANNESS_CHANGE} must name a project and a Flow.`);
+  const refused = unlistedField(body, FLOW_HUMANNESS_FIELDS.body, "");
+  if (refused) return refused;
+  if (typeof body.projectId !== "string" || !body.projectId) return forbidden(`${FLOW_HUMANNESS_CHANGE} must name its project by a string projectId.`);
+  if (typeof body.flowId !== "string" || !body.flowId) return forbidden(`${FLOW_HUMANNESS_CHANGE} must name its Flow by a string flowId.`);
+  const flow = payloadRecord(body.flow);
+  if (!flow) return forbidden(`${FLOW_HUMANNESS_CHANGE} must carry flow.metadata.humanness.`);
+  const refusedInFlow = unlistedField(flow, FLOW_HUMANNESS_FIELDS.flow, "flow.");
+  if (refusedInFlow) return refusedInFlow;
+  const namesFlow = Object.hasOwn(flow, "flowId");
+  if (namesFlow && flow.flowId !== body.flowId) return forbidden(`${FLOW_HUMANNESS_CHANGE} must name the same Flow in flow.flowId as in flowId.`);
+  const metadata = payloadRecord(flow.metadata);
+  if (!metadata) return forbidden(`${FLOW_HUMANNESS_CHANGE} must carry flow.metadata.humanness.`);
+  const refusedInMetadata = unlistedField(metadata, FLOW_HUMANNESS_FIELDS.metadata, "flow.metadata.");
+  if (refusedInMetadata) return refusedInMetadata;
+  if (!Object.hasOwn(metadata, "humanness")) return forbidden(`${FLOW_HUMANNESS_CHANGE} must carry flow.metadata.humanness.`);
+  const humanness = metadata.humanness;
+  if (humanness !== null && typeof humanness !== "number") return forbidden(`${FLOW_HUMANNESS_CHANGE} must carry flow.metadata.humanness as a number, or null to clear it.`);
+  return { ok: true, payload: { projectId: body.projectId, flowId: body.flowId, flow: { ...(namesFlow ? { flowId: body.flowId } : {}), metadata: { humanness } } } };
+}
+
+/** The refusal naming the first key of `record` not in `allowed`, by its path, or null. */
+function unlistedField(record: Record<string, unknown>, allowed: readonly string[], path: string): PairedClientRequestNarrowing | null {
+  const field = Object.keys(record).find((key) => !allowed.includes(key));
+  return field === undefined ? null : forbidden(`${FLOW_HUMANNESS_CHANGE} may not carry ${path}${field}.`);
 }
 
 function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {

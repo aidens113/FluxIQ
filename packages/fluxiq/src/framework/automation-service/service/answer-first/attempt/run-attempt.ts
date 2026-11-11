@@ -48,6 +48,8 @@ import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/inde
 import { automationStudioAnswerFirstCarriedOpening, automationStudioAnswerFirstCarryOnScope, type AutomationStudioAnswerFirstCarriedOpening, type AutomationStudioAnswerFirstCarryOnHold } from "../carry-on/index.ts";
 import { automationStudioAnswerFirstCallerApplied, automationStudioAnswerFirstScopeGate } from "../caller/index.ts";
 import { automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayOf } from "../completion/index.ts";
+import { automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
+import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
 import { automationStudioEndViewLook } from "../../end-view/index.ts";
 import { automationStudioAnswerFirstKnownParts } from "../../project-parts/index.ts";
 import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiveAttemptsOf } from "../interrupted/index.ts";
@@ -256,11 +258,17 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   if (opening.seed || opening.actsHeldHere || again) await automationStudioAnswerFirstBestEffort(() => persist(record.data()));
   if (carried) await carriedOn(run, carried);
   else await automationStudioAnswerFirstRecordOpening(run);
-  // A task with no level of its own starts from the person's starting value (the request's), once: a level it has, set by
+  // A task with no level of its own, on a Flow with none either, starts from the person's starting value (the request's), once.
+  // A Flow's level is the task's until someone sets the task's own, so with one nothing is stored; a level the task has, set by
   // the person or taken at an earlier attempt, is never replaced. A write it misses is made by the next attempt.
   const startingValue = input.humanness;
   if (startingValue !== undefined && opening.humanness === undefined) {
-    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => (current.humanness === undefined ? { ...current, humanness: startingValue } : current)));
+    // A Flow that cannot be read has no level to follow, so the starting value is stored as it always was.
+    const flow = await automationStudioAnswerFirstBestEffort(() => automationStudioAnswerFirstFlowRunEngineOf(input).parentFlow());
+    const flowLevel = flow.ok ? automationStudioFlowHumanness(flow.value.metadata) : undefined;
+    if (flowLevel === undefined) {
+      await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => (current.humanness === undefined ? { ...current, humanness: startingValue } : current)));
+    }
   }
   run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });
   return run;
