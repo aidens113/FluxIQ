@@ -63,6 +63,7 @@ import type { AutomationStudioRouteSignatures } from "../../../../framework/auto
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBranch, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
+import { automationStudioFlowLoopEndingNodesSaid as endingNodesSaid } from "./loop-ending/index.ts";
 import { matchAuthoringDefinition } from "./matching.ts";
 import { automationStudioFlowScriptRepeatBounds, automationStudioFlowScriptRepeatPaces } from "../script-statements/index.ts";
 
@@ -322,7 +323,7 @@ function scriptSpan(input: {
   const { repeat, steps, index } = input;
   const at = `The step at line ${steps[index]!.line}`;
   const refuse = (code: string, message: string, path?: string): ScriptSpanRefusal => ({ refusal: { code, message, ...(path ? { path } : {}) } });
-  const HOW = "Write `repeat over: <the listing step's label>` to do the span once for each row that step read, or `repeat while: <the span's last step>` to do it again while that step succeeds.";
+  const HOW = "Write `repeat over: <the listing step's label>` to do the span once for each row that step read, or `repeat while: <the span's last step>` to do it again until that step answers ended, which it must be able to answer when there is nothing more.";
   if (repeat.over === undefined && repeat.while === undefined) return refuse("flow_script.repeat_invalid", `${at} says repeat, but not what repeats it. ${HOW}`);
   if (repeat.over !== undefined && repeat.while !== undefined) return refuse("flow_script.repeat_invalid", `${at} says both repeat over and repeat while; a span repeats one way. ${HOW}`);
   if (repeat.while !== undefined && repeat.through !== undefined && repeat.through !== repeat.while) {
@@ -357,7 +358,7 @@ function scriptSpan(input: {
     const most = repeat.most === undefined ? undefined : writtenBound(at, repeat.most, REPEAT_NODE_ID, "most", input);
     if (typeof most === "object") return most;
     if (!endings.length && most === undefined) {
-      return refuse("flow_script.repeat_while_never_ends", `${at} repeats while the step at line ${last.line} succeeds, and that step has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. Repeat while a step that answers ended when there is nothing more, or add \`repeat most: <passes>\` to bound it.`);
+      return refuse("flow_script.repeat_while_never_ends", `${at} repeats while the step at line ${last.line} succeeds, and that step has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. A loop ends when its last step answers ended because there is nothing more: end the span with a step that answers ended${endingNodesSaid(input.registry, input.resolution)} and write \`repeat while:\` naming that step, or take the repeat off.`);
     }
     if (!head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats from the very start of the block, so a run would have nowhere to begin. Keep the step that opens the page before it.`);
     return { kind: "while", end, head, endings, ...(most === undefined ? {} : { most }) };
@@ -569,10 +570,9 @@ function emitRepeatOver(input: {
  *
  * The check is the span's own last step, so nothing is lifted: the span runs
  * at least once, and the loop ends on a route the last step answers
- * (next-page's `ended`, which is not a failure) or when the Repeat reaches
- * `most`. A last step whose node declares no such route, with no `most`
- * either, could end the loop only by failing or at the Repeat's default bound,
- * which is a Flow that does the wrong thing quietly, so it is refused.
+ * (next-page's `ended`, not a failure) or at a `most` the person gave. A last
+ * step with no such route and no `most` would end only by failing or at the
+ * Repeat's default bound, so it is refused (`./loop-ending/`).
  */
 function repeatWhile(input: {
   entry: AutomationStudioFlowDraftRoutedStep;
@@ -601,7 +601,7 @@ function repeatWhile(input: {
   const last = body[body.length - 1]!;
   const endings = repeatEndings(last.written, input.registry, input.resolution);
   if (!endings.length && routing.most === undefined) {
-    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. Repeat while a step that answers ended when there is nothing more, or send amend_draft repeat on step ${at} again with most set to the passes it should take.` };
+    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. A loop ends when its last step answers ended because there is nothing more: run the step that answers ended${endingNodesSaid(input.registry, input.resolution)} with add true as the span's last step, then send amend_draft repeat on step ${at} again with while naming it; or take this repeat off with amend_draft unrepeat on step ${at}.` };
   }
   // A Flow that starts with the loop would have no node without a way in --
   // the head Merge has the back edge -- so no run could begin.

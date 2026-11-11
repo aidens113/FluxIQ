@@ -54,9 +54,11 @@
 // completion after was refused as the same evidence, because the summary held no look. So what the
 // attempt's looks found after the first lasting act (`looked`, from Core's record of each call's
 // answer, `../attempt/call-chain.ts`) is in the summary, and so in its digest: a look that found
-// something new is new evidence, and the same look again is not. It is bounded -- the latest few, each
-// cut short -- and screened line by line as a judge's own words are, so a credential-shaped line
-// never reaches the judge and the rest of what was found still does.
+// something new is new evidence, and the same look again is not. The judge is given the latest few
+// distinct looks, each whole -- a look cut short is one a judge cannot take as seen (run-mwbkuxqt-c57f42cb:
+// a line the read returned whole reached the judge only as a cut, so every check said unsure) -- and
+// screened line by line as a judge's own words are, so a credential-shaped line never reaches the
+// judge and the rest of what was found still does.
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -94,10 +96,8 @@ const BY_CALLER_CHECK = "The caller's own check of the result.";
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
-/** The latest looks the judge is shown, and how much of each (header). */
+/** The latest distinct looks the judge is shown, each whole (header). */
 const LOOKS_SHOWN = 6;
-const FOUND_CHARS = 600;
-const WHERE_CHARS = 300;
 /** Stands in for a line, or an address, the screen dropped whole. */
 const WITHHELD = "(withheld)";
 
@@ -285,11 +285,11 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
   };
 }
 
-/** The latest few distinct looks, each cut short and screened (header). A look already shown keeps its place, so seeing it again changes nothing. */
+/** The latest few distinct looks, each whole and screened (header). A look already shown keeps its place, so seeing it again changes nothing. */
 function shownLooks(looks: readonly Look[]): Look[] {
   const kept = new Map<string, Look>();
   for (const look of looks) {
-    const shown = { where: screened(cut(look.where, WHERE_CHARS)), found: cut(look.found, FOUND_CHARS).split("\n").map(screened).join("\n") };
+    const shown = { where: screened(look.where), found: look.found.split("\n").map(screened).join("\n") };
     const key = JSON.stringify([shown.where, shown.found]);
     if (!kept.has(key)) kept.set(key, shown);
   }
@@ -300,11 +300,6 @@ function shownLooks(looks: readonly Look[]): Look[] {
 function screened(line: string): string {
   if (!line.trim()) return line;
   return automationStudioFlowLessScreenedWords(line).text ?? WITHHELD;
-}
-
-function cut(text: string, most: number): string {
-  const characters = [...text];
-  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function refused(code: string, instruction: string): AutomationStudioLlmEvidenceCompletionCheck {

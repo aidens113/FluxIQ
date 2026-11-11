@@ -30,6 +30,9 @@
 // (`claimRefused`, t285 gap 1), and its refusal is told in the numbers the
 // model wrote too: the judge's sentence and `instead` name steps as the draft
 // stood when the claim was judged (`../../flow-draft/amendment/said-numbers.ts`, gap 2).
+// A held repeat that could end only by failing is refused as one applied at
+// once is (`loopNeverEnds`, `repeat_never_ends`), its assembly sentence told in
+// the model's numbers the same way.
 import {
   applyAutomationStudioFlowDraftAmendments,
   automationStudioFlowDraftSaidInNumbers,
@@ -37,6 +40,7 @@ import {
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftAmendmentRefusal,
   type AutomationStudioFlowDraftClaimRefused,
+  type AutomationStudioFlowDraftLoopNeverEnds,
   type AutomationStudioFlowDraftStep
 } from "../../flow-authoring/draft/index.ts";
 
@@ -49,13 +53,13 @@ export type AutomationStudioLlmEvidenceHeldAmendments = {
   /**
    * What became of the held amendments, given the step the rerun appended, or
    * nothing when it never ran. Refusals name the step number the model wrote.
-   * `options.claimRefused` is the act judge the decision's other amendments
-   * were applied with.
+   * `options.claimRefused` is the act judge, and `options.loopNeverEnds` the
+   * loop check, the decision's other amendments were applied with.
    */
   settle(
     steps: AutomationStudioFlowDraftStep[],
     rerun: AutomationStudioFlowDraftStep | undefined,
-    options?: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined }
+    options?: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined; loopNeverEnds?: AutomationStudioFlowDraftLoopNeverEnds | undefined }
   ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[] };
 };
 
@@ -99,11 +103,11 @@ export function automationStudioLlmEvidenceHeldAmendments(
           const position = amendment[key];
           if (position !== undefined) moved[key] = at(position);
         }
-        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused });
+        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused, loopNeverEnds: options.loopNeverEnds });
         applied += result.applied;
         refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off"
           ? takenOffAsWritten(refusal, shown, written)
-          : refusal.reason === "act_not_done_there" ? claimAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
+          : refusal.reason === "act_not_done_there" || refusal.reason === "repeat_never_ends" ? claimAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
       }
       return { applied, refused };
     }
@@ -111,7 +115,7 @@ export function automationStudioLlmEvidenceHeldAmendments(
 }
 
 /**
- * An `act_not_done_there` from a held amendment, its sentence and `instead`
+ * An `act_not_done_there` or a `repeat_never_ends` from a held amendment, its sentence and `instead`
  * renumbered from the draft the amendment was applied to into the numbers the
  * model wrote.
  */

@@ -40,7 +40,7 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
     const note = noteOf(run, ending, ended.atMs);
     const row = { attemptId: run.attemptId, flowId, ordinal: run.ordinal, route: run.route.kind, ...(run.askedAgain ? { askedAgain: true as const } : {}), ...(ending === "stopped_by_person" ? { stoppedByPerson: true as const } : {}), ...(run.startedFrom ? { startedFrom: run.startedFrom } : {}), ...(run.input.caller ? { caller: automationStudioAnswerFirstKeptCallerOptions(run.input.caller) } : {}), steps: originsOf(run) };
     return await run.memory.update(projectId, run.taskId, (current) => {
-      const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run) });
+      const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run), keptAssembles: keptAssembles(run, current.best) });
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);
       return {
         ...current, flowId, ...(best ? { best } : {}), latest: next,
@@ -56,6 +56,18 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
 /** A run that sent nothing proves nothing: every step of it may have been refused as already done, and it is judged all the same. */
 function wholeRunYes(run: AutomationStudioAnswerFirstAttemptRun): boolean {
   return run.flowRun?.judged === "yes" && run.flowRun.wentOut;
+}
+
+/**
+ * Whether the Flow the task keeps assembled when this attempt opened, which its route says: a `use`
+ * route is one whose saved steps assembled, a `repair` route one whose did not, and so never ran.
+ * Only of the Flow the route was read from: another attempt may have kept a different one since,
+ * and of that one this attempt knows nothing (`../task-memory/better-flow.ts` then reads its record).
+ */
+function keptAssembles(run: AutomationStudioAnswerFirstAttemptRun, kept: AutomationStudioAnswerFirstSavedFlow | undefined): boolean | undefined {
+  const route = run.route;
+  if (!kept || route.kind === "build" || route.saved.stepsDigest !== kept.stepsDigest) return undefined;
+  return route.kind === "use";
 }
 
 /** The Flow as it was saved did not do the task on the site as it stands. A person's Stop, or a run that never went out, says nothing of the Flow. */

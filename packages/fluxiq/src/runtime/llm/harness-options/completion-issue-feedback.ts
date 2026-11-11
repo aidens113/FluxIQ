@@ -12,7 +12,11 @@ import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowScriptPlac
  * authored codes' sentences, and these were not among them: run
  * `run-musr9pv3-f4bf6256` (decision 0072) was shown
  * `repeat_not_after_its_source` at two paths and nothing else, and looped
- * fifteen turns on a fix the sentence named.
+ * fifteen turns on a fix the sentence named. `repeat_while_never_ends` also
+ * names the library's nodes that end a loop, by the id and label the node
+ * library declares -- the library's words, never the model's or the page's --
+ * and was likewise withheld: the model met a while-loop on a press refused
+ * with no word of what ends one (run `run-mwblz4aq-0baa810a`).
  */
 const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
   "flow_draft.check_not_before_step",
@@ -20,7 +24,9 @@ const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
   "flow_draft.recovery_is_routed",
   "flow_draft.repeat_span_unknown",
   "flow_draft.repeat_not_after_its_source",
-  "flow_draft.repeat_body_is_routed"
+  "flow_draft.repeat_body_is_routed",
+  // Names the library's nodes that end a loop, by id and label, beside step numbers (`../../flow-authoring/bootstrap/authoring/loop-ending/`).
+  "flow_draft.repeat_while_never_ends"
 ]);
 
 /**

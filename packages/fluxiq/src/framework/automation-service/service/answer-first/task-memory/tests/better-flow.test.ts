@@ -4,7 +4,11 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/fl
 import { automationStudioAnswerFirstBetterFlow as better, automationStudioAnswerFirstStepsDigest as digest, type AutomationStudioAnswerFirstSavedFlow } from "../index.ts";
 
 const step = (position: number, actionId: string, input: Record<string, unknown> = {}) => ({ position, actionId, input, iteration: 1, effect: "observe" }) as unknown as AutomationStudioFlowDraftStep;
+/** A Flow whose draft assembled and was saved, as every row of the label table is: `steps` alone is one that never assembled. */
 const flow = (attemptId: string, label: AutomationStudioAnswerFirstSavedFlow["label"], steps: AutomationStudioFlowDraftStep[], provenWhole = false): AutomationStudioAnswerFirstSavedFlow => ({
+  ...stepsOnly(attemptId, label, steps, provenWhole), candidateId: `candidate.${attemptId}`
+});
+const stepsOnly = (attemptId: string, label: AutomationStudioAnswerFirstSavedFlow["label"], steps: AutomationStudioFlowDraftStep[], provenWhole = false): AutomationStudioAnswerFirstSavedFlow => ({
   attemptId, flowId: "flow.1", steps, stepsDigest: digest(steps), label, provenWhole, savedAtMs: 1, spend: { calls: 1, usd: 0.01 }
 });
 const A = [step(1, "open", { page: "desk" })];
@@ -49,6 +53,34 @@ describe("which Flow is better", () => {
   });
   it("takes next where neither is confirmed: it was built from the best and went further", () => {
     for (const a of ["unverified", "refuted"] as const) for (const b of ["unverified", "refuted"] as const) expect(better(flow("k", a, A), flow("n", b, B), calm)?.attemptId).toBe("n");
+  });
+});
+
+describe("a Flow that does not assemble", () => {
+  const labels = ["confirmed", "unverified", "refuted"] as const;
+
+  it("never wins over a next one that does, whatever the labels, and on a repair route that ran nothing", () => {
+    // The live run's shape: a confirmed draft no Flow could be made of, then a confirmed repair of it that saved.
+    for (const a of labels) for (const b of labels) {
+      expect(better(stepsOnly("k", a, A), flow("n", b, B), calm)?.attemptId).toBe("n");
+      expect(better(stepsOnly("k", a, A), flow("n", b, B), { ...calm, keptAssembles: false })?.attemptId).toBe("n");
+    }
+  });
+  it("loses to the next one where the attempt found at its opening that the kept one does not assemble, even if it saved once", () => {
+    expect(better(flow("k", "confirmed", A), flow("n", "confirmed", B), { ...calm, keptAssembles: false })?.attemptId).toBe("n");
+  });
+  it("never wins as the next one over a kept one that assembles", () => {
+    for (const a of labels) for (const b of labels) {
+      expect(better(flow("k", a, A), stepsOnly("n", b, B), calm)?.attemptId).toBe("k");
+      expect(better(stepsOnly("k", a, A), stepsOnly("n", b, B), { ...calm, keptAssembles: true })?.attemptId).toBe("k");
+    }
+  });
+  it("where neither assembles, takes the next one: it was built from the kept one and went further", () => {
+    for (const a of labels) for (const b of labels) expect(better(stepsOnly("k", a, A), stepsOnly("n", b, B), calm)?.attemptId).toBe("n");
+  });
+  it("leaves the label table to decide between two that assemble", () => {
+    expect(better(stepsOnly("k", "confirmed", A), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("k");
+    expect(better(stepsOnly("k", "unverified", A), flow("n", "confirmed", B), { ...calm, keptAssembles: true })?.attemptId).toBe("n");
   });
 });
 
