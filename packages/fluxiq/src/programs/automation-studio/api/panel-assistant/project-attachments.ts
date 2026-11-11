@@ -1,4 +1,5 @@
-// A panel turn's project-bound attachment, read in the project its request names.
+// A panel turn's project-bound attachment, read in the project the read names:
+// the one its reference names, or for a reference that names none, the request's.
 //
 // The panel thread is the person's own, decided as `selfUser`. What a proposal
 // attachment shows is a project's own record, so the project is decided on its

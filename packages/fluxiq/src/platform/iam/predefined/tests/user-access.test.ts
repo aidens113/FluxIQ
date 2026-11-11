@@ -24,8 +24,7 @@ const PANEL_ASSISTANT_GRANTED = [
   "studio:RenamePanelThread",
   "studio:DeletePanelThread",
   "studio:SendPanelMessage",
-  "studio:AnswerPanelAsk",
-  "studio:GetPanelAssistantAllowance"
+  "studio:AnswerPanelAsk"
 ];
 
 describe("FluxIQUserAccess filtered workspace lists", () => {
@@ -47,10 +46,10 @@ describe("FluxIQUserAccess panel assistant", () => {
     for (const action of PANEL_ASSISTANT_GRANTED) expect(decide(action, ALICE_USER, "alice"), action).toBe("allow");
   });
 
-  it("allows none of them on another person's user FRN or on Studio content, and only the allowance read on the workspace FRN", () => {
+  it("allows none of them on another person's user FRN, on the workspace FRN or on Studio content", () => {
     for (const action of PANEL_ASSISTANT_GRANTED) {
       expect(decide(action, BOB_USER, "bob"), action).toBe("deny");
-      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe(action === "studio:GetPanelAssistantAllowance" ? "allow" : "deny");
+      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe("deny");
       expect(decide(action, `frn:fluxiq:studio:${WS}:*`), action).toBe("deny");
     }
   });
@@ -61,9 +60,10 @@ describe("FluxIQUserAccess panel assistant", () => {
     }
   });
 
-  it("reads the allowance on the workspace FRN, where it is one record for everyone, and in no other workspace", () => {
+  it("reads the allowance on the workspace FRN, where it is one record for everyone, and in no other workspace or on a person's user", () => {
     expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn(WS))).toBe("allow");
     expect(decide("studio:GetPanelAssistantAllowance", iamWorkspaceFrn("ws-2"))).toBe("deny");
+    expect(decide("studio:GetPanelAssistantAllowance", ALICE_USER, "alice")).toBe("deny");
   });
 
   it("withholds setting the allowance, which is one record for the whole workspace", () => {

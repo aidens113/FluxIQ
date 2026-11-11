@@ -76,7 +76,7 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   for (let attempt = 0; attempt < Math.max(1, request.maxAttempts); attempt += 1) {
     await parentOptions.commandRun?.checkpoint();
     const framed = childFrame = request.frame(childInputs);
-    childTrace = await runAutomationStudioChildWithBounds((signal) => request.runChild({ ...childOptions, signal, ...(framed ? { invocation: framed } : {}) }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
+    childTrace = await runAutomationStudioChildWithBounds((signal) => request.runChild({ ...childOptions, signal, ...(framed ? { invocation: framed } : {}) }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun, parentOptions.startTimer);
     childUncertain = childTrace.status === "failed" && childTrace.failure?.code === "run.outcome_uncertain";
     // The child already failed closed on an unresolved lasting act. A whole
     // child retry or a latched run's checkpoint cannot settle that act.

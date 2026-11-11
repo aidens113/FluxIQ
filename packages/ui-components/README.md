@@ -143,6 +143,19 @@ control.dispose();                              // sends a level the keys left w
   or when focus leaves. One request at a time; only the latest change made meanwhile goes.
 - "Saving…", "Saved." and, on a refusal, "Not saved." with the host's sentence; the
   slider goes back to what was saved.
+- **Draft mode** (`mode: "draft"`) is for a form that saves later, where a change is only
+  a draft. The control never calls `commit` and never shows "Saving…", "Saved." or a
+  refusal; it reports each settled level (drag release, arrow keys at rest, focus
+  leaving, clear) through `onDraft(level | null)`, `null` meaning "use the starting
+  value". The form saves it and then calls `show(level)`. Keyboard, `aria-valuetext` and
+  the inherited/own display are unchanged. `canClear: false` hides "Use starting value"
+  (the level is itself the starting value: pass `level: { own: v, starting: v }`);
+  `inputId` names the range input; `explain` replaces the explanation line.
+
+```ts
+createHumannessControl({ mode: "draft", level: { own: 40, starting: 40 }, canClear: false, onDraft: (level) => form.markDirty(level) });
+```
+
 - Styles: `src/chat/controls/humanness/humanness.css`, which `chat.css` imports. A
   screen outside the chat imports that sheet after `tokens.css`.
 

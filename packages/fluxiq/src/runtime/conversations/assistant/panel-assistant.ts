@@ -16,7 +16,7 @@ import type { AutomationStudioConversationAttachmentAnswer } from "../conversati
 import { automationStudioConversationIdOrRefuse, automationStudioConversationTitleOrRefuse } from "../inputs.ts";
 import type { AutomationStudioConversationTurn } from "../turn.ts";
 import { PANEL_ASSISTANT_DEFAULT_ALLOWANCE_USD, panelAssistantAllowanceOrRefuse } from "./allowance.ts";
-import { panelAssistantAttachmentPayload, type PanelAssistantProjectAttachments } from "./attachments/index.ts";
+import { panelAssistantAttachmentPayload, panelAssistantAttachmentProjects, type PanelAssistantProjectAttachments } from "./attachments/index.ts";
 import { panelAssistantContextOf } from "./context/index.ts";
 import {
   PANEL_ASSISTANT_WORDS,
@@ -177,8 +177,9 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
   /**
    * A turn's attachment and what it refers to, or null when the person's
    * threads hold no such turn or it shows nothing: a thread someone else holds
-   * reads exactly as one that does not exist. `projectId` names the project a
-   * project-bound attachment is read in, through `inProject`
+   * reads exactly as one that does not exist. A project-bound attachment is
+   * read through `inProject` in the project its reference names; `projectId`,
+   * the request's project, is used only for a reference that names none
    * (`./attachments/`).
    */
   async readAttachment(actor: TActor, input: { conversationId: string; turnId: string; projectId: string | null }, inProject: PanelAssistantProjectAttachments): Promise<AutomationStudioConversationAttachmentAnswer | null> {
@@ -253,7 +254,7 @@ export class PanelAssistant<TActor extends PanelAssistantActor = PanelAssistantA
       entries: [],
       clientActions: [],
       post: async (text, attachment) => {
-        await threads.append(actor.userId, { conversationId, author: "automation", text, attachment: attachment ?? null });
+        await threads.append(actor.userId, { conversationId, author: "automation", text, attachment: attachment ? panelAssistantAttachmentProjects.stored(attachment) : null });
       }
     };
   }

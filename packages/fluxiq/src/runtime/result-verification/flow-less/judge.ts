@@ -23,6 +23,11 @@
 // could only be settled by asking the judge again, and no reply here can ask; and no
 // computed facts, which read a Flow's own record.
 //
+// **Sized to the model that judges.** A run may judge on a model of its own, and the
+// request is built to that model's window (`../../llm/harness/sized-request.ts`). What
+// does not fit it whole is sent in a shorter form that says what it summarised
+// (`./window-fitting.ts`), never refused by size and read as not judged.
+//
 // **What a call that gave nothing is.** `not_judged`, never a throw and never a no: it
 // says nothing about the answer. Only a cancellation throws, for the attempt to end
 // on the person's Stop.
@@ -33,12 +38,14 @@
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
 import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../../llm/verification-checked/index.ts";
+import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultRecordsYesRefuted } from "../cited-yes/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict/index.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
+import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
@@ -80,7 +87,10 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;
-  const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? automationStudioResultVerificationDeadlineMs(input.timeoutMs), input.personHeldMs, () => expiry.abort());
+  // The check's deadline: the caller's, else the run's own (`judgeMs`), else today's derivation from the per-call timeout, which a run's `llmCallMs` replaces because the harness will use it for each call.
+  const deadlines = automationStudioRunOverrides()?.deadlines;
+  const callMs = deadlines?.llmCallMs ?? input.timeoutMs;
+  const disarm = automationStudioFlowLessJudgeDeadline(input.deadlineMs ?? deadlines?.judgeMs ?? automationStudioResultVerificationDeadlineMs(callMs), input.personHeldMs, () => expiry.abort());
   // A yes whose citations Core refutes is asked again, within this one check and its one deadline, until the refuted citations repeat.
   const tried = new Set<string>();
   let sentNow: AutomationStudioRunResultSummary = sent;
@@ -96,9 +106,12 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           ...(input.runId ? { runId: input.runId } : {}),
           instructions: [asked(input)],
           resultSummary: sentNow,
+          // Where the judging model's window cannot hold it whole, it is sent in the first shorter form that fits, each saying what it summarised (`./window-fitting.ts`).
+          resultSummaryFitting: automationStudioFlowLessSummaryFitting(sentNow),
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
-          ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+          ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
+          ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
           signal,
           metadata: { source: SOURCE, expectedOutput: "diagnosis" }
         })

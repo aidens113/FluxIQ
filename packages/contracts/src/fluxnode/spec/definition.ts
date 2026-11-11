@@ -3,10 +3,12 @@
 // is reached over the event stream, so the spec only says whether there is one.
 
 import { z } from "zod";
-import { flowInputNames, flowInputsSchema, fluxNodeNameSchema } from "../flow/index.ts";
+import { flowInputNames, fluxNodeNameSchema } from "../flow/index.ts";
 import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
+import { fluxNodeOverridesSchema } from "../overrides/index.ts";
 import { jsonTypeSchemaSchema } from "../type-schema/index.ts";
 import { readFluxNodeGoal } from "./goal.ts";
+import { fluxNodeInputsSchema } from "./inputs.ts";
 import { fluxNodeOptionsSchema } from "./options.ts";
 import { fluxNodeRuntimeSchema } from "./runtime.ts";
 import { fluxNodeScopeAllowsSite, fluxNodeScopeSchema } from "./scope.ts";
@@ -22,11 +24,13 @@ const NO_CONTROL = /^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u;
  * - `goal`: what to achieve, trimmed; each `{placeholder}` names a declared input;
  * - `start`: where a run starts. For `web`, an http or https address inside the
  *   scope's sites; for another runtime, that runtime's own start (an app, a screen);
- * - `inputs`, `outputs`: optional exact types (`JsonTypeSchema`); inputs are an object;
+ * - `inputs`, `outputs`: optional exact types (`JsonTypeSchema`); inputs are an object, and an input
+ *   directly under its `properties` may be a secret (`format: "secret"`, `JSON_TYPE_SECRET_FORMAT`);
  * - `scope`: the standing grant (`fluxNodeScopeSchema`);
  * - `hasCheck`: whether the program registered a check, run before any judge;
  * - `uses`: other FluxNodes this one calls, by name; never itself;
- * - `options`: `fluxNodeOptionsSchema`, every one optional.
+ * - `options`: `fluxNodeOptionsSchema`, every one optional;
+ * - `overrides`: `fluxNodeOverridesSchema`, how Core does the work; not part of the spec hash.
  *
  * Unknown keys are refused.
  */
@@ -36,7 +40,7 @@ export const fluxNodeSpecSchema = z
     runtime: fluxNodeRuntimeSchema,
     goal: z.string().trim().min(1).max(FLUXNODE_SPEC_LIMITS.goalMaxLength).regex(NO_CONTROL, "no control characters"),
     start: z.string().trim().min(1).max(FLUXNODE_SPEC_LIMITS.startMaxLength).regex(NO_CONTROL, "no control characters"),
-    inputs: flowInputsSchema.optional(),
+    inputs: fluxNodeInputsSchema.optional(),
     outputs: jsonTypeSchemaSchema.optional(),
     scope: fluxNodeScopeSchema,
     hasCheck: z.boolean().default(false),
@@ -45,7 +49,8 @@ export const fluxNodeSpecSchema = z
       .max(FLUXNODE_SPEC_LIMITS.usesMax)
       .transform((names) => [...new Set(names)])
       .optional(),
-    options: fluxNodeOptionsSchema.optional()
+    options: fluxNodeOptionsSchema.optional(),
+    overrides: fluxNodeOverridesSchema.optional()
   })
   .strict()
   .superRefine((spec, context) => {

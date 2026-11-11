@@ -13,8 +13,8 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
 
 // The panel assistant's endpoints a person needs for their own chats in the
 // dock: list, read, open, rename and delete their threads, read a turn's
-// attachment, send a message, answer the assistant's Allow card, and read the
-// spending allowance. Named one by one, never `*Panel*`. Each registration
+// attachment, send a message, and answer the assistant's Allow card. Named one
+// by one, never `*Panel*`. Each registration
 // declares `endpointResource.selfUser()` and the handler looks only in the
 // caller's own panel database, so another person's thread answers as a missing
 // one. An attachment that is a project's record is decided again on that
@@ -23,10 +23,9 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
 // the workspace's assistant key), so setting it changes what every person's
 // messages may spend. A test of the panel endpoints fails when one is neither
 // here nor named as withheld (programs/automation-studio/api/panel-assistant/tests).
-// `studio:GetPanelAssistantAllowance` is also read on the workspace FRN
-// (`IAM_USER_WORKSPACE_SETTING_READS`), where the allowance endpoints move; its
-// copy here keeps the endpoint working while it still declares the caller's own
-// user, and goes when it declares the workspace.
+// Reading the allowance, `studio:GetPanelAssistantAllowance`, is not here: its
+// endpoint declares the workspace, where `IAM_USER_WORKSPACE_SETTING_READS`
+// grants it.
 const OWN_PANEL_ASSISTANT: readonly string[] = [
   "studio:ListPanelThreads",
   "studio:GetPanelThread",
@@ -35,8 +34,7 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
   "studio:RenamePanelThread",
   "studio:DeletePanelThread",
   "studio:SendPanelMessage",
-  "studio:AnswerPanelAsk",
-  "studio:GetPanelAssistantAllowance"
+  "studio:AnswerPanelAsk"
 ];
 
 /**

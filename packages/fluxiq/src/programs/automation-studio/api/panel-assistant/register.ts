@@ -2,11 +2,15 @@
 // and deleting a thread, a message, the answer to its Allow card, and the
 // per-message spending allowance.
 //
-// Every endpoint is the person's own: a thread lives in their own database, so
-// each takes the signed-in user from the actor and never from the payload, and
-// declares `endpointResource.selfUser()`. Each is hidden from the assistant's
-// tools, since they are its own chat. A paired client (the extension) keeps its
-// own threads and interpreter and is refused here.
+// Every thread endpoint is the person's own: a thread lives in their own
+// database, so each takes the signed-in user from the actor and never from the
+// payload, and declares `endpointResource.selfUser()`. The spending allowance is
+// not a person's: one value applies to every message in the workspace, so its
+// two endpoints declare `endpointResource.workspace()`, as Secret Keys' own
+// assistant model endpoints do, and IAM decides them on the workspace. Each is
+// hidden from the assistant's tools, since they are its own chat. A paired
+// client (the extension) keeps its own threads and interpreter and is refused
+// here.
 //
 // Renaming and deleting a thread are `authoring`, as `rename-conversation` and
 // `delete-conversation` are: a person's own chat history, changed from the dock's
@@ -15,8 +19,9 @@
 // only database looked in is their own. A delete is refused with
 // `conversation_run_active` while a message's or a card's work still uses the
 // thread (`runtime/conversations/assistant/thread-use.ts`). An attachment that
-// refers to a project's record is read in the project the request names, which
-// IAM decides separately (`./project-attachments.ts`).
+// refers to a project's record is read in the project its reference names (the
+// request's project only for a reference that names none), which IAM decides
+// separately (`./project-attachments.ts`).
 //
 // `send-panel-message` answers once the message is stored; the work goes on in
 // the background and every step lands in the thread, which the dock reads as it
@@ -33,7 +38,7 @@ import { iamActionName } from "@fluxiq/contracts/iam";
 import { iamEndpointAccessLevel, iamProgramService } from "../../../../platform/iam/catalog/index.ts";
 import { PanelAssistant, PanelAssistantThreads } from "../../../../runtime/conversations/assistant/index.ts";
 import type { GlobalProgramApiRegistry, ProgramApiActor, ProgramApiHandler, ProgramEndpointClassification } from "../../../_shared/api.ts";
-import { endpointResource } from "../../../_shared/iam/index.ts";
+import { endpointResource, type ProgramEndpointResource } from "../../../_shared/iam/index.ts";
 import type { Permission } from "../../../identity-access/index.ts";
 import { PANEL_ASSISTANT_ENDPOINTS } from "./endpoints.ts";
 import { rememberPanelAssistant } from "./panel-assistant-of.ts";
@@ -67,7 +72,8 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
     }
   });
   rememberPanelAssistant(registry, assistant);
-  const register = (endpoint: string, permission: Permission, classification: ProgramEndpointClassification, hidden: string, handler: (actor: ProgramApiActor, payload: Record<string, unknown>, scope: { domainId?: string | null }) => Promise<unknown>): void => {
+  /** `resource` is what the endpoint changes or reads: the caller's own user unless it says otherwise. */
+  const register = (endpoint: string, permission: Permission, classification: ProgramEndpointClassification, hidden: string, handler: (actor: ProgramApiActor, payload: Record<string, unknown>, scope: { domainId?: string | null }) => Promise<unknown>, resource: ProgramEndpointResource = endpointResource.selfUser()): void => {
     const action = iamActionName(iamProgramService(PROGRAM), endpoint);
     const run: ProgramApiHandler = async (request) => {
       const actor = request.actor;
@@ -75,7 +81,7 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
       if (actor.channel === "paired-client") return { ok: false, error: "The assistant is used from the FluxIQ panel.", errorCode: "authorization.forbidden" };
       return { ok: true, payload: await handler(actor, payloadOf(request.payload), request.scope) };
     };
-    registry.register({ programId: PROGRAM, endpoint, permission, classification, action, accessLevel: iamEndpointAccessLevel(action, endpoint, classification), resource: endpointResource.selfUser(), assistant: { hidden }, handler: run });
+    registry.register({ programId: PROGRAM, endpoint, permission, classification, action, accessLevel: iamEndpointAccessLevel(action, endpoint, classification), resource, assistant: { hidden }, handler: run });
   };
 
   register(PANEL_ASSISTANT_ENDPOINTS.listThreads, "programs.read", "read", "The assistant's own list of chats, which the dock shows.", async (actor, payload) => ({ conversations: await assistant.listThreads(actor, { limit: payload.limit }) }));
@@ -107,8 +113,8 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
     const answered = await assistant.answer(actor, scope, { askId: text(payload.askId, "askId"), kind });
     return { ask: answered.ask };
   });
-  register(PANEL_ASSISTANT_ENDPOINTS.getAllowance, "programs.read", "read", "Settings shows the assistant's spending allowance.", async () => assistant.allowance());
-  register(PANEL_ASSISTANT_ENDPOINTS.setAllowance, "secrets.manage", "authoring", "The assistant does not change its own spending allowance; a person sets it in Settings.", async (_actor, payload) => assistant.setAllowance(payload.allowanceUsd));
+  register(PANEL_ASSISTANT_ENDPOINTS.getAllowance, "programs.read", "read", "Settings shows the assistant's spending allowance.", async () => assistant.allowance(), endpointResource.workspace());
+  register(PANEL_ASSISTANT_ENDPOINTS.setAllowance, "secrets.manage", "authoring", "The assistant does not change its own spending allowance; a person sets it in Settings.", async (_actor, payload) => assistant.setAllowance(payload.allowanceUsd), endpointResource.workspace());
   return assistant;
 }
 

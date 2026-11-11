@@ -7,6 +7,7 @@
 // which is the wrong reason to make a design decision. They live here instead,
 // and the adapter asks for the instruction its request's task kind calls for.
 
+import { automationStudioOverriddenText } from "../run-overrides/index.ts";
 import { automationStudioLlmTaskExpectsDiagnosis, type AutomationStudioLlmTaskKind } from "./harness/task-kind.ts";
 
 const AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION = "Put your reading of the failure in the diagnosis object, not only in the summary: expected, observed and changed in at most 500 characters each, stillAchievable and deterministicRecoveryPossible as one of yes, no or unknown, and explorationNeeded and patchNeeded as booleans. Answer stillAchievable no, and patchNeeded false, where the step's intended result can no longer be had: what it acted on is gone with nothing that does the same thing, it is refused on purpose, or only a person can settle it. That answer ends the recovery without changing anything, and it is correct as often as a repair is. Omit a field you cannot answer rather than guessing it. The summary is prose nothing acts on; these fields are what the recovery is decided from.";
@@ -298,7 +299,7 @@ const AUTOMATION_STUDIO_FLOW_LESS_VERIFICATION_INSTRUCTION = "This call judges w
  */
 export function automationStudioDiagnosisPromptInstruction(taskKind: AutomationStudioLlmTaskKind, judged: { buildTest?: boolean; flowLess?: boolean } = {}): string {
   if (!automationStudioLlmTaskExpectsDiagnosis(taskKind) || taskKind !== "loop_verification") return AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION;
-  if (judged.flowLess) return `${AUTOMATION_STUDIO_FLOW_LESS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${AUTOMATION_STUDIO_FLOW_LESS_VERIFICATION_INSTRUCTION}`;
-  const verification = `${AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION}`;
+  if (judged.flowLess) return `${AUTOMATION_STUDIO_FLOW_LESS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${automationStudioOverriddenText("prompt", "judge.verification", AUTOMATION_STUDIO_FLOW_LESS_VERIFICATION_INSTRUCTION)}`;
+  const verification = `${AUTOMATION_STUDIO_DIAGNOSIS_FIELDS_INSTRUCTION} ${AUTOMATION_STUDIO_RESULT_VERIFICATION_ORDER_INSTRUCTION} ${automationStudioOverriddenText("prompt", "judge.verification", AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION)}`;
   return judged.buildTest ? `${verification} ${AUTOMATION_STUDIO_BUILD_TEST_VERIFICATION_INSTRUCTION}` : verification;
 }

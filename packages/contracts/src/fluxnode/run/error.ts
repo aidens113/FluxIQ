@@ -5,14 +5,15 @@ import { z } from "zod";
 import { fluxNodeFieldSchemas } from "../fields/index.ts";
 
 /**
- * - `invalid_request`, `invalid_spec`, `invalid_inputs`: the body or query was refused; `issues` says where;
+ * - `invalid_request`, `invalid_spec`, `invalid_inputs`: the body or query was refused; `issues` says where.
+ *   `invalid_spec` is a body whose every issue is inside its `spec`; `invalid_request` is anything else wrong with the request;
  * - `unknown_fluxnode`, `unknown_spec_hash`, `unknown_run`, `unknown_event`: nothing by that name or id;
  * - `event_already_answered`, `answer_mismatch`: the event was answered, or this answer is for another kind of event;
  * - `run_ended`: the run has ended, so it cannot be answered or stopped;
  * - `idempotency_conflict`: the key was used with a different request;
- * - `no_host`: no connected host provides the runtime;
- * - `unauthenticated`, `forbidden`: no valid key, or a key without the grant;
- * - `rate_limited`, `unavailable`: try again after `retryAfterMs`;
+ * - `unauthenticated`, `forbidden`: no valid key, or a key without the grant, or a call an open-mode guard refused.
+ *   The open-mode engine answers `forbidden` only; `unauthenticated` is for an engine that requires a key, whose 401 the
+ *   SDK answers by proving its key again and repeating the call once;
  * - `internal`: Core failed; the message says no more than is safe.
  */
 export const FLUXNODE_ERROR_CODES = Object.freeze([
@@ -27,11 +28,8 @@ export const FLUXNODE_ERROR_CODES = Object.freeze([
   "answer_mismatch",
   "run_ended",
   "idempotency_conflict",
-  "no_host",
   "unauthenticated",
   "forbidden",
-  "rate_limited",
-  "unavailable",
   "internal"
 ] as const);
 
@@ -46,8 +44,7 @@ export const fluxNodeErrorBodySchema = z
       .object({
         code: z.enum(FLUXNODE_ERROR_CODES),
         message: fluxNodeFieldSchemas.personText,
-        issues: z.array(issueSchema).max(200).optional(),
-        retryAfterMs: fluxNodeFieldSchemas.count.optional()
+        issues: z.array(issueSchema).max(200).optional()
       })
       .strict()
   })

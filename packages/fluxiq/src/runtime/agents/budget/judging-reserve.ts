@@ -24,6 +24,8 @@ export class AutomationStudioLlmBuildPurseJudgingReserve {
   private largestJudgeHoldUsd: number | undefined;
   /** The provider's price, from the last call that brought one. */
   private price: AutomationStudioLlmBuildPursePrice | undefined;
+  /** A judge's price, from the last call that brought one: the call's own where no other model judges. */
+  private judgePrice: AutomationStudioLlmBuildPursePrice | undefined;
 
   /** Keep `judging` back from every call that is not a judge's, from now on. */
   keepBack(judging: AutomationStudioLlmBuildPurseJudging): void {
@@ -43,25 +45,32 @@ export class AutomationStudioLlmBuildPurseJudgingReserve {
   /** Learn from a call about to be held: the provider's price it brings, and, as a judge's, its worst case. */
   note(call: AutomationStudioLlmBuildPurseCall): void {
     if (call.price) this.price = call.price;
+    const judgePrice = call.judgePrice ?? call.price;
+    if (judgePrice) this.judgePrice = judgePrice;
     const projected = call.projectedCostUsd;
     if (call.judge && projected !== undefined) this.largestJudgeHoldUsd = Math.max(this.largestJudgeHoldUsd ?? 0, projected);
   }
 
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
   priceUsd(inputTokens: number, outputTokens: number): number | undefined {
-    let priced: number | undefined;
-    try {
-      priced = this.price?.(inputTokens, outputTokens);
-    } catch {
-      priced = undefined;
-    }
-    return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? priced : undefined;
+    return pricedUsd(this.price, inputTokens, outputTokens);
   }
 
-  /** What judging is held at; `undefined` where nothing is kept back or nothing can be priced. */
+  /** What judging is held at; `undefined` where nothing is kept back or nothing can be priced. Before a judge has been priced, at a judge's model's price. */
   holdUsd(): number | undefined {
     if (!this.judging) return undefined;
-    const each = this.largestJudgeHoldUsd ?? this.priceUsd(this.judging.unpriced.inputTokens, this.judging.unpriced.outputTokens);
+    const each = this.largestJudgeHoldUsd ?? pricedUsd(this.judgePrice, this.judging.unpriced.inputTokens, this.judging.unpriced.outputTokens);
     return each === undefined ? undefined : this.judging.calls * each;
   }
+}
+
+/** `price` for a request of `inputTokens` and a reply of `outputTokens`, or `undefined` where there is none or it prices nonsense. */
+function pricedUsd(price: AutomationStudioLlmBuildPursePrice | undefined, inputTokens: number, outputTokens: number): number | undefined {
+  let priced: number | undefined;
+  try {
+    priced = price?.(inputTokens, outputTokens);
+  } catch {
+    priced = undefined;
+  }
+  return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? priced : undefined;
 }

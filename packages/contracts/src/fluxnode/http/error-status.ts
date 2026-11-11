@@ -15,10 +15,7 @@ export const FLUXNODE_ERROR_HTTP_STATUS: Readonly<Record<FluxNodeErrorCode, numb
   answer_mismatch: 409,
   run_ended: 409,
   idempotency_conflict: 409,
-  no_host: 503,
   unauthenticated: 401,
   forbidden: 403,
-  rate_limited: 429,
-  unavailable: 503,
   internal: 500
 });

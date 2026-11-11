@@ -7,13 +7,11 @@ import { SdkError } from "./sdk-error.ts";
 export class FluxNodeApiError extends SdkError {
   readonly status: number;
   readonly apiCode: FluxNodeErrorCode | string;
-  readonly retryAfterMs: number | undefined;
 
-  constructor(details: { status: number; apiCode: FluxNodeErrorCode | string; message: string; issues?: FluxNodeIssue[]; retryAfterMs?: number }) {
+  constructor(details: { status: number; apiCode: FluxNodeErrorCode | string; message: string; issues?: FluxNodeIssue[] }) {
     super("protocol", details.message, details.issues === undefined ? {} : { issues: details.issues });
     this.name = "FluxNodeApiError";
     this.status = details.status;
     this.apiCode = details.apiCode;
-    this.retryAfterMs = details.retryAfterMs;
   }
 }

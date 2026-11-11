@@ -3,7 +3,8 @@
 // through the real registry, against real per-person panel databases:
 //
 // - a turn's attachment is read: a navigation from its own reference, a
-//   proposed change in the project the request names, decided by IAM and the
+//   proposed change in the project its reference names (or, for a reference
+//   stored without one, the project the request names), decided by IAM and the
 //   domain scope there, and never without a project;
 // - a rename checks the name before the thread, with the conversations' codes;
 // - a delete removes the thread, its turns, its asks, its cards' waiting calls
@@ -21,7 +22,7 @@ import { AutomationStudioProjectDatabasePool } from "../../../../../framework/pe
 import type { IamPolicy } from "../../../../../platform/iam/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { IAM_USER_ACCESS } from "../../../../../platform/iam/predefined/index.ts";
-import { PANEL_ASSISTANT_CLIENT_ACTION_ATTACHMENT, panelAssistantDatabaseId, PanelAssistantThreads, type PanelAssistant, type PanelAssistantModel } from "../../../../../runtime/conversations/assistant/index.ts";
+import { PANEL_ASSISTANT_CLIENT_ACTION_ATTACHMENT, panelAssistantAttachmentProjects, panelAssistantDatabaseId, PanelAssistantThreads, type PanelAssistant, type PanelAssistantModel } from "../../../../../runtime/conversations/assistant/index.ts";
 import { AUTOMATION_STUDIO_FLOW_GRAPH_DIFF_ATTACHMENT } from "../../../../../runtime/conversations/index.ts";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramApiResponse } from "../../../../_shared/api.ts";
 import { actor, fixedPolicySource, registerPrefixOwners } from "../../../../_shared/tests/iam-registry-fixtures.ts";
@@ -151,6 +152,37 @@ describe("panel thread attachments, renames and deletes", () => {
     expect(service.getFlowBootstrapAdaptation).not.toHaveBeenCalled();
   });
 
+  it("reads a proposal in the project its reference names, whichever project the request names", async () => {
+    const threads = new PanelAssistantThreads({ rootDir: panelRoot() });
+    let conversationId = "";
+    let turnId = "";
+    try {
+      conversationId = (await threads.open("alice", {})).conversationId;
+      const attachment = panelAssistantAttachmentProjects.stored({ kind: AUTOMATION_STUDIO_FLOW_GRAPH_DIFF_ATTACHMENT, ref: "flow.1:adaptation.1", projectId: ALICES_PROJECT });
+      turnId = (await threads.append("alice", { conversationId, author: "automation", text: "Here is the change.", attachment })).turnId;
+    } finally {
+      await threads.close();
+    }
+    const { call, service } = world();
+    const stored = { kind: "flow-graph-diff", ref: JSON.stringify({ projectId: ALICES_PROJECT, ref: "flow.1:adaptation.1" }) };
+    const drawn = { added: [{ id: "node.1", label: "Start the post", detail: null }], removed: [], changed: [] };
+
+    // Another project is open: the turn is still read in its own.
+    for (const open of [{ projectId: "a-project.two" }, { projectId: "panel" }, {}]) {
+      service.getFlowBootstrapAdaptation.mockClear();
+      service.assertProjectDomainAccess.mockClear();
+      expect(await call(PANEL_ASSISTANT_ENDPOINTS.getThreadAttachment, alice, { conversationId, turnId, ...open })).toEqual({ ok: true, payload: { attachment: { attachment: stored, payload: { flowId: null, ...drawn } } } });
+      expect(service.assertProjectDomainAccess.mock.calls).toEqual([[ALICES_PROJECT, "domain.one"]]);
+      expect(service.getFlowBootstrapAdaptation.mock.calls).toEqual([[ALICES_PROJECT, "flow.1", "adaptation.1"]]);
+    }
+
+    // The turn's project outside the request's domain is refused before anything in it is read.
+    service.assertProjectDomainAccess.mockRejectedValueOnce(new Error("Project not found."));
+    service.getFlowBootstrapAdaptation.mockClear();
+    expect(await call(PANEL_ASSISTANT_ENDPOINTS.getThreadAttachment, alice, { conversationId, turnId, projectId: "a-project.two" })).toMatchObject({ ok: false, error: "Project not found." });
+    expect(service.getFlowBootstrapAdaptation).not.toHaveBeenCalled();
+  });
+
   it("renames with the conversations' codes, checking the name before the thread", async () => {
     const planted = await plantAlicesThread();
     const { call } = world();
@@ -250,5 +282,30 @@ describe("panel thread attachments, renames and deletes", () => {
     expect(service.assertProjectDomainAccess).not.toHaveBeenCalled();
     // Alice may read it in her own project.
     expect(await call(PANEL_ASSISTANT_ENDPOINTS.getThreadAttachment, alice, { conversationId: planted.conversationId, turnId: planted.proposal, projectId: ALICES_PROJECT })).toMatchObject({ ok: true, payload: { attachment: { payload: { added: [{ label: "Start the post" }] } } } });
+  });
+
+  it("under the service profile, decides a reference's own project by IAM, refusing it as a request naming that project is refused", async () => {
+    const bobs = new PanelAssistantThreads({ rootDir: panelRoot() });
+    let conversationId = "";
+    let named = "";
+    let unnamed = "";
+    try {
+      conversationId = (await bobs.open("bob", {})).conversationId;
+      const attachment = panelAssistantAttachmentProjects.stored({ kind: AUTOMATION_STUDIO_FLOW_GRAPH_DIFF_ATTACHMENT, ref: "flow.1:adaptation.1", projectId: ALICES_PROJECT });
+      named = (await bobs.append("bob", { conversationId, author: "automation", text: "A change.", attachment })).turnId;
+      unnamed = (await bobs.append("bob", { conversationId, author: "automation", text: "A change.", attachment: { kind: AUTOMATION_STUDIO_FLOW_GRAPH_DIFF_ATTACHMENT, ref: "flow.1:adaptation.1" } })).turnId;
+    } finally {
+      await bobs.close();
+    }
+    const { call, service } = world({ profile: "service", policies: [ownPanelThreads()] });
+    const read = (turnId: string, projectId: string) => call(PANEL_ASSISTANT_ENDPOINTS.getThreadAttachment, bob, { conversationId, turnId, projectId });
+
+    // A turn stored without its project, read naming alice's project: the refusal it has always had.
+    const before = await read(unnamed, ALICES_PROJECT);
+    expect(before).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    // A turn naming alice's project, read while bob's own project is open: the same refusal.
+    expect(await read(named, "b-project.one")).toEqual(before);
+    expect(service.assertProjectDomainAccess).not.toHaveBeenCalled();
+    expect(service.getFlowBootstrapAdaptation).not.toHaveBeenCalled();
   });
 });

@@ -13,6 +13,7 @@ import {
   type FluxNodeApiEndpoint
 } from "@fluxiq/contracts/fluxnode";
 import type { FluxNodeService, FluxNodeServiceOutcome } from "../../framework/automation-service/service/fluxnode/index.ts";
+import { bodyRefusalCode } from "./body-refusal-code.ts";
 import { checkOpenModeGuards } from "./check-open-mode-guards.ts";
 import type { FluxNodeApiOptions } from "./handler-options.ts";
 import { FLUXNODE_OPEN_MODE_CALLER } from "./open-mode-caller.ts";
@@ -121,7 +122,7 @@ async function readBody<T>(context: Context, schema: FluxNodeBodySchema<T>, empt
   }
   const parsed = parseFluxNodeBody(schema, read.empty && emptyIsObject ? {} : read.value);
   if (parsed.ok) return parsed.value;
-  writeFluxNodeRefusal(context.response, { code: "invalid_request", message: "The request body was not valid.", issues: parsed.issues });
+  writeFluxNodeRefusal(context.response, { code: bodyRefusalCode(parsed.issues), message: "The request body was not valid.", issues: parsed.issues });
   return null;
 }
 

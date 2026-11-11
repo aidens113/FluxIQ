@@ -6,6 +6,18 @@ Docs program in the control panel.
 ## Authored Docs
 
 - [Architecture](architecture/README.md)
+- [FluxNodes: developer documentation](fluxnodes/README.md)
+  - [Spec](fluxnodes/reference/spec.md), [options](fluxnodes/reference/options.md),
+    [overrides](fluxnodes/reference/overrides.md), [HTTP API](fluxnodes/reference/http-api.md),
+    [errors](fluxnodes/reference/errors.md), [limits](fluxnodes/reference/limits.md)
+  - Guides: [customizing prompts](fluxnodes/guides/customizing-prompts.md),
+    [retries and deadlines](fluxnodes/guides/retries-and-deadlines.md),
+    [judging results](fluxnodes/guides/judging-results.md),
+    [choosing models](fluxnodes/guides/choosing-models.md), [safety](fluxnodes/guides/safety.md)
+  - Examples: [scraping with a check](fluxnodes/examples/scraping-with-check.md),
+    [custom prompts and criteria](fluxnodes/examples/custom-prompts-and-criteria.md),
+    [a pipeline](fluxnodes/examples/pipeline.md),
+    [per-run overrides over HTTP](fluxnodes/examples/per-run-overrides-http.md)
 - [Working Codebase Audit Remediation Plan](working/codebase-audit-remediation-plan.md)
 - [Current System](architecture/current-system.md)
 - [Documentation System](architecture/docs-system.md)
