@@ -86,6 +86,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       stalled: ({ trace }) => new AutomationStudioAnswerFirstRoundStalled(trace)
     },
     dryRun: false,
+    // Nothing is put back (D1): a model's rerun runs from the page as it stands, and says so (`runtime/llm/node-tools/step-place.ts`).
+    rerunsInPlace: true,
     // One record across the attempt (t859), and how many of one act the person asked for: the request's number, whichever act the decision names.
     attemptRecord: run.tried,
     askedRepeats: (act) => run.asked(act.act),

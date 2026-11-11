@@ -400,17 +400,17 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
-    let rerunTook = false, rerunChecked = false, rerunPlace: AutomationStudioFlowDraftStep["rerunPlace"]; // A checked rerun whose step took the new argument (run `run-murwcaj0-40e56557` R7); one sent as the dry run's check at all, which acted on nothing (run `run-mux74k5q-1c3c2127` C3): `./node-tools/rerun-check.ts`.
+    let rerunTook = false, rerunChecked = false, rerunPlace: AutomationStudioFlowDraftStep["rerunPlace"], rerunAt: Awaited<ReturnType<typeof automationStudioNodeRerunFromItsPlace>> | undefined; // A checked rerun whose step took the new argument (run `run-murwcaj0-40e56557` R7); one sent as the dry run's check at all, which acted on nothing (run `run-mux74k5q-1c3c2127` C3): `./node-tools/rerun-check.ts`.
     const words = member ? undefined : automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Batch members author no step and need no handle-based description.
     try {
       // A rerun runs from its step's own page, never from where the last call left it; a carried step from where its node started in the repaired run (`./node-tools/step-place.ts`, t194 C-D).
       const seedStartedOn = rerunReplaces && input.draft ? input.draft.seedStartedOn : undefined; // Every seeded step's start page: the seeded steps before it on its page are done again first (t443, R4b).
-      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, seedStartedOn, steps: draftSteps, now: handling.repeats.state(), callId, value: decision.input, executeTool: input.executeTool, signal: input.signal, nodeOf: input.nodeOf, definitionOf: input.definitionOf, partOf: input.partOf, namedColumns: input.namedColumns, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
+      rerunAt = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, seedStartedOn, steps: draftSteps, now: handling.repeats.state(), callId, value: decision.input, rerunsInPlace: input.rerunsInPlace === true, executeTool: input.executeTool, signal: input.signal, nodeOf: input.nodeOf, definitionOf: input.definitionOf, partOf: input.partOf, namedColumns: input.namedColumns, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
       if (member) ran = await member.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
-      else ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, controlParameterKeys: input.controlParameterKeys, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
-      if (!rerunChecked) rerunPlace = automationStudioNodeRerunPlaceOfStep(place); // The step it leaves keeps where it ran, for the judge of a lasting act's landing (t443).
+      else ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place: rerunAt, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, controlParameterKeys: input.controlParameterKeys, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      if (!rerunChecked) rerunPlace = automationStudioNodeRerunPlaceOfStep(rerunAt); // The step it leaves keeps where it ran, for the judge of a lasting act's landing (t443).
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -455,8 +455,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
     automationStudioLlmEvidenceLookBudget(handling, iteration, { tool, lookedAtNothing: lookRefused }); // A planning loop's looks, counted and withdrawn once spent (t569).
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
-    // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check is no attempt of its input (`repeat-guard/outcomes.ts`).
-    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, failure: execution.failure, personNeeded: execution.personNeeded, ownRetestBound: execution.ownRetestBound, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}) });
+    // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check, or one whose place was unreachable, is no attempt of its input (`repeat-guard/outcomes.ts`).
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, failure: execution.failure, personNeeded: execution.personNeeded, ownRetestBound: execution.ownRetestBound, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}), ...(rerunAt?.kind === "unreachable" ? { unrun: true } : {}) });
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
       latestObservations.set(tool.toolId, callId);

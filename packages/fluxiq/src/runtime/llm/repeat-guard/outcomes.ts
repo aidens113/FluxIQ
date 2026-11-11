@@ -196,6 +196,19 @@
 // a run of looks, but records no outcome for its key: the identical plain
 // call is the first attempt of that input there, and runs.
 //
+// **A rerun whose place could not be reached is not an attempt of its input
+// either.** Live run `run-mwc60eal-4c9fdf6f` (steps 0054-0060): the put-back
+// before `rerun.9` was refused (`../node-tools/step-place.ts`), so the rerun
+// was answered `rerun_place_unreachable` and its input -- the step's navigate
+// with the model's new address -- never reached the target. Recorded here as a
+// failed attempt of that input, it made the model's identical call by hand on
+// the same page a repeat of a failure, refused twice; three in a row end the
+// round. A call the loop reports as `unrun` is treated as a check is: it moves
+// the last page seen and ends a run of looks, and records no outcome for its
+// key. The decision that asked for the rerun is still recorded on its own
+// (`amended`, `same_amendment`): the same placement on the same draft fails
+// the same way, and is refused there.
+//
 // **A written step is not an attempt of its input (t707 D1).** An install
 // build's builders wrote steps with `core.run_node` `write: true`, each
 // answered `core.run_node.written` ("Added to the Flow, not run yet"). A
@@ -392,6 +405,8 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   answer?: string | undefined;
   /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
   checked?: boolean | undefined;
+  /** A rerun whose place could not be reached (`../node-tools/step-place.ts`): its input never reached the target, so it is no attempt of it (see the header). */
+  unrun?: boolean | undefined;
 };
 
 /** The loop's record of what its calls did. */
@@ -501,7 +516,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (counted && look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
       else if (counted) searching.acted();
       // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
-      if (call.checked === true) return;
+      // Nor did a rerun whose place could not be reached: its input never reached the target (run `run-mwc60eal-4c9fdf6f`).
+      if (call.checked === true || call.unrun === true) return;
       // A call that met a precondition an earlier refusal named lifted it, wherever that refusal was keyed (header, t587).
       const metPrecondition = !call.refused && met(call);
       if (state === undefined) return;
