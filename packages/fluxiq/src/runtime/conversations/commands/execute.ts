@@ -44,7 +44,7 @@ export async function executeAutomationStudioConversationCommand(input: {
   }
   const work = () => runInAutomationStudioConversation({ projectId: context.projectId, conversationId: context.conversationId }, () => settle(command, context, input.arguments));
   if (command.background) {
-    automationStudioConversationCommandWork.track(work());
+    automationStudioConversationCommandWork.track(work(), { projectId: context.projectId, conversationId: context.conversationId });
     return { capabilityId, status: "started", summary: `Started "${command.capability.title}". I will say here when it has finished.` };
   }
   const outcome = await work();

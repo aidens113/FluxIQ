@@ -12,6 +12,7 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, type AutomationStudioActionConse
 import { AUTOMATION_STUDIO_CONVERSATION_TEXT_MAX, isAutomationStudioConversationTurnDecision, type AutomationStudioConversationAttachment, type AutomationStudioConversationAuthor, type AutomationStudioConversationTurnDecision } from "./turn.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAskInput } from "./ask.ts";
 import type { AutomationStudioConversationStatus, AutomationStudioConversationSubjectKind } from "./thread.ts";
+import { AutomationStudioConversationRefusal } from "./refusal.ts";
 
 const ID = /^[A-Za-z0-9._:-]{1,200}$/u;
 const MAX_ATTACHMENT_REF = 1_000;
@@ -28,6 +29,21 @@ export type AutomationStudioConversationOpenInput = {
   subjectKind: AutomationStudioConversationSubjectKind;
   subjectId: string;
   title?: string | null;
+  changedAt?: number;
+};
+
+/** A person's new name for a thread. The title is trimmed, and must say something and fit `AUTOMATION_STUDIO_CONVERSATION_TITLE_MAX`. */
+export type AutomationStudioConversationRenameInput = {
+  mutationId: string;
+  conversationId: string;
+  title: string;
+  changedAt?: number;
+};
+
+/** Removing a thread with everything said and asked in it. */
+export type AutomationStudioConversationDeleteInput = {
+  mutationId: string;
+  conversationId: string;
   changedAt?: number;
 };
 
@@ -130,6 +146,19 @@ export function automationStudioConversationShortTextOrRefuse(value: string | nu
   if (!text) return null;
   if (text.length > max) throw new Error(`${label} is at most ${max} characters.`);
   return text;
+}
+
+/**
+ * A thread's new name: trimmed, and refused by code rather than cleared when it
+ * says nothing, because a person who renamed a thread to nothing asked for
+ * something this cannot do. Longer than a title may be is refused, as a title at
+ * creation is.
+ */
+export function automationStudioConversationTitleOrRefuse(value: unknown): string {
+  const title = typeof value === "string" ? value.trim() : "";
+  if (!title) throw new AutomationStudioConversationRefusal("conversation_title_required");
+  if (title.length > AUTOMATION_STUDIO_CONVERSATION_TITLE_MAX) throw new AutomationStudioConversationRefusal("conversation_title_too_long");
+  return title;
 }
 
 export function automationStudioConversationIdOrRefuse(value: string, kind: string): string {

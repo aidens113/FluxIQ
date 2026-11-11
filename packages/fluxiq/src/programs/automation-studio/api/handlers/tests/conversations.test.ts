@@ -37,7 +37,9 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
   const conversations = {
     listConversations: vi.fn().mockResolvedValue([]),
     openConversation: vi.fn().mockResolvedValue({ conversationId: "conversation.one" }),
-    getConversation: vi.fn().mockResolvedValue(null),
+    getConversation: vi.fn().mockResolvedValue({ conversation: { conversationId: "conversation.one", projectId: "project.one", subject: { kind: "project", id: "project.one" } }, turns: [], hasMore: false }),
+    renameConversation: vi.fn().mockResolvedValue({ conversationId: "conversation.one", title: "Renamed" }),
+    deleteConversation: vi.fn().mockResolvedValue({ deleted: true, conversationId: "conversation.one" }),
     appendTurn: vi.fn().mockResolvedValue({ turnId: "turn.1" }),
     answerAsk: vi.fn().mockResolvedValue({ askId: "ask.1", status: "answered" }),
     getAttachment: vi.fn().mockResolvedValue({ attachment: { kind: "run", ref: "run.17" }, payload: null }),
@@ -53,7 +55,8 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
   const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "project.one" }, { id: "project.two" }] });
   const listFlows = vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]);
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioConversationEndpoints({ registry, service: { assertProjectDomainAccess, listProjects, listFlows, getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations: conversations as unknown as AutomationStudioConversations } });
+  const runLinks = { usesThread: vi.fn().mockResolvedValue(false) };
+  registerAutomationStudioConversationEndpoints({ registry, runLinks, service: { assertProjectDomainAccess, listProjects, listFlows, getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations: conversations as unknown as AutomationStudioConversations } });
   return { registry, conversations, assertProjectDomainAccess, listProjects, listFlows };
 }
 
@@ -64,7 +67,9 @@ const CONVERSATION_ENDPOINTS = [
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversation, method: "getConversation", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", conversationId: "conversation.one" } },
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, method: "appendTurn", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one", text: "Go ahead." } },
   { endpoint: AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk, method: "answerAsk", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", askId: "ask.one", kind: "grant" } },
-  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment, method: "getAttachment", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", conversationId: "conversation.one", turnId: "turn.one" } }
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment, method: "getAttachment", permission: "programs.read", classification: "read", actor: readActor, payload: { projectId: "project.one", conversationId: "conversation.one", turnId: "turn.one" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.renameConversation, method: "renameConversation", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one", title: "Renamed" } },
+  { endpoint: AUTOMATION_STUDIO_ENDPOINTS.deleteConversation, method: "deleteConversation", permission: "programs.write", classification: "authoring", actor: writeActor, payload: { projectId: "project.one", conversationId: "conversation.one" } }
 ] as const;
 
 describe("Automation Studio conversation API", () => {
@@ -96,14 +101,16 @@ describe("Automation Studio conversation API", () => {
     }
   });
 
-  it("refuses a caller whose permission does not cover writing a turn or answering", async () => {
+  it("refuses a caller whose permission does not cover writing a turn, answering, renaming or deleting", async () => {
     const { registry, conversations } = conversationApi();
-    for (const endpoint of [AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk]) {
+    for (const endpoint of [AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, AUTOMATION_STUDIO_ENDPOINTS.answerConversationAsk, AUTOMATION_STUDIO_ENDPOINTS.renameConversation, AUTOMATION_STUDIO_ENDPOINTS.deleteConversation]) {
       const response = await registry.call({ programId: "automation-studio", endpoint, scope: { domainId: null }, actor: readActor, payload: { projectId: "project.one" } });
       expect(response.errorCode, endpoint).toBe("authorization.forbidden");
     }
     expect(conversations.appendTurn).not.toHaveBeenCalled();
     expect(conversations.answerAsk).not.toHaveBeenCalled();
+    expect(conversations.renameConversation).not.toHaveBeenCalled();
+    expect(conversations.deleteConversation).not.toHaveBeenCalled();
   });
 
   it("carries the person's own id onto the turn they write and the answer they give", async () => {

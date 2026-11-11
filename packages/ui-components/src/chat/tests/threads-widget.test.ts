@@ -1,7 +1,8 @@
 // The chat with a list of threads, end to end under a fake DOM and a fake Core:
 // which thread opens, what the person's pick and the host's targets keep, how a
 // thread is read and written to, the project-less chat, the change feed, the
-// background, the heading, and the words a host can replace.
+// background, the heading, the conversation list's New chat, Rename, Delete and
+// layouts, and the words a host can replace.
 
 import assert from "node:assert/strict";
 import { afterEach, test, vi } from "vitest";
@@ -66,8 +67,16 @@ function words(root: FakeElement): string[] {
   return root.byClass("chat-msg").map((message) => message.textContent);
 }
 
-function optionLabels(root: FakeElement): string[] {
-  return root.byClass("chat-thread-select")[0]!.querySelectorAll("option").map((option) => option.textContent);
+function rowNames(root: FakeElement): string[] {
+  return root.byClass("chat-thread-name").map((name) => name.textContent);
+}
+
+function row(root: FakeElement, conversationId: string): FakeElement {
+  return root.byClass("chat-thread-row").find((candidate) => candidate.getAttribute("data-conversation-id") === conversationId)!;
+}
+
+function press(root: FakeElement, conversationId: string, className: string): void {
+  row(root, conversationId).byClass(className)[0]!.dispatch("click");
 }
 
 function box(root: FakeElement): FakeElement {
@@ -87,12 +96,15 @@ test("the chat opens the thread waiting on the person, lists the others in order
   await mounted(core.transport(), { threads }, {}, async (chat, root) => {
     await settle();
     assert.deepEqual(chat.target(), { kind: "thread", conversationId: "B", projectId: "project-1" });
-    assert.deepEqual(optionLabels(root), ["Bravo (waiting on you)", "Charlie", "Alpha"]);
+    assert.deepEqual(rowNames(root), ["Bravo", "Charlie", "Alpha"]);
+    assert.deepEqual(root.byClass("chat-thread-waiting").map((mark) => mark.hidden), [false, true, true], "Bravo is marked as waiting on the person");
+    assert.equal(row(root, "B").getAttribute("data-selected"), "true");
     assert.deepEqual(words(root), ["B turn 1"]);
     assert.deepEqual(heard.selected, ["B"]);
     assert.deepEqual(heard.unanswered, [1]);
     assert.equal(heard.titles.at(-1), "Bravo");
-    assert.equal(root.byClass("chat-thread-picker")[0]!.hidden, false);
+    assert.equal(root.byClass("chat-thread-toggle")[0]!.textContent.startsWith("Chats"), true);
+    assert.equal(root.byClass("chat-thread-badge")[0]!.textContent, "1 waiting");
     assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true, "a host that takes the name gets no name drawn");
     assert.equal(root.byClass("chat-context")[0]!.hidden, true, "a chosen thread has no automation line");
   });
@@ -122,9 +134,7 @@ test("a person's pick stays when the list moves, and the host hears it", async (
   const { heard, threads } = hear();
   await mounted(core.transport({ changes: true }), { threads }, {}, async (chat, root) => {
     await tick(0);
-    const picker = root.byClass("chat-thread-select")[0]!;
-    picker.value = "A";
-    picker.dispatch("change");
+    press(root, "A", "chat-thread-open");
     await tick(0);
     assert.deepEqual(chat.target(), { kind: "thread", conversationId: "A", projectId: "project-1" });
     assert.deepEqual(words(root), ["A turn 1"]);
@@ -133,7 +143,7 @@ test("a person's pick stays when the list moves, and the host hears it", async (
     await tick(300);
     assert.equal(openThread(chat), "A", "the first thread of the list is now C, and the pick stays");
     assert.deepEqual(heard.selected, ["B", "A"]);
-    assert.equal(picker.value, "A");
+    assert.equal(row(root, "A").getAttribute("data-selected"), "true");
     assert.deepEqual(heard.unanswered, [1, 2]);
   });
 });
@@ -241,6 +251,29 @@ test("before the first read the project-less chat is loading, not empty", async 
     release?.();
     await settle();
     assert.equal(root.byClass("chat-empty-title")[0]!.textContent, "Welcome");
+  });
+});
+
+test("a host whose transport finds the session's project gives no reason: the project-less latest chat reads, takes typing and sends", async () => {
+  // A browser extension's background names the session's project for a message that names none, asking Core
+  // for one when the browser has none stored, so a person who has no thread and no project yet can still write.
+  const core = threadsCore([]);
+  const { threads } = hear();
+  delete (threads as { unavailableReason?: string }).unavailableReason;
+  await mounted(core.transport(), { threads }, {}, async (chat, root) => {
+    await settle();
+    assert.deepEqual(chat.target(), { kind: "latest" });
+    assert.ok(core.calls.list.length > 0, "the latest chat is listed as without a thread list, the transport naming the project");
+    assert.ok(core.calls.list.every((query) => query.projectId === undefined));
+    assert.equal(root.byClass("composer-unavailable")[0]!.hidden, true);
+    assert.equal(box(root).disabled, false);
+    assert.equal(box(root).placeholder, "Message FluxIQ");
+    send(root, "Hello from a new browser");
+    await settle();
+    await settle();
+    assert.equal(core.calls.send.length, 1);
+    assert.equal(core.calls.send[0]!.projectId, undefined, "the transport names the project, not the chat");
+    assert.deepEqual(words(root), ["Hello from a new browser"]);
   });
 });
 
@@ -371,19 +404,21 @@ test("the heading is a title in words with one thread and no host title bar, nev
     const title = root.byClass("chat-thread-title")[0]!;
     assert.equal(title.hidden, false);
     assert.equal(title.textContent, "Company website");
-    assert.equal(root.byClass("chat-thread-picker")[0]!.hidden, true);
     assert.equal(root.byClass("chat-thread-header")[0]!.textContent.includes("conv-secret-id-1"), false);
-    assert.equal(root.byClass("chat-thread-header").some((header) => header.querySelectorAll("button").length > 0), false, "no Refresh control");
+    assert.equal(root.byClass("chat-thread-row")[0]!.textContent.includes("conv-secret-id-1"), false);
+    assert.equal(root.descendants().some((element) => element.tagName === "BUTTON" && element.textContent === "Refresh"), false, "no Refresh control");
   });
 });
 
-test("a host that takes the chat's name hears it, and the header holds only the picker when there is one", async () => {
+test("a host that takes the chat's name hears it, and the header holds only the Chats button", async () => {
   const core = threadsCore([thread("only", { title: "Nightly run" })]);
   const titles: string[] = [];
   await mounted(core.transport(), { threads: hear({ onTitle: (title) => titles.push(title) }).threads }, {}, async (_chat, root) => {
     await settle();
     assert.equal(titles.at(-1), "Nightly run");
-    assert.equal(root.byClass("chat-thread-header")[0]!.hidden, true);
+    assert.equal(root.byClass("chat-thread-header")[0]!.hidden, false);
+    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true);
+    assert.equal(root.byClass("chat-thread-toggle-label")[0]!.textContent, "Chats");
   });
 });
 
@@ -433,5 +468,180 @@ test("without the port the thread list needs, the option does nothing", async ()
     assert.equal(root.byClass("chat-thread-header").length, 0);
     assert.equal(chat.target().kind, "latest");
     assert.deepEqual(core.calls.listAll, []);
+  });
+});
+
+test("New chat, Rename and Delete are offered only when the port carries them", async () => {
+  const core = threadsCore(threeThreads());
+  await mounted(core.transport(), { threads: hear().threads }, { projectId: "project-1" }, async (_chat, root) => {
+    await settle();
+    assert.equal(root.byClass("chat-thread-new")[0]!.hidden, true);
+    assert.ok(root.byClass("chat-thread-rename").every((button) => button.hidden));
+    assert.ok(root.byClass("chat-thread-delete").every((button) => button.hidden));
+    assert.ok(root.byClass("chat-thread-actions").every((actions) => actions.hidden), "no empty strip of actions");
+    assert.equal(root.byClass("chat-thread-search")[0]!.hidden, false, "search needs nothing of the port");
+  });
+  await mounted(core.transport({ actions: true }), { threads: hear().threads }, { projectId: "project-1" }, async (_chat, root) => {
+    await settle();
+    assert.equal(root.byClass("chat-thread-new")[0]!.hidden, false);
+    assert.ok(root.byClass("chat-thread-rename").every((button) => !button.hidden));
+    assert.ok(root.byClass("chat-thread-delete").every((button) => !button.hidden));
+    assert.equal(row(root, "A").byClass("chat-thread-delete")[0]!.getAttribute("aria-label"), "Delete Alpha");
+  });
+});
+
+test("New chat asks Core for a fresh thread about the host's project, opens it, closes the drawer and lists it", async () => {
+  const core = threadsCore(threeThreads());
+  await mounted(core.transport({ actions: true }), { threads: hear().threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    const toggle = root.byClass("chat-thread-toggle")[0]!;
+    const nav = root.byClass("chat-thread-nav")[0]!;
+    assert.equal(nav.hidden, true, "the drawer starts closed");
+    assert.equal(toggle.getAttribute("aria-controls"), nav.id);
+    toggle.dispatch("click");
+    assert.equal(nav.hidden, false);
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    const lists = core.calls.listAll.length;
+    root.byClass("chat-thread-new")[0]!.dispatch("click");
+    await settle();
+    await settle();
+    assert.deepEqual(core.calls.newThread, [{ projectId: "project-1", subjectKind: "project" }]);
+    assert.deepEqual(chat.target(), { kind: "thread", conversationId: "conv-new-4", projectId: "project-1" });
+    assert.equal(nav.hidden, true, "the new chat takes the drawer's place");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    assert.ok(core.calls.listAll.length > lists, "the list is read again");
+    assert.deepEqual(rowNames(root), ["Bravo", "This project", "Charlie", "Alpha"]);
+    assert.equal(row(root, "conv-new-4").getAttribute("data-selected"), "true");
+  });
+  const panel = threadsCore([]);
+  await mounted(panel.transport({ actions: true }), { threads: hear().threads }, {}, async (_chat, root) => {
+    await settle();
+    root.byClass("chat-thread-new")[0]!.dispatch("click");
+    await settle();
+    assert.deepEqual(panel.calls.newThread, [{ subjectKind: "panel" }], "with no project open, a new chat is about the panel");
+  });
+});
+
+test("Rename edits the name in place: Enter saves it through the port, Escape sends nothing", async () => {
+  const core = threadsCore(threeThreads());
+  await mounted(core.transport({ actions: true }), { threads: hear().threads }, { projectId: "project-1" }, async (_chat, root) => {
+    await settle();
+    press(root, "C", "chat-thread-rename");
+    const input = row(root, "C").byClass("chat-thread-rename-input")[0]!;
+    assert.equal(input.hidden, false);
+    assert.equal(input.value, "Charlie");
+    assert.equal(row(root, "C").byClass("chat-thread-open")[0]!.hidden, true);
+    input.value = "Something else";
+    input.dispatch("keydown", { key: "Escape", preventDefault: () => undefined });
+    assert.equal(input.hidden, true);
+    assert.deepEqual(core.calls.rename, [], "Escape cancels");
+    press(root, "C", "chat-thread-rename");
+    assert.equal(input.value, "Charlie", "a new edit starts from the name");
+    input.value = "  Weekly prices  ";
+    input.dispatch("keydown", { key: "Enter", preventDefault: () => undefined });
+    await settle();
+    await settle();
+    assert.deepEqual(core.calls.rename, [{ conversationId: "C", title: "Weekly prices", projectId: "project-1" }]);
+    assert.deepEqual(rowNames(root), ["Bravo", "Weekly prices", "Alpha"]);
+  });
+});
+
+test("Delete asks in place; deleting the open thread opens the next one, and the last one leaves the empty chat", async () => {
+  const core = threadsCore([thread("A", { title: "Alpha", updatedAt: 1000 }), thread("C", { title: "Charlie", updatedAt: 2000 })]);
+  const { heard, threads } = hear();
+  await mounted(core.transport({ actions: true }), { threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    assert.equal(openThread(chat), "C");
+    press(root, "C", "chat-thread-delete");
+    const confirm = row(root, "C").byClass("chat-thread-confirm")[0]!;
+    assert.equal(confirm.hidden, false);
+    assert.equal(confirm.byClass("chat-thread-confirm-text")[0]!.textContent, "Delete this chat?");
+    assert.deepEqual(core.calls.remove, [], "nothing is deleted before the person confirms");
+    press(root, "C", "chat-thread-confirm-cancel");
+    assert.equal(confirm.hidden, true);
+    press(root, "C", "chat-thread-delete");
+    press(root, "C", "chat-thread-confirm-delete");
+    await settle();
+    await settle();
+    assert.deepEqual(core.calls.remove, [{ conversationId: "C", projectId: "project-1" }]);
+    assert.equal(openThread(chat), "A", "the next thread of the list opens");
+    assert.deepEqual(rowNames(root), ["Alpha"]);
+    assert.deepEqual(heard.selected, ["C", "A"]);
+    press(root, "A", "chat-thread-delete");
+    press(root, "A", "chat-thread-confirm-delete");
+    await settle();
+    await settle();
+    assert.deepEqual(chat.target(), { kind: "latest", projectId: "project-1" }, "nothing is left: the latest chat");
+    assert.deepEqual(rowNames(root), []);
+    assert.equal(root.byClass("chat-thread-none")[0]!.textContent, "No chats yet.");
+    assert.equal(root.byClass("chat-empty")[0]!.hidden, false, "the empty chat");
+  });
+});
+
+test("deleting a thread that is not on screen leaves the thread on screen alone", async () => {
+  const core = threadsCore(threeThreads());
+  await mounted(core.transport({ actions: true }), { threads: hear().threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    assert.equal(openThread(chat), "B");
+    press(root, "A", "chat-thread-delete");
+    press(root, "A", "chat-thread-confirm-delete");
+    await settle();
+    await settle();
+    assert.equal(openThread(chat), "B");
+    assert.deepEqual(rowNames(root), ["Bravo", "Charlie"]);
+  });
+});
+
+test("a refused delete shows Core's sentence, keeps the thread, and the next press clears it", async () => {
+  const core = threadsCore(threeThreads());
+  const sentence = "This chat's work is still running. Stop it before deleting the chat.";
+  core.deleteFails = { ok: false, sentence, code: "conversation_run_active" };
+  await mounted(core.transport({ actions: true }), { threads: hear().threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    press(root, "B", "chat-thread-delete");
+    press(root, "B", "chat-thread-confirm-delete");
+    await settle();
+    await settle();
+    const notice = root.byClass("chat-thread-notice")[0]!;
+    assert.equal(notice.hidden, false);
+    assert.equal(notice.textContent, sentence);
+    assert.equal(notice.getAttribute("role"), "alert");
+    assert.equal(openThread(chat), "B");
+    assert.deepEqual(rowNames(root), ["Bravo", "Charlie", "Alpha"]);
+    core.deleteFails = undefined;
+    press(root, "A", "chat-thread-delete");
+    press(root, "A", "chat-thread-confirm-delete");
+    await settle();
+    assert.equal(notice.hidden, true);
+  });
+});
+
+test("the drawer closes on Escape and on a pick; a column keeps the list beside the thread", async () => {
+  const core = threadsCore(threeThreads());
+  await mounted(core.transport(), { threads: hear().threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    assert.equal(root.getAttribute("data-thread-layout"), "drawer");
+    const toggle = root.byClass("chat-thread-toggle")[0]!;
+    const nav = root.byClass("chat-thread-nav")[0]!;
+    toggle.dispatch("click");
+    nav.dispatch("keydown", { key: "Escape", preventDefault: () => undefined });
+    assert.equal(nav.hidden, true);
+    toggle.dispatch("click");
+    press(root, "A", "chat-thread-open");
+    assert.equal(nav.hidden, true);
+    assert.equal(openThread(chat), "A");
+  });
+  await mounted(core.transport(), { threads: hear({ layout: "column" }).threads }, { projectId: "project-1" }, async (_chat, root) => {
+    await settle();
+    assert.equal(root.getAttribute("data-thread-layout"), "column");
+    const nav = root.children[0]!;
+    assert.equal(nav.className, "chat-thread-nav");
+    assert.equal(nav.hidden, false);
+    assert.equal(root.children[1]!.className, "chat-body");
+    assert.equal(root.byClass("chat-thread-toggle").length, 0, "no Chats button beside an open list");
+    assert.equal(root.byClass("chat-thread-header")[0]!.textContent, "Bravo");
+    press(root, "A", "chat-thread-open");
+    nav.dispatch("keydown", { key: "Escape", preventDefault: () => undefined });
+    assert.equal(nav.hidden, false, "a column never closes");
   });
 });

@@ -11,7 +11,7 @@
 // **Two copies.** `read` is a full summary for Core's readers of a verdict, which
 // expect `flowShape`, here empty. `sent` is what the model sees, which leaves that
 // key out and adds the acts, the model's words, the witnesses, what looks found after the acts
-// (screened and bounded again, `lookedShown`) and, on a repeat the person asked
+// (screened again, `lookedShown`, and never cut) and, on a repeat the person asked
 // for, what that means (`./asked-again.ts`): the summary's type
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
@@ -32,10 +32,6 @@ const WITHHELD_VALUE = "[withheld]";
 /** Words the screen dropped whole. */
 const WITHHELD_WORDS = "(withheld)";
 const ANSWER_NOTE = "The model's own words, not evidence.";
-/** The latest looks the judge is shown, and how much of each: the completion check's own bounds (`SVC/answer-first/completion/check.ts`). */
-const LOOKS_SHOWN = 6;
-const FOUND_CHARS = 600;
-const WHERE_CHARS = 300;
 
 /** The rows' one record set has no dataset id here: the writer's result names the real one. */
 const SET_ID = "result";
@@ -75,7 +71,7 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
     ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
     ...(looked.looks.length ? { looked: looked.looks } : {}),
-    ...(readPages.pages.length ? { readPages: readPages.pages, ...(readPages.notShown ? { readPagesNotShown: readPages.notShown } : {}) } : {})
+    ...(readPages.pages.length ? { readPages: readPages.pages } : {})
   };
   return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
 }
@@ -87,7 +83,8 @@ function words(text: string): { text: string; withheld: boolean } {
 
 /**
  * What looks found after the first lasting act (`./types.ts`, `looked`), screened again here whatever
- * screened it before, because this is what leaves for the model: the latest few, each cut short, and an
+ * screened it before, because this is what leaves for the model: every distinct look, whole (size is
+ * handled only by `./window-fitting.ts`, which names what it summarised), and an
  * address or a line of what was found that a screen dropped is said as withheld, here or earlier.
  */
 function lookedShown(looks: readonly { where: string; found: string }[]): { looks: { where: string; found: string }[]; withheld: boolean } {
@@ -98,14 +95,8 @@ function lookedShown(looks: readonly { where: string; found: string }[]): { look
     if (screened.withheld || screened.text === WITHHELD_WORDS) withheld = true;
     return screened.text;
   };
-  const shown = looks.slice(-LOOKS_SHOWN).map((look) => ({ where: line(cut(look.where, WHERE_CHARS)), found: cut(look.found, FOUND_CHARS).split("\n").map(line).join("\n") }));
+  const shown = looks.map((look) => ({ where: line(look.where), found: look.found.split("\n").map(line).join("\n") }));
   return { looks: shown, withheld };
-}
-
-/** At most `most` characters, by code point, with `…` where it was cut. */
-function cut(text: string, most: number): string {
-  const characters = [...text];
-  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
 }
 
 function witness(view: JsonObject | undefined, denied: readonly string[]): { view?: JsonObject; withheld: boolean } {

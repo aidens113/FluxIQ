@@ -54,6 +54,8 @@ describe("a paired client on the program route", () => {
         "get-conversation",
         "append-turn",
         "answer-ask",
+        "rename-conversation",
+        "delete-conversation",
         "list-runtime-sessions",
         "cancel-runtime-session",
         "cancel-flow-bootstrap",
@@ -350,6 +352,20 @@ describe("a paired client on the program route", () => {
       // The route narrows only a paired client's body (`handle-program-request.ts`, narrowPost); a person's goes to the handler as sent.
       expect(withProgramAuthSession("automation-studio", change({ name: "Renamed", metadata: { flowSizeSettings: {} } }), "trusted")).toEqual(change({ name: "Renamed", metadata: { flowSizeSettings: {} } }, { authSessionId: "trusted" }));
     });
+  });
+
+  it("renames or deletes a conversation by project, thread and name only", () => {
+    const rename = (payload: unknown) => narrowPairedClientRequest("automation-studio", "rename-conversation", payload);
+    const remove = (payload: unknown) => narrowPairedClientRequest("automation-studio", "delete-conversation", payload);
+    expect(rename({ projectId: "p", conversationId: "conversation.1", title: "Loans" })).toEqual({ ok: true, payload: { projectId: "p", conversationId: "conversation.1", title: "Loans" } });
+    expect(rename({ conversationId: "conversation.1", title: "Loans" })).toMatchObject({ ok: true });
+    expect(remove({ projectId: "p", conversationId: "conversation.1" })).toEqual({ ok: true, payload: { projectId: "p", conversationId: "conversation.1" } });
+    expect(rename({ projectId: "p", conversationId: "c", title: "x", subjectId: "s" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's change to a conversation may not carry subjectId." });
+    expect(remove({ projectId: "p", conversationId: "c", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(remove({ projectId: "p", conversationId: "c", authSessionId: "s" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(remove(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(isPairedClientEndpoint("automation-studio", "rename-conversation")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "delete-conversation")).toBe(true);
   });
 
   it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {

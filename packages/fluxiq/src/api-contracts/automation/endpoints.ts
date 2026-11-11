@@ -168,6 +168,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listDatasetRuns: "list-dataset-runs",
   listConversations: "list-conversations",
   openConversation: "open-conversation",
+  renameConversation: "rename-conversation",
+  deleteConversation: "delete-conversation",
   getConversation: "get-conversation",
   getConversationAttachment: "get-conversation-attachment",
   appendConversationTurn: "append-turn",

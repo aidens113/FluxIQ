@@ -37,6 +37,16 @@ test("a card that named nothing says no target, never \"the page\"", () => {
   }
 });
 
+// run-mwbadi79-d928f922, attempt 2: a Post the run did not press again read "Click · Post — Done".
+test("an already-done card says what was not done again, by its kind, and never plain Done", () => {
+  const said = (kind: ActionCard["kind"]) => cardWords(card({ kind, target: "Post", already: true }), false);
+  assert.deepEqual([said("click").state, said("click").outcome], ["done", "Already done — not pressed again"]);
+  assert.equal(said("click").label, "Click, Post: Already done — not pressed again");
+  assert.equal(said("type").outcome, "Already done — not typed again");
+  assert.equal(said("navigate").outcome, "Already done — not opened again");
+  assert.equal(said("other").outcome, "Already done — not repeated");
+});
+
 test("a failure says why in words: Core's reason first, else its sentence; a check passes or does not", () => {
   assert.equal(cardWords(card({ outcome: "failed", said: "The field was covered by a banner." }), false).outcome, "Didn't work: the field was covered by a banner.");
   assert.equal(cardWords(card({ outcome: "failed", said: "URL was refused." }), false).outcome, "Didn't work: URL was refused.");

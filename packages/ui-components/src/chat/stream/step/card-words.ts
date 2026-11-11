@@ -36,7 +36,7 @@
 //   outcome  "Working on it" and "Waiting for you" only while it is the
 //            action of the moment (the newest of work still under way);
 //            "Done", or "Done: 13 rows from 5 pages" when Core said what a
-//            finished action came to (its `result`), "Already done" for a
+//            finished action came to (its `result`), "Already done — not pressed again" for a
 //            run step Core skipped because this run had already done its act
 //            (`already-done.ts`), "Passed", "Didn't work:
 //            it wasn't on the page",
@@ -99,6 +99,13 @@ const MIN_TARGET_ROOM = 16;
  */
 const WRAP_ROOM = 120;
 
+/**
+ * What an already-done card says was not done again, by the act's kind: the
+ * step pressed nothing, and "Done" alone read as a second press
+ * (`run-mwbadi79-d928f922`, attempt 2). Any other kind is "not repeated".
+ */
+const ALREADY_NOT_AGAIN: Partial<Record<ActionCard["kind"], string>> = { click: "not pressed again", type: "not typed again", navigate: "not opened again" };
+
 /** `card` in words; `current` is true while it is the action of the moment. */
 export function cardWords(card: ActionCard, current: boolean): CardWords {
   const kind = card.name ?? ACTIVITY_ACTION_NAMES[card.kind] ?? ACTIVITY_ACTION_NAMES.other;
@@ -139,7 +146,7 @@ function outcomeOf(card: ActionCard, current: boolean): [CardWords["state"], str
     case "done":
       if (card.answer !== undefined) return ["done", `Done. ${card.answer}`];
       // A step whose act this run had already done: skipped, and no failure (`already-done.ts`).
-      if (card.already) return ["done", "Already done"];
+      if (card.already) return ["done", `Already done — ${ALREADY_NOT_AGAIN[card.kind] ?? "not repeated"}`];
       if (card.tested !== undefined) return ["done", resultOf(card) === undefined ? card.tested : `${card.tested} — ${resultOf(card)}`];
       if (card.retried !== undefined) return ["done", retriedWords(card.retried, resultOf(card))];
       return ["done", card.check ? joined("Passed", card.said) : joined("Done", resultOf(card))];

@@ -13,4 +13,6 @@ export * from "./context/index.ts";
 export * from "./consent/index.ts";
 export * from "./model/index.ts";
 export * from "./loop/index.ts";
+export * from "./attachments/index.ts";
+export * from "./thread-use.ts";
 export * from "./panel-assistant.ts";

@@ -45,13 +45,17 @@ import {
   automationStudioConversationIdOrRefuse,
   automationStudioConversationShortTextOrRefuse,
   automationStudioConversationTextOrRefuse,
+  automationStudioConversationTitleOrRefuse,
   automationStudioConversationTurnDecisionOrRefuse,
   type AutomationStudioConversationAnswerInput,
+  type AutomationStudioConversationDeleteInput,
   type AutomationStudioConversationListInput,
   type AutomationStudioConversationOpenInput,
   type AutomationStudioConversationReadInput,
+  type AutomationStudioConversationRenameInput,
   type AutomationStudioConversationTurnInput
 } from "./inputs.ts";
+import { AutomationStudioConversationRefusal } from "./refusal.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationSubjectKind, AutomationStudioConversationThread } from "./thread.ts";
 import type { AutomationStudioConversationTurn } from "./turn.ts";
 
@@ -142,6 +146,77 @@ export class AutomationStudioProjectConversationStore {
       }
     );
     return automationStudioConversationFromRow(this.lease.projectId, result.response);
+  }
+
+  /**
+   * Gives a thread a person's own name. The revision rises and the change goes
+   * on the feed, so a reader holding the thread sees the new name; the time it
+   * was last touched does not move, because naming a thread is not something
+   * said in it and must not reorder the list. A thread the project does not hold
+   * is refused by code before anything is written.
+   */
+  async renameConversation(input: AutomationStudioConversationRenameInput): Promise<AutomationStudioConversation> {
+    const conversationId = automationStudioConversationIdOrRefuse(input.conversationId, "conversation");
+    const title = automationStudioConversationTitleOrRefuse(input.title);
+    if (!(await readConversation(this.lease.database, conversationId))) throw new AutomationStudioConversationRefusal("conversation_not_found");
+    const result = await this.unit.runIdempotent(
+      {
+        mutationId: automationStudioConversationIdOrRefuse(input.mutationId, "mutation"),
+        operationKind: "conversation.rename",
+        ownerKind: "conversation",
+        ownerId: conversationId,
+        request: { conversationId, title },
+        ...automationStudioConversationChangedAt(input.changedAt)
+      },
+      async (context) => {
+        const conversation = await readConversation(context.sql, conversationId);
+        if (!conversation) throw new AutomationStudioConversationRefusal("conversation_not_found");
+        const revision = conversation.revision + 1;
+        await context.sql.run("update conversations set title = ?, revision = ? where conversation_id = ?", [title, revision, conversationId]);
+        await context.recordChange({ entityKind: "conversation", entityId: conversationId, operation: "update", revision });
+        return requireConversation(await readConversation(context.sql, conversationId), conversationId);
+      }
+    );
+    return automationStudioConversationFromRow(this.lease.projectId, result.response);
+  }
+
+  /**
+   * Removes a thread with every turn and ask in it, and the mutation records
+   * that carried them, in one transaction; the feed gets the thread's `delete`.
+   *
+   * The records go too because a record keeps its response, and a turn's
+   * response is what was said: leaving them would keep the words a person
+   * deleted, and would let a replay of the thread's opening answer with a thread
+   * that is gone. The record of this removal stays, holding only the id.
+   *
+   * Refused while an ask in the thread parks a run, decided inside the same
+   * transaction: that run is waiting on the ask's row, and removing it would
+   * leave the run waiting on nothing. Whether other work still writes into the
+   * thread is the caller's to decide before this (`../conversations.ts`).
+   */
+  async deleteConversation(input: AutomationStudioConversationDeleteInput): Promise<{ deleted: true; conversationId: string }> {
+    const conversationId = automationStudioConversationIdOrRefuse(input.conversationId, "conversation");
+    if (!(await readConversation(this.lease.database, conversationId))) throw new AutomationStudioConversationRefusal("conversation_not_found");
+    const result = await this.unit.runIdempotent(
+      {
+        mutationId: automationStudioConversationIdOrRefuse(input.mutationId, "mutation"),
+        operationKind: "conversation.delete",
+        ownerKind: "conversation",
+        ownerId: conversationId,
+        request: { conversationId },
+        ...automationStudioConversationChangedAt(input.changedAt)
+      },
+      async (context) => {
+        const conversation = await readConversation(context.sql, conversationId);
+        if (!conversation) throw new AutomationStudioConversationRefusal("conversation_not_found");
+        const parked = await context.sql.get<{ count: number }>("select count(*) as count from conversation_asks where conversation_id = ? and status = 'pending' and parks = 1", [conversationId]);
+        if ((parked?.count ?? 0) > 0) throw new AutomationStudioConversationRefusal("conversation_run_active");
+        await removeThreadRows(context, conversationId);
+        await context.recordChange({ entityKind: "conversation", entityId: conversationId, operation: "delete", revision: conversation.revision + 1 });
+        return { deleted: true as const, conversationId };
+      }
+    );
+    return result.response;
   }
 
   /**
@@ -379,6 +454,23 @@ async function bumpThread(context: AutomationStudioProjectMutationContext, input
     input.conversationId
   ]);
   await context.recordChange({ entityKind: "conversation", entityId: input.conversationId, operation: "update", revision: input.revision });
+}
+
+/**
+ * Deletes a thread's rows: the mutation records owned by the thread or by one
+ * of its asks (and the entities each touched), except the removal's own, then
+ * its asks, its turns and the thread. Nothing else in a project database names
+ * a conversation: an attachment is a kind and a reference to something the
+ * thread does not own, and the change feed holds ids and revisions, never words.
+ */
+async function removeThreadRows(context: AutomationStudioProjectMutationContext, conversationId: string): Promise<void> {
+  const owned = `select mutation_id from mutation_records where mutation_id <> ? and ((owner_kind = 'conversation' and owner_id = ?) or (owner_kind = 'conversation_ask' and owner_id in (select ask_id from conversation_asks where conversation_id = ?)))`;
+  const ownedValues = [context.mutationId, conversationId, conversationId];
+  await context.sql.run(`delete from mutation_touched_entities where mutation_id in (${owned})`, ownedValues);
+  await context.sql.run(`delete from mutation_records where mutation_id in (${owned})`, ownedValues);
+  await context.sql.run("delete from conversation_asks where conversation_id = ?", [conversationId]);
+  await context.sql.run("delete from conversation_turns where conversation_id = ?", [conversationId]);
+  await context.sql.run("delete from conversations where conversation_id = ?", [conversationId]);
 }
 
 async function insertAsk(sql: AutomationStudioSqlExecutor, input: { ask: AutomationStudioConversationAskInput; conversationId: string; turnId: string; createdAt: number }): Promise<void> {

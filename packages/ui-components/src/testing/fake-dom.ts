@@ -4,6 +4,11 @@
 // attributes, `textContent`, `hidden`, events, and scroll sizes. There is no
 // HTML parser, on purpose: a test that finds markup where text was expected
 // finds it because a view built an element, not because a string was parsed.
+//
+// Events: `dispatch` stands for a person's own input, so the event it delivers
+// is trusted (`isTrusted: true`) unless the test says otherwise.
+// `dispatchUntrusted` and `click()` stand for script: an event a page made
+// itself, which a browser always marks `isTrusted: false`.
 
 /** A text node. */
 class FakeText {
@@ -112,8 +117,17 @@ export class FakeElement {
   addEventListener(type: string, listener: Listener): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
+  /** A person's input of `type`: trusted unless `fields` says `isTrusted: false`. */
   dispatch(type: string, fields: Record<string, unknown> = {}): void {
-    for (const listener of this.listeners.get(type) ?? []) listener({ type, ...fields });
+    for (const listener of this.listeners.get(type) ?? []) listener({ type, isTrusted: true, ...fields });
+  }
+  /** An event of `type` made by script (`element.dispatchEvent`): never trusted. */
+  dispatchUntrusted(type: string, fields: Record<string, unknown> = {}): void {
+    this.dispatch(type, { ...fields, isTrusted: false });
+  }
+  /** `HTMLElement.click()`: an untrusted click, and none at all on a disabled control, as in a browser. */
+  click(): void {
+    if (!this.disabled) this.dispatchUntrusted("click");
   }
   focus(): void {}
 

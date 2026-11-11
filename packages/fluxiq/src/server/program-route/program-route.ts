@@ -93,6 +93,10 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "get-conversation",
     "append-turn",
     "answer-ask",
+    // A person's own name for a thread, and deleting one, from the chat's thread list, `authoring` (programs.write).
+    // Narrowed: the project, the thread and a name. Each touches only that thread; a delete is refused while a run still uses it.
+    "rename-conversation",
+    "delete-conversation",
     "list-runtime-sessions",
     "cancel-runtime-session",
     "cancel-flow-bootstrap",
@@ -323,6 +327,8 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
   if (name === "get-flow-metadata-detail") return narrowFlowHumannessRead(payload);
   if (name === "update-flow-settings") return narrowFlowHumanness(payload);
+  if (name === "rename-conversation") return narrowThreadChange(payload, ["projectId", "conversationId", "title"]);
+  if (name === "delete-conversation") return narrowThreadChange(payload, ["projectId", "conversationId"]);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
@@ -445,6 +451,16 @@ function narrowFlowHumannessRead(payload: unknown): PairedClientRequestNarrowing
 function unlistedField(record: Record<string, unknown>, allowed: readonly string[], path: string, subject = FLOW_HUMANNESS_CHANGE): PairedClientRequestNarrowing | null {
   const field = Object.keys(record).find((key) => !allowed.includes(key));
   return field === undefined ? null : forbidden(`${subject} may not carry ${path}${field}.`);
+}
+
+/** A thread's rename or deletion names the project, the thread (and the new name), and nothing else. */
+function narrowThreadChange(payload: unknown, allowed: readonly string[]): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's change to a conversation must name the conversation.");
+  for (const field of Object.keys(body)) {
+    if (!allowed.includes(field)) return forbidden(`A paired client's change to a conversation may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
 }
 
 function narrowGenerateRecordingProposal(payload: unknown): PairedClientRequestNarrowing {

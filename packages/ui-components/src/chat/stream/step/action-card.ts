@@ -44,7 +44,7 @@ export type ActionCard = ActivityAction & {
   retried?: { tries: number; why: string | null };
   /**
    * A run step Core skipped because its act was already done in this run
-   * (`already-done.ts`): its card reads "Already done" ("Confirm · Lin Zhao:
+   * (`already-done.ts`): its card reads "Already done — not pressed again" ("Confirm · Lin Zhao:
    * Already done", the row named as on any row's step card). Absent otherwise.
    */
   already?: true;

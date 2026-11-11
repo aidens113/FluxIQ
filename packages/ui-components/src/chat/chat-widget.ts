@@ -68,7 +68,8 @@
 // the shell's Open FluxIQ is the way there.
 //
 // With `options.threads` the chat holds Core's list of threads (`threads/`), not
-// one; `setBackground` leaves only that list reading; `history` and `welcome`
+// one: a conversation list with search, and New chat, Rename and Delete where
+// the transport carries them; `setBackground` leaves only that list reading; `history` and `welcome`
 // change how much of a thread is kept and what the empty chat says.
 
 import { createElement } from "../dom/index.ts";
@@ -128,11 +129,19 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   let backScope = {};
   // True while the chat is out of sight: only the thread list reads (`setBackground`).
   let background = false;
+  // The lease keeps what the transport has, so each of these is there exactly when the client's is.
+  const { newThread, renameThread, deleteThread } = transport.conversation;
   const threads: ChatThreads | undefined = options.threads === undefined || transport.conversation.listAllThreads === undefined
     ? undefined
     : createChatThreads({
       options: options.threads,
       list: (query) => owner.transport.conversation.listAllThreads!(query),
+      actions: {
+        ...(newThread === undefined ? {} : { newThread: (request) => owner.transport.conversation.newThread!(request) }),
+        ...(renameThread === undefined ? {} : { renameThread: (request) => owner.transport.conversation.renameThread!(request) }),
+        ...(deleteThread === undefined ? {} : { deleteThread: (request) => owner.transport.conversation.deleteThread!(request) })
+      },
+      focusComposer: () => composer.focus(),
       projectId: () => latestStatus?.projectId,
       projectName: () => latestStatus?.projectName,
       target: () => shownTarget,
@@ -154,6 +163,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   // What the answer turns do through the host: exports and Run again go through the results port; the rest are the chat's own.
   const answerHost = (): AnswerHost => ({
     ...(owner.transport.results === undefined ? {} : { results: owner.transport.results }),
+    ...(owner.transport.taskSettings === undefined ? {} : { taskSettings: owner.transport.taskSettings }),
     onWhatIDid: () => {
       const first = thread.element.querySelector(".chat-step-line")?.closest("li") ?? undefined;
       showTurn(scroller, first ?? undefined);
@@ -230,14 +240,11 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     createElement("p", { className: "chat-empty-title", text: fallbackWords.title }),
     createElement("p", { className: "chat-empty-line", text: fallbackWords.line })
   ]);
-  const element = createElement("section", { className: "chat-panel", attrs: { "aria-label": "Chat with FluxIQ", tabindex: "-1" } }, [
-    context.element,
-    ...(threads === undefined ? [] : [threads.element]),
-    ...(banner === undefined ? [] : [banner.element]),
-    main,
-    dock,
-    fallback
-  ]);
+  const below = [...(banner === undefined ? [] : [banner.element]), main, dock, fallback];
+  // With a thread list, the list sits as a drawer over the thread or a column beside it (`threads/`).
+  const element = createElement("section", { className: "chat-panel", attrs: { "aria-label": "Chat with FluxIQ", tabindex: "-1" } },
+    threads === undefined ? [context.element, ...below] : threads.frame([context.element], below));
+  if (threads !== undefined) element.setAttribute("data-thread-layout", threads.layout);
 
   // Open FluxIQ links inside turns, kept only while their turn is on screen.
   let turnOpeners: ChatOpenControl[] = [];

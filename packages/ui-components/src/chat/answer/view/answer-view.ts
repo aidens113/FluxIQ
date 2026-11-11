@@ -18,6 +18,7 @@ import { answerBody } from "./body.ts";
 import { answerFoot } from "./foot.ts";
 import { answerHead } from "./head.ts";
 import { createAnswerHandlers } from "./handlers.ts";
+import { createHumannessSection, type HumannessSection } from "./humanness-section.ts";
 import { answerModel } from "../model/index.ts";
 import type { AnswerState } from "./state.ts";
 import type { AnswerModel } from "../model/index.ts";
@@ -36,6 +37,17 @@ function focusedAction(root: HTMLElement): string | null {
   return null;
 }
 
+/** Puts `parts` in `card`, keeping `kept` (the humanness section) where it is, last, so its slider keeps focus and state. */
+function place(card: HTMLElement, parts: HTMLElement[], kept: HumannessSection | undefined): void {
+  if (kept === undefined) {
+    card.replaceChildren(...parts);
+    return;
+  }
+  for (const child of Array.from(card.children)) if (child !== kept.element) child.remove();
+  if (kept.element.parentNode !== card) card.append(kept.element);
+  for (const part of parts) card.insertBefore(part, kept.element);
+}
+
 function refocus(root: HTMLElement, action: string | null): void {
   if (action === null) return;
   for (const button of root.querySelectorAll("button")) if (button.getAttribute("data-action") === action && !button.disabled) button.focus();
@@ -49,6 +61,7 @@ export function createAnswerView(host: AnswerHost = {}): AnswerView {
   let model: AnswerModel | undefined;
   let drawn = "";
   const handlers = createAnswerHandlers({ host, model: () => model, state, redraw: () => draw() });
+  const humanness = host.taskSettings === undefined ? undefined : createHumannessSection(host.taskSettings);
 
   function draw(): void {
     if (model === undefined) return;
@@ -57,7 +70,7 @@ export function createAnswerView(host: AnswerHost = {}): AnswerView {
     drawn = signature;
     const focus = focusedAction(card);
     const canExport = model.canExport && host.results !== undefined;
-    card.replaceChildren(...answerHead(model), ...answerBody(model, state, handlers, canExport), ...answerFoot(model, state, host, handlers));
+    place(card, [...answerHead(model), ...answerBody(model, state, handlers, canExport), ...answerFoot(model, state, host, handlers)], humanness);
     element.setAttribute("data-kind", model.kind);
     element.setAttribute("data-attempt-id", model.attemptId);
     refocus(card, focus);
@@ -67,6 +80,7 @@ export function createAnswerView(host: AnswerHost = {}): AnswerView {
     element,
     update(outcome) {
       model = answerModel(outcome, { reportsSpend: host.results?.reportsSpend !== false, canAddBudget: typeof host.results?.addBudgetAndCarryOn === "function", nowMs: (host.now ?? Date.now)() });
+      if (model !== undefined) humanness?.show({ projectId: model.projectId, taskId: model.taskId });
       draw();
       return model !== undefined;
     }
