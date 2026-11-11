@@ -1,6 +1,7 @@
 // The FluxNode runs this Core holds (fluxnode-plan N9), in memory: a run, its idempotency key and its
 // resume handle live as long as the process. What survives a restart is what the attempts stored
-// (the Flows, the task's learned Flow, the datasets), not the run records.
+// (the Flows, the task's learned Flow, the datasets, and a pin, which its Flow keeps: `./pin/`), not the
+// run records.
 //
 // - **Idempotency.** A key names one request: the same key with the same request is the run it
 //   started; with another request it is refused.
@@ -28,8 +29,6 @@ export class FluxNodeRunRegistry {
   private readonly learnedOn = new Map<string, { versions: number; candidateId: string; revision?: number | undefined; digest?: string | undefined }>();
   /** Per Flow: the judge-part digest of the latest run that a judge confirmed, so changed criteria are judged once even on a replay. */
   private readonly judgedOn = new Map<string, string>();
-  /** Per Flow: the version the program pinned, when it did. */
-  private readonly pinnedOn = new Map<string, { flowVersion: number; at: number }>();
 
   /** The run an idempotency key started, when this request is the one it named; `conflict` when it named another. */
   keyed(key: string | undefined, request: unknown): { runId: string } | "conflict" | undefined {
@@ -82,14 +81,6 @@ export class FluxNodeRunRegistry {
 
   judgedWith(flowId: string): string | undefined {
     return this.judgedOn.get(flowId);
-  }
-
-  pin(flowId: string, flowVersion: number, at: number): void {
-    this.pinnedOn.set(flowId, { flowVersion, at });
-  }
-
-  pinnedOf(flowId: string): { flowVersion: number; at: number } | undefined {
-    return this.pinnedOn.get(flowId);
   }
 
   list(query: FluxNodeListRunsQuery): FluxNodeListRunsResponse {

@@ -5,7 +5,7 @@
 import type { JsonValue } from "../../core.ts";
 import { finishRawParse, zodFromParser, type FluxNodeIssuePath, type FluxNodeParseResult, type FluxNodeRawIssue } from "../issue/index.ts";
 import { findNonJsonPart, jsonEqual } from "../json/index.ts";
-import { JSON_TYPE_FORMATS, JSON_TYPE_NAMES, JSON_TYPE_SCHEMA_LIMITS as LIMITS, type JsonTypeFormat, type JsonTypeName, type JsonTypeSchema } from "./type-schema.ts";
+import { JSON_TYPE_FORMATS, JSON_TYPE_NAMES, JSON_TYPE_SCHEMA_LIMITS as LIMITS, JSON_TYPE_SECRET_FORMAT, type JsonTypeFormat, type JsonTypeName, type JsonTypeSchema } from "./type-schema.ts";
 
 type Kind = "object" | "array" | "string" | "number";
 
@@ -53,7 +53,17 @@ const KIND_OF_TYPE: Readonly<Record<JsonTypeName, Kind | null>> = Object.freeze(
   null: null
 });
 
-type State = { issues: FluxNodeRawIssue[]; schemas: number; tooLarge: boolean };
+/**
+ * The name a secret input may have: the name Core binds a step to (`{"$input": <name>}`), since a
+ * secret is entered through that binding and never typed out. `item` names a list's row.
+ */
+const SECRET_INPUT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
+const SECRET_VALUE_KEYWORDS = ["default", "examples", "const", "enum"] as const;
+
+/** `secretInputs`: the schema is a FluxNode's inputs, so a property directly under its `properties` may be a secret. */
+export type JsonTypeSchemaReadOptions = { secretInputs?: boolean };
+
+type State = { issues: FluxNodeRawIssue[]; schemas: number; tooLarge: boolean; secretInputs: boolean };
 
 /** Parses an untrusted value into a schema in the subset, or every reason it is not one. */
 export function parseJsonTypeSchema(value: unknown): FluxNodeParseResult<JsonTypeSchema> {
@@ -65,9 +75,9 @@ export function parseJsonTypeSchema(value: unknown): FluxNodeParseResult<JsonTyp
 export const jsonTypeSchemaSchema = zodFromParser(readJsonTypeSchema);
 
 /** The parser over a raw issue list; `$schema` is accepted at the root only, and dropped. */
-export function readJsonTypeSchema(value: unknown, issues: FluxNodeRawIssue[]): JsonTypeSchema | null {
+export function readJsonTypeSchema(value: unknown, issues: FluxNodeRawIssue[], options: JsonTypeSchemaReadOptions = {}): JsonTypeSchema | null {
   const before = issues.length;
-  const state: State = { issues, schemas: 0, tooLarge: false };
+  const state: State = { issues, schemas: 0, tooLarge: false, secretInputs: options.secretInputs === true };
   const schema = readSchema(value, [], 0, state);
   return issues.length === before ? schema : null;
 }
@@ -277,6 +287,20 @@ function readScalarKeywords(value: Record<string, unknown>, path: FluxNodeIssueP
   const format = value["format"];
   if (typeof format === "string" && (JSON_TYPE_FORMATS as readonly string[]).includes(format)) schema.format = format as JsonTypeFormat;
   else add(state, [...path, "format"], "unknown_format", `${JSON.stringify(format)} is not a supported format. Use one of ${JSON_TYPE_FORMATS.join(", ")}.`);
+  if (format === JSON_TYPE_SECRET_FORMAT) checkSecret(value, path, state);
+}
+
+/** Where a secret may be declared, and that nothing beside it writes a value into the schema (`JSON_TYPE_SECRET_FORMAT`). */
+function checkSecret(value: Record<string, unknown>, path: FluxNodeIssuePath, state: State): void {
+  const name = path[1];
+  if (!state.secretInputs || path.length !== 2 || path[0] !== "properties" || typeof name !== "string") {
+    add(state, [...path, "format"], "secret_not_input", `format "secret" marks a FluxNode input whose value Core withholds, so it is allowed only on an input declared directly under a FluxNode's inputs.properties; an output, a pipeline's inputs, a data step's type and a nested value are returned or stored as they are.`);
+    return;
+  }
+  if (!SECRET_INPUT_NAME.test(name) || name === "item") add(state, path, "secret_bad_name", `A secret input is entered through a binding by its name, so "${name}" must be a lowercase letter then up to 31 letters and digits, and not "item".`);
+  for (const keyword of SECRET_VALUE_KEYWORDS) {
+    if (keyword in value) add(state, [...path, keyword], "secret_with_value", `A secret input holds no value in its declaration: remove "${keyword}", which the spec, its hash and every export would carry.`);
+  }
 }
 
 type BoundKey = "minItems" | "maxItems" | "minLength" | "maxLength" | "minimum" | "maximum";

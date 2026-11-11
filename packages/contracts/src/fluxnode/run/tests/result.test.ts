@@ -1,6 +1,6 @@
 // Run results: four endings, none of them failed, each consistent with its parts.
 import { describe, expect, it } from "vitest";
-import { parseFluxNodeRunResult } from "../index.ts";
+import { FLUXNODE_PINNED_CHANGE_HELD, parseFluxNodeRunResult } from "../index.ts";
 
 const ACHIEVED = {
   runId: "run_1",
@@ -32,6 +32,16 @@ describe("parseFluxNodeRunResult", () => {
   it("takes an overrides digest, and only a sha-256 one", () => {
     expect(codesOf({ ...ACHIEVED, overridesDigest: "c".repeat(64) })).toEqual([]);
     expect(codesOf({ ...ACHIEVED, overridesDigest: "nope" })).toHaveLength(1);
+  });
+
+  it("says what a pinned run replayed, and holds a change it would have made under its code with the proposal's identity", () => {
+    const proposal = { proposalId: "proposal.0123456789abcdef", flowId: "flow_10", stepsDigest: "d".repeat(64), runId: "run_1", path: "repaired", proposedAt: 4_000 };
+    expect(codesOf({ ...ACHIEVED, pinned: { flowVersion: 2, stepsDigest: "e".repeat(64) } })).toEqual([]);
+    expect(codesOf({ ...ACHIEVED, pinned: { flowVersion: 2, stepsDigest: "e".repeat(64), held: { code: FLUXNODE_PINNED_CHANGE_HELD, message: "Held as a proposal.", proposal } } })).toEqual([]);
+    expect(codesOf({ ...ACHIEVED, pinned: { flowVersion: 2, stepsDigest: "e".repeat(64), held: { code: "other", message: "Held.", proposal } } })).toHaveLength(1);
+    expect(codesOf({ ...ACHIEVED, pinned: { flowVersion: 0, stepsDigest: "e".repeat(64) } })).toHaveLength(1);
+    expect(codesOf({ ...ACHIEVED, pinned: { flowVersion: 1, stepsDigest: "e".repeat(64), held: { code: FLUXNODE_PINNED_CHANGE_HELD, message: "Held.", proposal: { ...proposal, stepsDigest: "short" } } } })).toHaveLength(1);
+    expect(FLUXNODE_PINNED_CHANGE_HELD).toBe("fluxnode.pinned_change_held");
   });
 
   it("has no failed status", () => {

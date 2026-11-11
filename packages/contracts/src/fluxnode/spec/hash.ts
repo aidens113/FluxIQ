@@ -38,12 +38,9 @@ export function canonicalFluxNodeSpec(spec: FluxNodeSpec): string {
   form["goal"] = spec.goal;
   if (spec.uses !== undefined) form["uses"] = [...new Set(spec.uses)].sort();
   if (spec.options !== undefined) {
+    // Every option the spec gives, so an option added later (as `humanness` was) is never left out of the form.
     const options: JsonObject = {};
-    const keys = ["retries", "judge", "budgetUsd", "model", "mode", "timeoutMs"] as const;
-    for (const key of keys) {
-      const value = spec.options[key];
-      if (value !== undefined) options[key] = value;
-    }
+    for (const [key, value] of Object.entries(spec.options)) if (value !== undefined) options[key] = value;
     form["options"] = options;
   }
   if (spec.overrides !== undefined) form["overrides"] = JSON.parse(JSON.stringify(spec.overrides)) as JsonObject;

@@ -11,6 +11,9 @@
 // name, under its `dataPipelineHash`, in the same registry, so it runs by name as a FluxNode does.
 //
 // Registering is serial, so two registrations of one new spec make one Flow.
+//
+// **A pin is kept here too** (`./pin/`): in the same `fluxNode` metadata, under `pin` and `versions`, written
+// through `resay`, which is serial with registering, so the pin is read back from the Flow after a restart.
 
 import { canonicalFluxNodeSpec, dataPipelineHash, fluxNodeNameToFlowPath, fluxNodeSpecHash, parseDataPipeline, parseFluxNodeSpec, type DataPipeline, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -64,6 +67,24 @@ export class FluxNodeOwnerFlows {
     if (!named) return { missing: "name" };
     const found = named.specs.get(specHash ?? named.latest);
     return found ? { found } : { missing: "hash" };
+  }
+
+  /** What the Flow's `fluxNode` metadata says now, read from the Flow, so what another write left is seen. */
+  async said(registered: FluxNodeRegistered): Promise<JsonObject> {
+    return saidOf(await this.service.getFlow(registered.projectId, registered.flowId), registered);
+  }
+
+  /**
+   * Changes the Flow's `fluxNode` metadata: `change` gets what it says now and answers what it says next (nothing writes
+   * nothing) and a value. Serial with registering, so a respecified spec and a pin never write over each other.
+   */
+  async resay<T>(registered: FluxNodeRegistered, change: (said: JsonObject) => Promise<{ said?: JsonObject | undefined; value: T }>): Promise<T> {
+    return await this.serially(async () => {
+      const flow = await this.service.getFlow(registered.projectId, registered.flowId);
+      const changed = await change(saidOf(flow, registered));
+      if (changed.said) await this.service.saveFlow({ projectId: registered.projectId, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), [METADATA_KEY]: changed.said } } });
+      return changed.value;
+    });
   }
 
   /** Saves `goal` as the Flow's instruction when its words changed. */
@@ -195,4 +216,10 @@ export class FluxNodeOwnerFlows {
     const saved = await this.service.saveFlow({ projectId, flow: { ...made, metadata: { ...(made.metadata ?? {}), [METADATA_KEY]: said } } });
     return { name: spec.name, specHash, spec, projectId, flowId: saved.flowId, flowPath, registeredAt: this.now() };
   }
+}
+
+/** A Flow's `fluxNode` metadata, or what it would say where it says nothing readable. */
+function saidOf(flow: { metadata?: JsonObject | undefined }, registered: FluxNodeRegistered): JsonObject {
+  const said = flow.metadata?.[METADATA_KEY];
+  return typeof said === "object" && said !== null && !Array.isArray(said) ? said : { name: registered.name, specHash: registered.specHash, flowPath: registered.flowPath };
 }

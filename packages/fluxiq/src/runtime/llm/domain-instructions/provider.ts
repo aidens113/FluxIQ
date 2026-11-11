@@ -30,12 +30,15 @@ export function automationStudioLlmProviderWithDomainInstructions(
   const stamped = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest => ({ ...request, domainInstructions: request.domainInstructions ?? domainInstructions });
   const measureInput = provider.measureInput;
   const estimateCostUsd = provider.estimateCostUsd;
+  const servedBy = provider.servedBy;
   return {
     metadata: provider.metadata,
     runTask: async (request, execution) => await provider.runTask(stamped(request), execution),
     ...(provider.whenReady ? { whenReady: async (request: AutomationStudioLlmTaskRequest, execution?: { signal?: AbortSignal }) => await provider.whenReady?.(stamped(request), execution) } : {}),
     ...(provider.observeHolds ? { observeHolds: provider.observeHolds.bind(provider) } : {}),
     ...(measureInput ? { measureInput: (request: AutomationStudioLlmTaskRequest) => measureInput.call(provider, stamped(request)) } : {}),
-    ...(estimateCostUsd ? { estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(provider, tokens) } : {})
+    ...(estimateCostUsd ? { estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(provider, tokens) } : {}),
+    // A provider that routes by role names the one that serves a request, stamped as this one is (`../role-routing/`).
+    ...(servedBy ? { servedBy: (request: AutomationStudioLlmTaskRequest) => automationStudioLlmProviderWithDomainInstructions(servedBy.call(provider, request), instructions) } : {})
   };
 }

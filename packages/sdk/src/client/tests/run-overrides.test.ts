@@ -39,11 +39,12 @@ describe("run overrides", () => {
     expect(request.overrides).toEqual({ mystery: 1 });
   });
 
-  it("passes overrides on a pipeline run the same way", () => {
+  it("passes options on a pipeline run, and refuses overrides there by the contract's code", () => {
     const built = pipeline("demo.pass").fromInput("rows").transform({ fn: (records) => records }).build();
-    const request = buildPipelineRunRequest(built, {}, { overrides: { retries: 4, judgeCriteria: ["Rows are not empty."] } });
+    const request = buildPipelineRunRequest(built, {}, { overrides: { retries: 4 } });
     expect(request.options).toEqual({ retries: 4 });
-    expect(request.overrides).toEqual({ judgeCriteria: ["Rows are not empty."] });
+    expect(request.overrides).toBeUndefined();
+    expect(() => buildPipelineRunRequest(built, {}, { overrides: { retries: 4, judgeCriteria: ["Rows are not empty."] } })).toThrowError(expect.objectContaining({ code: "run_request.overrides_on_pipeline" }));
   });
 
   it("exports the section ids", () => {

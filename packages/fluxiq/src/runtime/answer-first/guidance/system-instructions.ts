@@ -6,14 +6,19 @@
 // work's as much as a builder's.
 
 import type { AutomationStudioLlmTaskDomainInstructions } from "../../llm/domain-instructions/index.ts";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE, AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION } from "./guidance.ts";
+import { automationStudioOverriddenText } from "../../run-overrides/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION } from "./guidance.ts";
+import { automationStudioAnswerFirstOverriddenGuidance } from "./overridden-guidance.ts";
 
 /** The role's instructions over a domain's own text, when it bound any. */
 export function automationStudioAnswerFirstSystemInstructions(domain?: { version?: string | undefined; text?: string | undefined } | undefined): AutomationStudioLlmTaskDomainInstructions {
-  const text = domain?.text?.trim();
+  // Read at each call, so it is the run's own overrides that apply: the role's paragraphs by their ids, and the domain's text (append-only) as `domain.instructions`.
+  const guidance = automationStudioAnswerFirstOverriddenGuidance();
+  const trimmed = domain?.text?.trim();
+  const text = trimmed ? automationStudioOverriddenText("prompt", "domain.instructions", trimmed) : undefined;
   return {
     domainId: "fluxiq.answer-first",
     version: domain?.version ? `${AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION}+${domain.version}` : AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE_VERSION,
-    text: text ? `${AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE}\n\n${text}` : AUTOMATION_STUDIO_ANSWER_FIRST_GUIDANCE
+    text: text ? `${guidance}\n\n${text}` : guidance
   };
 }

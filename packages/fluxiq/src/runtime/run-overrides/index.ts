@@ -2,3 +2,5 @@
 export type { AutomationStudioRunOverrides, AutomationStudioRunTextOverride } from "./frame.ts";
 export { runWithAutomationStudioRunOverrides } from "./run-with.ts";
 export { automationStudioRunOverrides } from "./read.ts";
+export { automationStudioOverriddenText } from "./overridden-text.ts";
+export { automationStudioJudgeCriteriaText } from "./judge-criteria-text.ts";

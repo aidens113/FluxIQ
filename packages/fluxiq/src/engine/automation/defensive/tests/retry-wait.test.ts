@@ -59,6 +59,18 @@ describe("the run keeps a ledger of what it survived", () => {
     expect(ledger.nodeWaitedMs("act")).toBe(1_250);
   });
 
+  it("reports the run's own wait budget: scaled with its attempts, or the frame's perRunMs", () => {
+    const summaryIn = (frame: Parameters<typeof runWithAutomationStudioRunOverrides>[0]) => runWithAutomationStudioRunOverrides(frame, () => {
+      const ledger = automationStudioDefenceLedger();
+      ledger.record({ nodeId: "act", attemptId: "act.attempt.1", attemptNumber: 1, outcome: "retried", waitedMs: 250, ...fault });
+      return ledger.summary();
+    });
+
+    expect(summaryIn({ nodeAttempts: 7 })?.waitBudgetMs).toBe(600_000);
+    expect(summaryIn({ nodeAttempts: 7, retryWaits: { perRunMs: 42_000 } })?.waitBudgetMs).toBe(42_000);
+    expect(summaryIn({})?.waitBudgetMs).toBe(AUTOMATION_STUDIO_MAX_RUN_RETRY_WAIT_MS);
+  });
+
   it("gives a fresh arrival at a node a fresh waiting allowance, and never resets the run's", () => {
     const ledger = automationStudioDefenceLedger();
     ledger.record({ nodeId: "act", attemptId: "act.attempt.1", attemptNumber: 1, outcome: "retried", waitedMs: 5_000, ...fault });

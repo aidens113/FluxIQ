@@ -3,6 +3,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
+import type { AutomationStudioRunOverrides } from "../../../../runtime/run-overrides/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer } from "../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioFlowLessSummary } from "../../../../runtime/result-verification/index.ts";
@@ -207,6 +208,12 @@ export type AutomationStudioAnswerFirstCallerOptions = {
    * (`../answer-first/flow-run/input-bound-steps.ts`), with the value as its default. No model reads them.
    */
   inputs?: Readonly<Record<string, JsonValue>>;
+  /**
+   * The overrides frame the run was set under (a FluxNode run's; `runtime/run-overrides/`), JSON only and never holding a secret input
+   * (those travel beside the run, `runtime/run-secrets/`). The attempt runs inside it when no frame is already set, so a person's
+   * press on the attempt (Carry on, Run again) goes on under the same overrides.
+   */
+  runOverrides?: AutomationStudioRunOverrides;
 };
 
 /**
@@ -217,7 +224,7 @@ export type AutomationStudioAnswerFirstCallerOptions = {
  * runs as the kept mode says with no check (`auto` judges, `off` takes the result unverified), and no
  * `personAsk`, so a question goes to the Flow's conversation, where the person who pressed is.
  */
-export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "model" | "budgetUsd" | "judge" | "scope" | "inputs">;
+export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "model" | "budgetUsd" | "judge" | "scope" | "inputs" | "runOverrides" | "humanness">;
 
 /**
  * The caller's check of what the attempt got: Core's own summary of it (rows from reads, acts from

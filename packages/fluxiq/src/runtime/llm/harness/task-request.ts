@@ -332,6 +332,14 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * a result and by the runtime diagnosis and patch that repair one judged
    * wrong; any other task carrying one leaves it out of the packet. */
   resultSummary?: AutomationStudioRunResultSummary;
+  /**
+   * `resultSummary` in shorter forms, shortest last, for a request that does not
+   * fit the window of the model that serves it: each a Core-written summary of
+   * more of the evidence that says what it summarised. The harness trims
+   * nothing: it sends the whole summary where it fits, else the first of these
+   * that does (`./sized-request.ts`). Absent, a request too large is refused.
+   */
+  resultSummaryFitting?: readonly AutomationStudioRunResultSummary[];
   /** The thread the person and the automation have been talking in, in reading
    * order. The packet keeps the turns nearest the failure, bounded, and counts
    * the rest. Carried by the calls that are looking at a finished run: the

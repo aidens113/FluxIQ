@@ -3,6 +3,7 @@
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 
@@ -49,6 +50,12 @@ export type AutomationStudioFlowLessJudgeInput = {
    */
   deniedEvidenceKeys: readonly string[];
   timeoutMs?: number | undefined;
+  /**
+   * The judging model's window, as its resolution gives it (the attempt's provider's, when no role routes the judge
+   * elsewhere). Absent, the harness's default largest window, which a smaller-window model's adapter would refuse a
+   * request to by size. A routed judge model's own limits, said on its provider, still win (`../../llm/harness/served-limits.ts`).
+   */
+  tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
   /** The whole check's deadline. Absent, the verification deadline for `timeoutMs`. */
   deadlineMs?: number | undefined;
   /** How long this work has waited for a person: the deadline does not count it. Absent, nothing. */

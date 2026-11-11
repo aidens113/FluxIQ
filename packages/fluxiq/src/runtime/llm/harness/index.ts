@@ -125,6 +125,8 @@ export {
 export { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 export { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 export { runAutomationStudioLlmHarness } from "./run.ts";
+// What a role's provider says of its model's token limits, so a request is built to the serving model's window (`./served-limits.ts`).
+export { automationStudioLlmProviderWithTokenLimits, automationStudioLlmServedTokenLimits } from "./served-limits.ts";
 // Every guard that refuses to build a request, named, so a build that failed on
 // one says which (`request-refusal.ts`).
 export { AUTOMATION_STUDIO_LLM_REQUEST_REFUSAL_CODES, AutomationStudioLlmRequestRefusedError, type AutomationStudioLlmRequestRefusalCode } from "./request-refusal.ts";

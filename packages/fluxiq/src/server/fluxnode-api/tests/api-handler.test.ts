@@ -55,10 +55,21 @@ describe("endpoints", () => {
     expect(service.calls.at(-1)).toMatchObject({ method: "register", caller: OWNER });
   });
 
-  it("POST specs refuses a body that is not a spec, with its issues", async () => {
+  it("POST specs refuses a spec that is not valid as invalid_spec, with its issues", async () => {
     const reply = await post("/specs", { spec: { name: "x" } });
-    expectError(reply, 400, "invalid_request");
-    expect((reply.json() as { error: { issues?: unknown[] } }).error.issues?.length).toBeGreaterThan(0);
+    expectError(reply, 400, "invalid_spec");
+    const issues = (reply.json() as { error: { issues?: Array<{ path: string }> } }).error.issues ?? [];
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.every((issue) => issue.path.startsWith("/spec"))).toBe(true);
+  });
+
+  it("POST specs refuses a body outside the spec as invalid_request", async () => {
+    expectError(await post("/specs", {}), 400, "invalid_request");
+    expectError(await post("/specs", { spec: SPEC, unknown: true }), 400, "invalid_request");
+  });
+
+  it("POST runs refuses an inline spec that is not valid as invalid_spec", async () => {
+    expectError(await post("/runs", { spec: { name: "x" } }), 400, "invalid_spec");
   });
 
   it("POST runs starts a run, and a service refusal keeps its status", async () => {

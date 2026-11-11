@@ -95,6 +95,8 @@ export * from "./harness-options/index.ts";
 // because a downstream domain types the `systemInstructions` it binds with
 // them, and checks its text against the same bound Core enforces at bind time.
 export * from "./domain-instructions/index.ts";
+// A run's model per role, routed through one provider (`role-routing/`).
+export * from "./role-routing/index.ts";
 // The library as one thing a build may do: the verb that runs a node of the
 // registry against the live target, and how such a step is written down.
 export * from "./node-tools/index.ts";

@@ -4,7 +4,8 @@
 //
 // - **The task key** is the name and spec hash, never the inputs: other inputs are the same task, and
 //   find its saved Flow. `explore` runs under a key of its own, so it starts fresh and the task's
-//   learned Flow is kept as it was, still the one an `auto` run uses.
+//   learned Flow is kept as it was, still the one an `auto` run uses. A pinned FluxNode's `auto` run
+//   keeps what it changes under a key of its own too (`./caller-key.ts`, `./pin/`).
 // - **The judge.** The type and the developer's check run before any judge, both through the check
 //   bridge. `auto` means the judge only when there is no developer check, so a run with a declared type
 //   and no check asks the attempt for `always`: the type is checked, then the judge. With neither a
@@ -15,7 +16,9 @@
 import type { FluxNodeActClass, FluxNodeResolvedOptions, FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import type { AutomationStudioRunOverrides } from "../../../../runtime/run-overrides/index.ts";
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstPersonAskSink } from "../flow-bootstrap-commands/index.ts";
+import { fluxNodeCallerKey } from "./caller-key.ts";
 import type { FluxNodeCheckBridge } from "./events/index.ts";
 
 const CONSEQUENCES: Readonly<Record<FluxNodeActClass, readonly AutomationStudioActionConsequence[]>> = Object.freeze({
@@ -35,14 +38,17 @@ export type FluxNodeCallerOptionsInput = {
   personAsk: AutomationStudioAnswerFirstPersonAskSink;
   /** The run's judge criteria differ from those the Flow was last judged with: the judge runs again (unless it is off). */
   judgeChanged?: boolean | undefined;
+  /** The FluxNode is pinned: an `auto` run keeps what it changes apart from the pinned Flow (`./pin/`). */
+  pinned?: boolean | undefined;
+  /** The overrides frame the run sets around the attempt, kept so a person's press on the attempt goes on under it. Never holds a secret. */
+  runOverrides?: AutomationStudioRunOverrides | undefined;
 };
 
 export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): AutomationStudioAnswerFirstCallerOptions {
   const { spec, specHash, options, bridge } = input;
-  const key = `fluxnode:${spec.name}:${specHash}`;
   const permittedConsequences = fluxNodePermittedConsequences(spec.scope.acts);
   return {
-    taskKey: options.mode === "explore" ? `${key}:explore:${input.runId}` : key,
+    taskKey: fluxNodeCallerKey({ name: spec.name, specHash, ...(options.mode === "explore" ? { explore: input.runId } : { pinned: input.pinned }) }),
     ...(options.model === undefined ? {} : { model: options.model }),
     budgetUsd: options.budgetUsd,
     judge: input.judgeChanged === true && options.judge !== "off" ? "always" : bridge && options.judge === "auto" && !spec.hasCheck ? "always" : options.judge,
@@ -51,7 +57,8 @@ export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): Automa
     ...(options.humanness === undefined ? {} : { humanness: options.humanness }),
     personAsk: input.personAsk,
     scope: { permittedConsequences, ...(spec.scope.sites === undefined ? {} : { sites: [...spec.scope.sites] }) },
-    inputs: structuredClone(input.inputs)
+    inputs: structuredClone(input.inputs),
+    ...(input.runOverrides === undefined ? {} : { runOverrides: structuredClone(input.runOverrides) })
   };
 }
 

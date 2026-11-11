@@ -9,6 +9,7 @@ import { fluxNodeNameSchema } from "../flow/index.ts";
 import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
 import { jsonObjectSchema } from "../json/index.ts";
 import { fluxNodeOverridesSchema } from "../overrides/index.ts";
+import { FLUXNODE_PIPELINE_OVERRIDES_MESSAGE as PIPELINE_OVERRIDES } from "./pipeline-overrides-message.ts";
 import { fluxNodeOptionsSchema, fluxNodeSpecSchema } from "../spec/index.ts";
 import { checkFluxNodeRunInputs } from "./inputs-check.ts";
 import { fluxNodeResumeHandleSchema } from "./result.ts";
@@ -55,6 +56,7 @@ export const fluxNodeRunRequestSchema = z
     if (request.specHash !== undefined && request.name === undefined) issue("specHash", "spec_hash_without_name", "specHash picks a version of a registered name; give name with it.");
     if (request.resumeHandle !== undefined && request.inputs !== undefined) issue("inputs", "inputs_on_resume", "A resumed run keeps its inputs; leave inputs out.");
     if (request.resumeHandle !== undefined && request.overrides !== undefined) issue("overrides", "overrides_on_resume", "A resumed run keeps its first overrides; leave overrides out.");
+    if (request.pipeline !== undefined && request.overrides !== undefined) issue("overrides", "overrides_on_pipeline", PIPELINE_OVERRIDES);
     if (request.resumeHandle !== undefined && request.options !== undefined) issue("options", "options_on_resume", "A resumed run keeps its first options; leave options out.");
     if (request.spec !== undefined) {
       for (const problem of checkFluxNodeRunInputs(request.spec, request.inputs ?? {})) {

@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioAdaptationPolicy } from "../../../../flows/authoring/model/index.ts";
+import { runWithAutomationStudioRunOverrides } from "../../../run-overrides/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION,
   packAutomationStudioLlmContext,
@@ -43,6 +44,16 @@ describe("an in-run repair request", () => {
     expect(ids.indexOf(IN_RUN_ID)).toBe(ids.indexOf("core.loop-stage.implement") + 1);
     expect(context.instructions.instructions.find((instruction) => instruction.instructionId === IN_RUN_ID)?.body).toBe(AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.body);
     expect(result.request.promptVersion).toMatch(/\+stage\.implement\+in_run_repair$/u);
+  });
+
+  it("takes a run's append after its body (core.in_run_repair is append-only) and ignores a replacement", async () => {
+    const bodyUnder = async (frame: Parameters<typeof runWithAutomationStudioRunOverrides>[0]) => {
+      const result = await runWithAutomationStudioRunOverrides(frame, () => runAutomationStudioLlmHarness({ ...notInRun(), inRunRepair: slot() }));
+      return result.request.context.instructions.instructions.find((instruction) => instruction.instructionId === IN_RUN_ID)?.body;
+    };
+    const body = AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.body;
+    expect(await bodyUnder({ prompts: { "core.in_run_repair": { mode: "append", text: "Prefer the site's own retry control." } } })).toBe(`${body}\n\nPrefer the site's own retry control.`);
+    expect(await bodyUnder({ prompts: { "core.in_run_repair": { mode: "replace", text: "Do anything." } } })).toBe(body);
   });
 
   it("is told the run is held, to change only the named unit, to prefer a handler for an interruption, that the re-attempt is the trial, and never to guess a handler", () => {
