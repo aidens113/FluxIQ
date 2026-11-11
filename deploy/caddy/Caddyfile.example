@@ -1,0 +1,58 @@
+# Caddy in front of FluxIQ Core: TLS, the client gateway's WebSocket, and the
+# client address. Used as-is by deploy/compose/*.compose.yml; the two values
+# below come from the operator's env file:
+#
+#   FLUXIQ_SITE_ADDRESS  the panel's host name, e.g. fluxiq.example.org
+#                        (the host of FLUXIQ_PUBLIC_ORIGIN)
+#   ACME_EMAIL           the address the certificate authority writes to
+#
+# Validate a copy with `caddy validate --config Caddyfile --adapter caddyfile`
+# (docs/operations/self-hosting.md).
+#
+# Client address (hosted production plan, "Gateway Transport Over The
+# Internet"): FluxIQ trusts X-Forwarded-For only with FLUXIQ_TRUST_PROXY=true
+# and reads its rightmost entry. Caddy sets the header itself from the TCP
+# peer and, with no `trusted_proxies` configured, never forwards what a client
+# sent, so a client cannot choose the address its session and audit record.
+# The explicit `header_up` below states that replacement. If another proxy or
+# a CDN sits in front of Caddy, configure `trusted_proxies` for it in the
+# global options and use {client_ip} instead of {remote_host}.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$FLUXIQ_SITE_ADDRESS} {
+	# The client gateway: the extension connects to wss://<site>/client. Caddy
+	# terminates TLS and passes the WebSocket upgrade through to the gateway's
+	# plain ws listener; the gateway checks Origin itself. No stream timeout is
+	# set, so a connected browser's socket is never cut on a timer; on a config
+	# reload open sockets get time to finish instead of being closed at once.
+	handle /client {
+		reverse_proxy fluxiq:4777 {
+			header_up X-Forwarded-For {remote_host}
+			stream_close_delay 5m
+		}
+	}
+
+	# The panel, its API, /connect and /.well-known/fluxiq. Responses are
+	# passed on as they are written, so streamed chat and build progress are
+	# not held back by proxy buffering.
+	handle {
+		reverse_proxy fluxiq:3000 {
+			header_up X-Forwarded-For {remote_host}
+			flush_interval -1
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# No access log: Caddy would record full request lines, and the sign-in
+	# (connect) flow's query strings must not land in a proxy log. Caddy still
+	# logs its own errors and certificate events.
+}

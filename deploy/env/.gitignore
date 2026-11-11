@@ -1,0 +1,4 @@
+# Operators' env files never enter the repository; only the examples do.
+*
+!.gitignore
+!*.example
