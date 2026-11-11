@@ -1,6 +1,6 @@
 {
   "name": "@fluxiq/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Thin TypeScript client of the FluxNode HTTP API: define a FluxNode, run it, get typed outputs.",
   "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
