@@ -1,20 +1,14 @@
 import type { ClientGatewayPairingChallenge, ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
-import type { ClientGatewayCredentialCustodian } from "./credential-custody.ts";
 import { clientGatewayPeerAuditFields } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
-import { declaredDomainId } from "./declared-domain.ts";
-import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayPairingRegistry } from "./pairings.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
-import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
+import type { ClientGatewayTrustGrant } from "./trust-grant.ts";
 import type { InternalSession } from "./types.ts";
-import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
-import { clientGatewayCredentialHolder } from "./lifecycle.ts";
 
-import type { ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
 /**
@@ -30,15 +24,12 @@ type PairingFlowCollaborators = {
   config: ClientGatewayConfig;
   pairings: ClientGatewayPairingRegistry;
   sessions: ClientGatewaySessionRegistry;
-  trustedClients: ClientGatewayTrustedClientRegistry;
   transport: ClientGatewayTransport;
   audit: ClientGatewayAuditLog;
-  events: ClientGatewayEventBus;
-  trace: ClientGatewayTraceTap;
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
-  custody: ClientGatewayCredentialCustodian;
+  trustGrant: ClientGatewayTrustGrant;
 };
 
 /**
@@ -51,25 +42,19 @@ export class ClientGatewayPairingFlow {
   private readonly config: ClientGatewayConfig;
   private readonly pairings: ClientGatewayPairingRegistry;
   private readonly sessions: ClientGatewaySessionRegistry;
-  private readonly trustedClients: ClientGatewayTrustedClientRegistry;
   private readonly transport: ClientGatewayTransport;
   private readonly audit: ClientGatewayAuditLog;
-  private readonly events: ClientGatewayEventBus;
   private readonly facade: ClientGatewayFacadePorts;
-  private readonly trace: ClientGatewayTraceTap;
-  private readonly custody: ClientGatewayCredentialCustodian;
+  private readonly trustGrant: ClientGatewayTrustGrant;
 
   constructor(collaborators: PairingFlowCollaborators) {
     this.config = collaborators.config;
     this.pairings = collaborators.pairings;
     this.sessions = collaborators.sessions;
-    this.trustedClients = collaborators.trustedClients;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
-    this.events = collaborators.events;
     this.facade = collaborators.facade;
-    this.trace = collaborators.trace;
-    this.custody = collaborators.custody;
+    this.trustGrant = collaborators.trustGrant;
   }
 
   create(input: {
@@ -182,70 +167,40 @@ export class ClientGatewayPairingFlow {
     if (!session) throw this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED);
     const refusal = this.refusalFor(session, pairingCode);
     if (refusal) throw refusal;
-    const { trustedClient, token } = await this.trustedClients.register({
-      clientId: session.clientId,
-      clientType: session.clientType,
-      name: session.name,
+    return this.trustGrant.grant({
+      session,
       approvedByUserId,
-      // The domain the person saw this client declare when they approved it.
-      domainId: declaredDomainId(session.metadata)
-    });
-    // Saving the trust is asynchronous, and the browser can leave meanwhile.
-    // Trust for a session that is no longer waiting would hand its one-time
-    // token to a closed socket, so take the trust back and say so.
-    const replaced = this.sessions.get(sessionId) !== session || this.pairings.get(pairingCode) !== pairing;
-    const lateRefusal = replaced
-      ? this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED)
-      : this.refusalFor(session, pairingCode) ?? (pairing.consumedAt ? this.refuse(pairingCode, "pairing.not_waiting", NOT_WAITING) : undefined);
-    if (lateRefusal) {
-      await this.trustedClients.revoke(trustedClient, "pairing session ended before approval completed");
-      throw lateRefusal;
-    }
-    await this.endEarlierTrust(trustedClient);
-    const now = trustedClient.approvedAt;
-    pairing.consumedAt = now;
-    pairing.sessionId = sessionId;
-    pairing.userId = approvedByUserId;
-    delete session.pendingPairingCode;
-    this.pairings.removeOthersForSession(sessionId, pairingCode);
-    this.sessions.attachTrustedClient(session, trustedClient);
-    if (pairing.projectId !== undefined) session.projectId = pairing.projectId;
-    session.pairedAt = now;
-    this.trace.lifecycle({ sessionId, clientId: session.clientId }, "pairing.approved", { trustedClientId: trustedClient.trustedClientId, projectId: pairing.projectId ?? null });
-    // Before the token leaves: this browser's first request finds what the person who approved it can open.
-    await this.custody.issued({ holder: clientGatewayCredentialHolder(trustedClient), credential: token, approvedBySessionId });
-    session.sentCredentialHash = this.trustedClients.hashToken(token);
-    await this.transport.send(sessionId, this.transport.message("server.session_ready", {
-      sessionId,
-      token,
-      ...(pairing.projectId !== undefined ? { projectId: pairing.projectId } : {})
-    }, session));
-    this.audit.record("session.paired", "Client session paired and durable trust created.", {
-      sessionId,
-      pairingCode,
-      trustedClientId: trustedClient.trustedClientId,
-      approvedByUserId,
-      projectId: pairing.projectId ?? null,
-      ...clientGatewayPeerAuditFields(session.peer)
-    });
-    await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
-    return this.sessions.toPublic(session);
-  }
-
-  /**
-   * The person approved this client id again, so a trust they gave it before is not this browser's
-   * any more, and anyone still holding its credential is out. Only their own: a client id is
-   * whatever a client says, so nobody ends another person's trust by saying theirs.
-   */
-  private async endEarlierTrust(approved: ClientGatewayTrustedClient): Promise<void> {
-    for (const earlier of this.trustedClients.list()) {
-      if (earlier.trustedClientId === approved.trustedClientId || earlier.clientId !== approved.clientId || earlier.approvedByUserId !== approved.approvedByUserId || !this.trustedClients.isActive(earlier)) continue;
-      try {
-        await this.facade.revokeTrustedClient(earlier.trustedClientId, "the same browser was approved again");
-      } catch (error) {
-        this.audit.record("trust.revoke_failed", "An earlier trust of a browser approved again could not be ended; it still ends on any copy of its credential being used.", { trustedClientId: earlier.trustedClientId, error: error instanceof Error ? error.name : "unknown" });
+      approvedBySessionId,
+      ...(pairing.projectId !== undefined ? { projectId: pairing.projectId } : {}),
+      // The browser can leave while the trust is saved, or the pairing be settled another way.
+      lateRefusal: () => {
+        const replaced = this.sessions.get(sessionId) !== session || this.pairings.get(pairingCode) !== pairing;
+        if (replaced) return this.refuse(pairingCode, "pairing.client_disconnected", CLIENT_DISCONNECTED);
+        return this.refusalFor(session, pairingCode) ?? (pairing.consumedAt ? this.refuse(pairingCode, "pairing.not_waiting", NOT_WAITING) : undefined);
+      },
+      lateRevocationReason: "pairing session ended before approval completed",
+      bind: (trustedClient) => {
+        pairing.consumedAt = trustedClient.approvedAt;
+        pairing.sessionId = sessionId;
+        pairing.userId = approvedByUserId;
+        delete session.pendingPairingCode;
+        this.pairings.removeOthersForSession(sessionId, pairingCode);
+      },
+      traceEvent: "pairing.approved",
+      traceDetail: (trustedClient) => ({ trustedClientId: trustedClient.trustedClientId, projectId: pairing.projectId ?? null }),
+      audit: {
+        type: "session.paired",
+        message: "Client session paired and durable trust created.",
+        metadata: (trustedClient) => ({
+          sessionId,
+          pairingCode,
+          trustedClientId: trustedClient.trustedClientId,
+          approvedByUserId,
+          projectId: pairing.projectId ?? null,
+          ...clientGatewayPeerAuditFields(session.peer)
+        })
       }
-    }
+    });
   }
 
   /** Why a session cannot take this approval now, or nothing when it is waiting for it. */

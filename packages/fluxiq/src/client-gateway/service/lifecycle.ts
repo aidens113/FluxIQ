@@ -4,6 +4,7 @@ import type { ClientGatewayCredentialCustodian, ClientGatewayCredentialHolder } 
 import { ClientGatewayPairingCapacityError, clientGatewayPeerAuditFields, type ClientGatewayPeer } from "./security/index.ts";
 import type { ClientGatewayConfig } from "./config.ts";
 import { declaredDomainId } from "./declared-domain.ts";
+import type { ClientGatewayHostEnrolment } from "./enrolment/index.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayPairingFlow } from "./pairing-flow.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
@@ -23,6 +24,7 @@ type LifecycleCollaborators = {
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
   pairingFlow: ClientGatewayPairingFlow;
+  enrolment: ClientGatewayHostEnrolment;
   trace: ClientGatewayTraceTap;
   // Calls into the service's public surface go through this port, never
   // through the collaborator that owns the method. See ./facade-ports.ts.
@@ -51,6 +53,7 @@ export class ClientGatewayLifecycle {
   private readonly audit: ClientGatewayAuditLog;
   private readonly events: ClientGatewayEventBus;
   private readonly pairingFlow: ClientGatewayPairingFlow;
+  private readonly enrolment: ClientGatewayHostEnrolment;
   private readonly facade: ClientGatewayFacadePorts;
   private readonly trace: ClientGatewayTraceTap;
   private readonly custody: ClientGatewayCredentialCustodian;
@@ -63,6 +66,7 @@ export class ClientGatewayLifecycle {
     this.audit = collaborators.audit;
     this.events = collaborators.events;
     this.pairingFlow = collaborators.pairingFlow;
+    this.enrolment = collaborators.enrolment;
     this.facade = collaborators.facade;
     this.trace = collaborators.trace;
     this.custody = collaborators.custody;
@@ -71,8 +75,8 @@ export class ClientGatewayLifecycle {
   connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello; peer?: ClientGatewayPeer } = {}): ClientGatewaySession {
     const session = this.sessions.create(input);
     this.audit.record("session.connected", "Client connected.", { sessionId: session.sessionId, clientId: session.clientId, ...clientGatewayPeerAuditFields(session.peer) });
-    // A hello handed over with the connection goes to the traces claiming its client, its token redacted (D7).
-    this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "session.connected", { hello: input.hello ?? null }, [["hello", "token"]]);
+    // A hello handed over with the connection goes to the traces claiming its client, its token and any enrolment ticket redacted (D7).
+    this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "session.connected", { hello: input.hello ?? null }, [["hello", "token"], ["hello", "enrolmentTicket"]]);
     if (input.hello) void this.handleHello(session.sessionId, input.hello);
     return this.sessions.toPublic(session);
   }
@@ -142,6 +146,11 @@ export class ClientGatewayLifecycle {
     await this.facade.ready();
     const session = this.sessions.require(sessionId);
     this.applyHello(session, hello);
+    // A managed host the engine launched is enrolled by its ticket or refused and closed; it never pairs.
+    if (hello.enrolmentTicket !== undefined) {
+      await this.enrolment.enrol(session, hello.enrolmentTicket);
+      return;
+    }
     if (hello.token && await this.resumeTrustedSession(session, hello.token)) return;
     session.status = "pairing_required";
     let pairing: ClientGatewayPairingChallenge;

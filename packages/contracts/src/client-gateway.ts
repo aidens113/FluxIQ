@@ -49,6 +49,12 @@ export type ClientGatewayHelloMetadata = JsonObject & { clientLabel?: string };
  * `token` is the client's credential: under gateway 0.2 the connected-client
  * credential from the connect flow (`ConnectTokenResponse.credential`), under
  * 0.1 a trusted-client token.
+ *
+ * `enrolmentTicket` is a one-time ticket the engine minted in its own process
+ * for a managed host it launched. A hello carrying one is enrolled without a
+ * person's approval, or refused with an `enrolment.*` code and closed; it never
+ * falls back to pairing. It is a credential: sent only by a client with no
+ * token, at most once, and never logged.
  */
 export type ClientGatewayClientHello = {
   clientId?: string;
@@ -56,8 +62,20 @@ export type ClientGatewayClientHello = {
   name?: string;
   version?: string;
   token?: string;
+  enrolmentTicket?: string;
   capabilities?: ClientGatewayCapability[];
   metadata?: ClientGatewayHelloMetadata;
+};
+
+/**
+ * The managed host a trust was enrolled for: `hostId` names the host the engine
+ * launched, and `profile` says whether its browser profile is thrown away when
+ * it closes (`fresh`, whose trust is revoked then and at the next engine start)
+ * or kept (`named`).
+ */
+export type ClientGatewayManagedHost = {
+  hostId: string;
+  profile: "fresh" | "named";
 };
 
 export type ClientGatewayStateUpdate = {
@@ -580,6 +598,8 @@ export type ClientGatewaySession = {
   capabilities: ClientGatewayCapability[];
   stateUpdate?: ClientGatewayStateUpdate;
   metadata?: JsonObject;
+  /** The managed host this session's trust was enrolled for; absent for a client a person paired. Set by Core from the redeemed ticket, never claimed by the client. */
+  managedHostId?: string;
 };
 
 export type ClientGatewayTrustedClient = {
@@ -603,6 +623,8 @@ export type ClientGatewayTrustedClient = {
    * minted before the domain was bound, which therefore needs a new approval.
    */
   domainId?: string | null;
+  /** The managed host this trust was enrolled for (`ClientGatewayClientHello.enrolmentTicket`); absent for trust a person approved. */
+  managedHost?: ClientGatewayManagedHost;
   approvedAt: number;
   createdAt: number;
   updatedAt: number;

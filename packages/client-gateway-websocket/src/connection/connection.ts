@@ -264,6 +264,7 @@ export class FluxIQClientGatewayConnection {
       client: new FluxIQClientGatewayWebSocketClient({
         url: this.options.url(),
         client: hello,
+        ...(this.options.enrolment !== undefined ? { enrolment: this.options.enrolment } : {}),
         ...(this.options.WebSocketImpl !== undefined ? { WebSocketImpl: this.options.WebSocketImpl } : {}),
         ...(this.options.openTimeoutMs !== undefined ? { openTimeoutMs: this.options.openTimeoutMs } : {}),
         tokenStorage: {
