@@ -1,0 +1,17 @@
+[
+  {
+    "toolId": "core.run_node",
+    "description": "Run one node.",
+    "effect": "mutate"
+  },
+  {
+    "toolId": "core.run_flow",
+    "description": "Run the draft forward.",
+    "effect": "mutate"
+  },
+  {
+    "toolId": "web.click",
+    "description": "Press a control.",
+    "effect": "mutate"
+  }
+]

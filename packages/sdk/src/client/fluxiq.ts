@@ -27,6 +27,7 @@ import { createSession } from "../session/index.ts";
 import { buildPipelineRunRequest } from "./build-pipeline-run-request.ts";
 import { buildResumeRequest, buildRunRequest } from "./build-run-request.ts";
 import type { ConnectOptions } from "./connect-options.ts";
+import type { ResumeOptions } from "./resume-options.ts";
 import { executeRun } from "./execute-run.ts";
 import { finishPipelineRun } from "./finish-pipeline-run.ts";
 import { finishRun } from "./finish-run.ts";
@@ -90,7 +91,7 @@ export class FluxIQ {
   }
 
   /** Continues a run that ended `budget_out` or `waiting_for_person`, from its `resumeHandle`. */
-  async resume<I extends Schemas, O extends Schemas>(node: FluxNode<I, O>, resumeHandle: string, options: RunOptions = {}): Promise<RunOutcome<OutputOf<O>>> {
+  async resume<I extends Schemas, O extends Schemas>(node: FluxNode<I, O>, resumeHandle: string, options: ResumeOptions = {}): Promise<RunOutcome<OutputOf<O>>> {
     const events = executeRun(this.#transport, buildResumeRequest(resumeHandle, options), node as unknown as AnyFluxNode, options);
     return finishRun<OutputOf<O>>(node as unknown as AnyFluxNode, await endedResult(events));
   }
@@ -135,7 +136,7 @@ export class FluxIQ {
   }
 
   /** Continues a pipeline run that ended `budget_out` or `waiting_for_person`, from its `resumeHandle`. */
-  async resumePipeline<R = JsonObject>(built: BuiltPipeline, resumeHandle: string, options: RunOptions = {}): Promise<PipelineOutcome<R>> {
+  async resumePipeline<R = JsonObject>(built: BuiltPipeline, resumeHandle: string, options: ResumeOptions = {}): Promise<PipelineOutcome<R>> {
     const events = executeRun(this.#transport, buildResumeRequest(resumeHandle, options), undefined, pipelineRunOptions(built, options));
     return finishPipelineRun<R>(built, await endedResult(events));
   }
@@ -163,10 +164,14 @@ export class FluxIQ {
     return this.#transport.json({ method: "POST", path: fluxNodeApiPath("runStop", { runId }), body: reason === undefined ? {} : { reason }, answer: fluxNodeStopRunResponseSchema });
   }
 
-  /** A FluxNode's learned Flow as a reviewable document; with `pin`, the engine replays exactly that Flow from now on. */
-  exportFlow(name: string, options: { specHash?: string; pin?: boolean } = {}): Promise<FluxNodeFlowExport> {
-    const body: { specHash?: string; pin: boolean } = { pin: options.pin ?? false };
+  /**
+   * A FluxNode's learned Flow as a reviewable document; with `pin`, the engine replays exactly that Flow from now on.
+   * A pinned FluxNode's runs hold their changes as proposals (`export.proposals`); pinning adopts the one `proposal` names, else the newest waiting.
+   */
+  exportFlow(name: string, options: { specHash?: string; pin?: boolean; proposal?: string } = {}): Promise<FluxNodeFlowExport> {
+    const body: { specHash?: string; pin: boolean; proposal?: string } = { pin: options.pin ?? false };
     if (options.specHash !== undefined) body.specHash = options.specHash;
+    if (options.proposal !== undefined) body.proposal = options.proposal;
     return this.#transport.json({ method: "POST", path: fluxNodeApiPath("fluxNodeExport", { name }), body, answer: fluxNodeFlowExportSchema });
   }
 

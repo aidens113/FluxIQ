@@ -4,6 +4,7 @@ import type { JsonObject, JsonValue } from "@fluxiq/contracts/core";
 import type { FluxNodeSpec, FluxNodeSpecInput } from "@fluxiq/contracts/fluxnode";
 import type { z, ZodTypeAny } from "zod";
 import type { TypeSchemaInput } from "../schema/index.ts";
+import type { FluxNodeOverridesInput } from "./overrides-input.ts";
 
 /** What a run's outputs are typed as: the zod schema's output, or any JSON value for a raw JSON Schema or none. */
 export type OutputOf<S> = S extends ZodTypeAny ? z.output<S> : JsonValue;
@@ -34,6 +35,7 @@ export type FluxNodeDefinition<I extends TypeSchemaInput | undefined, O extends 
   scope: FluxNodeSpecInput["scope"];
   check?: FluxNodeCheck<I, O>;
   options?: FluxNodeSpecInput["options"];
+  overrides?: FluxNodeOverridesInput;
   uses?: Array<string | { readonly name: string }>;
 };
 

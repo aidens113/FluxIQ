@@ -12,6 +12,11 @@ describe("a caller's options", () => {
     expect(read({ budgetUsd: 0 }).budgetUsd).toBe(0);
   });
 
+  it("keeps a humanness of 0 to 100 and refuses anything else", () => {
+    for (const ok of [0, 40, 100]) expect(read({ humanness: ok }).humanness).toBe(ok);
+    for (const bad of [-1, 101, 1.5, "5", Number.NaN]) expect(() => read({ humanness: bad }), String(bad)).toThrow(/humanness must be a whole number/u);
+  });
+
   it("reads a scope into Core's consequences and lowercased sites without repeats", () => {
     expect(read({ scope: { permittedConsequences: ["create_new", "modify_existing", "create_new"], sites: ["Market.Example", "market.example", "localhost:3000"] } }).scope).toEqual({ permittedConsequences: parseAutomationStudioPermittedConsequences(["create_new", "modify_existing"]), sites: ["market.example", "localhost:3000"] });
     expect(read({ scope: { permittedConsequences: [] } }).scope).toEqual({ permittedConsequences: [] });

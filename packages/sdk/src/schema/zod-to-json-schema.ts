@@ -5,6 +5,7 @@
 // with the path and what to write instead, never dropped.
 
 import type { ZodTypeAny } from "zod";
+import { SECRET_MARK } from "./secret-mark.ts";
 import { unsupportedType } from "./unsupported.ts";
 
 type Def = { typeName?: string; [key: string]: unknown };
@@ -88,6 +89,12 @@ function convertString(def: Def, path: string): Json {
     else if (!IGNORED_STRING_CHECKS.has(check.kind)) unsupportedType(path, `the string check ".${check.kind}()" is not supported.`, "Use .min(), .max(), or a format: .email(), .url(), .datetime(), .date().");
   }
   if (hasRegex && out.format !== undefined) unsupportedType(path, `a regex beside the "${String(out.format)}" format would be dropped, since a format carries its own rule.`, "Keep the format, or drop the regex.");
+  // `secret()` (`./secret.ts`): a secret is any text, so another format beside it would say two things.
+  if ((def as { [SECRET_MARK]?: boolean })[SECRET_MARK] === true) {
+    if (out.format !== undefined) unsupportedType(path, `a secret cannot also be held to the "${String(out.format)}" format.`, "Drop the format check from the secret.");
+    if (hasRegex) unsupportedType(path, "a secret cannot carry a regex.", "Use .min() or .max() on it instead.");
+    out.format = "secret";
+  }
   return out;
 }
 

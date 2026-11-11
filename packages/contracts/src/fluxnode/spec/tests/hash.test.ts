@@ -18,6 +18,16 @@ function spec(changes: Partial<FluxNodeSpecInput> = {}): FluxNodeSpec {
   return parsed.value;
 }
 
+describe("overrides and the spec hash", () => {
+  it("leave the hash as it was but show in the canonical form", async () => {
+    const withOverrides = spec({ overrides: { prompts: { "core.efficiency": { mode: "append", text: "Prefer fewer steps." } }, deadlines: { llmCallMs: 20_000 } } });
+    expect(await fluxNodeSpecHash(withOverrides)).toBe(await fluxNodeSpecHash(spec()));
+    expect(canonicalFluxNodeSpec(withOverrides)).not.toBe(canonicalFluxNodeSpec(spec()));
+    expect(canonicalFluxNodeSpec(withOverrides)).toContain('"overrides":{"deadlines":{"llmCallMs":20000},"prompts"');
+    expect(canonicalFluxNodeSpec(spec({ overrides: { pace: { minStepGapMs: 1 } } }))).not.toBe(canonicalFluxNodeSpec(spec({ overrides: { pace: { minStepGapMs: 2 } } })));
+  });
+});
+
 describe("fluxNodeSpecHash", () => {
   it("is 64 lowercase hex characters and stable", async () => {
     const hash = await fluxNodeSpecHash(spec());
@@ -58,5 +68,7 @@ describe("canonicalFluxNodeSpec", () => {
     expect(left).toBe(right);
     expect(JSON.parse(left)).toMatchObject({ name: "market.cheapest-listings", options: { retries: 4, judge: "off" }, hasCheck: false });
     expect(canonicalFluxNodeSpec(spec({ options: { retries: 5 } }))).not.toBe(left);
+    // Every option is in the form, so one added later (humanness) still tells two specs apart.
+    expect(canonicalFluxNodeSpec(spec({ options: { humanness: 40 } }))).not.toBe(canonicalFluxNodeSpec(spec({ options: { humanness: 0 } })));
   });
 });

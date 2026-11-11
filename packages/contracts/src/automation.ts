@@ -14,6 +14,8 @@ export * from "./record-sets/index.ts";
 export * from "./recording-capture/index.ts";
 // Answer First's shared records: an attempt, its result, its acts, what it tried, what it saved, a subflow's card.
 export * from "./task-attempts/index.ts";
+// Humanness: the 0-100 level of human-like input, its default, schema and normalizer.
+export * from "./humanness/index.ts";
 
 export type AutomationStudioSchemaVersion = "0.1";
 export type StateValueType = "string" | "number" | "integer" | "boolean" | "point" | "rectangle" | "entity_ref" | "entity_ref_list" | "hash" | "json" | "unknown";

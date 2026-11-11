@@ -12,6 +12,7 @@
 import type { AutomationStudioAsk, AutomationStudioAskAnswer } from "../../../../../runtime/automation-parking/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION, AUTOMATION_STUDIO_PERSON_NEEDED_STOP_OPTION } from "../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioAnswerFirstPersonAskSink } from "../../flow-bootstrap-commands/index.ts";
+import { automationStudioRunOverrides } from "../../../../../runtime/run-overrides/index.ts";
 import type { FluxNodeRun } from "../fluxnode-run.ts";
 
 const NO_CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu;
@@ -22,7 +23,9 @@ export function fluxNodePersonSink(run: FluxNodeRun, waitMs: number, now: () => 
   return {
     raised: () => undefined,
     answer: async (ask, wait) => {
-      const until = Math.min(now() + waitMs, wait.expiresAtMs ?? Number.POSITIVE_INFINITY);
+      // A developer's `personWaitMs` governs: the expiry an ask carries is Core's default (300 s for a person-only check), which yields to it. With none given, today's rule holds and the nearer deadline wins. Either way the run still pauses for the person; no ask is skipped.
+      const given = automationStudioRunOverrides()?.deadlines?.personWaitMs !== undefined;
+      const until = given ? now() + waitMs : Math.min(now() + waitMs, wait.expiresAtMs ?? Number.POSITIVE_INFINITY);
       const said = await run.waitFor({ type: "person_needed", eventId: run.nextEventId(), need: needOf(ask), reason: reasonOf(ask), waitUntil: Math.floor(until) }, until);
       if (said?.type !== "person_answer") return undefined;
       return answerTo(ask, said.outcome, said.note, now());

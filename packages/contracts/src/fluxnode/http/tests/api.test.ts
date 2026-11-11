@@ -36,6 +36,12 @@ describe("paths", () => {
   it("give every error code a status", () => {
     for (const code of FLUXNODE_ERROR_CODES) expect(FLUXNODE_ERROR_HTTP_STATUS[code], code).toBeGreaterThanOrEqual(400);
   });
+
+  it("names only codes the engine or the SDK can meet", () => {
+    for (const gone of ["no_host", "rate_limited", "unavailable"]) expect(FLUXNODE_ERROR_CODES as readonly string[], gone).not.toContain(gone);
+    expect(FLUXNODE_ERROR_HTTP_STATUS.invalid_spec).toBe(400);
+    expect(FLUXNODE_ERROR_HTTP_STATUS.unauthenticated).toBe(401);
+  });
 });
 
 describe("the event stream", () => {
@@ -91,5 +97,10 @@ describe("bodies", () => {
     };
     expect(fluxNodeFlowExportSchema.safeParse(exported).success).toBe(true);
     expect(fluxNodeFlowExportSchema.safeParse({ ...exported, formatVersion: 2 }).success).toBe(false);
+    const proposal = { proposalId: "proposal.0123456789abcdef", flowId: "flow_10", stepsDigest: "d".repeat(64), runId: "run_1", path: "explored", proposedAt: 9 };
+    expect(fluxNodeFlowExportSchema.safeParse({ ...exported, stepsDigest: "e".repeat(64), proposals: [proposal] }).success).toBe(true);
+    expect(fluxNodeFlowExportSchema.safeParse({ ...exported, proposals: [{ ...proposal, saved: {} }] }).success).toBe(false);
+    expect(fluxNodeExportFlowRequestSchema.parse({ pin: true, proposal: "proposal.0123456789abcdef" })).toEqual({ pin: true, proposal: "proposal.0123456789abcdef" });
+    expect(fluxNodeExportFlowRequestSchema.safeParse({ pin: true, proposal: "not an id" }).success).toBe(false);
   });
 });

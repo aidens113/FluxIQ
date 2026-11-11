@@ -21,8 +21,9 @@ import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
 import { AutomationStudioLlmProviderRetryLedger } from "../../provider-retry/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "../../run-budget.ts";
 import type { AutomationStudioLlmProvider } from "../provider.ts";
+import { runWithAutomationStudioRunOverrides } from "../../../run-overrides/index.ts";
 import { runAutomationStudioLlmHarness } from "../run.ts";
-import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../task-request.ts";
+import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, AutomationStudioLlmTaskResult } from "../task-request.ts";
 
 const ANSWER = { response: { kind: "diagnosis", summary: "The control moved." } };
 /** An instruction whose body must never appear in anything a refusal carries. */
@@ -389,4 +390,57 @@ it("releases an explicit unsent adapter refusal and charges a sent malformed rep
   expect(malformed.providerInvocation).toBe("attempted");
   expect(purse.spentCalls()).toBe(1);
   expect(purse.spentUsd()).toBeCloseTo(0.002);
+});
+
+// A run's own per-call deadline (W3, t899) governs the model call, over what the caller passed.
+function recordingTimeouts(seen: number[]): AutomationStudioLlmProvider {
+  return {
+    metadata: { provider: "mock", model: "debug-model" },
+    runTask: async (request: AutomationStudioLlmTaskRequest) => {
+      seen.push(request.timeoutMs);
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      return { response: { kind: "diagnosis", summary: "Done." } };
+    }
+  };
+}
+
+const callWithTimeout = (provider: AutomationStudioLlmProvider, timeoutMs?: number) => runAutomationStudioLlmHarness({
+  taskKind: "runtime_diagnosis", projectId: "project.llm", flowId: "flow.one", runId: "run.one", instructions: [], provider,
+  tokenLimits: { maxInputTokens: 8_000, maxOutputTokens: 2_000, maxTotalTokens: 10_000 }, maxEstimatedCostUsd: 0.1,
+  ...(timeoutMs !== undefined ? { timeoutMs } : {})
+});
+
+describe("the run's llmCallMs on the harness", () => {
+  it("is what the provider is asked under, over the caller's timeout and the default", async () => {
+    const seen: number[] = [];
+    const result = await runWithAutomationStudioRunOverrides({ deadlines: { llmCallMs: 7_000 } }, () => callWithTimeout(recordingTimeouts(seen), 20_000));
+    expect(result.request.timeoutMs).toBe(7_000);
+    expect(seen).toEqual([7_000]);
+  });
+
+  it("changes nothing without a frame: the caller's timeout, else the 20 s default", async () => {
+    const seen: number[] = [];
+    await callWithTimeout(recordingTimeouts(seen), 12_000);
+    await callWithTimeout(recordingTimeouts(seen));
+    expect(seen).toEqual([12_000, 20_000]);
+  });
+
+  it("still refuses a value over the provider's 45 s maximum, unsent", async () => {
+    const seen: number[] = [];
+    const result = await runWithAutomationStudioRunOverrides({ deadlines: { llmCallMs: 60_000 } }, () => callWithTimeout(recordingTimeouts(seen)));
+    expect(result.ok).toBe(false);
+    expect(result.providerInvocation).toBe("not_attempted");
+    expect(result.diagnostics.map((d) => d.code)).toContain("llm.provider_invalid_timeout");
+    expect(seen).toEqual([]);
+  });
+
+  it("gives two concurrent runs their own deadline", async () => {
+    const a: number[] = [];
+    const b: number[] = [];
+    await Promise.all([
+      runWithAutomationStudioRunOverrides({ deadlines: { llmCallMs: 5_000 } }, () => callWithTimeout(recordingTimeouts(a))),
+      runWithAutomationStudioRunOverrides({ deadlines: { llmCallMs: 30_000 } }, () => callWithTimeout(recordingTimeouts(b)))
+    ]);
+    expect([a, b]).toEqual([[5_000], [30_000]]);
+  });
 });

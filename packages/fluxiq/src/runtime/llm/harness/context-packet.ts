@@ -36,6 +36,7 @@ import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmInRunRepairContext } from "./task-request.ts";
 import { automationStudioLlmWellFormedVerificationDefects } from "../verification-defects/index.ts";
 import { automationStudioLlmWellFormedVerificationChecked } from "../verification-checked/index.ts";
+import { automationStudioOverriddenText, automationStudioRunOverrides } from "../../run-overrides/index.ts";
 
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
@@ -165,7 +166,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   // its own, and a recorded intervention says so.
   const deniedEvidenceKeys = declaredDeniedEvidenceKeys(input);
   const inRunRepair = input.inRunRepair ? packInRunRepair(input.taskKind, input.inRunRepair, deniedEvidenceKeys) : undefined;
-  const promptVersion = inRunRepair ? `${stagedVersion}+in_run_repair` : stagedVersion;
+  const repairedVersion = inRunRepair ? `${stagedVersion}+in_run_repair` : stagedVersion;
+  // A run that overrides Core's words is a prompt of its own, and a recorded intervention says which overrides it had.
+  const overridesDigest = automationStudioRunOverrides()?.digest;
+  const promptVersion = overridesDigest ? `${repairedVersion}+overrides.${overridesDigest}` : repairedVersion;
   // Composed here rather than accepted from the caller, so a staged request
   // always carries Core's ordering statement. There is no argument by which a
   // caller, or a domain that replaced every stage, can omit it.
@@ -179,7 +183,8 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   // The in-run repair instruction follows the stage's, and only beside the slot it explains.
   const instructions = resolveAutomationStudioLlmInstructions(
     input,
-    inRunRepair ? [...stageInstructions, { ...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, tags: [...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.tags] }] : stageInstructions
+    // Its body is an append-only section (`core.in_run_repair`): a run may add to it, never put its own in its place.
+    inRunRepair ? [...stageInstructions, { ...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, body: automationStudioOverriddenText("prompt", "core.in_run_repair", AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.body), tags: [...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.tags] }] : stageInstructions
   );
   const catalogContext = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({

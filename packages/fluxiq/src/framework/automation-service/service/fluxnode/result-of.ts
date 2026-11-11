@@ -61,7 +61,8 @@ export async function fluxNodeResultOf(input: FluxNodeResultInput): Promise<Flux
     ...(status === "waiting_for_person" ? { waitingFor: attempt?.status === "waiting_for_person" ? WAITING[attempt.waitingFor] : WAITING.person_only_check } : {}),
     ...(lineage.length ? { lineage } : {}),
     ...datasetsOf(answered),
-    ...(run.carried.correlationId === undefined ? {} : { correlationId: run.carried.correlationId })
+    ...(run.carried.correlationId === undefined ? {} : { correlationId: run.carried.correlationId }),
+    ...(run.overridesDigest === undefined ? {} : { overridesDigest: run.overridesDigest })
   };
   return result;
 }

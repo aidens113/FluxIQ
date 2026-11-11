@@ -14,9 +14,11 @@
 //
 // **A run that throws** is Core failing, not the task: it ends `stopped` with what it had, after a
 // failed step event naming only the error's kind. There is no `failed` ending to give it.
+//
+// **A pin is enforced on every run** (`./pin/`): kept with the Flow, read as each run starts.
 
 import { randomUUID } from "node:crypto";
-import { checkFluxNodeRunInputs, fillFluxNodeGoal, fluxNodeApiPath, type FluxNodeIssue, type FluxNodeRunRequest, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
+import { checkFluxNodeRunInputs, fillFluxNodeGoal, FLUXNODE_PIPELINE_OVERRIDES_MESSAGE, fluxNodeApiPath, fluxNodeSecretInputs, type FluxNodeIssue, type FluxNodeRunRequest, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
@@ -25,6 +27,7 @@ import { fluxNodeFlowExport } from "./flow-export.ts";
 import { FluxNodeRun, type FluxNodeRunCarried } from "./fluxnode-run.ts";
 import type { FluxNodeService, FluxNodeServiceOutcome, FluxNodeServiceRefusal } from "./fluxnode-service.ts";
 import { FluxNodeOwnerFlows } from "./owner-flows.ts";
+import { FluxNodePins } from "./pin/index.ts";
 import { createPipelineDatasets, fluxNodePipelineResult, isRegisteredPipeline, pipelineInputIssues, runFluxNodePipeline, type FluxNodePipelineContext, type FluxNodeRegistered } from "./pipeline/index.ts";
 import { fluxNodeResultOf } from "./result-of.ts";
 import { runFluxNode, type FluxNodeRunContext } from "./run-fluxnode.ts";
@@ -64,9 +67,11 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
   const now = source.now ?? Date.now;
   const flows = new FluxNodeOwnerFlows(source.service, source.domainId, now);
   const runs = new FluxNodeRunRegistry();
+  const pins = new FluxNodePins(source.service, flows, now);
   const context: FluxNodeRunContext = {
-    service: source.service, flows, modelCaller: source.modelCaller ?? OWNER, now,
-    startLocationOf: source.startLocationOf ?? ((spec) => spec.start), personWaitMs: source.personWaitMs ?? PERSON_WAIT_MS
+    service: source.service, flows, pins, modelCaller: source.modelCaller ?? OWNER, now,
+    startLocationOf: source.startLocationOf ?? ((spec) => spec.start), personWaitMs: source.personWaitMs ?? PERSON_WAIT_MS,
+    judgedWith: (flowId) => runs.judgedWith(flowId)
   };
 
   const pipelines: FluxNodePipelineContext = {
@@ -83,7 +88,9 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
 
   const launch = (registered: FluxNodeRegistered, carried: FluxNodeRunCarried, key: { key: string; request: unknown } | undefined): FluxNodeRun => {
     const runId = `fnr-${randomUUID()}`;
-    const run = new FluxNodeRun(runId, { name: registered.name, specHash: registered.specHash, projectId: registered.projectId, flowId: registered.flowId, flowPath: registered.flowPath }, carried, fluxNodeApiPath("runEvents", { runId }), now);
+    // A secret input's value is withheld from everything the run tells (`./secrets/`); a pipeline declares none.
+    const secrets = isRegisteredPipeline(registered) ? [] : Object.values(fluxNodeSecretInputs(registered.spec.inputs, carried.inputs).values);
+    const run = new FluxNodeRun(runId, { name: registered.name, specHash: registered.specHash, projectId: registered.projectId, flowId: registered.flowId, flowPath: registered.flowPath }, carried, fluxNodeApiPath("runEvents", { runId }), now, secrets);
     runs.add(run, registered, async () => await finish(context, pipelines, runs, run, registered), key);
     return run;
   };
@@ -141,7 +148,7 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
     async exportFlow(_caller, name, request) {
       const found = await flows.find(name, request.specHash);
       if ("missing" in found) return refuse(found.missing === "name" ? { code: "unknown_fluxnode", message: "No FluxNode has that name." } : { code: "unknown_spec_hash", message: "That FluxNode has no spec with that hash." });
-      return ok(await fluxNodeFlowExport(source.service, runs, found.found, request.pin, now()));
+      return await fluxNodeFlowExport(source.service, runs, pins, found.found, request, now());
     }
   };
 }
@@ -150,17 +157,19 @@ type Target = { registered: FluxNodeRegistered; carried: FluxNodeRunCarried } | 
 
 /** What a request runs: an inline spec, registered on the way; a registered name; or the run a resume handle continues. */
 async function targetOf(flows: FluxNodeOwnerFlows, runs: FluxNodeRunRegistry, request: FluxNodeRunRequest): Promise<Target> {
-  const carried = (inputs: JsonObject): FluxNodeRunCarried => ({ inputs, ...(request.options === undefined ? {} : { options: request.options }), ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) });
+  const carried = (inputs: JsonObject): FluxNodeRunCarried => ({ inputs, ...(request.options === undefined ? {} : { options: request.options }), ...(request.overrides === undefined ? {} : { overrides: request.overrides }), ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) });
   if (request.spec !== undefined) return { registered: (await flows.register(request.spec)).registered, carried: carried(request.inputs ?? {}) };
   if (request.pipeline !== undefined) return { registered: (await flows.registerPipeline(request.pipeline)).registered, carried: carried(request.inputs ?? {}) };
   if (request.name !== undefined) {
     const found = await flows.find(request.name, request.specHash);
     if ("missing" in found) return { refusal: found.missing === "name" ? { code: "unknown_fluxnode", message: "No FluxNode has that name." } : { code: "unknown_spec_hash", message: "That FluxNode has no spec with that hash." } };
+    // A name may hold a pipeline, which the contract cannot see from the request: refused here as it refuses an inline one.
+    if (isRegisteredPipeline(found.found) && request.overrides !== undefined) return { refusal: { code: "invalid_request", message: FLUXNODE_PIPELINE_OVERRIDES_MESSAGE, issues: [{ path: "/overrides", code: "run_request.overrides_on_pipeline", message: FLUXNODE_PIPELINE_OVERRIDES_MESSAGE }] } };
     return { registered: found.found, carried: carried(request.inputs ?? {}) };
   }
   const held = request.resumeHandle === undefined ? undefined : runs.resumable(request.resumeHandle);
   if (!held) return { refusal: { code: "unknown_run", message: "That resume handle names no run this engine can continue." } };
-  // The same inputs, key and options; a correlation id given now ties this run in, else the first one's.
+  // The same inputs, key, options and overrides; a correlation id given now ties this run in, else the first one's.
   return { registered: held.registered, carried: { ...held.run.carried, ...(request.correlationId === undefined ? {} : { correlationId: request.correlationId }) } };
 }
 
@@ -181,6 +190,7 @@ async function finish(context: FluxNodeRunContext, pipelines: FluxNodePipelineCo
   try {
     const outcome = isRegisteredPipeline(registered) ? await runFluxNodePipeline(pipelines, run, registered, resumeHandle) : await runFluxNode(context, run, registered, resumeHandle);
     if (outcome.learned) runs.learned(registered.flowId, outcome.learned);
+    if (outcome.judgeDigest !== undefined && outcome.result.status === "achieved" && outcome.result.verdict.by === "judge") runs.judged(registered.flowId, outcome.judgeDigest);
     run.end(outcome.result);
   } catch (error) {
     run.tell({ type: "step", flowId: registered.flowId, stepId: "fluxnode.run", label: `Core could not run this FluxNode (${error instanceof Error ? error.name : "unknown error"}).`, state: "failed" });
