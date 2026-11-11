@@ -5,21 +5,37 @@
 import { humannessSchema } from "@fluxiq/contracts/automation";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
 import { automationStudioWithWholeAttemptInputs } from "../../../../engine/automation/node-execution/index.ts";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
 import { automationStudioRunChangedDurableBehavior } from "../../../../runtime/adaptation/durable-behavior/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "../../../../runtime/adaptation/recovery/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, type AutomationStudioRuntimeSessionLlm } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
+import type { AutomationStudioRuntimeSessionRunInput } from "../runtime-session/index.ts";
 import { automationStudioRunRefusalResponse } from "./refusal-response.ts";
+
+/**
+ * The run input fields a `run-runtime-session` body may set as it sent them,
+ * each still checked where the run reads it. Every other field of the input is
+ * either read and checked here (intent, permitted consequences, who pays for
+ * result checks, the reading's cost and calls, humanness) or Core's own to set:
+ * `llmExecution` comes from the signed-in caller alone.
+ */
+const RUN_REQUEST_FIELDS = ["projectId", "commandOutcomeMode", "runId", "newRunId", "flow", "flowId", "inputs", "maxSteps", "authorizedDomainIds", "adaptiveMode", "dryRunLlm", "authorizedExternalSideEffects", "subflowId", "idempotencyKey", "useReusableContext"] as const satisfies ReadonlyArray<keyof AutomationStudioRuntimeSessionRunInput>;
+type RunRequestFields = Pick<AutomationStudioRuntimeSessionRunInput, (typeof RUN_REQUEST_FIELDS)[number]>;
 
 export async function runRuntimeSessionForRequest(
   service: Pick<AutomationStudioService, "runRuntimeSession" | "getFlowRunDetail" | "conversations">,
   request: { payload?: unknown; actor?: { userId: string; sessionId: string } }
 ) {
-  const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown; interpretationCalls?: unknown; humanness?: unknown } : {};
-  if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-  const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, interpretationCalls: readingCalls, humanness: requestedHumanness, ...payload } = raw;
+  const body = request.payload && typeof request.payload === "object" ? request.payload as Record<string, unknown> : {};
+  if (body.useReusableContext !== undefined && body.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
+  // Only the fields named in `RUN_REQUEST_FIELDS` reach the run as sent; the
+  // ones read below are checked first, and anything else the body carries is
+  // dropped. Whose key pays and acts (`llmExecution`) is never read from it.
+  const payload: RunRequestFields = {};
+  for (const field of RUN_REQUEST_FIELDS) if (body[field] !== undefined) Object.assign(payload, { [field]: body[field] });
+  const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, interpretationCalls: readingCalls, humanness: requestedHumanness } = body;
   // What the chat's reading of the message that started the run cost (the chat's "Run it"): the Flow's spend in a Lab-scoped run (t438).
   if (readingCost !== undefined && (typeof readingCost !== "number" || !Number.isFinite(readingCost) || readingCost < 0)) return { ok: false, error: "The run's interpretation cost is invalid." };
   if (readingCalls !== undefined && (!Number.isSafeInteger(readingCalls) || (readingCalls as number) < 0)) return { ok: false, error: "The run's interpretation call count is invalid." };
@@ -75,7 +91,7 @@ export async function runRuntimeSessionForRequest(
   // A run refused before its first step answers with its closed code (`./refusal-response.ts`).
   let ran: Awaited<ReturnType<typeof service.runRuntimeSession>>;
   try {
-    ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }), ...(readingCalls === undefined ? {} : { interpretationCalls: readingCalls as number }), ...(requestedHumanness === undefined ? {} : { humanness: requestedHumanness as number }) });
+    ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }), ...(readingCalls === undefined ? {} : { interpretationCalls: readingCalls as number }), ...(requestedHumanness === undefined ? {} : { humanness: requestedHumanness as number }), ...(request.actor?.userId ? { personUserId: request.actor.userId } : {}) });
   } catch (error) {
     const refusal = automationStudioRunRefusalResponse(error);
     if (refusal) return refusal;
