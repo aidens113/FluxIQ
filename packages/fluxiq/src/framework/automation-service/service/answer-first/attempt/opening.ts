@@ -16,6 +16,13 @@
 // memory has none the Flow's is read only when its latest row is this task's last attempt.
 // `seedFrom` names that attempt, whose before reading the new attempt's witnesses start from.
 //
+// **A caller's act scope bounds it** (`actScope`; a FluxNode run's, `../../fluxnode/act-scope/`). Each
+// run of a FluxNode is its own execution of one task, so only the record of an attempt that ran under the
+// same scope is carried, told by the scope its kept caller options name; any other record is another
+// execution's, and the attempt starts with an empty one, so its acts land. The task, and so the saved Flow
+// it replays, is the same. A record whose attempt's scope is no longer known is another execution's. The
+// chat gives no scope, and the same words carry what landed as above.
+//
 // **A person's Run again starts with nothing carried** (`../run-again/`): that press is what means
 // "do it again". What it was spared is kept beside its record (`setAside`), since it still landed.
 // It names its own task, as a press names no page: the Flow it was found under is that task's.
@@ -68,7 +75,7 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];
   const route = await routeOf(input, taskId, kept, rows);
   const here = await automationStudioAnswerFirstBestEffort(() => stores.acts.get(projectId, flowId));
-  const carried = await seedOf(projectId, kept, stores);
+  const carried = await seedOf(projectId, kept, stores, input.caller?.actScope);
   return {
     taskId, memory, route,
     ordinal: ordinalOf(taskId, kept, rows),
@@ -104,15 +111,21 @@ function ordinalOf(taskId: string, kept: AutomationStudioAnswerFirstTaskMemory |
   return Math.max(0, ...counted) + 1;
 }
 
-/** The seed, and the one attempt it is of: none where a Run again's set-aside acts are united with it, since no one before reading came ahead of both. */
-async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores): Promise<{ data: AutomationStudioAttemptActRecordData; from?: string } | undefined> {
+/**
+ * The seed, and the one attempt it is of: none where a Run again's set-aside acts are united with it, since no one before reading came ahead of both.
+ * Under an act scope, only an attempt of that scope's (header).
+ */
+async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores, scope: string | undefined): Promise<{ data: AutomationStudioAttemptActRecordData; from?: string } | undefined> {
+  const ours = (attemptId: string): boolean => scope === undefined || kept?.attempts.find((attempt) => attempt.attemptId === attemptId)?.caller?.actScope === scope;
   const held = kept?.acts;
-  if (held) return seeded(automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier }), held.earlier ? undefined : held.attemptId);
-  const last = kept?.attempts.at(-1);
+  if (held && ours(held.attemptId)) return seeded(automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier }), held.earlier ? undefined : held.attemptId);
+  // Unscoped this is the task's last attempt; scoped, the scope's own last, whose record the Flow may still hold where the task's memory missed it.
+  const last = [...(kept?.attempts ?? [])].reverse().find((attempt) => ours(attempt.attemptId));
   if (!last) return undefined;
   const rows = (await readOrNothing(() => stores.store.list(projectId, last.flowId))) ?? [];
   const row = rows.find((each) => each.attempt.attemptId === last.attemptId);
-  if (row && rows.at(-1) !== row) return undefined;
+  // Scoped, the Flow's record is taken only where its latest row is known to be that attempt: it may be another execution's.
+  if (row ? rows.at(-1) !== row : scope !== undefined) return undefined;
   const data = await readOrNothing(() => stores.acts.get(projectId, last.flowId));
   return data ? seeded(automationStudioAttemptActSeed({ data }), last.attemptId) : undefined;
 }

@@ -16,12 +16,16 @@
 // failed step event naming only the error's kind. There is no `failed` ending to give it.
 //
 // **A pin is enforced on every run** (`./pin/`): kept with the Flow, read as each run starts.
+//
+// **Each run's lasting acts are its own** (`./act-scope/`): scoped as it is launched by its idempotency key
+// and request, or its own id; a resume keeps the first run's scope, and a pipeline's child runs are runs.
 
 import { randomUUID } from "node:crypto";
 import { checkFluxNodeRunInputs, fillFluxNodeGoal, FLUXNODE_PIPELINE_OVERRIDES_MESSAGE, fluxNodeApiPath, fluxNodeSecretInputs, type FluxNodeIssue, type FluxNodeRunRequest, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
+import { FluxNodeActRecords, fluxNodeActScope } from "./act-scope/index.ts";
 import { fluxNodeEventStream } from "./events/index.ts";
 import { fluxNodeFlowExport } from "./flow-export.ts";
 import { FluxNodeRun, type FluxNodeRunCarried } from "./fluxnode-run.ts";
@@ -69,7 +73,7 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
   const runs = new FluxNodeRunRegistry();
   const pins = new FluxNodePins(source.service, flows, now);
   const context: FluxNodeRunContext = {
-    service: source.service, flows, pins, modelCaller: source.modelCaller ?? OWNER, now,
+    service: source.service, flows, pins, actRecords: new FluxNodeActRecords(source.service), modelCaller: source.modelCaller ?? OWNER, now,
     startLocationOf: source.startLocationOf ?? ((spec) => spec.start), personWaitMs: source.personWaitMs ?? PERSON_WAIT_MS,
     judgedWith: (flowId) => runs.judgedWith(flowId)
   };
@@ -90,7 +94,9 @@ export function createFluxNodeService(source: FluxNodeServiceSource): FluxNodeSe
     const runId = `fnr-${randomUUID()}`;
     // A secret input's value is withheld from everything the run tells (`./secrets/`); a pipeline declares none.
     const secrets = isRegisteredPipeline(registered) ? [] : Object.values(fluxNodeSecretInputs(registered.spec.inputs, carried.inputs).values);
-    const run = new FluxNodeRun(runId, { name: registered.name, specHash: registered.specHash, projectId: registered.projectId, flowId: registered.flowId, flowPath: registered.flowPath }, carried, fluxNodeApiPath("runEvents", { runId }), now, secrets);
+    // Whose lasting acts this run's are (`./act-scope/`): a resume's first run's, a key's first run's, else its own.
+    const scoped: FluxNodeRunCarried = { ...carried, actScope: carried.actScope ?? fluxNodeActScope({ runId, key }) };
+    const run = new FluxNodeRun(runId, { name: registered.name, specHash: registered.specHash, projectId: registered.projectId, flowId: registered.flowId, flowPath: registered.flowPath }, scoped, fluxNodeApiPath("runEvents", { runId }), now, secrets);
     runs.add(run, registered, async () => await finish(context, pipelines, runs, run, registered), key);
     return run;
   };

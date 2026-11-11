@@ -20,6 +20,10 @@
 // **A pinned FluxNode's attempt works in a Flow beside the pinned one** (`./pin/`): it replays exactly the
 // pinned version, still repairs and explores to the result, and what it changes is held as a proposal on
 // the result (`pinned`), never saved over the pinned Flow.
+//
+// **Its lasting acts are its own execution's** (`./act-scope/`): the attempt carries only what this run's
+// scope landed before, which is nothing for a new run. A resume's record is put back just before its
+// attempt opens, and a run that can be resumed has its record held when it ends.
 
 import { fillFluxNodeGoal, fluxNodeSecretInputs, resolveFluxNodeOptions, resolveFluxNodeOverrides, type FluxNodeRunResult, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
@@ -27,6 +31,7 @@ import { runWithAutomationStudioRunOverrides } from "../../../../runtime/run-ove
 import { runWithAutomationStudioRunSecrets } from "../../../../runtime/run-secrets/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../flow-bootstrap-commands/index.ts";
+import { fluxNodeActScope, type FluxNodeActRecords } from "./act-scope/index.ts";
 import { fluxNodeCallerOptions, fluxNodePermittedConsequences } from "./caller-options.ts";
 import { fluxNodeCheckBridge, fluxNodePersonSink, fluxNodeStepEvents } from "./events/index.ts";
 import type { FluxNodeRun } from "./fluxnode-run.ts";
@@ -38,6 +43,8 @@ import { fluxNodeInputsWithoutSecrets, fluxNodeSecretGoalInputs } from "./secret
 
 /** How often a Stop that found no attempt registered yet is tried again. */
 const STOP_RETRY_MS = 25;
+/** The endings a resume handle continues (`./run-registry.ts`), whose act record is held for it. */
+const RESUMABLE: ReadonlySet<string> = new Set(["budget_out", "waiting_for_person"]);
 
 export type FluxNodeRunContext = {
   service: AutomationStudioService;
@@ -52,6 +59,8 @@ export type FluxNodeRunContext = {
   judgedWith?: ((flowId: string) => string | undefined) | undefined;
   /** The FluxNodes' pins (`./pin/`). Absent, no run is pinned. */
   pins?: Pick<FluxNodePins, "begin" | "settleUnpinned"> | undefined;
+  /** The records resumable runs ended with, put back for their resumes (`./act-scope/`). Absent, none is held. */
+  actRecords?: Pick<FluxNodeActRecords, "keep" | "restore"> | undefined;
   now: () => number;
 };
 
@@ -80,7 +89,8 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   const pinned = await context.pins?.begin(registered, options.mode, run.runId);
   // The Flow the attempt works in: the FluxNode's own, or beside it while it is pinned.
   const on: FluxNodeRegisteredSpec = pinned ? { ...registered, flowId: pinned.flowId } : registered;
-  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin, runOverrides: frame });
+  const actScope = run.carried.actScope ?? fluxNodeActScope({ runId: run.runId });
+  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, actScope, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin, runOverrides: frame });
   const goal = fillFluxNodeGoal(spec.goal, fluxNodeSecretGoalInputs(inputs, secrets.names));
   if (!goal.ok) throw new Error(`fluxnode.goal_unfilled: ${goal.issues.map((issue) => issue.code).join(", ")}`);
   const attempt = { over: false };
@@ -91,6 +101,7 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
     if (!run.stopRequested) {
       await runWithAutomationStudioRunSecrets(secrets.values, async () => await runWithAutomationStudioRunOverrides(frame, async () => {
         await context.flows.instruct(on, goal.value);
+        if (callerOptions.taskKey !== undefined) await context.actRecords?.restore({ projectId: on.projectId, taskKey: callerOptions.taskKey }, actScope);
         run.whenStopped(() => cancelUntilLanded(context.service, on, attempt));
         const start = context.startLocationOf(spec);
         const generated = await context.service.generateFlowBootstrapAdaptation({
@@ -106,6 +117,7 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
     if (timer !== undefined) clearTimeout(timer);
   }
   const result = await fluxNodeResultOf({ run, spec, inputs, answered, bridge, owner: context.service, resumeHandle, endedAt: context.now() });
+  if (callerOptions.taskKey !== undefined && RESUMABLE.has(result.status)) await context.actRecords?.keep({ projectId: on.projectId, taskKey: callerOptions.taskKey }, actScope);
   const pin = await fluxNodeRunPin({ run, registered, pins: context.pins, pinned, path: result.path, mode: options.mode });
   const learned = answered?.candidateId === undefined || pinned ? undefined : { candidateId: answered.candidateId, revision: answered.revision, digest: answered.digest };
   return { result: pin ? { ...result, pinned: pin } : result, ...(learned ? { learned } : {}), judgeDigest: resolved.judgeDigest };

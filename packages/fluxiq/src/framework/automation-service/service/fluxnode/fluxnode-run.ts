@@ -33,6 +33,8 @@ export type FluxNodeRunCarried = {
   /** The request's own overrides; never given to a child run, and a resume keeps the first run's. */
   overrides?: FluxNodeOverrides | undefined;
   correlationId?: string | undefined;
+  /** The execution its lasting acts belong to (`./act-scope/`): set as the run is launched, and a resume keeps the first run's. Never told. */
+  actScope?: string | undefined;
 };
 
 type Wait = { event: FluxNodeRunEvent; settle: (answer: FluxNodeEventAnswer | undefined) => void; answered: boolean };

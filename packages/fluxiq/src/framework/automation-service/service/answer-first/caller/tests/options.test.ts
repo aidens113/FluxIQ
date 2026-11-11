@@ -1,7 +1,7 @@
 // A caller's options, read: what is kept, and what is refused before anything runs.
 import { describe, expect, it } from "vitest";
 import { parseAutomationStudioPermittedConsequences } from "../../../../../../runtime/action-permission-requests/index.ts";
-import { automationStudioAnswerFirstCallerOptionsRead as read } from "../index.ts";
+import { automationStudioAnswerFirstCallerOptionsRead as read, automationStudioAnswerFirstKeptCallerOptions } from "../index.ts";
 
 describe("a caller's options", () => {
   it("reads nothing as nothing, and keeps each field it is given", () => {
@@ -10,6 +10,12 @@ describe("a caller's options", () => {
     const sink = { raised: () => undefined };
     expect(read({ taskKey: "market.cheapest-listings:3f2a", model: "claude-haiku-5-5", budgetUsd: 12, judge: "off", check, personAsk: sink })).toEqual({ taskKey: "market.cheapest-listings:3f2a", model: "claude-haiku-5-5", budgetUsd: 12, judge: "off", check, personAsk: sink });
     expect(read({ budgetUsd: 0 }).budgetUsd).toBe(0);
+  });
+
+  it("keeps an act scope of 1 to 512 characters, which a press's kept options read again, and refuses anything else", () => {
+    expect(read({ actScope: "fluxnode.run.fnr-1" }).actScope).toBe("fluxnode.run.fnr-1");
+    expect(read(JSON.parse(JSON.stringify(automationStudioAnswerFirstKeptCallerOptions({ taskKey: "t", actScope: "fluxnode.run.fnr-1" })))).actScope).toBe("fluxnode.run.fnr-1");
+    for (const bad of ["", "  ", "x".repeat(513), 5, null]) expect(() => read({ actScope: bad }), JSON.stringify(bad)).toThrow(/actScope must be 1 to 512 characters/u);
   });
 
   it("keeps a humanness of 0 to 100 and refuses anything else", () => {

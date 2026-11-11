@@ -2,7 +2,8 @@
 // of the Lab's realistic scenarios is: one real service with a scripted model, and the FluxNode service
 // over it, as a server builds it. The library gains one node a FluxNode needs: "Find loans" by a title,
 // a read whose rows depend on its parameter, at both doors -- by hand (the attempt's exploration) and
-// through the engine (a saved Flow's replay) -- so a replay with another input finds other rows.
+// through the engine (a saved Flow's replay) -- so a replay with another input finds other rows. "Renew
+// card" is at both doors too, a lasting act with no row, so a replay's act really lands (`engineCards`).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -16,7 +17,7 @@ import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionRes
 import { AutomationStudioService } from "../../../service.ts";
 import { caller as modelCaller, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "../../answer-first/index.ts";
-import { fakeLibrary, fakeLibraryBinding, judgedYes, LOOK_TOOL, runNode, toolCall, type FakeLibrary } from "../../answer-first/tests/fake-library.ts";
+import { fakeLibrary, fakeLibraryBinding, judgedYes, LOOK_TOOL, RENEW_CARD, runNode, toolCall, type FakeLibrary } from "../../answer-first/tests/fake-library.ts";
 import { LOANS_OUTPUT } from "../../answer-first/tests/fake-library-engine.ts";
 import { createFluxNodeService, type FluxNodeCaller, type FluxNodeService } from "../index.ts";
 import { fluxNodePricedModels } from "./priced-models.ts";
@@ -35,6 +36,14 @@ const FIND_NODE: AutomationStudioNodeDefinition = {
   outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "records", label: "Records", valueType: "array" }],
   parameters: [{ id: "title", label: "Title", valueType: "string", required: false }, { id: "recordOutput", label: "Record output", valueType: "object", required: false }],
   safety: { requiredPermissions: [] }
+};
+
+/** "Renew card" at the engine's door too, so a saved Flow's replay of a lasting act really lands: a save with no row, as a file's Save is. */
+const CARD_NODE: AutomationStudioNodeDefinition = {
+  ...FIND_NODE, id: RENEW_CARD, label: "Renew card", description: "Renew the library card.",
+  source: { kind: "importer", domainId: "library", packageId: "library.card", implementationKey: RENEW_CARD },
+  outputs: [{ id: "success", label: "Success", valueType: "any" }],
+  parameters: [{ id: "control", label: "Control", valueType: "string", required: false }]
 };
 
 /** The loans whose title has `words`, as a read shows them. */
@@ -60,6 +69,8 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   const engineFinds: unknown[] = [];
   /** The record output's label each engine press of "Find loans" ran with: which version of a Flow a replay ran. */
   const engineLabels: unknown[] = [];
+  /** The engine's own presses of "Renew card": a saved Flow's replay landing its lasting act. */
+  const engineCards: string[] = [];
   /** What an engine press of "Find loans" answers instead, or waits for: the site changed under a saved Flow. */
   const engine: { over?: ((parameters: Readonly<Record<string, unknown>>) => AutomationNodeExecutionResult | undefined | Promise<AutomationNodeExecutionResult | undefined>) | undefined } = {};
   let fluxNodes: FluxNodeService | undefined;
@@ -89,6 +100,13 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
       if (over) return over;
       const found: AutomationNodeExecutionResult = { status: "success", route: "success", outputs: { success: true }, effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput ?? LOANS_OUTPUT, records: loansWith(library, parameters.title) } }] };
       return found;
+    } } }
+  ).register(
+    { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.card", packageVersion: "1.0.0", domainId: "library", nodes: [CARD_NODE] },
+    { packageId: "library.card", packageVersion: "1.0.0", implementations: { [RENEW_CARD]: async () => {
+      engineCards.push(RENEW_CARD);
+      library.renewals.card = (library.renewals.card ?? 0) + 1;
+      return { status: "success", route: "success", outputs: { success: true } };
     } } }
   ));
   automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
@@ -145,7 +163,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     return nodes;
   };
 
-  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engine, run, arm, restart, served: priced?.served ?? [], priced: priced?.priced ?? [] };
+  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engineCards, engine, run, arm, restart, served: priced?.served ?? [], priced: priced?.priced ?? [] };
 }
 
 /** Stops the run `runId` names, or every run still going where none is named: the program stopping what has no more to try. */
