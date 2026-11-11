@@ -181,3 +181,42 @@ test("one request at a time: a change made meanwhile waits and only the latest g
 test("the words for a level", () => {
   assert.deepEqual([0, 10, 40, 75, 100].map(humannessWords), ["fastest", "a little human-like", "more human-like", "very human-like", "most human-like"]);
 });
+
+test("draft mode never commits and never says Saved; it reports drag release, arrow settle and clear", async () => {
+  await withFakeDocument(async () => {
+    const drafts: Array<number | null> = [];
+    const control = createHumannessControl({ mode: "draft", level: { own: 40, starting: 20 }, settleMs: 0, onDraft: (level) => drafts.push(level) });
+    const root = fake(control.element);
+    const range = one(root, "humanness-range");
+    const status = one(root, "humanness-status");
+    range.value = "55";
+    range.dispatch("input");
+    assert.deepEqual(drafts, [], "nothing is reported mid-drag");
+    range.dispatch("change");
+    assert.deepEqual(drafts, [55]);
+    assert.equal(status.textContent, "");
+    key(range, "ArrowRight");
+    await settle();
+    assert.deepEqual(drafts, [55, 60]);
+    assert.equal(range.getAttribute("aria-valuetext"), "60, more human-like");
+    one(root, "humanness-clear").dispatch("click");
+    await settle();
+    assert.deepEqual(drafts, [55, 60, null]);
+    assert.equal(range.value, "20");
+    assert.equal(root.getAttribute("data-state"), "inherited");
+    assert.equal(status.textContent, "");
+    assert.equal(root.getAttribute("data-status"), "idle");
+    control.show({ own: 35, starting: 20 });
+    assert.equal(range.value, "35");
+  });
+});
+
+test("draft mode with canClear false offers no Use starting value, and inputId and explain apply", async () => {
+  await withFakeDocument(() => {
+    const control = createHumannessControl({ mode: "draft", level: { own: 10, starting: 10 }, canClear: false, inputId: "mine", explain: "Words.", onDraft: () => undefined });
+    const root = fake(control.element);
+    assert.equal(one(root, "humanness-clear").hidden, true);
+    assert.equal(one(root, "humanness-range").id, "mine");
+    assert.equal(one(root, "humanness-explain").textContent, "Words.");
+  });
+});

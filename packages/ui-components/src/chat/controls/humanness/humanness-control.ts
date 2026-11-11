@@ -36,7 +36,22 @@ export type HumannessCommit = (humanness: number | null) => Promise<ChatResult<{
 export type HumannessControlOptions = {
   /** The level as read. */
   level: HumannessLevel;
-  commit: HumannessCommit;
+  /**
+   * `"commit"` (default): the control saves through `commit` and shows Saving, "Saved." and refusals.
+   * `"draft"`: for a form that saves later. The control never commits and never says "Saved."; it
+   * reports each settled level through `onDraft`, and the form saves it and calls `show(level)` after.
+   */
+  mode?: "commit" | "draft";
+  /** Saves the level. Required in commit mode; ignored in draft mode. */
+  commit?: HumannessCommit;
+  /** Draft mode: hears each settled level (drag release, keys at rest, focus leaving); `null` is "use the starting value". */
+  onDraft?: (level: number | null) => void;
+  /** Draft mode: whether "Use starting value" is offered while the level is the control's own. Default true. */
+  canClear?: boolean;
+  /** The range input's id, for a form's own label or test. Default generated. */
+  inputId?: string;
+  /** Replaces the explanation under the slider. */
+  explain?: string;
   /** The slider's visible name. Default "Humanness". */
   label?: string;
   /** How long the keys must rest before their level is sent, in ms. Default 500. */
@@ -96,6 +111,8 @@ async function asked(commit: HumannessCommit, humanness: number | null): Promise
 
 /** Creates the control over `options.commit`. */
 export function createHumannessControl(options: HumannessControlOptions): HumannessControl {
+  const drafting = options.mode === "draft";
+  const commit: HumannessCommit = options.commit ?? (async () => ({ ok: false, sentence: FAILED }));
   const settleMs = options.settleMs ?? 500;
   const id = `fluxiq-humanness-${++made}`;
   let saved = tidy(options.level);
@@ -110,11 +127,12 @@ export function createHumannessControl(options: HumannessControlOptions): Humann
   const label = createElement("span", { id: `${id}-label`, className: "humanness-label", text: options.label ?? "Humanness" });
   const value = createElement("span", { className: "humanness-value", attrs: { "aria-hidden": "true" } });
   const range = createElement("input", {
+    ...(options.inputId === undefined ? {} : { id: options.inputId }),
     className: "humanness-range",
     attrs: { type: "range", min: "0", max: "100", step: String(STEP), "aria-labelledby": `${id}-label`, "aria-describedby": `${id}-explain ${id}-inherited` }
   });
   const ends = createElement("div", { className: "humanness-ends", attrs: { "aria-hidden": "true" } }, [createElement("span", { text: "Fastest" }), createElement("span", { text: "Most human-like" })]);
-  const explain = createElement("p", { id: `${id}-explain`, className: "humanness-explain", text: EXPLAIN });
+  const explain = createElement("p", { id: `${id}-explain`, className: "humanness-explain", text: options.explain ?? EXPLAIN });
   const inherited = createElement("p", { id: `${id}-inherited`, className: "humanness-inherited" });
   const clear = createElement("button", { className: "humanness-clear", text: "Use starting value", attrs: { type: "button" } });
   const said = createElement("p", { className: "humanness-status", attrs: { role: "status", "aria-live": "polite" } });
@@ -130,7 +148,7 @@ export function createHumannessControl(options: HumannessControlOptions): Humann
     range.setAttribute("aria-valuetext", `${shown}, ${humannessWords(draft.value)}${draft.own ? "" : ", your starting value"}`);
     inherited.hidden = draft.own;
     inherited.textContent = draft.own ? "" : `Uses your starting value (${saved.starting}). Move the slider to give this its own level.`;
-    clear.hidden = !draft.own;
+    clear.hidden = !draft.own || (drafting && options.canClear === false);
     said.textContent = status.kind === "pending" ? "Saving…" : status.kind === "saved" ? "Saved." : status.kind === "refused" ? `Not saved. ${status.sentence}` : "";
     said.setAttribute("role", status.kind === "refused" ? "alert" : "status");
     if (status.kind === "idle") said.removeAttribute("data-tone");
@@ -163,7 +181,7 @@ export function createHumannessControl(options: HumannessControlOptions): Humann
     inFlight = true;
     status = { kind: "pending" };
     render();
-    const answer = await asked(options.commit, humanness);
+    const answer = await asked(commit, humanness);
     inFlight = false;
     if (answer.ok) {
       const own = humanness === null ? undefined : whole(typeof answer.value.humanness === "number" ? answer.value.humanness : humanness);
@@ -188,9 +206,19 @@ export function createHumannessControl(options: HumannessControlOptions): Humann
     timer = undefined;
   }
 
+  /** Draft mode: tells the form the level the slider settled on. */
+  function report(humanness: number | null): void {
+    saved = humanness === null ? { starting: saved.starting } : { own: humanness, starting: saved.starting };
+    options.onDraft?.(humanness);
+  }
+
   /** Sends what the slider shows now. */
   function commitShown(): void {
     stopWaiting();
+    if (drafting) {
+      report(draft.own ? draft.value : null);
+      return;
+    }
     void send(draft.own ? draft.value : null);
   }
 
@@ -221,7 +249,8 @@ export function createHumannessControl(options: HumannessControlOptions): Humann
     stopWaiting();
     draft = { value: saved.starting, own: false };
     render();
-    void send(null);
+    if (drafting) report(null);
+    else void send(null);
   });
 
   render();
