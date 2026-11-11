@@ -20,7 +20,16 @@ export {
   type ThreadOption,
   type ThreadSubjectKind
 } from "./conversation/index.ts";
-export { createHoldControl, createStopControl } from "./controls/index.ts";
+export {
+  createHoldControl,
+  createHumannessControl,
+  createStopControl,
+  humannessWords,
+  type HumannessCommit,
+  type HumannessControl,
+  type HumannessControlOptions,
+  type HumannessLevel
+} from "./controls/index.ts";
 export {
   createActivityFeed,
   threadRefreshWanted,

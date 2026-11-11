@@ -7,6 +7,7 @@
 import type { ChatResult } from "./result.ts";
 import type { ChatResultsPort } from "./results.ts";
 import type { ChatSelection } from "./selection.ts";
+import type { ChatTaskSettingsPort } from "./task-settings.ts";
 
 /** Core's subject kinds a thread can be about. `panel`: the panel-wide thread, about no one project, Flow or run. */
 export type ChatSubjectKind = "project" | "flow" | "run" | "panel";
@@ -169,4 +170,6 @@ export type ChatTransport = {
   readonly changes?: ChatChangesPort;
   /** A task's answer (`./results.ts`). Absent: the chat shows no answer turn. */
   readonly results?: ChatResultsPort;
+  /** A task's own settings, such as its humanness (`./task-settings.ts`). Absent: the answer turn offers no humanness control. */
+  readonly taskSettings?: ChatTaskSettingsPort;
 };

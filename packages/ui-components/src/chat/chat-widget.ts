@@ -163,6 +163,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   // What the answer turns do through the host: exports and Run again go through the results port; the rest are the chat's own.
   const answerHost = (): AnswerHost => ({
     ...(owner.transport.results === undefined ? {} : { results: owner.transport.results }),
+    ...(owner.transport.taskSettings === undefined ? {} : { taskSettings: owner.transport.taskSettings }),
     onWhatIDid: () => {
       const first = thread.element.querySelector(".chat-step-line")?.closest("li") ?? undefined;
       showTurn(scroller, first ?? undefined);

@@ -108,6 +108,63 @@ transport has nowhere to send a message that names no project (the web panel wit
 no project open). A host whose transport names the session's project for such a
 message (the extension) leaves it out, so a new person can write a first message.
 
+## Humanness
+
+Humanness is a whole number from 0 (fastest) to 100: higher adds human-like timing,
+click positions and the odd harmless misclick, for sites that limit robots. Robot
+checks always pause for the person, at any level. A run uses the first of: its own
+option, the task's, the Flow's, the person's starting value, then 0.
+
+**The control.** `createHumannessControl(options)` is one reusable slider for a task,
+Flow or FluxNode, exported from the package root for any screen. It holds no port: the
+host gives it the level it read and a `commit`.
+
+```ts
+import { createHumannessControl } from "@fluxiq/ui-components";
+
+const control = createHumannessControl({
+  level: { own: 40, starting: 20 },            // `own` absent: it uses the starting value
+  commit: (humanness) => port.setHumanness({ projectId, taskId, humanness }), // null clears
+  label: "Humanness for this Flow",             // default "Humanness"
+  onLevel: (saved) => { /* each level once saved, or put back after a refusal */ }
+});
+container.append(control.element);
+control.show(levelReadAgain);                   // ignored while a change is on its way
+control.dispose();                              // sends a level the keys left waiting
+```
+
+- A range 0-100 in steps of 5, its level in mono, the ends "Fastest" and "Most
+  human-like", and one line on what it does. The spoken value says the level in words
+  (`aria-valuetext` "40, more human-like").
+- **Own level**: "Use starting value" sends `null`. **Inherited**: "Uses your starting
+  value (N)"; moving the slider gives the task its own.
+- No request per pixel: a drag is sent once on release; the arrow keys (and Page
+  Up/Down, Home, End) step by 5 and send once they rest (`settleMs`, 500 by default)
+  or when focus leaves. One request at a time; only the latest change made meanwhile goes.
+- "Saving…", "Saved." and, on a refusal, "Not saved." with the host's sentence; the
+  slider goes back to what was saved.
+- Styles: `src/chat/controls/humanness/humanness.css`, which `chat.css` imports. A
+  screen outside the chat imports that sheet after `tokens.css`.
+
+**On the answer card.** With the optional `ChatTransport.taskSettings` port, each task's
+answer card ends with a small "Humanness · N" button that opens onto the control. It
+reads the card's task when the card first shows and again on each opening. Without the
+port there is no control. A client that answers `unsupported` shows none; any other
+failed read is said inside the fold.
+
+```ts
+type ChatTaskSettingsPort = {
+  read(task: { projectId: string; taskId: string }): Promise<ChatResult<{ humanness?: number; starting: number }>>;
+  setHumanness(request: { projectId: string; taskId: string; humanness: number | null }):
+    Promise<ChatResult<{ humanness?: number }>>;  // humanness absent once cleared
+};
+```
+
+Core's calls behind it are `list-project-tasks` (rows carry `humanness?`) and
+`update-task-settings`. `starting` is the person's starting value, which the client
+knows. Core refuses a level out of range with a named error; the client's adapter
+answers it as a failed result whose `sentence` is the person's words.
+
 ## Theme
 
 `styles/tokens.css` is the single token source: every stylesheet reads colours from

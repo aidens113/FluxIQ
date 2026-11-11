@@ -113,3 +113,27 @@ test("New chat, Rename and Delete are leased like the thread list, and left out 
   assert.equal(plain.renameThread, undefined);
   assert.equal(plain.deleteThread, undefined);
 });
+
+test("the task settings port is leased like the rest, and left out when the client leaves it out", async () => {
+  const bare = messageTransport(async () => OK);
+  const asked: unknown[] = [];
+  const taskSettings = {
+    read: async (task: unknown) => {
+      asked.push(["read", task]);
+      return { ok: true as const, value: { starting: 40 } };
+    },
+    setHumanness: async (request: unknown) => {
+      asked.push(["set", request]);
+      return { ok: true as const, value: {} };
+    }
+  };
+  let valid = true;
+  const leased = leaseTransport({ ...bare, taskSettings }, () => valid).taskSettings!;
+  assert.deepEqual(await leased.read({ projectId: "p", taskId: "t" }), { ok: true, value: { starting: 40 } });
+  assert.equal((await leased.setHumanness({ projectId: "p", taskId: "t", humanness: null })).ok, true);
+  assert.deepEqual(asked, [["read", { projectId: "p", taskId: "t" }], ["set", { projectId: "p", taskId: "t", humanness: null }]]);
+  valid = false;
+  assert.deepEqual(await leased.setHumanness({ projectId: "p", taskId: "t", humanness: 50 }), { ok: false, sentence: CONTEXT_CHANGED });
+  assert.equal(asked.length, 2, "a lapsed lease sends nothing");
+  assert.equal(leaseTransport(bare, () => true).taskSettings, undefined);
+});

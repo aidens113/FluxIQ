@@ -43,6 +43,7 @@ export const IAM_READ_ONLY_ACTIONS: readonly string[] = Object.freeze([
   "studio:GetNormalizedTimeline",
   "studio:GetPanelAssistantAllowance",
   "studio:GetPanelThread",
+  "studio:GetPanelThreadAttachment",
   "studio:GetPerformanceMetrics",
   "studio:GetProjectArtifact",
   "studio:GetProjectHierarchy",

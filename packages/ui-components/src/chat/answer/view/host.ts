@@ -2,11 +2,13 @@
 // turn never calls the runs port itself; Keep going, Tell it more and Stop are the
 // host's, and "What I did" reveals the step messages, which only the host can find.
 
-import type { ChatResultsPort } from "../../ports/index.ts";
+import type { ChatResultsPort, ChatTaskSettingsPort } from "../../ports/index.ts";
 
 /** The results port and the host's callbacks. Each action is offered only where its callback or port method exists. */
 export type AnswerHost = {
   results?: ChatResultsPort | undefined;
+  /** The task's own settings: present, the card offers its humanness behind "Humanness · N". Absent: no control. */
+  taskSettings?: ChatTaskSettingsPort | undefined;
   /** Scrolls to or reveals the step messages of this attempt. Never folds them. */
   onWhatIDid?: ((attemptId: string) => void) | undefined;
   onKeepGoing?: ((attemptId: string) => void) | undefined;

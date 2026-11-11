@@ -58,6 +58,20 @@ describe("PanelAssistantThreads", () => {
     expect(await threads.takeWaitingCall("user.ada", "ask.missing")).toBeNull();
   });
 
+  it("deletes a thread with its cards' waiting calls, and leaves another thread's alone", async () => {
+    const card = (conversationId: string, askId: string) => threads.appendCard("user.ada", { conversationId, text: "Delete it?", ask: { askId, kind: "confirm", parks: false }, call: { toolName: "automation-studio__delete-flow", input: { flowId: "f" }, words: "delete this", context: {} } });
+    const gone = await threads.open("user.ada", {});
+    const kept = await threads.open("user.ada", {});
+    await card(gone.conversationId, "ask.gone");
+    await card(kept.conversationId, "ask.kept");
+    expect(await threads.delete("user.ada", { conversationId: gone.conversationId })).toEqual({ deleted: true, conversationId: gone.conversationId });
+    expect(await threads.read("user.ada", { conversationId: gone.conversationId })).toBeNull();
+    expect(await threads.takeWaitingCall("user.ada", "ask.gone")).toBeNull();
+    expect(await threads.takeWaitingCall("user.ada", "ask.kept")).toMatchObject({ askId: "ask.kept", conversationId: kept.conversationId });
+    await expect(threads.delete("user.grace", { conversationId: kept.conversationId })).rejects.toMatchObject({ code: "conversation_not_found" });
+    expect(await threads.read("user.ada", { conversationId: kept.conversationId })).not.toBeNull();
+  });
+
   it("rebuilds conversations with every column a project database has, and only there allows panel", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     try {

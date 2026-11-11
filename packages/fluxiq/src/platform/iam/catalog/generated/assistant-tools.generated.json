@@ -4198,6 +4198,12 @@
       "reason": "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows."
     },
     {
+      "name": "automation-studio__delete-panel-thread",
+      "programId": "automation-studio",
+      "endpoint": "delete-panel-thread",
+      "reason": "A person deletes one of their chats from the dock's own list; the assistant never removes its own chat."
+    },
+    {
       "name": "automation-studio__delete-project-artifact",
       "programId": "automation-studio",
       "endpoint": "delete-project-artifact",
@@ -4322,6 +4328,12 @@
       "programId": "automation-studio",
       "endpoint": "get-panel-thread",
       "reason": "The assistant's own chat, which the dock reads."
+    },
+    {
+      "name": "automation-studio__get-panel-thread-attachment",
+      "programId": "automation-studio",
+      "endpoint": "get-panel-thread-attachment",
+      "reason": "The dock fetches a turn's attachment to draw it; a person does not ask for it in words."
     },
     {
       "name": "automation-studio__get-performance-metrics",
@@ -4646,6 +4658,12 @@
       "programId": "automation-studio",
       "endpoint": "rename-flow-subflow",
       "reason": "Subflows are being retired, so a person asks about the Flow's steps instead of its Subflows."
+    },
+    {
+      "name": "automation-studio__rename-panel-thread",
+      "programId": "automation-studio",
+      "endpoint": "rename-panel-thread",
+      "reason": "A person renames one of their chats from the dock's own list."
     },
     {
       "name": "automation-studio__reorder-project-categories",
