@@ -29,4 +29,6 @@ export type AutomationStudioRuntimeSessionRunInput = {
     interpretationCostUsd?: number;
     /** How many priced model calls `interpretationCostUsd` sums: the Flow spend's "chat" calls. */
     interpretationCalls?: number;
+    /** How human the person wants the run to act, an integer 0-100; absent means 0. Reaches the graph's options where the session builds them. */
+    humanness?: number;
 };

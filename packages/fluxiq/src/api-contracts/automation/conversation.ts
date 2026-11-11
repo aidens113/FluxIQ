@@ -89,6 +89,8 @@ export type ConversationTurnAppendRequest = FlowProjectRequest & {
   attachmentKind?: string;
   attachmentRef?: string;
   capabilities?: unknown[];
+  /** How human the person wants the work to act, an integer 0-100. Absent means 0. Carried into the build or run a command from this turn starts; any other value is refused. */
+  humanness?: number;
   /**
    * What the panel has open, so "run it" means the Flow on screen. Every field
    * optional. Without `flowId`, a thread whose subject is a Flow means that

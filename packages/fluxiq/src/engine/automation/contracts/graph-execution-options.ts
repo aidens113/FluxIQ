@@ -72,9 +72,12 @@ export type AutomationStudioGraphExecutionOptions = {
    * `withheldValues` holds every value the run has resolved out of state so far,
    * for a dispatcher that keeps its own record of the command; the effect itself
    * carries the real value. `humanness` is the run's level when its options set it,
-   * for the dispatcher to put on the command it sends.
+   * for the dispatcher to put on the command it sends. `humannessMisclick` is set
+   * only above humanness 0 on a node Core knows is not lasting: it declared an
+   * empty consequence list and nothing marks it as acting on the world
+   * (`node-execution/attempt.ts`). Absent, the client never misclicks.
    */
-  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; humanness?: number; commandContext?: import("../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
+  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; humanness?: number; humannessMisclick?: true; commandContext?: import("../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
   /**
    * Stores the rows a record output captured. Called once per capture, after
    * the dispatch succeeded and before the attempt is returned. A throw fails the

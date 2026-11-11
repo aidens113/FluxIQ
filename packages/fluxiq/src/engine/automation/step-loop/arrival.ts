@@ -1,8 +1,7 @@
 import type { AutomationStudioFlowNode } from "../../../flows/executable/graph/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { automationStudioAwaitNodeReadiness, type AutomationStudioReadinessOutcome } from "../recovery/index.ts";
-import { normalizeHumanness } from "@fluxiq/contracts/runtime";
-import { automationStudioHumanPauseMs, automationStudioRunWait } from "../pacing/index.ts";
+import { automationStudioArrivalPauseMs, automationStudioRunWait } from "../pacing/index.ts";
 import { automationStudioOptionalStepNotShown } from "../state-routing/index.ts";
 import { automationStudioRecordedState, type AutomationStudioRecordedState } from "../transitions/index.ts";
 import { automationStudioNodeRetryPolicy, type AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
@@ -65,7 +64,9 @@ export async function automationStudioStepArrival(
   if (alreadyDone) return alreadyDone;
   const retryPolicy = automationStudioNodeRetryPolicy(ctx.flow, node, options);
   const recordedState = automationStudioRecordedState(node);
-  if (ctx.arrival.attempts === 1 && normalizeHumanness(options.humanness) > 0) await automationStudioRunWait(options, automationStudioHumanPauseMs(options.humanness, options.humannessSeed ?? 0, node.id, ctx.arrival.ordinal));
+  // Before a node's first arrival: the human pause at the run's humanness, never under a developer's least step gap; 0 and no await at level 0 with no override (`pacing/arrival-pause.ts`).
+  const arrivalPauseMs = ctx.arrival.attempts === 1 ? automationStudioArrivalPauseMs(options, node.id, ctx.arrival.ordinal) : 0;
+  if (arrivalPauseMs > 0) await automationStudioRunWait(options, arrivalPauseMs);
   // A node's pace holds each arrival at it, never a retry of one (`pacing/pace-keeper.ts`).
   const paced = ctx.arrival.attempts === 1 ? await runState.pace.before(node, now, (ms) => automationStudioRunWait(options, ms)) : undefined;
   // On Before, retries included, before the readiness gate; its record rides on the attempt it cleared the way for.

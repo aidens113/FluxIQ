@@ -2,6 +2,7 @@
 // the run to be, runs it as whoever's unlocked key pays, and answers with the
 // run's session and what its stored detail says came of it.
 
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../api-contracts/automation.ts";
 import { automationStudioWithWholeAttemptInputs } from "../../../../engine/automation/node-execution/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../../flows/authoring/model/index.ts";
@@ -16,12 +17,14 @@ export async function runRuntimeSessionForRequest(
   service: Pick<AutomationStudioService, "runRuntimeSession" | "getFlowRunDetail" | "conversations">,
   request: { payload?: unknown; actor?: { userId: string; sessionId: string } }
 ) {
-  const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown; interpretationCalls?: unknown } : {};
+  const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown; interpretationCalls?: unknown; humanness?: unknown } : {};
   if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-  const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, interpretationCalls: readingCalls, ...payload } = raw;
+  const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, interpretationCalls: readingCalls, humanness: requestedHumanness, ...payload } = raw;
   // What the chat's reading of the message that started the run cost (the chat's "Run it"): the Flow's spend in a Lab-scoped run (t438).
   if (readingCost !== undefined && (typeof readingCost !== "number" || !Number.isFinite(readingCost) || readingCost < 0)) return { ok: false, error: "The run's interpretation cost is invalid." };
   if (readingCalls !== undefined && (!Number.isSafeInteger(readingCalls) || (readingCalls as number) < 0)) return { ok: false, error: "The run's interpretation call count is invalid." };
+  // How human the person wants the run to act (the chat's "Run it", the panel's Run): refused unless a whole number from 0 to 100.
+  if (requestedHumanness !== undefined && !humannessSchema.safeParse(requestedHumanness).success) return { ok: false, error: "The run's humanness must be a whole number from 0 to 100." };
   // A caller may ask to pay for fewer of its run's result checks, never more: the chat's "Run it" for a
   // paired client calls as the person's unlocked session, so it says itself what the paired rule below says.
   if (requestedCallerPays !== undefined && requestedCallerPays !== "repair_checks") return { ok: false, error: "A run can only ask to pay for the result checks that judge a repair." };
@@ -72,7 +75,7 @@ export async function runRuntimeSessionForRequest(
   // A run refused before its first step answers with its closed code (`./refusal-response.ts`).
   let ran: Awaited<ReturnType<typeof service.runRuntimeSession>>;
   try {
-    ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }), ...(readingCalls === undefined ? {} : { interpretationCalls: readingCalls as number }) });
+    ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }), ...(readingCalls === undefined ? {} : { interpretationCalls: readingCalls as number }), ...(requestedHumanness === undefined ? {} : { humanness: requestedHumanness as number }) });
   } catch (error) {
     const refusal = automationStudioRunRefusalResponse(error);
     if (refusal) return refusal;

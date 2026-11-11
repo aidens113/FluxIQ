@@ -71,6 +71,8 @@ export type FluxIQRuntimeCommand = {
   metadata?: JsonObject;
   /** How human the run's input looks, 0 to 100; present only when the run's options set it. */
   humanness?: number;
+  /** Set only above humanness 0 on a step Core knows is not lasting (`ClientGatewayActionCommand.humannessMisclick`); absent otherwise. */
+  humannessMisclick?: true;
 };
 
 export type FluxIQRuntimeCommandStatus =

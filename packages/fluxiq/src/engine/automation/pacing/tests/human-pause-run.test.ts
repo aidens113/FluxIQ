@@ -3,6 +3,7 @@ import type { AutomationStudioFlowDocument } from "../../tests/fixture-contracts
 import type { AutomationStudioFlowNode } from "../../../../flows/executable/graph/index.ts";
 import { automationStudioHumanPauseMs } from "../index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../index.ts";
+import { runWithAutomationStudioRunOverrides } from "../../../../runtime/run-overrides/index.ts";
 
 const step = (id: string): AutomationStudioFlowNode => ({ id, definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: id } } });
 const flow: AutomationStudioFlowDocument = {
@@ -54,5 +55,15 @@ describe("a graph run at a humanness level", () => {
     const seeded = await run({ humanness: 50, humannessSeed: 12345 });
     expect(seeded.trace.humanness).toEqual({ level: 50, seed: 12345 });
     expect(seeded.delays).toEqual(["s1", "s2", "s3"].map((id) => automationStudioHumanPauseMs(50, 12345, id, 1)).filter((ms) => ms > 0));
+  });
+
+  it("holds a developer's least step gap at level 0, once per node's first arrival, and adds the floor under the human pause above 0", async () => {
+    const floored = await runWithAutomationStudioRunOverrides({ pace: { minStepGapMs: 400 } }, () => run({}));
+    expect(floored.delays).toEqual([400, 400, 400]);
+    expect("humanness" in floored.trace).toBe(false);
+    const unset = await runWithAutomationStudioRunOverrides({}, () => run({}));
+    expect(unset.delays).toEqual([]);
+    const human = await runWithAutomationStudioRunOverrides({ pace: { minStepGapMs: 400 } }, () => run({ humanness: 50, humannessSeed: 11 }));
+    expect(human.delays).toEqual(["s1", "s2", "s3"].map((id) => Math.max(400, automationStudioHumanPauseMs(50, 11, id, 1))));
   });
 });

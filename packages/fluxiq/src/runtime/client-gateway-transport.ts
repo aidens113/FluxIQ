@@ -189,7 +189,8 @@ function actionCommandFromRuntime(command: FluxIQRuntimeCommand): ClientGatewayA
     ...(command.target ? { target: command.target } : {}),
     ...(command.timeoutMs !== undefined ? { timeoutMs: command.timeoutMs } : {}),
     ...(command.metadata ? { metadata: command.metadata } : {}),
-    ...(command.humanness !== undefined ? { humanness: command.humanness } : {})
+    ...(command.humanness !== undefined ? { humanness: command.humanness } : {}),
+    ...(command.humannessMisclick === true ? { humannessMisclick: true as const } : {})
   };
 }
 

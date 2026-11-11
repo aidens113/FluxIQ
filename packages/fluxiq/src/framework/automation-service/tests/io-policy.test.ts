@@ -40,6 +40,17 @@ describe("a run's humanness on the command the runtime policy dispatcher sends",
     await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 0 });
     expect(commands.map((command) => command.humanness)).toEqual([60, 0]);
   });
+
+  it("copies the misclick mark only when the context carries it, and a command without it is exactly today's", async () => {
+    const commands: Array<Record<string, unknown>> = [];
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 60 });
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 60, humannessMisclick: true });
+    const [plain, marked] = commands.map(({ commandId: _id, ...command }) => command);
+    expect(plain).not.toHaveProperty("humannessMisclick");
+    const { humannessMisclick, ...markedWithout } = marked!;
+    expect(humannessMisclick).toBe(true);
+    expect(plain).toEqual(markedWithout);
+  });
 });
 
 describe("a domain's output target preparer", () => {
