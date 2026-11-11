@@ -64,7 +64,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   let personStopped = false;
   run.path = "run_flow";
   const outcome = await automationStudioAnswerFirstFlowRun({
-    input, runId: run.runId, record: run.record, sink: run.sink, permissions: run.permissions,
+    input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
     stepped: () => {
       run.liveSteps += 1;
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);

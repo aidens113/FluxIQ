@@ -8,6 +8,7 @@ import type { AutomationStudioDomainReadings } from "../../../../../runtime/doma
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "../attempt/index.ts";
+import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 
 /** What the engine runs a Flow with: the parts a trial's environment holds (`../../trial-ports/environment.ts`). */
@@ -34,6 +35,8 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   runId: string;
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "recordBatch">;
+  /** The attempt's one result: told the run's batches as its draft steps' pages once it has ended (`./flow-run.ts`). Absent, nothing is told. */
+  result?: Pick<AutomationStudioAnswerFirstResultFeed, "batches"> | undefined;
   permissions: Pick<AutomationStudioFlowBootstrapActionPermissions, "planStep" | "shown"> & { exploredToggles?: Pick<AutomationStudioFlowBootstrapActionPermissions["exploredToggles"], "trial"> | undefined };
   /** One call really reached the target. */
   stepped(): void;

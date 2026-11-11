@@ -195,11 +195,11 @@ describe("nothing is applied", () => {
   it("for a run judged no, or an attempt with any model decision", async () => {
     const { lane } = await appliedLane(cleanups);
     await lane.attempt(firstAttempt);
-    const judged = await lane.attempt({ judge: [judgedNo("Not what was asked.")], script: [readLoans("again", {}), complete("Listed by hand.")] });
+    const judged = await lane.attempt({ judge: [judgedNo("Not what was asked.")], script: [readLoans("again"), complete("Listed by hand.")] });
     expect(judged.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
     expect(await changesOn(lane)).toEqual([]);
     lane.target.page = "elsewhere";
-    const broke = await lane.attempt({ script: [readLoans("again", {}), complete("Listed by hand.")] });
+    const broke = await lane.attempt({ script: [readLoans("again"), complete("Listed by hand.")] });
     expect(broke.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
     expect(await changesOn(lane)).toEqual([]);
     expect(await stepsInTheFlow(lane)).toEqual([]);

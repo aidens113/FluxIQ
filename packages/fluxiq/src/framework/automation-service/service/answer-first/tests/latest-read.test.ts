@@ -10,6 +10,13 @@
 // the model on its own answer (run-mwafor01-bb471f52, cause 1d: the result held two pages, the model
 // read page 2 again asked another way, that one page became the whole result, and nothing it was shown
 // said so). The last describe asserts what the model's next request carries.
+//
+// **Since lane t905 the result is the draft's read steps (lead decision D1).** Every read here that is
+// meant to be the result is made with `add`; a read without it is a look and never changes the result.
+// Pages of one list are one step's pages where the list says one key and each read says its place
+// (`library.listKey`, a `page` parameter or the address's page), as the web domain's list read does;
+// reads with no key are steps of their own, and the last is the result. What each read did to the
+// result is the ledger's line on its answer (`resultNote`), no longer the row sink's `resultList`.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../../../runtime/llm/index.ts";
@@ -27,7 +34,7 @@ type Loan = FakeLibrary["loans"][number];
 const loan = (title: string, due = "2030-01-01"): Loan => ({ title, due });
 const NAMES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking"];
 /** A read, under a call id of its own. */
-const read = (id: string, parameters: JsonObject = {}) => runNode(id, READ_LOANS, parameters);
+const read = (id: string, parameters: JsonObject = {}) => runNode(id, READ_LOANS, parameters, [], { add: true });
 let moves = 0;
 /**
  * The site changes, a look sees the page moved, and then the model reads. As on a real page the
@@ -75,6 +82,11 @@ function resultRows(attempt: Awaited<ReturnType<typeof attemptOf>>): JsonObject[
   return rows;
 }
 
+/** The list's key the web domain's read says, for the tests whose pages are one list. */
+const LIST_KEY = "list.loans";
+/** As `after`, with the read made as a look: no `add`. */
+const afterLook = (library: FakeLibrary, change: () => void, id: string): Step[] => [after(library, change, id)[0]!, runNode(id, READ_LOANS, {})];
+
 const titles = (rows: readonly JsonObject[]) => rows.map((row) => row.title);
 
 describe("the latest read of a list is the result", () => {
@@ -121,13 +133,15 @@ describe("the latest read of a list is the result", () => {
 
   it("page 2 of a list merges after page 1 in order, by rows alone", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
-    const attempt = await attemptOf(library, [read("first"), after(library, () => { library.loans = [loan("Clockmaking"), loan("Dunes of the South")]; }, "page-two")]);
+    library.listKey = LIST_KEY;
+    const attempt = await attemptOf(library, [read("first", { page: 1 }), after(library, () => { library.loans = [loan("Clockmaking"), loan("Dunes of the South")]; }, "page-two", { page: 2 })]);
     expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dunes of the South"]);
   });
 
   it("page 2 by its address merges, and a row the feed repeats counts once", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     library.address = "library://account/loans?page=1";
+    library.listKey = LIST_KEY;
     const attempt = await attemptOf(library, [read("first"), after(library, () => {
       library.address = "library://account/loans?page=2";
       library.loans = [loan("Birds of the Coast", "2030-01-02"), loan("Clockmaking")];
@@ -137,18 +151,20 @@ describe("the latest read of a list is the result", () => {
 
   it("a feed repeating a pinned row on every page: merged, the row once", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
-    const attempt = await attemptOf(library, [read("first"), after(library, () => { library.loans = [library.loans[0]!, loan("Dunes of the South"), loan("Ephemera of the Harbour")]; }, "page-two")]);
+    library.listKey = LIST_KEY;
+    const attempt = await attemptOf(library, [read("first", { page: 1 }), after(library, () => { library.loans = [library.loans[0]!, loan("Dunes of the South"), loan("Ephemera of the Harbour")]; }, "page-two", { page: 2 })]);
     expect(titles(resultRows(attempt))).toEqual([...NAMES, "Dunes of the South", "Ephemera of the Harbour"]);
   });
 
   it("two pages, then page 1 read again sorted differently: the list starts over, and the next page merges after it", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const pageTwo = [loan("Clockmaking"), loan("Dunes of the South")];
+    library.listKey = LIST_KEY;
     const attempt = await attemptOf(library, [
-      read("first", worded("first")),
-      after(library, () => { library.loans = pageTwo; }, "page-two", worded("two")),
-      after(library, () => { library.loans = [loan("Birds of the Coast", "2030-01-02"), loan("Atlas of Rivers")]; }, "resorted", worded("resorted")),
-      after(library, () => { library.loans = [...pageTwo].reverse(); }, "page-two-again", worded("again"))
+      read("first", { ...worded("first"), page: 1 }),
+      after(library, () => { library.loans = pageTwo; }, "page-two", { ...worded("two"), page: 2 }),
+      after(library, () => { library.loans = [loan("Birds of the Coast", "2030-01-02"), loan("Atlas of Rivers")]; }, "resorted", { ...worded("resorted"), page: 1 }),
+      after(library, () => { library.loans = [...pageTwo].reverse(); }, "page-two-again", { ...worded("again"), page: 2 })
     ]);
     expect(titles(resultRows(attempt))).toEqual(["Birds of the Coast", "Atlas of Rivers", "Dunes of the South", "Clockmaking"]);
   });
@@ -156,7 +172,8 @@ describe("the latest read of a list is the result", () => {
   it("two pages, then page 1 read again unchanged: both pages stand, and the person's result does not shrink", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const pageOne = library.loans;
-    const attempt = await attemptOf(library, [read("first", worded("first")), after(library, () => { library.loans = [loan("Clockmaking")]; }, "page-two", worded("two")), after(library, () => { library.loans = pageOne; }, "page-one-again", worded("again"))]);
+    library.listKey = LIST_KEY;
+    const attempt = await attemptOf(library, [read("first", { ...worded("first"), page: 1 }), after(library, () => { library.loans = [loan("Clockmaking")]; }, "page-two", { ...worded("two"), page: 2 }), after(library, () => { library.loans = pageOne; }, "page-one-again", { ...worded("again"), page: 1 })]);
     expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
   });
 
@@ -182,14 +199,16 @@ describe("the latest read of a list is the result", () => {
     expect(titles(resultRows(attempt))).toEqual(["Birds of the Coast", "Atlas of Rivers"]);
   });
 
-  it("the model says `append` across two views under one name: it asked for both, in order", async () => {
+  // Changed by lane t905: the result is one list, its output step's (design (e): a join is not designed), and a record
+  // output's `append` names no step. Two views read as two steps leave the last one's rows as the result.
+  it("the model says `append` across two views under one name: the result is the last view's step", async () => {
     const library = fakeLibrary(["Atlas of Rivers"]);
     library.address = "library://account/branch-one";
     const attempt = await attemptOf(library, [read("one", output("everything", "append")), after(library, () => {
       library.address = "library://account/branch-two";
       library.loans = [loan("Birds of the Coast")];
     }, "two", output("everything", "append"))]);
-    expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast"]);
+    expect(titles(resultRows(attempt))).toEqual(["Birds of the Coast"]);
   });
 
   it("the model says `replace` on rows the list has never held: a filter no row of it survived", async () => {
@@ -205,9 +224,10 @@ describe("the latest read of a list is the result", () => {
     expect(titles(resultRows(attempt))).toEqual(asked.map((each) => each.title));
   });
 
-  it("a read that came back empty does not wipe a good one", async () => {
+  // Changed by lane t905: a read outside the draft (a look) never changes the result, empty or not.
+  it("a look that came back empty does not wipe a good one", async () => {
     const library = fakeLibrary();
-    const attempt = await attemptOf(library, [read("first"), after(library, () => { library.loans = []; }, "empty")]);
+    const attempt = await attemptOf(library, [read("first"), afterLook(library, () => { library.loans = []; }, "empty")]);
     expect(titles(resultRows(attempt))).toEqual(NAMES);
   });
 
@@ -248,16 +268,26 @@ describe("the latest read of a list is the result", () => {
   });
 });
 
-/** Core's note on the result, on the answer to `callId` as a request shows it, or nothing. */
-function resultNoteOn(request: AutomationStudioLlmTaskRequest, callId: string): JsonObject | undefined {
+/** The result's line on the answer to `callId` as a request shows it, or nothing (lane t905: the ledger's, `resultNote`). */
+function resultNoteOn(request: AutomationStudioLlmTaskRequest, callId: string): string | undefined {
   const value = request.context.evidenceLoop?.evidence.find((each) => each.callId === callId)?.value as JsonObject | undefined;
-  return value?.resultList as JsonObject | undefined;
+  return typeof value?.resultNote === "string" ? value.resultNote : undefined;
 }
 
+/** The header in a request's fixed slot. */
+function headerIn(request: AutomationStudioLlmTaskRequest): string {
+  const slot = request.context.evidenceLoop?.evidence.find((each) => each.toolId === "core.result")?.value as JsonObject | undefined;
+  return String(slot?.result ?? "");
+}
+
+// Changed by lane t905: the row sink's `resultList` note (`answer_first.result_list_replaced` / `_started_over`) is the
+// ledger's change line now, on every read's answer; a Flow's run of a read step makes that step's page, and the result
+// stays the output step's, the last read step of the draft.
 describe("a read that changes which rows the result holds says so in the model's next request", () => {
-  it("another list: what it holds now, and the list it replaced", async () => {
+  it("a further page of the same list, and the same page asked another way: each says how the result changed", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     library.address = "library://account/loans?page=1";
+    library.listKey = LIST_KEY;
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
       library,
@@ -271,7 +301,7 @@ describe("a read that changes which rows the result holds says so in the model's
           seen.push(request);
           return toolCall("look.carried", LOOK_TOOL, { at: "carried" });
         },
-        ...after(library, () => undefined, "page-two-asked-otherwise", { shape: "narrowed" }),
+        ...after(library, () => { library.loans = [loan("Clockmaking"), loan("Dunes of the South")]; }, "page-two-again", { shape: "narrowed" }),
         (request) => {
           seen.push(request);
           return complete("Listed.");
@@ -279,21 +309,13 @@ describe("a read that changes which rows the result holds says so in the model's
       ]
     }, cleanups);
     expect(attempt.answered.status).toBe("answered");
-    const [carried, switched] = seen;
-    // A further page of the same list carries it on, and that is no change to tell.
-    expect(resultNoteOn(carried!, "page-two")).toBeUndefined();
-    expect(resultNoteOn(switched!, "page-two-asked-otherwise")).toEqual({
-      code: "answer_first.result_list_replaced",
-      rows: 1,
-      pages: [{ place: "page=2", kept: 1 }],
-      replaced: { rows: 3, columns: ["title", "due"], pages: [{ place: "page=1", kept: 2 }, { place: "page=2", kept: 1 }], lastReadBy: "page-two" },
-      instruction: expect.stringContaining("the result is now this list alone")
-    });
-    // What the model was told is what the result became.
-    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(1);
+    const [carried, again] = seen;
+    expect(resultNoteOn(carried!, "page-two")).toMatch(/^result 2 → 3 rows: .*read page=2 \(1\)/u);
+    expect(resultNoteOn(again!, "page-two-again")).toMatch(/^result 3 → 4 rows: .*read page=2 again \(1 → 2\)/u);
+    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(4);
   });
 
-  it("its list started over and a row it held left out", async () => {
+  it("another step becomes the result, and a row the first held is left out: said", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
@@ -308,19 +330,19 @@ describe("a read that changes which rows the result holds says so in the model's
       ]
     }, cleanups);
     expect(attempt.answered.status).toBe("answered");
-    expect(resultNoteOn(seen[0]!, "filtered")).toMatchObject({ code: "answer_first.result_list_started_over", rows: 1, replaced: { rows: 2, lastReadBy: "first" } });
+    expect(resultNoteOn(seen[0]!, "filtered")).toMatch(/^result 2 → 1 row: .*the result is now step \d+'s \(it was step \d+'s\)/u);
   });
 
-  it("a Flow run that switches the list: the run's answer says so, as a read by hand's does", async () => {
+  it("a Flow run of an earlier read step is that step's page, and the result stays the draft's last read step", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
+    // Each read says its place, as the web domain's list read does: a read that says none is the step's next page (`../result/place-order.ts`).
+    library.address = "library://account/loans?page=1";
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
       library,
       script: [
-        { ...read("listed", { shape: "listed" }), add: true },
-        // The model asks for the same loans another way, which is a list of its own and the result.
+        read("listed", { shape: "listed" }),
         ...after(library, () => { library.loans = [loan("Clockmaking")]; }, "narrowed", { shape: "narrowed" }),
-        // The Flow's read step asks as the first did, so running it makes the first list the result again.
         () => {
           library.loans = [loan("Atlas of Rivers"), loan("Birds of the Coast"), loan("Dunes of the South")];
           library.shelf = `${library.shelf} moved`;
@@ -333,13 +355,7 @@ describe("a read that changes which rows the result holds says so in the model's
       ]
     }, cleanups);
     expect(attempt.answered.status).toBe("answered");
-    const note = resultNoteOn(seen[0]!, "forward");
-    expect(note).toMatchObject({
-      code: "answer_first.result_list_replaced",
-      rows: 3,
-      replaced: { rows: 1, columns: ["title", "due"], lastReadBy: "narrowed" },
-      instruction: expect.stringContaining("the result is now this list alone")
-    });
-    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(3);
+    expect(headerIn(seen[0]!)).toContain("Working reads, not the answer: step 2 (1 page, 3 rows)");
+    expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(1);
   });
 });

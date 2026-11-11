@@ -12,6 +12,7 @@ import type { AutomationStudioAnswerFirstAttemptPrior } from "../carry-on/index.
 import type { AutomationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "../flow-run/index.ts";
 import type { AutomationStudioAnswerFirstStuck } from "../loop-signal/index.ts";
+import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRoute } from "../route/index.ts";
 import type { AutomationStudioAnswerFirstRowSink, AutomationStudioAnswerFirstSession } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptProvenance, AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
@@ -59,6 +60,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   /** The act of the request the latest decision says its call does, for `asked`: which act, never how many. */
   claim?: string | undefined;
   sink: AutomationStudioAnswerFirstRowSink;
+  /** The attempt's one result (`../result-feed/`): which of the rows the sink stores are the answer. */
+  result: AutomationStudioAnswerFirstResultFeed;
   session: AutomationStudioAnswerFirstSession;
   witnesses: AutomationStudioAnswerFirstWitnesses;
   completion: AutomationStudioAnswerFirstCompletionCheck;
@@ -93,5 +96,5 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   /** This attempt's own provider's waits for a person (`../person-waits/key-wait.ts`). */
   keyWaits?: { heldMs(): number; stop(): void } | undefined;
   /** What the attempt waits for right now, for its stored row. */
-  waitingFor?: "permission" | "person_only_check" | "stuck_in_a_loop" | "model_key_locked" | undefined;
+  waitingFor?: "permission" | "person_only_check" | "model_key_locked" | undefined;
 };

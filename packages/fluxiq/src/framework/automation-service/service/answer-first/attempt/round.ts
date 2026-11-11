@@ -96,6 +96,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       ...automationStudioAttemptActForward(run.record),
       // Which steps forward runs got through, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
       passed: (step, _row, answer) => {
+        // A pass of a draft read step is that step's page; a pass that moves a loop's list on says its paging (`../result-feed/feed.ts`).
+        run.result.passed(step, run.steps, answer);
         if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardPassed.add(automationStudioFlowDraftStepId(step));
       }
     },
@@ -181,7 +183,7 @@ function sentAgain(issueCodes: readonly string[]): string {
 
 function resultHolds(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const { held } = run.completion.state;
-  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.sink.summary(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? []);
+  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.result.rows(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? [], run.result.port.header());
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

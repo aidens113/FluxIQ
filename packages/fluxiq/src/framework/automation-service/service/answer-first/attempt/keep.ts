@@ -2,6 +2,7 @@
 // decision, every wait and between rounds, so a process that dies leaves the best result so far,
 // what it spent and the draft rather than nothing, and written at the ending (`./ending.ts`)
 // through the contract's own check. A carried-on attempt's counts are what it had and this segment's.
+// Its rows are the answer the attempt's one result holds (`../result-feed/`): the output step's pages, never a look.
 
 import { automationStudioTaskAttemptNoLoopsCaught, type AutomationStudioTaskAttempt, type AutomationStudioTaskAttemptPath, type AutomationStudioTaskResult, type AutomationStudioTaskResultRows, type AutomationStudioTaskResultSource } from "@fluxiq/contracts/automation";
 import { automationStudioAnswerFirstResult } from "../../../../../runtime/answer-first/result/index.ts";
@@ -14,7 +15,7 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 const SOURCE_OF_PATH: Readonly<Record<AutomationStudioTaskAttemptPath, AutomationStudioTaskResultSource>> = { explore: "exploration", run_flow: "flow", run_flow_then_repair: "both", run_flow_then_explore: "both" };
 
 /** The attempt as it stands, by status. */
-export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "stuck_in_a_loop" | "model_key_locked" }): AutomationStudioTaskAttempt {
+export function automationStudioAnswerFirstAttemptAs(run: AutomationStudioAnswerFirstAttemptRun, status: { status: "working" | "achieved" | "budget_out" | "stopped_by_person" } | { status: "waiting_for_person"; waitingFor: "permission" | "person_only_check" | "model_key_locked" }): AutomationStudioTaskAttempt {
   const now = Date.now();
   const ended = status.status === "achieved" || status.status === "budget_out" || status.status === "stopped_by_person";
   const purse = run.input.creation.purse;
@@ -100,7 +101,7 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
   try {
     const waiting = run.waitingFor !== undefined;
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
-    const result = automationStudioAnswerFirstResultAs(run, run.sink.summary());
+    const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
     await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...automationStudioAnswerFirstReplayKept(run.completion.state) });
     if (waiting) await run.input.stores.datasets.processEndedRunDatasets({ projectId: run.input.projectId, runId: run.runId });
     return { ok: true };

@@ -6,6 +6,9 @@
 // Screened as the judge's copy is (`../../../../../runtime/result-verification/flow-less/judged-summary.ts`):
 // a column that may not be sent is left out and a value that may not is marked. Every value is one
 // the model's own read returned. A digest, not the record, so it is bounded and says when it is cut.
+//
+// **And the result header, whole** (`result`, `../result/header.ts`): which draft step the rows are from, its pages and
+// the looks that are not in it, in the words every request's fixed slot carries, so a refusal and the request agree.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../../../../runtime/llm/harness/index.ts";
@@ -16,9 +19,10 @@ const MOST_ROWS = 30;
 const MOST_CHARS = 200;
 const WITHHELD = "[withheld]";
 
-export function automationStudioAnswerFirstResultHolds(held: { rows: AutomationStudioAnswerFirstRowsSummary; acts: number }, deniedEvidenceKeys: readonly string[]): JsonObject {
+export function automationStudioAnswerFirstResultHolds(held: { rows: AutomationStudioAnswerFirstRowsSummary; acts: number }, deniedEvidenceKeys: readonly string[], header?: string): JsonObject {
   const { rows, acts } = held;
-  if (rows.totalRows === 0 || rows.rows.length === 0) return { totalRows: 0, acts };
+  const result = header === undefined ? {} : { result: header };
+  if (rows.totalRows === 0 || rows.rows.length === 0) return { ...result, totalRows: 0, acts };
   const declared = rows.columns.length ? rows.columns.map((column) => column.id) : [...new Set(rows.rows.flatMap((row) => Object.keys(row)))];
   const columns = declared.filter((id) => {
     const found = screenAutomationStudioLlmEvidence({ [id]: "" }, deniedEvidenceKeys);
@@ -26,6 +30,7 @@ export function automationStudioAnswerFirstResultHolds(held: { rows: AutomationS
   });
   const shown = rows.rows.slice(0, MOST_ROWS).map((row) => Object.fromEntries(columns.filter((id) => Object.hasOwn(row, id)).map((id) => [id, cell(row[id]!, deniedEvidenceKeys)])));
   return {
+    ...result,
     totalRows: rows.totalRows,
     columns,
     rowsInOrder: shown,

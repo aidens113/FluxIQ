@@ -4,6 +4,7 @@ export { automationStudioAnswerFirstStatedToggles } from "./stated-toggles.ts";
 export { automationStudioAnswerFirstStandIn, type AutomationStudioAnswerFirstStandInRun } from "./stand-in.ts";
 export { automationStudioAnswerFirstStepOfNode } from "./step-of-node.ts";
 export { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
+export { automationStudioAnswerFirstFlowRunBatchSteps } from "./batch-steps.ts";
 export { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 export { automationStudioAnswerFirstFlowRunEngineOf } from "./engine-of.ts";
 export { automationStudioAnswerFirstFlowRun } from "./flow-run.ts";

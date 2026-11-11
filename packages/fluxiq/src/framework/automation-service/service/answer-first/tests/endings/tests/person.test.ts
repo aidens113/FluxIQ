@@ -130,7 +130,7 @@ describe("a check only a person can clear", () => {
     const generating = scriptedAttempt({
       before: hold.before,
       fault: (call) => call.value.node === READ_LOANS && checks-- > 0 ? check(call) : undefined,
-      script: [runNode("read.checked", READ_LOANS, {}, [], { add: true }), runNode("read", READ_LOANS, { again: true }, [], {}), complete("Listed.")]
+      script: [runNode("read.checked", READ_LOANS, {}, [], { add: true }), runNode("read", READ_LOANS, { again: true }, [], { add: true }), complete("Listed.")]
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
     const ask = await pendingAsk(service, projectId, flowId, AUTOMATION_STUDIO_PERSON_NEEDED_CONTROL_KIND);
@@ -163,7 +163,7 @@ describe("a check only a person can clear", () => {
         return check(call);
       },
       // Each checked call stands as the domain described it once cleared, with nothing read; the last read reads the list.
-      script: [...reads.map((page) => runNode(`read.${page}`, READ_LOANS, { page }, [], page === 1 ? { add: true } : {})), runNode("read.all", READ_LOANS, { all: true }, [], {}), complete("Listed.")]
+      script: [...reads.map((page) => runNode(`read.${page}`, READ_LOANS, { page }, [], page === 1 ? { add: true } : {})), runNode("read.all", READ_LOANS, { all: true }, [], { add: true }), complete("Listed.")]
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
     let finished = false;

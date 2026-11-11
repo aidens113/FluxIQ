@@ -55,6 +55,8 @@ export type FakeLibrary = {
   renewedUntil?: string;
   /** The address a read says it read, as a real domain's does. Absent, a read says none. */
   address?: string;
+  /** The list's key, as the web domain's list read says it beside the rows (`read.listKey`): two reads of one list carry one. Absent, a read says none. */
+  listKey?: string;
   /** Whether the account's hold shelf is on: a control a press flips each time, and a toggle site's Save in small. */
   onHold?: boolean;
 };
@@ -103,7 +105,7 @@ async function answerOf(library: FakeLibrary, fault: FakeLibraryFault | undefine
   const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
   if (value.write === true) return { ...answer({ written: true }, { ...draft, written: true, effect: nodeId === READ_LOANS ? "observe" : "mutate" }), resultCode: "core.run_node.written" };
   const rows = (): JsonObject[] => library.loans.map((loan) => library.shapes?.[String(ran.parameters.shape)]?.(loan) ?? { ...loan });
-  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows(), ...(library.address === undefined ? {} : { url: library.address }) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
+  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows(), ...(library.address === undefined ? {} : { url: library.address }), ...(library.listKey === undefined ? {} : { listKey: library.listKey }) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
   const declared = ran.consequences;
   if (declared.length && permission) {
     const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });

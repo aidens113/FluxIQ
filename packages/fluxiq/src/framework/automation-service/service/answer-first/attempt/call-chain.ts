@@ -7,10 +7,12 @@
 // executor. The first lasting act reads the "before" witness first, and only then is dispatched.
 //
 // **What the sink is told is the call's answer alone**, never a model's words (plan D9), and
-// the chain counts what reached the domain as the attempt's live steps. A read that made the result
-// another list, or started its list over and left rows out, carries Core's note on that beside what
-// the domain answered (`resultList`, `../rows/result-change.ts`; run-mwafor01-bb471f52): without it the
-// model cannot tell from the read that rows it read before are no longer in the result.
+// the chain counts what reached the domain as the attempt's live steps. The sink stores every read's
+// rows; the attempt's one result (`../result-feed/`, lane t905) says which of them are the answer: a
+// read made with `add` is a draft step's page, any other is a look. Every read's answer carries the
+// ledger's line beside what the domain answered (`resultNote`): how the result changed, or that it was
+// a look and the result is unchanged (run-mwafor01-bb471f52, run-mwaudvnh-c208d32c). Without it the
+// model cannot tell from the read whether the rows it holds are in the result.
 //
 // **Nothing is put back on this path (D1).** A forward run sends no reset by construction, and a
 // model's `amend_draft` rerun sends none either: the round tells the loop it reruns in place
@@ -47,7 +49,8 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import { automationStudioAnswerFirstResultChangeTold, type AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
+import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
+import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
 
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
@@ -62,12 +65,16 @@ const ELEMENT_KEY = "element";
 const PAGE_KEY = "page";
 /** Looks remembered as already handed on; past this the oldest is forgotten, so a long attempt holds a bounded set. */
 const LOOKS_REMEMBERED = 200;
+/** Where a read's answer carries the result's line (header). */
+const RESULT_NOTE_KEY = "resultNote";
 
 /** The chain under the permission gate (header). */
 export function automationStudioAnswerFirstCallChain(input: {
   domain: Execute;
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "fromCall">;
+  /** The attempt's one result, told every call's answer and what the sink stored of it (header). Absent, no read is told anything. */
+  result?: Pick<AutomationStudioAnswerFirstResultFeed, "called"> | undefined;
   witnesses: Pick<AutomationStudioAnswerFirstWitnesses, "beforeFirstLastingAct">;
   readRowsKey: string | undefined;
   describe: ((call: { toolId: string; value: JsonObject }) => { target?: string | undefined; wouldRunWith?: JsonObject | undefined } | undefined) | undefined;
@@ -99,8 +106,9 @@ export function automationStudioAnswerFirstCallChain(input: {
     } catch {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
-    // A read that changed which rows the result holds says so on its own answer (`../rows/result-change.ts`).
-    return isExecution(answer) && rows?.resultChanged ? automationStudioAnswerFirstResultChangeTold(answer, rows.resultChanged) : answer;
+    // The result's line goes on the read's own answer (header).
+    const line = isExecution(answer) ? input.result?.called({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, rows) : undefined;
+    return isExecution(answer) && line ? withResultNote(answer, line) : answer;
   };
   const described = (call: { toolId: string; value: JsonObject }) => {
     try {
@@ -132,6 +140,12 @@ export function automationStudioAnswerFirstCallChain(input: {
     if (declaresLasting(call.value)) await input.witnesses.beforeFirstLastingAct();
     return await gated(call);
   };
+}
+
+/** The answer with the result's line beside what the domain answered (header). */
+function withResultNote(answer: AutomationStudioLlmEvidenceToolExecutionResult, line: string): AutomationStudioLlmEvidenceToolExecutionResult {
+  const evidence: JsonValue = isObject(answer.evidence) ? { ...answer.evidence, [RESULT_NOTE_KEY]: line } : { answered: answer.evidence, [RESULT_NOTE_KEY]: line };
+  return { ...answer, evidence };
 }
 
 /** A call that says it does something lasting, and is not only a check of a step. */

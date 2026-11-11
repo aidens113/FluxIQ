@@ -83,6 +83,8 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE = "answer_first.not_
 const NOTHING = "answer_first.nothing_to_judge";
 /** A request that asks for rows back, completed while no read has run in the attempt (header). */
 const ROWS_NOT_READ = "answer_first.rows_not_read";
+/** A result with no rows while reads outside the draft kept some: only the draft's reads are the result (`../result/empty-refusal.ts`). */
+const EMPTY_RESULT = "answer_first.result_empty";
 /** A completion over what the check last refused: the code the ladder climbs on. */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE = "answer_first.same_evidence";
 const SAME = AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE;
@@ -146,6 +148,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   acts(): readonly AutomationStudioAttemptAct[];
   /** Whether any read has answered in this attempt, rows or none (`../rows/sink-type.ts`, `readsAnswered`). */
   readsRan(): boolean;
+  /** Why a result with no rows is refused where a look holds rows the draft could take (`../result-feed/feed.ts`); `undefined` where it is not. Absent, never. */
+  emptyResult?: (() => string | undefined) | undefined;
   endView(): Promise<AutomationStudioResultEndView | undefined>;
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
@@ -184,6 +188,9 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       const rows = await input.rows();
       const acts = input.acts();
       state.held = { rows, acts: acts.length };
+      // Rows a look kept are not the result: the model is told which, and the one call that makes one a draft step (lane t905, D1).
+      const empty = rows.totalRows === 0 && (asks.records || (acts.length === 0 && answerText === undefined)) ? input.emptyResult?.() : undefined;
+      if (empty !== undefined) return refused(EMPTY_RESULT, empty);
       if (rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
