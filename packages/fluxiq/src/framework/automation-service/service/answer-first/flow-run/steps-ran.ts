@@ -34,7 +34,8 @@ import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.t
 import type { AutomationStudioAnswerFirstFlowRunOutcome, AutomationStudioAnswerFirstFlowRunSkip, AutomationStudioAnswerFirstFlowRunStep } from "./outcome.ts";
 
 type Ran = Extract<AutomationStudioAnswerFirstFlowRunOutcome, { kind: "ran" }>;
-type Placed = { position: number; label?: string; nodeKey: string; nodeId?: string };
+/** `interruption`: the saved step answered something that stood in front of the page, and does none of the person's acts (`AutomationStudioFlowDraftStep.interruption`). */
+type Placed = { position: number; label?: string; nodeKey: string; nodeId?: string; interruption?: true };
 type Failing = NonNullable<Ran["failing"]>;
 type Watch = Pick<AutomationStudioAnswerFirstFlowRunWatch, "order" | "sentCount" | "askedCount" | "succeededCount">;
 
@@ -53,6 +54,7 @@ const SAID = Object.freeze({
   personCleared: "It met a check only a person can complete; the person completed it, and the run went on from this step.",
   absentNotDone: "Its control was not on the page, so the step was skipped and what it does was not done.",
   absent: "Its control was not on the page, so the step was skipped.",
+  interruptionAbsent: "What stood in front of the page when this was saved was not there this time, so there was nothing to answer.",
   notArisen: "The step before it was not done again, so the page this step answers never came, and the run went on past it.",
   inState: "Its control already showed the asked state, so it was not pressed.",
   elsewhere: "The page was already at another step, so the run went on from there.",
@@ -118,11 +120,14 @@ function placedSteps(input: Input): Placed[] {
       const place = input.locator?.nodes[`${subflowIndex}.${nodeIndex}`];
       if (place?.draftStep === undefined) continue;
       const nodeId = nodeIdOf.get(node.key);
+      const position = (place.draftStepId !== undefined ? positionById.get(place.draftStepId) : undefined) ?? place.draftStep;
+      const step = (place.draftStepId !== undefined ? input.saved.find((each) => each.id === place.draftStepId) : undefined) ?? input.saved.find((each) => each.position === position);
       placed.push({
-        position: (place.draftStepId !== undefined ? positionById.get(place.draftStepId) : undefined) ?? place.draftStep,
+        position,
         nodeKey: node.key,
         ...(node.label ? { label: node.label } : {}),
-        ...(nodeId ? { nodeId } : {})
+        ...(nodeId ? { nodeId } : {}),
+        ...(step?.interruption === true && !step.acts?.length ? { interruption: true as const } : {})
       });
     }
   }
@@ -133,7 +138,7 @@ function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Pla
   const nodeId = place.nodeId;
   if (!attempts.length) return nodeId && watch && watch.succeededCount(nodeId) > 0 ? { ran: "passed" } : { ran: "not_reached" };
   const last = attempts.at(-1)!;
-  if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", ...skippedOf(last) };
+  if (attempts.every((attempt) => attempt.skipped)) return { ran: "skipped", ...skippedOf(last, place) };
   if (personCleared(last)) return { ran: "passed", happened: SAID.personCleared };
   const settled = automationStudioAttemptSettled(last).status;
   if (settled !== "succeeded") return { ran: "failed", happened: last.failure ? automationStudioTrialFailureHappened(last.failure.category, last.failure.code) : SAID.notFinished };
@@ -162,12 +167,23 @@ function personCleared(attempt: AutomationStudioNodeAttemptTrace): boolean {
  * Why a step was passed over, in words and in the closed word a replay is read by. An act the run's
  * own ledger already completed is `already_done`: it once read as "the page was already at another
  * step", which said the run was routed when it was not.
+ *
+ * **An interruption that is not there is passed over as saved (t897).** The engine says a press it
+ * passed over did not do its act whenever the domain's floor says a press commits, which it says of
+ * every press (`engine/automation/step-skip/act-not-done.ts`). A saved step that answered what stood
+ * in front of the page (a consent wall, a covering prompt) and does none of the person's acts is
+ * optional because the layer comes and goes: a site that remembers the answer never shows it again.
+ * Its absence is the page the accepted run would have met had it come back, so it is `absent`, never
+ * an act not done; read as one, every replay of social-network-feed's Post after the first proven
+ * one was judged for `act_not_done` (`run-mwbadi79-d928f922`). A step that does a person's act
+ * keeps `absent_not_done`, so a lasting act really left undone still sends the replay to the judge.
  */
-function skippedOf(attempt: AutomationStudioNodeAttemptTrace): { happened: string; skipped: AutomationStudioAnswerFirstFlowRunSkip } {
+function skippedOf(attempt: AutomationStudioNodeAttemptTrace, place: Pick<Placed, "interruption">): { happened: string; skipped: AutomationStudioAnswerFirstFlowRunSkip } {
   const skipped = attempt.skipped;
   if (skipped?.reason === "already_in_state") return { happened: SAID.inState, skipped: "already_in_state" };
   if (skipped?.reason === "already_done") return { happened: SAID.alreadyDone, skipped: "already_done" };
   if (skipped?.reason === "target_absent" && skipped.code === AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE) return { happened: SAID.notArisen, skipped: "not_arisen" };
+  if (skipped?.reason === "target_absent" && place.interruption) return { happened: SAID.interruptionAbsent, skipped: "absent" };
   if (skipped?.reason === "target_absent") return skipped.notDone ? { happened: SAID.absentNotDone, skipped: "absent_not_done" } : { happened: SAID.absent, skipped: "absent" };
   return { happened: SAID.elsewhere, skipped: "routed_elsewhere" };
 }
