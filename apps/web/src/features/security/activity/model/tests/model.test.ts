@@ -21,4 +21,11 @@ describe("shapeActivityPage", () => {
     expect(page).toEqual({ entries: [{ at: 1, who: "A", action: "x:Y", outcome: "denied", resources: [] }], next: null });
     expect(shapeActivityPage(null)).toEqual({ entries: [], next: null });
   });
+
+  it("keeps how many items a list hid only when it is a positive whole number", () => {
+    const base = { at: 1, who: "A", action: "x:Y", outcome: "denied", resources: [] };
+    const page = shapeActivityPage({ entries: [{ ...base, hidden: 3 }, { ...base, hidden: 0 }, { ...base, hidden: -2 }, { ...base, hidden: 1.5 }, { ...base, hidden: "3" }, base] });
+    expect(page.entries.map((entry) => entry.hidden)).toEqual([3, undefined, undefined, undefined, undefined, undefined]);
+    expect(page.entries.filter((entry) => "hidden" in entry)).toHaveLength(1);
+  });
 });

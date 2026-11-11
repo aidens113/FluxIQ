@@ -230,12 +230,17 @@ Added only; nothing a client already imports changed shape.
   again is a no-op, another one throws. The web server installs the platform's
   account provisioning as the owner on every workspace instance. A Core host
   that sets no owner is unchanged.
-- **`update-user`.** For a person the owner holds (one with a platform
-  account), a request carrying `username`, `roleId` or `enabled` is refused
+- **`update-user`.** A field equal to the person's stored value is not a
+  change: the endpoint drops it before deciding anything, so resending an
+  unchanged `username`, `roleId` or `enabled` is neither refused nor
+  rechecked, and is not written. Values are compared exactly, as the service
+  stores them as sent. A request for an unknown person is decided as before
+  and fails as not found. For a person the owner holds (one with a platform
+  account), a request that changes `username`, `roleId` or `enabled` is refused
   with `{ ok: false, error, errorCode: "identity.authority_managed_by_provisioning" }`,
   before the credential recheck, so a refused call spends no attempt. Presence
-  decides, as for the recheck: a request that carries only `displayName` still
-  changes it. An owner that cannot answer refuses the same change with
+  of a changed field decides, as for the recheck: a request whose only change
+  is `displayName` still changes it. An owner that cannot answer refuses the same change with
   `identity.authority_unchecked`, and the answer never echoes the cause.
   Provisioning stays the only writer of their role (`setPolicies`) and on/off
   (`disableAccount`, `enableAccount`), and their sign-in name stays their

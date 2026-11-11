@@ -157,6 +157,12 @@ export type IamAuditRecord = {
   via?: IamRequestVia;
   /** Present only on a press grant's mint and the call it confirmed (`IamRequestContext.consent`). Never the grant or any digest of it. */
   consent?: IamRequestConsent;
+  /**
+   * Present only on the one `deny` row of a list request that hid items from
+   * the caller (`IamRequestAuthorizer.filter`): how many it hid, a positive
+   * integer. That row names the list's action and scope, not the hidden items.
+   */
+  hidden?: number;
 };
 
 /** Where decisions and IAM changes are recorded. `record` never awaits storage; `flush` drains the buffer. */

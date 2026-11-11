@@ -1,10 +1,15 @@
 import { agoText } from "../../home/model";
 import { actionLabel, type ActivityEntry } from "./model";
 
+/** "1 item hidden", "3 items hidden": how many items a list request hid from whoever asked. */
+function hiddenText(hidden: number): string {
+  return `${hidden} ${hidden === 1 ? "item" : "items"} hidden`;
+}
+
 /**
  * Entries newest first: who, what they did, whether it was allowed, what it
- * acted on and when. Every value is drawn as text; an entry carries no secret
- * to hide.
+ * acted on, how many items a list hid from them, and when. Every value is
+ * drawn as text; an entry carries no secret to hide.
  */
 export function ActivityList(props: { entries: readonly ActivityEntry[]; now: number }) {
   return (
@@ -18,6 +23,7 @@ export function ActivityList(props: { entries: readonly ActivityEntry[]; now: nu
           </span>
           <span className="security-muted">
             {entry.resources.length > 0 ? `${entry.resources.join(", ")} · ` : ""}
+            {entry.hidden === undefined ? "" : `${hiddenText(entry.hidden)} · `}
             <time dateTime={new Date(entry.at).toISOString()}>{agoText(entry.at, props.now)}</time>
           </span>
         </li>

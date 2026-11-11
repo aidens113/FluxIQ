@@ -30,17 +30,21 @@ async function resourceLabel(resource: string, nameOf: NameOf): Promise<string> 
 
 /**
  * One audit record as the Activity section shows it, built field by field
- * from an allow-list: when, who (by name), the action, allowed or denied, and
- * what it acted on (by name). Nothing else of the record is read, so its
+ * from an allow-list: when, who (by name), the action, allowed or denied,
+ * what it acted on (by name), and, for a list request that hid items, how
+ * many it hid (a positive integer, else absent, as on every row written
+ * before the count existed). Nothing else of the record is read, so its
  * request id, deciding statement, address prefix, origin, who acted on the
  * person's behalf and how they consented never leave the server.
  */
 export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf): Promise<ActivityEntry> {
+  const hidden = record.hidden;
   return {
     at: record.time * 1000,
     who: await whoLabel(record.principal, nameOf),
     action: record.action,
     outcome: record.decision === "allow" ? "allowed" : "denied",
-    resources: await Promise.all(record.resources.map((resource) => resourceLabel(resource, nameOf)))
+    resources: await Promise.all(record.resources.map((resource) => resourceLabel(resource, nameOf))),
+    ...(typeof hidden === "number" && Number.isSafeInteger(hidden) && hidden > 0 ? { hidden } : {})
   };
 }

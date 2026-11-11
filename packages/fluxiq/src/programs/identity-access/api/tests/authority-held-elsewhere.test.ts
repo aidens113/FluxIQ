@@ -8,10 +8,12 @@
 // display name still changes; a person without an account keeps changing
 // through it; an owner that cannot answer refuses the change rather than
 // letting it through; and the snapshot marks each person exactly as
-// `update-user` decides, so a client never offers a refused change. Dummy
-// values only; scrypt at N=2^10.
+// `update-user` decides, so a client never offers a refused change. A value
+// equal to the stored one is not a change: resending it is neither refused,
+// nor asked for proof, nor written, for anyone. Dummy values only; scrypt at
+// N=2^10.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryIamAuditSink } from "../../../../platform/iam/index.ts";
 import { MemoryEmailSender } from "../../../../platform/provisioning/email/index.ts";
 import { createPlatformServices } from "../../../../platform/provisioning/service/index.ts";
@@ -160,6 +162,80 @@ describe("update-user for a person without an account", () => {
   });
 });
 
+describe("update-user with values equal to the stored ones", () => {
+  it("lets an account holder resend their unchanged sign-in name with a display-name edit, and changes only the display name", async () => {
+    const { holder, updateUser, state } = await setup();
+    const before = await state(holder);
+
+    const answer = await updateUser({ id: holder, username: "holder@example.test", displayName: "Renamed Holder" });
+
+    expect(answer).toMatchObject({ ok: true, payload: { username: "holder@example.test", displayName: "Renamed Holder" } });
+    const after = await state(holder);
+    expect(after.user).toMatchObject({ username: "holder@example.test", displayName: "Renamed Holder", roleId: before.user?.roleId, enabled: before.user?.enabled });
+    expect(after.user?.username).toBe(after.account?.email);
+    expect(after.membership?.policies).toEqual(before.membership?.policies);
+    expect(after.account?.status).toBe("active");
+  });
+
+  it("still refuses an account holder's real sign-in name change by name, even beside an unchanged role", async () => {
+    const { holder, updateUser, state } = await setup();
+
+    const answer = await updateUser({ id: holder, username: "Holder@example.test", roleId: "viewer", displayName: "Renamed Holder" });
+
+    expect(answer).toMatchObject({ ok: false, errorCode: IdentityAuthorityManagedError.code });
+    expect((await state(holder)).user).toMatchObject({ username: "holder@example.test", displayName: "Account Holder" });
+  });
+
+  it("lets an account holder resend their unchanged role and on/off, with no proof, and still refuses a real one", async () => {
+    const { holder, updateUser, state } = await setup();
+
+    const resent = await updateUser({ id: holder, roleId: "viewer", enabled: true, displayName: "Renamed Holder" });
+
+    expect(resent).toMatchObject({ ok: true, payload: { roleId: "viewer", enabled: true, displayName: "Renamed Holder" } });
+    expect(resent).not.toHaveProperty("requiresRecheck");
+    expect(await updateUser({ id: holder, roleId: "viewer", enabled: false })).toMatchObject({ ok: false, errorCode: IdentityAuthorityManagedError.code });
+    expect(await updateUser({ id: holder, roleId: "admin", enabled: true })).toMatchObject({ ok: false, errorCode: IdentityAuthorityManagedError.code });
+    expect((await state(holder)).user).toMatchObject({ roleId: "viewer", enabled: true });
+  });
+
+  it("asks a person without an account for no proof for unchanged values, and writes none of them", async () => {
+    const { identity, updateUser, state } = await setup();
+    const update = vi.spyOn(identity, "updateUser");
+
+    const answer = await updateUser({ id: OLDER_PERSON, username: "older-viewer", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" });
+
+    expect(answer).toMatchObject({ ok: true, payload: { username: "older-viewer", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" } });
+    expect(answer).not.toHaveProperty("requiresRecheck");
+    expect(update).toHaveBeenCalledTimes(1);
+    const written = update.mock.calls[0]?.[0];
+    expect(written).toMatchObject({ id: OLDER_PERSON, displayName: "Renamed Viewer" });
+    expect(written).not.toHaveProperty("username");
+    expect(written).not.toHaveProperty("roleId");
+    expect(written).not.toHaveProperty("enabled");
+    expect((await state(OLDER_PERSON)).user).toMatchObject({ username: "older-viewer", roleId: "viewer", enabled: true, displayName: "Renamed Viewer" });
+  });
+
+  it("still asks a person without an account for proof of a real role change sent beside unchanged values", async () => {
+    const { updateUser, proof, state } = await setup();
+
+    expect(await updateUser({ id: OLDER_PERSON, username: "older-viewer", enabled: true, roleId: "admin" })).toMatchObject({ ok: false, requiresRecheck: true });
+    expect((await state(OLDER_PERSON)).user?.roleId).toBe("viewer");
+    expect(await updateUser({ id: OLDER_PERSON, username: "older-viewer", enabled: true, roleId: "admin", ...proof })).toMatchObject({ ok: true, payload: { roleId: "admin" } });
+  });
+
+  it("fails a request for an unknown person as before: proof first for a role change, then not found", async () => {
+    const { updateUser, proof } = await setup();
+
+    const renamed = await updateUser({ id: "no.such.person", displayName: "Nobody" });
+    expect(renamed).toMatchObject({ ok: false });
+    expect(renamed.error).toContain("Unknown user");
+    expect(await updateUser({ id: "no.such.person", roleId: "viewer" })).toMatchObject({ ok: false, requiresRecheck: true });
+    const reproved = await updateUser({ id: "no.such.person", roleId: "viewer", ...proof });
+    expect(reproved).toMatchObject({ ok: false });
+    expect(reproved.error).toContain("Unknown user");
+  });
+});
+
 describe("the authority owner", () => {
   it("refuses the change by name when it cannot answer, and changes nothing", async () => {
     const identity = new IdentityAccessService({ passwordKdf: WEAK_KDF });
@@ -197,12 +273,21 @@ describe("the snapshot endpoint", () => {
     expect(users.find((user) => user.id === CALLER)?.authorityHeldElsewhere).toBe(false);
   });
 
-  it("marks each person exactly as update-user decides for them", async () => {
+  it("marks each person exactly as update-user decides a real change of theirs", async () => {
     const { listed, updateUser } = await setup();
 
     for (const user of await listed()) {
-      const answer = await updateUser({ id: user.id, roleId: user.roleId });
+      const answer = await updateUser({ id: user.id, enabled: !user.enabled });
       expect(answer.errorCode === IdentityAuthorityManagedError.code).toBe(user.authorityHeldElsewhere);
+    }
+  });
+
+  it("speaks only of real changes: resending anyone's current values is refused for nobody, marked or not", async () => {
+    const { listed, updateUser } = await setup();
+
+    for (const user of await listed()) {
+      const answer = await updateUser({ id: user.id, username: user.username, roleId: user.roleId, enabled: user.enabled });
+      expect(answer).toMatchObject({ ok: true });
     }
   });
 

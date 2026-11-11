@@ -254,7 +254,7 @@ affordable.
 | --- | --- | --- |
 | `dict` | Every distinct principal, action, resource list, matched statement, origin, IP prefix and non-decimal request id | Loaded into memory at open; never collected |
 | `allow_YYYYMMDD` | One table per UTC day, allow decisions | All integer columns, created lazily, no secondary index |
-| `long` | Denies and IAM changes | Category column (deny or iam-change), index on time |
+| `long` | Denies and IAM changes | Category column (deny or iam-change), index on time; `hid`, the hidden-item count of a list's refusal row, null otherwise |
 
 Rows are compact because strings are interned: an allow row measured about 30
 bytes (29.9 over 10,000 polling-like rows). A request id that is a canonical
@@ -288,6 +288,20 @@ every program that registers the action registers it as one; an unknown
 classification is kept. The web server builds its `iam.audit` from these on
 every profile (see [Web workspace manager](#web-workspace-manager)).
 
+**A list is one row.** A list request that hides items from its caller
+(`IamRequestAuthorizer.filter`, behind every registry list through
+`filterProgramList`) still decides each item on its own, but writes one row for
+the request, never one per item: a `deny` naming the list's action and scope,
+citing the statement that denied the first hidden item, with `hidden`, how many
+items it hid. A list that hides nothing writes one `allow` row, which the
+filter above drops for a read, so it persists nothing. The full-access fast path
+and an empty list still write the scope's own row. The count is stored in
+`long.hid`; a file made before that column existed gains it at open (`ALTER
+TABLE ... ADD COLUMN`) and its rows read back without `hidden`. The Activity
+route copies `hidden` into an entry only as a positive whole number, from its
+field allow-list, and the Activity screen shows it as "N items hidden". The row
+does not say which items were hidden; the policies and owners at that time do.
+
 ## Authorizer
 
 `IamAuthorizer(source, sink)` is the entry point B3 will call. `source` is an
@@ -314,8 +328,10 @@ prefix). A request id comes from the context or is generated once per request.
 
 `filter` decides on the list's scope first. If that is allowed by the fast
 path and every item is covered by it, one row is written and all items are
-returned. Otherwise each item is decided and gets a row, and only allowed items
-are returned. An empty list writes the single scope row.
+returned. Otherwise each item is decided on its own and only allowed items are
+returned, but the request writes one row, never one per item: a `deny` with
+`hidden: k` when k items were hidden, else one `allow` (which the audit filter
+drops, since a list is a read). An empty list writes the single scope row.
 
 `assumeRole` writes one deny row (action `iam:AssumeRole`, the role FRN) for an
 unknown role, a missing workspace or a trust refusal. When trust allows, the
@@ -1190,8 +1206,8 @@ never imports `@fluxiq/contracts`).
 - **`platform:*Account*`** in the provisioner matches the ten provisioning
   actions of the frozen contract, every one of which names `Account`.
 - **Audit.** Non-decimal request ids are costly; multiple processes writing one
-  audit file, and expiry over a full 90 days of data, are untested. Under
-  `service` a list a member can only partly see still persists one deny row
-  per hidden item (`filter`), the largest remaining source of audit volume.
+  audit file, and expiry over a full 90 days of data, are untested. The
+  `hid` column added to an existing audit file on open is untested with two
+  processes opening the same file at once.
   Allowed rows flush up to 1 second after denials, so store order within one
   second is not call order.

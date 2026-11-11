@@ -77,6 +77,15 @@ describe("ActivitySection", () => {
     expect(text(renderer)).toContain("Load more");
   });
 
+  it("says how many items a list hid, and nothing of the kind for an entry without a count", () => {
+    const list = (hidden?: number): ActivityEntry => ({ at: NOW - 60_000, who: "Bo", action: "studio:ListProjects", outcome: "denied", resources: ["This workspace"], ...(hidden === undefined ? {} : { hidden }) });
+    const html = renderToStaticMarkup(createElement(ActivityList, { entries: [list(4), list(1), list()], now: NOW }));
+    expect(html).toContain("This workspace · 4 items hidden · ");
+    expect(html).toContain("This workspace · 1 item hidden · ");
+    expect(html.match(/hidden/gu)).toHaveLength(2);
+    expect(html).toContain("List projects");
+  });
+
   it("draws an entry's values as text", () => {
     const html = renderToStaticMarkup(createElement(ActivityList, { entries: [{ ...entry(NOW, "<img src=x onerror=alert(1)>"), resources: ["<script>x</script>"] }], now: NOW }));
     expect(html).not.toContain("<img");

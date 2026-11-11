@@ -7,7 +7,10 @@
  * - `who`: the name of whoever acted, in words;
  * - `action`: the IAM action, `<service>:<PascalCase>`;
  * - `outcome`: whether it was allowed or denied;
- * - `resources`: what it acted on, in words.
+ * - `resources`: what it acted on, in words;
+ * - `hidden`: present only on a list request that hid items from whoever
+ *   asked: how many it hid, a positive integer. The audit keeps one entry for
+ *   such a request, not one per hidden item.
  */
 export type ActivityEntry = {
   at: number;
@@ -15,6 +18,7 @@ export type ActivityEntry = {
   action: string;
   outcome: "allowed" | "denied";
   resources: string[];
+  hidden?: number;
 };
 
 /** One page of activity, newest first; `next` asks for the page after it, null when there is no more. */

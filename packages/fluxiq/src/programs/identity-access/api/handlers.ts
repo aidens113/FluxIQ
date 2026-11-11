@@ -66,8 +66,32 @@ async function authorityRefusal(service: IdentityAccessService, payload: UpdateI
 }
 
 /**
+ * `payload` without the fields whose value equals the person's stored one: a
+ * value resent unchanged is not a change, so it is not asked about
+ * (`authorityRefusal`), not rechecked (`changesAuthority`) and not written.
+ * Every later decision then goes by presence on what is left, which is
+ * exactly what would change. Compared exactly, because `updateUser` stores
+ * each value as sent (no trimming or case folding): a value that would be
+ * stored differently is a change. The stored person is read in this request;
+ * a dropped field is never written, so a change that lands after the read is
+ * not overwritten by it. A person not found is returned whole, so the request
+ * fails in `updateUser` as it did before.
+ */
+async function withoutUnchangedFields(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<UpdateIdentityUserRequest> {
+  const stored = (await service.snapshot()).users.find((user) => user.id === payload.id);
+  if (!stored) return payload;
+  const changes = { ...payload };
+  if (changes.username === stored.username) delete changes.username;
+  if (changes.displayName === stored.displayName) delete changes.displayName;
+  if (changes.roleId === stored.roleId) delete changes.roleId;
+  if (changes.enabled === stored.enabled) delete changes.enabled;
+  return changes;
+}
+
+/**
  * Whether an account update changes what the account can do, rather than how it
- * reads. Presence decides it, as the request carries only the fields being
+ * reads. Presence decides it, on a request already stripped of unchanged
+ * values (`withoutUnchangedFields`), so it carries only the fields being
  * changed.
  */
 function changesAuthority(payload: UpdateIdentityUserRequest): boolean {
@@ -123,8 +147,12 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     resource: endpointResource.user("id"),
     assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in. A person with an account keeps their account email as their sign-in name, so only their display name changes here.", phrases: ["rename this person", "change this person's display name"] },
     handler: async (request) => {
-      const payload = request.payload as UpdateIdentityUserRequest | undefined;
-      if (!payload?.id) return { ok: false, error: "id is required" };
+      const requested = request.payload as UpdateIdentityUserRequest | undefined;
+      if (!requested?.id) return { ok: false, error: "id is required" };
+      // A field equal to the person's stored value is not a change: resending
+      // an unchanged sign-in name, role or on/off is neither refused, nor
+      // rechecked, nor written. A real change is decided as below.
+      const payload = await withoutUnchangedFields(service, requested);
       // The gate is on the fields that move authority, not on the endpoint: a
       // role change grants it, and an enable or disable hands it back or takes
       // it from someone relying on it. A disabled administrator that can be

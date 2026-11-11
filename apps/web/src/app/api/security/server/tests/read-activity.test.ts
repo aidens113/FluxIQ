@@ -108,6 +108,32 @@ describe("readActivity: the fields an entry carries", () => {
   });
 });
 
+describe("readActivity: a list that hid items", () => {
+  it("carries how many items the list hid, and nothing for a row without a count, an old row included", async () => {
+    const ana = userFrn(WORKSPACE, "ana");
+    const scope = `frn:fluxiq:platform::workspace/${WORKSPACE}`;
+    const harness = auditHarness({
+      audit: memoryAudit([
+        // Written before the count existed: a row per hidden item.
+        record({ time: 1, principal: ana, category: "deny", decision: "deny", action: "studio:Projects", resources: [`frn:fluxiq:studio:${WORKSPACE}:project/p1`] }),
+        record({ time: 2, principal: ana, category: "deny", decision: "deny", action: "studio:Projects", resources: [scope], hidden: 12 }),
+        record({ time: 3, principal: ana, category: "deny", decision: "deny", action: "studio:Projects", resources: [scope], hidden: 0 }),
+        record({ time: 4, principal: ana, category: "deny", decision: "deny", action: "studio:Projects", resources: [scope], hidden: 1.5 })
+      ]),
+      names: { ana: "Ana" }
+    });
+    const page = payload(await readActivity(harness.deps, null));
+    expect(page.entries.map((entry) => [entry.at, entry.resources, entry.hidden])).toEqual([
+      [4000, ["This workspace"], undefined],
+      [3000, ["This workspace"], undefined],
+      [2000, ["This workspace"], 12],
+      [1000, ["project p1"], undefined]
+    ]);
+    expect(page.entries.filter((entry) => "hidden" in entry)).toHaveLength(1);
+    expect(Object.keys(page.entries[2]!).sort()).toEqual(["action", "at", "hidden", "outcome", "resources", "who"]);
+  });
+});
+
 describe("readActivity: pages", () => {
   it("pages newest first through records sharing a second, each exactly once", async () => {
     const records: IamAuditRecord[] = [];
