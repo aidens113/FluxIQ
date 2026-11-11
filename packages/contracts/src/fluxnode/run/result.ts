@@ -47,7 +47,8 @@ export const fluxNodeRunTimingsSchema = z
  * - `waitingFor`: what a person must do, only for `waiting_for_person`;
  * - `lineage`: where output values came from, at most 1000 entries; `datasets`: the
  *   datasets the run stored;
- * - `correlationId`: the caller's, echoed.
+ * - `correlationId`: the caller's, echoed;
+ * - `overridesDigest`: the digest of the run's resolved overrides, present only when it had any.
  *
  * An `achieved` run's verdict is never `refuted`.
  */
@@ -69,7 +70,8 @@ export const fluxNodeRunResultSchema = z
     waitingFor: fluxNodeFieldSchemas.personText.optional(),
     lineage: z.array(dataLineageSchema).max(1000).optional(),
     datasets: z.array(datasetRefSchema).max(64).optional(),
-    correlationId: fluxNodeFieldSchemas.callerKey.optional()
+    correlationId: fluxNodeFieldSchemas.callerKey.optional(),
+    overridesDigest: fluxNodeFieldSchemas.sha256Hex.optional()
   })
   .strict()
   .superRefine((result, context) => {

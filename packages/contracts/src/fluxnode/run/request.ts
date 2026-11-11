@@ -8,6 +8,7 @@ import { fluxNodeFieldSchemas } from "../fields/index.ts";
 import { fluxNodeNameSchema } from "../flow/index.ts";
 import { parseWithZod, type FluxNodeParseResult } from "../issue/index.ts";
 import { jsonObjectSchema } from "../json/index.ts";
+import { fluxNodeOverridesSchema } from "../overrides/index.ts";
 import { fluxNodeOptionsSchema, fluxNodeSpecSchema } from "../spec/index.ts";
 import { checkFluxNodeRunInputs } from "./inputs-check.ts";
 import { fluxNodeResumeHandleSchema } from "./result.ts";
@@ -24,7 +25,9 @@ import { fluxNodeResumeHandleSchema } from "./result.ts";
  * - `inputs`: the inputs, checked against an inline spec here and against a
  *   registered one by Core; not allowed with `resumeHandle`;
  * - `options`: overrides of the spec's options, each replacing the declared one;
- *   `retries` still stays at least 3;
+ *   `retries` still stays at least 3; not allowed with `resumeHandle`, which keeps its first options;
+ * - `overrides`: prompts, judge criteria, tool descriptions, models, deadlines, waits and
+ *   pace for this run, each entry replacing the declared one; not allowed with `resumeHandle`;
  * - `correlationId`: ties separate runs together, as plain code calling one FluxNode
  *   after another does (plan, D3);
  * - `idempotencyKey`: the same key with the same request returns the same run.
@@ -38,6 +41,7 @@ export const fluxNodeRunRequestSchema = z
     pipeline: dataPipelineSchema.optional(),
     inputs: jsonObjectSchema.optional(),
     options: fluxNodeOptionsSchema.optional(),
+    overrides: fluxNodeOverridesSchema.optional(),
     correlationId: fluxNodeFieldSchemas.callerKey.optional(),
     idempotencyKey: fluxNodeFieldSchemas.callerKey.optional()
   })
@@ -50,6 +54,8 @@ export const fluxNodeRunRequestSchema = z
     if (given !== 1) issue("", "target", "Give exactly one of spec, name, resumeHandle and pipeline.");
     if (request.specHash !== undefined && request.name === undefined) issue("specHash", "spec_hash_without_name", "specHash picks a version of a registered name; give name with it.");
     if (request.resumeHandle !== undefined && request.inputs !== undefined) issue("inputs", "inputs_on_resume", "A resumed run keeps its inputs; leave inputs out.");
+    if (request.resumeHandle !== undefined && request.overrides !== undefined) issue("overrides", "overrides_on_resume", "A resumed run keeps its first overrides; leave overrides out.");
+    if (request.resumeHandle !== undefined && request.options !== undefined) issue("options", "options_on_resume", "A resumed run keeps its first options; leave options out.");
     if (request.spec !== undefined) {
       for (const problem of checkFluxNodeRunInputs(request.spec, request.inputs ?? {})) {
         const steps = problem.path.split("/").slice(1).map((step) => step.replaceAll("~1", "/").replaceAll("~0", "~"));

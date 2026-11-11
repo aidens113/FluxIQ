@@ -26,6 +26,8 @@ export class FluxNodeRunRegistry {
   private readonly flowTails = new Map<string, Promise<void>>();
   /** Per Flow: how many runs saved a learned Flow, and the latest one's candidate, for an export. */
   private readonly learnedOn = new Map<string, { versions: number; candidateId: string; revision?: number | undefined; digest?: string | undefined }>();
+  /** Per Flow: the judge-part digest of the latest run that a judge confirmed, so changed criteria are judged once even on a replay. */
+  private readonly judgedOn = new Map<string, string>();
   /** Per Flow: the version the program pinned, when it did. */
   private readonly pinnedOn = new Map<string, { flowVersion: number; at: number }>();
 
@@ -72,6 +74,14 @@ export class FluxNodeRunRegistry {
 
   learnedOf(flowId: string): { versions: number; candidateId: string; revision?: number | undefined; digest?: string | undefined } | undefined {
     return this.learnedOn.get(flowId);
+  }
+
+  judged(flowId: string, judgeDigest: string): void {
+    this.judgedOn.set(flowId, judgeDigest);
+  }
+
+  judgedWith(flowId: string): string | undefined {
+    return this.judgedOn.get(flowId);
   }
 
   pin(flowId: string, flowVersion: number, at: number): void {

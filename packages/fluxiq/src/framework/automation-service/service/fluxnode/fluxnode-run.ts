@@ -6,7 +6,7 @@
 // **A wait never outlives the run.** Stopping, or ending, settles every open wait with no answer, so a
 // check or a person's question nobody answered can only send the attempt round again or park it.
 
-import { fluxNodeAnswerFitsEvent, type FluxNodeCost, type FluxNodeEventAnswer, type FluxNodeOptions, type FluxNodeRunEvent, type FluxNodeRunResult, type FluxNodeRunStateBody, type FluxNodeRunSummary } from "@fluxiq/contracts/fluxnode";
+import { fluxNodeAnswerFitsEvent, type FluxNodeCost, type FluxNodeOverrides, type FluxNodeEventAnswer, type FluxNodeOptions, type FluxNodeRunEvent, type FluxNodeRunResult, type FluxNodeRunStateBody, type FluxNodeRunSummary } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { FluxNodeServiceRefusal } from "./fluxnode-service.ts";
 
@@ -26,6 +26,8 @@ export type FluxNodeRunTarget = {
 export type FluxNodeRunCarried = {
   inputs: JsonObject;
   options?: FluxNodeOptions | undefined;
+  /** The request's own overrides; never given to a child run, and a resume keeps the first run's. */
+  overrides?: FluxNodeOverrides | undefined;
   correlationId?: string | undefined;
 };
 
@@ -43,6 +45,8 @@ export class FluxNodeRun {
   private eventIds = 0;
   /** The budget the run was given, once known, for its `cost` event. */
   budgetUsd: number | undefined;
+  /** The digest of the run's resolved overrides, once known and only when it had any, for its result. */
+  overridesDigest: string | undefined;
 
   constructor(readonly runId: string, readonly target: FluxNodeRunTarget, readonly carried: FluxNodeRunCarried, readonly eventsPath: string, private readonly now: () => number) {
     this.startedAt = now();

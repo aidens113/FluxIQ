@@ -27,6 +27,7 @@ import { createSession } from "../session/index.ts";
 import { buildPipelineRunRequest } from "./build-pipeline-run-request.ts";
 import { buildResumeRequest, buildRunRequest } from "./build-run-request.ts";
 import type { ConnectOptions } from "./connect-options.ts";
+import type { ResumeOptions } from "./resume-options.ts";
 import { executeRun } from "./execute-run.ts";
 import { finishPipelineRun } from "./finish-pipeline-run.ts";
 import { finishRun } from "./finish-run.ts";
@@ -90,7 +91,7 @@ export class FluxIQ {
   }
 
   /** Continues a run that ended `budget_out` or `waiting_for_person`, from its `resumeHandle`. */
-  async resume<I extends Schemas, O extends Schemas>(node: FluxNode<I, O>, resumeHandle: string, options: RunOptions = {}): Promise<RunOutcome<OutputOf<O>>> {
+  async resume<I extends Schemas, O extends Schemas>(node: FluxNode<I, O>, resumeHandle: string, options: ResumeOptions = {}): Promise<RunOutcome<OutputOf<O>>> {
     const events = executeRun(this.#transport, buildResumeRequest(resumeHandle, options), node as unknown as AnyFluxNode, options);
     return finishRun<OutputOf<O>>(node as unknown as AnyFluxNode, await endedResult(events));
   }
@@ -135,7 +136,7 @@ export class FluxIQ {
   }
 
   /** Continues a pipeline run that ended `budget_out` or `waiting_for_person`, from its `resumeHandle`. */
-  async resumePipeline<R = JsonObject>(built: BuiltPipeline, resumeHandle: string, options: RunOptions = {}): Promise<PipelineOutcome<R>> {
+  async resumePipeline<R = JsonObject>(built: BuiltPipeline, resumeHandle: string, options: ResumeOptions = {}): Promise<PipelineOutcome<R>> {
     const events = executeRun(this.#transport, buildResumeRequest(resumeHandle, options), undefined, pipelineRunOptions(built, options));
     return finishPipelineRun<R>(built, await endedResult(events));
   }

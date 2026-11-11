@@ -21,7 +21,7 @@ describe("parseFluxNodeRunRequest", () => {
   it("accepts an inline spec with fitting inputs, a name, or a resume handle", () => {
     expect(codesOf({ spec: SPEC, inputs: { query: "lens hood", count: 3 }, correlationId: "batch-7", idempotencyKey: "k1" })).toEqual([]);
     expect(codesOf({ name: "market.cheapest-listings", specHash: "a".repeat(64), inputs: { query: "x" }, options: { budgetUsd: 0 } })).toEqual([]);
-    expect(codesOf({ resumeHandle: "resume_0123456789abcdef", options: { budgetUsd: 2 } })).toEqual([]);
+    expect(codesOf({ resumeHandle: "resume_0123456789abcdef" })).toEqual([]);
     expect(codesOf({ pipeline: { name: "market.price-watch", source: { kind: "input", field: "queries" }, steps: [{ id: "top", kind: "limit", count: 10 }] }, inputs: { queries: ["a"] } })).toEqual([]);
   });
 
@@ -41,6 +41,16 @@ describe("parseFluxNodeRunRequest", () => {
 
   it("refuses retries below the floor in an override", () => {
     expect(codesOf({ name: "a", options: { retries: 1 } })).toEqual(["/options/retries too_small"]);
+  });
+});
+
+describe("overrides and options on a resume", () => {
+  it("refuses both, since a resumed run keeps its first ones, and accepts overrides on a new run", () => {
+    const resume = "resume_0123456789abcdef";
+    expect(codesOf({ resumeHandle: resume, overrides: { pace: { minStepGapMs: 5 } } })).toEqual(["/overrides run_request.overrides_on_resume"]);
+    expect(codesOf({ resumeHandle: resume, options: { budgetUsd: 2 } })).toEqual(["/options run_request.options_on_resume"]);
+    expect(codesOf({ name: "a", overrides: { pace: { minStepGapMs: 5 } } })).toEqual([]);
+    expect(codesOf({ name: "a", overrides: { prompts: { "core.output_rules": { mode: "append", text: "x" } } } })).toEqual(["/overrides/prompts/core.output_rules overrides.section_locked"]);
   });
 });
 

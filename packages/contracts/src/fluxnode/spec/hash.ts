@@ -28,7 +28,7 @@ export function fluxNodeSpecIdentity(spec: FluxNodeSpec): JsonObject {
 
 /**
  * The whole spec as canonical JSON text: the identity's parts plus name, check,
- * uses and options, with sets sorted and keys in order. Two specs that say the same
+ * uses, options and overrides, with sets sorted and keys in order. Two specs that say the same
  * thing give the same text.
  */
 export function canonicalFluxNodeSpec(spec: FluxNodeSpec): string {
@@ -46,6 +46,7 @@ export function canonicalFluxNodeSpec(spec: FluxNodeSpec): string {
     }
     form["options"] = options;
   }
+  if (spec.overrides !== undefined) form["overrides"] = JSON.parse(JSON.stringify(spec.overrides)) as JsonObject;
   return canonicalJson(form);
 }
 

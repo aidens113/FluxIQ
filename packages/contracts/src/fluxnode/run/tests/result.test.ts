@@ -29,6 +29,11 @@ describe("parseFluxNodeRunResult", () => {
     expect(codesOf(ACHIEVED)).toEqual([]);
   });
 
+  it("takes an overrides digest, and only a sha-256 one", () => {
+    expect(codesOf({ ...ACHIEVED, overridesDigest: "c".repeat(64) })).toEqual([]);
+    expect(codesOf({ ...ACHIEVED, overridesDigest: "nope" })).toHaveLength(1);
+  });
+
   it("has no failed status", () => {
     expect(codesOf({ ...ACHIEVED, status: "failed" })).toEqual(["/status invalid_enum_value"]);
   });

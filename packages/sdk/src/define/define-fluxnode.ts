@@ -25,6 +25,7 @@ export function defineFluxNode<I extends TypeSchemaInput | undefined = undefined
   if (definition.inputs !== undefined) draft.inputs = typeSchemaFrom(definition.inputs, "inputs");
   if (definition.outputs !== undefined) draft.outputs = typeSchemaFrom(definition.outputs, "outputs");
   if (definition.options !== undefined) draft.options = definition.options;
+  if (definition.overrides !== undefined) draft.overrides = definition.overrides;
   if (definition.uses !== undefined) draft.uses = definition.uses.map((use) => (typeof use === "string" ? use : use.name));
   const parsed = parseFluxNodeSpec(draft);
   if (!parsed.ok) {

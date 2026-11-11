@@ -4,6 +4,7 @@
 export * from "./definition.ts";
 export * from "./goal.ts";
 export * from "./hash.ts";
+export * from "./model-id-pattern.ts";
 export * from "./options.ts";
 export * from "./runtime.ts";
 export * from "./scope.ts";
