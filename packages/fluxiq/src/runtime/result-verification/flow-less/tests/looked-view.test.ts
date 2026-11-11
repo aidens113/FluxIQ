@@ -52,6 +52,9 @@ describe("what looks found, as the judge is shown them", () => {
     const request = await sentFor([LOOK]);
     expect(lookedOf(request)).toEqual([LOOK]);
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("looked lists what looks at the site found after the first lasting act");
+    // A look is what was found whole, never a cut the judge must refuse to take as seen (run-mwbkuxqt-c57f42cb).
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("each with where it was made and what was found there, whole, from the site itself");
+    expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).not.toContain("short cut");
     const user = automationStudioLlmTaskMessages(request).find((message) => message.role === "user")?.content ?? "";
     expect(user).toContain("Choir practice, 7pm");
     expect(user).toContain("looked lists what looks at the site found");
