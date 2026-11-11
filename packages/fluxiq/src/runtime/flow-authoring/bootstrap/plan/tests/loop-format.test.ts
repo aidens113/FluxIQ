@@ -20,8 +20,18 @@ describe("the Flow script loop grammar", () => {
     const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
     expect(text).toContain("The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where:");
     expect(text).toContain("It never changes which rows a repeat visits.");
-    expect(text).toContain("`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`.");
-    expect(text).toContain("A span whose last step answers ended -- a next-page step -- needs none.");
+    expect(text).toContain("`repeat most:` is only for a count the person's own instruction gives, never the way a loop ends. Beside `repeat while:` it goes on the span's first step, never under its last, and stops after that many passes.");
+  });
+
+  // Run `run-mwblz4aq-0baa810a`: the text offered `repeat most` as the way out
+  // for a last step that cannot answer ended, and a build capped a press at 20.
+  it("says a while-loop ends when its last step answers ended, and never teaches a count as the way out", () => {
+    const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
+    const whileLine = text.split("\n").find((line) => line.startsWith("`repeat while: <label>`"))!;
+    expect(whileLine).toContain("The loop ends when that step answers ended because there is nothing more");
+    expect(whileLine).toContain("A last step that cannot, such as a plain press, would end the loop only by failing, and that repeat is refused: end the span with a step that answers ended instead.");
+    expect(whileLine).not.toContain("repeat most");
+    expect(text).not.toMatch(/needs repeat most|or after `repeat most|`repeat while: [^`]*` then `repeat most|repeat most: 20/u);
   });
 
   it("says repeat most beside repeat over acts on only the listing's first rows, with an example of another kind of site", () => {

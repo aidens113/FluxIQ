@@ -30,10 +30,15 @@
 // rows are the summary's own) -- is handed on from the call's own answer, never a model's words, once
 // the act record holds an act (an earlier attempt's carried one included): a look before any act
 // shows the page as it was, not what the acts made of it. What is handed on is where (the answer's
-// `location`) and a short cut of what it found: a search's own `found` lines, else the start of the
-// page it read (`page`), the web domain's keys (`domain/.../page-find/search.ts`). The same look
-// again is handed on once only, so a repeated look is no new evidence. The completion check screens
-// and bounds what it is given (`../completion/check.ts`).
+// `location`) and what the call itself found, whole: a search's `found` lines, a single read's value
+// under the domain's declared read key (`readRowsKey`, a value there and not rows), a described
+// element's `element`, and only where the call found none of those the page it read (`page`); the
+// web domain's keys (`domain/.../page-find/search.ts`, `.../tools.ts`). It is never cut: run
+// run-mwbkuxqt-c57f42cb's judge was given a read's look as the first 600 characters of the page
+// after the read, which did not hold the line the read returned, and was told it was a cut, so it
+// could not take the line as seen. The same look again is handed on once only, so a repeated look is
+// no new evidence. The completion check screens what it is given and keeps the latest distinct looks
+// (`../completion/check.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
@@ -47,9 +52,11 @@ type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 const NO_RESET_CODE = "answer_first.no_reset";
 const NO_RESET_SAID = "Nothing is put back on this task, so this was not done. Carry on from the page as it stands; to get to another page, go there.";
 
-/** How much of what one look found is kept, in characters, and of where it was made. */
-const FOUND_CHARS = 600;
-const WHERE_CHARS = 300;
+/** The keys a search's and a description's answer hold what they found under (header): the web domain's own (`domain/.../page-find/search.ts`, `domain/.../describe`). */
+const FOUND_KEY = "found";
+const ELEMENT_KEY = "element";
+/** The page a call read, which is what it found only where it found nothing more particular (header). */
+const PAGE_KEY = "page";
 /** Looks remembered as already handed on; past this the oldest is forgotten, so a long attempt holds a bounded set. */
 const LOOKS_REMEMBERED = 200;
 
@@ -132,7 +139,7 @@ function declaresLasting(value: JsonObject): boolean {
   return automationStudioFlowDraftDeclaresLasting(value.consequences) || automationStudioFlowDraftDeclaresLasting(inner);
 }
 
-/** Where a look was made and a short cut of what it found, from its own answer (header), or nothing for any other call. */
+/** Where a look was made and what it found, whole, from its own answer (header), or nothing for any other call. */
 function lookOf(answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult, readRowsKey: string | undefined): { where: string; found: string } | undefined {
   if (!isExecution(answer)) return undefined;
   const evidence = answer.evidence;
@@ -140,15 +147,27 @@ function lookOf(answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResu
   const said = automationStudioAttemptActAnswerRead(answer, readRowsKey);
   if (!said.looked || said.reads.length > 0) return undefined;
   const where = typeof evidence.location === "string" ? evidence.location.trim() : "";
-  const text = typeof evidence.found === "string" ? evidence.found : typeof evidence.page === "string" ? evidence.page : "";
-  const found = text.trim();
-  return where && found ? { where: cut(where, WHERE_CHARS), found: cut(found, FOUND_CHARS) } : undefined;
+  const particular = [evidence[FOUND_KEY], readValue(evidence, readRowsKey), evidence[ELEMENT_KEY]].map(text).filter((found) => found !== "");
+  const found = particular.length ? particular.join("\n") : text(evidence[PAGE_KEY]);
+  return where && found ? { where, found } : undefined;
 }
 
-/** At most `most` characters, by code point, with `…` where it was cut. */
-function cut(text: string, most: number): string {
-  const characters = [...text];
-  return characters.length <= most ? text : `${characters.slice(0, most - 1).join("")}…`;
+/**
+ * The value a single read returned, at the domain's read key (`holder.member`, as the act gate reads it,
+ * `automationStudioAttemptActAnswerRead`). A list there is a list read's rows, never a look: rows are the
+ * summary's own, and a list read that kept none is said by the summary's read pages.
+ */
+function readValue(evidence: JsonObject, key: string | undefined): JsonValue | undefined {
+  if (!key) return undefined;
+  let value: JsonValue | undefined = evidence;
+  for (const part of key.split(".")) value = isObject(value) ? value[part] : undefined;
+  return Array.isArray(value) ? undefined : value;
+}
+
+/** What a found value says, whole: words as they are, any other value as its JSON, and nothing for none. */
+function text(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) return "";
+  return (typeof value === "string" ? value : JSON.stringify(value)).trim();
 }
 
 function isObject(value: unknown): value is JsonObject {

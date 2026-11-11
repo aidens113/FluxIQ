@@ -51,3 +51,23 @@ describe("the note on a list that started over or got smaller", () => {
     expect(kept(withRows({}))).toEqual({ totalRows: 3, columns: ["title"] });
   });
 });
+
+describe("the note on saved steps that did not assemble", () => {
+  const repairing = (issues?: readonly { code: string; step?: number; said?: string }[]) => ({
+    ...runThatFailed(undefined), flowRun: undefined,
+    route: { kind: "repair", notes: [], why: "", saved: {}, ...(issues ? { issues } : {}) }
+  }) as unknown as AutomationStudioAnswerFirstAttemptRun;
+  const told = (run: AutomationStudioAnswerFirstAttemptRun) => automationStudioAnswerFirstRoundNote(run, undefined)?.flowRun as Record<string, unknown>;
+
+  it("names each refusal's code and step, with Core's sentence where the assembly let it through", () => {
+    const said = "Step 7 repeats while step 7 succeeds, and step 7 has no way to say the loop is done.";
+    const note = told(repairing([{ code: "flow_draft.repeat_while_never_ends", step: 7, said }, { code: "flow_draft.input_conflict", step: 2 }]));
+    expect(String(note.happened)).toMatch(/could not be made into a Flow/u);
+    expect(note.issues).toEqual([{ code: "flow_draft.repeat_while_never_ends", step: 7, said }, { code: "flow_draft.input_conflict", step: 2 }]);
+    expect(String(note.why)).not.toMatch(/library|loan|renew|card|core\./iu);
+  });
+
+  it("says only that they did not fit where nothing was said of why", () => {
+    expect(told(repairing())).toEqual({ happened: expect.stringMatching(/could not be made into a Flow/u) });
+  });
+});

@@ -38,6 +38,13 @@ describe("the route", () => {
     expect(route).toMatchObject({ kind: "repair", saved, notes: [note] });
     expect((route as { why: string }).why).not.toMatch(/flow\.missing|_/);
   });
+  it("carries what the assembly refused, and at which step, on a repair", () => {
+    const told = [{ code: "flow_draft.repeat_while_never_ends", step: 4, said: "Step 4 repeats while step 4 succeeds." }, { code: "flow.missing_binding" }];
+    const route = automationStudioAnswerFirstRoute({ ...base, memory: memory({ best: saved }), assemble: () => ({ ok: false, codes: ["flow_draft.repeat_while_never_ends"], told }) });
+    expect(route).toMatchObject({ kind: "repair", issues: told });
+    // Nothing refused said, nothing carried.
+    expect(automationStudioAnswerFirstRoute({ ...base, memory: memory({ best: saved }), assemble: () => ({ ok: false, codes: [] }) })).not.toHaveProperty("issues");
+  });
   it("reads an assemble that throws as not assembled", () => {
     const assemble = (): { ok: true } => {
       throw new Error("boom");

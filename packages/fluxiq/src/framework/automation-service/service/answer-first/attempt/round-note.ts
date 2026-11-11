@@ -2,6 +2,8 @@
 // model wrote but the check's screened reason and, marked as what they are, an earlier attempt's
 // own notes.
 //
+// A repair is told which step the saved steps' assembly refused, and why, in Core's words.
+//
 // A task with nothing saved, in its first round, is told nothing at all: that round is what a
 // first attempt always was. From there on every round is told again what the task brought with it,
 // since a round starts with an empty evidence window. A carried-on attempt is told so, and what
@@ -15,6 +17,7 @@ const NOTES_ARE = "Written during earlier attempts at this task. They are those 
 const RELATED_DRAFT = "The draft holds steps saved under another task on this Flow. They are a known start only and have not run for this task.";
 const DECLINED = "A person said no to a lasting act in the saved Flow, so it did not run. Its steps are your draft: look for another way to get the result without that act.";
 const NOT_ASSEMBLED = "The saved steps could not be made into a Flow on this site as it stands, so they did not run. They are your draft: fix what no longer fits.";
+const WHY_NOT = "What stopped the saved steps being made into a Flow, with the step each is at. Fix each one in the draft.";
 const WHOLE_NOT_ACCEPTED = "The saved Flow ran from its start to its end, and that was not accepted as the result yet.";
 const THE_PAGE = "The page is where it left it. Fix that step, then run forward. Running a saved step again only checks it when it acts lastingly, and does nothing: if it has to change, write the changed step as a new step, drop the old one, and then run forward.";
 const STARTED_OVER = "Your latest read of this list replaced what an earlier read of it held, so the rows kept are that read's alone. To add to the list instead, read it again with writeMode append under the same datasetId.";
@@ -57,7 +60,7 @@ function broughtWith(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
 
 function flowRunTold(run: AutomationStudioAnswerFirstAttemptRun): JsonObject | undefined {
   if (run.prior) return undefined;
-  if (run.route.kind === "repair") return { happened: NOT_ASSEMBLED };
+  if (run.route.kind === "repair") return { happened: NOT_ASSEMBLED, ...notAssembledAt(run.route.issues) };
   const outcome = run.flowRun?.outcome;
   if (!outcome || outcome.kind === "stopped") return undefined;
   if (outcome.kind === "permission_declined") return { happened: DECLINED };
@@ -66,4 +69,14 @@ function flowRunTold(run: AutomationStudioAnswerFirstAttemptRun): JsonObject | u
   const steps = outcome.steps.map((step) => ({ position: step.position, ran: step.ran, ...(step.happened ? { happened: step.happened } : {}) }));
   if (!outcome.failing) return { steps, happened: WHOLE_NOT_ACCEPTED };
   return { steps, stoppedAt: outcome.failing.position, happened: `${outcome.failing.happened} ${THE_PAGE}` };
+}
+
+/**
+ * What a repair is told of why the saved steps were not a Flow: each refusal's code, its step, and
+ * Core's own sentence where the assembly let it through (`../flow-run/assemble.ts`). Without it
+ * the model knew only that something no longer fitted, and repaired other steps than the one refused.
+ */
+function notAssembledAt(issues: Extract<AutomationStudioAnswerFirstAttemptRun["route"], { kind: "repair" }>["issues"]): JsonObject {
+  if (!issues?.length) return {};
+  return { why: WHY_NOT, issues: issues.map((issue) => ({ code: issue.code, ...(issue.step === undefined ? {} : { step: issue.step }), ...(issue.said ? { said: issue.said } : {}) })) };
 }

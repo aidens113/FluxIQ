@@ -70,16 +70,21 @@ describe("a look after the acts, as evidence for the check", () => {
     expect(judged[0]).not.toHaveProperty("looked");
   });
 
-  it("shows the latest few looks, each cut short", async () => {
-    const looks = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/page/${index}/`, found: `${index} ${"word ".repeat(400)}` }));
+  it("shows the latest few distinct looks, none of them cut", async () => {
+    const looks = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/page/${index}/`, found: `${index} ${"word ".repeat(400)}`.trim() }));
     const { check, judged } = made(() => looks);
     await check.check({ summary: "Done." });
     const shown = judged[0]!.looked!;
-    expect(shown).toHaveLength(6);
-    expect(shown[0]!.where).toBe("http://127.0.0.1:5000/page/4/");
-    expect(shown.at(-1)!.where).toBe("http://127.0.0.1:5000/page/9/");
-    for (const look of shown) expect([...look.found].length).toBeLessThanOrEqual(600);
-    expect(JSON.stringify(shown).length).toBeLessThan(5_000);
+    expect(shown).toEqual(looks.slice(-6));
+    for (const look of shown) expect([...look.found].length).toBeGreaterThan(600);
+  });
+
+  it("gives the judge a long single line a read found whole", async () => {
+    const line = `Folders kept: ${Array.from({ length: 90 }, (_, index) => `Folder ${index + 1}`).join("; ")}`;
+    expect([...line].length).toBeGreaterThan(600);
+    const { check, judged } = made(() => [{ where: FOLDER, found: line }]);
+    await check.check({ summary: "Done." });
+    expect(judged[0]!.looked).toEqual([{ where: FOLDER, found: line }]);
   });
 
   it("keeps a credential-shaped line out of what the judge is given, and the rest of what was found in", async () => {

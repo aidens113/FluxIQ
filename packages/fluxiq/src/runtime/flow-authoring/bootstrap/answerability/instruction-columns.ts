@@ -39,6 +39,18 @@
 // assembly, which knows the fields, takes the leading name that is one of them
 // (`../authoring/assembled-record-output.ts`), and otherwise declares nothing
 // and notes it in the step log.
+//
+// **A colon after an item ends the list (run `run-mwblz4aq-0baa810a`).**
+// "columns author, comment and date: author is the username of whoever wrote
+// it, ..." names its last column, then opens that column's explanation with a
+// colon. The reader took "date: author is the username ..." as the closing
+// item, found it ran on, and every leading-words candidate kept the colon
+// ("date:"), which no column name holds, so the list was answered empty and the
+// note said no named column was read. So the text before a colon in an item is
+// that item, and the list ends with it; a colon that opens the list ("columns:
+// a, b and c") leaves nothing before it and ends nothing. A leading-words
+// candidate is also trimmed of its trailing punctuation, so a list that still
+// runs on offers "date" rather than "date:".
 
 const MAX_COLUMNS = 12;
 const MAX_COLUMN_NAME = 32;
@@ -80,16 +92,19 @@ export function automationStudioFlowBootstrapInstructionColumns(instructionText:
     // The item after "and" was the list's last; a comma after it ends the list.
     if (closing && !CLOSING_SEPARATOR.test(separatorBefore)) break;
     if (CLOSING_SEPARATOR.test(separatorBefore)) closing = true;
-    const name = pieces[index]!.replace(/^[^A-Za-z0-9]+/u, "").replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim();
+    // A colon after an item opens its explanation: the item is the text before it, and the list ends with it (header).
+    const piece = pieces[index]!.replace(/^[^A-Za-z0-9]+/u, "");
+    const colon = piece.indexOf(":");
+    const explained = colon >= 0;
+    const name = (explained ? piece.slice(0, colon) : piece).replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim();
     if (!name) continue;
     if (ORDERING_PHRASE.test(name)) break;
     if (name.split(" ").length > MAX_COLUMN_WORDS) {
       if (CLOSING_SEPARATOR.test(separatorBefore)) return cutShort(names, name);
       break;
     }
-    if (name.length > MAX_COLUMN_NAME || !COLUMN_NAME.test(name) || names.includes(name)) continue;
-    names.push(name);
-    if (names.length >= MAX_COLUMNS) break;
+    if (name.length <= MAX_COLUMN_NAME && COLUMN_NAME.test(name) && !names.includes(name)) names.push(name);
+    if (explained || names.length >= MAX_COLUMNS) break;
   }
   return names;
 }
@@ -99,8 +114,8 @@ function cutShort(named: readonly string[], item: string): AutomationStudioFlowB
   const words = item.split(" ");
   const leading: string[] = [];
   for (let count = Math.min(MAX_COLUMN_WORDS, words.length - 1); count >= 1; count -= 1) {
-    const name = words.slice(0, count).join(" ");
-    if (name.length <= MAX_COLUMN_NAME && COLUMN_NAME.test(name) && !named.includes(name)) leading.push(name);
+    const name = words.slice(0, count).join(" ").replace(/[^A-Za-z0-9]+$/u, "");
+    if (name && name.length <= MAX_COLUMN_NAME && COLUMN_NAME.test(name) && !named.includes(name) && !leading.includes(name)) leading.push(name);
   }
   const list: AutomationStudioFlowBootstrapInstructionColumnList = [];
   list.cutShort = { named: [...named], leading };
