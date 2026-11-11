@@ -682,6 +682,13 @@ export type AutomationStudioRecordBatch = {
    * read left out as it is told of a read the model made. Never stored with the rows.
    */
   leftOut?: { extraction: JsonObject; parameters?: JsonObject };
+  /**
+   * Which list the read read, as the domain declares it from the site's structure (`records/read/list-key.ts`): two
+   * reads of one list carry one key whatever handle or words they were asked with. Never stored with the rows.
+   */
+  listKey?: string;
+  /** Where in the list the read was, as the domain says its pager said (`records/read/place.ts`: `page=3`, `offset=40`). Never stored with the rows. */
+  place?: string;
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
   /**

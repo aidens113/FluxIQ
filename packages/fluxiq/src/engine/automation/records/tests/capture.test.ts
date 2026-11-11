@@ -330,3 +330,20 @@ describe("capturing the rows a records.write effect carries", () => {
     expect(result.failure?.code).toBe("record_output.invalid");
   });
 });
+
+describe("which list and place a read's answer says, on its batch (invariant I3)", () => {
+  it("carries the list's key and the place the pager said, beside the rows and never in them", () => {
+    const said = { page: { items: [{ name: EXTRACTED }], listKey: "list.0a1b2c3d4e5f60718293a4b5c6d7", place: "page=2" } };
+    const { batch } = capture(effect(recordOutput), answer(said));
+    expect(batch?.listKey).toBe("list.0a1b2c3d4e5f60718293a4b5c6d7");
+    expect(batch?.place).toBe("page=2");
+    expect(batch?.rows).toEqual([{ name: EXTRACTED }]);
+  });
+
+  it("says neither where the answer said neither", () => {
+    const { batch } = capture(effect(recordOutput), answer(extractedPayload()));
+    expect(batch).toBeDefined();
+    expect(batch).not.toHaveProperty("listKey");
+    expect(batch).not.toHaveProperty("place");
+  });
+});

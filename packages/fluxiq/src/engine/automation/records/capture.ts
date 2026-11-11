@@ -25,7 +25,10 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../components/automation/index.ts";
 import type { AutomationStudioRecordBatch } from "../contracts.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../trace/index.ts";
-import { automationStudioRecordReadLeftOut, automationStudioRecordReadLocation } from "./read/index.ts";
+import { automationStudioRecordReadLeftOut, automationStudioRecordReadListKey, automationStudioRecordReadLocation, automationStudioRecordReadPlace } from "./read/index.ts";
+
+/** What a read's answer said of the read beside its rows (`./read/`): told with the rows, never stored with them. */
+type ReadSaid = Pick<AutomationStudioRecordBatch, "location" | "leftOut" | "listKey" | "place">;
 
 export type AutomationStudioRecordCaptureRequest = {
   effect: { type: string; payload?: JsonValue };
@@ -74,8 +77,19 @@ export function captureAutomationStudioRecordBatch(request: AutomationStudioReco
     outputs: { ...outputs, result: replacedAtPath(outputs.result, segments, rows), records: rows }
   };
   if (parsed.output.purpose === "intermediate") return { result };
-  // Where the read read, and what its own conditions left out, as its answer said them: told with the rows, never stored with them.
-  return { result, batch: recordBatch(request, parsed.output, validated, automationStudioRecordReadLocation(outputs.result, segments), automationStudioRecordReadLeftOut(effect.payload, outputs.result, segments)) };
+  // Where the read read, which list and where in it, and what its own conditions left out, as its answer said them:
+  // told with the rows, never stored with them.
+  const location = automationStudioRecordReadLocation(outputs.result, segments);
+  const leftOut = automationStudioRecordReadLeftOut(effect.payload, outputs.result, segments);
+  const listKey = automationStudioRecordReadListKey(outputs.result, segments);
+  const place = automationStudioRecordReadPlace(outputs.result, segments);
+  const said: ReadSaid = {
+    ...(location !== undefined ? { location } : {}),
+    ...(leftOut !== undefined ? { leftOut } : {}),
+    ...(listKey !== undefined ? { listKey } : {}),
+    ...(place !== undefined ? { place } : {})
+  };
+  return { result, batch: recordBatch(request, parsed.output, validated, said) };
 }
 
 // Present and not null declares a record output, the rule the policy action and
@@ -147,7 +161,7 @@ function incompleteIntermediate(dispatched: AutomationNodeExecutionResult): Auto
     { category: "output_not_observed", code: "record_output.intermediate_incomplete", retryable: false, stage: "dispatch" });
 }
 
-function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId" | "attemptId" | "callFlowAttemptPath">, output: AutomationStudioRecordOutput, validated: AutomationStudioRecordValidationResult, location?: string, leftOut?: AutomationStudioRecordBatch["leftOut"]): AutomationStudioRecordBatch {
+function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId" | "attemptId" | "callFlowAttemptPath">, output: AutomationStudioRecordOutput, validated: AutomationStudioRecordValidationResult, said: ReadSaid = {}): AutomationStudioRecordBatch {
   const batch: AutomationStudioRecordBatch = {
     nodeId: request.nodeId,
     attemptId: request.attemptId,
@@ -160,8 +174,10 @@ function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId
     invalidCount: validated.invalidCount,
     truncated: validated.truncated
   };
-  if (location !== undefined) batch.location = location;
-  if (leftOut !== undefined) batch.leftOut = leftOut;
+  if (said.location !== undefined) batch.location = said.location;
+  if (said.leftOut !== undefined) batch.leftOut = said.leftOut;
+  if (said.listKey !== undefined) batch.listKey = said.listKey;
+  if (said.place !== undefined) batch.place = said.place;
   if (output.label !== undefined) batch.label = output.label;
   if (output.process !== undefined) batch.process = output.process;
   return batch;
