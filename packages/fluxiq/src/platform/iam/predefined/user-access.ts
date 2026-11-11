@@ -31,7 +31,8 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
  *   else is granted on the workspace FRN: an unfiltered list across the
  *   workspace, and an action on no specific resource, are denied.
  * - `SelfService`: the actions that change only the caller's own credentials,
- *   and a person's own unlock of their own keys with their own password, on
+ *   the caller's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`:
+ *   their starting humanness), and a person's own unlock of their own keys with their own password, on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
  *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
@@ -73,7 +74,9 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
       "iam:RevokeSession",
       "iam:UnlockVault",
       "iam:LockVault",
-      "iam:MintPressGrant"
+      "iam:MintPressGrant",
+      "iam:GetMyPreferences",
+      "iam:UpdateMyPreferences"
     ],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}"
   }

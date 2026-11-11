@@ -173,7 +173,7 @@ describe("Automation Studio LLM execution API", () => {
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
     const run = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "diagnosis_only" } });
     expect(run.ok).toBe(true);
-    expect(runRuntimeSession).toHaveBeenLastCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "diagnosis_only" } });
+    expect(runRuntimeSession).toHaveBeenLastCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "diagnosis_only" } });
     // **A run may name the run it is continuing (t166).** A repair has to
     // resume the run that failed, and re-running is not an act anybody needs
     // permission for.
@@ -220,6 +220,7 @@ describe("Automation Studio LLM execution API", () => {
     expect(runRuntimeSession).toHaveBeenCalledWith({
       projectId: "project.one",
       flowId: "flow.one",
+      personUserId: "user.one",
       llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "diagnose_and_adapt" },
       permittedConsequences: ["move_money", "modify_existing"]
     });

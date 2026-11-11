@@ -66,4 +66,20 @@ describe("a generation request in answer-first mode", () => {
     const { deps } = dependencies(ANSWERED);
     await expect(generateFlowBootstrapAdaptationForRequest(deps, { actor: ACTOR, payload: payload({ authoringMode: "guess" }) })).resolves.toMatchObject({ ok: false, error: "Candidate authoring requires evidence-guided generation." });
   });
+
+  it("carries a valid humanness into the build input, 0 included, and refuses one outside 0 to 100 before anything runs", async () => {
+    for (const humanness of [0, 60, 100]) {
+      const { asked, deps } = dependencies(ANSWERED);
+      await generateFlowBootstrapAdaptationForRequest(deps, { actor: ACTOR, payload: payload({ authoringMode: "answer-first", humanness }) });
+      expect(asked[0]?.humanness).toBe(humanness);
+    }
+    const none = dependencies(ANSWERED);
+    await generateFlowBootstrapAdaptationForRequest(none.deps, { actor: ACTOR, payload: payload({ authoringMode: "answer-first" }) });
+    expect(none.asked[0]).not.toHaveProperty("humanness");
+    for (const bad of [101, 1.5, "x"]) {
+      const { asked, deps } = dependencies(ANSWERED);
+      expect(await generateFlowBootstrapAdaptationForRequest(deps, { actor: ACTOR, payload: payload({ authoringMode: "answer-first", humanness: bad }) })).toMatchObject({ ok: false, error: expect.stringMatching(/humanness/) });
+      expect(asked).toEqual([]);
+    }
+  });
 });

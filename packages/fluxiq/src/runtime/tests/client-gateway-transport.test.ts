@@ -86,6 +86,38 @@ describe("ClientGatewayRuntimeTransport", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "succeeded", message: "clicked" });
   });
 
+  it("copies a run's humanness onto the wire command, 0 included, and leaves the command as it was when none is set", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.humanness", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const base = { kind: "execute_action" as const, domainId: "web-automation", actionType: "web.dom.click", parameters: { selector: "#save" } };
+    const sent = () => gateway.outbound(paired.sessionId).filter((message) => message.type === "server.execute_action").map((message) => message.payload as Record<string, unknown>);
+    void transport.dispatch({ ...base, humanness: 60 }).catch(() => undefined);
+    void transport.dispatch({ ...base, humanness: 0 }).catch(() => undefined);
+    void transport.dispatch(base).catch(() => undefined);
+    const [sixty, zero, absent] = sent();
+    expect(sixty?.humanness).toBe(60);
+    expect(zero?.humanness).toBe(0);
+    expect(absent).not.toHaveProperty("humanness");
+    expect(Object.keys(absent ?? {}).sort()).toEqual(["actionType", "commandId", "parameters", "runContext"].filter((key) => key in (absent ?? {})).sort());
+  });
+
+  it("copies the humanness misclick mark onto the wire command only when it is set", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.misclick", "user.web");
+    const transport = new ClientGatewayRuntimeTransport({ gateway });
+    const base = { kind: "execute_action" as const, domainId: "web-automation", actionType: "web.dom.click", parameters: { selector: "#save" }, humanness: 60 };
+    const sent = () => gateway.outbound(paired.sessionId).filter((message) => message.type === "server.execute_action").map((message) => message.payload as Record<string, unknown>);
+    void transport.dispatch({ ...base, humannessMisclick: true }).catch(() => undefined);
+    void transport.dispatch(base).catch(() => undefined);
+    const [marked, plain] = sent();
+    expect(marked?.humannessMisclick).toBe(true);
+    expect(plain).not.toHaveProperty("humannessMisclick");
+    const { commandId: _plainId, ...plainRest } = plain ?? {};
+    const { commandId: _markedId, humannessMisclick: _mark, ...markedRest } = marked ?? {};
+    expect(plainRest).toEqual(markedRest);
+  });
+
   // t434: Automation Studio addresses a policy output by `outputId`, and a gateway
   // client can only name what it serves as action types, often with the domain
   // on the capability alone. The runtime and the transport both took that

@@ -10,6 +10,7 @@
 
 import { readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import { parseAutomationStudioAttemptActRecordData } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { safeSegment, ProgramJsonStore, ProgramStateReadError } from "../../../../persistence/program-state/storage.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -225,7 +226,14 @@ function readHeld(value: JsonObject, projectId: string, taskId: string): Held | 
   for (const flow of [memory.best, memory.latest]) {
     if (flow !== undefined && (typeof flow !== "object" || flow === null || !Array.isArray(flow.steps) || typeof flow.flowId !== "string" || typeof flow.stepsDigest !== "string")) return undefined;
   }
-  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: withReadableFlowBases(withReadableActs(memory as AutomationStudioAnswerFirstTaskMemory)) };
+  return { kind: "answer_first_task_memory", schemaVersion: 1, projectId, memory: withReadableHumanness(withReadableFlowBases(withReadableActs(memory as AutomationStudioAnswerFirstTaskMemory))) };
+}
+
+/** A level no save would have taken is left off and the rest stands: the task then runs at its Flow's level or the starting value. */
+function withReadableHumanness(memory: AutomationStudioAnswerFirstTaskMemory): AutomationStudioAnswerFirstTaskMemory {
+  if (memory.humanness === undefined || humannessSchema.safeParse(memory.humanness).success) return memory;
+  const { humanness: _unreadable, ...rest } = memory;
+  return rest;
 }
 
 /** A base that does not read is left off and the rest stands: a Flow with none is looked at afresh, and only a blank one gets a base again, so nothing of a person's can be replaced for it. */

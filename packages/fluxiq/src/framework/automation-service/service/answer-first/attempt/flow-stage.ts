@@ -63,8 +63,12 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const sentBefore = run.liveSteps;
   let personStopped = false;
   run.path = "run_flow";
+  // The task's own level as it stands now, a person's change since the attempt opened included; unread, it reads as none and the next source decides (`../flow-run/flow-run.ts`).
+  const kept = await automationStudioAnswerFirstBestEffort(() => run.memory.get(input.projectId, run.taskId));
+  const taskHumanness = kept.ok ? kept.value?.humanness : undefined;
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, permissions: run.permissions,
+    ...(taskHumanness !== undefined ? { storedHumanness: { task: taskHumanness } } : {}),
     stepped: () => {
       run.liveSteps += 1;
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);

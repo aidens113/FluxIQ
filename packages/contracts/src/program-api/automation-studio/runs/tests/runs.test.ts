@@ -22,7 +22,7 @@ describe("runs inputs", () => {
       [inputs.getActivityInput, p],
       [inputs.getTaskAttemptInput, { ...p, attemptId: "a" }], [inputs.listConversationTaskAttemptsInput, { ...p, conversationId: "c" }],
       [inputs.carryOnTaskAttemptInput, { ...p, attemptId: "a", addUsd: 0 }], [inputs.runTaskAgainInput, { ...p, taskId: "t" }],
-      [inputs.listProjectTasksInput, p], [inputs.renameTaskInput, { ...p, taskId: "t", title: "Weekly report" }], [inputs.removeTaskInput, { ...p, taskId: "t" }]
+      [inputs.listProjectTasksInput, p], [inputs.renameTaskInput, { ...p, taskId: "t", title: "Weekly report" }], [inputs.updateTaskSettingsInput, { ...p, taskId: "t", humanness: 40 }], [inputs.updateTaskSettingsInput, { ...p, taskId: "t", humanness: null }], [inputs.removeTaskInput, { ...p, taskId: "t" }]
     ];
     for (const [input, example] of examples) expect(() => input.parse(example)).not.toThrow();
   });
@@ -32,5 +32,7 @@ describe("runs inputs", () => {
     expect(inputs.exportRunDatasetInput.read({ projectId: "p", runId: "r", datasetId: "d", format: "xml" }).ok).toBe(false);
     expect(inputs.carryOnTaskAttemptInput.read({ projectId: "p", attemptId: "a", addUsd: -1 }).ok).toBe(false);
     expect(inputs.reviewFlowAdaptationInput.read({ projectId: "p", flowId: "f", adaptationId: "x", action: "explode" }).ok).toBe(false);
+    for (const humanness of [101, 2.5, "x"]) expect(inputs.updateTaskSettingsInput.read({ projectId: "p", taskId: "t", humanness }).ok).toBe(false);
+    expect(inputs.updateTaskSettingsInput.jsonSchema()).toMatchObject({ properties: { humanness: { anyOf: expect.any(Array) } } });
   });
 });

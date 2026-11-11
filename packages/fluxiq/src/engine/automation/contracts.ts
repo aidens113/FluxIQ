@@ -618,6 +618,8 @@ export type AutomationStudioGraphExecutionTrace = {
    * saved Flow, so playback starts paced.
    */
   pace?: AutomationStudioNodePace[];
+  /** The humanness the run paused its nodes by, with the seed that replays it; absent at level 0. */
+  humanness?: { level: number; seed: number };
   /** Present only on a partial run that ended at its stop node (`AutomationStudioGraphExecutionOptions.stopAfterNodeId`). */
   stopReason?: AutomationStudioGraphRunStopReason;
   /**

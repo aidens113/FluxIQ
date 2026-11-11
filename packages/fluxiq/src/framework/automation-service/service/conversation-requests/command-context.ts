@@ -11,7 +11,7 @@ import type { AutomationStudioConversationRequest, AutomationStudioConversationR
 export function commandContext(
   dependencies: AutomationStudioConversationRequestDependencies,
   request: AutomationStudioConversationRequest,
-  target: { projectId: string; conversationId: string; startLocation: string | null; attachedRecordingId?: string | undefined; interpretationCostUsd?: number | undefined; interpretationCalls?: number | undefined }
+  target: { projectId: string; conversationId: string; startLocation: string | null; attachedRecordingId?: string | undefined; interpretationCostUsd?: number | undefined; interpretationCalls?: number | undefined; humanness?: number | undefined }
 ): AutomationStudioConversationCommandContext | null {
   if (!request.actor) return null;
   const conversations = dependencies.service.conversations;
@@ -33,6 +33,8 @@ export function commandContext(
     ...(target.attachedRecordingId ? { attachedRecordingId: target.attachedRecordingId } : {}),
     // What reading the turn cost, carried into the purse of a Flow the command builds (`commands/build.ts`).
     ...(target.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: target.interpretationCostUsd }),
-    ...(target.interpretationCalls === undefined ? {} : { interpretationCalls: target.interpretationCalls })
+    ...(target.interpretationCalls === undefined ? {} : { interpretationCalls: target.interpretationCalls }),
+    // The person's humanness for the build or run the command starts (`commands/build.ts`, `commands/run-flow.ts`).
+    ...(target.humanness === undefined ? {} : { humanness: target.humanness })
   };
 }
