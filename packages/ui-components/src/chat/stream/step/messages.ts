@@ -197,15 +197,26 @@ function settlesStep(event: ClientGatewayActivity): boolean {
 const SKIPPED_AFTER_ANNOUNCING: ReadonlySet<string> = new Set(["optional_absent", "state_routed", "already_in_state"]);
 
 /**
- * Core's words for `event` when it is the row that says the run step it
- * announced for `node` was skipped (`stepSkip`; Core's `activityActionSkipped`),
- * or null. A skip for already done comes in place of a step, not after one
- * (`already-done.ts`), and keeps its own card.
+ * What the row that says the run step Core announced for `node` was skipped
+ * (`stepSkip`) puts on that step's card, or null when `event` is no such row:
+ * Core's words for the skip (`activityActionSkipped`), or the already-done mark.
+ *
+ * Already done comes two ways. The engine's own skip (`executor/step-loop/
+ * already-done.ts`) comes in place of a step, numbers that step (`step`), and
+ * keeps its own card (`already-done.ts`): it may name the node just announced,
+ * as a later pass of the same step, and that earlier pass did run. The
+ * answer-first run gate (`answer-first/run-acts/run-gate.ts`, t861) decides in
+ * the step's executor, after the step was announced, and names that node with
+ * no step of its own: the announced step is the one not done again. Its card
+ * read "Click · Post — Done" when the run pressed nothing
+ * (`run-mwbadi79-d928f922`, attempt 2).
  */
-function skippedStep(event: ClientGatewayActivity, node: string | undefined): string | null {
+function skippedStep(event: ClientGatewayActivity, node: string | undefined): Pick<ActionCard, "tested" | "already"> | null {
   const skip = stepSkip(event);
-  if (skip === undefined || node === undefined || event.detail?.ref !== node || !SKIPPED_AFTER_ANNOUNCING.has(skip.reason)) return null;
-  return activityActionSkipped(skip);
+  if (skip === undefined || node === undefined || event.detail?.ref !== node) return null;
+  if (skip.reason === "already_done") return event.step === undefined ? { already: true } : null;
+  const said = SKIPPED_AFTER_ANNOUNCING.has(skip.reason) ? activityActionSkipped(skip) : null;
+  return said === null ? null : { tested: said };
 }
 
 /** The messages for `events` (oldest first), at most `limit` of them, the newest. */
@@ -285,8 +296,9 @@ export function stepMessages(events: readonly ClientGatewayActivity[], limit: nu
       // done: its card read "Done" while the status line said "Skipped ...: it
       // was not shown" (round 12, lane D, `run-mv62icw0-070f88ad`). Core's
       // words for the skip go on the step's card, and its row is no second card.
+      // So does a step found already done once announced (`skippedStep`).
       const skipped = outcome === "done" ? skippedStep(event, unit.stepNode) : null;
-      over.actions = over.actions.map((card) => (card.outcome === "working" ? { ...card, outcome, ...(why === null ? {} : { why }), ...(skipped === null ? {} : { tested: skipped }) } : card));
+      over.actions = over.actions.map((card) => (card.outcome === "working" ? { ...card, outcome, ...(why === null ? {} : { why }), ...(skipped ?? {}) } : card));
       over.sequence = Math.max(over.sequence, event.sequence);
       unit.step = undefined;
       unit.stepNode = undefined;

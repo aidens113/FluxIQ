@@ -9,11 +9,15 @@
 // no such dialog the chat cannot take that answer, so those actions give way to
 // the "elsewhere" sentence and the Open FluxIQ control; the other actions, a
 // refusal for one, stay.
+//
+// Answers require a person's activation: every press or key here acts only
+// when it is a person's own (`isPersonEvent`).
 
 import { createElement } from "../../dom/index.ts";
 import type { ChatAskAction, ChatAskPresentation } from "../ports/index.ts";
 import type { AskControlsContext } from "./ask-controls.ts";
 import { composerKeyAction } from "./composer-keys.ts";
+import { isPersonEvent } from "./person-event.ts";
 
 /** Said where the chat cannot take an answer itself (the same words as `ask-copy.ts`). */
 const ELSEWHERE = "Answer this in FluxIQ.";
@@ -46,7 +50,8 @@ function actionButton(action: ChatAskAction, context: AskControlsContext): HTMLE
     attrs: { type: "button", "data-tone": action.tone, ...(action.description ? { title: action.description } : {}) }
   });
   button.disabled = context.answering;
-  button.addEventListener("click", () => {
+  button.addEventListener("click", (event) => {
+    if (!isPersonEvent(event)) return;
     if (action.reauthorize !== undefined) context.reauthorize?.(action);
     else void context.answer(action.kind, action.value);
   });
@@ -77,9 +82,11 @@ function textAnswer(presented: ChatAskPresentation, context: AskControlsContext)
       send.disabled = true;
     });
   };
-  send.addEventListener("click", submit);
+  send.addEventListener("click", (event) => {
+    if (isPersonEvent(event)) submit();
+  });
   box.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || composerKeyAction(event, false) !== "send") return;
+    if (!isPersonEvent(event) || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || composerKeyAction(event, false) !== "send") return;
     event.preventDefault();
     submit();
   });

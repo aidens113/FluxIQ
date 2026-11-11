@@ -80,3 +80,36 @@ test("a results port that reports no real spend still says so through the lease"
   assert.equal(leaseTransport({ ...bare, results: port }, () => true).results?.reportsSpend, false);
   assert.equal("reportsSpend" in leaseTransport({ ...bare, results: createFakeChatResultsPort() }, () => true).results!, false);
 });
+
+test("New chat, Rename and Delete are leased like the thread list, and left out when the client leaves them out", async () => {
+  const bare = messageTransport(async () => OK);
+  const asked: unknown[] = [];
+  const conversation = {
+    ...bare.conversation,
+    newThread: async (request: unknown) => {
+      asked.push(["new", request]);
+      return { ok: true as const, value: {} };
+    },
+    renameThread: async (request: unknown) => {
+      asked.push(["rename", request]);
+      return { ok: true as const, value: {} };
+    },
+    deleteThread: async (request: unknown) => {
+      asked.push(["delete", request]);
+      return { ok: true as const, value: { deleted: true } };
+    }
+  };
+  let valid = true;
+  const leased = leaseTransport({ ...bare, conversation }, () => valid).conversation;
+  assert.equal((await leased.newThread!({ projectId: "p", subjectKind: "project" })).ok, true);
+  assert.equal((await leased.renameThread!({ conversationId: "c", title: "Named" })).ok, true);
+  assert.equal((await leased.deleteThread!({ conversationId: "c", projectId: "p" })).ok, true);
+  assert.deepEqual(asked, [["new", { projectId: "p", subjectKind: "project" }], ["rename", { conversationId: "c", title: "Named" }], ["delete", { conversationId: "c", projectId: "p" }]]);
+  valid = false;
+  assert.deepEqual(await leased.deleteThread!({ conversationId: "c" }), { ok: false, sentence: CONTEXT_CHANGED });
+  assert.equal(asked.length, 3, "a lapsed lease sends nothing");
+  const plain = leaseTransport(bare, () => true).conversation;
+  assert.equal(plain.newThread, undefined);
+  assert.equal(plain.renameThread, undefined);
+  assert.equal(plain.deleteThread, undefined);
+});

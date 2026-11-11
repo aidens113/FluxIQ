@@ -43,7 +43,8 @@ import { registerAutomationStudioApi } from "../index.ts";
 /**
  * Every endpoint that refuses a project outside the request's domain scope:
  * the six run-dataset endpoints, the seven reusable LLM context endpoints, the
- * six conversation endpoints, the task-attempt endpoints, whose results hold
+ * eight conversation endpoints (a rename or a delete asserts when it names its
+ * project; without one it searches the domain's projects as the listing does), the task-attempt endpoints, whose results hold
  * rows, and a project's tasks: their list shows each task's latest result, and
  * a rename or removal changes what a task remembers of that page content, as
  * `put-reusable-llm-context` and `append-turn` do; and a project's library of
@@ -76,6 +77,8 @@ const DOMAIN_SCOPED = [
   AUTOMATION_STUDIO_ENDPOINTS.packReusableLlmContexts,
   AUTOMATION_STUDIO_ENDPOINTS.listConversations,
   AUTOMATION_STUDIO_ENDPOINTS.openConversation,
+  AUTOMATION_STUDIO_ENDPOINTS.renameConversation,
+  AUTOMATION_STUDIO_ENDPOINTS.deleteConversation,
   AUTOMATION_STUDIO_ENDPOINTS.getConversation,
   AUTOMATION_STUDIO_ENDPOINTS.getConversationAttachment,
   AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn,
@@ -133,6 +136,8 @@ const PAYLOAD = {
   nodeId: "node.one",
   sessionId: "session.one",
   attemptId: "attempt.one",
+  conversationId: "conversation.one",
+  title: "Title one",
   format: "csv",
   action: "reject",
   authSessionId: "session.user.every",

@@ -17,7 +17,7 @@
 // project-scoped, so `answer-ask` carries the project too: it is which
 // database to open, not a second key.
 
-import type { AutomationStudioConversationCommandExecution } from "../../framework/automation-service/index.ts";
+import type { AutomationStudioConversation, AutomationStudioConversationCommandExecution } from "../../framework/automation-service/index.ts";
 import type { FlowProjectRequest } from "./flow.ts";
 
 /**
@@ -50,12 +50,59 @@ export type ConversationListRequest = Omit<FlowProjectRequest, "projectId"> & {
  *
  * Opening a thread is `authoring`, like writing a turn: it creates nothing a
  * person would need warning about and must not take a PIN.
+ *
+ * `fresh: true` is a person's New chat: it always opens a new thread for the
+ * subject instead of continuing the open one, and Core's own turns about that
+ * subject continue the new thread from then on. The earlier thread stays open
+ * and listed.
  */
 export type ConversationOpenRequest = FlowProjectRequest & {
   subjectKind?: string;
   subjectId?: string;
   title?: string;
+  fresh?: boolean;
 };
+
+/**
+ * A person's own name for a thread. `title` is trimmed and must say something
+ * and be at most 200 characters, as a title at creation is
+ * (`conversation_title_required`, `conversation_title_too_long`). The answer is
+ * `{ conversation }`, the updated record, the shape `get-conversation` answers
+ * it in; its `revision` rises and its `updatedAt` does not, so renaming does not
+ * reorder a thread list.
+ *
+ * `projectId` may be left out: the thread is then looked for in every project
+ * this caller may change in the request's domain scope (`list-conversations`'s
+ * projects, each decided by IAM as the call itself is). A thread found in none,
+ * and a thread the caller may not see, are both `conversation_not_found`; one
+ * found in two is `conversation_ambiguous`. Under the `service` IAM profile a
+ * caller without workspace-wide access must name the project.
+ */
+export type ConversationRenameRequest = {
+  projectId?: string;
+  conversationId: string;
+  title: string;
+};
+
+/** `rename-conversation`'s answer. */
+export type ConversationRenameResponse = { conversation: AutomationStudioConversation };
+
+/**
+ * Removing a thread: it, every turn and every ask in it, in one transaction.
+ * Refused with `conversation_run_active` while work is still using the thread:
+ * a run parked on one of its asks, a build or run the chat started from it that
+ * has not ended, a task attempt it holds that is still working or waiting for
+ * the person, or a run that is the thread's own subject (or, for a Flow's
+ * thread, a run of that Flow) that has not ended. `projectId` is found as
+ * `rename-conversation`'s is, with the same refusals.
+ */
+export type ConversationDeleteRequest = {
+  projectId?: string;
+  conversationId: string;
+};
+
+/** `delete-conversation`'s answer. */
+export type ConversationDeleteResponse = { deleted: true; conversationId: string };
 
 /** One thread. With `sinceTurnId` only the turns after that one are read, which is what a reader already holding it asks for. */
 export type ConversationReadRequest = FlowProjectRequest & {

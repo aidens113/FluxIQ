@@ -5,7 +5,7 @@
 // Core says it with one `step` row that carries a closed `skipped` field with
 // reason `already_done` (t416), read by the one reader, `stepSkip`. The row's
 // words ("Already done for Lin Zhao") are never parsed. Its card reads
-// "Already done", never "Didn't work", and is never taken for a step done
+// "Already done — not pressed again" (or not typed, not opened, not repeated), never "Didn't work", and is never taken for a step done
 // again or a retry that worked (`done-again.ts`, `retried.ts`).
 
 import { stepRecovery, stepSkip, type ClientGatewayActivity } from "fluxiq/ui";

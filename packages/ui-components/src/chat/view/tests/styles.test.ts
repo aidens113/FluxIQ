@@ -1,7 +1,7 @@
 // chat.css is self-contained: every class the chat's views build is styled in
-// it, or is named below as a hook with no style of its own (the Lab and the
-// tests find elements by it); and every custom property it reads without a
-// fallback is one tokens.css defines.
+// it or in a sheet it imports, or is named below as a hook with no style of its
+// own (the Lab and the tests find elements by it); and every custom property
+// they read without a fallback is one tokens.css defines.
 
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,6 +12,13 @@ import { test } from "vitest";
 const CHAT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const TOKENS_CSS = join(CHAT_DIR, "..", "theme", "tokens.css");
 const CHAT_CSS = join(CHAT_DIR, "chat.css");
+
+/** chat.css and every sheet it imports, as one text, so a host's one import carries them all. */
+function chatSheets(file = CHAT_CSS): string {
+  const text = readFileSync(file, "utf8");
+  const imported = [...withoutComments(text).matchAll(/@import\s+"([^"]+)";/gu)].map((match) => chatSheets(join(dirname(file), match[1]!)));
+  return [text, ...imported].join("\n");
+}
 
 /** Classes the views build that carry no rule of their own: structure for the Lab, the tests and the host. */
 const UNSTYLED_HOOKS: readonly string[] = [
@@ -77,7 +84,7 @@ function withoutComments(css: string): string {
 }
 
 test("every class the views build is styled in chat.css or is a named hook", () => {
-  const css = withoutComments(readFileSync(CHAT_CSS, "utf8"));
+  const css = withoutComments(chatSheets());
   const styled = new Set([...css.matchAll(/\.([a-zA-Z_][\w-]*)/gu)].map((match) => match[1]!));
   const built = new Set<string>();
   for (const file of sourceFiles(CHAT_DIR)) {
@@ -93,7 +100,7 @@ test("every class the views build is styled in chat.css or is a named hook", () 
 });
 
 test("every custom property chat.css reads without a fallback is defined in tokens.css", () => {
-  const css = withoutComments(readFileSync(CHAT_CSS, "utf8"));
+  const css = withoutComments(chatSheets());
   const tokens = withoutComments(readFileSync(TOKENS_CSS, "utf8"));
   const defined = new Set([...tokens.matchAll(/(--[\w-]+)\s*:/gu)].map((match) => match[1]!));
   const read = new Set([...css.matchAll(/var\(\s*(--[\w-]+)\s*\)/gu)].map((match) => match[1]!));
@@ -102,7 +109,7 @@ test("every custom property chat.css reads without a fallback is defined in toke
 });
 
 test("chat.css styles nothing outside .chat-panel but its own classes, and names no page element", () => {
-  const css = withoutComments(readFileSync(CHAT_CSS, "utf8"));
+  const css = withoutComments(chatSheets());
   const rules = css.replace(/@media[^{]*\{/gu, "").replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/gu, "");
   const selectors = [...rules.matchAll(/(?:^|\})\s*([^{}]+)\{/gu)].map((match) => match[1]!.trim());
   const leaks = selectors.flatMap((list) => list.split(",")).map((selector) => selector.trim()).filter((selector) => /^(?:html|body|\*|:root|[a-z]+\b)/u.test(selector));

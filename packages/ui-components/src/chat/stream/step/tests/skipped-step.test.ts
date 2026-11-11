@@ -46,8 +46,10 @@ test("a step state routing passed over says the page was already at another step
 test("a skip row for another step, or for an act already done, does not settle the step before it as skipped", () => {
   const other = outcomes([started(1, "n2.close", 2, "Close the panel"), skippedRow(2, "n9.other", "optional_absent", "Skipped “Other”: it was not shown")]);
   assert.equal(other[0], "Done");
+  // An act found already done once its step was announced (Core's answer-first run gate) is that
+  // step's one card, already done: it read "Done" (`run-mwbadi79-d928f922`, attempt 2).
   const already = outcomes([started(1, "n2.close", 2, "Close the panel"), skippedRow(2, "n2.close", "already_done", "Already done: Close the panel")]);
-  assert.ok(already.every((outcome) => !outcome?.startsWith("Skipped")));
+  assert.deepEqual(already, ["Already done — not pressed again"]);
 });
 
 test("a step whose control already showed the asked state says it was not pressed, on its one card, and not as a failure", () => {

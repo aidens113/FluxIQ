@@ -20,8 +20,9 @@ run controls and optional recordings, model keys and change feed, and
 `ChatWidgetOptions` for what only the host can do. Every option beyond the
 transport is optional, and without it the widget does not offer that feature:
 
-- `threads`: a list of every thread with a picker, the unanswered count, the
+- `threads`: a conversation list of every thread, the unanswered count, the
   chat's name, and which thread to open on (needs `conversation.listAllThreads`).
+  See "Conversation list" below.
 - `asks`: a pending question in the host's words, and the PIN dialog before an
   answer with a lasting effect. The host draws the dialog; the PIN passes through
   to `conversation.answer` and is held nowhere.
@@ -43,6 +44,69 @@ It imports no Node built-in and no browser
 extension API. `styles/tokens.css` sets the brand theme on `:root`; a host with
 its own design tokens may define the same names on an ancestor of the widget
 instead (see Theme below). `@fluxiq/ui-components/testing` is the small DOM the tests build on.
+
+## Conversation list
+
+With `threads` set and `conversation.listAllThreads` present, the chat shows every
+thread the person can see, the one waiting on them first, then the newest:
+
+- a search box that keeps the chats whose name or time has every word typed
+  ("invoice", "yesterday", "nov 3");
+- one row per chat: its name (never an id), when it last moved ("3 h ago", "Oct 3",
+  the full day on hover), "Waiting on you" when a question in it waits, and the
+  chat on screen marked (`aria-current`);
+- ArrowUp/ArrowDown between rows, Home/End, ArrowDown from the search box into the
+  rows, Escape to clear the search and then to close the drawer;
+- "Show older chats" while Core answered as many chats as were asked for (25 per page).
+
+Three optional `ChatConversationPort` methods add controls; each control shows only
+when its method is present, and each press reads the list again afterwards:
+
+```ts
+newThread?(request: { projectId?: string; subjectKind?: ChatSubjectKind; subjectId?: string; title?: string }):
+  Promise<ChatResult<{ conversation?: unknown }>>;  // Core's open-conversation with fresh: true
+renameThread?(request: { projectId?: string; conversationId: string; title: string }):
+  Promise<ChatResult<{ conversation?: unknown }>>;
+deleteThread?(request: { projectId?: string; conversationId: string }):
+  Promise<ChatResult<{ deleted?: boolean }>>;
+```
+
+- **New chat** asks for a fresh thread about the host's open project
+  (`subjectKind: "project"`), or about the panel (`subjectKind: "panel"`) with no
+  project open, opens the conversation Core answers, and hands the caret to the composer.
+- **Rename** edits the name in place: Enter saves, Escape or leaving the box cancels.
+- **Delete** asks in place ("Delete this chat?" with Delete and Cancel), never through
+  a browser dialog. Deleting the chat on screen opens the next one in the list, else
+  the one before it, else the empty chat. A refusal, such as Core's
+  `conversation_run_active` for a chat whose work still runs, shows Core's own
+  sentence over the list.
+
+`ChatThreadsOptions.layout` places the list:
+
+- `"drawer"` (default), for a narrow host such as the extension's side panel or popup:
+  a "Chats" button over the thread names the chat on screen and how many chats wait,
+  and opens the list in the thread's place. Picking a chat, a new chat or Escape closes it.
+- `"column"`, for a wide host: the list stands left of the thread and the line over the
+  thread is the chat's name. The panel gets `data-thread-layout="column"` and the thread
+  side sits in `.chat-body`.
+
+Hook classes (the Lab and tests find elements by them): `chat-thread-header`,
+`chat-thread-toggle`, `chat-thread-title`, `chat-thread-badge`, `chat-thread-nav`
+(`data-layout`), `chat-thread-new`, `chat-thread-search`, `chat-thread-notice`,
+`chat-thread-rows`, `chat-thread-row` (`data-conversation-id`, `data-selected`,
+`data-waiting`, `data-mode`), `chat-thread-open`, `chat-thread-name`,
+`chat-thread-when`, `chat-thread-waiting`, `chat-thread-rename`,
+`chat-thread-rename-input`, `chat-thread-delete`, `chat-thread-confirm`,
+`chat-thread-confirm-delete`, `chat-thread-confirm-cancel`, `chat-thread-none`,
+`chat-thread-more`. The native picker (`chat-thread-picker`, `chat-thread-select`)
+is gone. The list's styles are `src/chat/view/thread-list/thread-list.css`, which
+`chat.css` imports, so a host still imports `styles/chat.css` alone.
+
+`ChatThreadsOptions.unavailableReason` (optional) disables the composer, with that
+sentence, for a latest chat with no project and no thread. Set it only when the
+transport has nowhere to send a message that names no project (the web panel with
+no project open). A host whose transport names the session's project for such a
+message (the extension) leaves it out, so a new person can write a first message.
 
 ## Theme
 

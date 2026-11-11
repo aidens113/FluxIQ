@@ -19,6 +19,7 @@ import type { AutomationStudioConversationAnswerKind, AutomationStudioConversati
 import { AutomationStudioProjectConversationStore } from "./store.ts";
 import { currentAutomationStudioConversation } from "./context/index.ts";
 import {
+  automationStudioConversationCommandWork,
   automationStudioConversationEffectiveCaller,
   type AutomationStudioConversationEffectiveCaller,
   type AutomationStudioConversationKeyUnlockCheck,
@@ -47,6 +48,7 @@ import {
 } from "./writer.ts";
 import { automationStudioConversationWholeThread } from "./whole-thread.ts";
 import { automationStudioConversationPersonWords } from "./person-words.ts";
+import { AutomationStudioConversationRefusal } from "./refusal.ts";
 
 const STORAGE_UNAVAILABLE = "Conversations require project storage.";
 /** How far back a thread is searched for asks still waiting. */
@@ -118,6 +120,19 @@ export type AutomationStudioConversationParkingRequest = {
   subject: AutomationStudioConversationSubject;
   /** How often the thread is re-read while a run waits. The default suits a person answering; a test shortens it. */
   pollIntervalMs?: number;
+};
+
+/** A person's new name for one of the project's threads. */
+export type AutomationStudioConversationRenameRequest = {
+  projectId: string;
+  conversationId: string;
+  title: string;
+};
+
+/** Removing one of the project's threads. */
+export type AutomationStudioConversationDeleteRequest = {
+  projectId: string;
+  conversationId: string;
 };
 
 export type AutomationStudioConversationWriterRequest = {
@@ -236,10 +251,14 @@ export class AutomationStudioConversations {
    * conversations. So an open thread for the subject is continued rather than
    * duplicated, and a resolved one is left resolved -- the next thing said
    * about that subject starts a new thread.
+   *
+   * `fresh` is a person's New chat: a new open thread whatever is open, and
+   * the one Core continues afterwards, since it is the subject's most recently
+   * touched open thread. The thread it leaves stays open and listed.
    */
   openConversation(input: AutomationStudioConversationOpenRequest): Promise<AutomationStudioConversation> {
     return this.withStore(input.projectId, async (store) => {
-      if (input.conversationId === undefined) {
+      if (input.conversationId === undefined && input.fresh !== true) {
         // Work the chat started speaks in the chat. A build's question is
         // raised on the Flow's subject by code that knows nothing of the chat;
         // inside the thread's ambient context (`context/`) it is the thread the
@@ -259,6 +278,27 @@ export class AutomationStudioConversations {
         title: input.title
       });
     });
+  }
+
+  /** Gives a thread a person's own name. Refused by code when the project holds no such thread (`./refusal.ts`). */
+  renameConversation(input: AutomationStudioConversationRenameRequest): Promise<AutomationStudioConversation> {
+    return this.withStore(input.projectId, (store) =>
+      store.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title })
+    );
+  }
+
+  /**
+   * Removes a thread with everything said and asked in it. Refused while work
+   * started from the thread in this process is still running, because it writes
+   * its ending there, and (by the store, in the same transaction as the removal)
+   * while an ask in it parks a run. A run the thread is linked to elsewhere is
+   * the caller's to rule out first (`conversation-requests/delete.ts` in the
+   * service). Each removal is its own mutation: a thread opened again under the
+   * same id must be removable again, which a replayed record would not do.
+   */
+  deleteConversation(input: AutomationStudioConversationDeleteRequest): Promise<{ deleted: true; conversationId: string }> {
+    if (automationStudioConversationCommandWork.busy(input)) return Promise.reject(new AutomationStudioConversationRefusal("conversation_run_active"));
+    return this.withStore(input.projectId, (store) => store.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId }));
   }
 
   /** A turn Core itself writes: what a run, a build or a node says, and the ask it raises. */

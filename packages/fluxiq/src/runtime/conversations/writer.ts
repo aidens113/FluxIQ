@@ -18,12 +18,16 @@ import type { AutomationStudioConversationAskInput, AutomationStudioConversation
 import type { AutomationStudioConversation, AutomationStudioConversationSubject } from "./thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn, AutomationStudioConversationTurnDecision } from "./turn.ts";
 
-/** Opening a subject's thread. Without `conversationId` the holder mints one. */
+/**
+ * Opening a subject's thread. Without `conversationId` the holder mints one.
+ * `fresh` opens a new thread even when the subject already has an open one.
+ */
 export type AutomationStudioConversationOpenRequest = {
   projectId: string;
   subject: AutomationStudioConversationSubject;
   title: string | null;
   conversationId?: string;
+  fresh?: boolean;
 };
 
 /** One turn Core itself writes, with the ask it carries and the thing it shows. */
