@@ -3,13 +3,15 @@
 // answered only in FluxIQ (`askPresentation`). A failed answer is said here,
 // beside the buttons that sent it. A pending question the host words itself
 // (`context.presented`) is drawn by `presentedAskControls` instead; a settled
-// one keeps the chat's own sentence either way.
+// one keeps the chat's own sentence either way. Answers require a person's
+// activation: each control acts only on a person's own press (`isPersonEvent`).
 
 import { createElement } from "../../dom/index.ts";
 import type { ChatAskAction, ChatAskPresentation } from "../ports/index.ts";
 import { presentedAskControls } from "./presented-ask.ts";
 import { askPresentation } from "./ask-copy.ts";
 import type { CoreAsk } from "./core-thread.ts";
+import { isPersonEvent } from "./person-event.ts";
 
 /** What the controls need from the card. */
 export type AskControlsContext = {
@@ -44,7 +46,9 @@ export function askControls(ask: CoreAsk, context: AskControlsContext): HTMLElem
       children.push(createElement("div", { className: "card-actions" }, presentation.choices.map((choice) => {
         const button = createElement("button", { className: "small-button", text: choice.label, attrs: { type: "button" } });
         button.disabled = context.answering;
-        button.addEventListener("click", () => context.answer(choice.kind, choice.value));
+        button.addEventListener("click", (event) => {
+          if (isPersonEvent(event)) context.answer(choice.kind, choice.value);
+        });
         return button;
       })));
       break;
@@ -56,9 +60,11 @@ export function askControls(ask: CoreAsk, context: AskControlsContext): HTMLElem
       const submit = (): void => {
         if (input.value.trim() !== "") context.answer("text", input.value.trim());
       };
-      send.addEventListener("click", submit);
+      send.addEventListener("click", (event) => {
+        if (isPersonEvent(event)) submit();
+      });
       input.addEventListener("keydown", (event) => {
-        if (event.key !== "Enter" || event.defaultPrevented || event.isComposing || event.keyCode === 229
+        if (!isPersonEvent(event) || event.key !== "Enter" || event.defaultPrevented || event.isComposing || event.keyCode === 229
           || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         submit();
       });

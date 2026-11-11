@@ -1,48 +1,86 @@
-/* Design tokens, light and dark. Every stylesheet of the chat reads colours
-   from these names and never from a literal, so a surface or a theme changes
-   here and nowhere else. They sit on `:root` on purpose, so a host defines
-   its own surface from the same names. Imported once, by the host. */
+/* Design tokens, the FluxIQ brand. Dark is the default; a derived light theme
+   is kept. Every stylesheet of the chat reads colours from these names and
+   never from a literal, so a surface or a theme changes here and nowhere else.
+   They sit on `:root` on purpose, so a host defines its own surface from the
+   same names. Imported once, by the host (fonts come from fonts.css).
+
+   `:root` holds the dark brand values. `data-theme="light"` on the root
+   element switches to the light values below; `data-theme="system"` follows
+   the OS. Plain blocks, not light-dark(): that function needs Chrome 123 and
+   Safari 17.5, the extension supports Chrome 116, and esbuild passes it
+   through unlowered, so every colour token would be invalid there.
+
+   Contrast (WCAG ratio, dark / light; every text pair is at least 4.5:1):
+     text on canvas             15.61 / 16.75     text on surface        15.05 / 18.24
+     text-soft on surface       12.56 / 11.15     muted on canvas         9.19 /  6.40
+     muted on surface            8.86 /  6.97     muted on surface-raised 8.47 /  5.96
+     text-dim on surface         5.43 /  5.62     accent-text on surface 10.54 /  7.82
+     accent-text on accent-soft 10.06 /  6.95     accent-ink on accent   10.93 / 10.93
+     send-text on send          10.93 / 10.93     success on surface      9.58 /  6.08
+     warning on surface         10.64 /  5.83     warning-text on soft   10.15 /  7.56
+     danger on surface           6.39 /  5.96     danger-text on soft     6.20 /  6.91
+     send-off-text on send-off   4.89 /  5.44     text on bubble         14.39 / 15.60
+     text on code-bg            15.81 / 15.60 */
 
 :root {
-  color-scheme: light dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
 
-  --canvas: #f5f7fa;
-  --surface: #ffffff;
-  --surface-raised: #eef2f7;
-  --surface-muted: #f0f3f7;
-  --divider: #d6dde6;
-  --text: #16202b;
-  --muted: #5b6b7c;
-  --accent: #2f6fc0;
-  --accent-soft: #e3eefb;
-  --accent-text: #1d4f8f;
-  --success: #1f9d61;
-  --warning: #b7791f;
-  --warning-soft: #fdf4e3;
-  --warning-text: #7a4f0e;
-  --danger: #d23b4a;
-  --danger-soft: #fdeaec;
-  --danger-text: #9b1f2c;
-  --neutral-dot: #8b98a6;
-  --focus: #2f6fc0;
-  --hover: #e4eaf2;
-  --shadow: 0 12px 32px rgb(15 23 42 / 16%);
-  --shadow-sm: 0 1px 4px rgb(15 23 42 / 8%);
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+  font-family: var(--font-sans);
+  /* Native controls and scrollbars in the brand rather than the system's blue
+     and light grey: checkboxes, radios and ranges take the amber accent, and
+     scrollbars the edge hairline. Both inherit, so they hold in every theme. */
+  accent-color: var(--accent);
+  scrollbar-color: var(--edge) transparent;
+
+  --canvas: #0c0d0f;
+  --surface: #111214;
+  --surface-raised: #16171a;
+  --surface-muted: #0f1012;
+  --divider: #23252a;
+  --line: #1b1d21;
+  --edge: #2e3035;
+  --text: #e8e6e3;
+  --text-soft: #d6d3ce;
+  --muted: #b5b2ac;
+  --text-dim: #8c8a85;
+  --accent: #f5b83d;
+  --accent-hover: #ffc95c;
+  --accent-edge: #5a4618;
+  --accent-wash: #15130d;
+  --accent-row: #1a1710;
+  --accent-soft: #1a1710;
+  --accent-text: #f5b83d;
+  --accent-ink: #0c0d0f;
+  --success: #7fc99b;
+  --warning: #f5b94a;
+  --warning-soft: #1a1710;
+  --warning-text: #f5b94a;
+  --danger: #fa6571;
+  --danger-soft: #1d1315;
+  --danger-text: #fa6571;
+  --neutral-dot: #8c8a85;
+  --focus: #f5b83d;
+  --focus-width: 2px;
+  --focus-offset: 4px;
+  --hover: #1b1d21;
+  --shadow: 0 12px 32px rgb(0 0 0 / 48%);
+  --shadow-sm: 0 1px 4px rgb(0 0 0 / 40%);
 
   /* The chat (chat/): a chat app's type, bubble, code and composer. */
-  --chat-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --chat-mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+  --chat-font: var(--font-sans);
+  --chat-mono: var(--font-mono);
   --chat-size: 14px;
   --chat-column: 720px;
-  --bubble: #eef1f5;
-  --code-bg: #eef1f5;
-  --composer: #ffffff;
-  --composer-focus: #aab6c4;
-  --send: #16202b;
-  --send-text: #ffffff;
-  --send-off: #dde3ea;
-  --send-off-text: #8b98a6;
+  --bubble: #16171a;
+  --code-bg: #0a0b0d;
+  --composer: #111214;
+  --composer-focus: #3a3c42;
+  --send: #f5b83d;
+  --send-text: #0c0d0f;
+  --send-off: #1b1d21;
+  --send-off-text: #8c8a85;
 
   --radius: 10px;
   --space-1: 4px;
@@ -51,37 +89,90 @@
   --space-4: 16px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --canvas: #0b1016;
-    --surface: #111923;
-    --surface-raised: #172231;
-    --surface-muted: #0e151e;
-    --divider: #26384a;
-    --text: #eef4fb;
-    --muted: #93a4b6;
-    --accent: #5e9eea;
-    --accent-soft: #183250;
-    --accent-text: #dcebff;
-    --success: #3bc982;
-    --warning: #efbb52;
-    --warning-soft: #211d15;
-    --warning-text: #f8d489;
-    --danger: #fa6571;
-    --danger-soft: #27171d;
-    --danger-text: #ffb5bc;
-    --neutral-dot: #718094;
-    --focus: #9dccff;
-    --hover: #1b2b3d;
-    --shadow: 0 20px 60px rgb(0 0 0 / 48%);
-    --shadow-sm: 0 1px 4px rgb(0 0 0 / 40%);
-    --bubble: #1f2c3b;
-    --code-bg: #0b1119;
-    --composer: #172231;
-    --composer-focus: #3d5670;
-    --send: #eef4fb;
-    --send-text: #0b1016;
-    --send-off: #26384a;
-    --send-off-text: #718094;
+/* The light theme: the same names, derived from the same palette. Chosen with
+   data-theme="light", or by the OS under data-theme="system". The two blocks
+   below must stay identical (theme/tests/tokens.test.ts). */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f6f3ee;
+  --surface: #fffdf9;
+  --surface-raised: #efebe4;
+  --surface-muted: #f1ede6;
+  --divider: #ddd8ce;
+  --line: #e6e1d7;
+  --edge: #c9c3b6;
+  --text: #16130d;
+  --text-soft: #3d3a34;
+  --muted: #5c584f;
+  --text-dim: #6b665c;
+  --accent-hover: #e8a620;
+  --accent-edge: #e3c379;
+  --accent-wash: #fcf5e2;
+  --accent-row: #fbefd0;
+  --accent-soft: #fbefd0;
+  --accent-text: #6e4a00;
+  --success: #1d6f40;
+  --warning: #8a5a00;
+  --warning-soft: #fdf1d6;
+  --warning-text: #6b4500;
+  --danger: #b92b38;
+  --danger-soft: #fdeaec;
+  --danger-text: #9b1f2c;
+  --neutral-dot: #6b665c;
+  --focus: #8a5a00;
+  --hover: #e8e3da;
+  --shadow: 0 12px 32px rgb(22 19 13 / 16%);
+  --shadow-sm: 0 1px 4px rgb(22 19 13 / 8%);
+  --bubble: #efebe4;
+  --code-bg: #efebe4;
+  --composer: #fffdf9;
+  --composer-focus: #b5ae9f;
+  --send-off: #e6e1d7;
+  --send-off-text: #5c584f;
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+    --canvas: #f6f3ee;
+    --surface: #fffdf9;
+    --surface-raised: #efebe4;
+    --surface-muted: #f1ede6;
+    --divider: #ddd8ce;
+    --line: #e6e1d7;
+    --edge: #c9c3b6;
+    --text: #16130d;
+    --text-soft: #3d3a34;
+    --muted: #5c584f;
+    --text-dim: #6b665c;
+    --accent-hover: #e8a620;
+    --accent-edge: #e3c379;
+    --accent-wash: #fcf5e2;
+    --accent-row: #fbefd0;
+    --accent-soft: #fbefd0;
+    --accent-text: #6e4a00;
+    --success: #1d6f40;
+    --warning: #8a5a00;
+    --warning-soft: #fdf1d6;
+    --warning-text: #6b4500;
+    --danger: #b92b38;
+    --danger-soft: #fdeaec;
+    --danger-text: #9b1f2c;
+    --neutral-dot: #6b665c;
+    --focus: #8a5a00;
+    --hover: #e8e3da;
+    --shadow: 0 12px 32px rgb(22 19 13 / 16%);
+    --shadow-sm: 0 1px 4px rgb(22 19 13 / 8%);
+    --bubble: #efebe4;
+    --code-bg: #efebe4;
+    --composer: #fffdf9;
+    --composer-focus: #b5ae9f;
+    --send-off: #e6e1d7;
+    --send-off-text: #5c584f;
   }
+}
+
+/* Selected text, as the website marks it: amber, softened. */
+::selection {
+  background-color: color-mix(in oklab, var(--accent) 35%, transparent);
 }

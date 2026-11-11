@@ -19,6 +19,13 @@
 // on with reads those, never the page at the press or a newer message (review
 // P9-R2). A row from before it reads as no words, which clearly ask nothing.
 //
+// **They go with their thread.** A waiting call keeps the words of the message
+// it was raised under, so it must not outlive the thread a person deleted.
+// `9004` removes a thread's waiting calls when its `conversations` row is
+// deleted, inside the statement that deletes it, so the store's delete
+// (`AutomationStudioProjectConversationStore.deleteConversation`) removes them in
+// its own transaction and nothing here has to remember to.
+//
 // The ids sit far above the project's (`0001`-`0036`): a project migration
 // added later still sorts first.
 
@@ -71,6 +78,15 @@ export const PANEL_ASSISTANT_STORE_MIGRATIONS: readonly AutomationStudioSchemaMi
     statements: [
       "alter table panel_assistant_waiting_calls add column words text not null default ''",
       "alter table panel_assistant_waiting_calls add column context_json text not null default '{}'"
+    ]
+  },
+  {
+    id: "9004_panel_waiting_calls_follow_thread",
+    statements: [
+      `create trigger panel_assistant_waiting_calls_follow_thread after delete on conversations
+      begin
+        delete from panel_assistant_waiting_calls where conversation_id = old.conversation_id;
+      end`
     ]
   }
 ]);

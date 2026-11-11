@@ -367,6 +367,27 @@ stop a run, and use its automation and recording controls:
 
 - Automation Studio: `list-conversations`, `open-conversation`,
   `get-conversation`, `append-turn`, `answer-ask`
+- Automation Studio, the chat's thread list: `rename-conversation` and
+  `delete-conversation` (`programs.write`, `authoring`, no PIN, as deleting a
+  Flow is; narrowed to `projectId`, `conversationId` and, for a rename,
+  `title`). A rename answers `{ conversation }`, the record `get-conversation`
+  answers, with the title trimmed and at most 200 characters
+  (`conversation_title_required`, `conversation_title_too_long`). A delete
+  answers `{ deleted: true, conversationId }` and removes the thread, its turns,
+  its asks and the mutation records that kept their words in one transaction;
+  it is refused with `conversation_run_active` while a run still uses the
+  thread: one parked on its ask, work the chat started from it that is still
+  running in this process, a task attempt it holds that is still working or
+  waiting, or an unended run that is its subject (or of its Flow). Both are
+  decided by IAM on the thread's project; a thread the caller may not change is
+  `conversation_not_found`, exactly as a missing one. Without `projectId` the
+  thread is looked for in the domain's projects the caller may change, each
+  decided by IAM (`conversation_ambiguous` when two hold it); under the
+  `service` profile such a call needs workspace-wide access, so a client names
+  the project from the thread's record. `open-conversation` takes `fresh: true`
+  for a New chat: a new open thread for the subject rather than the open one
+  continued, and `list-conversations` with no `projectId` lists every thread the
+  caller may see across the domain's projects
 - Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`,
   `cancel-flow-bootstrap`
 - Automation Studio, Take over and Hand back: `pause-runtime-session` and

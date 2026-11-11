@@ -93,6 +93,10 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "get-conversation",
     "append-turn",
     "answer-ask",
+    // A person's own name for a thread, and deleting one, from the chat's thread list, `authoring` (programs.write).
+    // Narrowed: the project, the thread and a name. Each touches only that thread; a delete is refused while a run still uses it.
+    "rename-conversation",
+    "delete-conversation",
     "list-runtime-sessions",
     "cancel-runtime-session",
     "cancel-flow-bootstrap",
@@ -313,6 +317,8 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "run-task-again") return narrowRunTaskAgain(payload);
   if (name === "rename-task") return narrowTaskMemory(payload, ["projectId", "taskId", "title"]);
   if (name === "remove-task") return narrowTaskMemory(payload, ["projectId", "taskId"]);
+  if (name === "rename-conversation") return narrowThreadChange(payload, ["projectId", "conversationId", "title"]);
+  if (name === "delete-conversation") return narrowThreadChange(payload, ["projectId", "conversationId"]);
   if (name === "generate-recording-proposal") return narrowGenerateRecordingProposal(payload);
   if (name === "review-recording-flow-proposal") return narrowReviewRecordingFlowProposal(payload);
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
@@ -369,6 +375,16 @@ function narrowTaskMemory(payload: unknown, allowed: readonly string[]): PairedC
   if (!body) return forbidden("A paired client's task change must name a project and a task.");
   for (const field of Object.keys(body)) {
     if (!allowed.includes(field)) return forbidden(`A paired client's task change may not carry ${field}.`);
+  }
+  return { ok: true, payload: body };
+}
+
+/** A thread's rename or deletion names the project, the thread (and the new name), and nothing else. */
+function narrowThreadChange(payload: unknown, allowed: readonly string[]): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload);
+  if (!body) return forbidden("A paired client's change to a conversation must name the conversation.");
+  for (const field of Object.keys(body)) {
+    if (!allowed.includes(field)) return forbidden(`A paired client's change to a conversation may not carry ${field}.`);
   }
   return { ok: true, payload: body };
 }

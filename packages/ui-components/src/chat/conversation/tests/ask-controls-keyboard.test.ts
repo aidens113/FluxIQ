@@ -79,3 +79,24 @@ test("choice click preserves displayed choice kind/value and busy native state",
   assert.equal(view.input, undefined);
   assert.equal(controls(ask, true).button!.disabled, true);
 }));
+// Answers require a person's activation: a choice or the Answer box acts on a person's trusted press or key only.
+test("a choice ignores an untrusted click and answers a trusted press", async () => withFakeDocument(() => {
+  const ask: CoreAsk = { ...pending, kind: "choice", options: [{ id: "synthetic-choice", label: "Choose synthetic" }] };
+  const view = controls(ask);
+  view.button!.click();
+  view.button!.dispatchUntrusted("click");
+  view.button!.dispatch("click", { isTrusted: false });
+  assert.deepEqual(view.answers, []);
+  view.button!.dispatch("click");
+  assert.deepEqual(view.answers, [{ kind: "choice", value: "synthetic-choice" }]);
+}));
+test("the Answer box ignores an untrusted click and Enter, and answers trusted ones", async () => withFakeDocument(() => {
+  const view = controls();
+  view.input!.value = "synthetic words";
+  view.button!.click();
+  view.input!.dispatchUntrusted("keydown", { key: "Enter", isComposing: false, keyCode: 13 });
+  assert.deepEqual(view.answers, []);
+  view.button!.dispatch("click");
+  view.input!.dispatch("keydown", { key: "Enter", isComposing: false, keyCode: 13 });
+  assert.deepEqual(view.answers, [{ kind: "text", value: "synthetic words" }, { kind: "text", value: "synthetic words" }]);
+}));

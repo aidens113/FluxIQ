@@ -85,3 +85,32 @@ test("with a dialog the press asks for it and answers nothing yet", async () => 
   assert.deepEqual(pressed, ["Confirm"]);
   assert.deepEqual(answers, []);
 }));
+
+// Answers require a person's activation: an action or Send answer acts on a person's trusted press or key only.
+test("an action ignores an untrusted click, and a trusted press answers or asks for the dialog", async () => withFakeDocument(() => {
+  const pressed: string[] = [];
+  const { root, answers } = drawn({ ...pinAsk, actions: [{ id: "allow", label: "Allow", tone: "primary", kind: "grant" }, ...pinAsk.actions] }, (action) => pressed.push(action.label));
+  const button = (label: string) => root.querySelectorAll("button").find((candidate) => candidate.textContent === label)!;
+  button("Allow").click();
+  button("Confirm").dispatchUntrusted("click");
+  button("Cancel").dispatch("click", { isTrusted: false });
+  assert.deepEqual(answers, []);
+  assert.deepEqual(pressed, []);
+  button("Allow").dispatch("click");
+  button("Confirm").dispatch("click");
+  assert.deepEqual(answers, [["grant", undefined]]);
+  assert.deepEqual(pressed, ["Confirm"]);
+}));
+
+test("an open question ignores an untrusted Send answer and Enter, and sends on a trusted press", async () => withFakeDocument(() => {
+  const { root, answers } = drawn(presentation({ takesText: true }));
+  const box = root.byClass("turn-answer-text")[0]!;
+  box.value = "the blue one";
+  box.dispatch("input");
+  const send = root.querySelectorAll("button").find((candidate) => candidate.textContent === "Send answer")!;
+  send.click();
+  box.dispatchUntrusted("keydown", { key: "Enter", shiftKey: false, isComposing: false, keyCode: 13, preventDefault: () => undefined });
+  assert.deepEqual(answers, []);
+  send.dispatch("click");
+  assert.deepEqual(answers, [["text", "the blue one"]]);
+}));

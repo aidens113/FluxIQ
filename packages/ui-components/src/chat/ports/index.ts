@@ -26,18 +26,22 @@ export type {
   ChatTaskResultRows
 } from "./results.ts";
 export type { ChatSelection } from "./selection.ts";
-export type { ChatThreadsOptions, ChatWelcome, ChatWelcomeItem } from "./threads.ts";
+export type { ChatSetHumannessRequest, ChatTaskRef, ChatTaskSettings, ChatTaskSettingsPort } from "./task-settings.ts";
+export type { ChatThreadsLayout, ChatThreadsOptions, ChatWelcome, ChatWelcomeItem } from "./threads.ts";
 export type {
   ChatActivityPort,
   ChatAnswer,
   ChatAttachment,
   ChatChangesPort,
   ChatConversationPort,
+  ChatDeleteThreadRequest,
   ChatModelsPort,
+  ChatNewThreadRequest,
   ChatOnScreen,
   ChatOverlayPreference,
   ChatRecordingsPort,
   ChatRecordingSummary,
+  ChatRenameThreadRequest,
   ChatRunPort,
   ChatRunTarget,
   ChatSend,

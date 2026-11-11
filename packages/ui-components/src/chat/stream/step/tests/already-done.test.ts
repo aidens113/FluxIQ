@@ -1,6 +1,6 @@
 // A run step Core skipped because this run had already done its act for that
 // row (Core's `executor/step-loop/already-done.ts`, t411) is its own short
-// step message whose card reads "Already done" for the row: never a failure,
+// step message whose card reads "Already done — not repeated" for the row (its row names no act it could press): never a failure,
 // never a step done again, never a retry that worked.
 
 import assert from "node:assert/strict";
@@ -60,7 +60,7 @@ test("the skipped field decides, not the row's shape: an older Core's row withou
 
 test("an older Core's already-done rows still give Already done cards", () => {
   const messages = stepMessages([confirm(1, 4, "Lin Zhao"), olderAlreadyDone(2, 4, "Lin Zhao")], 100);
-  assert.deepEqual(messages.map((message) => cardWords(message.actions[0]!, false).outcome), ["Done", "Already done"]);
+  assert.deepEqual(messages.map((message) => cardWords(message.actions[0]!, false).outcome), ["Done", "Already done — not repeated"]);
 });
 
 test("an already-done step is a short step message whose card says Already done for its row, after the steps that did the work", () => {
@@ -77,11 +77,54 @@ test("an already-done step is a short step message whose card says Already done 
   assert.deepEqual(words.map((card) => [card.target, card.state, card.outcome]), [
     ["Confirm · Amara Osei", "done", "Done"],
     ["Confirm · Lin Zhao", "done", "Done"],
-    ["Confirm · Amara Osei", "done", "Already done"],
-    ["Confirm · Lin Zhao", "done", "Already done"]
+    ["Confirm · Amara Osei", "done", "Already done — not repeated"],
+    ["Confirm · Lin Zhao", "done", "Already done — not repeated"]
   ]);
   for (const card of words) assert.doesNotMatch(card.label, /Didn't work|already_done|executor\./u);
   assert.deepEqual(messages.map((message) => message.actions[0]!.again), [undefined, undefined, undefined, undefined], "nothing is folded as done again");
+});
+
+// Live run `run-mwbadi79-d928f922`, attempt 2: the saved Flow's run found its Post already done by
+// attempt 1 and pressed nothing, yet its card read "Click · Post — Done". That skip is Core's
+// answer-first run gate (`answer-first/run-acts/run-gate.ts`, t861), which decides inside the node's
+// executor, so it comes after the step was announced, names the announced node, and numbers no step
+// of its own -- unlike the engine's own skip, which comes in place of the step.
+const attemptRow = (sequence: number, kind: "build" | "run", fields: Partial<ClientGatewayActivity>) =>
+  activityEvent(sequence, { activityId: `${kind}:a2`, subject: { kind, id: "a2", projectId: "p" }, conversationId: "c1", ...fields });
+const replayedPost = (kind: "build" | "run") => [
+  attemptRow(1, kind, { phase: kind === "build" ? "building" : "running", label: "Working on your task" }),
+  attemptRow(2, kind, {
+    phase: "running",
+    label: "Running step 7 of 7: Clicking “Post”",
+    step: { index: 7, count: 7, nodeId: "node.main.s7", label: "Post" },
+    detail: { kind: "step", title: "Clicking “Post”", status: "started", ref: "node.main.s7", text: "Node: web.output.dom-click" }
+  }),
+  // The run gate's row (`told` in run-gate.ts): no `step`, the node as `ref`.
+  attemptRow(3, kind, {
+    phase: "running",
+    label: "Already done: Post",
+    detail: { kind: "step", title: "Already done: Post", status: "succeeded", ref: "node.main.s7", skipped: { reason: "already_done", subject: "Post" } }
+  }),
+  attemptRow(4, kind, { phase: "running", label: "Checking the result", detail: { kind: "check", title: "Checking the result", status: "started" } })
+];
+
+for (const kind of ["build", "run"] as const) {
+  test(`a step the run found already done after announcing it says so on its one card, never Done (${kind})`, () => {
+    const messages = stepMessages(replayedPost(kind), 100);
+    const posts = messages.filter((message) => message.actions.some((card) => card.target?.includes("Post")) || message.title.includes("Post"));
+    assert.equal(posts.length, 1, "the skip row is no second message for the same step");
+    const card = posts[0]!.actions[0]!;
+    assert.equal(card.already, true);
+    const words = cardWords(card, false);
+    assert.deepEqual([words.state, words.outcome], ["done", "Already done — not pressed again"]);
+    assert.doesNotMatch(words.label, /: Done$/u);
+  });
+}
+
+test("an engine already-done row for the step announced before it keeps its own card, and the earlier pass stays Done", () => {
+  // The engine numbers its own skip (`step`), and it comes in place of a later pass of the same step.
+  const messages = stepMessages([confirm(1, 4, "Lin Zhao"), alreadyDone(2, 4, "Lin Zhao")], 100);
+  assert.deepEqual(messages.map((message) => cardWords(message.actions[0]!, false).outcome), ["Done", "Already done — not repeated"]);
 });
 
 test("an already-done step after a failed one is no retry that worked, and a step with no row still says Already done", () => {
@@ -94,7 +137,7 @@ test("an already-done step after a failed one is no retry that worked, and a ste
   const messages = stepMessages(events, 100);
   const cards = messages.map((message) => message.actions[0]!);
   assert.deepEqual(cards.map((card) => [card.outcome, card.retried === undefined]), [["failed", true], ["done", true], ["done", true]]);
-  assert.equal(cardWords(cards[1]!, false).outcome, "Already done");
-  assert.equal(cardWords(cards[2]!, false).outcome, "Already done");
+  assert.equal(cardWords(cards[1]!, false).outcome, "Already done — not repeated");
+  assert.equal(cardWords(cards[2]!, false).outcome, "Already done — not repeated");
   assert.equal(messages[2]!.title, "Step 5: Confirm");
 });
