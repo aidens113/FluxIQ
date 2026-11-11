@@ -34,8 +34,8 @@ export class IdentityAuthorityDelegation {
    * answer. Presence decides, as it does for the credential recheck: the
    * `update-user` endpoint first drops every field equal to the person's
    * stored value (a resent value is not a change), so `update` carries only
-   * the fields being changed, and it does not ask about a person re-casing
-   * their own sign-in name (the same name, so no change of authority). A
+   * the fields being changed, and it does not ask about a sign-in name
+   * re-cased (the same name of the same person, so no change of authority). A
    * display-name change, or any change with no owner set, passes.
    */
   async refuseChangeHeldElsewhere(update: Pick<IdentityUserUpdate, "id" | "username" | "roleId" | "enabled">): Promise<void> {
@@ -57,8 +57,8 @@ export class IdentityAuthorityDelegation {
    * holder, or a person the owner could not answer for (the change would be
    * refused unchecked, so a client must not offer it either). With no owner
    * set, nobody is. The flag speaks of real changes: resending anyone's
-   * current values is not a change, and neither is a person re-casing their
-   * own sign-in name, so `update-user` refuses neither.
+   * current values is not a change, and neither is re-casing a person's
+   * sign-in name, so `update-user` refuses neither.
    */
   async listing(snapshot: IdentityAccessSnapshot): Promise<IdentityAccessListing> {
     const users = await Promise.all(snapshot.users.map(async (user) => ({ ...user, authorityHeldElsewhere: await this.refuses(user.id) })));

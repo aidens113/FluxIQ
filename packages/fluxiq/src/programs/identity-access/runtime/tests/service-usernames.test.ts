@@ -3,7 +3,8 @@
 // caller's path (the endpoints and provisioning both write through the
 // service); a person may re-case their own name, stored as sent; and two
 // people stored before the rule with names that differ only by case are left
-// as they are and can each still be updated. Every password is a dummy value;
+// as they are and can each still be updated, but neither may re-case the
+// shared name while the other has it. Every password is a dummy value;
 // derivations run at the test-only N=2^10.
 
 import { describe, expect, it } from "vitest";
@@ -99,12 +100,21 @@ describe("IdentityAccessService with two people stored under names that differ o
     expect(await usernames(service)).toMatchObject({ first: "Ann", second: "ann" });
   });
 
-  it("updates either when the name is not written, or is re-cased", async () => {
+  it("updates either when the name is not written, or is written exactly as stored", async () => {
     const { service } = await storedDuplicates();
 
     await expect(service.updateUser({ id: "first", displayName: "Renamed First" })).resolves.toMatchObject({ username: "Ann", displayName: "Renamed First" });
     await expect(service.updateUser({ id: "second", roleId: "admin" })).resolves.toMatchObject({ username: "ann", roleId: "admin" });
-    await expect(service.updateUser({ id: "second", username: "ANN" })).resolves.toMatchObject({ username: "ANN" });
+    await expect(service.updateUser({ id: "second", username: "ann", displayName: "Renamed Second" })).resolves.toMatchObject({ username: "ann", displayName: "Renamed Second" });
+    await expect(service.upsertUser({ id: "first", username: "Ann", displayName: "First", roleId: "viewer" })).resolves.toMatchObject({ username: "Ann" });
+  });
+
+  it("refuses re-casing either name while the other shares it, a case-only clash, and changes nothing", async () => {
+    const { service } = await storedDuplicates();
+
+    await expect(service.updateUser({ id: "second", username: "ANN" })).rejects.toBeInstanceOf(IdentityUsernameTakenError);
+    await expect(service.updateUser({ id: "first", username: "ann" })).rejects.toBeInstanceOf(IdentityUsernameTakenError);
+    expect(await usernames(service)).toMatchObject({ first: "Ann", second: "ann" });
   });
 
   it("lets one move to a free name, after which the other can no longer take it", async () => {

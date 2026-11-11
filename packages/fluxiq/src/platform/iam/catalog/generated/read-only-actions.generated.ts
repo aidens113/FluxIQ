@@ -2,6 +2,7 @@
 export const IAM_READ_ONLY_ACTIONS: readonly string[] = Object.freeze([
   "iam:GetMyPreferences",
   "iam:MintPressGrant",
+  "iam:RecaseMyUsername",
   "iam:Snapshot",
   "iam:UpdateMyPreferences",
   "ops:AuthorizeStore",

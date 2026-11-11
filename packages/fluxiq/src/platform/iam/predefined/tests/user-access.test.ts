@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { compileIamPolicySet, evaluateIamRequest } from "../../evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../frn/index.ts";
 import type { IamPrincipal } from "../../types.ts";
-import { IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../index.ts";
+import { IAM_CONNECTED_SESSION, IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../index.ts";
 
 const WS = "ws-1";
 const ALICE: IamPrincipal = { type: "user", id: "alice", workspaceId: WS, frn: iamPrincipalFrn("user", WS, "alice") };
@@ -108,5 +108,28 @@ describe("FluxIQUserAccess and the workspace's assistant key", () => {
     const ALICES_KEY = `frn:fluxiq:secrets:${WS}:key/k2`;
     for (const action of ["secrets:RevealKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey"]) expect(decide(action, ALICES_KEY, "alice"), action).toBe("allow");
     expect(decide("secrets:CreateKey", iamWorkspaceFrn(WS))).toBe("allow");
+  });
+});
+
+describe("FluxIQUserAccess self-only identity actions", () => {
+  // The caller's own preferences and their own sign-in name in another case:
+  // each endpoint declares the caller's own user and reads the person only
+  // from the session, so the policy grants them there and nowhere else.
+  const SELF_ONLY = ["iam:GetMyPreferences", "iam:UpdateMyPreferences", "iam:RecaseMyUsername"];
+  const browser = compileIamPolicySet({ identity: [IAM_USER_ACCESS], guardrails: [], sessions: [IAM_CONNECTED_SESSION], boundary: null }, ALICE, WS);
+
+  it("allows each on the person's own user FRN, and never on another person's or the workspace", () => {
+    for (const action of SELF_ONLY) {
+      expect(decide(action, ALICE_USER, "alice"), action).toBe("allow");
+      expect(decide(action, BOB_USER, "bob"), action).toBe("deny");
+      expect(decide(action, iamWorkspaceFrn(WS)), action).toBe("deny");
+    }
+    expect(decide("iam:UpdateUser", ALICE_USER, "alice")).toBe("deny");
+  });
+
+  it("refuses each, the re-case exactly as the preferences, to a paired browser's credential", () => {
+    for (const action of SELF_ONLY) {
+      expect(evaluateIamRequest(browser, ALICE, action, [{ frn: ALICE_USER, ownerId: "alice" }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision, action).toBe("deny");
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { AUTOMATION_STUDIO_ENDPOINTS } from "fluxiq/automation";
+import { PAIRED_CLIENT_ENDPOINTS } from "fluxiq/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const call = vi.fn();
@@ -56,7 +57,10 @@ const ALLOWLISTED = [
   "list-flow-subflows",
   "list-project-tasks",
   "rename-task",
+  "update-task-settings",
   "remove-task",
+  "get-flow-metadata-detail",
+  "update-flow-settings",
   "carry-on-task-attempt",
   "run-task-again",
   "run-runtime-session",
@@ -95,7 +99,10 @@ const CLASSIFICATIONS: Record<string, string> = {
   "list-flow-subflows": "read",
   "list-project-tasks": "read",
   "rename-task": "authoring",
+  "update-task-settings": "authoring",
   "remove-task": "authoring",
+  "get-flow-metadata-detail": "read",
+  "update-flow-settings": "authoring",
   "carry-on-task-attempt": "authoring",
   "run-task-again": "authoring",
   "run-runtime-session": "authoring",
@@ -217,7 +224,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -236,6 +243,93 @@ describe("a paired client's bearer token", () => {
       payload: forwardedPayload(endpoint, body),
     });
     expect(await response.json()).toEqual({ ok: true, payload: { conversation: { id: "c1" } } });
+  });
+
+  it("mirrors Core's paired-client allowlist for Automation Studio exactly", () => {
+    expect([...ALLOWLISTED].sort()).toEqual([...(PAIRED_CLIENT_ENDPOINTS["automation-studio"] ?? [])].sort());
+  });
+
+  it("forwards a Flow's humanness change reaching only flow.metadata.humanness, rebuilt exactly, as a number or null", async () => {
+    for (const flow of [{ metadata: { humanness: 40 } }, { metadata: { humanness: null } }, { flowId: "flow-1", metadata: { humanness: 0 } }]) {
+      call.mockClear();
+      const body = { projectId: "project-1", flowId: "flow-1", flow };
+      const response = await POST(tokenRequest("update-flow-settings", { body }), params("update-flow-settings"));
+      expect(response.status).toBe(200);
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ endpoint: "update-flow-settings", payload: body }));
+    }
+  });
+
+  it("refuses a Flow settings change that reaches any other flow field, metadata key, settings key or top-level key, and Core is never called", async () => {
+    const humanness = { humanness: 40 };
+    const change = (flow: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ projectId: "project-1", flowId: "flow-1", flow, ...extra });
+    const refused: Array<Record<string, unknown>> = [
+      change({ metadata: { ...humanness, flowSizeSettings: { maxNodesPerSubflow: 500 } } }),
+      change({ metadata: { ...humanness, llmExecutionSettings: {} } }),
+      change({ metadata: { ...humanness, trainingModeSettings: {} } }),
+      change({ metadata: { ...humanness, adaptationMode: "fully_adaptive" } }),
+      change({ name: "Renamed", metadata: humanness }),
+      change({ description: "d", metadata: humanness }),
+      change({ visibility: "public", metadata: humanness }),
+      change({ interface: {}, metadata: humanness }),
+      change({ executionDefaults: {}, metadata: humanness }),
+      change({ source: { mode: "code" }, metadata: humanness }),
+      change({ metadata: humanness }, { expectedUpdatedAt: 1 }),
+      change({ metadata: humanness }, { anything: true }),
+      change({ metadata: {} }),
+      change({}),
+      change({ metadata: { humanness: "40" } }),
+      change({ flowId: "flow-other", metadata: humanness }),
+      { projectId: "project-1", flowId: "flow-1" },
+      { projectId: "project-1", flow: { metadata: humanness } },
+    ];
+    for (const body of refused) {
+      const response = await POST(tokenRequest("update-flow-settings", { body }), params("update-flow-settings"));
+      expect({ body, status: response.status }).toEqual({ body, status: 403 });
+      expect(await response.json()).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    }
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("removes a named auth session from a Flow settings change before narrowing, as for every token call", async () => {
+    const body = { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } };
+    const response = await POST(tokenRequest("update-flow-settings", { body: { ...body, authSessionId: "stolen-session" } }), params("update-flow-settings"));
+    expect(response.status).toBe(200);
+    expect(call).toHaveBeenCalledWith(expect.objectContaining({ payload: body }));
+  });
+
+  it("forwards a task's humanness change by project, task and level, and refuses any other key", async () => {
+    for (const humanness of [40, null]) {
+      call.mockClear();
+      const body = { projectId: "project-1", taskId: "task-1", humanness };
+      const response = await POST(tokenRequest("update-task-settings", { body }), params("update-task-settings"));
+      expect(response.status).toBe(200);
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ endpoint: "update-task-settings", payload: body }));
+    }
+    call.mockClear();
+    for (const body of [
+      { projectId: "project-1", taskId: "task-1", humanness: 40, flowId: "flow-1" },
+      { projectId: "project-1", taskId: "task-1", title: "x" },
+    ]) {
+      const response = await POST(tokenRequest("update-task-settings", { body }), params("update-task-settings"));
+      expect(response.status).toBe(403);
+    }
+    const notAnObject = await POST(tokenRequest("update-task-settings", { body: ["task-1"] }), params("update-task-settings"));
+    expect(notAnObject.status).toBe(403);
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it("forwards a Flow settings read by project and Flow only, and refuses any other key", async () => {
+    call.mockResolvedValue({ ok: true, payload: {} });
+    const body = { projectId: "project-1", flowId: "flow-1" };
+    const response = await POST(tokenRequest("get-flow-metadata-detail", { body }), params("get-flow-metadata-detail"));
+    expect(response.status).toBe(200);
+    expect(call).toHaveBeenCalledWith(expect.objectContaining({ endpoint: "get-flow-metadata-detail", payload: body }));
+    call.mockClear();
+    for (const extra of [{ flow: {} }, { expectedUpdatedAt: 1 }]) {
+      const refused = await POST(tokenRequest("get-flow-metadata-detail", { body: { ...body, ...extra } }), params("get-flow-metadata-detail"));
+      expect(refused.status).toBe(403);
+    }
+    expect(call).not.toHaveBeenCalled();
   });
 
   it("refuses a carry-on that names a Flow, a mode or a grant, and Core is never called", async () => {

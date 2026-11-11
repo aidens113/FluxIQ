@@ -234,24 +234,27 @@ Added only; nothing a client already imports changed shape.
   change: the endpoint drops it before deciding anything, so resending an
   unchanged `username`, `roleId` or `enabled` is neither refused nor
   rechecked. All four fields are compared exactly, so a `username` that
-  differs from the stored one only by case is written as sent. Anyone may
-  re-case their own sign-in name (the caller is the person, and the new name
-  equals the stored one ignoring case, `toLowerCase`, the folding sign-in
-  uses): it is the same name of the same person (same id, sessions,
-  memberships and account), so it is not a change of authority, is never
-  refused as held elsewhere and asks no proof, an account holder's included.
-  An account holder's account email is not rewritten: the platform store
-  keeps every email trimmed and lower-cased and nothing compares it to the
-  sign-in name in a case-sensitive way. Re-casing another person's name is a
-  sign-in name change like any other: refused for an account holder, written
-  for anyone else. Sign-in names are unique ignoring case: the
-  service refuses a write that would give a person a name another person has
-  in any case (`IdentityUsernameTakenError`, which `create-user` and
-  `update-user` answer as `errorCode: "identity.username_taken"`), on every
-  caller's path, provisioning's `createAccount` included. A person may keep
-  their own name in any case, and names stored before the rule that differ
-  only by case are left as they are: each person can still be updated, and
-  only a move onto another person's name is refused. Stored names are not yet
+  differs from the stored one only by case is written as sent. A re-cased
+  sign-in name (equal to the stored one ignoring case, `toLowerCase`, the
+  folding sign-in uses) is the same name of the same person (same id,
+  sessions, memberships and account), so it is not a change of authority: it
+  is never refused as held elsewhere and asks no proof, an account holder's
+  included, whoever re-cases it. The endpoint's own gate (`identity.manage`)
+  decides who may: an owner or administrator may re-case anyone's name, their
+  own included, and nobody else may through `update-user`; a person re-cases
+  their own name through `recase-my-username` (below). A real rename of an
+  account holder is still refused. An account holder's account email is not
+  rewritten: the platform store keeps every email trimmed and lower-cased and
+  nothing compares it to the sign-in name in a case-sensitive way. Sign-in
+  names are unique ignoring case: the service refuses a write that would give
+  a person a name another person has in any case (`IdentityUsernameTakenError`,
+  which `create-user`, `update-user` and `recase-my-username` answer as
+  `errorCode: "identity.username_taken"`), on every caller's path,
+  provisioning's `createAccount` included. A person may re-case their own name
+  while nobody else has it in any case. Names stored before the rule that
+  differ only by case are left as they are: each person can still be updated
+  and keep their name exactly, but neither may re-case the shared name (a
+  case-only clash) or move onto another person's. Stored names are not yet
   normalised. A request for an unknown person is decided as before
   and fails as not found. For a person the owner holds (one with a platform
   account), a request that changes `username`, `roleId` or `enabled` is refused
@@ -262,9 +265,23 @@ Added only; nothing a client already imports changed shape.
   `identity.authority_unchecked`, and the answer never echoes the cause.
   Provisioning stays the only writer of their role (`setPolicies`) and on/off
   (`disableAccount`, `enableAccount`), and their sign-in name stays their
-  account email (in whatever case they re-case it to); it writes through
+  account email (in whatever case it is re-cased to); it writes through
   `IdentityAccessService.updateUser`, which never asks. A person without an account changes through `update-user` as
   before.
+- **`recase-my-username`.** `{ username }` (`RecaseMyUsernameRequest`), the
+  caller's own sign-in name in another case, held exactly as
+  `get-my-preferences` and `update-my-preferences` are: `programs.read`,
+  `iam:RecaseMyUsername` on the caller's own user (`FluxIQUserAccess`
+  `SelfService` and `FluxIQReadOnlyAccess`; a paired browser's session policy
+  denies every `iam:*` action), hidden from the assistant. The person is read
+  only from the session: a payload with any field but `username` (and the
+  panel route's own `authSessionId`) is refused as
+  `identity.recase_self_only`, and a name that is not the caller's current one
+  ignoring case as `identity.recase_not_case_only`, before it is compared with
+  any other person's name. It writes through `IdentityAccessService.updateUser`
+  as `update-user`'s re-case does, with no recheck and no authority owner
+  asked, and answers the written person. The Security sign-in page's "Your
+  sign-in" panel offers it as "Change capitals in your sign-in name".
 - **`snapshot`.** The endpoint's `IdentityAccessSnapshotResponse` is now an
   `IdentityAccessListing`: each user is an `IdentityAccessListedUser` with
   `authorityHeldElsewhere: boolean`, true exactly when `update-user` would

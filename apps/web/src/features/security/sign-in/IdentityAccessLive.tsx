@@ -12,6 +12,7 @@ import { digits, formatTime } from "../../programs/format";
 import { emptyCredentialEdit } from "./emptyCredentialEdit";
 import { ClipboardButton } from "../../programs/components";
 import { ManagedUnderAccess } from "./ManagedUnderAccess";
+import { OwnSignInNameCase } from "./OwnSignInNameCase";
 
 type IdentityView = "Users" | "Roles" | "Authentication Policy";
 type CredentialEdit = { userId: string; kind: "password" | "pin"; value: string; confirm: string; authorizationPassword: string; authorizationPin: string; authorizationTotp: string };
@@ -276,6 +277,20 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
       await refresh();
     });
   }
+  // The person's own sign-in name in other capitals, through the self-only
+  // endpoint every signed-in person holds (`update-user` needs identity.manage).
+  async function recaseOwnUsername(username: string): Promise<string | null> {
+    if (!current() || latestRender.current !== renderToken) return null;
+    const answer = await operation.run("recase-my-username", async () => {
+      const result = await safePost("recase-my-username", { username });
+      if (!current()) return null;
+      if (!result.ok) return refusalMessage(result, "Your sign-in name could not be changed.");
+      setStatus("Sign-in name updated");
+      await refresh();
+      return "";
+    });
+    return answer ?? null;
+  }
   function beginCredential(user: IdentityAccessListedUser, kind: "password" | "pin") {
     if (!current() || latestRender.current !== renderToken || !usersRef.current.some((item) => item.id === user.id)) return;
     setSelectedUserId(user.id);
@@ -297,6 +312,7 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
       <button className="button" disabled={readLoading} onClick={guard(() => void latestRefresh.current())} type="button">Refresh</button>
       {actorUser ? <Panel title="Your sign-in">
         <KeyValue rows={[
+          ["Sign-in name", actorUser.username],
           ["Password", actorUser.passwordConfigured ? "Configured" : "Not configured"],
           ["PIN", actorUser.pinConfigured ? "Configured" : "Not configured"],
           ["Two-factor", actorUser.totpEnabled ? "Enabled" : "Off"],
@@ -313,6 +329,7 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
             if (actorUser.totpEnabled) setTotpDisable(emptyAuthorizationStep(actorUser.id));
             else setTotpStart(emptyAuthorizationStep(actorUser.id));
           })} type="button"><QrCode size={14} aria-hidden />{actorUser.totpEnabled ? "Turn off two-factor" : "Set up two-factor"}</button>
+          <OwnSignInNameCase busy={operation.busy} save={guard(recaseOwnUsername)} username={actorUser.username} />
         </div>
       </Panel> : <VisualAlert tone="info" title="Your sign-in" message="Your own account is not in the identity list this sign-in can read, so its password, PIN and two-factor cannot be changed here." />}
       <Segmented label="Identity and Access view"options={["Users", "Roles", "Authentication Policy"]} value={activeView} onChange={guard((value) => setActiveView(value as IdentityView))} />

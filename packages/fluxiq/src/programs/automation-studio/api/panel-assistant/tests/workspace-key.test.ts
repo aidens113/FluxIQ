@@ -232,17 +232,29 @@ describe("the dock on the workspace's assistant key (service)", () => {
     expect(await call("secret-keys", "set-assistant-model", member, { keyId: mine.id })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(await call("secret-keys", "offer-key", owner, { id: mine.id, offered: true })).toMatchObject({ ok: false, error: "Only the person who added a key can offer it to the workspace." });
 
-    // An owner makes the member's key the default: chosen, not offered, so it pays for no one but the member.
-    expect(await call("secret-keys", "set-default-key", owner, { id: mine.id })).toMatchObject({ ok: true });
-    expect((await send(owner, "hello")).texts).toEqual(["hello", NOT_OFFERED]);
+    // An owner cannot choose the member's key before the member offers it, by either chooser, and nothing is spent.
+    const UNOFFERED = "That key belongs to someone else, who has not offered it to this workspace.";
+    expect(await call("secret-keys", "set-default-key", owner, { id: mine.id })).toMatchObject({ ok: false, error: UNOFFERED });
+    expect(await call("secret-keys", "set-assistant-model", owner, { keyId: mine.id })).toMatchObject({ ok: false, error: UNOFFERED });
     expect(provider.fetchImpl).not.toHaveBeenCalled();
-    expect((await send(member, "hello")).texts).toEqual(["hello", "Done."]);
+
+    // The member offers it and an owner makes it the default: it pays for the owner's message, on the member's own unlock.
+    expect(await call("secret-keys", "offer-key", member, { id: mine.id, offered: true })).toMatchObject({ ok: true });
+    expect(await call("secret-keys", "set-default-key", owner, { id: mine.id })).toMatchObject({ ok: true });
+    expect((await send(owner, "hello")).texts).toEqual(["hello", "Done."]);
     expect(provider.credentials).toEqual([`Bearer ${MEMBER_VALUE}`]);
 
-    // The member offers it: now it pays for the owner's message too, on the member's own unlock.
+    // The member withdraws the offer: still chosen, not offered, so it pays for no one but the member.
+    expect(await call("secret-keys", "offer-key", member, { id: mine.id, offered: false })).toMatchObject({ ok: true });
+    expect((await send(owner, "withdrawn")).texts).toEqual(["withdrawn", NOT_OFFERED]);
+    expect(provider.fetchImpl).toHaveBeenCalledTimes(1);
+    expect((await send(member, "mine")).texts).toEqual(["mine", "Done."]);
+    expect(provider.credentials).toEqual([`Bearer ${MEMBER_VALUE}`, `Bearer ${MEMBER_VALUE}`]);
+
+    // Offered again: it pays for the owner's message once more.
     expect(await call("secret-keys", "offer-key", member, { id: mine.id, offered: true })).toMatchObject({ ok: true });
     expect((await send(owner, "again")).texts).toEqual(["again", "Done."]);
-    expect(provider.credentials).toEqual([`Bearer ${MEMBER_VALUE}`, `Bearer ${MEMBER_VALUE}`]);
+    expect(provider.credentials).toEqual([`Bearer ${MEMBER_VALUE}`, `Bearer ${MEMBER_VALUE}`, `Bearer ${MEMBER_VALUE}`]);
   });
 
   it("on local, the owner's own key answers the owner with nothing offered or chosen, as before", async () => {

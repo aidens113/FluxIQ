@@ -5061,6 +5061,12 @@
       "reason": "Only a person's own press can confirm an action."
     },
     {
+      "name": "identity-access__recase-my-username",
+      "programId": "identity-access",
+      "endpoint": "recase-my-username",
+      "reason": "A person's own sign-in name, re-cased by them on their sign-in page, never by the assistant."
+    },
+    {
       "name": "identity-access__set-password",
       "programId": "identity-access",
       "endpoint": "set-password",

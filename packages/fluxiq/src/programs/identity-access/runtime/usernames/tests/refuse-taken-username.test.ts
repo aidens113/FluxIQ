@@ -1,7 +1,8 @@
 // The sign-in name uniqueness rule on its own: names are compared ignoring
-// case, a person may keep their own name in any case, and two people stored
-// before the rule with names that differ only by case can each be written
-// unless the write moves one onto another person's name.
+// case, a person may keep their own name in any case while nobody else has it,
+// and two people stored before the rule with names that differ only by case
+// can each keep their name exactly, but neither may re-case it or move onto
+// another person's name.
 
 import { describe, expect, it } from "vitest";
 import type { User } from "../../../types.ts";
@@ -56,9 +57,14 @@ describe("refuseTakenUsername", () => {
   describe("with two people already stored under names that differ only by case", () => {
     const duplicates = people(person("first", "Ann"), person("second", "ann"), person("bob", "bob"));
 
-    it("lets either keep their name in any case, since that makes no new clash", () => {
-      expect(() => refuseTakenUsername(duplicates, "first", "ANN")).not.toThrow();
-      expect(() => refuseTakenUsername(duplicates, "second", "Ann")).not.toThrow();
+    it("lets either keep their name exactly as stored", () => {
+      expect(() => refuseTakenUsername(duplicates, "first", "Ann")).not.toThrow();
+      expect(() => refuseTakenUsername(duplicates, "second", "ann")).not.toThrow();
+    });
+
+    it("refuses either re-casing the shared name, a case-only clash with the other", () => {
+      expect(() => refuseTakenUsername(duplicates, "first", "ANN")).toThrow(IdentityUsernameTakenError);
+      expect(() => refuseTakenUsername(duplicates, "second", "Ann")).toThrow(IdentityUsernameTakenError);
     });
 
     it("lets either move to a free name, and refuses a move onto anyone else's", () => {
