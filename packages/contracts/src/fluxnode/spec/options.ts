@@ -2,6 +2,7 @@
 // them; `resolveFluxNodeOptions` fills what neither says with Core's defaults.
 
 import { z } from "zod";
+import { humannessSchema } from "../../humanness/index.ts";
 
 /** The standing floor of retries per step: the first attempt plus 3. A caller may raise it, never lower it. */
 export const FLUXNODE_MIN_RETRIES = 3;
@@ -33,7 +34,8 @@ export type FluxNodeRunMode = (typeof FLUXNODE_RUN_MODES)[number];
  *   only, ending at budget out with the best partial result and a resume handle;
  * - `model`: the model id to use, such as "claude-haiku-5-5";
  * - `mode`: see `FLUXNODE_RUN_MODES`;
- * - `timeoutMs`: the longest the run may take, at most 7 days.
+ * - `timeoutMs`: the longest the run may take, at most 7 days;
+ * - `humanness`: an integer 0 to 100, how human the run's input looks; 0 (the default) is today's path.
  */
 export const fluxNodeOptionsSchema = z
   .object({
@@ -42,7 +44,8 @@ export const fluxNodeOptionsSchema = z
     budgetUsd: z.number().finite().nonnegative().max(100_000),
     model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u, "A model id is 1 to 128 of letters, digits, \".\", \"_\", \":\", \"/\" and \"-\"."),
     mode: z.enum(FLUXNODE_RUN_MODES),
-    timeoutMs: z.number().int().positive().max(7 * 24 * 60 * 60 * 1000)
+    timeoutMs: z.number().int().positive().max(7 * 24 * 60 * 60 * 1000),
+    humanness: humannessSchema
   })
   .partial()
   .strict();
@@ -57,6 +60,7 @@ export type FluxNodeResolvedOptions = {
   mode: FluxNodeRunMode;
   model?: string;
   timeoutMs?: number;
+  humanness?: number;
 };
 
 /** The run's options: each override wins over the declaration, and Core's defaults fill the rest. */
@@ -71,5 +75,7 @@ export function resolveFluxNodeOptions(declared: FluxNodeOptions | undefined, ov
   if (model !== undefined) resolved.model = model;
   const timeoutMs = overrides?.timeoutMs ?? declared?.timeoutMs;
   if (timeoutMs !== undefined) resolved.timeoutMs = timeoutMs;
+  const humanness = overrides?.humanness ?? declared?.humanness;
+  if (humanness !== undefined) resolved.humanness = humanness;
   return resolved;
 }
