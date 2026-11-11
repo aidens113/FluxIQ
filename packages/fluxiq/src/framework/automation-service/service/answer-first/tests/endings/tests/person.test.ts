@@ -1,6 +1,6 @@
 // @fluxiq-test-group real-sql
 // The keep-going table's rows about a person: a permission allowed or declined, a check only a
-// person can clear, the attempt asking because it is stuck, and a Stop. Nothing here has a clock.
+// person can clear, the attempt steered when it is stuck, asking without waiting, and a Stop. Nothing here has a clock.
 // A person's Stop always wins, and it comes back as a normal return with what the attempt had.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
@@ -10,7 +10,7 @@ import { AutomationStudioLlmProviderError } from "../../../../../../../runtime/m
 import type { AutomationStudioService } from "../../../../../service.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "../../../index.ts";
 import { complete, LOOK_TOOL, READ_LOANS, RENEW_CARD, runNode, scriptedAttempt, toolCall } from "../../fake-library.ts";
-import { answerOf, decisions, expectEnded, expectPresses, expectReached, held, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
+import { decisions, expectEnded, expectPresses, expectReached, held, heldAtSteer, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -283,57 +283,61 @@ describe("a check with nobody to ask", () => {
 });
 
 describe("an attempt stuck in a loop", () => {
-  const stuckScript = (answered: () => boolean) => {
+  /** Reads the wrong list again and again, until `unstuck` says the request shows what gets it out. */
+  const stuckScript = (unstuck: (request: AutomationStudioLlmTaskRequest) => boolean) => {
     const decide = (request: AutomationStudioLlmTaskRequest) => {
-      if (!answered()) return runNode("read.stuck", READ_LOANS, { from: "the wrong list" }, [], {});
+      if (!unstuck(request)) return runNode("read.stuck", READ_LOANS, { from: "the wrong list" }, [], {});
       const done = request.context.evidenceLoop?.evidence.some((entry) => JSON.stringify(entry.value).includes("Atlas of Rivers"));
       return done ? complete("Listed.") : runNode("read", READ_LOANS, {}, [], { add: true });
     };
-    return Array.from({ length: 200 }, () => decide);
+    return Array.from({ length: 300 }, () => decide);
   };
   const failing = (call: { value: JsonObject }): AutomationStudioLlmEvidenceToolExecutionResult | undefined => (call.value.parameters as JsonObject | undefined)?.from === "the wrong list" ? { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "target_not_found" }, effectApplied: false, resultCode: "web.action.rejected.target_not_found", failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "dispatch" } } : undefined;
+  const ANSWER = "Try it once more from the list.";
+  const told = (request: AutomationStudioLlmTaskRequest): string => JSON.stringify(request.context);
 
-  it("asks the person after two fresh approaches, stops spending, keeps what it has, and resumes on the same record", async () => {
+  // R7 revision (run-mwc6ut8u-52e3c1b3): the last rung steers and never parks; the person is asked without waiting.
+  it("is steered onto a fresh round and asks the person without waiting, never waiting_for_person, and a later answer reaches a later round's note", async () => {
     const hold = held();
-    let keepGoing = false;
-    let modelCalls = 0;
+    const steer = heldAtSteer();
     const generating = scriptedAttempt({
       before: (service, project) => {
         noWaiting()(service);
         hold.before(service, project);
       },
-      wrapProvider: (provider) => ({
-        ...provider,
-        runTask: async (request, execution) => {
-          modelCalls += 1;
-          return await provider.runTask(request, execution);
-        }
-      }),
+      wrapProvider: steer.wrap,
       fault: failing,
-      script: stuckScript(() => keepGoing)
+      // Out of the loop only once the person's words reach it.
+      script: stuckScript((request) => told(request).includes(ANSWER))
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
+    // The model is asked again, on a round steered onto a different way, while the question is still open.
+    const steered = await steer.steered;
+    expect(told(steered)).toContain("Take a different way to the result");
+    expect(told(steered)).toContain("Do not wait for them");
     const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
+    expect(ask.kind).toBe("open");
     expect(ask.timeoutMs).toBeNull();
     const kept = await keptAttempt(service, projectId, flowId);
-    expect(kept?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
-    expect(kept?.tried.approaches).toBe(2);
-    // Nothing is asked of the model while it waits.
-    const callsAtTheAsk = modelCalls;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(modelCalls).toBe(callsAtTheAsk);
-    keepGoing = true;
-    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: "stuck_keep_going" });
+    expect(kept?.attempt.status).toBe("working");
+    expect(kept?.attempt).not.toHaveProperty("waitingFor");
+    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
+    steer.release();
     const attempt = await generating;
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
+    // The person's words reached a later round's note, as theirs.
+    const guided = decisions(attempt).find((request) => told(request).includes(ANSWER));
+    expect(guided && told(guided)).toContain("personSaid");
+    expect(attempt.said.some((line) => line.includes("Trying a different way"))).toBe(true);
+    expect(attempt.said.some((line) => line.includes("Got your answer"))).toBe(true);
     const caught = Object.values(answer.attempt.loopsCaught);
     expect(caught.reduce((sum, each) => sum + each.changeApproach, 0)).toBe(2);
-    expect(caught.reduce((sum, each) => sum + each.askPerson, 0)).toBe(1);
-    expect((await keptAttempt(service, projectId, flowId))?.tried.approaches).toBe(2);
+    expect(caught.reduce((sum, each) => sum + each.askPerson, 0)).toBeGreaterThanOrEqual(1);
+    expect((await keptAttempt(service, projectId, flowId))?.tried.approaches).toBeGreaterThanOrEqual(3);
   });
 
-  it("with nobody to ask it waits for a person, with the reason, and spends nothing more", async () => {
+  it("with nobody to ask it is steered all the same, posts nothing, and goes on until its budget is gone", async () => {
     const attempt = await scriptedAttempt({
       before: (service) => {
         noWaiting()(service);
@@ -347,27 +351,37 @@ describe("an attempt stuck in a loop", () => {
       script: stuckScript(() => false)
     }, cleanups);
     expect(attempt.hung).toBe(false);
-    const answer = answerOf(attempt);
-    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
+    const answer = expectEnded(attempt, "budget_out");
+    expect(answer.attempt).not.toHaveProperty("waitingFor");
     expect(Object.values(answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBeGreaterThanOrEqual(1);
-    expect(answer.attempt.spend.usd).toBeLessThan(0.8);
+    const steered = decisions(attempt).find((request) => told(request).includes("loopStopped"));
+    expect(steered && told(steered)).toContain("Take a different way to the result");
+    expect(steered && told(steered)).not.toContain("personAsked");
+    expect(attempt.said.some((line) => line.includes("Trying a different way"))).toBe(true);
   });
 
-  it("the person's Stop at that question ends it, with what it had", async () => {
+  it("the person's Stop while the question is open ends it, with what it had, and closes the question", async () => {
     const hold = held();
+    const steer = heldAtSteer();
     const generating = scriptedAttempt({
       before: (service, project) => {
         noWaiting()(service);
         hold.before(service, project);
       },
+      wrapProvider: steer.wrap,
       fault: failing,
       script: stuckScript(() => false)
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
+    await steer.steered;
     const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
-    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: "stuck_stop" });
+    service.buildCancellation.cancel(projectId, flowId);
+    steer.release();
     const attempt = await generating;
     expectEnded(attempt, "stopped_by_person");
+    const [conversation] = await service.conversations.listConversations({ projectId, subject: { kind: "flow", id: flowId } });
+    const thread = conversation ? await service.conversations.getConversation({ projectId, conversationId: conversation.conversationId }) : null;
+    expect(thread?.turns.map((turn) => turn.ask).find((each) => each?.askId === ask.askId)?.status).not.toBe("pending");
   });
 });
 

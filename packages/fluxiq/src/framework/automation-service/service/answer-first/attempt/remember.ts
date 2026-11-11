@@ -18,7 +18,6 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 const JUDGED_NOT_RESULT = "The saved Flow ran to its end, and the check said that was not the result.";
 const BUDGET_GONE = "The budget ran out before the result was confirmed.";
 const NEEDS_A_PERSON = "It needed a person to clear a check on the page.";
-const STUCK_NO_ONE_TO_ASK = "It kept getting stuck and there was nobody to ask whether to keep going.";
 
 type Ended = { label: AutomationStudioTaskResultLabel; candidateId: string | undefined; stated: readonly AutomationStudioAnswerFirstStatedToggle[]; spend: { calls: number; usd: number }; atMs: number };
 
@@ -92,7 +91,8 @@ function whatFailed(run: AutomationStudioAnswerFirstAttemptRun, ending: Automati
     ...(failing ? [`The saved Flow stopped at step ${failing.position}. ${failing.happened}`] : []),
     ...(run.flowRun?.judged === "no" ? [JUDGED_NOT_RESULT] : []),
     ...(ending === "budget_out" ? [BUDGET_GONE] : []),
-    ...(ending === "waiting_for_check" ? [run.waitingFor === "stuck_in_a_loop" ? STUCK_NO_ONE_TO_ASK : NEEDS_A_PERSON] : [])
+    // A stuck attempt is steered and never parks (R7, `./rounds.ts`), so a check only a person can clear is the one wait that ends a segment.
+    ...(ending === "waiting_for_check" ? [NEEDS_A_PERSON] : [])
   ];
   return words.length ? words.join(" ") : undefined;
 }

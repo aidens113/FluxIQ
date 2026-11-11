@@ -16,7 +16,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draf
 import { automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
 import { automationStudioRunNodeStartPages } from "../run/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run/index.ts";
-import { automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted, type AutomationStudioNodeRerunPlace } from "../step-place.ts";
+import { automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted, automationStudioNodeRerunPlaceOfStep, type AutomationStudioNodeRerunPlace } from "../step-place.ts";
 
 const CHEAP_PER_PAGE = [4, 3, 3, 3, 0];
 
@@ -124,6 +124,57 @@ describe("where a rerun runs", () => {
     const executeTool = site(5);
     expect(await automationStudioNodeRerunFromItsPlace({ steps: [], step: step(), now: "page=5", callId: "r", executeTool })).toEqual({ kind: "in_place", why: "start_page_unknown" });
     expect(executeTool).not.toHaveBeenCalled();
+  });
+});
+
+// Live run `run-mwc60eal-4c9fdf6f` (steps 0041-0060): in an attempt that puts no page back, every rerun of a step
+// that started on another page sent a reset, the attempt refused it, and the rerun ran nothing. A caller that puts no
+// page back now has the rerun run where the page stands, and says so.
+describe("where a rerun runs for a caller that puts no page back", () => {
+  const step = (fields: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position: 3, id: "d3", iteration: 3, actionId: "read", toolId: "read", input: {}, effect: "observe", disposition: "kept", proposes: true, effectApplied: true, ...fields
+  });
+  const before = (position: number): AutomationStudioFlowDraftStep => step({ position, id: `d${position}`, iteration: position, actionId: "press", effect: "mutate", replay: { from: { location: "page=1" } }, stateBefore: "page=1" });
+
+  it("sends nothing for a step that started on another page, and its answer says where it started and that it ran here", async () => {
+    const executeTool = site(5);
+    const read = step({ replay: { from: { location: "page=2" } }, stateBefore: "page=2" });
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [before(1), before(2), read], step: read, now: "page=5", callId: "r", executeTool, rerunsInPlace: true });
+
+    expect(place).toEqual({ kind: "in_place", why: "forward_run", from: { location: "page=2" } });
+    expect(executeTool).not.toHaveBeenCalled();
+    const note = (automationStudioNodeRerunPlaceNoted(place, { rows: 11 }) as JsonObject).rerunPlace as JsonObject;
+    expect(note).toMatchObject({ place: "in_place", reason: "forward_run", stepStartedOn: { location: "page=2" } });
+    expect(String(note.detail)).toMatch(/puts no page back, so this rerun ran here/u);
+    expect(automationStudioNodeRerunPlaceOfStep(place)).toEqual({ kind: "forward_run" });
+  });
+
+  it("sends no reset for a lasting act either, and does not go back to the Flow's start", async () => {
+    const executeTool = site(5);
+    const press = step({ actionId: "press", effect: "mutate", replay: { from: { location: "page=2" } }, stateBefore: "page=2" });
+    const place = await automationStudioNodeRerunFromItsPlace({
+      steps: [before(1), before(2), press], step: press, now: "page=5", callId: "r", executeTool, rerunsInPlace: true, value: { target: "Reserve", consequences: ["create_new"] }
+    });
+
+    expect(place).toEqual({ kind: "in_place", why: "forward_run", from: { location: "page=2" } });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps already_there and start_page_unknown as they are", async () => {
+    const executeTool = site(1);
+    const there = step({ replay: { from: { location: "page=1" } }, stateBefore: "page=1" });
+    expect(await automationStudioNodeRerunFromItsPlace({ steps: [there], step: there, now: "page=1", callId: "r", executeTool, rerunsInPlace: true })).toEqual({ kind: "in_place", why: "already_there" });
+    expect(await automationStudioNodeRerunFromItsPlace({ steps: [], step: step(), now: "page=5", callId: "r", executeTool, rerunsInPlace: true })).toEqual({ kind: "in_place", why: "start_page_unknown" });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("puts the page back as before when the caller does not say it puts none back", async () => {
+    const executeTool = site(5);
+    const read = step({ replay: { from: { location: "page=2" } }, stateBefore: "page=2" });
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [read], step: read, now: "page=5", callId: "r", executeTool });
+
+    expect(place).toEqual({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] });
+    expect(executeTool.mock.calls.map(([call]) => call.value)).toEqual([{ replay: "reset", from: { location: "page=2" } }]);
   });
 });
 

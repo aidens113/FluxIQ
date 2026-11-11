@@ -71,3 +71,21 @@ describe("the note on saved steps that did not assemble", () => {
     expect(told(repairing())).toEqual({ happened: expect.stringMatching(/could not be made into a Flow/u) });
   });
 });
+
+// run-mwc6ut8u-52e3c1b3 (R7): a stuck attempt asks the person what to do, and their answer carries it on.
+describe("the note after the person answered a stuck attempt", () => {
+  const answered = (personSaid?: string[]) => ({ ...runThatFailed(undefined), ...(personSaid ? { personSaid } : {}) }) as unknown as AutomationStudioAnswerFirstAttemptRun;
+
+  it("tells every later round the person's words, oldest first, marked as theirs", () => {
+    const told = automationStudioAnswerFirstRoundNote(answered(["Look under the second tab.", "Use the later dates."]), undefined)?.personSaid as { whose: string; words: string[] };
+    expect(told.words).toEqual(["Look under the second tab.", "Use the later dates."]);
+    expect(told.whose).toMatch(/person's own words/u);
+    expect(told.whose).toMatch(/guidance from the person/u);
+    expect(told.whose).not.toMatch(/library|loan|renew|card|core\./iu);
+  });
+
+  it("says nothing of it where the person was never asked", () => {
+    expect(automationStudioAnswerFirstRoundNote(answered(), {})?.personSaid).toBeUndefined();
+    expect(automationStudioAnswerFirstRoundNote(answered([]), {})?.personSaid).toBeUndefined();
+  });
+});

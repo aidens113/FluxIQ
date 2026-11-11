@@ -25,7 +25,9 @@
 //     made with. A put-back that left any out -- a page comparison decided where
 //     they started -- does not count (t443 review: positive evidence only);
 //   - a rerun on the page in the state its step found it (`already_there`),
-//     only when no proposed step comes before it;
+//     only when no proposed step comes before it; and the same for a rerun
+//     where the page stood for a caller that puts no page back (`forward_run`,
+//     run `run-mwc60eal-4c9fdf6f`), which did no step before it again either;
 //   - a press the build made as an ordinary call, after steps that all ran in
 //     this build as they now stand (none carried from the earlier Flow and not
 //     run, written, or a checked candidate).
@@ -72,7 +74,8 @@ export function automationStudioBuildTestExplored(
 function orderOf(press: PressRecord, before: readonly AutomationStudioFlowDraftStep[], steps: readonly AutomationStudioFlowDraftStep[]): { after: AutomationStudioFlowDraftStep[] } | { why: string } {
   const place = press.rerunPlace;
   if (place?.kind === "start_page_unknown") return { why: "it ran wherever the page was left, not after the steps before it" };
-  if (place?.kind === "already_there") {
+  // A rerun where the page stood, for a caller that puts no page back, is read as one on its own page: no step before it was done again.
+  if (place?.kind === "already_there" || place?.kind === "forward_run") {
     return before.some((each) => !automationStudioFlowDraftStepCarriedJoin(each)) ? { why: "it ran on the page as it stood, without the steps before it done again first" } : { after: [] };
   }
   if (place?.kind === "put_back") {

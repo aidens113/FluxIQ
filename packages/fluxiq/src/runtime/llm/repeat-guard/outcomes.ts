@@ -196,6 +196,19 @@
 // a run of looks, but records no outcome for its key: the identical plain
 // call is the first attempt of that input there, and runs.
 //
+// **A rerun whose place could not be reached is not an attempt of its input
+// either.** Live run `run-mwc60eal-4c9fdf6f` (steps 0054-0060): the put-back
+// before `rerun.9` was refused (`../node-tools/step-place.ts`), so the rerun
+// was answered `rerun_place_unreachable` and its input -- the step's navigate
+// with the model's new address -- never reached the target. Recorded here as a
+// failed attempt of that input, it made the model's identical call by hand on
+// the same page a repeat of a failure, refused twice; three in a row end the
+// round. A call the loop reports as `unrun` is treated as a check is: it moves
+// the last page seen and ends a run of looks, and records no outcome for its
+// key. The decision that asked for the rerun is still recorded on its own
+// (`amended`, `same_amendment`): the same placement on the same draft fails
+// the same way, and is refused there.
+//
 // **A written step is not an attempt of its input (t707 D1).** An install
 // build's builders wrote steps with `core.run_node` `write: true`, each
 // answered `core.run_node.written` ("Added to the Flow, not run yet"). A
@@ -255,6 +268,15 @@
 // ladder refuses through the same path. It lifts nothing refused here, and what
 // this guard has lifted starts again from nothing there.
 //
+// **How long a node waits is no part of what it asks (run-mwc6ut8u-52e3c1b3,
+// R6).** A press refused `same_result` ran again thirteen times with only its
+// `timeoutMs` changed, each landing where the last had: the key held the whole
+// input. A `core.run_node` call is keyed without the parameters its node
+// declares as timing (`./timing-free.ts`, `timingOf`), so the same press with
+// another wait is the same call. After a call that timed out, the timing it ran
+// with is kept with its outcome (`timedOutWith`), and the same call with another
+// wait runs: waiting longer is then the change that may get it through.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -283,6 +305,7 @@ import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decis
 import { automationStudioLlmEvidenceResendAdmission } from "./resend-admission.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
+import { automationStudioLlmEvidenceTimingFree, type AutomationStudioLlmEvidenceTimingOf } from "./timing-free.ts";
 import { automationStudioLlmEvidenceUnchangedStanding } from "./unchanged-standing.ts";
 import { automationStudioLlmEvidenceCallWritten } from "./written-call.ts";
 
@@ -365,6 +388,10 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
   issues?: JsonValue[];
   /** `failed` only: the revision an unchanged submission's refusal named as standing, and whether it was tried (`./unchanged-standing.ts`, t738). */
   standing?: { revision: number; digest: string; tried?: true };
+  /** The call timed out: the timing it ran with, in canonical form (empty for none), so the same call with another wait runs (header, R6). */
+  timedOutWith?: string;
+  /** `blocks` only: the call refused carried timing its node declares, left out of its key (header, R6), so the model is told a changed wait is no new call. */
+  timingLeftOut?: true;
 };
 
 /** One call as it ran, for the record. */
@@ -392,6 +419,8 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   answer?: string | undefined;
   /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
   checked?: boolean | undefined;
+  /** A rerun whose place could not be reached (`../node-tools/step-place.ts`): its input never reached the target, so it is no attempt of it (see the header). */
+  unrun?: boolean | undefined;
 };
 
 /** The loop's record of what its calls did. */
@@ -435,7 +464,11 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
  * answer depends on the current draft (`core.run_flow`) or an accepted proposal's
  * backend revision. Such a call is keyed on that target as well as its page.
  */
-export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((toolId: string) => string | undefined) | undefined } = {}): AutomationStudioLlmEvidenceRepeatGuard {
+export function automationStudioLlmEvidenceRepeatGuard(options: {
+  draftOf?: ((toolId: string) => string | undefined) | undefined;
+  /** The parameters a node declares as timing (header, R6): left out of a node call's key. */
+  timingOf?: AutomationStudioLlmEvidenceTimingOf | undefined;
+} = {}): AutomationStudioLlmEvidenceRepeatGuard {
   const outcomes = new Map<string, AutomationStudioLlmEvidenceRepeatedOutcome>();
   // Where each call that changed something left the page, and what each look answered, by its key.
   const endedOn = new Map<string, string>();
@@ -473,7 +506,9 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   let standing: string | undefined;
   // What a call is answered against besides its page: the draft a part run runs, or the revision a submission is compared with.
   const against = (toolId: string): string => options.draftOf?.(toolId) ?? (toolId === SUBMIT_CANDIDATE ? standing : undefined) ?? "";
-  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${against(toolId)}\u0000${automationStudioLlmEvidenceCanonicalJson(keyedInput(toolId, input))}`;
+  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${against(toolId)}\u0000${automationStudioLlmEvidenceCanonicalJson(keyedInput(toolId, automationStudioLlmEvidenceTimingFree(toolId, input, options.timingOf).asks))}`;
+  // The timing a call ran with, in canonical form, empty for none (header, R6).
+  const timingOf = (toolId: string, input: JsonObject): string => automationStudioLlmEvidenceTimingFree(toolId, input, options.timingOf).timing ?? "";
   // A decision is keyed on the draft it was sent on, which a call key never starts with (a call's starts with its tool id, never empty).
   const amendmentKey = (signature: string, draft: string): string => `\u0000amend_draft\u0000${draft}\u0000${signature}`;
   return {
@@ -501,7 +536,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (counted && look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
       else if (counted) searching.acted();
       // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
-      if (call.checked === true) return;
+      // Nor did a rerun whose place could not be reached: its input never reached the target (run `run-mwc60eal-4c9fdf6f`).
+      if (call.checked === true || call.unrun === true) return;
       // A call that met a precondition an earlier refusal named lifted it, wherever that refusal was keyed (header, t587).
       const metPrecondition = !call.refused && met(call);
       if (state === undefined) return;
@@ -549,6 +585,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       else awaiting.delete(at);
       const issues = call.refused ? refusalIssues(call.answer) : undefined;
       const standingNamed = call.refused ? automationStudioLlmEvidenceUnchangedStanding(call.resultCode, call.answer) : undefined;
+      const timedOut = failed && timedOutCall(call);
       outcomes.set(at, {
         callId: call.callId,
         outcome: failed ? "failed" : !changedNothing ? "same_result" : runsDraft ? "same_draft" : "changed_nothing",
@@ -556,12 +593,18 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
         ...(call.resultReason ? { resultReason: call.resultReason } : {}),
         ...(handleUnshown ? { handleUnshown: true as const } : {}),
         ...(issues ? { issues } : {}),
-        ...(standingNamed ? { standing: standingNamed } : {})
+        ...(standingNamed ? { standing: standingNamed } : {}),
+        ...(timedOut ? { timedOutWith: timingOf(call.toolId, call.input) } : {})
       });
     },
     blocks(toolId, input, at) {
       const state = at ?? latest;
-      return state === undefined ? undefined : outcomes.get(key(toolId, input, state));
+      const earlier = state === undefined ? undefined : outcomes.get(key(toolId, input, state));
+      // A call that timed out runs again with another wait (header, R6).
+      if (earlier === undefined) return undefined;
+      const timing = timingOf(toolId, input);
+      if (earlier.timedOutWith !== undefined && earlier.timedOutWith !== timing) return undefined;
+      return timing === "" ? earlier : { ...earlier, timingLeftOut: true };
     },
     amended(outcome) {
       const at = amendmentKey(outcome.signature, outcome.draft);
@@ -611,6 +654,15 @@ function keyedInput(toolId: string, input: JsonObject): JsonObject {
   const flow: JsonObject = {};
   for (const name of SUBMISSION_FLOW_KEYS) if (input[name] !== undefined) flow[name] = input[name];
   return Object.keys(flow).length ? flow : input;
+}
+
+/** A timeout's closed words (`AutomationStudioFailureRecord.category`, or a code's or reason's last segment). */
+const TIMED_OUT = /^(?:timeout|timed[_-]?out)$/iu;
+
+/** Whether a call failed by running out of time: its validated failure says so, or its code or reason is a timeout's own word (header, R6). */
+function timedOutCall(call: AutomationStudioLlmEvidenceCallOutcome): boolean {
+  if (call.failure?.category === "timeout") return true;
+  return [call.resultCode?.split(".").at(-1), call.resultReason].some((word) => word !== undefined && TIMED_OUT.test(word));
 }
 
 /** The digest an accepted submission's answer returned, read from its own JSON; nothing for an answer that is not one. */

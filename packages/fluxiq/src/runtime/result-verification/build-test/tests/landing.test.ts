@@ -87,6 +87,12 @@ describe("a withheld lasting step whose act a rerun did earlier in this build", 
     expect(explored(draft(press({ kind: "already_there" }))).explored).toMatchObject({ changed: "no", landed: { counts: false } });
   });
 
+  // Run `run-mwc60eal-4c9fdf6f`: a caller that puts no page back reruns a step where the page stands.
+  it("does not credit a press rerun where the page stood, for a caller that puts no page back, while steps come before it", () => {
+    expect(explored(draft(press({ kind: "forward_run" }))).explored)
+      .toMatchObject({ changed: "no", landed: { counts: false, why: "it ran on the page as it stood, without the steps before it done again first" } });
+  });
+
   it("flags a press that ran wherever the last call left the page", () => {
     expect(explored(draft(press({ kind: "start_page_unknown" }))).explored).toMatchObject({ changed: "no", landed: { counts: false, why: expect.stringMatching(/wherever the page was left/u) } });
   });

@@ -11,7 +11,8 @@
 //
 // **The patterns, each over the calls that made no progress.**
 //
-// - A near repeat is one call, free text out (`./meaningful-input.ts`), on one
+// - A near repeat is one call, free text out (`./meaningful-input.ts`) and the
+//   wait bounds its node declares as timing out (`../timing-free.ts`, R6), on one
 //   page, that twice came to nothing. The repeat guard's own lifts stay lifts: a
 //   call whose exact form the guard stopped refusing -- a handle since shown, a
 //   precondition since met -- starts again from nothing here (`holds`).
@@ -63,6 +64,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmLoopAttemptRecord } from "./attempt-record.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD, AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT, AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW, AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, AUTOMATION_STUDIO_LLM_LOOP_SINGLE_CYCLE_AT } from "./limits.ts";
+import { automationStudioLlmEvidenceTimingFree, type AutomationStudioLlmEvidenceTimingOf } from "../timing-free.ts";
 import { automationStudioLlmLoopCallKey, automationStudioLlmLoopDigest, automationStudioLlmLoopRanKey } from "./meaningful-input.ts";
 import type { AutomationStudioLlmLoopAmendment, AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopCall, AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopUnchanged } from "./types.ts";
 
@@ -107,8 +109,13 @@ export function automationStudioLlmLoopDetector(options: {
   askedRepeats?: AutomationStudioLlmLoopAskedRepeats | undefined;
   /** A call that did nothing and says what it stands for is judged with no page (header): the caller can act on what that leads to. */
   judgesWithNoPage?: boolean | undefined;
+  /** The parameters a node declares as timing: no part of what a call asks (header). */
+  timingOf?: AutomationStudioLlmEvidenceTimingOf | undefined;
 }): AutomationStudioLlmLoopDetector {
   const { record, holds, askedRepeats, judgesWithNoPage } = options;
+  // What a call asks, as written or as it ran: free text and declared timing out.
+  const callKey = (toolId: string, input: JsonObject, context: string | undefined): string => automationStudioLlmLoopCallKey(toolId, automationStudioLlmEvidenceTimingFree(toolId, input, options.timingOf).asks, context);
+  const ranKey = (toolId: string, ranAs: JsonObject, node: JsonObject[string] | undefined, context: string | undefined): string => automationStudioLlmLoopRanKey(toolId, automationStudioLlmEvidenceTimingFree(toolId, ranAs, options.timingOf, ranAs.node ?? node).asks, context);
   const visited = new Set<string>();
   const landed = new Set<string>();
   const rowsSeen = new Set<string>();
@@ -185,7 +192,7 @@ export function automationStudioLlmLoopDetector(options: {
 
   return {
     actRepeats(toolId, input, context, targetWords) {
-      const written = actsWritten.get(automationStudioLlmLoopCallKey(toolId, input, context));
+      const written = actsWritten.get(callKey(toolId, input, context));
       const act = written ? acts.get(written.act) : undefined;
       if (!written || !act || act.times < Math.max(AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, act.asked ?? 0) || act.rowsAt !== rowsSeen.size) return undefined;
       // This is another place, or the domain now names something else under this handle: another target.
@@ -196,7 +203,7 @@ export function automationStudioLlmLoopDetector(options: {
     },
     repeating(toolId, input, context, state) {
       const page = state ?? last;
-      const written = automationStudioLlmLoopCallKey(toolId, input, context);
+      const written = callKey(toolId, input, context);
       const key = ranAsHere.get(at(written, page)) ?? written;
       if (lifted(key, page, toolId)) return undefined;
       const entry = near.get(at(key, page));
@@ -207,8 +214,8 @@ export function automationStudioLlmLoopDetector(options: {
     },
     ran(call, guarded) {
       const state = call.stateBefore ?? last;
-      const written = automationStudioLlmLoopCallKey(call.toolId, call.input, call.context);
-      const key = call.ranAs ? automationStudioLlmLoopRanKey(call.toolId, call.ranAs, call.context) : written;
+      const written = callKey(call.toolId, call.input, call.context);
+      const key = call.ranAs ? ranKey(call.toolId, call.ranAs, call.input.node, call.context) : written;
       ranAsHere.set(at(written, state), key);
       const here = at(key, state);
       if (call.stateBefore !== undefined) visited.add(call.stateBefore);
@@ -314,7 +321,7 @@ export function automationStudioLlmLoopDetector(options: {
       return { progressed: false, ...(window.count >= AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW ? { finding: windowFinding() } : {}) };
     },
     unrun(toolId, input, context, state, answered) {
-      const key = automationStudioLlmLoopCallKey(toolId, input, context);
+      const key = callKey(toolId, input, context);
       const page = state ?? last;
       if (page === undefined && context === undefined) return;
       counted(key, page, toolId);
