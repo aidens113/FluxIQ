@@ -22,7 +22,7 @@ function attempt(fields: Partial<AutomationStudioTaskAttempt> = {}): AutomationS
 
 const RESULT = (attemptId: string) => ({ attemptId, kind: "done_on_site", label: "confirmed", timesChecked: 1, source: "exploration", acts: [{ id: "act.1", what: "Renewed", where: "On the site", classes: ["modify_existing"], state: "landed" }] });
 
-function outcomeOf(fields: Partial<AutomationStudioTaskAttempt> | { endedAtMs: undefined; status: "working" }, record: { steps?: typeof STEPS; candidateId?: string; draftKept?: "not_assembled" | "not_saved" } = { steps: STEPS, candidateId: "candidate.1" }) {
+function outcomeOf(fields: Partial<AutomationStudioTaskAttempt> | { endedAtMs: undefined; status: "working" }, record: { steps?: typeof STEPS; candidateId?: string; draftKept?: "not_assembled" | "not_saved"; replay?: unknown } = { steps: STEPS, candidateId: "candidate.1" }) {
   const row = attempt(fields as Partial<AutomationStudioTaskAttempt>);
   // A row still going has no ending time: `endedAtMs: undefined` in the fields takes it off.
   if ("endedAtMs" in fields && fields.endedAtMs === undefined) delete (row as { endedAtMs?: number }).endedAtMs;
@@ -88,5 +88,17 @@ describe("what an attempt left", () => {
     const startedFrom = { route: "use" as const, attemptId: "attempt.0", stepsDigest: DIGEST };
     expect(outcomeOf({ startedFrom }).attempt.startedFrom).toEqual(startedFrom);
     expect(outcomeOf({}).attempt.startedFrom).toBeUndefined();
+  });
+});
+
+// t897: why a replay was judged lived only in memory, so no run could say it (dining, `run-mwb81x8q-432e8389`).
+describe("how a replay of the saved Flow was checked", () => {
+  it("is on the outcome as the row keeps it: stood on its record, or judged for a named deviation", () => {
+    expect(outcomeOf({ path: "run_flow" }, { steps: STEPS, candidateId: "candidate.1", replay: { stood: true } }).replay).toEqual({ stood: true });
+    expect(outcomeOf({ path: "run_flow" }, { steps: STEPS, candidateId: "candidate.1", replay: { stood: false, deviation: "step_routed" } }).replay).toEqual({ stood: false, deviation: "step_routed" });
+  });
+
+  it("is absent where the attempt closed no replay", () => {
+    expect(outcomeOf({}).replay).toBeUndefined();
   });
 });

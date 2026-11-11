@@ -132,7 +132,8 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     did_not_work: {}, already_in_flow: {}, already_out: {}, changes_nothing: {}, act_on_a_read: {}, act_already_named: { act: "a1" },
     bind_not_a_binding: { parameter: "query" }, bind_new_key: { parameter: "query", bindable: ["text"] }, bind_row_outside_loop: { parameter: "query" }, bind_malformed: { parameter: "query" },
     rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }, settings_rewrite_run: {}, second_copy: { copyOf: 1 },
-    act_not_done_there: { act: "a1", said: "Step 2 chose \"Spain\", one of a1's options (a1.origin), and does not do a1. Step 3 (\"Add to cart\") names it: name a1 there with amend_draft add on step 3 with act a1.", instead: 3 }
+    act_not_done_there: { act: "a1", said: "Step 2 chose \"Spain\", one of a1's options (a1.origin), and does not do a1. Step 3 (\"Add to cart\") names it: name a1 there with amend_draft add on step 3 with act a1.", instead: 3 },
+    repeat_never_ends: { said: "Step 2 repeats while step 2 succeeds, and step 2 cannot answer \"ended\": end the repeat on a step that answers \"ended\" when there is nothing more." }
   };
 
   it("gives every reason a next naming the step, without a checklist and with one", () => {

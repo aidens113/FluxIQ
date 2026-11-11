@@ -693,9 +693,11 @@ describe("places on the named route", () => {
 });
 
 // Read-list redesign S2 (contract C2): a list that continues is gone through
-// by a repeat on its read that runs again while the step that moves it on
-// succeeds. The model is shown `while` and `most` with their bounds, and the
+// by a repeat on its read that runs again until the step that moves it on
+// answers ended. The model is shown `while` and `most` with their bounds, and the
 // rule that a repeat goes on the act is said of a repeat over a listing only.
+// Run `run-mwblz4aq-0baa810a`: the schema called `most` a default of 50, and a
+// model capped a press at 20 passes; `most` is now only a count the person gave.
 describe("the do-while repeat the schema teaches", () => {
   const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { type?: string; minimum?: number; maximum?: number; description: string }>;
 
@@ -706,20 +708,42 @@ describe("the do-while repeat the schema teaches", () => {
     expect(properties.while!.description).toContain("through defaults to it");
     // F5: most also bounds a repeat over a listing to its first rows, up to For Each's 10,000; with while it is still 1 to 500.
     expect(properties.most).toMatchObject({ type: "integer", minimum: 1, maximum: 10_000 });
-    expect(properties.most!.description).toContain("default 50");
-    expect(properties.most!.description).toContain("with while, the most passes, 1 to 500");
+    expect(properties.most!.description).toContain("only when the person's instruction itself gives a number");
+    expect(properties.most!.description).toContain("with while, that many passes at most, 1 to 500");
     expect(properties.most!.description).toContain("over a listing, only its first this many rows, in their order");
   });
 
   it("says the continuing list's form beside the list form, in generic words", () => {
     const change = properties.change!.description;
     expect(change).toContain("A repeat over a listing goes on the act, never on the listing itself");
-    expect(change).toContain("To go through a list that continues -- the step that reads it, then the step that moves it on -- repeat on the read with while naming that step");
+    expect(change).toContain("To go through a list that continues -- the step that reads it, then the step that moves it on, which answers ended when there is no more -- repeat on the read with while naming that step");
     expect(change).toContain("each pass reads once, and the Flow keeps each row once");
     for (const description of [change, properties.while!.description, properties.most!.description]) {
       // Pagination words only: "as the page offers it" (an option's press) is not one. The check never ran before t673
       // (`\b` in a template literal is a backspace).
       for (const word of ["next page", "Next", "pagination", "scroll"]) expect(description).not.toMatch(new RegExp(`\\b${word}`));
     }
+  });
+});
+
+// The standing rule (user, 2026-11-10): a loop ends by the page's own ending,
+// never by a count. Run `run-mwblz4aq-0baa810a` wrote a while-loop on a plain
+// press, and the schema's "default 50" and the refusal's "most set to the
+// passes" led the next attempt to cap it at 20.
+describe("what the schema says ends a while-loop", () => {
+  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>;
+
+  it("says a while-loop ends when its last step answers ended, and that a step which cannot is refused", () => {
+    expect(properties.change!.description).toContain("again until its last step answers ended");
+    expect(properties.change!.description).toContain("a step that cannot, such as a plain press, would end the loop only by failing, and that repeat is refused");
+    expect(properties.while!.description).toContain("must be a step that answers ended when there is nothing more");
+    expect(properties.while!.description).toContain("again until that step answers ended");
+  });
+
+  it("never offers most as a default or as the way to end a loop", () => {
+    for (const description of Object.values(properties).map((property) => property.description)) {
+      expect(description).not.toMatch(/default 50|\bdefault\b[^.]*\bpasses\b|most set to|to bound it/u);
+    }
+    expect(properties.most!.description).toContain("Leave it out otherwise: a while-loop ends when its last step answers ended");
   });
 });

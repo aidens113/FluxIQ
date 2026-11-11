@@ -42,8 +42,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   askedAgain: boolean;
   /** A carry-on's: what the attempt had when the person pressed. Absent on an attempt's first segment. */
   prior?: AutomationStudioAnswerFirstAttemptPrior | undefined;
-  /** The highest step position a forward run passed. */
-  forwardReached: number;
+  /** The ids of the steps a forward run passed in this attempt (`./path.ts`, `../flow-run/stand-in.ts`). */
+  forwardPassed: Set<string>;
   attemptId: string;
   ordinal: number;
   runId: string;

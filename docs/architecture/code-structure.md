@@ -442,8 +442,8 @@ live/                         6 source files + four directories
 
 `tsconfig.base.json` `paths` map only some `fluxiq` subpaths to source; the
 rest (`fluxiq/identity-access`, `fluxiq/auth`, ...) resolve through
-`package.json` `exports` to `dist`. So `pnpm check` runs the three library
-build steps (`contracts:build fluxiq:build client-gateway-websocket:build`)
+`package.json` `exports` to `dist`. So `pnpm check` runs every library
+build step in build order (`contracts:build sdk:build fluxiq:build client-gateway-websocket:build ui-components:build`)
 through the build cache before the package checks. Unchanged sources reuse the
 stamped `dist` (seconds); a changed library source rebuilds it, and the web
 check's fingerprint includes that `dist`, so it re-runs against the new types.

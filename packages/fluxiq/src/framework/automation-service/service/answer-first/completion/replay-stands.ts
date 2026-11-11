@@ -32,15 +32,13 @@
 // site whose data changed under an unchanged structure; the shape check catches a read that came back
 // empty or different, not a different row.
 
+import { AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS, type AutomationStudioTaskReplayDeviation } from "../../../../../api-contracts/automation.ts";
 import type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 
-/** Every deviation the rule names, in the order it is checked (header). */
-export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS = [
-  "judge_always", "asked_again", "flow_not_proven", "flow_not_confirmed", "run_not_whole", "repaired", "step_failed", "step_routed",
-  "act_not_done", "check_cleared", "step_retried", "shape_unknown", "shape_differs"
-] as const;
+/** Every deviation the rule names, in the order it is checked (header): the contract's closed words, since an attempt's outcome carries them (t897). */
+export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS = AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS;
 
-export type AutomationStudioAnswerFirstReplayDeviation = (typeof AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS)[number];
+export type AutomationStudioAnswerFirstReplayDeviation = AutomationStudioTaskReplayDeviation;
 
 export function automationStudioAnswerFirstReplayStands(
   record: AutomationStudioAnswerFirstReplayRecord,

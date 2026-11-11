@@ -29,6 +29,8 @@ function field(id: string, label = id): AutomationStudioRecordSchema["fields"][n
 
 /** The schema a replayed step's derived record output declares: every field the read reads (step 0066 of the run). */
 const READ_SCHEMA: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [field("name", "Name"), field("price", "Price"), field("rating", "Rating"), field("link", "Link")] };
+/** The row's identity the answer keeps: every column the read stores, as before its columns were set. */
+const WHOLE_ROW = { by: ["name", "price", "rating", "link"] };
 
 /** A batch a saved Flow's run captured. */
 function runBatch(attemptId: string, rows: JsonObject[], schema = READ_SCHEMA, process?: AutomationStudioRecordProcessing): AutomationStudioRecordBatch {
@@ -59,7 +61,7 @@ describe("the answer holds the columns the request names", () => {
     await sink.recordBatch(runBatch("run.1.pass.1", [lamp(1), lamp(2)]));
     await sink.recordBatch(runBatch("run.1.pass.2", [lamp(3)]));
     // Stored whole as collected, with the answer's columns declared, the same on every batch of the dataset.
-    expect(store.batches.map((batch) => batch.process)).toEqual([{ columns: ["name", "price", "rating"] }, { columns: ["name", "price", "rating"] }]);
+    expect(store.batches.map((batch) => batch.process)).toEqual([{ dedupe: WHOLE_ROW, columns: ["name", "price", "rating"] }, { dedupe: WHOLE_ROW, columns: ["name", "price", "rating"] }]);
     expect(store.batches[0]!.rows).toEqual([lamp(1), lamp(2)]);
     const summary = sink.summary();
     expect(summary.columns).toEqual([{ id: "name", label: "Name" }, { id: "price", label: "Price" }, { id: "rating", label: "Rating" }]);
@@ -75,7 +77,7 @@ describe("the answer holds the columns the request names", () => {
     const { store, sink } = sinkOver(NAMED);
     await sink.fromCall(call("call.1", "web.read", { target: "list", page: 1 }), liveAnswer([lamp(1), lamp(2)]));
     await sink.fromCall(call("call.2", "web.read", { target: "list", page: 2 }), liveAnswer([lamp(3)]));
-    expect(store.batches.map((batch) => batch.process)).toEqual([{ columns: ["name", "price", "rating"] }, { columns: ["name", "price", "rating"] }]);
+    expect(store.batches.map((batch) => batch.process)).toEqual([{ dedupe: WHOLE_ROW, columns: ["name", "price", "rating"] }, { dedupe: WHOLE_ROW, columns: ["name", "price", "rating"] }]);
     expect(store.batches[0]!.schema.fields.map((each) => each.id)).toEqual(["name", "price", "rating", "link"]);
     expect(sink.summary().columns.map((column) => column.id)).toEqual(["name", "price", "rating"]);
     expect(sink.summary().rows).toEqual([shown(1), shown(2), shown(3)]);
@@ -105,13 +107,13 @@ describe("the answer holds the columns the request names", () => {
 
   it("meets a name with case and separators set aside, and keeps the person's order", async () => {
     const schema: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [field("star_rating"), field("product_name"), field("link")] };
-    expect(await asked("Give me columns Product name and Star-Rating.", schema)).toEqual({ process: { columns: ["product_name", "star_rating"] }, columns: ["product_name", "star_rating"] });
+    expect(await asked("Give me columns Product name and Star-Rating.", schema)).toEqual({ process: { dedupe: { by: ["star_rating", "product_name", "link"] }, columns: ["product_name", "star_rating"] }, columns: ["product_name", "star_rating"] });
   });
 
   it("keeps a column a declared where filters by shown, as the contract requires, and the rest of the processing", async () => {
     const schema: AutomationStudioRecordSchema = { schemaVersion: "0.1", fields: [...READ_SCHEMA.fields, field("brand")] };
     const result = await asked(NAMED, schema, { where: [{ field: "link", is: "present" }], limit: 5 });
-    expect(result).toEqual({ process: { where: [{ field: "link", is: "present" }], limit: 5, columns: ["name", "price", "rating", "link"] }, columns: ["name", "price", "rating", "link"] });
+    expect(result).toEqual({ process: { dedupe: { by: [...WHOLE_ROW.by, "brand"] }, where: [{ field: "link", is: "present" }], limit: 5, columns: ["name", "price", "rating", "link"] }, columns: ["name", "price", "rating", "link"] });
   });
 
   it("changes nothing when the named columns are already every stored column, in order", async () => {
@@ -119,9 +121,38 @@ describe("the answer holds the columns the request names", () => {
     expect(await asked(NAMED, schema)).toEqual({ process: undefined, columns: ["name", "price", "rating"] });
   });
 
+  it("keeps two listings that differ only in a column the answer leaves out: each is its own row", async () => {
+    // Two distinct listings, alike in every named column and told apart only by their links.
+    const twin = (n: number): JsonObject => ({ ...lamp(1), link: `https://shop.example/lamp/1-${n}` });
+    for (const reads of ["run", "model"] as const) {
+      const { store, sink } = sinkOver(NAMED);
+      if (reads === "run") await sink.recordBatch(runBatch("run.1.pass.1", [twin(1), twin(2)]));
+      else await sink.fromCall(call("call.1"), liveAnswer([twin(1), twin(2)]));
+      expect(store.batches[0]!.rows).toEqual([twin(1), twin(2)]);
+      expect(sink.summary().columns.map((column) => column.id)).toEqual(["name", "price", "rating"]);
+      expect(sink.summary().totalRows).toBe(2);
+      expect(sink.summary().rows).toEqual([shown(1), shown(1)]);
+      const back = await sink.readBack();
+      expect(back.totalRows).toBe(2);
+      expect(back.rows).toEqual([shown(1), shown(1)]);
+    }
+  });
+
+  it("keeps a dedupe the processing declared, or its no dedupe", async () => {
+    expect((await asked(NAMED, READ_SCHEMA, { dedupe: { by: ["name"] } })).process).toEqual({ dedupe: { by: ["name"] }, columns: ["name", "price", "rating"] });
+    expect((await asked(NAMED, READ_SCHEMA, { dedupe: false })).process).toEqual({ dedupe: false, columns: ["name", "price", "rating"] });
+  });
+
+  it("a row repeated whole is still one row", async () => {
+    const { sink } = sinkOver(NAMED);
+    await sink.recordBatch(runBatch("run.1.pass.1", [lamp(1), lamp(1), lamp(2)]));
+    expect(sink.summary().totalRows).toBe(2);
+    expect(sink.summary().rows).toEqual([shown(1), shown(2)]);
+  });
+
   it("closes a named list whose last item ran on with the leading words that name a stored column", async () => {
     const text = "List the lamps with columns name and price exactly as the shop shows them.";
     expect([...automationStudioFlowBootstrapInstructionColumns(text)]).toEqual([]);
-    expect(await asked(text, READ_SCHEMA)).toEqual({ process: { columns: ["name", "price"] }, columns: ["name", "price"] });
+    expect(await asked(text, READ_SCHEMA)).toEqual({ process: { dedupe: WHOLE_ROW, columns: ["name", "price"] }, columns: ["name", "price"] });
   });
 });
