@@ -333,7 +333,10 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         order.push(datasetId);
       }
       const apart = after ? heldApart(was, datasetId, held, evidence, columns) : undefined;
-      const resultChanged = apart ?? (after ? changed(was, datasetId, after.over) : undefined);
+      const told = apart ?? (after ? changed(was, datasetId, after.over) : undefined);
+      // A pass of a run that carried the result's list on stamps what the result holds after it (`./result-change.ts`).
+      const now = !told && after && typeof call.value.replay === "string" ? standing() : undefined;
+      const resultChanged: AutomationStudioAnswerFirstResultChange | undefined = told ?? (now?.datasetId === datasetId ? { kind: "carried_on", now: { rows: now.totalRows, pages: now.pages } } : undefined);
       return { rows: validated.rows, datasetId, invalidCount: validated.invalidCount, truncated: validated.truncated, ...(after?.over ? { startedOver: true } : {}), ...(resultChanged ? { resultChanged } : {}) };
     },
     async recordBatch(given) {

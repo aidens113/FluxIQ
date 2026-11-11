@@ -52,4 +52,17 @@ describe("the judge's summary told more briefly", () => {
 
     expect(JSON.stringify(given)).toBe(before);
   });
+
+  it("sends looks and read pages whole, then summarises them by name when the window needs it", () => {
+    const looked = Array.from({ length: 12 }, (_, index) => ({ where: `http://127.0.0.1:5000/desks/${index}`, found: `${index} ${LONG.trim()}` }));
+    const readPages = Array.from({ length: 45 }, (_, index) => ({ where: `http://127.0.0.1:5000/desks?page=${index}`, kept: 1 }));
+    const whole = sent(summary({ looked, readPages })) as unknown as { looked: unknown[]; readPages: unknown[] };
+    expect(whole.looked).toEqual(looked);
+    expect(whole.readPages).toHaveLength(45);
+    const forms = automationStudioFlowLessSummaryFitting(whole as unknown as ReturnType<typeof sent>).map(shown);
+    const last = forms[forms.length - 1];
+    expect(last.summarised.items).toEqual(expect.arrayContaining(["looked", "readPages"]));
+    expect(last.looked["core.summarised"]).toMatchObject({ item: "looked", kind: "list", entries: 12 });
+    expect(last.readPages["core.summarised"]).toMatchObject({ item: "readPages", kind: "list", entries: 45 });
+  });
 });
