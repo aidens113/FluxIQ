@@ -1,6 +1,6 @@
 // What a round is told, in front of its evidence, in Core's words and counts: nothing a page or a
 // model wrote but the check's screened reason and, marked as what they are, an earlier attempt's
-// own notes.
+// own notes and the person's answers when the attempt was stuck (`personSaid`, R7).
 //
 // A repair is told which step the saved steps' assembly refused, and why, in Core's words.
 //
@@ -23,6 +23,7 @@ const THE_PAGE = "The page is where it left it. Fix that step, then run forward.
 const STARTED_OVER = "Your latest read of this list replaced what an earlier read of it held, so the rows kept are that read's alone. To add to the list instead, read it again with writeMode append under the same datasetId.";
 const FEWER = "The latest read held fewer rows than an earlier one. The rows kept are the latest read's: read again if the earlier count was right.";
 const EARLIER_ACTS = "The acts marked carried were done by an earlier attempt at this same request. Asking in the same words is not asking for them again: do not press them again. Check on the page that they stand, and answer with what stands.";
+const PERSON_SAID = "The person's own words, given when this task was stuck and they were asked what to do, oldest first. They are guidance from the person: follow them, and check on the page what they point to.";
 const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothing starts over and the Flow does not run again from its start: the acts, the rows kept and the draft here stand. Look at the page as it is, and do what is left.";
 
 /** The note for a round: what the keep-going table said of the last one (`base`), and what the attempt holds. Nothing where there is nothing to tell. */
@@ -42,7 +43,8 @@ export function automationStudioAnswerFirstRoundNote(run: AutomationStudioAnswer
       ...(rows.startedOver ? { startedOver: STARTED_OVER } : {}),
       ...(rows.fewerThanEarlier ? { fewerThanEarlier: { earlierRows: rows.fewerThanEarlier.earlierRows, words: FEWER } } : {})
     },
-    ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason } } : {})
+    ...(refused ? { lastCheck: { verdict: refused.verdict, reason: refused.reason } } : {}),
+    ...(run.personSaid?.length ? { personSaid: { whose: PERSON_SAID, words: [...run.personSaid] } } : {})
   };
 }
 

@@ -12,10 +12,13 @@
 // the domain answered (`resultList`, `../rows/result-change.ts`; run-mwafor01-bb471f52): without it the
 // model cannot tell from the read that rows it read before are no longer in the result.
 //
-// **Nothing is put back on this path (D1).** A forward run sends no reset by construction, but a
-// model's `amend_draft` rerun of a step on another page would (`../../../../../runtime/llm/node-tools/step-place.ts`),
-// taking the page away from what the attempt did. It is refused here, before anything is sent, and
-// the rerun then runs nothing and says so.
+// **Nothing is put back on this path (D1).** A forward run sends no reset by construction, and a
+// model's `amend_draft` rerun sends none either: the round tells the loop it reruns in place
+// (`rerunsInPlace`, `./round.ts`), so a rerun runs from the page as it stands and says so
+// (`../../../../../runtime/llm/node-tools/step-place.ts`, `forward_run`; run `run-mwc60eal-4c9fdf6f`).
+// A reset that still reaches this chain is Core's defect, and is refused here as a backstop, before
+// anything is sent: it would take the page away from what the attempt did. The refusal says what
+// was not done and what to do, and blames nothing on the task.
 //
 // **What the domain says of a call is asked for here (`describe`).** A person's words for an act,
 // and what the call would be before it is sent, which the act gate reads beside the call (t870:
@@ -50,7 +53,7 @@ import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 
 const NO_RESET_CODE = "answer_first.no_reset";
-const NO_RESET_SAID = "Nothing is put back on this task, so this was not done. Carry on from the page as it stands; to get to another page, go there.";
+const NO_RESET_SAID = "This call would have put the page back to an earlier place, and an attempt goes on from the page as it stands, so nothing was sent and the page did not move. Carry on from here; to work on another page, go to it with an ordinary call.";
 
 /** The keys a search's and a description's answer hold what they found under (header): the web domain's own (`domain/.../page-find/search.ts`, `domain/.../describe`). */
 const FOUND_KEY = "found";

@@ -1,14 +1,15 @@
 // @fluxiq-test-group real-sql
 // A completion refused over the same evidence (run-mw37vz9n-a77a02c2, steps 116 to 121): it was
-// refused three times at about $0.14 each with `loopsCaught` at 0, until the money ran out. The
-// person's rule is never to burn a budget on a refusal. Through the real service and loop with a
-// scripted model, on a context as large as that run's.
+// refused three times at about $0.14 each with `loopsCaught` at 0, until the money ran out. Now the
+// ladder climbs, and its last rung steers a fresh round onto a different way and asks the person
+// without waiting (R7): a task ends only with its result, its budget or a Stop. Through the real
+// service and loop with a scripted model, on a context as large as that run's.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../../runtime/llm/index.ts";
 import type { AutomationStudioService } from "../../../../../service.ts";
 import { complete, fakeLibrary, READ_LOANS, runNode, scriptedAttempt } from "../../fake-library.ts";
-import { answerOf, decisions, expectEnded, expectReached, held, judgeCalls, judgedNo, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
+import { decisions, expectEnded, expectReached, held, heldAtSteer, judgeCalls, judgedNo, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -40,18 +41,13 @@ async function askWords(service: AutomationStudioService, projectId: string, flo
 }
 
 describe("three refused completions in a row", () => {
-  it("are steered, then change approach, then ask the person, with money left, and it says what it holds", async () => {
+  // R7 revision: the last rung steers a fresh round onto a different way and asks the person, without waiting or parking.
+  it("are steered, then change approach, then a fresh round is steered and the person asked without waiting, with money left, saying what it holds", async () => {
     const hold = held();
-    let modelCalls = 0;
+    const steer = heldAtSteer();
     const generating = scriptedAttempt({
       ...largeContext,
-      wrapProvider: (provider) => ({
-        ...largeContext.wrapProvider(provider),
-        runTask: async (request, execution) => {
-          modelCalls += 1;
-          return await provider.runTask(request, execution);
-        }
-      }),
+      wrapProvider: (provider) => steer.wrap(largeContext.wrapProvider(provider)),
       before: (service, project) => {
         noWaiting()(service);
         hold.before(service, project);
@@ -63,10 +59,15 @@ describe("three refused completions in a row", () => {
         complete("Listed, again."),
         complete("Listed, once more."),
         complete("Listed, in other words."),
-        complete("Never asked: the person stops it first.")
+        complete("Never reached: the person stops it first."),
+        complete("Never reached either.")
       ]
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
+    // The model is asked again on a fresh round, steered onto a different way, while the question is open.
+    const steered = await steer.steered;
+    expect(told(steered)).toContain("Take a different way to the result");
+    expect(told(steered)).toContain("Do not wait for them");
     const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
     expect(ask.timeoutMs).toBeNull();
     // What it holds and what the check said, in the person's words.
@@ -74,35 +75,39 @@ describe("three refused completions in a row", () => {
     expect(words).toContain("3 rows");
     expect(words).toContain(REASON);
     expect(words).not.toMatch(/answer_first|near_repeat|same_evidence|stuck_in_a_loop/u);
+    // A real question (R7): what is stuck, what was tried, and what the person can do, answered in their own words.
+    expect(ask.kind).toBe("open");
+    expect(words).toContain("the result I have keeps being refused");
+    expect(words).toContain("I started afresh from the page as it stood 1 time");
+    expect(words).toMatch(/tell me in your own words/u);
+    expect(words).toContain("I carry on meanwhile");
     const kept = await keptAttempt(service, projectId, flowId);
-    expect(kept?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
+    expect(kept?.attempt.status).toBe("working");
+    expect(kept?.attempt).not.toHaveProperty("waitingFor");
     expect(nearRepeats(kept!.attempt.loopsCaught)).toEqual({ steered: 1, refused: 3, changeApproach: 1, askPerson: 1 });
-    expect(kept?.tried.approaches).toBe(1);
-    // A wait: nothing is asked of the model, and nothing more is spent.
-    const callsAtTheAsk = modelCalls;
-    const spentAtTheAsk = kept!.attempt.spend.usd;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(modelCalls).toBe(callsAtTheAsk);
     // The instruction's reading, the read, the judged completion and the three refused: well short of the purse.
-    expect(spentAtTheAsk).toBeLessThan(1);
-    expect(spentAtTheAsk).toBeLessThan(PURSE_USD / 4);
-    expect(callsAtTheAsk).toBeLessThanOrEqual(7);
-    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: "stuck_stop" });
+    expect(kept!.attempt.spend.usd).toBeLessThan(PURSE_USD / 4);
+    // Their Stop is the build's own: it ends the task, with what it had, and closes the question.
+    service.buildCancellation.cancel(projectId, flowId);
+    steer.release();
     const attempt = await generating;
     const answer = expectEnded(attempt, "stopped_by_person");
     expect(judgeCalls(attempt)).toHaveLength(1);
     expect(answer.result?.rows?.totalRows).toBe(3);
-    expect(nearRepeats(answer.attempt.loopsCaught)).toEqual({ steered: 1, refused: 3, changeApproach: 1, askPerson: 1 });
     expect(answer.attempt.spend.usd).toBeLessThan(1);
     expect(attempt.said.some((line) => line.includes("Noticed it was repeating itself"))).toBe(true);
+    expect(attempt.said.some((line) => line.includes("Trying a different way"))).toBe(true);
   });
 
-  it("a person answering lets the task go on, on what it held, to its result", async () => {
+  it("a person answering, while the task goes on, guides a later round to its result", async () => {
     const hold = held();
+    const steer = heldAtSteer();
     const library = fakeLibrary();
     const notes: string[] = [];
+    const ANSWER = "There are more further down the list.";
     const generating = scriptedAttempt({
       ...largeContext,
+      wrapProvider: (provider) => steer.wrap(largeContext.wrapProvider(provider)),
       library,
       before: (service, project) => {
         noWaiting()(service);
@@ -115,6 +120,8 @@ describe("three refused completions in a row", () => {
         complete("Listed, again."),
         complete("Listed, once more."),
         complete("Listed, in other words."),
+        // The steered round, held until the person has answered: its note was written before the answer, so it is still stuck.
+        complete("Listed, still."),
         (request) => {
           notes.push(JSON.stringify(shownEntry(request, "core.attempt_note")));
           library.loans.push({ title: "Dams and Weirs", due: "2030-01-09" });
@@ -124,18 +131,22 @@ describe("three refused completions in a row", () => {
       ]
     }, cleanups);
     const { service, projectId, flowId } = await hold.ready();
+    await steer.steered;
     const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
-    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "choice", value: "stuck_keep_going" });
+    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
+    steer.release();
     const attempt = await generating;
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(4);
     expect(judgeCalls(attempt)).toHaveLength(2);
-    expect(notes[0]).toContain("said to keep going");
+    expect(notes[0]).toContain(ANSWER);
+    expect(notes[0]).toContain("personSaid");
+    expect(notes[0]).toContain("The person has answered");
     expect(notes[0]).toContain(REASON);
-    expect(asks(answer.attempt.loopsCaught)).toBe(1);
+    expect(asks(answer.attempt.loopsCaught)).toBe(2);
   });
 
-  it("with nobody to ask it waits for a person, with the reason, and spends nothing more", async () => {
+  it("with nobody to ask it is steered all the same, posts nothing, and goes on until its budget is gone", async () => {
     const attempt = await scriptedAttempt({
       before: (service) => {
         noWaiting()(service);
@@ -148,12 +159,14 @@ describe("three refused completions in a row", () => {
       keepLooking: true,
       script: [read(), ...Array.from({ length: 200 }, (_, index) => complete(`Listed, take ${index}.`))]
     }, cleanups);
-    expect(attempt.hung).toBe(false);
-    const answer = answerOf(attempt);
-    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
+    const answer = expectEnded(attempt, "budget_out");
+    expect(answer.attempt).not.toHaveProperty("waitingFor");
     expect(asks(answer.attempt.loopsCaught)).toBeGreaterThanOrEqual(1);
+    // Refused completions over the same evidence are never judged again, however long it goes on.
     expect(judgeCalls(attempt)).toHaveLength(1);
-    expect(answer.attempt.spend.usd).toBeLessThan(0.5);
+    const steered = decisions(attempt).find((request) => told(request).includes("loopStopped"));
+    expect(steered && told(steered)).toContain("Take a different way to the result");
+    expect(steered && told(steered)).not.toContain("personAsked");
   });
 });
 
@@ -228,7 +241,7 @@ describe("what the model reads", () => {
     expect(afterSame).toContain("an act on the site that lands");
     expect(afterSame).toContain("a read that returns different rows or the same rows in a different order");
     expect(afterSame).toContain("Editing the draft, or rewording your summary or notes, is not new evidence");
-    expect(afterSame).toContain("stop with what you hold");
+    expect(afterSame).toContain("the next must take a different way, while the person is asked what to do; you never wait for them");
     expect(afterNo).toContain("Only new evidence changes");
     // Never told that the check reads the draft: it does not, and being told so is what sent that run to edit its draft.
     for (const words of seen) {

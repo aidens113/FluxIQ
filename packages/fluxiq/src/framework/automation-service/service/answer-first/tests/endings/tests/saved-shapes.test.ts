@@ -47,8 +47,8 @@ describe("the saved-run shapes", () => {
     expect(decisions(attempt).map((request) => JSON.stringify(request.context.evidenceLoop?.evidence ?? [])).join("\n")).toContain("answer_first.same_evidence");
   });
 
-  // With a person to ask it stops spending and asks (refused-completion.test.ts); with nobody to ask it waits and spends nothing more, since a refusal is never worth a budget.
-  it("the same refused evidence again and again spends no judge call, and with nobody to ask it waits instead of spending the purse", async () => {
+  // R7: a stuck attempt is steered and never parks, with or without a person to ask (refused-completion.test.ts); a task ends only with its result, its budget or a Stop.
+  it("the same refused evidence again and again spends no judge call, and with nobody to ask it is steered on until the purse ends it", async () => {
     const attempt = await scriptedAttempt({
       judge: [judgedNo("Not it.")],
       usage: USAGE,
@@ -64,9 +64,9 @@ describe("the saved-run shapes", () => {
     expect(attempt.hung).toBe(false);
     expect(judgeCalls(attempt)).toHaveLength(1);
     const answer = answerOf(attempt);
-    expect(answer.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "stuck_in_a_loop" });
+    expect(answer.attempt.status).toBe("budget_out");
+    expect(answer.attempt).not.toHaveProperty("waitingFor");
     expect(answer.result).toMatchObject({ label: "refuted", timesChecked: 1 });
-    expect(answer.attempt.spend.usd).toBeLessThan(0.4);
   });
 
   it("still moving, never arriving: new pages and new acts read as progress, no judge is asked, and only the purse ends it", async () => {

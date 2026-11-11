@@ -91,6 +91,22 @@
 // address, which brought the page back at quantity 1 (steps 0059-0061, a toast
 // reading "Qty 1"); the model then "fixed" the quantity by rerunning step 10 as
 // "+" (steps 0063-0065), and the Flow lost its Add to cart.
+//
+// **A caller that puts no page back runs a rerun where the page stands
+// (`rerunsInPlace`; run `run-mwc60eal-4c9fdf6f`).** An attempt that goes on
+// forward from the page as it stands -- answer-first (plan D1, D2) -- refuses
+// every reset before it is sent, so a put-back there could only fail: every
+// rerun of a step that started on another page was answered
+// `rerun_place_unreachable` and ran nothing, a paid decision spent each time,
+// and the model then made the same call by hand. Told so, a rerun sends no
+// reset and does no earlier step again -- not even for a lasting act, whose
+// put-back would replay the Flow from its start -- and runs here. Its answer
+// says the step started elsewhere and that it ran here (`forward_run`, with
+// `stepStartedOn`), and the step it leaves records that it ran in place
+// (`rerunPlace.kind: "forward_run"`), so a judge never reads a lasting press
+// made here as one made after the steps before it. Every call still goes
+// through the caller's act gate, so an act that landed is not done again.
+// `already_there` and `start_page_unknown` stay as they are.
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import {
   automationStudioFlowDraftConditionalStepReasons,
@@ -124,7 +140,9 @@ export type AutomationStudioNodeRerunDoneAgain = { step: number; stepId?: string
  * Where a rerun runs: as the target stands, after it was put back, or nowhere.
  *
  * `in_place` says why: the target was `already_there`, or no start page was
- * known (`start_page_unknown`) and it ran wherever the last call left it.
+ * known (`start_page_unknown`) and it ran wherever the last call left it, or
+ * the caller puts no page back (`forward_run`) and it ran where the page
+ * stands, not on `from`, the page its step started on.
  * `put_back` says whose start page it went back to: the `step`'s own, the
  * one its node started on in the run the draft was seeded from (`seeded_run`),
  * or, for a lasting act, where the Flow's first step starts (`flow_start`);
@@ -135,6 +153,7 @@ export type AutomationStudioNodeRerunDoneAgain = { step: number; stepId?: string
  */
 export type AutomationStudioNodeRerunPlace =
   | { kind: "in_place"; why: "already_there" | "start_page_unknown" }
+  | { kind: "in_place"; why: "forward_run"; from: JsonObject }
   | { kind: "put_back"; callId: string; startPage: "step" | "seeded_run" | "flow_start"; doneAgain: AutomationStudioNodeRerunDoneAgain[]; unknownBefore?: number }
   /** `result` is what the rerun is answered with, in place of running it. */
   | { kind: "unreachable"; callId: string; result: AutomationStudioLlmEvidenceToolExecutionResult };
@@ -176,10 +195,17 @@ export async function automationStudioNodeRerunFromItsPlace(input: {
   partOf?: AutomationStudioFlowDraftReplayStepsInput["partOf"];
   namedColumns?: AutomationStudioFlowDraftReplayStepsInput["namedColumns"];
   signal?: AbortSignal | undefined;
+  /**
+   * The caller puts no page back (answer-first, plan D1): the rerun runs from
+   * the page as it stands, with no reset and no step done again, a lasting
+   * act's included (see the header). Absent, the rerun is put back as above.
+   */
+  rerunsInPlace?: boolean | undefined;
 }): Promise<AutomationStudioNodeRerunPlace> {
   const placeOf = (step: AutomationStudioFlowDraftStep): JsonObject | undefined =>
     step.replay?.from ?? input.seedStartedOn?.[step.standsFor ?? automationStudioFlowDraftStepId(step)];
   const callId = `${input.callId}.place`;
+  if (input.rerunsInPlace === true) return inPlace(input.step, placeOf(input.step), input.now);
   // A lasting act not yet done is pressed only on positive evidence: every step before it done again, in order (see the header).
   if (pressesLastingAct(input)) return lastingActPlace(input, placeOf, callId);
   const own = input.step.replay?.from;
@@ -196,6 +222,13 @@ export async function automationStudioNodeRerunFromItsPlace(input: {
   const failed = firstBlocking(input.steps, done.outcomes);
   if (!failed) return { kind: "put_back", callId, startPage, doneAgain, ...unknown };
   return notDoneAgain(callId, `step ${failed.step} before it, which started on the same page, could not be done again`, done, doneAgain, failed);
+}
+
+/** Where a rerun runs for a caller that puts no page back: here, whatever page its step started on, and nothing is sent (see the header). */
+function inPlace(step: AutomationStudioFlowDraftStep, from: JsonObject | undefined, now: string | undefined): AutomationStudioNodeRerunPlace {
+  if (!from) return { kind: "in_place", why: "start_page_unknown" };
+  if (now !== undefined && now === step.stateBefore) return { kind: "in_place", why: "already_there" };
+  return { kind: "in_place", why: "forward_run", from };
 }
 
 /** What a rerun is given, as `automationStudioNodeRerunFromItsPlace` takes it. */
@@ -393,6 +426,9 @@ const RERUN_PLACE_KEY = "rerunPlace";
 /** What a rerun that ran where the page was is told, in words a model acts on. */
 const IN_PLACE_DETAIL = "This rerun ran where the page is now, not where its step started: nothing recorded the page the step started on, so the page was not put back. If an earlier call moved the page (another results page, a scroll, a filter), this answer is about that page and not the step's own.";
 
+/** What a rerun that ran where the page stands, for a caller that puts no page back, is told. */
+const FORWARD_RUN_DETAIL = "This attempt goes on from the page as it stands and puts no page back, so this rerun ran here, not on the page its step started on (stepStartedOn). If the step belongs on that page, go there first; this answer is about this page.";
+
 /**
  * The step a rerun replaces, for the note on a refused rerun: its position, and
  * what its new argument named in the domain's words, asked before the page was
@@ -448,6 +484,7 @@ function placeNote(place: AutomationStudioNodeRerunPlace | undefined, refused?: 
     };
   }
   if (place.kind === "unreachable") return undefined;
+  if (place.why === "forward_run") return { place: "in_place", reason: "forward_run", stepStartedOn: place.from, detail: FORWARD_RUN_DETAIL };
   return place.why === "already_there"
     ? { place: "in_place", reason: "already_on_start_page" }
     : { place: "in_place", reason: "start_page_unknown", detail: IN_PLACE_DETAIL };

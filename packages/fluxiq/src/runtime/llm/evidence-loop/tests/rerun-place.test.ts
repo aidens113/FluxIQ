@@ -139,6 +139,81 @@ describe("a rerun of a read that paged to the end", () => {
   });
 });
 
+// Live run `run-mwc60eal-4c9fdf6f` (steps 0041-0060): an attempt that puts no page back refused every reset, so each
+// rerun of a step that started on another page ran nothing, and the model's identical call by hand was then refused as
+// a repeat of the rerun that never ran.
+describe("a rerun for a caller that puts no page back", () => {
+  const forward = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
+    tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, rerunsInPlace: true, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+  });
+
+  it("runs once where the page stands, with no reset, says where its step started, and the step records that it ran in place", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(read)
+      .mockResolvedValueOnce(rerun("price < 50"))
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = site();
+
+    const result = await forward(decide, executeTool);
+
+    expect(result).toMatchObject({ ok: true });
+    expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value])).toEqual([
+      ["read.1", { list: "results" }],
+      ["rerun.1", { list: "results", where: "price < 50" }]
+    ]);
+    const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
+    expect(answered).toMatchObject({ rows: 11, pagesRead: 1, rerunPlace: { place: "in_place", reason: "forward_run", stepStartedOn: { location: "p1" } } });
+    expect(result.steps.find((step) => step.callId === "rerun.1")).toMatchObject({ rerunPlace: { kind: "forward_run" } });
+  });
+});
+
+describe("the model's own call after a rerun whose place could not be reached", () => {
+  it("runs, and is not refused as a repeat of the rerun that never ran", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(read)
+      .mockResolvedValueOnce(rerun("price < 50"))
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "read.2", toolId: "read", input: { list: "results", where: "price < 50" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = site({ unreachable: true });
+
+    await loop(decide, executeTool).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["read.1", "rerun.1.place", "read.2"]);
+    expect(shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value).toMatchObject({ ok: false, code: "rerun_place_unreachable" });
+    const answered = shownAt(decide, 3).find((entry) => entry.callId === "read.2")?.value;
+    expect(answered).toMatchObject({ rows: 11 });
+    expect(answered).not.toMatchObject({ code: "llm_evidence_loop.repeat_refused" });
+  });
+
+  it("of a navigation runs too, as run-mwc60eal-4c9fdf6f's step 9 would have: the rerun's input never reached the target", async () => {
+    const go = { toolId: "go", description: "Go to an address.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };
+    let at = "home";
+    const executeTool = vi.fn(async ({ value }: { callId?: string; toolId: string; value: JsonObject }) => {
+      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false, resultCode: "core.replay.reset_failed" };
+      const before = at;
+      at = String(value.url);
+      return {
+        kind: "llm_evidence_tool_execution", stateDigests: { before, after: at }, evidence: { ok: true, at }, effectApplied: true, resultCode: "web.navigated",
+        draft: { actionId: "web.navigate", effect: "mutate", proposes: true, replay: { from: { location: before } } }
+      };
+    });
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "go.1", toolId: "go", input: { url: "list" }, add: true })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "go.2", toolId: "go", input: { url: "item" }, add: true })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { url: "list-96" } }] })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "go.3", toolId: "go", input: { url: "list-96" } })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: [go], decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+    }).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["go.1", "go.2", "rerun.1.place", "go.3"]);
+    expect(shownAt(decide, 3).find((entry) => entry.callId === "rerun.1")?.value).toMatchObject({ ok: false, code: "rerun_place_unreachable" });
+    expect(shownAt(decide, 4).find((entry) => entry.callId === "go.3")?.value).toMatchObject({ ok: true, at: "list-96" });
+  });
+});
+
 // Live run `run-murwcmx2-a1c6edf7` (t194, cause C-D): after the judge refuted
 // the saved Flow's answer, the re-author's `amend_draft rerun step 7` -- the
 // Flow's list read, with a relaxed condition -- ran on results page 5, where the
