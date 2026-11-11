@@ -16,6 +16,7 @@
 import type { FluxNodeActClass, FluxNodeResolvedOptions, FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../../../runtime/action-permission-requests/index.ts";
+import type { AutomationStudioRunOverrides } from "../../../../runtime/run-overrides/index.ts";
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstPersonAskSink } from "../flow-bootstrap-commands/index.ts";
 import { fluxNodeCallerKey } from "./caller-key.ts";
 import type { FluxNodeCheckBridge } from "./events/index.ts";
@@ -39,6 +40,8 @@ export type FluxNodeCallerOptionsInput = {
   judgeChanged?: boolean | undefined;
   /** The FluxNode is pinned: an `auto` run keeps what it changes apart from the pinned Flow (`./pin/`). */
   pinned?: boolean | undefined;
+  /** The overrides frame the run sets around the attempt, kept so a person's press on the attempt goes on under it. Never holds a secret. */
+  runOverrides?: AutomationStudioRunOverrides | undefined;
 };
 
 export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): AutomationStudioAnswerFirstCallerOptions {
@@ -54,7 +57,8 @@ export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): Automa
     ...(options.humanness === undefined ? {} : { humanness: options.humanness }),
     personAsk: input.personAsk,
     scope: { permittedConsequences, ...(spec.scope.sites === undefined ? {} : { sites: [...spec.scope.sites] }) },
-    inputs: structuredClone(input.inputs)
+    inputs: structuredClone(input.inputs),
+    ...(input.runOverrides === undefined ? {} : { runOverrides: structuredClone(input.runOverrides) })
   };
 }
 

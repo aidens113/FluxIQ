@@ -80,7 +80,7 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   const pinned = await context.pins?.begin(registered, options.mode, run.runId);
   // The Flow the attempt works in: the FluxNode's own, or beside it while it is pinned.
   const on: FluxNodeRegisteredSpec = pinned ? { ...registered, flowId: pinned.flowId } : registered;
-  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin });
+  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin, runOverrides: frame });
   const goal = fillFluxNodeGoal(spec.goal, fluxNodeSecretGoalInputs(inputs, secrets.names));
   if (!goal.ok) throw new Error(`fluxnode.goal_unfilled: ${goal.issues.map((issue) => issue.code).join(", ")}`);
   const attempt = { over: false };

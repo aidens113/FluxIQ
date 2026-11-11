@@ -6,13 +6,16 @@
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstKeptCallerOptions } from "../../flow-bootstrap-commands/index.ts";
 
 export function automationStudioAnswerFirstKeptCallerOptions(options: AutomationStudioAnswerFirstCallerOptions): AutomationStudioAnswerFirstKeptCallerOptions {
-  const { taskKey, model, budgetUsd, judge, scope, inputs } = options;
+  const { taskKey, model, budgetUsd, judge, scope, inputs, runOverrides, humanness } = options;
   return structuredClone({
     ...(taskKey === undefined ? {} : { taskKey }),
     ...(model === undefined ? {} : { model }),
     ...(budgetUsd === undefined ? {} : { budgetUsd }),
     ...(judge === undefined ? {} : { judge }),
     ...(scope === undefined ? {} : { scope }),
-    ...(inputs === undefined ? {} : { inputs })
+    ...(inputs === undefined ? {} : { inputs }),
+    ...(runOverrides === undefined ? {} : { runOverrides }),
+    // The person's chosen humanness goes on under a press too (I1): a press is the same attempt, paced the same way.
+    ...(humanness === undefined ? {} : { humanness })
   });
 }

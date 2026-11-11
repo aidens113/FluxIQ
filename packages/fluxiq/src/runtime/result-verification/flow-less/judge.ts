@@ -111,6 +111,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
           ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
+          ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
           signal,
           metadata: { source: SOURCE, expectedOutput: "diagnosis" }
         })
