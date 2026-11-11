@@ -110,7 +110,7 @@ import {
 import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-authoring/draft/carried-step/index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
-import { automationStudioFlowDraftReplaySteps } from "./replay/draft.ts";
+import { automationStudioFlowDraftReplaySteps, type AutomationStudioFlowDraftReplayStepsInput } from "./replay/draft.ts";
 import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "./replay/index.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES, automationStudioNodeReplayResetCall, automationStudioNodeReplayToolId } from "./replay/replay.ts";
 
@@ -168,6 +168,13 @@ export async function automationStudioNodeRerunFromItsPlace(input: {
    */
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
   definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
+  /**
+   * Which plan part each step serves, and the columns the instruction names, as the dry run is given them: a read done
+   * again sends the record output its saved Flow node has (`./replay/replay.ts`), so the put-back stores its rows where
+   * the dry run and the forward run do, and declares the person's columns. Absent, a read is sent as before.
+   */
+  partOf?: AutomationStudioFlowDraftReplayStepsInput["partOf"];
+  namedColumns?: AutomationStudioFlowDraftReplayStepsInput["namedColumns"];
   signal?: AbortSignal | undefined;
 }): Promise<AutomationStudioNodeRerunPlace> {
   const placeOf = (step: AutomationStudioFlowDraftStep): JsonObject | undefined =>
@@ -263,6 +270,8 @@ async function redo(input: RerunPlaceInput, run: readonly AutomationStudioFlowDr
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
     ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
+    ...(input.partOf ? { partOf: input.partOf } : {}),
+    ...(input.namedColumns ? { namedColumns: input.namedColumns } : {}),
     // Every step of the run follows the one before it from the place the reset
     // put back, so asking one again "on its own page" would reset away the others.
     reanchor: false

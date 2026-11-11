@@ -663,6 +663,13 @@ describe("a span that repeats while its own last step succeeds", () => {
     const refused = assemblePaged(pressing);
     expect(refused.plan).toBeUndefined();
     expect(refused.issues.map((issue) => issue.code)).toContain("flow_draft.repeat_while_never_ends");
+    // Run `run-mwblz4aq-0baa810a`: the way out names the library's nodes that answer ended, read from the
+    // registry, and never offers most -- a count the person did not give caps the loop rather than ending it.
+    const message = refused.issues.find((issue) => issue.code === "flow_draft.repeat_while_never_ends")!.message;
+    expect(message).toContain("A loop ends when its last step answers ended because there is nothing more");
+    expect(message).toContain('(in this library: web.output.dom-next_page, "Next Page")');
+    expect(message).toContain("amend_draft unrepeat on step 2");
+    expect(message).not.toMatch(/most set to|with most|add `?repeat most/u);
 
     const bounded = assemblePaged(pressing.map((draftStep) => draftStep.id === "d2" ? { ...draftStep, routing: { kind: "repeat", through: "d3", while: "d3", most: 5 } as const } : draftStep));
     expect(bounded.issues.filter((issue) => issue.severity === "error")).toEqual([]);

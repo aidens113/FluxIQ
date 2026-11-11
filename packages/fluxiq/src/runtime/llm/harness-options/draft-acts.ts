@@ -38,11 +38,25 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./index.ts";
 // column and every such read sits before the last kept step carrying `acts`,
 // the same note entry says so instead, naming that act step and never the
 // read. Never both: a column no read gives wins.
+//
+// **A loop that could end only by failing is refused as it is written (run
+// `run-mwblz4aq-0baa810a`).** A repeat that runs its span again while the
+// span's last step succeeds ends when that step answers ended because there is
+// nothing more; a press can answer no such route. Assembly refuses that loop
+// (`flow_draft.repeat_while_never_ends`), but under answer-first assembly comes
+// after the answer, and the model never saw it: that run capped a press at 20
+// passes and spent 19 on nothing. So `loopNeverEnds` asks assembly itself, on
+// the draft as the amendment left it, and hands its own sentence -- which names
+// this library's nodes that do end a loop -- to the amendment, which is taken
+// back and refused `repeat_never_ends` (`../../flow-authoring/draft/amendment/apply.ts`).
+// Asking assembly rather than restating its rule is what makes the refusal
+// come exactly when the Flow's would: no ending and no `most` the person gave.
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
-import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposable } from "../../flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftLoopNeverEnds, AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed } from "../../flow-authoring/draft/index.ts";
 import {
+  assembleAutomationStudioFlowDraftPlan,
   automationStudioFlowBootstrapDraftUnreadColumnsSentence,
   automationStudioInstructedActClaimVerdict,
   automationStudioInstructedActsChecklist,
@@ -52,13 +66,20 @@ import {
 } from "../../flow-authoring/bootstrap/index.ts";
 import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 import { automationStudioFlowBootstrapDraftRoute } from "./draft-route.ts";
-import { automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
+import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
+
+/** Assembly's code for a repeat whose last step can answer no route that ends it (`flow-authoring/bootstrap/authoring/draft-routing.ts`). */
+const REPEAT_NEVER_ENDS_CODE = "flow_draft.repeat_while_never_ends";
+
+/** The summary the loop check assembles the draft under: assembly needs one, and nothing reads it. */
+const LOOP_CHECK_SUMMARY = "The draft as it stands, assembled to check one loop.";
 
 /**
  * The loop's act callbacks for one build's instruction and start location: the
  * checklist, the acts not done, and whether a claim stands as it is made
  * (`claimRefused`, week report W1: a claim the act judge would reject is
- * refused there, with the checklist's own sentence, rather than told later).
+ * refused there, with the checklist's own sentence, rather than told later),
+ * and whether a loop a repeat writes can end (`loopNeverEnds`, header).
  */
 export function automationStudioFlowBootstrapDraftActs(input: {
   instructionText?: string | undefined;
@@ -74,6 +95,7 @@ export function automationStudioFlowBootstrapDraftActs(input: {
   acts(steps: readonly AutomationStudioFlowDraftStep[]): JsonValue | undefined;
   actsMissing(steps: readonly AutomationStudioFlowDraftStep[]): readonly string[];
   claimRefused: AutomationStudioFlowDraftClaimRefused;
+  loopNeverEnds: AutomationStudioFlowDraftLoopNeverEnds;
 } & ReturnType<typeof automationStudioFlowBootstrapDraftRoute> {
   const checklist = (steps: readonly AutomationStudioFlowDraftStep[]) =>
     automationStudioInstructedActsChecklist({ instructionText: input.instructionText, draftSteps: steps, startLocation: input.startLocation, arrival: input.arrival });
@@ -85,8 +107,33 @@ export function automationStudioFlowBootstrapDraftActs(input: {
     },
     actsMissing: (steps) => automationStudioInstructedActsNotDone(checklist(steps)),
     claimRefused: (steps, step, act) => automationStudioInstructedActClaimVerdict({ instructionText: input.instructionText, startLocation: input.startLocation, arrival: input.arrival, steps, step, act }),
+    loopNeverEnds: (steps, step) => loopNeverEnds(steps, step, input.registry, input.resolution),
     ...automationStudioFlowBootstrapDraftRoute({ route: input.route, activeInstructions: input.activeInstructions, startLocation: input.startLocation, arrival: input.arrival })
   };
+}
+
+/**
+ * Assembly's own refusal of the repeat on `step` when its loop could end only
+ * by failing, from the draft's steps in the Flow as the completion assembles
+ * them (`./bootstrap-completion.ts`, `fromDraft`), or nothing when it can end,
+ * when assembly refuses it for another reason first, or with no library to
+ * assemble against.
+ */
+function loopNeverEnds(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  step: AutomationStudioFlowDraftStep,
+  registry: AutomationStudioNodeRegistry | undefined,
+  resolution: AutomationStudioNodeRegistryResolution | undefined
+): string | undefined {
+  if (!registry || !resolution) return undefined;
+  const { issues } = assembleAutomationStudioFlowDraftPlan({
+    steps: steps.filter(automationStudioFlowDraftStepIsProposed),
+    write: automationStudioFlowBootstrapDraftNodeStep,
+    registry,
+    resolution,
+    summary: LOOP_CHECK_SUMMARY
+  });
+  return issues.find((issue) => issue.code === REPEAT_NEVER_ENDS_CODE && issue.path === `draft.steps.${step.position}`)?.message;
 }
 
 /** The act with the repeat amendment its todo asks for, when the draft gives one. */

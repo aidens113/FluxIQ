@@ -13,6 +13,8 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { automationStudioFlowDraftSeedFromFlow, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted, automationStudioNodeRerunPlaceOfStep } from "../index.ts";
+import { automationStudioFlowBootstrapInstructionColumns } from "../../../flow-authoring/bootstrap/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
 
 const HOME = "https://bigbox.test/";
 const TOWELS = "https://bigbox.test/p/towels";
@@ -357,5 +359,46 @@ describe("a rerun of a step seeded from a saved Flow", () => {
     expect(place).toEqual({ kind: "put_back", callId: "rerun.5.place", startPage: "seeded_run", doneAgain: [], unknownBefore: 4 });
     expect(automationStudioNodeRerunPlaceNoted(place, { ok: true })).toMatchObject({ rerunPlace: { place: "put_back", notDoneAgain: expect.stringMatching(/step 4 started on/u) } });
     expect(automationStudioNodeRerunPlaceOfStep(place)).toEqual({ kind: "put_back", redone: [], unknownBefore: 4 });
+  });
+});
+
+// The put-back sends a read done again with the record output the dry run and the forward run send it: the saved
+// Flow's, under the plan part a step serves and the columns the person named (`../replay/replay.ts`). Before, it
+// sent neither, so a read put back stored its rows under every field it read, in a list the Flow never writes.
+// A kind of site no realistic scenario is: a lending library's catalogue, an atlas reserved from its list.
+describe("a read the put-back does again", () => {
+  const definitions = webDomainNodeDefinitionsFixture();
+  const list = definitions.find((definition) => definition.id === "web.output.dom-extract_list")!;
+  const SHELF = "https://library.test/atlases";
+  const readCall = { node: list.id, parameters: { extractList: { item: ".atlas", fields: { title: ".t", year: ".y", link: "a@href" } } }, consequences: [] };
+  const steps: AutomationStudioFlowDraftStep[] = [
+    { position: 1, id: "d1", iteration: 1, actionId: list.id, toolId: "core.run_node", input: structuredClone(readCall), ranWith: structuredClone(readCall), effect: "observe", effectApplied: true, disposition: "kept", proposes: true, replay: { from: { location: SHELF } } },
+    { position: 2, id: "d2", iteration: 2, actionId: "node.reserve", toolId: "core.run_node", input: { node: "node.reserve", parameters: {}, consequences: [] }, ranWith: { node: "node.reserve", parameters: {}, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept", proposes: true, replay: { from: { location: SHELF } } }
+  ];
+
+  async function putBack(given: { namedColumns?: readonly string[]; partOf?: (stepId: string) => { id: string; columns: readonly string[] } | undefined }) {
+    const sent: JsonObject[] = [];
+    const executeTool = async ({ value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      if (value.node === list.id) sent.push(value);
+      return answer("core.replay.replayed", value.replay === "reset");
+    };
+    const place = await automationStudioNodeRerunFromItsPlace({ step: steps[1]!, steps, now: "elsewhere", callId: "rerun.2", executeTool, definitionOf: (id) => definitions.find((definition) => definition.id === id), ...given });
+    expect(place).toMatchObject({ kind: "put_back", doneAgain: [{ step: 1, outcome: "replayed" }] });
+    expect(sent).toHaveLength(1);
+    const output = (sent[0]!.parameters as JsonObject).recordOutput as { datasetId: string; schema: { fields: { id: string }[] } };
+    return { datasetId: output.datasetId, columns: output.schema.fields.map((field) => field.id) };
+  }
+
+  it("declares the columns the person named, as the dry run's read does", async () => {
+    const named = automationStudioFlowBootstrapInstructionColumns("Reserve the atlas. Give me a table with columns title and year.");
+    expect((await putBack({})).columns).toEqual(["title", "year", "link"]);
+    expect((await putBack({ namedColumns: named })).columns).toEqual(["title", "year"]);
+  });
+
+  it("writes the list of the plan part its step serves, as the dry run's read does", async () => {
+    const plain = await putBack({});
+    const part = await putBack({ partOf: (stepId) => (stepId === "d1" ? { id: "atlases", columns: ["title"] } : undefined) });
+    expect(part.columns).toEqual(["title"]);
+    expect(part.datasetId).not.toBe(plain.datasetId);
   });
 });

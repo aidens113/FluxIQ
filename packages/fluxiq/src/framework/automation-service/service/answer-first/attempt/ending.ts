@@ -20,6 +20,8 @@ import { automationStudioAnswerFirstEnding } from "../../../../../runtime/answer
 import { emitAutomationStudioAttemptEnded } from "../../../../../runtime/automation-activity/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts";
+import { automationStudioAnswerFirstReplayKept } from "../completion/index.ts";
+import { automationStudioAnswerFirstStandIn } from "../flow-run/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING, AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
@@ -38,6 +40,8 @@ const SESSION_END = { achieved: "succeeded", taken_unverified: "succeeded", budg
 
 export async function automationStudioAnswerFirstFinish(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding): Promise<AutomationStudioGenerateFlowBootstrapAdaptationAnswered> {
   const { input } = run;
+  // The step the saved Flow broke at leaves it where this attempt put its fix in the Flow, before the path reads the Flow and anything saves it (`../flow-run/stand-in.ts`).
+  automationStudioAnswerFirstStandIn(run);
   run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
   await run.witnesses.atEnd();
   const flushed = await flushedRecord(run);
@@ -108,6 +112,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),
       ...(draftKept === undefined ? {} : { draftKept }),
+      ...automationStudioAnswerFirstReplayKept(run.completion.state),
       // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
       steps: run.steps
     });

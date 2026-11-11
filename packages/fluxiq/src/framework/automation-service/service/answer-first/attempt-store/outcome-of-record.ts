@@ -29,6 +29,8 @@ export function automationStudioAnswerFirstOutcomeOfRecord(records: readonly Aut
   if (!checkAutomationStudioTaskAttemptResult(attempt, outcome.result).ok) throw new AutomationStudioAnswerFirstAttemptsUnreadable(flowId);
   const saved = savedOf(record, attempt, flowId);
   if (saved) outcome.saved = saved;
+  // How its replay of the saved Flow was checked, where it closed one (`../completion/replay-verdict.ts`, t897).
+  if (record.replay) outcome.replay = { ...record.replay };
   const earlier = records.slice(0, at).filter((each) => each.attempt.taskId === attempt.taskId && each.attempt.endedAtMs !== undefined).at(-1);
   if (earlier) outcome.comparedTo = attemptOf(earlier.attempt, flowId);
   return outcome;
