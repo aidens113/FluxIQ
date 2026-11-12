@@ -13,7 +13,7 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 
 ## Current State
 
-**P2c registry assigned (2026-11-12).** Task t910 owns only the runtime bundle registry foundation and its local tests/architecture row in runtime/automation-runtimes. A Sol Medium worker is implementing phase 1 from p2c-multi-runtime-design.md. No service routing or multi-runtime execution is claimed; those phases remain dependent on the active result/security lanes. Lead owns integration and independent verification.
+**P2c registry validated (2026-11-12).** Task t910 implements only the runtime bundle registry foundation and local tests/architecture row. Lead independently passed 22 tests, the fluxiq package check and structure audit. Registered/fallback provenance is immutable; dual-role objects are allowed within one owner and refused across owners. Guard authority is explicit and fails closed when unknown. Package version is 0.49.0; no package publication. Service selection and guard call-site integration remain later phases, so this is not multi-runtime execution acceptance. The unit is ready for task integration.
 
 **P5 integrated (2026-11-12).** Managed browser hosts are merged into Core dev a47f7dcf0 and downstream dev 01a01946a. Final-source provider-free proof returned ten exact datasets with eight zero-call predecessor-Flow replays and all fourteen lifecycle checks. Core finish passed70 mandatory contracts; affected typechecks/tests and both audits passed before integration. Public package versions: fluxiq0.48.0, contracts0.21.0, SDK0.4.0, gateway-websocket0.2.0. No package publication or main promotion. Result/source work, local-only security recovery, P2c, P3b and simulated environments remain open.
 
@@ -473,6 +473,14 @@ Discovery, 2026-11-09. "AF" is `packages/fluxiq/src/framework/automation-service
 6. **The cloud runs automation on third-party sites from FluxIQ's addresses,** which needs an acceptable-use policy before launch.
 
 ## Work Ledger
+
+### 2026-11-12 - Runtime registry foundation acceptance
+
+- Agent: lead; runtime_registry (Sol Medium).
+- Changed: runtime/automation-runtimes foundation, architecture ownership row, fluxiq 0.49.0. No public export or service routing changed.
+- Validation: `pnpm --filter fluxiq exec vitest run src/runtime/automation-runtimes/tests --maxWorkers 1 --minWorkers 1` -> 3 files / 22 passed, 5.75s; `pnpm --filter fluxiq check` -> exit 0, 14.928s; `node scripts/structure-audit.mjs` -> passed, 544 warnings / 916 baselined, no exemption, combined exit 0. Log TEMP/fluxiq-lead-t910-registry.log.
+- Outcome: both lead review findings fixed: mutable fallback provenance and false same-owner host/node sharing refusal. Guard is an explicit project-authority primitive; actual service wiring and two-runtime execution remain unverified. Worker report records earlier fixture/type/audit failures. Task integration follows.
+
 
 ### 2026-11-12 ? P5 paired integration
 

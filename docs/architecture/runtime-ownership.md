@@ -26,6 +26,7 @@ Core owns every executable capability. Automation Studio is a controller program
 | `runtime/project-agents` | The supervisor, builders and repair agents, and the build record they share |
 | `runtime/recording` | Recording normalization, gateway trace, policy models and the recording controller |
 | `runtime/native-nodes`, `runtime/output-dispatch` | The domain implementation bundle and its hooks; preparing an output action for a domain's target |
+| `runtime/automation-runtimes` | Internal runtime-bundle registry foundation: immutable selection metadata, identity-preserving fallback slots, atomic validation and a project-authority fallback guard primitive; service selection and guard call-site integration are still required |
 | `framework/automation-service` | The automation service: the project, Flow, run, recording, dataset and conversation operations every endpoint calls; the executor wiring, node pack and the public `fluxiq/automation` entry |
 | `framework/persistence/automation` | Project catalog, canonical stores, schema migrations, indexes, ownership and the state index |
 | `api-contracts/automation`, `@fluxiq/contracts/automation` | Endpoint names, request and response contracts, and the browser-safe shared contract |
