@@ -13,6 +13,7 @@ import { resolveFluxNodeOptions, type FluxNodeVerdict } from "@fluxiq/contracts/
 import { PipelineError, PipelineRejectedError, compilePipeline, runCompiledPipelineFlow, type PipelineRunContext, type PipelineRunOutcome } from "../../pipelines/index.ts";
 import type { FluxNodeRun } from "../fluxnode-run.ts";
 import type { FluxNodeRunOutcome } from "../run-fluxnode.ts";
+import { fluxNodePipelineSourceOf, fluxNodeExecutionTargets } from "../act-scope/index.ts";
 import { fluxNodeFlowCaller } from "./fluxnode-flow-caller.ts";
 import type { FluxNodePipelineContext } from "./fluxnode-pipeline-context.ts";
 import { PipelineCallEnded } from "./call-ended.ts";
@@ -32,14 +33,18 @@ export async function runFluxNodePipeline(context: FluxNodePipelineContext, run:
   const options = resolveFluxNodeOptions(undefined, run.carried.options);
   run.budgetUsd = options.budgetUsd;
   const spend = new PipelineSpend();
+  const targets = await fluxNodeExecutionTargets(registered, context.flows, run.carried.targets);
+  if ("problem" in targets) throw targets.problem;
   // The secret values record fields give mapped calls, withheld from here on everywhere the pipeline keeps or shows them (`./pipeline-secrets.ts`).
   const secrets = new PipelineSecrets((texts) => run.withhold(texts));
+  const source = await fluxNodePipelineSourceOf({ ...context, flows: targets.flows }, run, registered, secrets);
   const abort = new AbortController();
   run.whenStopped(() => abort.abort());
   const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => run.stop("The run's time ran out."), options.timeoutMs);
   const ports: PipelineRunContext["ports"] = {
-    callFlow: fluxNodeFlowCaller({ flows: context.flows, runChild: context.runChild, parent: run, spend, secrets }),
-    writeDataset: withheldDatasetWriter(context.datasets.writerFor(run.runId), secrets), readDataset: context.datasets.read, state: await fluxNodePipelineStateWithoutSecrets(context.state, pipeline, context.flows), sdk: pipelineSdkPort(run), now: context.now,
+    callFlow: fluxNodeFlowCaller({ flows: targets.flows, runChild: context.runChild, parent: run, spend, secrets }),
+    writeDataset: withheldDatasetWriter(context.datasets.writerFor(run.runId), secrets), readDataset: (dataset) => source.readDataset(dataset), sourceSnapshot: (load) => source.read(load),
+    state: await fluxNodePipelineStateWithoutSecrets(context.state, pipeline, targets.flows), sdk: pipelineSdkPort(run), now: context.now,
     ...(context.fetch === undefined ? {} : { fetch: context.fetch }), ...(context.writeFile === undefined ? {} : { writeFile: context.writeFile })
   };
   const finished = (fields: Omit<PipelineResultInput, "run" | "registered" | "path" | "cost" | "resumeHandle" | "endedAt">): FluxNodeRunOutcome => ({
@@ -47,7 +52,7 @@ export async function runFluxNodePipeline(context: FluxNodePipelineContext, run:
   });
   try {
     if (run.stopRequested) return finished({ status: "stopped" });
-    const outcome: PipelineRunOutcome = await runCompiledPipelineFlow(compilePipeline(pipeline), { runId: run.runId, flowId: registered.flowId, projectId: registered.projectId, pipeline: registered.name, inputs: run.carried.inputs, ports, signal: abort.signal });
+    const outcome: PipelineRunOutcome = await secrets.within(() => runCompiledPipelineFlow(compilePipeline(pipeline), { runId: run.runId, flowId: registered.flowId, projectId: registered.projectId, pipeline: registered.name, inputs: run.carried.inputs, ports, signal: abort.signal }));
     const verdict: FluxNodeVerdict = pipeline.outputs === undefined ? { label: "unverified" } : { label: "confirmed", by: "type" };
     return finished({ status: "achieved", records: outcome.records, datasets: outcome.datasets, verdict });
   } catch (error) {

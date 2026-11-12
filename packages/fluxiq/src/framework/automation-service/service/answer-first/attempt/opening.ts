@@ -1,6 +1,6 @@
 // What a new attempt finds of its task (design, "Route" and "What carries between attempts").
-// Nothing here can stop a task: a memory, a row or an act record that cannot be read reads as
-// nothing, and the attempt then starts as a first one would.
+// Legacy unscoped memory that cannot be read starts fresh. Scoped execution state must read,
+// because forgetting it could repeat a lasting act.
 //
 // **Where it starts.** Saved steps are assembled now, against the binding as it stands, and the
 // route is read from that (`../route/`), with what the assembly refused where they did not. `related` is the steps of this Flow's latest attempt at
@@ -18,9 +18,9 @@
 //
 // **A caller's act scope bounds it** (`actScope`; a FluxNode run's, `../../fluxnode/act-scope/`). Each
 // run of a FluxNode is its own execution of one task, so only the record of an attempt that ran under the
-// same scope is carried, told by the scope its kept caller options name; any other record is another
-// execution's, and the attempt starts with an empty one, so its acts land. The task, and so the saved Flow
-// it replays, is the same. A record whose attempt's scope is no longer known is another execution's. The
+// same scope is carried, from its durable `actsByScope` entry. The latest slot is a legacy fallback only
+// when its kept caller options prove that scope; any other record is another execution's. The task, and
+// so the saved Flow it replays, is the same. Scoped entries outlive trimmed attempt provenance. The
 // chat gives no scope, and the same words carry what landed as above.
 //
 // **A person's Run again starts with nothing carried** (`../run-again/`): that press is what means
@@ -71,7 +71,7 @@ export async function automationStudioAnswerFirstOpening(input: AutomationStudio
   // A caller that names its task (a FluxNode's name and spec hash) is known by that, whatever its words (`../task-key/task-key.ts`).
   const taskId = again?.taskId ?? automationStudioAnswerFirstTaskKey({ instructionText: automationStudioAnswerFirstTaskWords(input), startLocation: input.startLocation, callerKey: input.caller?.taskKey });
   const memory = automationStudioAnswerFirstTaskMemoryOf(input.owner, input.stores);
-  const kept = await readOrNothing(() => memory.get(projectId, taskId));
+  const kept = input.caller?.actScope === undefined ? await readOrNothing(() => memory.get(projectId, taskId)) : await memory.get(projectId, taskId, { scoped: true });
   const rows = (await readOrNothing(() => stores.store.list(projectId, flowId))) ?? [];
   const route = await routeOf(input, taskId, kept, rows);
   const here = await automationStudioAnswerFirstBestEffort(() => stores.acts.get(projectId, flowId));
@@ -116,6 +116,8 @@ function ordinalOf(taskId: string, kept: AutomationStudioAnswerFirstTaskMemory |
  * Under an act scope, only an attempt of that scope's (header).
  */
 async function seedOf(projectId: string, kept: AutomationStudioAnswerFirstTaskMemory | undefined, stores: Stores, scope: string | undefined): Promise<{ data: AutomationStudioAttemptActRecordData; from?: string } | undefined> {
+  const scoped = scope !== undefined && kept?.actsByScope && Object.hasOwn(kept.actsByScope, scope) ? kept.actsByScope[scope] : undefined;
+  if (scoped) return seeded(automationStudioAttemptActSeed(scoped), scoped.earlier ? undefined : scoped.attemptId);
   const ours = (attemptId: string): boolean => scope === undefined || kept?.attempts.find((attempt) => attempt.attemptId === attemptId)?.caller?.actScope === scope;
   const held = kept?.acts;
   if (held && ours(held.attemptId)) return seeded(automationStudioAttemptActSeed({ data: held.data, earlier: held.earlier }), held.earlier ? undefined : held.attemptId);

@@ -3,7 +3,7 @@
 Status: Active
 Status detail: Revised 2026-11-09 with the user's second direction; execution started the same day (Wave 1).
 Created: 2026-11-09
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 Owner: Senior supervisor agent
 Scope: The framework pivot. FluxNode becomes Core's main offering (a scoped automation a developer declares in code and runs on Core's engine). "Subflow" retires, so everything is a Flow in a project's folders. Data pipelines become first-class. One key-based access system covers every client. The panel is redesigned for setup, monitoring, security and an easy editor, with a panel-wide assistant. Simulated Android, Linux and Windows test environments are built, and the cloud comes later. The extension's finish, the managed browser host and the web Lab lane are owned by the paired document.
 Paired document: `C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-seal-plan.md`
@@ -463,6 +463,14 @@ Discovery, 2026-11-09. "AF" is `packages/fluxiq/src/framework/automation-service
 6. **The cloud runs automation on third-party sites from FluxIQ's addresses,** which needs an acceptable-use policy before launch.
 
 ## Work Ledger
+
+### 2026-11-12 - Durable scope, source and target acceptance
+
+- Agent: Codex lead; act_scope and act_scope_resume (Sol Max).
+- Changed: durable scoped act records, exclusive execution ownership, atomic task documents, immutable source references, original task and reachable target binding; architecture documentation.
+- Validation: lead `pnpm --filter fluxiq exec vitest run src/framework/automation-service/service/fluxnode/act-scope/tests/pipeline-source.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/source-continuation.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/source-secrets.test.ts src/framework/automation-service/service/fluxnode/tests/corrupt-scoped-memory.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/scoped-memory.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/execution-targets.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/execution-task.test.ts src/framework/automation-service/service/fluxnode/tests/pin-act-scope.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/pipeline-runs.test.ts --maxWorkers=1 --minWorkers=1` -> 9 files / 31 passed, exit 0, 130.21s. Earlier independent storage 27 and ownership/settlement 83 passed; worker final package check and full structure audit passed (544 warnings / 916 baselined, no growth).
+- Outcome: scoped source accepted for integration, no full sweep, paid run, package publication or main promotion. Downstream report codex-t909-resume.md records prior failures and the exact shared-seam integration patches.
+
 
 ### 2026-11-09 - Plan
 

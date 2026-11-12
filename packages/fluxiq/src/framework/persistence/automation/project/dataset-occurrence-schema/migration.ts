@@ -1,5 +1,5 @@
-import type { AutomationStudioSchemaMigration } from "../../../schema-migrations.ts";
-import { foreignKeyGuards } from "../foreign-key-guards.ts";
+import type { AutomationStudioSchemaMigration } from "../../schema-migrations.ts";
+import { foreignKeyGuards } from "../schema/foreign-key-guards.ts";
 
 /** Independent of run datasets: immutable source occurrences never fabricate a runtime session. */
 export const AUTOMATION_STUDIO_PROJECT_DATASET_SNAPSHOT_MIGRATION: AutomationStudioSchemaMigration = {

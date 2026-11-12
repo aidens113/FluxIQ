@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What a task remembers: kept on disk and in memory, safe against an unreadable file and against
 // two writes at once, capped, with its notes screened, and an index from attempt to task.
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -27,11 +28,37 @@ const withAttempt = (attemptId: string, flowId = "flow.1") => (memory: Automatio
 const withNote = (words: { worked?: string; failed?: string; quirks?: string }, attemptId = "attempt.1") => (memory: AutomationStudioAnswerFirstTaskMemory): AutomationStudioAnswerFirstTaskMemory => ({ ...memory, notes: [...memory.notes, { attemptId, atMs: 1, from: "model", ...words }] });
 
 describe("the task memory", () => {
+  it("distinguishes missing scoped state from corrupt state without resetting it, while legacy reads retain recovery", async () => {
+    const { store, tasks } = await onDisk();
+    await expect(store.get("project.1", "missing", { scoped: true })).resolves.toBeUndefined();
+    const file = path.join(tasks, "task.a.json");
+    await writeFile(file, "{ malformed");
+    const failure = await store.get("project.1", "task.a", { scoped: true }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).cause).toBeInstanceOf(Error);
+    await expect(store.update("project.1", "task.a", withAttempt("new"), { scoped: true })).rejects.toThrow("stored execution state");
+    expect(await readFile(file, "utf8")).toBe("{ malformed");
+    await expect(store.get("project.1", "task.a")).resolves.toBeUndefined();
+    await store.update("project.1", "task.a", withAttempt("legacy"));
+    expect(await readdir(tasks)).toContain("task.a.json.unreadable");
+  });
+
+  it("never silently drops invalid scoped acts or source references during a strict read or replacement", async () => {
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    const store = inMemory();
+    await store.update("project.1", "acts", (memory) => ({ ...memory, actsByScope: { key: { attemptId: "a", flowId: "f", data: { ...data, schemaVersion: 2 } as unknown as typeof data } } }));
+    await expect(store.get("project.1", "acts", { scoped: true })).rejects.toThrow("stored execution state");
+    await store.update("project.1", "source", (memory) => ({ ...memory, pipelineSourcesByScope: { key: { snapshotId: "old", count: -1 } } }));
+    await expect(store.get("project.1", "source", { scoped: true })).rejects.toThrow("stored execution state");
+    await expect(store.update("project.1", "new", (memory) => ({ ...memory, pipelineSourcesByScope: { key: { snapshotId: "old", count: -1 } } }), { scoped: true })).rejects.toThrow("replacement execution state");
+    await expect(store.get("project.1", "new", { scoped: true })).resolves.toBeUndefined();
+  });
+
   it("round-trips on disk, one file per task under the project, and reads back from a new store", async () => {
     const { store, paths, tasks } = await onDisk();
     await store.update("project.1", "task.a", withAttempt("attempt.1"));
     await store.update("project.1", "task.b", withAttempt("attempt.2"));
-    expect((await readdir(tasks)).sort()).toEqual(["attempt-index.json", "task.a.json", "task.b.json"]);
+    expect((await readdir(tasks)).sort()).toEqual([".document-locks", "attempt-index.json", "task.a.json", "task.b.json"]);
     const again = new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS);
     await expect(again.get("project.1", "task.a")).resolves.toMatchObject({ taskId: "task.a", flowId: "flow.1", attempts: [{ attemptId: "attempt.1" }] });
     await expect(again.get("project.1", "task.none")).resolves.toBeUndefined();
@@ -58,7 +85,7 @@ describe("the task memory", () => {
     await writeFile(path.join(tasks, "task.a.json"), JSON.stringify({ version: 1, data: { kind: "something_else" } }));
     await writeFile(path.join(tasks, "attempt-index.json"), "garbage");
     await store.update("project.1", "task.a", withAttempt("attempt.1"));
-    expect((await readdir(tasks)).sort()).toEqual(["attempt-index.json", "attempt-index.json.unreadable", "task.a.json", "task.a.json.unreadable"]);
+    expect((await readdir(tasks)).sort()).toEqual([".document-locks", "attempt-index.json", "attempt-index.json.unreadable", "task.a.json", "task.a.json.unreadable"]);
     await expect(store.attemptLocation("project.1", "attempt.1")).resolves.toEqual({ taskId: "task.a", flowId: "flow.1" });
   });
 
@@ -69,6 +96,41 @@ describe("the task memory", () => {
       expect(kept?.attempts.map((each) => each.attemptId).sort()).toEqual(Array.from({ length: 12 }, (_, at) => `attempt.${at}`).sort());
       for (let at = 0; at < 12; at += 1) await expect(store.attemptLocation("project.1", `attempt.${at}`)).resolves.toEqual({ taskId: "task.a", flowId: "flow.1" });
     }
+  });
+
+  it("retains both scope records when separate store instances update the same persisted task concurrently", async () => {
+    const { store, paths } = await onDisk();
+    const other = new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS);
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    await store.update("project.1", "task.a", withAttempt("initial"));
+    await Promise.all([store, other].map((owner, at) => owner.update("project.1", "task.a", (memory) => ({
+      ...memory, actsByScope: { ...memory.actsByScope, [`scope.${at}`]: { attemptId: `a.${at}`, flowId: "f", data } },
+      pipelineSourcesByScope: { ...memory.pipelineSourcesByScope, [`scope.${at}`]: { snapshotId: `snapshot.${at}`, count: at + 1 } },
+      attempts: [...memory.attempts, provenance(`a.${at}`, "f")]
+    }), { scoped: true })));
+    const kept = await new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS).get("project.1", "task.a", { scoped: true });
+    expect(Object.keys(kept?.actsByScope ?? {}).sort()).toEqual(["scope.0", "scope.1"]);
+    expect(Object.keys(kept?.pipelineSourcesByScope ?? {}).sort()).toEqual(["scope.0", "scope.1"]);
+    expect(await store.attemptLocation("project.1", "a.0")).toEqual({ taskId: "task.a", flowId: "f" });
+    expect(await store.attemptLocation("project.1", "a.1")).toEqual({ taskId: "task.a", flowId: "f" });
+  });
+
+  it("uses the existing layout-v2 owner transaction for concurrent acts and source references", async () => {
+    const { dir } = await onDisk();
+    await writeFile(path.join(dir, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+    const paths = new AutomationStudioProjectPaths(path.join(dir, "artifacts", "automation-studio", "projects"));
+    const stores = [new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS), new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS)];
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    await Promise.all(stores.map((store, at) => store.update("project.1", "task.a", (memory) => ({
+      ...memory, actsByScope: { ...memory.actsByScope, [`scope.${at}`]: { attemptId: `a.${at}`, flowId: "f", data } },
+      pipelineSourcesByScope: { ...memory.pipelineSourcesByScope, [`scope.${at}`]: { snapshotId: `snapshot.${at}`, count: at + 1 } },
+      attempts: [...memory.attempts, provenance(`a.${at}`, "f")]
+    }), { scoped: true })));
+    const kept = await stores[0]!.get("project.1", "task.a", { scoped: true });
+    expect(Object.keys(kept?.actsByScope ?? {}).sort()).toEqual(["scope.0", "scope.1"]);
+    expect(Object.keys(kept?.pipelineSourcesByScope ?? {}).sort()).toEqual(["scope.0", "scope.1"]);
+    expect(await stores[0]!.attemptLocation("project.1", "a.0")).toEqual({ taskId: "task.a", flowId: "f" });
+    expect(await stores[0]!.attemptLocation("project.1", "a.1")).toEqual({ taskId: "task.a", flowId: "f" });
   });
 
   it("keeps the last 10 notes and the last 100 attempts", async () => {
@@ -133,6 +195,36 @@ describe("the task memory", () => {
     // A later write that leaves it as it is keeps it.
     await again.update("project.1", "task.a", withAttempt("attempt.3"));
     await expect(again.get("project.1", "task.a")).resolves.toMatchObject({ humanness: 40 });
+  });
+
+  it("serializes distinct execution records without losing one, and keeps them beyond the provenance window", async () => {
+    const { store, paths } = await onDisk();
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    const scopes = ["__proto__", "constructor", ...Array.from({ length: 10 }, (_, at) => `scope.${at}`)];
+    await Promise.all(scopes.map((scope) => store.update("project.1", "task.a", (memory) => ({
+      ...memory, actsByScope: { ...memory.actsByScope, [scope]: { attemptId: `attempt.${scope}`, flowId: "flow.1", data } }
+    }))));
+    await store.update("project.1", "task.a", (memory) => ({ ...memory, attempts: Array.from({ length: 105 }, (_, at) => provenance(`later.${at}`)) }));
+    const again = new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS);
+    const kept = await again.get("project.1", "task.a");
+    expect(kept?.attempts).toHaveLength(100);
+    expect(Object.keys(kept?.actsByScope ?? {}).sort()).toEqual([...scopes].sort());
+    for (const scope of scopes) expect(kept?.actsByScope?.[scope]).toEqual({ attemptId: `attempt.${scope}`, flowId: "flow.1", data });
+  });
+
+  it("reads each execution record independently and preserves legacy task files", async () => {
+    const { store, tasks } = await onDisk();
+    const data = { kind: "attempt_act_record" as const, schemaVersion: 1 as const, acts: [], rows: [] };
+    await store.update("project.1", "task.a", (memory) => ({ ...memory, actsByScope: { good: { attemptId: "attempt.1", flowId: "flow.1", data } } }));
+    const file = path.join(tasks, "task.a.json");
+    const written = JSON.parse(await readFile(file, "utf8"));
+    written.data.memory.actsByScope.bad = { attemptId: "attempt.bad", flowId: "flow.1", data: { kind: "broken" } };
+    await writeFile(file, JSON.stringify(written));
+    const kept = await store.get("project.1", "task.a");
+    expect(Object.keys(kept?.actsByScope ?? {})).toEqual(["good"]);
+    expect(kept?.actsByScope?.good?.data).toEqual(data);
+    await store.update("project.1", "task.legacy", withAttempt("attempt.legacy"));
+    expect(await store.get("project.1", "task.legacy")).not.toHaveProperty("actsByScope");
   });
 
   it("reads and writes a task with no level exactly as before", async () => {

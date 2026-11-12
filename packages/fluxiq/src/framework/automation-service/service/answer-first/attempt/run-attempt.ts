@@ -153,10 +153,18 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   // The instruction is the person's: Core refuses to save or count one written from a command's argument (`../../flow-bootstrap-commands/save-goal.ts`, `../../instruction-led/task.ts`).
   const asked = automationStudioAnswerFirstAskedRepeats(input.instructionText);
   // The same answer as the loop's `askedRepeats` (`./round.ts`), so the record and the detector agree on how many of one act the person asked for.
-  // The Flow's store must take it, since a press with no record of it is refused; the task's memory is what outlives another task on this Flow, and a write it misses is made by the next.
+  // A scoped execution must durably keep its own record on every write: another run may replace both latest slots before it resumes.
+  // Unscoped chat retains its best-effort task copy; the Flow's store must always take the record before a press.
   const persist = async (data: AutomationStudioAttemptActRecordData): Promise<void> => {
     await acts.save(projectId, flowId, data);
-    await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => ({ ...current, acts: { attemptId, flowId, data, ...(opening.setAside ? { earlier: opening.setAside } : {}) } })));
+    const scope = input.caller?.actScope;
+    const kept = { attemptId, flowId, data, ...(opening.setAside ? { earlier: opening.setAside } : {}) };
+    const save = () => opening.memory.update(projectId, opening.taskId, (current) => ({
+      ...current, acts: kept,
+      ...(scope === undefined ? {} : { actsByScope: { ...current.actsByScope, [scope]: kept } })
+    }), { scoped: scope !== undefined });
+    if (scope === undefined) await automationStudioAnswerFirstBestEffort(save);
+    else await save();
   };
   const record = new AutomationStudioAttemptActRecord({ ...(opening.seed ? { seed: opening.seed } : {}), persist, asked: () => asked(run.claim) });
   input.partActs?.use(record);

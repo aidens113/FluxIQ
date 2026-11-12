@@ -102,7 +102,7 @@ describe("a pipeline maps a FluxNode over records", () => {
     expect(run.asked).toHaveLength(0);
   });
 
-  it("ends stopped with a failed step when the program's callback raises, and when a mapped FluxNode is not registered", async () => {
+  it("ends stopped when the program's callback raises, and refuses an unregistered mapped target before admission", async () => {
     const lane = await fluxNodeLane(cleanups);
     const callback: DataPipelineInput = { name: "demo.raises", source: { kind: "input", field: "rows" }, steps: [{ id: "bad", kind: "transform", callback: "breaks" }] };
     const raised = await lane.run({ pipeline: callback, inputs: { rows: [{ n: 1 }] } }, {
@@ -112,9 +112,10 @@ describe("a pipeline maps a FluxNode over records", () => {
     expect(raised.result.status).toBe("stopped");
     expect(raised.events.find((event) => event.type === "step" && event.state === "failed")).toMatchObject({ label: expect.stringContaining("the callback broke") });
 
-    const unknown = await lane.run({ pipeline: REPORT, inputs: TITLES });
-    expect(unknown.result.status).toBe("stopped");
-    expect(unknown.events.find((event) => event.type === "step" && event.state === "failed")).toMatchObject({ label: expect.stringContaining("No FluxNode named") });
+    const before = await lane.fluxNodes.list(OWNER, { limit: 20 });
+    const unknown = await lane.fluxNodes.start(OWNER, { pipeline: parsedPipeline(REPORT), inputs: TITLES });
+    expect(unknown).toMatchObject({ ok: false, refusal: { code: "invalid_request", message: expect.stringContaining("declared target") } });
+    expect(await lane.fluxNodes.list(OWNER, { limit: 20 })).toEqual(before);
   });
 
   it("ends budget_out with a resume handle when a mapped call's budget is gone, and refuses inputs that do not fit", async () => {

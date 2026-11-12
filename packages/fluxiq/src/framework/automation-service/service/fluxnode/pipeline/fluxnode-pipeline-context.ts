@@ -2,9 +2,11 @@ import type { PipelineFetch, PipelineFileWriter, PipelineState } from "../../pip
 import type { FluxNodeOwnerFlows } from "../owner-flows.ts";
 import type { FluxNodeChildRunner } from "./fluxnode-flow-caller.ts";
 import type { PipelineDatasets } from "./datasets.ts";
+import type { AutomationStudioService } from "../../../service.ts";
 
 /** What a pipeline run is given by the runner that holds it. */
 export type FluxNodePipelineContext = {
+  service: AutomationStudioService;
   flows: Pick<FluxNodeOwnerFlows, "find">;
   runChild: FluxNodeChildRunner;
   datasets: PipelineDatasets;

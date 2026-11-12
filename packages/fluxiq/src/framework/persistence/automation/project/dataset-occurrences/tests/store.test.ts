@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../database.ts";
 import { AutomationStudioProjectDatasetSnapshotStore, type AutomationStudioDatasetSnapshotRow } from "../index.ts";
-import { AUTOMATION_STUDIO_PROJECT_DATASET_SNAPSHOT_MIGRATION } from "../../schema/index.ts";
+import { AUTOMATION_STUDIO_PROJECT_DATASET_SNAPSHOT_MIGRATION } from "../../dataset-occurrence-schema/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 
 let rootDir = "";

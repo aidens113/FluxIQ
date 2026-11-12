@@ -38,6 +38,8 @@ export type FluxNodeCallerOptionsInput = {
   runId: string;
   /** The execution the run's lasting acts belong to (`./act-scope/`). Absent, the run's own. */
   actScope?: string | undefined;
+  /** A continuation keeps the first attempt's task identity, including its explore/pin variant. */
+  taskKey?: string | undefined;
   options: FluxNodeResolvedOptions;
   inputs: JsonObject;
   bridge: FluxNodeCheckBridge | undefined;
@@ -53,9 +55,10 @@ export type FluxNodeCallerOptionsInput = {
 export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): AutomationStudioAnswerFirstCallerOptions {
   const { spec, specHash, options, bridge } = input;
   const permittedConsequences = fluxNodePermittedConsequences(spec.scope.acts);
+  const actScope = input.actScope ?? fluxNodeActScope({ runId: input.runId });
   return {
-    taskKey: fluxNodeCallerKey({ name: spec.name, specHash, ...(options.mode === "explore" ? { explore: input.runId } : { pinned: input.pinned }) }),
-    actScope: input.actScope ?? fluxNodeActScope({ runId: input.runId }),
+    taskKey: input.taskKey ?? fluxNodeCallerKey({ name: spec.name, specHash, ...(options.mode === "explore" ? { explore: actScope } : { pinned: input.pinned }) }),
+    actScope,
     ...(options.model === undefined ? {} : { model: options.model }),
     budgetUsd: options.budgetUsd,
     judge: input.judgeChanged === true && options.judge !== "off" ? "always" : bridge && options.judge === "auto" && !spec.hasCheck ? "always" : options.judge,

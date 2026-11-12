@@ -55,7 +55,7 @@ export function loansWith(library: FakeLibrary, words: unknown): JsonObject[] {
 /** A model's decision to find loans by hand, keeping its rows through a record output a Flow can run again. */
 export const findLoans = (title: string, callId = "find"): JsonObject => runNode(callId, FIND_LOANS, { title, recordOutput: LOANS_OUTPUT }, [], { add: true });
 
-type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject);
+type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject | Promise<JsonObject>);
 
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 
@@ -85,13 +85,14 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     // Past the script nothing would end the attempt but its purse, so the program stops it, as a person would.
     if (current.decided >= current.script.length && fluxNodes) void stopRunning(fluxNodes, current.runId);
     current.decided += 1;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: USAGE };
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? await next(request) : next }, usage: USAGE };
   };
   const provider = mockProvider(answer);
   const priced = options.models ? fluxNodePricedModels(options.models, answer) : undefined;
   const byHand = fakeLibraryBinding(library, ({ value }) => (value.node === FIND_LOANS ? foundByHand(library, value) : undefined));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: priced?.resolver ?? (() => ({ provider })), llmEvidenceRuntime: byHand });
-  service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
+  const makeService = () => {
+    const service = new AutomationStudioService({ dataDir, llmProviderResolver: priced?.resolver ?? (() => ({ provider })), llmEvidenceRuntime: byHand });
+    service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.find", packageVersion: "1.0.0", domainId: "library", nodes: [FIND_NODE] },
     { packageId: "library.find", packageVersion: "1.0.0", implementations: { [FIND_LOANS]: async ({ parameters }) => {
       engineFinds.push(parameters.title);
@@ -109,7 +110,10 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
       return { status: "success", route: "success", outputs: { success: true } };
     } } }
   ));
-  automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
+    automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
+    return service;
+  };
+  let service = makeService();
   const made = () => createFluxNodeService({ service, domainId: "library", modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
   fluxNodes = made();
   cleanups.push(async () => {
@@ -163,7 +167,14 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     return nodes;
   };
 
-  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engineCards, engine, run, arm, restart, served: priced?.served ?? [], priced: priced?.priced ?? [] };
+  /** Closes Core and reopens its persisted project on the same isolated directory; the fake site keeps its state. */
+  const restartCore = async (): Promise<FluxNodeService> => {
+    await service.close();
+    service = makeService();
+    return restart();
+  };
+
+  return { get service() { return service; }, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engineCards, engine, run, arm, restart, restartCore, served: priced?.served ?? [], priced: priced?.priced ?? [] };
 }
 
 /** Stops the run `runId` names, or every run still going where none is named: the program stopping what has no more to try. */
