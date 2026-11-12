@@ -109,6 +109,15 @@ test("the context's file sets include untracked files", (t) => {
   assert.equal(ctx.read("src/untracked.ts"), "");
 });
 
+test("production source in snapshot-named folders still reaches structural rules", (t) => {
+  const file = "src/dataset-snapshots/store.ts";
+  const root = fixture(t, { untracked: { [file]: "x;\n".repeat(801), "tests/ui-snapshots/page.png": "fixture" } });
+  const ctx = createContext({ root, config: {} });
+  assert.deepEqual(ctx.sourceFiles, [file]);
+  assert.deepEqual(ctx.scriptFiles, [file]);
+  assert.ok(runRule(fileLines, ctx).some((finding) => finding.path === file && finding.severity === "fail"));
+});
+
 test("an untracked file over a limit fails: it has no baseline entry, so the ratchet holds it to the limit", (t) => {
   const long = "x;\n".repeat(801);
   const root = fixture(t, { tracked: { "src/old.ts": long }, untracked: { "src/new.ts": long } });
