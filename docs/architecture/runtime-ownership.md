@@ -40,6 +40,32 @@ A full stored Flow document is structurally assignable to the execution contract
 
 Host contracts do not import the engine. No framework area imports Studio, including erased type imports and tests: `importBoundaries` in the structure audit's configuration stops it, and only the program catalog composes Studio. Presentation is supplied per run or scoped context; pure execution can run without a panel.
 
+## Input binding and graph-entry evidence
+
+`runtime/input-basis` owns authenticated normal-input revisions; the service's
+`input-basis` adapter persists their exact private snapshots and authoritative heads.
+An input lease proves a stored binding, not that execution used it.
+
+`engine/automation/input-use` supplies optional graph-entry evidence through an
+explicit run session and a methodless opaque handle. Internal engine integration
+prepares an authenticated copy and uses that same dictionary to initialize actual
+working values. It retains full private child-boundary inputs before public frame
+projection and checks the child handoff at entry. Only the owning session associates
+the real execution traces with closed `graph_entry_inputs` observations.
+
+Missing authority, active secrets, unsupported values, stale producers, foreign
+handoffs and seeded continuation remain unknown. An initially unknown observation
+cannot become sealed later. Cancellation invalidates proof and closes live leases;
+final freshness cancellation preserves any trace and landed-act evidence already
+produced. Late cleanup failure cannot create an unhandled rejection or replace the
+settled execution. With no input-use handle, ordinary execution keeps its timing and
+input behavior.
+
+This internal foundation has no service producer adapter or replay exemption. It
+does not prove later resolved/default/wired/refreshed node inputs, secret continuity,
+durable child occurrence identity, result correctness or whole-execution equivalence.
+Those require their own authenticated consumption and service integration.
+
 ## FluxNode execution identity
 
 A FluxNode's name and spec hash identify the task and its learned Flow. Its lasting acts belong to an execution within that task: a fresh run gets its own `actScope`, and an idempotency key in the trusted caller/project namespace durably allocates an opaque execution scope. Request comparison replaces declared secret input positions with their binding pointers before hashing; non-secret request fields remain significant. Secret values, including guessable hashes of them, do not enter the scope or its stored request comparison. A changed non-secret request conflicts across restart; rotating a supplied secret preserves its binding identity.
