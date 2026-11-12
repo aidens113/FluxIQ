@@ -5,6 +5,7 @@ import { getFluxIQ } from "../../../../../../../lib/fluxiq";
 import { pairedClientProjectDomainRefusal } from "../../../../../../../lib/paired-client-project-domain";
 import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor, routeParamId } from "../../../../../../../lib/app-route-iam";
 import { pairedClientDomainScope } from "../../../../../../../lib/program-route";
+import { uploadStateAsset } from "fluxiq/server";
 
 type RouteParams = {
   params: Promise<{
@@ -16,8 +17,6 @@ type RouteParams = {
 const READ_ROUTE = appRouteIamContract("GET", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
 const WRITE_ROUTE = appRouteIamContract("PUT", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
 
-const MAX_STATE_ASSET_BYTES = 20 * 1024 * 1024;
-const ALLOWED_UPLOAD_MEDIA_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 export async function GET(_request: Request, context: RouteParams) {
   const { projectId, sha256 } = await context.params;
@@ -53,41 +52,9 @@ export async function PUT(request: Request, context: RouteParams) {
   const fluxiq = getFluxIQ();
   const uploadAuth = await authorizeStateAssetUpload(request, fluxiq, decodedProjectId);
   if (!uploadAuth.ok) return NextResponse.json({ ok: false, error: uploadAuth.error, ...(uploadAuth.errorCode ? { errorCode: uploadAuth.errorCode } : {}) }, { status: uploadAuth.status });
-  const normalizedSha = sha256.toLowerCase();
-  if (!/^[a-f0-9]{64}$/i.test(normalizedSha)) return NextResponse.json({ ok: false, error: "Invalid object digest" }, { status: 400 });
-
-  const mediaType = normalizeUploadMediaType(request.headers.get("content-type"));
-  if (!mediaType) {
-    return NextResponse.json({ ok: false, error: "State asset uploads must use image/png, image/jpeg, image/webp, or image/gif." }, { status: 415 });
-  }
-
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > MAX_STATE_ASSET_BYTES) {
-    return NextResponse.json({ ok: false, error: "State asset upload is too large." }, { status: 413 });
-  }
-
-  const content = Buffer.from(await request.arrayBuffer());
-  if (!content.byteLength) return NextResponse.json({ ok: false, error: "State asset upload body is required." }, { status: 400 });
-  if (content.byteLength > MAX_STATE_ASSET_BYTES) {
-    return NextResponse.json({ ok: false, error: "State asset upload is too large." }, { status: 413 });
-  }
-
-  try {
-    const asset = await fluxiq.programs.automationStudio.writeProjectObjectAsset({
-      projectId: decodedProjectId,
-      ...(uploadAuth.recordingId ? { recordingId: uploadAuth.recordingId } : {}),
-      // A paired client's screenshot is also taken by the traces claiming its gateway session (D13).
-      ...(uploadAuth.clientSessionId ? { traceIntake: { sessionId: uploadAuth.clientSessionId, gateway: fluxiq.programs.clientGateway } } : {}),
-      content,
-      mediaType,
-      expectedSha256: normalizedSha
-    });
-    return NextResponse.json({ ok: true, payload: asset }, { status: 201 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "State asset could not be stored.";
-    const status = message.includes("digest does not match") ? 409 : message.includes("not enabled") ? 503 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
-  }
+  const result = await uploadStateAsset({ fluxiq, request, projectId: decodedProjectId, sha256, ...uploadAuth,
+    stillAuthorized: async () => (await authorizeStateAssetUpload(request, fluxiq, decodedProjectId)).ok });
+  return new Response(result.body, { status: result.status, headers: result.headers });
 }
 
 async function readSessionId(): Promise<string | undefined> {
@@ -126,11 +93,6 @@ async function authorizeStateAssetUpload(
   const denied = await authorizeAppRoute(fluxiq.programs.api, WRITE_ROUTE, "panel", panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role }), { projectId });
   if (denied) return { ok: false, ...denied };
   return { ok: true };
-}
-
-function normalizeUploadMediaType(value: string | null): string | null {
-  const mediaType = (value ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
-  return ALLOWED_UPLOAD_MEDIA_TYPES.has(mediaType) ? mediaType : null;
 }
 
 function readBearerToken(header: string | null): string | null {

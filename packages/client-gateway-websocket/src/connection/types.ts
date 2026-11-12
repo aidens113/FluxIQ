@@ -62,6 +62,8 @@ export type ClientGatewayConnectionOptions = {
   url(): string;
   hello(): ClientGatewayConnectionHello;
   tokenStorage: ClientGatewayConnectionTokenStorage;
+  /** A managed host's one-time enrolment ticket, handed to each socket's transport, which takes it only for a hello with no token. */
+  enrolment?: FluxIQClientGatewayWebSocketOptions["enrolment"];
   WebSocketImpl?: FluxIQWebSocketConstructor;
   /** How long a socket is given to open (default `CLIENT_GATEWAY_OPEN_TIMEOUT_MS`). */
   openTimeoutMs?: number;

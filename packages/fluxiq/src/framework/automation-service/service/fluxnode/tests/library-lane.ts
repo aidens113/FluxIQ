@@ -60,7 +60,7 @@ type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonO
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 
 /** One service on one library, with the FluxNode service over it. */
-export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
+export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; hosts?: Parameters<typeof createFluxNodeService>[0]["hosts"]; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-fluxnode-"));
   const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; runId?: string } = { script: [], judge: [], decided: 0 };
@@ -114,7 +114,7 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     return service;
   };
   let service = makeService();
-  const made = () => createFluxNodeService({ service, domainId: "library", modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
+  const made = () => createFluxNodeService({ service, domainId: "library", hosts: options.hosts, modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
   fluxNodes = made();
   cleanups.push(async () => {
     await service.close();

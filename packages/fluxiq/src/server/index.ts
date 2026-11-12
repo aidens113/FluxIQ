@@ -8,4 +8,6 @@ export * from "./client-gateway-websocket/index.ts";
 export * from "./drain/index.ts";
 export * from "./fluxnode-api/index.ts";
 export * from "./headless/index.ts";
+export * from "./managed-hosts/index.ts";
 export * from "./program-route/index.ts";
+export * from "./client-gateway-routes/index.ts";

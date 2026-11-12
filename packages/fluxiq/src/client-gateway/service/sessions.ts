@@ -137,6 +137,9 @@ export class ClientGatewaySessionRegistry {
     session.trustedClientId = trustedClient.trustedClientId;
     session.operatorUserId = trustedClient.approvedByUserId;
     session.pairedAt ??= trustedClient.approvedAt;
+    // A managed host's role comes from its trust, which Core enrolled; never from anything the client said.
+    if (trustedClient.managedHost !== undefined) session.managedHostId = trustedClient.managedHost.hostId;
+    else delete session.managedHostId;
   }
 
   /** Drops the oldest-ended sessions past the retention bounds; stops at the first one within them. */

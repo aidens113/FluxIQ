@@ -24,6 +24,9 @@ export * from "../../runtime/project-agents/host-resources/index.ts";
 export * from "../../runtime/recording/io-bridge.ts";
 export * from "./io-policy.ts";
 export * from "../../runtime/llm/index.ts";
+// Hosts bind a provider through the runtime's execution-provider port; the
+// provider's prompt construction, transport and answer decoding stay in Core.
+export { createAutomationStudioAnthropicProvider, type AutomationStudioAnthropicProviderOptions } from "../../runtime/llm/anthropic/index.ts";
 // Host-local adapter readers only. Capture/frozen-call factories remain Core-private.
 export { automationStudioLlmRerunCapture, automationStudioLlmRerunExecution } from "../../runtime/llm/rerun-provenance/index.ts";
 export type { AutomationStudioLlmRerunCaptureAccess, AutomationStudioLlmRerunCaptureSnapshot, AutomationStudioLlmRerunDispatchAttempt, AutomationStudioLlmRerunExecutionAccess, AutomationStudioLlmRerunExecutionInput, AutomationStudioLlmRerunExecutionRefused, AutomationStudioLlmRerunUnavailable, AutomationStudioLlmRerunUnavailableReason } from "../../runtime/llm/rerun-provenance/index.ts";
