@@ -38,3 +38,5 @@ Notes: Final source frozen for lead acceptance. No public export or existing ent
 ## Lead acceptance
 
 Final independent `pnpm --filter fluxiq exec vitest run src/runtime/automation-runtimes/tests --maxWorkers 1 --minWorkers 1` -> 22/22 in 5.75s; package check -> exit 0, 14.928s; structure audit -> passed 544 warnings / 916 baselined, combined exit 0. Final package version 0.49.0. Log TEMP/fluxiq-lead-t910-registry.log. No public API export, runtime routing, browser execution, full sweep or publication claimed.
+
+Task integration: Core dev 2968365b5, task branch removed by the owning tool. Mandatory contract tests passed 70/70 in 10.25s, exit 0; optional full suite omitted after independently passing narrow tests/typecheck/audit. No main promotion or publication.
