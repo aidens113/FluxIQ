@@ -1,3 +1,5 @@
+import type { JsonObject } from "../../../../core/index.ts";
+import { AutomationStudioDatasetSnapshots } from "./snapshots.ts";
 import {
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_FORMATS,
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_LIMITS,
@@ -45,6 +47,7 @@ const NOTHING_WRITTEN = Object.freeze({ rowCount: 0, byteCount: 0 });
  * handlers check the permission and the project's domain before calling in.
  */
 export class AutomationStudioRunDatasets {
+  private readonly snapshots: AutomationStudioDatasetSnapshots;
   /** False without a project database pool. Every method then throws, and the service binds no record-batch hook. */
   readonly available: boolean;
 
@@ -54,6 +57,16 @@ export class AutomationStudioRunDatasets {
     private readonly limits: AutomationStudioRunDatasetExportLimits = AUTOMATION_STUDIO_RUN_DATASET_EXPORT_LIMITS
   ) {
     this.available = pool !== undefined;
+    this.snapshots = new AutomationStudioDatasetSnapshots(projects, pool);
+  }
+
+  /** Snapshot source occurrences independently of a run. Only the returned opaque id belongs in task memory. */
+  createImmutableSnapshot(input: { projectId: string; rows: readonly { occurrenceId: string; row: JsonObject }[] }) {
+    return this.snapshots.create(input);
+  }
+
+  readImmutableSnapshotPage(input: { projectId: string; snapshotId: string; cursor?: string; limit?: number }) {
+    return this.snapshots.page(input);
   }
 
   /**
