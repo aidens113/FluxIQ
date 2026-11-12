@@ -187,6 +187,15 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
 export type AutomationStudioAnswerFirstCallerOptions = {
   /** The task's key in place of the digest of its words and site, so other words for one task find what it kept (a FluxNode's name and spec hash). 1 to 512 characters. */
   taskKey?: string;
+  /**
+   * The execution this attempt's lasting acts belong to, apart from its task (a FluxNode run, or the run an
+   * idempotency key first started). Given, an attempt carries what an earlier attempt at its task landed only
+   * when that attempt ran under the same scope, and otherwise starts with an empty act record: a new execution
+   * means its acts, and the same one never presses again what may have landed (`../answer-first/attempt/opening.ts`).
+   * The task key still finds the saved Flow. Absent (the chat), the same words carry what landed
+   * (`runtime/answer-first/act-record/seed.ts`). 1 to 512 characters.
+   */
+  actScope?: string;
   /** The model this attempt's calls ask for, in place of the Flow's `llmModel`. */
   model?: string;
   /** How human the attempt's input looks, a whole number 0 to 100; absent means 0, today's path. */
@@ -224,7 +233,7 @@ export type AutomationStudioAnswerFirstCallerOptions = {
  * runs as the kept mode says with no check (`auto` judges, `off` takes the result unverified), and no
  * `personAsk`, so a question goes to the Flow's conversation, where the person who pressed is.
  */
-export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "model" | "budgetUsd" | "judge" | "scope" | "inputs" | "runOverrides" | "humanness">;
+export type AutomationStudioAnswerFirstKeptCallerOptions = Pick<AutomationStudioAnswerFirstCallerOptions, "taskKey" | "actScope" | "model" | "budgetUsd" | "judge" | "scope" | "inputs" | "runOverrides" | "humanness">;
 
 /**
  * The caller's check of what the attempt got: Core's own summary of it (rows from reads, acts from

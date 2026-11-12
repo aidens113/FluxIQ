@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administ
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import type { AutomationStudioAcceptedProjectSnapshot, AutomationStudioAcceptedStateBinding, AutomationStudioAcceptedStateCurrent, AutomationStudioAcceptedStateMutationResult, AutomationStudioAcceptedStateReconciliation, AutomationStudioAcceptedStateRequest, AutomationStudioAcceptedStateTombstone } from "./contracts.ts";
 import { automationStudioAcceptedStateDigest } from "./digest.ts";
 import { AutomationStudioAcceptedStateValidation as Validation } from "./validation.ts";
@@ -18,7 +19,7 @@ export class AutomationStudioProjectAcceptedStateStore {
     const lease = await input.pool.acquire(input.projectId);
     let unitOfWork: AutomationStudioProjectUnitOfWork | undefined;
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION] }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION]) }).migrate();
       unitOfWork = await AutomationStudioProjectUnitOfWork.open(input);
       return new AutomationStudioProjectAcceptedStateStore(lease, unitOfWork);
     } catch (error) { await unitOfWork?.close(); await lease.release(); throw error; }

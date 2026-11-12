@@ -12,6 +12,34 @@ function mapDeclaration(extra: Record<string, unknown> = {}): Extract<DataStep, 
 const input = () => records([{ n: 1, id: "a" }, { n: 2, id: "b" }, { n: 3, id: "c" }, { n: 4, id: "d" }]);
 
 describe("mapStep", () => {
+  it("preserves distinct equal-input invocations through reorder and changes to non-identity data", async () => {
+    const original = records([{ n: 1, label: "before-a" }, { n: 1, label: "before-b" }]);
+    const seen: (string | undefined)[] = [];
+    const callFlow = async (_target: unknown, _inputs: unknown, _signal: unknown, invocation?: { invocationId: string }) => {
+      seen.push(invocation?.invocationId);
+      return { outputs: null, lineage: [] };
+    };
+    await mapStep(mapDeclaration(), original, context({ callFlow }));
+    expect(seen[0]).toBeDefined();
+    expect(seen[1]).not.toBe(seen[0]);
+    const reordered = [...original].reverse().map((record) => ({ ...record, data: { ...record.data, label: "changed" } }));
+    await mapStep(mapDeclaration(), reordered, { ...context({ callFlow }), runId: "after-restart" });
+    expect(seen.slice(2)).toEqual([seen[1], seen[0]]);
+  });
+
+  it("distinguishes two intentional occurrences even when they carry the same origin and equal inputs", async () => {
+    const [one] = records([{ n: 1 }]);
+    const seen: (string | undefined)[] = [];
+    const callFlow = async (_target: unknown, _inputs: unknown, _signal: unknown, invocation?: { invocationId: string }) => {
+      seen.push(invocation?.invocationId);
+      return { outputs: null, lineage: [] };
+    };
+    await mapStep(mapDeclaration(), [one!, one!], context({ callFlow }));
+    expect(seen[0]).toBeDefined();
+    expect(seen[1]).not.toBe(seen[0]);
+    await mapStep(mapDeclaration(), [one!, one!], { ...context({ callFlow }), runId: "continued" });
+    expect(seen.slice(2)).toEqual(seen.slice(0, 2));
+  });
   it("calls the Flow once per record in order, under the concurrency limit, and rebases the call lineage under the field", async () => {
     const fake = fakeCaller();
     const out = await mapStep(mapDeclaration({ concurrency: 2 }), input(), context({ callFlow: fake.caller }));

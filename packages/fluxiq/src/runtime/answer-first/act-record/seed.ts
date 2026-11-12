@@ -13,6 +13,12 @@
 // which starts with an empty record whatever is here, and words of their own ("... again") that make
 // it another task with its own key. A carry-on is not here: it is the same attempt, with the same record.
 //
+// **A caller from code says which execution it is** (`actScope`, t909): a FluxNode run is called with its
+// inputs to do what it does each time, so its task (and the saved Flow it replays) is shared by every run,
+// and its acts are not. Its attempt is seeded by this rule only from an attempt of the same scope (the
+// same run resumed, or the same idempotency key retried), and otherwise starts empty
+// (`SVC/answer-first/attempt/opening.ts`). The chat names no scope, so the words decide as above.
+//
 // **Across many attempts it is a union (`earlier`).** An attempt seeded from the one before already
 // holds what that one carried. A Run again holds nothing of it, so what it was spared is kept beside
 // its record, and a later attempt carries both: what landed before the press still landed, and so

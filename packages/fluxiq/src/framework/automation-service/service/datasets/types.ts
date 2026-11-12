@@ -86,3 +86,4 @@ export type AutomationStudioRunDatasetStream = AsyncIterable<string> & {
   fileName: string;
   contentType: string;
 };
+export type { AutomationStudioDatasetSnapshot, AutomationStudioDatasetSnapshotPage, AutomationStudioDatasetSnapshotRow } from "../../../persistence/automation/index.ts";

@@ -17,6 +17,7 @@ import {
   AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
   AutomationStudioProjectUnitOfWork,
   AutomationStudioSchemaMigrationRunner,
+  automationStudioSchemaMigrationOrder,
   automationStudioPageLimit,
   type AutomationStudioProjectDatabaseLease,
   type AutomationStudioProjectDatabasePool,
@@ -100,7 +101,7 @@ export class AutomationStudioProjectConversationStore {
   static async openReserved(input: { pool: AutomationStudioProjectDatabasePool; databaseId: string; migrations: readonly AutomationStudioSchemaMigration[] }): Promise<AutomationStudioProjectConversationStore> {
     const lease = await input.pool.acquire(input.databaseId);
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, ...input.migrations] }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, input.migrations) }).migrate();
       return new AutomationStudioProjectConversationStore(lease, await AutomationStudioProjectUnitOfWork.open({ pool: input.pool, projectId: input.databaseId }));
     } catch (error) {
       await lease.release();

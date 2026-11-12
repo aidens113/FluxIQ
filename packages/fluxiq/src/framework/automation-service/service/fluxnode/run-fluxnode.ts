@@ -20,6 +20,10 @@
 // **A pinned FluxNode's attempt works in a Flow beside the pinned one** (`./pin/`): it replays exactly the
 // pinned version, still repairs and explores to the result, and what it changes is held as a proposal on
 // the result (`pinned`), never saved over the pinned Flow.
+//
+// **Its lasting acts are its own execution's** (`./act-scope/`): the attempt carries only what this run's
+// scope landed before, which is nothing for a new run. Records are written through by the attempt under
+// their scope, independent of later runs and restarts; a continuation keeps the first attempt's task key.
 
 import { fillFluxNodeGoal, fluxNodeSecretInputs, resolveFluxNodeOptions, resolveFluxNodeOverrides, type FluxNodeRunResult, type FluxNodeSpec } from "@fluxiq/contracts/fluxnode";
 import type { AutomationStudioLlmModelCaller } from "../../../../runtime/llm/index.ts";
@@ -27,6 +31,7 @@ import { runWithAutomationStudioRunOverrides } from "../../../../runtime/run-ove
 import { runWithAutomationStudioRunSecrets } from "../../../../runtime/run-secrets/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../flow-bootstrap-commands/index.ts";
+import { fluxNodeActScope } from "./act-scope/index.ts";
 import { fluxNodeCallerOptions, fluxNodePermittedConsequences } from "./caller-options.ts";
 import { fluxNodeCheckBridge, fluxNodePersonSink, fluxNodeStepEvents } from "./events/index.ts";
 import type { FluxNodeRun } from "./fluxnode-run.ts";
@@ -80,7 +85,9 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
   const pinned = await context.pins?.begin(registered, options.mode, run.runId);
   // The Flow the attempt works in: the FluxNode's own, or beside it while it is pinned.
   const on: FluxNodeRegisteredSpec = pinned ? { ...registered, flowId: pinned.flowId } : registered;
-  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin, runOverrides: frame });
+  const actScope = run.carried.actScope ?? fluxNodeActScope({ runId: run.runId });
+  const callerOptions = fluxNodeCallerOptions({ spec, specHash: registered.specHash, runId: run.runId, actScope, taskKey: run.carried.taskKey, options, inputs: fluxNodeInputsWithoutSecrets(inputs, secrets.names), bridge, personAsk, judgeChanged, pinned: pinned?.replaysPin, runOverrides: frame });
+  run.carried.taskKey = callerOptions.taskKey;
   const goal = fillFluxNodeGoal(spec.goal, fluxNodeSecretGoalInputs(inputs, secrets.names));
   if (!goal.ok) throw new Error(`fluxnode.goal_unfilled: ${goal.issues.map((issue) => issue.code).join(", ")}`);
   const attempt = { over: false };
