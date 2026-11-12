@@ -62,7 +62,7 @@ export const LIMITS = {
 const SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css"]);
 const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
 const EXCLUDED_SEGMENTS = new Set(["node_modules", "dist", "build", ".next", "coverage", ".test-build", ".script-build"]);
-const EXCLUDED_PATTERNS = [/-snapshots\//, /\.d\.ts$/, /^docs\/generated\//];
+const EXCLUDED_PATTERNS = [/\.d\.ts$/, /^docs\/generated\//];
 
 export function normalize(file) {
   return file.replaceAll("\\", "/");
