@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { automationStudioSchemaMigrationOrder } from "../migration-order/index.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import type { AutomationStudioProjectContentProtection } from "./content-protection.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
@@ -96,12 +97,11 @@ type ContextRow = {
 };
 type AuditRow = { event_id: string; event_type: AutomationStudioReusableLlmContextAuditEvent["eventType"]; record_id: string | null; flow_id: string | null; subflow_id: string | null; domain_id: string | null; actor_id: string | null; detail_json: string; created_at_ms: number };
 
-/** What the store migrates on open: administration, then the keyring's 0033, then 0035 (ascending ids). */
-const STORE_MIGRATIONS = [
-  ...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS,
+/** Administration and the keyring's independently owned migrations, ordered together. */
+const STORE_MIGRATIONS = automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [
   AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION,
   AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_KEYED_DIGEST_MIGRATION
-];
+]);
 
 /** Project-isolated durable storage for domain-sanitized, prompt-safe reusable LLM context. Disabled unless explicitly enabled. */
 export class AutomationStudioProjectReusableLlmContextStore {

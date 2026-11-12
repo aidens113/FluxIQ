@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import { automationStudioCandidateRequirementsDigest } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioCandidateLedgerRecord, AutomationStudioCandidateLedgerRequest, AutomationStudioCandidateLedgerStage } from "./contracts.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION } from "./migration.ts";
@@ -13,7 +14,7 @@ export class AutomationStudioCandidateVerificationStore {
   static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }): Promise<AutomationStudioCandidateVerificationStore> {
     const lease = await input.pool.acquire(input.projectId);
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION] }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION]) }).migrate();
       return new AutomationStudioCandidateVerificationStore(lease);
     } catch (error) { await lease.release(); throw error; }
   }

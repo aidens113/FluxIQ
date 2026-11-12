@@ -45,6 +45,7 @@ import type {
   ClientGatewayTraceStore
 } from "../../../../../client-gateway/trace/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, openAutomationStudioContentAddressKeyring } from "../content-address/index.ts";
 import type { AutomationStudioProjectContentProtection } from "../content-protection.ts";
@@ -117,7 +118,7 @@ export class AutomationStudioProjectGatewayTraceStore implements ClientGatewayTr
     try {
       const traceMigrations = [AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_PROTECTION_MIGRATION];
       const keyedMigrations = [AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_KEYED_ADDRESS_MIGRATION];
-      const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION, ...traceMigrations, ...keyedMigrations];
+      const migrations = automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION], traceMigrations, keyedMigrations);
       await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
       const keyring = input.protection === undefined
         ? undefined

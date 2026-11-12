@@ -9,6 +9,7 @@ export * from "./state-index.ts";
 export * from "./recording-index-store.ts";
 export * from "./project/index.ts";
 export * from "./schema-migrations.ts";
+export * from "./migration-order/index.ts";
 export * from "./catalog.ts";
 export * from "./query-plan.ts";
 export * from "./catalog-index-migration.ts";
