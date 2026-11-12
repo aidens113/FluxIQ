@@ -7,8 +7,9 @@
 // - the `local` profile decides by permission, as before: `secrets.manage`
 //   changes it, `programs.read` reads it;
 // - under `service`, the predefined policies: owner and administrator change
-//   it, read-only access reads it and cannot change it, and user access does
-//   neither.
+//   it, read-only access reads it and cannot change it, and user access (a
+//   member) reads it, through `IAM_USER_WORKSPACE_SETTING_READS` on the
+//   workspace, and cannot change it.
 
 import { IAM_POLICY_LANGUAGE_VERSION, parseIamPolicyDocument } from "@fluxiq/contracts/iam";
 import { describe, expect, it } from "vitest";
@@ -74,10 +75,13 @@ describe("the panel assistant's spending allowance is decided on the workspace",
     expect(await decide(actor("writer", "user", ["programs.read", "programs.write"]))).toEqual({ read: "allow", change: "deny" });
   });
 
-  it("under service, owner and administrator change it, read-only reads it, and user access does neither", async () => {
+  it("under service, owner and administrator change it, read-only and user access read it and cannot change it", async () => {
     expect(await world([IAM_OWNER_FULL_ACCESS]).decide(person)).toEqual({ read: "allow", change: "allow" });
     expect(await world([IAM_ADMINISTRATOR_ACCESS]).decide(person)).toEqual({ read: "allow", change: "allow" });
     expect(await world([IAM_READ_ONLY_ACCESS]).decide(person)).toEqual({ read: "allow", change: "deny" });
-    expect(await world([IAM_USER_ACCESS]).decide(person)).toEqual({ read: "deny", change: "deny" });
+    // A member reads the workspace's allowance (IAM_USER_WORKSPACE_SETTING_READS) and never changes it.
+    const member = world([IAM_USER_ACCESS]);
+    expect(await member.decide(person)).toEqual({ read: "allow", change: "deny" });
+    expect(member.allowance()).toBeUndefined();
   });
 });

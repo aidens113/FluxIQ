@@ -7,7 +7,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   overflow: hidden;
@@ -25,16 +25,16 @@
 }
 
 .automation-graph-save-state.unsaved {
-  color: var(--color-warning);
+  color: var(--warning-text);
 }
 
 .automation-graph-save-state.saving {
-  color: var(--color-primary);
+  color: var(--accent-text);
 }
 
 .automation-graph-save-state.failed,
 .automation-graph-save-state.conflict {
-  color: var(--color-danger);
+  color: var(--danger-text);
 }
 
 .automation-graph-viewport-state {
@@ -45,7 +45,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   line-height: 1.2;
   contain: strict;
@@ -53,39 +53,39 @@
 
 .automation-graph-viewport-state > span {
   min-width: 54px;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--line);
   border-radius: var(--radius-control);
   padding: 3px 7px;
   background: var(--surface-muted);
-  color: var(--color-text);
+  color: var(--text);
   text-align: center;
   text-transform: capitalize;
 }
 
 .automation-graph-viewport-state > strong {
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-caption);
 }
 
 .automation-graph-viewport-state > small {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .automation-graph-viewport-state.loading > span,
 .automation-graph-viewport-state.partial > span {
-  border-color: var(--color-selected-border);
-  background: var(--surface-selected);
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
 }
 
 .automation-graph-viewport-state.dense > span,
 .automation-graph-viewport-state.capped > span {
-  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border-subtle));
-  background: color-mix(in srgb, var(--color-warning) 10%, var(--surface-muted));
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-muted));
 }
 
 .automation-graph-viewport-state.error > span {
-  border-color: color-mix(in srgb, var(--color-danger) 50%, var(--color-border-subtle));
-  background: color-mix(in srgb, var(--color-danger) 10%, var(--surface-muted));
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--line));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface-muted));
 }
 
 .automation-draft-recovery {
@@ -94,15 +94,15 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-dense);
-  border: 1px solid var(--color-selected-border);
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-control);
-  background: var(--surface-selected);
+  background: var(--accent-soft);
   padding: 9px 10px;
 }
 
 .automation-draft-recovery.stale {
-  border-color: color-mix(in srgb, var(--color-warning) 50%, var(--color-border));
-  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--warning) 50%, var(--divider));
+  background: color-mix(in srgb, var(--warning) 7%, var(--surface));
 }
 
 .automation-draft-recovery > div:first-child {
@@ -112,7 +112,7 @@
 }
 
 .automation-draft-recovery > div:first-child span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
 }
 

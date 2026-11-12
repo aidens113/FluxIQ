@@ -118,7 +118,8 @@ describe("the assistant's model", () => {
     const { service, add } = workspace();
     const first = await add("First", { provider: "alpha" });
     const choice = await service.modelKeys.resolveAssistant();
-    expect(choice).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha" });
+    // A key nobody is stamped on is nobody's to share.
+    expect(choice).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha", chosenForWorkspace: false, offeredByHolder: false });
     expect(JSON.stringify(choice)).not.toContain("dummy-First");
   });
 
@@ -155,7 +156,7 @@ describe("the assistant's model", () => {
     const second = await add("Second");
     await service.modelKeys.setAssistant({ keyId: second.id, model: "m" });
     await service.updateKey({ id: second.id, enabled: false });
-    expect(await service.modelKeys.resolveAssistant()).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha" });
+    expect(await service.modelKeys.resolveAssistant()).toEqual({ ok: true, keyId: first.id, keyName: "First", provider: "alpha", chosenForWorkspace: false, offeredByHolder: false });
     expect((await service.modelKeys.read()).assistantKeyId).toBeNull();
   });
 });
@@ -178,5 +179,108 @@ describe("the assistant's spending allowance", () => {
     await expect(service.modelKeys.setAssistantAllowance(-1)).rejects.toThrow("zero or more");
     await expect(service.modelKeys.setAssistantAllowance(Number.NaN)).rejects.toThrow("zero or more");
     expect(await service.modelKeys.setAssistantAllowance(0)).toBe(0);
+  });
+});
+
+describe("the workspace's key: no key is shared automatically; it needs an owner's or administrator's choice and its holder's offer", () => {
+  function people() {
+    const { service, repository } = workspace();
+    let at = 5000;
+    const add = (name: string, createdBy: string, provider = "Anthropic") =>
+      service.createKey({ name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider, createdBy, nowMs: (at += 10) });
+    const shared = async () => {
+      const choice = await service.modelKeys.resolveAssistant();
+      return choice.ok ? { keyId: choice.keyId, ownerId: choice.ownerId, chosen: choice.chosenForWorkspace, offered: choice.offeredByHolder } : choice;
+    };
+    return { service, repository, add, shared };
+  }
+
+  it("is nothing for the first key a person adds: adding a key neither chooses nor offers it", async () => {
+    const { service, add, shared } = people();
+    const first = await add("Mine", "member");
+    await add("Team", "owner");
+    expect(await shared()).toEqual({ keyId: first.id, ownerId: "member", chosen: false, offered: false });
+    const view = await service.modelKeys.read();
+    expect(view).toMatchObject({ defaultKeyId: first.id, assistantProvider: "Anthropic", assistantKeyChosen: false, assistantKeyOffered: false });
+  });
+
+  it("is chosen by an explicit default or assistant choice, and offered only by the key's holder, for their own key", async () => {
+    const { service, add, shared } = people();
+    await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setDefault(mine.id, "owner");
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: true, offered: false });
+    await expect(service.modelKeys.setOffered(mine.id, true, "owner")).rejects.toThrow("Only the person who added a key can offer it to the workspace.");
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: true, offered: false });
+    expect(await service.modelKeys.setOffered(mine.id, true, "member")).toEqual({ keyId: mine.id, offered: true });
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: true, offered: true });
+    expect(await service.modelKeys.read()).toMatchObject({ assistantKeyChosen: true, assistantKeyOffered: true });
+    // Withdrawn: chosen still, and pays for nobody else.
+    await service.modelKeys.setOffered(mine.id, false, "member");
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: true, offered: false });
+  });
+
+  it("refuses an offer of a key that is missing, turned off, or not a model key, and of a key nobody is stamped on", async () => {
+    const { service, add } = people();
+    const off = await service.createKey({ name: "Off", value: "dummy-off", authorizationPassword: PASSWORD, provider: "Anthropic", createdBy: "member", enabled: false });
+    const custom = await service.createKey({ name: "Webhook", value: "dummy-webhook", authorizationPassword: PASSWORD, kind: "custom", createdBy: "member" });
+    const legacy = await service.createKey({ name: "Legacy", value: "dummy-legacy", authorizationPassword: PASSWORD, provider: "Anthropic" });
+    await add("Mine", "member");
+    await expect(service.modelKeys.setOffered("secret:missing", true, "member")).rejects.toThrow("That key does not exist.");
+    await expect(service.modelKeys.setOffered(off.id, true, "member")).rejects.toThrow("That key is turned off, so it cannot be offered to the workspace. Turn it on first.");
+    await expect(service.modelKeys.setOffered(custom.id, true, "member")).rejects.toThrow("That key is not a model key, so it cannot be offered to the workspace.");
+    await expect(service.modelKeys.setOffered(legacy.id, true, "member")).rejects.toThrow("Only the person who added a key can offer it to the workspace.");
+  });
+
+  it("is never a default that passed to a key on its own, offered or not", async () => {
+    const { service, add, shared } = people();
+    const team = await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setOffered(mine.id, true, "member");
+    await service.modelKeys.setDefault(team.id, "owner");
+    await service.deleteKey(team.id);
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: false, offered: true });
+  });
+
+  it("drops the offer when the key stops being a model key, so turning it back on shares nothing", async () => {
+    const { service, add, shared } = people();
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setOffered(mine.id, true, "member");
+    await service.modelKeys.setAssistant({ keyId: mine.id, chosenBy: "owner" });
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: true, offered: true });
+    await service.updateKey({ id: mine.id, enabled: false });
+    await service.updateKey({ id: mine.id, enabled: true });
+    expect(await shared()).toEqual({ keyId: mine.id, ownerId: "member", chosen: false, offered: false });
+  });
+
+  it("takes \"the default key\" chosen for the assistant as a choice of the default it names, which stays put", async () => {
+    const { service, add, shared } = people();
+    const team = await add("Team", "owner");
+    expect(await shared()).toEqual({ keyId: team.id, ownerId: "owner", chosen: false, offered: false });
+    await service.modelKeys.setAssistant({ chosenBy: "admin" });
+    expect(await shared()).toEqual({ keyId: team.id, ownerId: "owner", chosen: true, offered: false });
+    expect((await service.modelKeys.read()).defaultKeyId).toBe(team.id);
+  });
+
+  it("says in the snapshot which model keys their holders offered", async () => {
+    const { service, add } = people();
+    const team = await add("Team", "owner");
+    const mine = await add("Mine", "member");
+    await service.modelKeys.setOffered(mine.id, true, "member");
+    const keys = (await service.snapshot()).keys;
+    expect(keys.find((key) => key.id === mine.id)?.offeredToWorkspace).toBe(true);
+    expect(keys.find((key) => key.id === team.id)?.offeredToWorkspace).toBe(false);
+    const forMember = await service.snapshotFor({ userId: "member", sessionId: null });
+    expect(forMember.keys.find((key) => key.id === mine.id)).toMatchObject({ heldByYou: true, offeredToWorkspace: true });
+    expect(forMember.keys.find((key) => key.id === team.id)?.heldByYou).toBeUndefined();
+  });
+
+  it("keeps the choice and the offer across a restart", async () => {
+    const { service, repository, add } = people();
+    const team = await add("Team", "owner");
+    await service.modelKeys.setDefault(team.id, "owner");
+    await service.modelKeys.setOffered(team.id, true, "owner");
+    const reopened = new SecretKeysService({ repository, passwordKdf: weakKdf });
+    expect(await reopened.modelKeys.resolveAssistant()).toMatchObject({ ok: true, keyId: team.id, ownerId: "owner", chosenForWorkspace: true, offeredByHolder: true });
   });
 });

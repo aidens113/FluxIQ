@@ -1,7 +1,7 @@
 .automation-react-flow-frame .react-flow__minimap {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-flow-node {
@@ -14,42 +14,42 @@
   grid-template-rows: auto auto auto minmax(72px, 1fr) auto;
   box-sizing: border-box;
   overflow: visible;
-  border: 2px solid #bfd0dd;
+  border: 2px solid var(--edge);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 11px;
 }
 
 .automation-flow-node.selected {
-  border-color: var(--color-primary);
-  outline: 3px solid rgb(9 114 211 / 22%);
+  border-color: var(--accent);
+  outline: 3px solid color-mix(in srgb, var(--accent) 22%, transparent);
   outline-offset: 2px;
 }
 
 .automation-flow-node.proposed {
-  border-color: #22a06b;
-  background: #f5fff9;
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
 }
 
 .automation-flow-node.existing,
 .automation-flow-node.locked {
-  border-color: #b8c0ca;
-  background: #f7f8fa;
+  border-color: var(--edge);
+  background: var(--surface-muted);
 }
 
 .automation-flow-node.proposed.selected {
-  border-color: #12805c;
-  outline: 3px solid rgb(34 160 107 / 22%);
+  border-color: var(--success);
+  outline: 3px solid color-mix(in srgb, var(--success) 22%, transparent);
   outline-offset: 2px;
 }
 
 .automation-flow-node.routine-node {
   min-height: 166px;
-  border-color: #c4cbd3;
+  border-color: var(--edge);
 }
 
 .automation-flow-node.routine-node.custom {
-  border-color: #d6b7e8;
+  border-color: var(--edge);
 }
 
 .automation-flow-node-main {
@@ -77,7 +77,7 @@
 }
 
 .automation-flow-node-main span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -86,10 +86,10 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--color-selected-border);
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-panel);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .node-badges,
@@ -109,7 +109,7 @@
 
 .node-badge,
 .node-state-chip {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
   padding: 2px 6px;
   font-size: var(--font-size-caption);
@@ -126,38 +126,38 @@
 }
 
 .node-badge.start {
-  border-color: var(--color-success-border);
-  background: var(--color-success-surface);
-  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--success) 45%, var(--surface));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
 }
 
 .node-badge.confidence {
   margin-left: auto;
-  border-color: var(--color-selected-border);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .node-badge.custom {
-  border-color: #d6b7e8;
-  background: #fbf5ff;
-  color: #7c3aa0;
+  border-color: var(--edge);
+  background: var(--surface-raised);
+  color: var(--text-soft);
 }
 
 .node-badge.privileged {
-  border-color: var(--color-danger-border);
-  background: var(--color-danger-surface);
-  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--surface));
+  background: var(--danger-soft);
+  color: var(--danger-text);
 }
 
 .node-badge.category,
 .node-state-chip.has-state {
-  background: var(--surface-tool);
-  color: var(--color-text-muted);
+  background: var(--surface-muted);
+  color: var(--muted);
 }
 
 .node-state-chip.empty-state {
-  color: #8c9aa5;
+  color: var(--text-dim);
 }
 
 .automation-flow-handle {
@@ -165,32 +165,32 @@
   z-index: 3;
   width: 14px;
   height: 14px;
-  border: 2px solid var(--color-surface);
-  box-shadow: 0 0 0 1px rgb(15 23 42 / 25%);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
   transform: translateY(-50%);
 }
 
 .automation-flow-handle.input {
   left: -14px;
-  background: var(--color-text-muted);
+  background: var(--muted);
 }
 
 .automation-flow-handle.output {
   right: -14px;
-  background: var(--color-primary);
+  background: var(--accent);
 }
 
-.automation-flow-handle.tone-success { background: #188038; }
-.automation-flow-handle.tone-warning { background: #b35c00; }
-.automation-flow-handle.tone-danger { background: #c5221f; }
-.automation-flow-handle.tone-boolean { background: #00897b; }
-.automation-flow-handle.tone-number { background: #5e35b1; }
-.automation-flow-handle.tone-text { background: #ad1457; }
-.automation-flow-handle.tone-object { background: #1565c0; }
-.automation-flow-handle.tone-signal { background: #ef6c00; }
-.automation-flow-handle.tone-routine { background: #6a1b9a; }
-.automation-flow-handle.tone-flow { background: #0972d3; }
-.automation-flow-handle.tone-neutral { background: #6b7785; }
+.automation-flow-handle.tone-success { background: var(--success); }
+.automation-flow-handle.tone-warning { background: var(--warning); }
+.automation-flow-handle.tone-danger { background: var(--danger); }
+.automation-flow-handle.tone-boolean { background: var(--success); }
+.automation-flow-handle.tone-number { background: var(--accent); }
+.automation-flow-handle.tone-text { background: var(--text-soft); }
+.automation-flow-handle.tone-object { background: var(--accent); }
+.automation-flow-handle.tone-signal { background: var(--warning); }
+.automation-flow-handle.tone-routine { background: var(--text-soft); }
+.automation-flow-handle.tone-flow { background: var(--accent); }
+.automation-flow-handle.tone-neutral { background: var(--hover); }
 
 .automation-node-port-list {
   display: grid;
@@ -198,9 +198,9 @@
   gap: var(--space-sm);
   min-height: 0;
   overflow: visible;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: #f8fbfd;
+  background: var(--accent-soft);
   padding: 7px;
 }
 
@@ -217,7 +217,7 @@
 }
 
 .automation-flow-edge-halo {
-  stroke: var(--color-surface);
+  stroke: var(--surface);
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.96;
@@ -232,7 +232,7 @@
 }
 
 .react-flow__edge.selected .automation-flow-edge-path {
-  filter: drop-shadow(0 0 2px rgb(9 114 211 / 42%));
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--accent) 42%, transparent));
 }
 
 .automation-node-port-column {
@@ -243,8 +243,8 @@
 }
 
 .automation-node-port-column > span {
-  --port-color: #6b7785;
-  --port-bg: #f4f6f8;
+  --port-color: var(--text-dim);
+  --port-bg: var(--surface-muted);
   position: relative;
   display: grid;
   grid-template-columns: 7px minmax(0, 1fr);
@@ -255,7 +255,7 @@
   border-radius: var(--radius-medium);
   background: var(--port-bg);
   padding: 3px 5px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
 }
@@ -263,7 +263,7 @@
 .automation-node-port-column > span.empty {
   grid-template-columns: minmax(0, 1fr);
   background: transparent;
-  color: #8c9aa5;
+  color: var(--text-dim);
 }
 
 .automation-node-port-column > span > i {
@@ -294,53 +294,53 @@
 }
 
 .automation-node-port-column > span.tone-success {
-  --port-color: #188038;
-  --port-bg: #eef8f0;
+  --port-color: var(--success);
+  --port-bg: color-mix(in srgb, var(--success) 12%, var(--surface));
 }
 
 .automation-node-port-column > span.tone-warning {
-  --port-color: #b35c00;
-  --port-bg: #fff4e5;
+  --port-color: var(--warning-text);
+  --port-bg: var(--warning-soft);
 }
 
 .automation-node-port-column > span.tone-danger {
-  --port-color: #c5221f;
-  --port-bg: #fff0ef;
+  --port-color: var(--danger-text);
+  --port-bg: var(--danger-soft);
 }
 
 .automation-node-port-column > span.tone-boolean {
-  --port-color: #00897b;
-  --port-bg: #eaf7f5;
+  --port-color: var(--success);
+  --port-bg: color-mix(in srgb, var(--success) 12%, var(--surface));
 }
 
 .automation-node-port-column > span.tone-number {
-  --port-color: #5e35b1;
-  --port-bg: #f2edfb;
+  --port-color: var(--accent-text);
+  --port-bg: var(--surface-raised);
 }
 
 .automation-node-port-column > span.tone-text {
-  --port-color: #ad1457;
-  --port-bg: #fdeef5;
+  --port-color: var(--text-soft);
+  --port-bg: var(--surface-raised);
 }
 
 .automation-node-port-column > span.tone-object {
-  --port-color: #1565c0;
-  --port-bg: #edf5ff;
+  --port-color: var(--accent-text);
+  --port-bg: var(--accent-soft);
 }
 
 .automation-node-port-column > span.tone-signal {
-  --port-color: #ef6c00;
-  --port-bg: #fff3e0;
+  --port-color: var(--warning-text);
+  --port-bg: var(--warning-soft);
 }
 
 .automation-node-port-column > span.tone-routine {
-  --port-color: #6a1b9a;
-  --port-bg: #f6ecfb;
+  --port-color: var(--text-soft);
+  --port-bg: var(--surface-raised);
 }
 
 .automation-node-port-column > span.tone-flow {
-  --port-color: #0972d3;
-  --port-bg: #eef6ff;
+  --port-color: var(--accent-text);
+  --port-bg: var(--accent-soft);
 }
 
 .automation-node-port-column strong,
@@ -351,22 +351,22 @@
 }
 
 .automation-node-port-column small {
-  color: #7d8b97;
+  color: var(--text-dim);
   font-size: var(--font-size-caption);
 }
 
 .node-definition-lines {
   display: grid;
   gap: 3px;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
   padding: 7px 0;
 }
 
 .node-definition-lines span,
 .node-runtime-line {
   overflow: hidden;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -390,9 +390,9 @@
   top: 0;
   left: 0;
   box-sizing: border-box;
-  border: 2px dashed var(--color-warning-border);
+  border: 2px dashed color-mix(in srgb, var(--warning) 45%, var(--surface));
   border-radius: var(--radius-panel);
-  background: color-mix(in srgb, var(--color-warning-surface) 45%, transparent);
+  background: color-mix(in srgb, var(--warning-soft) 45%, transparent);
   pointer-events: none;
 }
 
@@ -403,22 +403,22 @@
 }
 
 .automation-handler-area strong {
-  color: var(--color-warning-strong, var(--color-warning));
+  color: var(--warning-text);
   font-size: var(--font-size-body-large);
 }
 
 .automation-handler-area span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .automation-flow-node.automation-handler-node {
-  border-color: var(--color-warning-border);
-  background: var(--color-warning-surface);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
 }
 
 .automation-flow-node.automation-handler-node.selected {
-  border-color: var(--color-warning);
+  border-color: var(--warning);
 }
 
 .automation-flow-node.automation-handler-node.unreadable {
@@ -426,15 +426,15 @@
 }
 
 .automation-flow-node.automation-handler-node .node-icon {
-  border-color: var(--color-warning-border);
-  background: var(--color-surface);
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--surface);
+  color: var(--warning);
 }
 
 .node-badge.handler {
-  border-color: var(--color-warning-border);
-  background: var(--color-surface);
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--surface);
+  color: var(--warning);
 }
 
 .automation-handler-facts {
@@ -451,7 +451,7 @@
 }
 
 .automation-handler-facts dt {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .automation-handler-facts dd {
@@ -465,7 +465,7 @@
 
 .react-flow__node.automation-handler-step .automation-flow-node {
   border-style: dashed;
-  border-color: var(--color-warning-border);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
 }
 
 .react-flow__edge.automation-handler-route .react-flow__edge-path {
@@ -481,7 +481,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
   padding: 2px 6px;
   font-size: var(--font-size-caption);
@@ -489,31 +489,31 @@
 }
 
 .node-state-marker.entry {
-  border-color: var(--color-success-border);
-  background: var(--color-success-surface);
-  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--success) 45%, var(--surface));
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
 }
 
 .node-state-marker.checkpoint {
-  border-color: var(--color-info-border);
-  background: var(--color-info-surface);
-  color: var(--color-info);
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .node-state-marker.handler-step {
-  border-color: var(--color-warning-border);
-  background: var(--color-surface);
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--surface);
+  color: var(--warning);
 }
 
 .node-hook-port {
   cursor: pointer;
-  border-color: var(--color-warning-border);
-  background: var(--color-warning-surface);
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 
 .node-hook-port:hover,
 .node-hook-port:focus-visible {
-  border-color: var(--color-warning);
+  border-color: var(--warning);
 }

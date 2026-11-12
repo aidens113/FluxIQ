@@ -29,9 +29,9 @@
 
 .automation-runtime-list-page > header,
 .automation-runtime-log-page > header {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-md);
 }
 
@@ -45,7 +45,7 @@
 .automation-runtime-list-page > header span,
 .automation-runtime-log-page > header span,
 .automation-runtime-log-section > header span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -59,10 +59,10 @@
 }
 
 .automation-runtime-list-summary span {
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-control);
-  background: #f8fbff;
-  color: #1e3a8a;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   padding: 4px 8px;
   font-weight: var(--font-weight-bold);
   white-space: nowrap;
@@ -74,10 +74,10 @@
 .automation-runtime-log-toolbar button,
 .automation-runtime-json-toggle button {
   min-height: 28px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-primary);
+  background: var(--surface);
+  color: var(--accent-text);
   padding: 4px 9px;
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
@@ -89,8 +89,8 @@
 .automation-runtime-pagination button:hover:not(:disabled),
 .automation-runtime-log-toolbar button:hover:not(:disabled),
 .automation-runtime-json-toggle button:hover {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .automation-runtime-pagination,
@@ -106,14 +106,14 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-dense);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 9px 10px;
 }
 
 .automation-runtime-pagination-footer span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -129,9 +129,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-dense);
 }
 
@@ -139,7 +139,7 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -159,9 +159,9 @@
   display: grid;
   gap: var(--space-md);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-md);
 }
 
@@ -185,7 +185,7 @@
 
 .automation-runtime-run-panel > header span {
   overflow: hidden;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -201,7 +201,7 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -210,18 +210,18 @@
   width: 100%;
   min-width: 0;
   resize: vertical;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 8px;
   font: inherit;
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--font-weight-regular);
 }
 
 .automation-flow-exploration-task textarea:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
   outline: none;
 }
 
@@ -230,7 +230,7 @@
   align-items: center;
   gap: var(--space-sm);
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -242,17 +242,17 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
 
 .automation-runtime-pagination-footer select {
   min-height: 28px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 3px 22px 3px 7px;
 }
 
@@ -266,7 +266,7 @@
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  color: var(--color-success, #15803d) !important;
+  color: var(--success) !important;
   font-weight: var(--font-weight-bold);
 }
 
@@ -282,7 +282,7 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -291,23 +291,23 @@
   width: 100%;
   min-width: 0;
   min-height: 36px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 6px 8px;
   font-size: var(--font-size-body-small);
 }
 
 .automation-runtime-run-command select:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
   outline: none;
 }
 
 .automation-runtime-run-command small {
   overflow: hidden;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
   text-overflow: ellipsis;
@@ -336,7 +336,7 @@
 .automation-runtime-run-actions label {
   display: grid;
   gap: 5px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -344,10 +344,10 @@
 .automation-runtime-run-actions input {
   width: 100%;
   min-height: 36px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 6px 8px;
 }
 
@@ -361,9 +361,9 @@
   display: grid;
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
+  background: var(--surface-muted);
   padding: var(--space-dense);
 }
 
@@ -376,7 +376,7 @@
 
 .automation-runtime-input-fields > header span,
 .automation-runtime-input-preview span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -392,7 +392,7 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -402,18 +402,18 @@
   width: 100%;
   min-width: 0;
   min-height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 6px 8px;
   font-size: var(--font-size-body-small);
 }
 
 .automation-runtime-input-fields input:focus,
 .automation-runtime-advanced-grid input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
   outline: none;
 }
 
@@ -423,9 +423,9 @@
   justify-content: space-between;
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: #f8fafc;
+  background: var(--surface-muted);
   padding: 9px 10px;
 }
 
@@ -459,10 +459,10 @@
   align-items: center;
   min-width: 700px;
   min-height: 28px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-control);
-  background: #eff6ff;
-  color: #1e3a8a;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   padding: 4px 8px;
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
@@ -476,9 +476,9 @@
   align-items: center;
   min-width: 700px;
   min-height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 4px 8px;
 }
 
@@ -488,8 +488,8 @@
 
 .automation-runtime-run-row:hover,
 .automation-runtime-run-row:focus-visible {
-  border-color: #93c5fd;
-  background: #f8fbff;
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
   outline: none;
 }
 
@@ -503,11 +503,11 @@
 }
 
 .automation-runtime-run-row > strong {
-  color: var(--color-text);
+  color: var(--text);
   font-weight: var(--font-weight-bold);
 }
 
 .automation-runtime-run-row > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 

@@ -4,17 +4,11 @@
   justify-content: space-between;
   gap: var(--space-md);
   min-height: 44px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   padding: var(--space-sm);
-}
-
-.toolbar-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
 }
 
 .button {
@@ -23,22 +17,22 @@
   justify-content: center;
   gap: var(--space-sm);
   min-height: var(--control-height-default);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 5px 12px;
   cursor: pointer;
 }
 
 .button:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .button:not(:disabled):active,
 .icon-button:not(:disabled):active {
-  box-shadow: inset 0 1px 2px rgb(0 28 36 / 16%);
+  box-shadow: var(--shadow-sm);
 }
 
 .button[aria-busy="true"] {
@@ -47,32 +41,32 @@
 
 .button-primary,
 .button.primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .button-primary:hover:not(:disabled),
 .button.primary:hover:not(:disabled) {
-  border-color: var(--color-primary-hover);
-  background: var(--color-primary-hover);
-  color: var(--color-text-inverse);
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--accent-ink);
 }
 
 .button-danger,
 .button.danger,
 .button.danger-action {
-  border-color: var(--color-danger);
-  background: var(--color-danger);
-  color: var(--color-text-inverse);
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--accent-ink);
 }
 
 .button-danger:hover:not(:disabled),
 .button.danger:hover:not(:disabled),
 .button.danger-action:hover:not(:disabled) {
-  border-color: var(--color-danger);
-  background: color-mix(in srgb, var(--color-danger) 88%, black);
-  color: var(--color-text-inverse);
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 88%, black);
+  color: var(--accent-ink);
 }
 
 .button-ghost {
@@ -80,9 +74,8 @@
   background: transparent;
 }
 
-
 .action-link {
-  color: var(--color-primary);
+  color: var(--accent-text);
   font-weight: var(--font-weight-semibold);
   text-decoration: underline;
   text-decoration-color: transparent;
@@ -90,7 +83,7 @@
 }
 
 .action-link:hover {
-  color: var(--color-primary-hover);
+  color: var(--accent-text);
   text-decoration-color: currentColor;
 }
 .menu {
@@ -107,10 +100,10 @@
   min-width: 190px;
   max-width: min(320px, calc(100vw - var(--space-xl)));
   overflow: hidden;
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-panel);
-  background: var(--surface-pane);
-  box-shadow: var(--shadow-popover);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   padding: var(--space-xs);
 }
 
@@ -132,7 +125,7 @@
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: var(--space-sm) var(--space-dense);
   text-align: left;
   cursor: pointer;
@@ -140,16 +133,16 @@
 
 .menu-popover :is(button, a):hover,
 .menu-popover :is(button, a):focus-visible {
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .menu-popover :is(button, a).danger {
-  color: var(--color-danger);
+  color: var(--danger-text);
 }
 
 .menu-popover button:disabled {
-  color: var(--color-text-muted);
+  color: var(--muted);
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -168,21 +161,21 @@
   width: 100%;
   min-width: 0;
   min-height: var(--control-height-comfortable);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: var(--space-sm) calc(var(--space-xl) + var(--space-xs)) var(--space-sm) var(--space-dense);
 }
 
 .field-error .combobox-input-wrap input {
-  border-color: var(--color-danger);
+  border-color: var(--danger);
 }
 
 .combobox-input-wrap svg {
   position: absolute;
   right: var(--space-sm);
-  color: var(--color-text-muted);
+  color: var(--muted);
   pointer-events: none;
 }
 
@@ -195,10 +188,10 @@
   display: grid;
   max-height: min(320px, 45vh);
   overflow-y: auto;
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-panel);
-  background: var(--surface-pane);
-  box-shadow: var(--shadow-popover);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   padding: var(--space-xs);
 }
 
@@ -210,7 +203,7 @@
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: var(--space-sm) var(--space-dense);
   text-align: left;
   cursor: pointer;
@@ -219,13 +212,13 @@
 .combobox-listbox [role="option"]:hover,
 .combobox-listbox [role="option"].active,
 .combobox-listbox [role="option"].selected {
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .combobox-listbox [role="option"] small,
 .combobox-empty {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
 }
 
@@ -247,8 +240,8 @@
   width: max-content;
   max-width: min(280px, calc(100vw - var(--space-xl)));
   border-radius: var(--radius-control);
-  background: var(--color-text);
-  color: var(--color-surface);
+  background: var(--text);
+  color: var(--surface);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-compact);
   opacity: 0;

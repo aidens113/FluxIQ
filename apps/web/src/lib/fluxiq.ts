@@ -1,5 +1,6 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
+import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,7 +14,7 @@ import { announceOwnerClaim } from "../server/startup";
 import type { ProvisioningListenerHandle } from "../server/provisioning-listener";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
-import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, serviceWorkspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
+import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, WorkspaceDecisionAudit, workspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
@@ -32,8 +33,8 @@ type FluxIQWebGlobal = typeof globalThis & {
     workspaces: FluxIQWorkspaceManager;
     /** Builds the primary instance; a reload builds the next one with it. */
     createPrimary: () => FluxIQ;
-    /** The IAM decision audit every registry records into under the service profile, until the platform's own sink opens. */
-    iamAudit: DeferredIamAuditSink | null;
+    /** The IAM decision audit every registry records into, on every profile, until the platform's own sink opens. */
+    iamAudit: DeferredIamAuditSink;
     hostModulePath: string | null;
     clientGatewayServer: ClientGatewayWebSocketServerHandle | null;
     /** Set once storage is ready; the readiness probe reads it. */
@@ -300,28 +301,39 @@ function getWebRuntimeState(): WebRuntimeState {
 /**
  * The runtime record and its workspace manager. The deployment profile picks
  * the tenancy: `service` is multi-tenant, and every instance (the primary
- * included) then decides by its workspace's IAM policies and records into the
- * platform's audit; `local` and `self-hosted` keep one instance, created
- * exactly as before.
+ * included) then decides by its workspace's IAM policies; `local` and
+ * `self-hosted` keep one instance, deciding exactly as before. On every
+ * profile each instance records its route decisions (every state change and
+ * every refusal, never an allowed read) into the platform's audit, and defers
+ * an account holder's role and sign-in to provisioning.
  */
 function createWebRuntimeState(): WebRuntimeState {
   const tenancy = workspaceTenancyOfProfile(resolveFluxIQProfile(process.env));
   const primaryId = primaryWorkspaceId();
-  const iamAudit = tenancy === "multi"
-    ? new DeferredIamAuditSink(async () => (await import("../server/provisioning-listener")).getPlatformIamAuditSink(), {
-      onError: (error) => webLogger().warn("[FluxIQ] The IAM audit could not be opened; decisions wait in memory until it opens.", { reason: error.name })
-    })
-    : null;
-  const iamOf = (workspaceId: string): Pick<FluxIQOptions, "iam"> => iamAudit
-    ? { iam: serviceWorkspaceIam(workspaceId, { platformServices: async () => (await import("../server/provisioning-listener")).getPlatformServices(), audit: iamAudit }) }
-    : {};
-  const createPrimary = () => createFluxIQWebInstance(iamOf(primaryId));
+  const platform = () => import("../server/provisioning-listener");
+  const iamAudit = new DeferredIamAuditSink(async () => (await platform()).getPlatformIamAuditSink(), {
+    onError: (error) => webLogger().warn("[FluxIQ] The IAM audit could not be opened; decisions wait in memory until it opens.", { reason: error.name })
+  });
+  const decisions = new WorkspaceDecisionAudit(iamAudit);
+  const iamOf = (workspaceId: string): Pick<FluxIQOptions, "iam"> => ({
+    iam: workspaceIam(tenancy, workspaceId, { platformServices: async () => (await platform()).getPlatformServices(), audit: decisions.sink })
+  });
+  // Lazy, as the audit is: the platform services are composed on first use.
+  const accountAuthority: IdentityAuthorityOwner = { holdsAuthorityOf: async (userId) => (await platform()).platformAuthorityOwner.holdsAuthorityOf(userId) };
+  // Before an instance serves anything: its reads are known to the audit, and
+  // its Identity Access refuses to change an account holder's role or sign-in.
+  const opened = (fluxiq: FluxIQ): FluxIQ => {
+    decisions.learn(fluxiq.programs.api);
+    fluxiq.programs.identityAccess.authority.holdElsewhere(accountAuthority);
+    return fluxiq;
+  };
+  const createPrimary = () => opened(createFluxIQWebInstance(iamOf(primaryId)));
   const workspaces = new FluxIQWorkspaceManager({
     tenancy,
     primaryWorkspaceId: primaryId,
     createPrimary,
     ...(tenancy === "multi" ? {
-      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({ workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId), instantiate: createTenantFluxIQInstance }),
+      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({ workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId), instantiate: async (options) => opened(await createTenantFluxIQInstance(options)) }),
       removeTenantRoot: async ({ workspaceId, primary }) => {
         await removeFluxIQWorkspaceRoot(fluxiqLayoutV3Paths(primary.paths.root), workspaceId);
       }
@@ -418,7 +430,7 @@ function primaryOf(state: WebRuntimeState): FluxIQ {
 /** Writes the IAM decisions still held; a failure is reported, never allowed to stop the shutdown. */
 async function flushIamAudit(state: WebRuntimeState): Promise<void> {
   try {
-    await state.iamAudit?.flush();
+    await state.iamAudit.flush();
   } catch (error) {
     webLogger().warn("[FluxIQ] The IAM audit could not be written before shutdown.", { reason: error instanceof Error ? error.name : "unknown" });
   }

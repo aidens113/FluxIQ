@@ -23,7 +23,14 @@ import type { AppRouteIamContract, AppRouteResource, AppRouteResourceInput } fro
 // - a list across the workspace (recordings, client sessions, the program
 //   directory) and dismissing a pending pairing, which no one owns yet, act on
 //   the workspace;
-// - framework setup, migration and I/O act on the framework's own program FRN.
+// - framework setup, migration and I/O act on the framework's own program FRN;
+// - the accounts routes (W5) require `identity.manage` of a panel caller, as
+//   Identity Access's own people endpoints do: the list and an invite act on
+//   the workspace, a change to one person on that person's user
+//   (`frn:fluxiq:iam:<ws>:user/<id>`). On `service` only
+//   `FluxIQAdministratorAccess` and `FluxIQOwnerFullAccess` grant them;
+// - reading the workspace's activity (the IAM audit) is `identity.manage` on
+//   the workspace too: who did what is the administrators' to read.
 
 const FRAMEWORK_PROGRAM_ID = "framework";
 
@@ -61,6 +68,17 @@ const studioContext: AppRouteResource = {
   }
 };
 
+const person: AppRouteResource = {
+  from: "the user of body userId",
+  of: (input) => ({ kind: "user", userId: input.userId })
+};
+
+const ACCOUNT_MEMBER_PATH = "/api/accounts/member";
+
+function memberChange(variant: string, action: string): AppRouteIamContract {
+  return { path: ACCOUNT_MEMBER_PATH, method: "POST", variant, action, callers: { panel: "identity.manage" }, resource: person };
+}
+
 function framework(method: "GET" | "POST", path: string, action: string, permission: "programs.read" | "programs.write", variant?: string): AppRouteIamContract {
   return { path, method, ...(variant === undefined ? {} : { variant }), action, callers: { panel: permission }, programId: FRAMEWORK_PROGRAM_ID, resource: frameworkProgram };
 }
@@ -83,5 +101,14 @@ export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.fr
   { path: "/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]", method: "GET", action: "studio:StreamRunDataset", callers: { panel: "programs.read" }, resource: runDataset },
   { path: "/api/programs/automation-studio/state-assets/[projectId]/[sha256]", method: "GET", action: "studio:ReadStateAsset", callers: { panel: "programs.read" }, resource: project },
   { path: "/api/programs/automation-studio/state-assets/[projectId]/[sha256]", method: "PUT", action: "studio:WriteStateAsset", callers: { panel: "programs.write", "paired-client": "none" }, resource: project },
-  { path: "/api/recordings", method: "GET", action: "studio:ListRecordingSummaries", callers: { panel: "none", "paired-client": "none" }, resource: workspace }
+  { path: "/api/recordings", method: "GET", action: "studio:ListRecordingSummaries", callers: { panel: "none", "paired-client": "none" }, resource: workspace },
+  { path: "/api/accounts/members", method: "GET", action: "iam:ListMembers", callers: { panel: "identity.manage" }, resource: workspace },
+  { path: "/api/accounts/invite", method: "POST", action: "iam:InviteMember", callers: { panel: "identity.manage" }, resource: workspace },
+  memberChange("set-role", "iam:SetMemberRole"),
+  memberChange("turn-off", "iam:DisableMember"),
+  memberChange("turn-on", "iam:EnableMember"),
+  memberChange("remove", "iam:RemoveMember"),
+  memberChange("resend-invite", "iam:ResendInvite"),
+  memberChange("revoke-invite", "iam:RevokeInvite"),
+  { path: "/api/security/audit", method: "GET", action: "iam:ListAuditEvents", callers: { panel: "identity.manage" }, resource: workspace }
 ] satisfies AppRouteIamContract[]);

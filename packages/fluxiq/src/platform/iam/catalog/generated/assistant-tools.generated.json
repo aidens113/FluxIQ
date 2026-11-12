@@ -3893,7 +3893,7 @@
       "name": "identity-access__update-user",
       "programId": "identity-access",
       "endpoint": "update-user",
-      "summary": "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in.",
+      "summary": "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in. A person with an account keeps their account email as their sign-in name, so only their display name changes here.",
       "phrases": [
         "rename this person",
         "change this person's display name"
@@ -5061,6 +5061,12 @@
       "reason": "Only a person's own press can confirm an action."
     },
     {
+      "name": "identity-access__recase-my-username",
+      "programId": "identity-access",
+      "endpoint": "recase-my-username",
+      "reason": "A person's own sign-in name, re-cased by them on their sign-in page, never by the assistant."
+    },
+    {
       "name": "identity-access__set-password",
       "programId": "identity-access",
       "endpoint": "set-password",
@@ -5125,6 +5131,12 @@
       "programId": "secret-keys",
       "endpoint": "delete-key",
       "reason": "Needs the person's password to delete a key, which is never given to the assistant."
+    },
+    {
+      "name": "secret-keys__offer-key",
+      "programId": "secret-keys",
+      "endpoint": "offer-key",
+      "reason": "Lets a person's own key pay for other people's messages, so the person decides it themselves in Settings; the assistant never does it for them."
     },
     {
       "name": "secret-keys__reveal-key",

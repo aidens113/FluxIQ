@@ -8,7 +8,7 @@ vi.mock("next/link", () => ({ default: ({ children, ...props }: React.ComponentP
 vi.mock("../../../overlay-environment", () => ({ acquireOverlayEnvironment: (_doc: unknown, options: typeof environments.entries[number]) => { environments.entries.push(options); return () => options.returnFocus?.focus(); } }));
 let view: ReactTestRenderer | undefined;
 const action = vi.fn();
-const defaults: MenuOption[] = [{ id: "a", label: "Alpha", onSelect: action }, { id: "b", label: "Beta", href: "/programs/beta" }, { id: "c", label: "Gamma", onSelect: action }];
+const defaults: MenuOption[] = [{ id: "a", label: "Alpha", onSelect: action }, { id: "b", label: "Beta", href: "/flows/beta" }, { id: "c", label: "Gamma", onSelect: action }];
 const doc = { body: {}, activeElement: null as unknown, visibilityState: "visible", hasFocus: vi.fn(() => true), defaultView: { getComputedStyle: () => ({ visibility: "visible" }) } };
 const nodes = new Map<string, ReturnType<typeof makeNode>>();
 const label = (children: unknown): string => Array.isArray(children) ? children.map(label).join("") : typeof children === "string" ? children : "";
@@ -67,7 +67,7 @@ it("caller action exception remains observable and menu still closes", async () 
   const failure = new Error("synthetic caller error"); const throwing = vi.fn(() => { throw failure; }); await mount([{ id: "a", label: "Alpha", onSelect: throwing }]);
   await act(async () => { expect(() => item("a")!.props.onClick({ preventDefault: vi.fn() })).toThrow(failure); }); expect(items()).toHaveLength(0); expect(environments.entries[0]!.returnFocus).toBeNull();
 });
-it("enabled Link preserves its href and modified native click", async () => { await mount(); expect(item("b")!.props.href).toBe("/programs/beta"); expect(await click("b", { ctrlKey: true })).not.toHaveBeenCalled(); expect(action).not.toHaveBeenCalled(); });
+it("enabled Link preserves its href and modified native click", async () => { await mount(); expect(item("b")!.props.href).toBe("/flows/beta"); expect(await click("b", { ctrlKey: true })).not.toHaveBeenCalled(); expect(action).not.toHaveBeenCalled(); });
 it("outside pointer close suppresses cleanup trigger return", async () => { await mount(); await act(async () => environments.entries[0]!.onPointerDownOutside()); expect(environments.entries[0]!.returnFocus).toBeNull(); expect(node("trigger").focus).not.toHaveBeenCalled(); });
 it("current Escape can return focus to eligible trigger", async () => { await mount(); await act(async () => environments.entries[0]!.onEscape()); expect(doc.activeElement).toBe(node("trigger")); });
 it("ArrowUp from panel chooses last rather than penultimate", async () => { await mount(); await key("ArrowUp", "panel"); expect(doc.activeElement).toBe(node("c")); });

@@ -110,14 +110,15 @@ export const STEPS = Object.freeze({
     // so the panel resolves Core's packages from their stamped `dist`.
     tsconfigs: ["tsconfig.build.json"],
     // Next loads apps/web/.env* into the build; all but .env.example are
-    // ignored. `next.config.ts` reads no variable today; the registry test
+    // ignored. `next.config.ts` reads FLUXIQ_WEB_STANDALONE (the image build
+    // sets it for `output: "standalone"`), so it is fingerprinted; the registry test
     // fails when it starts to read one this entry does not fingerprint. The
     // identity check's module beside its entry script is read too.
     ignoredInputs: [
       { path: ".", match: /^\.env/u, shallow: true, name: ".env*" },
       { path: "../../scripts/web-build/identity", match: /\.mjs$/u, shallow: true }
     ],
-    env: ["NODE_ENV"],
+    env: ["NODE_ENV", "FLUXIQ_WEB_STANDALONE"],
     envPrefixes: ["NEXT_", "__NEXT_"],
     traces: true
   },

@@ -10,10 +10,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ProgramChatWidget } from "../../chat-widget";
 import { onScreenFromContext, usePanelContext } from "../context";
+import { useProjectChoices } from "../top-bar";
+import { openProjectName } from "./open-project-name";
 
 export function AssistantDock() {
   const { context, read } = usePanelContext();
   const [open, setOpen] = useState(false);
+  const { projects } = useProjectChoices();
+  const projectName = openProjectName(projects, context.projectId);
   const panel = useMemo(() => ({ onScreen: () => onScreenFromContext(read()) }), [read]);
   const toggle = useCallback(() => setOpen((was) => !was), []);
   useEffect(() => {
@@ -28,7 +32,7 @@ export function AssistantDock() {
           <button type="button" className="panel-dock-close" onClick={toggle} aria-label="Close the assistant">Close</button>
         </div>
         <div className="panel-dock-body">
-          <ProgramChatWidget projectId={context.projectId ?? null} panel={panel} />
+          <ProgramChatWidget projectId={context.projectId ?? null} projectName={projectName} panel={panel} />
         </div>
       </aside>
       <button

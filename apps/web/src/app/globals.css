@@ -4,7 +4,6 @@
 @import "./styles/global-foundation/04-feedback-and-status.css";
 @import "./styles/global-foundation/05-console-shell.css";
 @import "./styles/global-foundation/06-controls-and-menus.css";
-@import "./styles/global-foundation/07-program-launcher.css";
 @import "./styles/global-foundation/08-program-directory.css";
 @import "./styles/global-foundation/09-panels-and-pagination.css";
 @import "./styles/global-foundation/10-lists-tables-and-rows.css";
@@ -17,7 +16,7 @@
 @import "./styles/global-foundation/17-database-explorer.css";
 @import "./styles/global-foundation/18-production-and-motion.css";
 @import "./styles/global-shared-controls.css";
-@import "./styles/global-secret-management.css";
+@import "./styles/secret-management.css";
 @import "./styles/global-programs/01-identity-and-access.css";
 @import "./styles/global-programs/02-secret-keys.css";
 @import "./styles/global-programs/03-docs-workspace.css";

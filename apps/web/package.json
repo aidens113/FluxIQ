@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
+    "test:e2e:isolated": "node e2e/support/run-isolated.mjs",
     "fixture:e2e": "node e2e/support/seed-fixtures.mjs",
     "fixture:e2e:verify": "node e2e/support/verify-fixtures.mjs",
     "mock:client": "node scripts/mock-client.mjs",

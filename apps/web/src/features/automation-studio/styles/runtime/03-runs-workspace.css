@@ -6,9 +6,9 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-sm);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 8px 10px;
 }
 
@@ -23,7 +23,7 @@
 }
 
 .automation-runs-workspace > header span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -51,9 +51,9 @@
   justify-items: start;
   gap: 6px;
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-md);
 }
 
@@ -63,7 +63,7 @@
 
 .automation-flow-start-intro > p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-body-small);
   line-height: 1.5;
 }
@@ -78,7 +78,7 @@
 
 /* One sensible default, said in a sentence; the six-way choice is opt-in. */
 .automation-runtime-mode-summary > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   line-height: 1.45;
 }
@@ -88,7 +88,7 @@
 }
 
 .automation-runtime-advanced-mode > summary {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
   cursor: pointer;
