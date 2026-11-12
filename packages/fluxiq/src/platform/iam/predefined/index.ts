@@ -13,4 +13,5 @@ export * from "./read-only-access.ts";
 export * from "./resolve-predefined-policy.ts";
 export * from "./service-guardrail.ts";
 export * from "./user-access.ts";
+export * from "./user-workspace-setting-reads.ts";
 export * from "./workspace-patterns.ts";

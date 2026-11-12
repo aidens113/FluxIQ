@@ -11,11 +11,12 @@ const DEFAULT_LIMIT = 100;
 const SID_SEPARATOR = "\u001f";
 const MAX_DECIMAL_REQUEST_ID = 15;
 const ALLOW_COLUMNS = "t INTEGER NOT NULL, req INTEGER NOT NULL, p INTEGER NOT NULL, a INTEGER NOT NULL, r INTEGER NOT NULL, m INTEGER NOT NULL, o INTEGER NOT NULL, ip INTEGER";
-const LONG_COLUMNS = `cat INTEGER NOT NULL, dec INTEGER NOT NULL, ${ALLOW_COLUMNS}`;
+const LONG_COLUMNS = `cat INTEGER NOT NULL, dec INTEGER NOT NULL, ${ALLOW_COLUMNS}, hid INTEGER`;
+const HIDDEN_COLUMN = "hid";
 const CATEGORY_CODES = { deny: 0, "iam-change": 1 } as const;
 const CATEGORY_NAMES = ["deny", "iam-change"] as const;
 
-type Row = { t: number; req: number; p: number; a: number; r: number; m: number; o: number; ip: number | null; cat?: number; dec?: number };
+type Row = { t: number; req: number; p: number; a: number; r: number; m: number; o: number; ip: number | null; cat?: number; dec?: number; hid?: number | null };
 type Encoded = { values: Array<number | null>; day: number };
 
 /**
@@ -33,8 +34,12 @@ type Encoded = { values: Array<number | null>; day: number };
  * - `allow_YYYYMMDD(t, req, p, a, r, m, o, ip)`: one table per UTC day for
  *   category `allow`; no secondary index (the principal read scans one day's
  *   rows; see the report for the measurement). Expiry drops a whole table.
- * - `long(cat, dec, t, req, p, a, r, m, o, ip)` with an index on `t`: `deny`
- *   (cat 0) and `iam-change` (cat 1) rows; `dec` is 1 for allow, 0 for deny.
+ * - `long(cat, dec, t, req, p, a, r, m, o, ip, hid)` with an index on `t`:
+ *   `deny` (cat 0) and `iam-change` (cat 1) rows; `dec` is 1 for allow, 0 for
+ *   deny; `hid` is how many items a list request hid (`IamAuditRecord.hidden`),
+ *   null on every other row. A file made before `hid` existed gains the column
+ *   at open (`ALTER TABLE ... ADD COLUMN`), and its rows read back unchanged,
+ *   without `hidden`.
  *
  * Request id encoding: a canonical decimal id (`0` or digits without a leading
  * zero, at most 15 digits) is stored as that integer; any other id is interned
@@ -42,7 +47,8 @@ type Encoded = { values: Array<number | null>; day: number };
  * rendered in decimal therefore costs one to three bytes and loses nothing.
  *
  * An `allow`-category record is stored with decision `allow` whatever its
- * `decision` field says; callers record denials as `deny` or `iam-change`.
+ * `decision` field says, and without `hidden`, which only a `deny` carries;
+ * callers record denials as `deny` or `iam-change`.
  */
 export class IamAuditStore {
   private readonly dayTables = new Set<number>();
@@ -57,6 +63,7 @@ export class IamAuditStore {
     const db = await IamAuditDatabase.open(filePath);
     const dictionary = await IamAuditDictionary.load(db);
     await db.exec(`CREATE TABLE IF NOT EXISTS long (${LONG_COLUMNS}); CREATE INDEX IF NOT EXISTS long_t ON long (t)`);
+    await addHiddenColumn(db);
     const store = new IamAuditStore(db, dictionary);
     for (const day of await store.listDays()) store.dayTables.add(day);
     return store;
@@ -115,7 +122,7 @@ export class IamAuditStore {
     if (row.day >= 0) {
       return this.db.run(`INSERT INTO ${tableName(row.day)} (t, req, p, a, r, m, o, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, row.values);
     }
-    return this.db.run("INSERT INTO long (cat, dec, t, req, p, a, r, m, o, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row.values);
+    return this.db.run("INSERT INTO long (cat, dec, t, req, p, a, r, m, o, ip, hid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row.values);
   }
 
   private encode(record: IamAuditRecord): Encoded {
@@ -132,7 +139,7 @@ export class IamAuditStore {
       record.ipPrefix === null ? null : dict.idOf(record.ipPrefix)
     ];
     if (record.category === "allow") return { values: shared, day: Math.floor(time / DAY_SECONDS) };
-    return { values: [CATEGORY_CODES[record.category], record.decision === "allow" ? 1 : 0, ...shared], day: -1 };
+    return { values: [CATEGORY_CODES[record.category], record.decision === "allow" ? 1 : 0, ...shared, hiddenCount(record.hidden)], day: -1 };
   }
 
   private encodeRequestId(requestId: string): number {
@@ -166,7 +173,7 @@ export class IamAuditStore {
     const longCodes = categories.filter((category) => category !== "allow").map((category) => CATEGORY_CODES[category as "deny" | "iam-change"]);
     if (longCodes.length > 0) {
       const marks = longCodes.map(() => "?").join(",");
-      const sql = `SELECT cat, dec, t, req, p, a, r, m, o, ip FROM long WHERE cat IN (${marks}) AND ${filter} ORDER BY t DESC, rowid DESC LIMIT ?`;
+      const sql = `SELECT cat, dec, t, req, p, a, r, m, o, ip, hid FROM long WHERE cat IN (${marks}) AND ${filter} ORDER BY t DESC, rowid DESC LIMIT ?`;
       const rows = await this.db.all<Row>(sql, [...longCodes, ...params, limit]);
       for (const row of rows) found.push(this.decode(row, CATEGORY_NAMES[row.cat ?? 0] ?? "deny", row.dec === 1 ? "allow" : "deny"));
     }
@@ -178,6 +185,7 @@ export class IamAuditStore {
     const dict = this.dictionary;
     const resources = dict.valueOf(row.r);
     const origin = decodeOrigin(dict.valueOf(row.o));
+    const hidden = hiddenCount(row.hid);
     return {
       category,
       time: row.t,
@@ -190,7 +198,8 @@ export class IamAuditStore {
       origin: origin.origin,
       ipPrefix: row.ip === null ? null : dict.valueOf(row.ip),
       ...(origin.via === undefined ? {} : { via: origin.via }),
-      ...(origin.consent === undefined ? {} : { consent: origin.consent })
+      ...(origin.consent === undefined ? {} : { consent: origin.consent }),
+      ...(hidden === null ? {} : { hidden })
     };
   }
 
@@ -215,6 +224,26 @@ export class IamAuditStore {
     const rows = await this.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB 'allow_[0-9]*'");
     return rows.map((row) => dayOfTable(row.name));
   }
+}
+
+/**
+ * Gives `long` its `hid` column when the file was made before it existed. A
+ * second process that added it first makes the `ALTER` fail; the column then
+ * exists, so only a failure that leaves it missing is thrown.
+ */
+async function addHiddenColumn(db: IamAuditDatabase): Promise<void> {
+  const present = async () => (await db.all<{ name: string }>("PRAGMA table_info(long)")).some((column) => column.name === HIDDEN_COLUMN);
+  if (await present()) return;
+  try {
+    await db.exec(`ALTER TABLE long ADD COLUMN ${HIDDEN_COLUMN} INTEGER`);
+  } catch (error) {
+    if (!(await present())) throw error;
+  }
+}
+
+/** A stored or recorded hidden count: a positive safe integer, else null (not recorded). */
+function hiddenCount(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 function encodeMatched(matched: IamAuditRecord["matched"]): string {

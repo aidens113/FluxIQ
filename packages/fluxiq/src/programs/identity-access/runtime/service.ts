@@ -15,6 +15,7 @@ import {
   type CredentialKey,
   type SealedCredentialRecord
 } from "./credential-seal.ts";
+import { IdentityAuthorityDelegation } from "./authority/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
@@ -34,6 +35,8 @@ import {
   type StoredSession
 } from "./stored-state.ts";
 import { createTotpSecret, verifyTotp } from "./totp.ts";
+import { TotpRequiredError } from "./totp-required-error.ts";
+import { refuseTakenUsername, usernameKey } from "./usernames/index.ts";
 import type {
   IdentityAccessServiceOptions,
   IdentityAccessSnapshot,
@@ -52,13 +55,6 @@ import type {
 } from "../types.ts";
 
 const INVALID_CREDENTIALS = "Invalid username or credentials";
-
-export class TotpRequiredError extends Error {
-  constructor(message = "Authenticator code required") {
-    super(message);
-    this.name = "TotpRequiredError";
-  }
-}
 
 export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -81,6 +77,8 @@ export class IdentityAccessService {
   /** Raw ids of the sessions this process saw, in memory only, and who is told when one is revoked. */
   private readonly revocations: IdentitySessionRevocations;
   private readonly credentialAttempts = new IdentityCredentialAttempts();
+  /** Where account holders' role and on/off are held; the `update-user` endpoint asks it first. */
+  readonly authority = new IdentityAuthorityDelegation();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -129,6 +127,7 @@ export class IdentityAccessService {
     if ((existing || this.credentials.has(id) || this.encryptedCredentials.has(id)) && (params.password || params.pin)) {
       throw new Error("An existing account's or stored credential's password or PIN cannot be changed here; use a password or PIN change");
     }
+    refuseTakenUsername(this.users, id, params.username);
     const user: User = {
       id,
       username: params.username,
@@ -147,11 +146,12 @@ export class IdentityAccessService {
     return withoutPersonalPreferences(user);
   }
 
-  async updateUser(params: IdentityUserUpdate): Promise<User> {
+  async updateUser(params: IdentityUserUpdate, usernameMode: "replace" | "recase" = "replace"): Promise<User> {
     await this.load();
     const existing = this.users.get(params.id);
     if (!existing) throw new Error(`Unknown user: ${params.id}`);
     if (params.roleId && !this.roles.has(params.roleId)) throw new Error(`Unknown role: ${params.roleId}`);
+    refuseTakenUsername(this.users, existing.id, params.username, usernameMode);
     const removesFinalAdmin = existing.enabled && existing.roleId === "admin"
       && (params.enabled === false || (params.roleId !== undefined && params.roleId !== "admin"))
       && ![...this.users.values()].some((user) => user.id !== existing.id && user.enabled && user.roleId === "admin");
@@ -322,8 +322,8 @@ export class IdentityAccessService {
 
   async authenticate(params: { username: string; password: string; totp?: string; ttlMs?: number; nowMs?: number }): Promise<{ session: Session; user: User; role: Role }> {
     await this.load();
-    const username = params.username.trim().toLowerCase();
-    const user = [...this.users.values()].find((item) => item.username.toLowerCase() === username);
+    const username = usernameKey(params.username.trim());
+    const user = [...this.users.values()].find((item) => usernameKey(item.username) === username);
     if (!user || !user.enabled) {
       await runDummyCredentialDerivation(params.password, this.kdf);
       throw new Error(INVALID_CREDENTIALS);

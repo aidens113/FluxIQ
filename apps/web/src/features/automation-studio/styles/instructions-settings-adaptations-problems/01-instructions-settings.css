@@ -5,9 +5,9 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%);
+  background: var(--surface-muted);
   padding: var(--space-md);
 }
 
@@ -28,10 +28,10 @@
   justify-content: space-between;
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
   padding: var(--space-md);
 }
 
@@ -45,7 +45,7 @@
 .automation-instruction-list-pane > header span,
 .automation-instruction-editor-pane > header span,
 .automation-instruction-diagnostics > header span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -61,10 +61,10 @@
   display: grid;
   gap: 7px;
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
   padding: 11px;
   text-align: left;
   cursor: pointer;
@@ -72,14 +72,14 @@
 
 .automation-instruction-list button:hover,
 .automation-instruction-list button.selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px rgba(0, 104, 201, 0.08), 0 8px 18px rgba(15, 23, 42, 0.06);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent), 0 8px 18px color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--accent-soft);
 }
 
 .automation-instruction-title {
   overflow: hidden;
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-body-small);
   font-weight: var(--font-weight-bold);
   text-overflow: ellipsis;
@@ -87,7 +87,7 @@
 }
 
 .automation-instruction-meta {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -99,7 +99,7 @@
 }
 
 .automation-instruction-footer small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   text-transform: uppercase;
@@ -114,10 +114,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-dense);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
   padding: 14px;
 }
 
@@ -125,7 +125,7 @@
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -135,11 +135,11 @@
 .automation-instruction-editor-card textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
-  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+  color: var(--text);
   padding: 9px 10px;
   font: inherit;
 }
@@ -151,8 +151,8 @@
 .automation-settings-panel select:focus,
 .automation-settings-panel textarea:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(0, 104, 201, 0.14);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .automation-instruction-body-field {
@@ -174,10 +174,10 @@
 .automation-instruction-diagnostics article,
 .automation-instruction-diagnostics p {
   margin: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
   padding: 9px 10px;
 }
 
@@ -188,7 +188,7 @@
 
 .automation-instruction-diagnostics article span,
 .automation-instruction-diagnostics p {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -208,10 +208,10 @@
   align-content: start;
   gap: var(--space-md);
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
   padding: 14px;
 }
 
@@ -223,17 +223,17 @@
   display: grid;
   gap: 3px;
   padding-bottom: 9px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-settings-panel > header strong {
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-body);
 }
 
 .automation-settings-panel > header span,
 .automation-settings-panel label span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -249,11 +249,11 @@
 .automation-settings-panel textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
-  background: #ffffff;
-  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+  color: var(--text);
   padding: 9px 10px;
   font: inherit;
 }
@@ -266,11 +266,11 @@
   display: grid;
   gap: 2px;
   padding-top: var(--space-sm);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
 }
 
 .automation-settings-divider span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -288,7 +288,7 @@
   gap: var(--space-sm);
   min-width: 0;
   padding: 10px 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-flow-port-row:last-child { border-bottom: 0; }
@@ -310,7 +310,7 @@
   align-items: center;
   gap: var(--space-sm);
   padding: 8px 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 @media (max-width: 1100px) {
@@ -340,35 +340,35 @@
 .automation-settings-toggle {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: #f8fafc;
+  background: var(--surface-muted);
   padding: var(--space-dense);
   transition: border-color var(--motion-fast) var(--motion-easing), background var(--motion-fast) var(--motion-easing), box-shadow var(--motion-fast) var(--motion-easing);
 }
 
 .automation-settings-toggle:hover {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .automation-settings-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: var(--color-primary);
+  accent-color: var(--accent);
 }
 
 .automation-settings-toggle span {
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-body-small);
 }
 
 .automation-settings-success {
   margin: 0;
-  border: 1px solid #bbf7d0;
+  border: 1px solid color-mix(in srgb, var(--success) 40%, var(--surface));
   border-radius: var(--radius-control);
-  background: #f0fdf4;
-  color: #166534;
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
   padding: 8px 10px;
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);

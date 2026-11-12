@@ -49,17 +49,17 @@ export function automationPortTone(port: AutomationNodePort, direction: "source"
 
 export function automationPortColor(tone: AutomationPortTone): string {
   switch (tone) {
-    case "success": return "#188038";
-    case "warning": return "#b35c00";
-    case "danger": return "#c5221f";
-    case "boolean": return "#00897b";
-    case "number": return "#5e35b1";
-    case "text": return "#ad1457";
-    case "object": return "#1565c0";
-    case "signal": return "#ef6c00";
-    case "routine": return "#6a1b9a";
-    case "flow": return "#0972d3";
-    default: return "#6b7785";
+    case "success": return "var(--success)";
+    case "warning": return "var(--warning)";
+    case "danger": return "var(--danger)";
+    case "boolean": return "var(--success)";
+    case "number": return "var(--accent-text)";
+    case "text": return "var(--text-soft)";
+    case "object": return "var(--muted)";
+    case "signal": return "var(--warning-text)";
+    case "routine": return "var(--danger-text)";
+    case "flow": return "var(--accent)";
+    default: return "var(--text-dim)";
   }
 }
 

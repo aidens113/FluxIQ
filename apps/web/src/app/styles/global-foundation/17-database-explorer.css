@@ -4,25 +4,25 @@
   gap: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .db-sidebar,
 .db-inspector {
   min-width: 0;
   overflow: auto;
-  background: var(--surface-tool);
+  background: var(--surface-muted);
 }
 
 .db-sidebar {
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--divider);
 }
 
 .db-inspector {
-  border-left: 1px solid var(--color-border);
+  border-left: 1px solid var(--divider);
   padding: var(--space-md);
 }
 
@@ -38,12 +38,12 @@
   justify-content: space-between;
   gap: var(--space-sm);
   min-height: 42px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 10px 12px;
 }
 
 .db-sidebar-heading span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -68,7 +68,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: 5px 7px;
   text-align: left;
   cursor: pointer;
@@ -76,8 +76,8 @@
 
 .db-node.selected,
 .db-table-node.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .db-table-list {
@@ -91,7 +91,7 @@
   align-items: center;
   gap: var(--space-xs);
   margin-left: auto;
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .db-icon {
@@ -100,26 +100,26 @@
   flex: 0 0 auto;
   width: 24px;
   height: 22px;
-  border: 1px solid var(--color-selected-border);
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-control);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
 }
 
 .db-icon.table {
-  border-color: #c8d0d8;
-  background: #ffffff;
-  color: var(--color-text-muted);
+  border-color: var(--edge);
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .db-icon.key {
   width: 20px;
   height: 20px;
-  border-color: var(--color-warning-border);
-  background: var(--color-warning-surface);
-  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
+  color: var(--warning-text);
 }
 
 .db-toolbar {
@@ -127,8 +127,8 @@
   grid-template-columns: minmax(180px, 1fr) minmax(150px, 220px) minmax(110px, 140px) minmax(110px, 140px) auto;
   gap: var(--space-dense);
   align-items: end;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
   padding: var(--space-dense);
 }
 
@@ -138,14 +138,14 @@
 }
 
 .db-toolbar label span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
 
 .db-toolbar input {
   min-height: 34px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   padding: 5px 9px;
 }
@@ -160,8 +160,8 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  border-bottom: 1px solid var(--color-warning-border);
-  background: var(--color-warning-surface);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
   padding: var(--space-sm) var(--space-md);
   font-size: var(--font-size-compact);
 }
@@ -172,8 +172,8 @@
   justify-content: space-between;
   gap: var(--space-md);
   min-height: 48px;
-  border-top: 1px solid var(--color-border);
-  background: var(--surface-tool);
+  border-top: 1px solid var(--divider);
+  background: var(--surface-muted);
   padding: var(--space-sm) var(--space-md);
   font-size: var(--font-size-compact);
 }
@@ -181,7 +181,7 @@
 .db-grant-status {
   display: block;
   margin-top: var(--space-md);
-  color: var(--color-warning);
+  color: var(--warning-text);
 }
 
 .db-raw-record {
@@ -191,8 +191,8 @@
 .db-raw-record pre {
   max-height: 320px;
   overflow: auto;
-  border: 1px solid var(--color-border);
-  background: var(--surface-tool);
+  border: 1px solid var(--divider);
+  background: var(--surface-muted);
   padding: var(--space-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -204,11 +204,11 @@
   align-content: start;
   justify-items: start;
   margin: 16px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-lg);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-sm);
 }
 
 .db-locked-state .button {
@@ -225,8 +225,8 @@
 .db-grid td {
   max-width: 280px;
   overflow: hidden;
-  border-bottom: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
+  border-right: 1px solid var(--divider);
   padding: 8px 10px;
   text-align: left;
   text-overflow: ellipsis;
@@ -237,7 +237,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -248,7 +248,7 @@
 
 .db-grid tr:hover,
 .db-grid tr.selected {
-  background: var(--surface-selected);
+  background: var(--accent-soft);
 }
 
 .kv-explorer {
@@ -262,9 +262,9 @@
   grid-template-columns: 20px minmax(80px, 0.4fr) minmax(0, 1fr);
   gap: var(--space-sm);
   align-items: start;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-sm);
 }
 
@@ -275,8 +275,8 @@
 }
 
 .kv-explorer code {
-  color: var(--color-text-muted);
-  font-family: var(--font-family-mono);
+  color: var(--muted);
+  font-family: var(--font-mono);
   font-size: var(--font-size-compact);
 }
 

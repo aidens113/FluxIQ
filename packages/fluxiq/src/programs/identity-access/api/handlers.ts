@@ -1,10 +1,11 @@
-import type { GlobalProgramApiRegistry } from "../../_shared/api.ts";
+import type { GlobalProgramApiRegistry, ProgramApiResponse } from "../../_shared/api.ts";
 import { humannessSchema } from "@fluxiq/contracts/automation";
 import { identityAccessSnapshotInput, renameIdentityUserInput, revokeIdentitySessionInput } from "@fluxiq/contracts/program-api-inputs";
 import { endpointResource } from "../../_shared/iam/index.ts";
 import {
   IDENTITY_ACCESS_ENDPOINTS,
   IDENTITY_PREFERENCES_ERRORS,
+  IDENTITY_RECASE_ERRORS,
   type CreateIdentityUserRequest,
   type MyPreferencesResponse,
   type RevokeSessionRequest,
@@ -14,7 +15,10 @@ import {
   type UpdateIdentityUserRequest,
   type VaultUnlockRequest
 } from "./contracts.ts";
+import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "../runtime/authority/index.ts";
 import type { IdentityAccessService } from "../runtime/service.ts";
+import { IdentityUsernameTakenError } from "../runtime/username-taken-error.ts";
+import { IdentityUsernameRecaseError, usernameKey } from "../runtime/usernames/index.ts";
 
 /**
  * The refusal an endpoint returns when the calling session has not just
@@ -52,42 +56,112 @@ async function recheckCredentials(service: IdentityAccessService, payload: Crede
 }
 
 /**
+ * The named refusal of a sign-in name, role or on/off change for a person
+ * whose authority is held elsewhere (`IdentityAuthorityDelegation`), or `null`
+ * when it is held here or the update changes none of the three. Only the delegation's own two refusals are answered; anything else
+ * propagates, as any handler error does.
+ */
+async function authorityRefusal(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<{ ok: false; error: string; errorCode: string } | null> {
+  try {
+    await service.authority.refuseChangeHeldElsewhere(payload);
+    return null;
+  } catch (error) {
+    if (error instanceof IdentityAuthorityManagedError || error instanceof IdentityAuthorityUncheckedError) return { ok: false, error: error.message, errorCode: error.code };
+    throw error;
+  }
+}
+
+/**
+ * What an `update-user` request changes, read against the person's stored
+ * values in this request. `changes` is `payload` without the fields equal to
+ * the stored ones: a value resent unchanged is not a change, so it is not
+ * asked about (`authorityRefusal`), not rechecked (`changesAuthority`) and not
+ * written. All four fields are compared exactly, so a sign-in name that
+ * differs from the stored one only by case stays in `changes` and is written
+ * as sent. `recasesName` says it is the person's own name in another case
+ * (equal under `usernameKey`, as sign-in and the uniqueness check compare
+ * names): the same sign-in name of the same person, so no change of
+ * authority, for an account holder (whose sign-in name is their account
+ * email, the same address in any case) as for anyone, whoever re-cases it;
+ * the endpoint's own gate (`identity.manage`) decides who may. A dropped
+ * field is never written, so a change that lands after the read is not
+ * overwritten by it. A person not found is returned whole, so the request
+ * fails in `updateUser` as it did before.
+ */
+async function changedFields(service: IdentityAccessService, payload: UpdateIdentityUserRequest): Promise<{ changes: UpdateIdentityUserRequest; recasesName: boolean }> {
+  const stored = (await service.snapshot()).users.find((user) => user.id === payload.id);
+  if (!stored) return { changes: payload, recasesName: false };
+  const changes = { ...payload };
+  if (changes.username === stored.username) delete changes.username;
+  if (changes.displayName === stored.displayName) delete changes.displayName;
+  if (changes.roleId === stored.roleId) delete changes.roleId;
+  if (changes.enabled === stored.enabled) delete changes.enabled;
+  const recasesName = changes.username !== undefined && usernameKey(changes.username) === usernameKey(stored.username);
+  return { changes, recasesName };
+}
+
+/**
  * Whether an account update changes what the account can do, rather than how it
- * reads. Presence decides it, as the request carries only the fields being
+ * reads. Presence decides it, on a request already stripped of unchanged
+ * values (`changedFields`), so it carries only the fields being
  * changed.
  */
 function changesAuthority(payload: UpdateIdentityUserRequest): boolean {
   return payload.roleId !== undefined || payload.enabled !== undefined;
 }
 
-/** A preferences request's refusal, by its named code. */
-type PreferencesRefusal = { ok: false; error: string; errorCode: string };
+/**
+ * The response for a write of a person: the written person, or the named
+ * refusal of a sign-in name another person already has ignoring case
+ * (`IdentityUsernameTakenError`, answered as `errorCode`). Anything else
+ * propagates, as any handler error does.
+ */
+async function written(write: () => Promise<unknown>): Promise<ProgramApiResponse> {
+  try {
+    return { ok: true, payload: await write() };
+  } catch (error) {
+    if (error instanceof IdentityUsernameTakenError || error instanceof IdentityUsernameRecaseError) return { ok: false, error: error.message, errorCode: error.code };
+    throw error;
+  }
+}
 
-const SELF_ONLY: PreferencesRefusal = {
+/** A self-only request's refusal (preferences, re-casing one's own name), by its named code. */
+type SelfOnlyRefusal = { ok: false; error: string; errorCode: string };
+
+const SELF_ONLY: SelfOnlyRefusal = {
   ok: false,
   error: "Preferences are only ever your own: the request may carry startingHumanness and nothing else, never a person.",
   errorCode: IDENTITY_PREFERENCES_ERRORS.selfOnly
 };
-const STARTING_HUMANNESS_INVALID: PreferencesRefusal = {
+const STARTING_HUMANNESS_INVALID: SelfOnlyRefusal = {
   ok: false,
   error: "startingHumanness is a whole number from 0 to 100, or null to clear it.",
   errorCode: IDENTITY_PREFERENCES_ERRORS.startingHumannessInvalid
 };
+const RECASE_SELF_ONLY: SelfOnlyRefusal = {
+  ok: false,
+  error: "Only your own sign-in name is changed here: the request may carry username and nothing else, never a person.",
+  errorCode: IDENTITY_RECASE_ERRORS.selfOnly
+};
+const RECASE_NOT_CASE_ONLY: SelfOnlyRefusal = {
+  ok: false,
+  error: "Only the capitalisation of your sign-in name can change here: send your current sign-in name with different capital letters.",
+  errorCode: IDENTITY_RECASE_ERRORS.notCaseOnly
+};
 
 /**
- * A preferences request's fields, or its refusal. The person is never read
- * from the payload: any field but `startingHumanness` (`userId`, `id`, `user`,
- * the caller's own id included) refuses the request, except the panel route's
- * own `authSessionId`, which must be the caller's session. `fields` lists what
- * this endpoint takes.
+ * A self-only request's fields, or `refusal`. The person is never read from
+ * the payload: any field not in `fields` (`userId`, `id`, `user`, the caller's
+ * own id included) refuses the request, except the panel route's own
+ * `authSessionId`, which must be the caller's session.
  */
-function readPreferencesPayload(payload: unknown, sessionId: string, fields: readonly string[]): { ok: true; body: Record<string, unknown> } | PreferencesRefusal {
+function readSelfOnlyPayload(payload: unknown, sessionId: string, fields: readonly string[], refusal: SelfOnlyRefusal): { ok: true; body: Record<string, unknown> } | SelfOnlyRefusal {
   if (payload === undefined || payload === null) return { ok: true, body: {} };
-  if (typeof payload !== "object" || Array.isArray(payload)) return SELF_ONLY;
+  if (typeof payload !== "object" || Array.isArray(payload)) return refusal;
   const body = payload as Record<string, unknown>;
   for (const key of Object.keys(body)) {
     if (key === "authSessionId" && body.authSessionId === sessionId) continue;
-    if (!fields.includes(key)) return SELF_ONLY;
+    if (!fields.includes(key)) return refusal;
   }
   return { ok: true, body };
 }
@@ -102,9 +176,12 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     accessLevel: "Read",
     resource: endpointResource.workspace(),
     assistant: { input: identityAccessSnapshotInput, summary: "Lists the people, their roles and the sign-in sessions.", phrases: ["who has access", "show sign-in sessions", "list the people"] },
+    // Each person is marked with whether `update-user` would refuse their
+    // sign-in name, role and on/off, so a client never offers a change that
+    // will be refused.
     handler: async () => ({
       ok: true,
-      payload: await service.snapshot()
+      payload: await service.authority.listing(await service.snapshot())
     })
   });
   registry.register({
@@ -125,7 +202,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       // creating an administrator outright cannot ask for less.
       const refusal = await recheckCredentials(service, payload);
       if (refusal) return refusal;
-      return { ok: true, payload: await service.upsertUser(payload) };
+      return written(() => service.upsertUser(payload));
     }
   });
   registry.register({
@@ -136,20 +213,40 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     action: "iam:UpdateUser",
     accessLevel: "PermissionsManagement",
     resource: endpointResource.user("id"),
-    assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in.", phrases: ["rename this person", "change this person's display name"] },
+    assistant: { input: renameIdentityUserInput, summary: "Renames a person, by sign-in name or display name. It never changes their role or whether they can sign in. A person with an account keeps their account email as their sign-in name, so only their display name changes here.", phrases: ["rename this person", "change this person's display name"] },
     handler: async (request) => {
-      const payload = request.payload as UpdateIdentityUserRequest | undefined;
-      if (!payload?.id) return { ok: false, error: "id is required" };
+      const requested = request.payload as UpdateIdentityUserRequest | undefined;
+      if (!requested?.id) return { ok: false, error: "id is required" };
+      // A field equal to the person's stored value is not a change: resending
+      // an unchanged sign-in name, role or on/off is neither refused nor
+      // rechecked. A person's sign-in name re-cased, by them or by an
+      // administrator, keeps the same name, so it is not asked about either,
+      // and is written as sent. A real change is decided as below, and a
+      // sign-in name another person has, ignoring case, is refused by name
+      // when it is written (`written`).
+      const { changes: payload, recasesName } = await changedFields(service, requested);
+      const authorityChange = { ...payload };
+      if (recasesName) delete authorityChange.username;
       // The gate is on the fields that move authority, not on the endpoint: a
       // role change grants it, and an enable or disable hands it back or takes
       // it from someone relying on it. A disabled administrator that can be
       // switched on again with nothing proved is a dormant escalation. A
       // rename or display-name edit changes no authority and stays open.
+      //
+      // An account holder's sign-in name, role and on/off are provisioning's
+      // (their account email, their memberships' policies and their account's
+      // status). Refused by name (`errorCode`) before any credential is spent:
+      // a change here would disagree with provisioning's record, and the next
+      // provisioning change would undo a role or on/off. Their display name
+      // stays open, as anyone's does, and so does re-casing their sign-in
+      // name: the same address, so provisioning's record still holds.
+      const heldElsewhere = await authorityRefusal(service, authorityChange);
+      if (heldElsewhere) return heldElsewhere;
       if (changesAuthority(payload)) {
         const refusal = await recheckCredentials(service, payload);
         if (refusal) return refusal;
       }
-      return { ok: true, payload: await service.updateUser(payload) };
+      return written(() => service.updateUser(payload, recasesName ? "recase" : "replace"));
     }
   });
   registry.register({
@@ -343,7 +440,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     handler: async (request) => {
       const actor = request.actor;
       if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
-      const read = readPreferencesPayload(request.payload, actor.sessionId, []);
+      const read = readSelfOnlyPayload(request.payload, actor.sessionId, [], SELF_ONLY);
       if (!read.ok) return read;
       const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.startingHumanness(actor.userId) };
       return { ok: true, payload };
@@ -363,13 +460,44 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     handler: async (request) => {
       const actor = request.actor;
       if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
-      const read = readPreferencesPayload(request.payload, actor.sessionId, ["startingHumanness"]);
+      const read = readSelfOnlyPayload(request.payload, actor.sessionId, ["startingHumanness"], SELF_ONLY);
       if (!read.ok) return read;
       if (!Object.hasOwn(read.body, "startingHumanness")) return STARTING_HUMANNESS_INVALID;
       const value = read.body.startingHumanness;
       if (value !== null && !humannessSchema.safeParse(value).success) return STARTING_HUMANNESS_INVALID;
       const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.setStartingHumanness(actor.userId, value as number | null) };
       return { ok: true, payload };
+    }
+  });
+  // The caller's own sign-in name in another case: held exactly as the
+  // preferences are (`programs.read`, the caller's own user, the person read
+  // only from `request.actor.userId`), so a person who may not call
+  // `update-user` can still correct which letters of their name are capitals.
+  // Anything but the same name ignoring case is refused before anything is
+  // written or compared with another person's name, so the endpoint never
+  // says whether a name other than the caller's own is taken.
+  registry.register({
+    programId: "identity-access",
+    endpoint: IDENTITY_ACCESS_ENDPOINTS.recaseMyUsername,
+    permission: "programs.read",
+    classification: "authoring",
+    action: "iam:RecaseMyUsername",
+    accessLevel: "Write",
+    resource: endpointResource.selfUser(),
+    assistant: { hidden: "A person's own sign-in name, re-cased by them on their sign-in page, never by the assistant." },
+    // No recheck and no authority owner asked: the same name of the same
+    // person (same id, sessions, memberships and account) moves no authority,
+    // as `update-user` decides a re-case. It writes through the same
+    // `updateUser`, so the service's uniqueness check (ignoring case) holds.
+    handler: async (request) => {
+      const actor = request.actor;
+      if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
+      const read = readSelfOnlyPayload(request.payload, actor.sessionId, ["username"], RECASE_SELF_ONLY);
+      if (!read.ok) return read;
+      const username = read.body.username;
+      const stored = (await service.snapshot()).users.find((user) => user.id === actor.userId);
+      if (typeof username !== "string" || !stored || usernameKey(username) !== usernameKey(stored.username)) return RECASE_NOT_CASE_ONLY;
+      return written(() => service.updateUser({ id: actor.userId, username }, "recase"));
     }
   });
 }

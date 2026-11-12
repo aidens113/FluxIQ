@@ -3,7 +3,7 @@ export type SetupDomain = { id: string; title: string; description: string };
 
 /**
  * Which domain an entry that creates projects works in: first-run setup
- * (`app/get-started`) and Automation Studio (`app/programs/automation-studio`).
+ * (`app/get-started`) and Automation Studio (`/programs/automation-studio`, which redirects to `/flows`).
  * A project created from either is
  * stamped with the domain its Studio request names, and a paired client
  * refuses a project outside the domain it was paired for, so setup must

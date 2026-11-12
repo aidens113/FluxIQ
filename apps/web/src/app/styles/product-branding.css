@@ -30,9 +30,9 @@
 .onboarding-card {
   display: grid;
   gap: var(--space-dense);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-lg);
 }
 
@@ -43,7 +43,7 @@
 
 .onboarding-card p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .onboarding-card-actions {

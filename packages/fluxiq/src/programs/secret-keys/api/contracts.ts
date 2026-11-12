@@ -11,7 +11,8 @@ export const SECRET_KEYS_ENDPOINTS = {
   unlock: "unlock",
   setDefaultKey: "set-default-key",
   getAssistantModel: "get-assistant-model",
-  setAssistantModel: "set-assistant-model"
+  setAssistantModel: "set-assistant-model",
+  offerKey: "offer-key"
 } as const;
 
 export type SecretKeyAuthorizationPayload = {
@@ -82,6 +83,10 @@ export type RevealSecretKeyResponse = {
 };
 
 export type SetDefaultKeyRequest = { id: string };
+/** The holder offers their own key to the workspace (`offered` true) or withdraws it (false). */
+export type OfferSecretKeyRequest = { id: string; offered: boolean };
+/** The reply of `offer-key`. */
+export type OfferSecretKeyResponse = { keyId: string; offered: boolean };
 export type SetAssistantModelRequest = { keyId?: string; model?: string };
 /** The reply of `set-default-key`, `get-assistant-model` and `set-assistant-model`. */
 export type ModelKeySettingsResponse = ModelKeySettingsView;

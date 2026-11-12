@@ -24,6 +24,6 @@ describe("the root layout", () => {
     registerProduct(FULL_PRODUCT);
     expect(await generateMetadata()).toEqual({ title: "Full", description: "Domain-neutral automation framework control panel", icons: { icon: "/product/assets/favicon.ico" } });
     const html = renderToStaticMarkup(await RootLayout({ children: <main>Page</main> }));
-    expect(html).toContain('<html lang="en" style="--color-primary:#0b5cad;--color-primary-hover:#084a8a;--color-focus:#0b5cad">');
+    expect(html).toContain('<html lang="en" style="--accent:#0b5cad;--accent-hover:#084a8a;--accent-text:#0b5cad;--accent-ink:#ffffff;--focus:#0b5cad">');
   });
 });

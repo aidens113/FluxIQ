@@ -2,16 +2,16 @@
 .runs h1 { margin: 0; overflow-wrap: anywhere; font-size: 1.4rem; }
 .runs-crumb { margin: 0; }
 .runs-note { margin: 0; opacity: 0.85; }
-.runs-error { color: var(--danger, #b42318); opacity: 1; }
+.runs-error { color: var(--danger); opacity: 1; }
 .runs-filters { display: flex; flex-wrap: wrap; gap: 12px; min-width: 0; }
 .runs-filters label { display: grid; gap: 4px; min-width: 0; flex: 1 1 160px; }
 .runs-filters select { min-height: 36px; max-width: 100%; }
 .runs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.runs-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, rgba(127, 127, 127, 0.35)); border-radius: 8px; overflow-wrap: anywhere; }
+.runs-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border: 1px solid var(--divider); border-radius: 8px; overflow-wrap: anywhere; }
 .runs-link { color: inherit; text-decoration: underline; min-height: 24px; }
 .runs-muted { opacity: 0.75; font-size: 0.9rem; }
 .runs-state { font-weight: 600; }
-.runs-state[data-tone="ok"] { color: var(--success, #067647); }
-.runs-state[data-tone="bad"] { color: var(--danger, #b42318); }
-.runs-state[data-tone="warn"] { color: var(--warning, #b54708); }
+.runs-state[data-tone="ok"] { color: var(--success); }
+.runs-state[data-tone="bad"] { color: var(--danger); }
+.runs-state[data-tone="warn"] { color: var(--warning); }
 .runs-detail { min-width: 0; max-width: 100%; overflow-x: auto; }

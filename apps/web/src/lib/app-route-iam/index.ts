@@ -4,6 +4,7 @@ export { appRouteIamContract } from "./contract-for";
 export { authorizeAppRoute } from "./authorize-app-route";
 export { pairedClientRouteActor } from "./paired-client-route-actor";
 export { panelRouteActor } from "./panel-actor";
+export { appRouteReadActions } from "./read-actions";
 export { routeParamId } from "./route-param-id";
 export type {
   AppRouteActor,

@@ -3,6 +3,7 @@
 // scripted model the e2e fixture host may use instead.
 export * from "./conversation-model.ts";
 export * from "./key-model-source.ts";
+export * from "./workspace-key-locked-error.ts";
 export * from "./fixture-host-constants.ts";
 export * from "./fixture-host-model-source.ts";
 export * from "./is-fixture-host.ts";

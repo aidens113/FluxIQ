@@ -9,8 +9,8 @@
   justify-content: space-between;
   gap: var(--space-lg);
   min-height: 56px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
   padding: 0 24px;
 }
 
@@ -21,21 +21,10 @@
   font-weight: var(--font-weight-bold);
 }
 
-.domain-topbar-nav {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-width: 0;
-}
-
-.domain-topbar-nav .back-link {
-  flex: 0 0 auto;
-}
-
 .brand-lockup small {
   display: block;
   margin-top: 2px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-medium);
 }
@@ -45,10 +34,10 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--color-selected-border);
+  border: 1px solid var(--accent-edge);
   border-radius: var(--radius-control);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .auth-status {
@@ -65,7 +54,7 @@
 }
 
 .auth-status > small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   text-transform: uppercase;
 }
@@ -75,23 +64,23 @@
   place-items: center;
   width: var(--control-size-icon);
   height: var(--control-size-icon);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
+  background: var(--surface);
+  color: var(--muted);
   cursor: pointer;
 }
 
 .icon-button:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .icon-button.selected,
 .button.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .icon-button:disabled,
@@ -111,7 +100,7 @@
 }
 
 .auth-role {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   text-transform: uppercase;
   white-space: nowrap;
@@ -132,10 +121,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
-}
-
-.program-topbar-title .breadcrumb {
-  flex: 1;
 }
 
 @media (max-width: 640px) {

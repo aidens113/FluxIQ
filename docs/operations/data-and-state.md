@@ -102,6 +102,18 @@ The platform IAM audit at `.fluxiq/platform/iam-audit.sqlite` is one open store
 per host root across primary reloads. It is flushed and closed after workspace
 shutdown; tenant registries never retain a sink replaced by a reload.
 
+It fills on every profile, `local` and `self-hosted` included, with one row per
+allowed state-changing call (a registry endpoint at `Write` or
+`PermissionsManagement` level, or an app route whose method is not `GET`) and
+one per refusal, a refused read included. Allowed reads are not stored. Frequent
+write-level calls each add a row (compute-control's `ops:Heartbeat` and
+`ops:PollCommands` when a node polls through the registry, chat writes such as
+`append-turn`); allowed rows are buffered and flushed after 1 second or at 100
+rows, and refusals flush at once. Under `service` a list a member can only
+partly see adds one refusal row per hidden item. Rows are compact (about 30
+bytes for an allowed one) and carry no payload. See
+[Platform: Audit](../architecture/platform.md#audit).
+
 ## Global SQLite Database
 
 The global framework database is:

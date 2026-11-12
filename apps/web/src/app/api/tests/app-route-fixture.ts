@@ -3,6 +3,9 @@
 // collaborators answer success, so a route's status says only how it was
 // decided. People sign in by cookie; paired clients carry a token approved by
 // one of them. No live server, no storage, and no token or cookie is printed.
+// The accounts and activity routes also reach the platform services and the
+// IAM audit, which answer here as one workspace holding one pending invitee,
+// so an allowed call runs to its end and a refused one never reaches them.
 
 import { NextRequest } from "next/server";
 import type { GlobalProgramApiRegistry } from "fluxiq";
@@ -18,6 +21,10 @@ export const PEOPLE = {
 } as const;
 
 export type Person = keyof typeof PEOPLE;
+
+/** The one workspace, and the person every accounts change acts on: invited, never signed in. */
+export const FIXTURE_WORKSPACE = "workspace-main";
+export const INVITEE = { id: "user-invitee", roleId: "viewer" } as const;
 
 const ROLES = [
   { id: "admin", permissions: ADMIN_PERMISSIONS },
@@ -56,7 +63,9 @@ const fluxiq = {
         const person = personOf("cookie-", sessionId);
         return person && sessionId ? { session: { id: sessionId, userId: person.id, expiresAtMs: Date.now() + 60_000 }, user: { id: person.id }, role: role(person.roleId) } : null;
       },
-      snapshot: async () => ({ users: Object.values(PEOPLE).map((person) => ({ ...person, enabled: true })), roles: ROLES })
+      snapshot: async () => ({ users: [...Object.values(PEOPLE), INVITEE].map((person) => ({ ...person, displayName: person.id, username: person.id, enabled: true })), roles: ROLES }),
+      // Every re-proof passes, so an accounts change is decided by IAM alone.
+      authorizeSessionCredentials: async () => undefined
     },
     clientGateway: {
       ready: async () => undefined,
@@ -97,10 +106,13 @@ const fluxiq = {
   programDirectory: () => ({ scope: {}, domains: [], domain: null, programs: [] })
 };
 
+const workspaces = { tenancy: "single" as const, primaryWorkspaceId: FIXTURE_WORKSPACE, primary: () => ({ fluxiq }) };
+
 /** The `lib/fluxiq` module the routes import. */
 export function fluxiqModuleMock() {
   return {
     getFluxIQ: () => fluxiq,
+    getFluxIQWorkspaces: () => workspaces,
     getFluxIQWebRuntimeStatus: () => ({ automationStudio: { activeProjectId: "project-active" } }),
     setAutomationStudioWebContext: () => undefined,
     reloadFluxIQWebInstance: async () => fluxiq
@@ -136,4 +148,29 @@ export async function outcome(response: Response): Promise<{ outcome: "unauthent
     return { outcome: "forbidden", ...(body.error === undefined ? {} : { error: body.error }) };
   }
   return { outcome: "allowed" };
+}
+
+const invitee = { userId: INVITEE.id, email: "invitee@example.test", displayName: "Invitee", status: "active", emailVerifiedAtMs: null, lastSignInAtMs: null, createdAtMs: 0 };
+const inviteeMembership = { workspaceId: FIXTURE_WORKSPACE, userId: INVITEE.id, status: "active", policies: ["FluxIQReadOnlyAccess"], createdAtMs: 0 };
+
+const platformServices = {
+  store: {
+    getAccount: async (userId: string) => (userId === INVITEE.id ? invitee : null),
+    getMembership: async (workspaceId: string, userId: string) => (workspaceId === FIXTURE_WORKSPACE && userId === INVITEE.id ? inviteeMembership : null),
+    getWorkspace: async () => ({ workspaceId: FIXTURE_WORKSPACE, kind: "single" }),
+    listMembershipsOfWorkspace: async () => [inviteeMembership],
+    listMembershipsOfUser: async () => []
+  },
+  // Every operation succeeds; an invite creates the invitee.
+  provisioning: { run: async () => ({ ok: true, result: { status: "created", userId: INVITEE.id } }) }
+};
+
+/** The `server/provisioning-listener` module the accounts and activity routes load once a call is allowed. */
+export function provisioningListenerMock() {
+  return { getPlatformServices: async () => platformServices };
+}
+
+/** The activity route's audit reader: an empty audit. */
+export function platformAuditReaderMock() {
+  return { platformAuditReader: async () => ({ read: async () => [] }) };
 }
