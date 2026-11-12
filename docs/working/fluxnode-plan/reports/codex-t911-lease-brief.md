@@ -24,3 +24,9 @@ Use only adjacent narrow tests and affected package checks/structure audit after
 Heavy jobs through node C:/Users/osrs_/FluxStuff/fxwork/.tools/heavy-slot.mjs run t911-lease -- "<command>"; one job per lane. pnpm.cmd in PowerShell, pnpm inside coordinator bash.
 Root owns final independent verification, package versions, shared plans and git. Report actual causal reds separately from code inspection; do not claim architecture assertions are observed behavior.
 Return Outcome/Changed/Validation/Not verified/Report/Notes at each endpoint.
+
+## Lead interface review, 2026-11-12
+
+Legacy compatibility is approved as a separate discriminated owner-bound target source. Existing untagged ClientGatewayHostLeaseSource and requiresLease(sessionId:string) retain their exact invocation contract; target objects must never silently replace the legacy argument.
+After recording the causal-red endpoint and revised interface, production release covers the report's authority/binding/lease-scope files and gateway source/stamp adapter plus adjacent tests. The physical port retains one scheduler; authority is per actual instance and domain, with stale matching frames refusing.
+Durable ledger/controller/persistence expansion remains held for a concrete terminal known-unsent settlement design. An admission refusal after claim but before send cannot be misreported as send_uncertain, left as a dangling pending claim, or represented by a fabricated client receipt. Re-resolve ready/trust authority at the actual send boundary. Shared service wiring remains the t911 lane's ownership; t905 design must not edit it concurrently.
