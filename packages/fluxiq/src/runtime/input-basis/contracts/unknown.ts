@@ -1,0 +1,1 @@
+export type AutomationStudioInputUnknownCode = "invalid_scope" | "invalid_reference" | "unsupported_input" | "scope_unverified" | "secrecy_unverified" | "producer_unverified" | "storage_unavailable" | "missing" | "stale" | "snapshot_unavailable" | "lease_closed";

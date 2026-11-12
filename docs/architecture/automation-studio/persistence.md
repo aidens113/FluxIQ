@@ -57,6 +57,25 @@ recording-drain performance remains a separate validation requirement.
 
 ## Other persistence foundations
 
+The internal normal-input binding owner keeps its project head at
+`input-basis/owner.json` through the existing program-document transaction owner.
+The head contains opaque owner/binding IDs, monotonic revisions, trusted scopes,
+ordered producer references and immutable snapshot references. Exact nonsecret
+values live in private dataset snapshots; unchanged values and producer references
+reuse a revision, while A-to-B-to-A advances it. Snapshot creation and read-back
+precede the head compare-and-swap, so a failed head write cannot publish an orphan
+snapshot as authority. Both a project root and persistent dataset storage are
+required. Corrupt state and storage errors do not create replacement authority.
+
+Scope, secrecy and producer authority are injected trusted ports. Missing authority
+or an active/unverified secret context yields unknown before publication. Reopening
+rechecks scope, current revision, stored values and producer references. Runtime
+leases expose isolated execution copies, serialize only their reference and release
+their live copy on close. Per-operation cancellation preserves its original reason;
+an already-started storage commit may finish, but cancellation returns no receipt.
+This foundation proves a stored normal binding only: engine-use evidence, secret
+continuity and replay admission require their own integration.
+
 Immutable source occurrence snapshots live in the project's SQLite database, independently of runtime runs. The store lives under `framework/persistence/automation/project/dataset-occurrences`, with its additive schema under `dataset-occurrence-schema`. `AutomationStudioRunDatasets.createImmutableSnapshot({projectId, rows})` accepts sanitized `{occurrenceId, row}` values and returns `{snapshotId, count}`; task memory holds that opaque reference. Migration `0037_dataset_snapshots` adds snapshot metadata and ordered occurrence rows. It is additive and independent of the run-batch evidence migration. Creation writes metadata and all occurrences in one transaction; duplicate occurrence IDs and non-JSON values refuse the entire snapshot. Duplicate row values remain separate occurrences.
 
 `readImmutableSnapshotPage({projectId, snapshotId, cursor?, limit?})` reads that immutable order, with a cursor bound to the snapshot and an explicit empty page for an empty snapshot. A missing snapshot is `null`. Snapshots survive process restart and remain isolated by the owning project database. The API provides no overwrite, creates no runtime session, and computes no digest of row contents. Callers retain secret references rather than resolved secret values. Snapshots remain project data until the owning project is removed; they are never browser cache.
