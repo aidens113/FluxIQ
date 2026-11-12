@@ -20,6 +20,9 @@
 // worded for the workspace's key, never another key.
 //
 // Bound by the host, which holds Secret Keys (`programs/_shared/runtime.ts`).
+// Each release checks the current choice and consent before and after the
+// asynchronous unlock/reveal. A turn's earlier choice never authorizes a
+// later call after that choice or the holder's offer has changed.
 
 import { AutomationStudioSecretsLockedError, createAutomationStudioAnthropicPanelCommandModel, createAutomationStudioDeepSeekPanelCommandModel, isAutomationStudioDeepSeekModel, releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../../../llm/index.ts";
 import { isAutomationStudioAnthropicModel } from "../../../models/index.ts";
@@ -42,6 +45,8 @@ const NOT_CHOSEN = "No model key has been chosen for this workspace's messages y
 /** Said when the workspace's chosen key is someone else's and its holder has not offered it. */
 const NOT_OFFERED = "The key chosen for this workspace's messages has not been offered to the workspace by the person who added it, so it pays only for their own messages. They can offer it in Settings, or an owner or administrator of this workspace can choose another.";
 
+const CHOICE_CHANGED = "The model key or model chosen for this workspace's messages has changed. Send the message again to use the current choice in Settings.";
+
 /**
  * A model source over Secret Keys: `resolveAssistant` names the key and model,
  * `keyPorts` release the value per call. A key whose provider the assistant
@@ -55,32 +60,45 @@ export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promis
     const refusal = lentTo(choice, sender.userId) ? notReleasable(choice) : undefined;
     if (refusal) return { ok: false, reason: refusal };
     const provider = choice.provider?.trim().toLowerCase();
-    // The adapters turn any throw from the key lookup into a generic provider error, so a lock is remembered here and rethrown typed.
-    let locked: AutomationStudioSecretsLockedError | undefined;
+    // The adapters wrap key lookup errors, so preserve known consent refusals
+    // and typed locks without exposing an unrelated internal lookup failure.
+    let releaseFailure: Error | undefined;
+    const refuseRelease = (reason: string): never => {
+      releaseFailure = new Error(reason);
+      throw releaseFailure;
+    };
+    const checkCurrentChoice = async (userId: string): Promise<void> => {
+      const current = await input.resolveAssistant();
+      if (!current.ok) return refuseRelease(current.reason);
+      if (current.keyId !== choice.keyId || current.provider?.trim().toLowerCase() !== provider || current.model !== choice.model || current.ownerId !== choice.ownerId) refuseRelease(CHOICE_CHANGED);
+      const refusal = lentTo(current, userId) ? notReleasable(current) : undefined;
+      if (refusal) refuseRelease(refusal);
+    };
     const release = (wanted: "anthropic" | "deepseek") => async (caller: { userId: string; sessionId: string } | null): Promise<string> => {
       if (!caller) throw new Error("No signed-in person sent this message, so no model key can be released for it.");
+      await checkCurrentChoice(caller.userId);
       const lent = lentTo(choice, caller.userId);
-      const refusal = lent ? notReleasable(choice) : undefined;
-      if (refusal) throw new Error(refusal);
       // Lent: the holder's own live panel unlock (the host's fallback for a caller with no session of its own), never the sender's.
       const payer = lent && choice.ownerId ? { userId: choice.ownerId, sessionId: null } : caller;
       try {
-        return await releaseAutomationStudioSessionProviderKey(input.keyPorts, payer, { provider: wanted, flowKeyId: choice.keyId, ...(choice.model ? { model: choice.model } : {}), ...(input.instanceHost ? { instanceHost: input.instanceHost } : {}) });
+        const value = await releaseAutomationStudioSessionProviderKey(input.keyPorts, payer, { provider: wanted, flowKeyId: choice.keyId, ...(choice.model ? { model: choice.model } : {}), ...(input.instanceHost ? { instanceHost: input.instanceHost } : {}) });
+        await checkCurrentChoice(caller.userId);
+        return value;
       } catch (error) {
         if (!(error instanceof AutomationStudioSecretsLockedError)) throw error;
         // The holder sees their own words; anyone else is told it is the workspace's key, and its owner unlocks it.
-        locked = lent ? new PanelAssistantWorkspaceKeyLockedError({ instanceHost: input.instanceHost, cause: error }) : error;
-        throw locked;
+        releaseFailure = lent ? new PanelAssistantWorkspaceKeyLockedError({ instanceHost: input.instanceHost, cause: error }) : error;
+        throw releaseFailure;
       }
     };
     const typed = (model: PanelAssistantModel): PanelAssistantModel => ({
       name: model.name,
       decide: async (request, execution) => {
-        locked = undefined;
+        releaseFailure = undefined;
         try {
           return await model.decide(request, execution);
         } catch (error) {
-          throw locked ?? error;
+          throw releaseFailure ?? error;
         }
       }
     });

@@ -7,10 +7,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 803
+- Public declarations: 809
 - Class: 49
-- Object: 89
-- Type: 520
+- Object: 91
+- Type: 524
 - Value: 145
 
 ## Public Declarations
@@ -544,6 +544,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `fluxiqWorkspaceRootDir` | Value | `packages/fluxiq/src/framework/layout-v3/workspace-root-dir.ts` | - |
 | `FrameworkResult` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `GeneratedDocumentationPage` | Type | `packages/fluxiq/src/programs/docs/types.ts` | - |
+| `GetMyPreferencesRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | The calling person's own preferences. Both endpoints act only on the caller (`request.actor.userId`): the request names no person, and one that carries any field but `startingHumanness` is refused (`IDENTITY_PREFERENCES_ERRORS.selfOnly`). |
 | `GetRuntimeRunRequest` | Type | `packages/fluxiq/src/programs/runtime-control/api/contracts.ts` | - |
 | `GLOBAL_PROGRAMS` | Object | `packages/fluxiq/src/programs/_shared/catalog.ts` | - |
 | `GlobalProgramApiRegistry` | Class | `packages/fluxiq/src/programs/_shared/api.ts` | - |
@@ -554,6 +555,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `HeldKeys` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | Custody of password-derived keys held after a successful check: session unlocks and one-use reveal authorizations. Invariant: every held key opens its record's current seal. Rotation, metadata edits, and deletion revoke a key's holders; a re-seal or credential change replaces their keys. Every buffer dropped or replaced is zeroed. A `SecretKeysService` creates its own, or is given one that outlives it (a workspace manager's, so evicting an idle instance does not lock its users' keys). Expiry timers come from here and hold only this custody and an id, never the service that asked for them or the password that unlocked them. |
 | `IDENTITY_ACCESS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `IDENTITY_ACCESS_PROGRAM` | Object | `packages/fluxiq/src/programs/identity-access/metadata.ts` | - |
+| `IDENTITY_PREFERENCES_ERRORS` | Object | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | The named refusals of the preference endpoints, sent as the response's `errorCode`. |
+| `IDENTITY_RECASE_ERRORS` | Object | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | The named refusals of `recase-my-username`, sent as the response's `errorCode`. A name another person has ignoring case is refused as `identity.username_taken` (`IdentityUsernameTakenError`), as on every write. |
 | `IdentityAccessListedUser` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | A person as the `snapshot` endpoint lists them. `authorityHeldElsewhere` is true exactly when `update-user` would refuse to change their sign-in name, role or on/off (`IdentityAuthorityDelegation`): an account holder, whose three are provisioning's, or a person the owner could not answer for. A client offers those changes only when it is false. |
 | `IdentityAccessListing` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | The snapshot as the `snapshot` endpoint answers it: each person marked as an `IdentityAccessListedUser`. |
 | `IdentityAccessPanel` | Type | `packages/fluxiq/src/programs/identity-access/ui/contracts.ts` | - |
@@ -620,6 +623,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ModelKeySettingsRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Which model key is the workspace's default, and what the panel assistant uses. One small record beside the keys; it holds key ids, a model id and a notice, never a value. Absent until something sets it: the default is then the oldest enabled model key, so a workspace made before this record needs no migration. |
 | `ModelKeySettingsResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The reply of `set-default-key`, `get-assistant-model` and `set-assistant-model`. |
 | `ModelKeySettingsView` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | The model-key choices as a client shows them: no ids of values, only which key. |
+| `MyPreferencesResponse` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | What both preference endpoints answer: the value now stored, null when none. |
 | `NavigationItem` | Type | `packages/fluxiq/src/ui/index.ts` | - |
 | `normalizeDomainId` | Value | `packages/fluxiq/src/domains/index.ts` | - |
 | `normalizeFluxIQStatus` | Value | `packages/fluxiq/src/ui/index.ts` | - |
@@ -682,6 +686,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `readMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `readModelKeyLockReason` | Value | `packages/contracts/src/task-attempts/model-key-lock.ts` | - |
 | `readStorageConfig` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
+| `RecaseMyUsernameRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | The calling person's own sign-in name in another case (`recase-my-username`). It acts only on the caller (`request.actor.userId`): the request names no person, and one that carries any field but `username` is refused (`IDENTITY_RECASE_ERRORS.selfOnly`). `username` must equal the caller's current name ignoring case (`usernameKey`); it is written as sent and answered as the written person, the same as `update-user` answers. |
 | `RecordEnvelope` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `recordProgramEndpointPerformance` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `recordSqlPerformance` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
@@ -804,6 +809,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `UnlockSecretKeysRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. |
 | `UnlockSecretKeysResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | `stillLocked`: those named that this did not lift. |
 | `UpdateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
+| `UpdateMyPreferencesRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | `startingHumanness`: an integer 0-100, or null to clear it. |
 | `UpdateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `UpsertDeploymentArtifactRequest` | Type | `packages/fluxiq/src/programs/deployment-sync/api/contracts.ts` | - |
 | `UpsertDeploymentTargetRequest` | Type | `packages/fluxiq/src/programs/deployment-sync/api/contracts.ts` | - |

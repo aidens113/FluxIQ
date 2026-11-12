@@ -280,8 +280,17 @@ Added only; nothing a client already imports changed shape.
   ignoring case as `identity.recase_not_case_only`, before it is compared with
   any other person's name. It writes through `IdentityAccessService.updateUser`
   as `update-user`'s re-case does, with no recheck and no authority owner
-  asked, and answers the written person. The Security sign-in page's "Your
-  sign-in" panel offers it as "Change capitals in your sign-in name".
+  asked, and answers the written person. Both re-case paths also pass the
+  service's case-only mutation mode: it compares the requested name with the
+  live stored name and checks uniqueness immediately before writing, with no
+  asynchronous gap between those checks and the map mutation. A concurrent
+  real rename therefore refuses the stale re-case with
+  `identity.recase_not_case_only` and preserves the newer name and all other
+  fields. This guarantee is within one identity-service instance; it does not
+  add cross-process storage transactions. The Security sign-in page's "Your
+  sign-in" panel offers it as "Change capitals in your sign-in name", using
+  the authenticated person's username supplied by the server even when the
+  broader identity snapshot is refused. No identity-list permission is added.
 - **`snapshot`.** The endpoint's `IdentityAccessSnapshotResponse` is now an
   `IdentityAccessListing`: each user is an `IdentityAccessListedUser` with
   `authorityHeldElsewhere: boolean`, true exactly when `update-user` would

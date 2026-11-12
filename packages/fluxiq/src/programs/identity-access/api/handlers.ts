@@ -18,7 +18,7 @@ import {
 import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "../runtime/authority/index.ts";
 import type { IdentityAccessService } from "../runtime/service.ts";
 import { IdentityUsernameTakenError } from "../runtime/username-taken-error.ts";
-import { usernameKey } from "../runtime/usernames/index.ts";
+import { IdentityUsernameRecaseError, usernameKey } from "../runtime/usernames/index.ts";
 
 /**
  * The refusal an endpoint returns when the calling session has not just
@@ -120,7 +120,7 @@ async function written(write: () => Promise<unknown>): Promise<ProgramApiRespons
   try {
     return { ok: true, payload: await write() };
   } catch (error) {
-    if (error instanceof IdentityUsernameTakenError) return { ok: false, error: error.message, errorCode: error.code };
+    if (error instanceof IdentityUsernameTakenError || error instanceof IdentityUsernameRecaseError) return { ok: false, error: error.message, errorCode: error.code };
     throw error;
   }
 }
@@ -246,7 +246,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
         const refusal = await recheckCredentials(service, payload);
         if (refusal) return refusal;
       }
-      return written(() => service.updateUser(payload));
+      return written(() => service.updateUser(payload, recasesName ? "recase" : "replace"));
     }
   });
   registry.register({
@@ -497,7 +497,7 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       const username = read.body.username;
       const stored = (await service.snapshot()).users.find((user) => user.id === actor.userId);
       if (typeof username !== "string" || !stored || usernameKey(username) !== usernameKey(stored.username)) return RECASE_NOT_CASE_ONLY;
-      return written(() => service.updateUser({ id: actor.userId, username }));
+      return written(() => service.updateUser({ id: actor.userId, username }, "recase"));
     }
   });
 }

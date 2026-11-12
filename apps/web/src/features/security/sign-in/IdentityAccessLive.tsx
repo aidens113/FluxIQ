@@ -15,6 +15,7 @@ import { ManagedUnderAccess } from "./ManagedUnderAccess";
 import { OwnSignInNameCase } from "./OwnSignInNameCase";
 
 type IdentityView = "Users" | "Roles" | "Authentication Policy";
+type SignInUser = CurrentUser & { username?: string | undefined };
 type CredentialEdit = { userId: string; kind: "password" | "pin"; value: string; confirm: string; authorizationPassword: string; authorizationPin: string; authorizationTotp: string };
 
 export function visibleIdentityUsers<T extends User>(users: readonly T[], query: string, enabledFilter: "all" | "enabled" | "disabled"): T[] {
@@ -30,7 +31,7 @@ export function isLastEnabledAdmin(users: User[], user: User): boolean {
   return user.enabled && user.roleId === "admin" && users.filter((item) => item.enabled && item.roleId === "admin").length === 1;
 }
 
-export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }) {
+export function IdentityAccessLive({ currentUser }: { currentUser: SignInUser }) {
   const api = useProgramApi("identity-access");
   const ownerRef = useRef({ api, actorId: currentUser.id, generation: 0 });
   if (ownerRef.current.api !== api || ownerRef.current.actorId !== currentUser.id) ownerRef.current = { api, actorId: currentUser.id, generation: ownerRef.current.generation + 1 };
@@ -39,12 +40,14 @@ export function IdentityAccessLive({ currentUser }: { currentUser: CurrentUser }
   return <IdentityWorkspace key={owner.generation} api={api} currentUser={currentUser} isOwnerCurrent={isOwnerCurrent} />;
 }
 
-function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnType<typeof useProgramApi>; currentUser: CurrentUser; isOwnerCurrent(): boolean }) {
+function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnType<typeof useProgramApi>; currentUser: SignInUser; isOwnerCurrent(): boolean }) {
   const mounted = useRef(false);
   const current = () => mounted.current && isOwnerCurrent();
   const [snapshot, setSnapshot] = useState<ApiResponse<IdentityAccessSnapshotResponse> | null>(null);
   const [readError, setReadError] = useState("");
   const [readLoading, setReadLoading] = useState(true);
+  const [ownUsername, setOwnUsername] = useState(currentUser.username);
+  useEffect(() => setOwnUsername(currentUser.username), [currentUser.username]);
   const readJob = useRef({ id: 0, controller: null as AbortController | null });
   const users = snapshot?.payload?.users ?? [];
   const roles = snapshot?.payload?.roles ?? [];
@@ -285,6 +288,7 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
       const result = await safePost("recase-my-username", { username });
       if (!current()) return null;
       if (!result.ok) return refusalMessage(result, "Your sign-in name could not be changed.");
+      setOwnUsername(username);
       setStatus("Sign-in name updated");
       await refresh();
       return "";
@@ -298,8 +302,16 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
     setCredentialEdit({ userId: user.id, ...emptyCredentialEdit(kind) });
   }
 
-  if (!snapshot && readLoading) return <LoadingState label="Loading identity and access" detail="Retrieving users, roles, sessions, and authentication policy." />;
-  if (!snapshot) return <EmptyState title="Identity and access unavailable" description={readError || "No identity snapshot confirmed."} action={<button className="button" onClick={guard(() => void latestRefresh.current())} type="button">Retry</button>} />;
+  // The server supplies only the authenticated person's own name. Re-casing
+  // it needs no read of the wider identity list, which members cannot read.
+  const ownNamePanel = ownUsername ? <Panel title="Your sign-in">
+    <KeyValue rows={[["Sign-in name", ownUsername]]} />
+    <OwnSignInNameCase busy={operation.busy} save={guard(recaseOwnUsername)} username={ownUsername} />
+    {status ? <p role="status">{status}</p> : null}
+  </Panel> : null;
+  if (!snapshot) return <OperationBusyBoundary busy={operation.busy}>{ownNamePanel}{readLoading
+    ? <LoadingState label="Loading identity and access" detail="Retrieving users, roles, sessions, and authentication policy." />
+    : <EmptyState title="Identity and access unavailable" description={readError || "No identity snapshot confirmed."} action={<button className="button" onClick={guard(() => void latestRefresh.current())} type="button">Retry</button>} />}</OperationBusyBoundary>;
 
   return (
     <OperationBusyBoundary busy={operation.busy}><section aria-busy={operation.busy || undefined} className="identity-access-workspace">
@@ -331,7 +343,7 @@ function IdentityWorkspace({ api, currentUser, isOwnerCurrent }: { api: ReturnTy
           })} type="button"><QrCode size={14} aria-hidden />{actorUser.totpEnabled ? "Turn off two-factor" : "Set up two-factor"}</button>
           <OwnSignInNameCase busy={operation.busy} save={guard(recaseOwnUsername)} username={actorUser.username} />
         </div>
-      </Panel> : <VisualAlert tone="info" title="Your sign-in" message="Your own account is not in the identity list this sign-in can read, so its password, PIN and two-factor cannot be changed here." />}
+      </Panel> : <>{ownNamePanel}<VisualAlert tone="info" title="Your sign-in" message="Your own account is not in the identity list this sign-in can read, so its password, PIN and two-factor cannot be changed here." /></>}
       <Segmented label="Identity and Access view"options={["Users", "Roles", "Authentication Policy"]} value={activeView} onChange={guard((value) => setActiveView(value as IdentityView))} />
 
       {activeView === "Users" ? <div className="identity-users-layout">

@@ -133,4 +133,37 @@ describe("the capitals of the person's own sign-in name", () => {
     expect(text()).toContain("The identity operation could not be completed. Try again.");
     expect(text()).not.toContain("network down");
   });
+
+  it("lets a member re-case only their authenticated name when the identity snapshot is refused", async () => {
+    const member = { ...actor, username: "member@example.test" };
+    fixture.api.get = vi.fn(async () => ({ ok: false, errorCode: "authorization.forbidden" }));
+    await act(async () => { renderer = create(<IdentityAccessLive currentUser={member} />); });
+
+    expect(button("Change capitals in your sign-in name")).toBeDefined();
+    expect(button("Add User")).toBeUndefined();
+    act(() => button("Change capitals in your sign-in name")!.props.onClick());
+    expect(nameInput().props.value).toBe(member.username);
+    type("Member@Example.Test");
+    await act(async () => save().props.onClick());
+
+    expect(fixture.api.post).toHaveBeenCalledWith("recase-my-username", { username: "Member@Example.Test" });
+    expect(fixture.api.post).toHaveBeenCalledTimes(1);
+    expect(text()).toContain("Member@Example.Test");
+    expect(modal()).toBeUndefined();
+  });
+
+  it("keeps the person's draft when the broader identity read finishes with a refusal", async () => {
+    let refuse!: (answer: { ok: false; errorCode: string }) => void;
+    fixture.api.get = vi.fn(() => new Promise((resolve) => { refuse = resolve; }));
+    const member = { ...actor, username: "member@example.test" };
+    await act(async () => { renderer = create(<IdentityAccessLive currentUser={member} />); });
+    act(() => button("Change capitals in your sign-in name")!.props.onClick());
+    type("Member@Example.Test");
+
+    await act(async () => refuse({ ok: false, errorCode: "authorization.forbidden" }));
+
+    expect(nameInput().props.value).toBe("Member@Example.Test");
+    expect(save().props.disabled).toBe(false);
+    expect(fixture.api.post).not.toHaveBeenCalled();
+  });
 });

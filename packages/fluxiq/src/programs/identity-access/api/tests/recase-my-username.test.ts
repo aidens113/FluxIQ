@@ -241,3 +241,24 @@ describe("recase-my-username and another person with the same name ignoring case
     expect(names).toMatchObject({ first: "Ann", second: "ann" });
   });
 });
+
+describe("case-only writes when another writer changes the sign-in name", () => {
+  it.each(["recase-my-username", "update-user"])("%s refuses a stale re-case instead of undoing a real rename", async (endpoint) => {
+    const { identity, registry, admin, viewer, state } = await setup();
+    const snapshot = identity.snapshot.bind(identity);
+    vi.spyOn(identity, "snapshot").mockImplementationOnce(async (...args) => {
+      const before = await snapshot(...args);
+      // The endpoint's read finishes after an authorized writer has moved
+      // the person onto another name. Its original re-case is now a rename.
+      await identity.updateUser({ id: VIEWER, username: "new-viewer" });
+      return before;
+    });
+
+    const answer = endpoint === "recase-my-username"
+      ? await recase(registry, viewer, { username: "Person-Viewer" })
+      : await registry.call({ programId: "identity-access", endpoint, scope: {}, actor: admin, payload: { id: VIEWER, username: "Person-Viewer" } });
+
+    expect(answer).toMatchObject({ ok: false, errorCode: IDENTITY_RECASE_ERRORS.notCaseOnly });
+    expect((await state(VIEWER)).user?.username).toBe("new-viewer");
+  });
+});

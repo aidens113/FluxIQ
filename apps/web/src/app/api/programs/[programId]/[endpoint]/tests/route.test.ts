@@ -225,6 +225,20 @@ describe("a paired client's bearer token", () => {
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
     const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
+    const flowDetail = endpoint === "get-flow-metadata-detail" || endpoint === "update-flow-settings";
+    if (flowDetail) {
+      // Real detail is richer than a paired client may read. The positive
+      // fixture proves its level survives and all context/defaults stay out.
+      call.mockResolvedValue({ ok: true, requestContext: { personUserId: "fixture-person" }, payload: {
+        context: { callerSessionId: "fixture-session" },
+        flow: {
+          flowId: "flow-1", name: "Fixture flow", description: "Fixture description",
+          inputs: [{ name: "fixture-input", defaultValue: "fixture-only-default" }],
+          variables: [{ name: "fixture-variable", initialValue: "fixture-only-initial" }],
+          metadata: { humanness: 40, llmExecutionSettings: { model: "fixture-model" }, checkAuthorization: "fixture-only-authorization" }
+        }
+      } });
+    }
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -242,7 +256,9 @@ describe("a paired client's bearer token", () => {
       },
       payload: forwardedPayload(endpoint, body),
     });
-    expect(await response.json()).toEqual({ ok: true, payload: { conversation: { id: "c1" } } });
+    expect(await response.json()).toEqual({ ok: true, payload: flowDetail
+      ? { flow: { flowId: "flow-1", metadata: { humanness: 40 } } }
+      : { conversation: { id: "c1" } } });
   });
 
   it("mirrors Core's paired-client allowlist for Automation Studio exactly", () => {

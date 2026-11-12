@@ -8,6 +8,7 @@ export default async function SecuritySignInRoute() {
   if (!auth) return <LoginPanel />;
   return <SecuritySignInPage user={{
     id: auth.user.id,
+    username: auth.user.username,
     displayName: auth.user.displayName,
     roleId: auth.user.roleId,
     totpEnabled: auth.user.totpEnabled,

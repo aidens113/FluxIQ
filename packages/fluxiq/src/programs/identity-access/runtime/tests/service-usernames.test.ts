@@ -13,6 +13,7 @@ import type { RecordEnvelope, Repository } from "../../../database-manager/index
 import { IdentityAccessService } from "../service.ts";
 import { identityRecord } from "../stored-state.ts";
 import { IdentityUsernameTakenError } from "../username-taken-error.ts";
+import { IdentityUsernameRecaseError } from "../usernames/index.ts";
 
 const WEAK_KDF = { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const };
 const PASSWORD = "dummy-password";
@@ -91,6 +92,22 @@ describe("IdentityAccessService sign-in names", () => {
 
     await expect(service.updateUser({ id: "bob", displayName: "Robert" })).resolves.toMatchObject({ username: "Bob", displayName: "Robert" });
   });
+
+  it("checks a case-only write against the live name before changing any fields", async () => {
+    const service = await freshService();
+    await service.updateUser({ id: "ann", username: "new-ann" });
+
+    await expect(service.updateUser({ id: "ann", username: "ANN", displayName: "Stale change" }, "recase")).rejects.toBeInstanceOf(IdentityUsernameRecaseError);
+    expect((await service.snapshot()).users.find((user) => user.id === "ann")).toMatchObject({ username: "new-ann", displayName: "Ann" });
+    await expect(service.updateUser({ id: "ann", username: "NEW-ANN" }, "recase")).resolves.toMatchObject({ username: "NEW-ANN" });
+  });
+
+  it("runs case-only validation before another person's uniqueness check", async () => {
+    const service = await freshService();
+
+    await expect(service.updateUser({ id: "ann", username: "BOB" }, "recase")).rejects.toMatchObject({ code: IdentityUsernameRecaseError.code });
+    expect(await usernames(service)).toMatchObject({ ann: "ann", bob: "Bob" });
+  });
 });
 
 describe("IdentityAccessService with two people stored under names that differ only by case", () => {
@@ -114,6 +131,7 @@ describe("IdentityAccessService with two people stored under names that differ o
 
     await expect(service.updateUser({ id: "second", username: "ANN" })).rejects.toBeInstanceOf(IdentityUsernameTakenError);
     await expect(service.updateUser({ id: "first", username: "ann" })).rejects.toBeInstanceOf(IdentityUsernameTakenError);
+    await expect(service.updateUser({ id: "first", username: "ANN" }, "recase")).rejects.toBeInstanceOf(IdentityUsernameTakenError);
     expect(await usernames(service)).toMatchObject({ first: "Ann", second: "ann" });
   });
 

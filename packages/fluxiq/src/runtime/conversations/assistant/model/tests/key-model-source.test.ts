@@ -110,4 +110,48 @@ describe("panelAssistantKeyModelSource on another person's key", () => {
     expect((byHolder as Error).message).toBe(secretsLockedMessage(HOST));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["the holder withdraws the offer", { chosenForWorkspace: true, offeredByHolder: false }],
+    ["the workspace choice is cleared", { chosenForWorkspace: false, offeredByHolder: true }],
+    ["another key is chosen", { keyId: "key.other", chosenForWorkspace: true, offeredByHolder: true }],
+    ["another provider is chosen", { provider: "DeepSeek", chosenForWorkspace: true, offeredByHolder: true }],
+    ["another model is chosen", { model: "claude-haiku-5-5", chosenForWorkspace: true, offeredByHolder: true }]
+  ] as const)("does not spend a captured choice again after %s", async (_label, changed) => {
+    const { keyPorts, revealed } = lentPorts(true);
+    let current: PanelAssistantKeyChoice = team({ chosenForWorkspace: true, offeredByHolder: true });
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
+    const source = panelAssistantKeyModelSource({ resolveAssistant: async () => current, keyPorts, fetchImpl });
+    const resolved = await source(CALLER);
+    if (!resolved.ok) throw new Error(resolved.reason);
+    const call = () => resolved.model.decide({ instructions: "x", transcript: [{ author: "person", text: "hi" }] }, { signal: new AbortController().signal, caller: CALLER });
+    await expect(call()).rejects.toBeDefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    current = { ...team({ chosenForWorkspace: true, offeredByHolder: true }), ...changed };
+    const refusal = await call().catch((error: unknown) => error);
+
+    expect(refusal).toMatchObject({ message: changed.offeredByHolder === false ? NOT_OFFERED : changed.chosenForWorkspace === false ? NOT_CHOSEN : "The model key or model chosen for this workspace's messages has changed. Send the message again to use the current choice in Settings." });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(revealed).toEqual(["key.team"]);
+  });
+
+  it("does not reach the provider when the offer is withdrawn while the key is being released", async () => {
+    const { keyPorts } = lentPorts(true);
+    let current = team({ chosenForWorkspace: true, offeredByHolder: true });
+    const reveal = keyPorts.revealKeyWithAuthorization;
+    keyPorts.revealKeyWithAuthorization = async (request) => {
+      const answer = await reveal(request);
+      // A separate holder operation completes before release returns.
+      current = team({ chosenForWorkspace: true, offeredByHolder: false });
+      return answer;
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
+    const source = panelAssistantKeyModelSource({ resolveAssistant: async () => current, keyPorts, fetchImpl });
+
+    const refusal = await decide(source, CALLER);
+
+    expect(refusal).toMatchObject({ message: NOT_OFFERED });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

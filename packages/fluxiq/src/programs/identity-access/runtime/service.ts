@@ -146,12 +146,12 @@ export class IdentityAccessService {
     return withoutPersonalPreferences(user);
   }
 
-  async updateUser(params: IdentityUserUpdate): Promise<User> {
+  async updateUser(params: IdentityUserUpdate, usernameMode: "replace" | "recase" = "replace"): Promise<User> {
     await this.load();
     const existing = this.users.get(params.id);
     if (!existing) throw new Error(`Unknown user: ${params.id}`);
     if (params.roleId && !this.roles.has(params.roleId)) throw new Error(`Unknown role: ${params.roleId}`);
-    refuseTakenUsername(this.users, existing.id, params.username);
+    refuseTakenUsername(this.users, existing.id, params.username, usernameMode);
     const removesFinalAdmin = existing.enabled && existing.roleId === "admin"
       && (params.enabled === false || (params.roleId !== undefined && params.roleId !== "admin"))
       && ![...this.users.values()].some((user) => user.id !== existing.id && user.enabled && user.roleId === "admin");
