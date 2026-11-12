@@ -10,6 +10,7 @@ import {
 } from "fluxiq/automation/llm-models";
 import { FLOW_RESULT_CHECK_DEFAULT_VALUES, flowResultCheckDraftFromSettings, flowResultCheckSchedule, type FlowResultCheckDraft } from "./flow-result-check-model";
 import { FLOW_SIZE_SETTING } from "./max-nodes-setting";
+import { humannessDraftValue, humannessFromStored, humannessSavePayload } from "./humanness";
 
 /** The model's context window, read from Core's model registry: the only per-request token limit. */
 export const FLOW_LLM_HARD_MAX_TOKENS = AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS;
@@ -73,6 +74,8 @@ export type FlowSettingsDraft = {
   maxReroutesPerRun: string;
   /** The most nodes one Subflow may hold (`max-nodes-setting.ts`). */
   maxNodesPerSubflow: string;
+  /** The Flow's own humanness 0-100 as text; "" means it uses the starting value (`humanness/`). */
+  humanness: string;
   interfaceInputs: FlowPortSettingsDraft[];
   interfaceOutputs: FlowPortSettingsDraft[];
   dependencyPins: string[];
@@ -133,6 +136,7 @@ export const FLOW_SETTINGS_DEFAULT_VALUES: Partial<FlowSettingsDraft> = {
   llmMaxInputTokens: "8000", llmMaxOutputTokens: "2000", llmMaxTotalTokens: "10000", llmTimeoutSeconds: "20", llmMaxCostUsd: "0.25", llmRetryCount: "0",
   maxCostUsdPerTrainingWindow: "5", maxRetriesPerAction: "1", maxRecoveryAttemptsPerSubflow: "2", maxReroutesPerRun: "2",
   maxNodesPerSubflow: String(FLOW_SIZE_SETTING.defaultValue),
+  humanness: "",
   ...FLOW_RESULT_CHECK_DEFAULT_VALUES
 };
 
@@ -262,6 +266,11 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
   // the detail beside the row, so a saved size comes back with the save.
   const flowSizeSettings = detail[FLOW_SIZE_SETTING.metadataKey] && typeof detail[FLOW_SIZE_SETTING.metadataKey] === "object" ? detail[FLOW_SIZE_SETTING.metadataKey] : undefined;
 
+  // Core's detail states the Flow's own humanness (`metadata.humanness`), or leaves it out.
+  const detailMetadata = detail.metadata && typeof detail.metadata === "object" ? detail.metadata : null;
+  const { humanness: _baseHumanness, ...metadataWithoutHumanness } = metadata;
+  const detailHumanness = detailMetadata ? humannessFromStored(detailMetadata.humanness) : humannessFromStored(metadata.humanness);
+
   return {
     ...(baseFlow ?? {}),
     flowId: detail.flowId,
@@ -283,7 +292,8 @@ export function flowSettingsFlowFromDetail(baseFlow: any, detail: any): any {
     createdAt: detail.createdAt ?? baseFlow?.createdAt,
     updatedAt: latestFlowSettingsTimestamp(detail.updatedAt, settings.updatedAt, baseFlow?.updatedAt),
     metadata: {
-      ...metadata,
+      ...metadataWithoutHumanness,
+      ...(detailHumanness !== null ? { humanness: detailHumanness } : {}),
       summaryOnly: false,
       settingsRevision: detail.settingsRevision ?? settings.revision,
       ...(settings.interventionMode ? { adaptationModeVersion: 1, adaptationMode: settings.interventionMode } : {}),
@@ -350,6 +360,7 @@ export function flowSettingsDraftFromFlow(flow: any): FlowSettingsDraft {
     maxRecoveryAttemptsPerSubflow: numberInputValue(trainingSettings.recoveryBudget?.maxRecoveryAttemptsPerSubflow ?? 2),
     maxReroutesPerRun: numberInputValue(trainingSettings.recoveryBudget?.maxReroutesPerRun ?? 2),
     maxNodesPerSubflow: numberInputValue(storedMaxNodesPerSubflow(metadata)),
+    humanness: humannessDraftValue(metadata.humanness),
     interfaceInputs: (flow?.interface?.inputs ?? []).map(flowPortSettingsDraft),
     interfaceOutputs: (flow?.interface?.outputs ?? []).map(flowPortSettingsDraft),
     dependencyPins: flow?.source?.mode === "code" ? [...(flow.source.declaredDependencies ?? [])] : [],
@@ -501,6 +512,8 @@ export function buildFlowSettingsSavePayload(flow: any, draft: FlowSettingsDraft
       llmSecretKeyId,
       llmExecutionSettings,
       adaptationPolicyId: adaptationPolicyId || "policy.default",
+      // A number, or null to clear the Flow's own value; stated on every save for the same reason.
+      humanness: humannessSavePayload(draft.humanness),
       // Stated on every save, default included, for the same reason as the
       // settings above: an omitted key keeps whatever is stored.
       [FLOW_SIZE_SETTING.metadataKey]: {

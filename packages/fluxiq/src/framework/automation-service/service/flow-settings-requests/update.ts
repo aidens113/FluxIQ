@@ -9,6 +9,9 @@ import { withStoredCheckAuthorization } from "./stored-check-authorization.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import { withFlowSizeSettings } from "./size-settings.ts";
+import { assertFlowHumanness } from "./assert-flow-humanness.ts";
+import { withFlowHumannessPatch } from "./flow-humanness-patch.ts";
+import { withFlowHumanness } from "./humanness-detail.ts";
 
 export async function updateFlowSettingsForRequest(service: Pick<AutomationStudioService, "getFlow" | "saveFlow" | "getFlowMetadataDetail">, projectId: string, flowId: string, payload: Record<string, any>) {
   const current = await service.getFlow(projectId, flowId);
@@ -16,6 +19,7 @@ export async function updateFlowSettingsForRequest(service: Pick<AutomationStudi
   const metadata = patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {};
   assertFlowLlmExecutionSettings(metadata as Record<string, unknown>);
   assertFlowSizeSettings(metadata as Record<string, unknown>);
+  assertFlowHumanness((metadata as Record<string, unknown>).humanness);
   const next = {
     ...current,
     ...(typeof patch.name === "string" ? { name: patch.name } : {}),
@@ -23,7 +27,7 @@ export async function updateFlowSettingsForRequest(service: Pick<AutomationStudi
     ...(patch.visibility === "private" || patch.visibility === "public" ? { visibility: patch.visibility } : {}),
     ...(patch.interface && typeof patch.interface === "object" ? { interface: patch.interface } : {}),
     ...(patch.executionDefaults && typeof patch.executionDefaults === "object" ? { executionDefaults: patch.executionDefaults } : {}),
-    metadata: withAutomationStudioCostLimitChoice(withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata), metadata), current.metadata, metadata),
+    metadata: withFlowHumannessPatch(withAutomationStudioCostLimitChoice(withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata), metadata), current.metadata, metadata), metadata),
     ...(current.source?.mode === "code" && patch.source?.mode === "code"
       ? { source: { ...current.source, declaredDependencies: Array.isArray(patch.source.declaredDependencies) ? patch.source.declaredDependencies : current.source.declaredDependencies } }
       : {})
@@ -33,7 +37,8 @@ export async function updateFlowSettingsForRequest(service: Pick<AutomationStudi
     flow: next,
     ...(typeof payload.expectedUpdatedAt === "number" ? { expectedUpdatedAt: payload.expectedUpdatedAt } : {})
   });
-  return withFlowSizeSettings(await service.getFlowMetadataDetail(projectId, flowId), await service.getFlow(projectId, flowId));
+  const stored = await service.getFlow(projectId, flowId);
+  return withFlowHumanness(withFlowSizeSettings(await service.getFlowMetadataDetail(projectId, flowId), stored), stored);
 }
 
 /**

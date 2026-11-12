@@ -47,9 +47,16 @@ Failure traces, video, screenshots, and baseline captures are written under
 
 ## Chat widget
 
-`e2e/chat-widget.spec.ts` drives the panel's chat in a headed browser, with no model call. Seed the isolated root and its threads
-with the server stopped, then run it against a server you started on a free port with `FLUXIQ_IMPORTER_ROOT` set to
-`apps/web/.e2e-host` and no model key in its environment:
+`e2e/chat-widget.spec.ts` drives the panel's docked Assistant (the shared ui-components chat and its conversation
+list), with no model call. `run-isolated.mjs` runs it in a round of its own (it answers its seeded asks), seeding the
+threads with `seed-chat-threads.mjs` after the fixture:
+
+```powershell
+node apps/web/e2e/support/run-isolated.mjs --skip-build --only e2e/chat-widget.spec.ts
+```
+
+By hand: seed the isolated root and its threads with the server stopped, then run it against a server you started on a
+free port with `FLUXIQ_IMPORTER_ROOT` set to `apps/web/.e2e-host` and no model key in its environment:
 
 ```powershell
 $env:FLUXIQ_E2E_FAST_STUDIO = "true"
@@ -104,3 +111,21 @@ Either one missing leaves the normal key binding, so it cannot be turned on for 
 chosen by words the person's message contains, and lists the model's decisions in order (`{ tool, input, why }` or
 `{ reply }`); `{ $answer: "revision" }` inside a tool's input reads from what the previous tool answered. A call that waits for
 the person's Allow must come first in its scenario. Script text is generic; never shape it like a Lab task.
+
+## Every panel screen, in one command
+
+`support/run-isolated.mjs` runs every `panel-*.spec.ts` (Home, Flows, Runs, Data, Security, Settings, Welcome, the redirects,
+the panel presets and an axe pass over the screens) on the isolated fixture host, with no model key and no model call. From
+the repository root, through the machine's heavy-job queue:
+
+```powershell
+node C:/Users/osrs_/FluxStuff/fxwork/.tools/heavy-slot.mjs run <lane> -- node apps/web/e2e/support/run-isolated.mjs [--skip-build] [--only e2e/panel-data.spec.ts ...] [--fail-fast]
+```
+
+It builds the panel (unless `--skip-build`), then per round seeds `apps/web/.e2e-host`, verifies the seed, starts the production
+panel on a free port with the gateway off and every `*API_KEY` blanked, waits for `/api/ready`, runs Playwright on
+`desktop-chromium`, and always stops the server it started (by its process id and child tree, `taskkill /T /F`). Rounds: the
+read-only specs together; `panel-assistant` and `panel-flows` each alone on a fresh seed (they delete a Flow and rename steps);
+`panel-presets` once per preset server (`FLUXIQ_PANEL_PRESET=data-collection`, then `task-automation`; the default `full` panel
+hides nothing, so the spec skips there). The seed holds one table of three rows under "Old search" and one paired browser, for the
+Data and Security specs. The seed and verifier print nothing but errors.

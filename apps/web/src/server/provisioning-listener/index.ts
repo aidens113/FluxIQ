@@ -1,10 +1,12 @@
 // Barrel for the private provisioning listener (hosted production plan,
 // Account Provisioning API, Transports): the listener and its environment
-// entry, its configuration error and types, and the platform services the web
-// server composes for it and the account pages.
+// entry, its configuration error and types, the platform services the web
+// server composes for it and the account pages, and the account holders'
+// authority owner every workspace's Identity Access defers to.
 //
 // `platform-services.ts` imports `lib/fluxiq`, so `lib/fluxiq` reaches this
 // barrel with a dynamic `import()`, which keeps the two out of a load cycle.
+export * from "./platform-authority-owner";
 export * from "./platform-services";
 export * from "./provisioning-listener-config-error";
 export * from "./resolve-email-sender";

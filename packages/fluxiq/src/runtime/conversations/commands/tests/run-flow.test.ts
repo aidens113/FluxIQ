@@ -281,3 +281,14 @@ describe("Run it", () => {
     expect(calls.map((call) => call.endpoint)).toEqual(["run-runtime-session"]);
   });
 });
+
+describe("Run it and the person's humanness", () => {
+  it("sends the run the humanness the context carries, and sends none when it has none", async () => {
+    const withIt = contextWith({ "run-runtime-session": ended("succeeded") }, { humanness: 60 });
+    await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(withIt.context, { flowId: "flow.kettle" });
+    expect(withIt.calls.find((call) => call.endpoint === "run-runtime-session")?.payload).toEqual({ projectId: "project.run", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", humanness: 60 });
+    const without = contextWith({ "run-runtime-session": ended("succeeded") });
+    await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(without.context, { flowId: "flow.kettle" });
+    expect(without.calls.find((call) => call.endpoint === "run-runtime-session")?.payload).toEqual({ projectId: "project.run", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" });
+  });
+});

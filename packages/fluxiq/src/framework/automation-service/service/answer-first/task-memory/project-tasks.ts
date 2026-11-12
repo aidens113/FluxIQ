@@ -22,7 +22,7 @@ export async function automationStudioAnswerFirstProjectTasks(ports: AutomationS
     const flowId = latest.attempt.flowId ?? memory.flowId;
     const title = memory.title ?? ports.flowNames.get(flowId)?.trim();
     const conversationId = await ports.source.locator.conversationOfFlow(projectId, flowId);
-    tasks.push({ taskId: memory.taskId, flowId, ...(title ? { title } : {}), ...(conversationId ? { conversationId } : {}), attemptCount: memory.attempts.length, latest });
+    tasks.push({ taskId: memory.taskId, flowId, ...(title ? { title } : {}), ...(conversationId ? { conversationId } : {}), ...(memory.humanness !== undefined ? { humanness: memory.humanness } : {}), attemptCount: memory.attempts.length, latest });
   }
   return tasks.sort((one, other) => other.latest.attempt.startedAtMs - one.latest.attempt.startedAtMs);
 }

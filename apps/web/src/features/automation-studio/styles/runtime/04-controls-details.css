@@ -1,8 +1,8 @@
 .automation-inline-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 2px solid var(--divider);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -12,8 +12,8 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: var(--space-sm);
-  border: 1px solid var(--color-warning-border, #f59e0b);
-  background: #fffbeb;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
   padding: var(--space-sm);
   border-radius: var(--radius-control);
 }
@@ -32,20 +32,20 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .automation-runtime-advanced-inputs {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
   padding-top: var(--space-sm);
 }
 
-.automation-runtime-advanced-inputs summary { cursor: pointer; color: var(--color-text-muted); font-weight: var(--font-weight-bold); }
+.automation-runtime-advanced-inputs summary { cursor: pointer; color: var(--muted); font-weight: var(--font-weight-bold); }
 .automation-runtime-advanced-inputs label { display: grid; gap: var(--space-xs); margin-top: var(--space-sm); }
-.automation-runtime-advanced-inputs textarea { width: 100%; min-height: 140px; resize: vertical; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface-subtle); padding: var(--space-sm); color: var(--color-text); font: var(--font-size-compact)/1.45 var(--font-family-mono); }
-.automation-runtime-advanced-inputs textarea[aria-invalid="true"] { border-color: var(--color-danger); }
-.automation-field-error { color: var(--color-danger); }
+.automation-runtime-advanced-inputs textarea { width: 100%; min-height: 140px; resize: vertical; border: 1px solid var(--edge); border-radius: var(--radius-control); background: var(--surface-muted); padding: var(--space-sm); color: var(--text); font: var(--font-size-compact)/1.45 var(--font-mono); }
+.automation-runtime-advanced-inputs textarea[aria-invalid="true"] { border-color: var(--danger); }
+.automation-field-error { color: var(--danger-text); }
 .automation-runtime-mode-control {
   min-width: 0;
   margin: 0;
@@ -57,17 +57,17 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: 2px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-border);
+  background: var(--divider);
 }
 
 .automation-runtime-mode-control button {
   min-height: 34px;
   border: 0;
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 6px 10px;
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
   text-align: center;
@@ -75,15 +75,15 @@
 }
 
 .automation-runtime-mode-control button.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .automation-runtime-mode-control small {
   display: block;
   margin-top: 5px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-regular);
 }
@@ -97,13 +97,13 @@
   align-items: center;
   gap: var(--space-sm);
   min-width: 0;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
   padding-top: var(--space-sm);
 }
 
 .automation-runtime-live-control > div { display: grid; gap: 2px; min-width: 0; margin-right: auto; }
 .automation-runtime-live-control span,
-.automation-runtime-retry-control > span { color: var(--color-text-muted); font-size: var(--font-size-compact); }
+.automation-runtime-retry-control > span { color: var(--muted); font-size: var(--font-size-compact); }
 .automation-runtime-retry-control { justify-content: space-between; }
 
 @media (max-width: 620px) {
@@ -117,14 +117,14 @@
   align-items: end;
   gap: var(--space-dense);
   padding: 0 0 var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-runtime-run-filters label {
   display: grid;
   gap: 4px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -133,10 +133,10 @@
 .automation-runtime-run-filters select {
   width: 100%;
   min-height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 6px 9px;
   font: inherit;
   font-weight: var(--font-weight-regular);
@@ -149,19 +149,19 @@
   gap: 6px;
   min-width: 0;
   min-height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding-left: 9px;
 }
 
 .automation-runtime-run-search-field:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .automation-runtime-run-search-field svg {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .automation-runtime-run-search-field input {
@@ -173,7 +173,7 @@
 
 .automation-runtime-run-results {
   grid-column: 1 / -1;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -183,8 +183,8 @@
   justify-content: space-between;
   gap: var(--space-dense);
   padding: var(--space-dense);
-  color: var(--color-danger);
-  background: var(--color-danger-surface);
+  color: var(--danger-text);
+  background: var(--danger-soft);
 }
 
 @media (max-width: 1100px) {
@@ -211,9 +211,9 @@
   display: grid;
   align-content: start;
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-runtime-history > header {
@@ -223,7 +223,7 @@
   gap: var(--space-sm);
   min-width: 0;
   padding: var(--space-sm) var(--space-md) 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-runtime-history > header > div:first-child {
@@ -234,7 +234,7 @@
 }
 
 .automation-runtime-history > header span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -255,15 +255,15 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 5px 3px;
   font-weight: var(--font-weight-bold);
   cursor: pointer;
 }
 
 .automation-runs-view-control button.active {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-primary);
+  border-bottom-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .automation-runs-replay-view {
@@ -275,7 +275,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 @media (max-width: 720px) {
@@ -302,18 +302,18 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   margin: 0;
-  border: 1px solid var(--color-border);
-  background: var(--color-border);
+  border: 1px solid var(--divider);
+  background: var(--divider);
 }
 
 .automation-runtime-overview-grid > div {
   min-width: 0;
   padding: var(--space-dense);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-runtime-overview-grid dt {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -321,7 +321,7 @@
 .automation-runtime-overview-grid dd {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
-  color: var(--color-text);
+  color: var(--text);
 }
 
 @media (max-width: 720px) {
@@ -334,7 +334,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
-  border-block: 1px solid var(--color-border);
+  border-block: 1px solid var(--divider);
 }
 
 .automation-runtime-action-workspace.has-detail {
@@ -356,12 +356,12 @@
 
 .automation-runtime-attempt-row[role="button"]:hover,
 .automation-runtime-attempt-row.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .automation-runtime-attempt-row:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 
@@ -370,8 +370,8 @@
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 360px;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-left: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-runtime-action-detail > header {
@@ -380,7 +380,7 @@
   justify-content: space-between;
   gap: var(--space-dense);
   padding: var(--space-dense);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-runtime-action-detail > header > div {
@@ -390,7 +390,7 @@
 
 .automation-runtime-action-detail > header span {
   overflow: hidden;
-  color: var(--color-text-muted);
+  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -400,7 +400,7 @@
   gap: 2px;
   overflow-x: auto;
   padding: 4px var(--space-dense);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-runtime-action-detail-tabs button {
@@ -408,15 +408,15 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 4px 8px;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .automation-runtime-action-detail-tabs button.active {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-text);
+  border-bottom-color: var(--accent);
+  color: var(--text);
   font-weight: var(--font-weight-bold);
 }
 
@@ -454,7 +454,7 @@
 .automation-runtime-action-story li {
   min-width: 0;
   overflow-wrap: anywhere;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -466,7 +466,7 @@
 }
 
 .automation-runtime-action-story li {
-  color: var(--color-text);
+  color: var(--text);
 }
 
 @media (max-width: 900px) {
@@ -475,7 +475,7 @@
   }
 
   .automation-runtime-action-detail {
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 }
@@ -494,8 +494,8 @@
   gap: 1px;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--color-border);
-  background: var(--color-border);
+  border: 1px solid var(--divider);
+  background: var(--divider);
   list-style: none;
 }
 
@@ -505,7 +505,7 @@
   align-items: start;
   gap: var(--space-dense);
   padding: var(--space-dense);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-runtime-decision-index {
@@ -513,9 +513,9 @@
   place-items: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: 50%;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -528,12 +528,12 @@
 
 .automation-runtime-decision-timeline > li > div > span,
 .automation-runtime-decision-meta {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .automation-runtime-decision-meta a {
-  color: var(--color-primary);
+  color: var(--accent-text);
   font-weight: var(--font-weight-bold);
 }
 
@@ -552,8 +552,8 @@
   gap: 1px;
   margin: 0;
   padding: 0;
-  border: 1px solid var(--color-border);
-  background: var(--color-border);
+  border: 1px solid var(--divider);
+  background: var(--divider);
   list-style: none;
 }
 
@@ -563,7 +563,7 @@
   align-items: start;
   gap: var(--space-dense);
   padding: var(--space-dense);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-runtime-adaptation-sequence > li > div {
@@ -574,11 +574,11 @@
 
 .automation-runtime-adaptation-sequence p {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .automation-runtime-adaptation-stage {
-  color: var(--color-primary);
+  color: var(--accent-text);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   text-transform: uppercase;
@@ -604,7 +604,7 @@
 }
 
 .automation-runtime-state-effects-panel > header > div:first-child span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -618,11 +618,11 @@
 /* A called part's steps, under the step that called them (runtime/action-log-frames.ts). */
 .automation-runtime-attempt-row.in-part {
   margin-left: calc(var(--automation-runtime-part-depth, 1) * 24px);
-  border-left: 3px solid var(--color-primary);
+  border-left: 3px solid var(--accent);
 }
 
 .automation-runtime-attempt-row > .automation-runtime-attempt-part {
   grid-column: 1 / -1;
-  color: var(--color-text);
+  color: var(--text);
   font-weight: var(--font-weight-bold);
 }

@@ -35,7 +35,11 @@ const alice = actor("alice", "user", ["programs.read", "programs.write"]);
 const bob = actor("bob", "user", ["programs.read", "programs.write"]);
 const ALICES_PROJECT = "a-project.one";
 
-/** The panel actions on the caller's own user, which `FluxIQUserAccess` does not grant (see the report): what lets the handlers run under `service`. */
+/**
+ * The panel actions on the caller's own user, with no origin condition, so these handler tests run under `service`
+ * without a panel request origin. `FluxIQUserAccess` grants them from the panel (`OwnPanelAssistant`), pinned in
+ * `user-access.test.ts` beside this file.
+ */
 function ownPanelThreads(): IamPolicy {
   const actions = ["studio:ListPanelThreads", "studio:GetPanelThread", "studio:GetPanelThreadAttachment", "studio:OpenPanelThread", "studio:RenamePanelThread", "studio:DeletePanelThread"];
   const parsed = parseIamPolicyDocument({ Version: IAM_POLICY_LANGUAGE_VERSION, Statement: [{ Sid: "OwnPanelThreads", Effect: "Allow", Action: actions, Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}" }] }, "identity");
@@ -303,11 +307,5 @@ describe("panel thread attachments, renames and deletes", () => {
     expect(await read(named, "b-project.one")).toEqual(before);
     expect(service.assertProjectDomainAccess).not.toHaveBeenCalled();
     expect(service.getFlowBootstrapAdaptation).not.toHaveBeenCalled();
-  });
-
-  it("under the service profile, FluxIQUserAccess alone grants no panel endpoint (finding recorded in the report)", async () => {
-    const { call } = world({ profile: "service" });
-    expect(await call(PANEL_ASSISTANT_ENDPOINTS.listThreads, alice, {})).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    expect(await call(PANEL_ASSISTANT_ENDPOINTS.deleteThread, alice, { conversationId: "conversation.missing" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 });

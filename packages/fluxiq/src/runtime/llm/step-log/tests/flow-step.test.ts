@@ -60,3 +60,23 @@ describe("a flow step", () => {
     expect((meta.spans as Array<{ name: string }>).map((span) => span.name)).toEqual(["send.click"]);
   });
 });
+
+describe("a flow step's humanness record", () => {
+  const meta = () => json(path.join(directory, readdirSync(directory).find((name) => name.startsWith("0001-"))!, "meta.json"));
+
+  it("writes how the page action was made above humanness 0: level, aim and a misclick's point", () => {
+    const step = automationStudioLlmStepLogFlowStep({ nodeId: "n1", definitionId: "web.output.dom-click" }, env())!;
+    step.finish({ status: "succeeded", outputs: { ok: true, result: { humanness: { level: 80, aimed: true, misclick: { x: 12, y: 40 } }, url: "https://shop.example/" } } });
+    expect(meta().humanness).toEqual({ level: 80, aimed: true, misclick: { x: 12, y: 40 } });
+  });
+
+  it("writes no humanness key at level 0, with no outputs, or for a malformed record", () => {
+    for (const outputs of [undefined, { ok: true }, { ok: true, result: { url: "https://shop.example/" } }, { result: { humanness: { level: "80", aimed: true } } }, { result: { humanness: { level: 80 } } }]) {
+      rmSync(directory, { recursive: true, force: true });
+      directory = mkdtempSync(path.join(tmpdir(), "fluxiq-flow-step-"));
+      const step = automationStudioLlmStepLogFlowStep({ nodeId: "n1", definitionId: "web.output.dom-click" }, env())!;
+      step.finish({ status: "succeeded", ...(outputs ? { outputs } : {}) });
+      expect(meta()).not.toHaveProperty("humanness");
+    }
+  });
+});

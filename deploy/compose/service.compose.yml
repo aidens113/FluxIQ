@@ -1,0 +1,106 @@
+# FluxIQ Core, service profile: a multi-user service whose accounts are
+# created by a separate sign-up site through the private provisioning
+# listener, with Caddy terminating TLS.
+#
+#   cp deploy/env/service.env.example deploy/env/service.env   # then edit it
+#   # write deploy/secrets/provisioning-token and deploy/secrets/setup-code
+#   docker compose -f deploy/compose/service.compose.yml up -d --build
+#
+# Two networks:
+# - edge: Caddy and FluxIQ. Only Caddy publishes ports (80, 443).
+# - provisioning: internal (no route to the internet or the host), with a
+#   fixed subnet. FluxIQ's provisioning listener binds only its own address
+#   on it and admits only that subnet as a source, on top of the bearer
+#   token. The sign-up site's backend joins this network from its own
+#   compose project (`networks: { fluxiq-provisioning: { external: true } }`)
+#   and calls http://<FLUXIQ_PROVISIONING_ADDRESS>:4780. Caddy never routes
+#   to it, and the port is never published.
+#
+# Change FLUXIQ_PROVISIONING_SUBNET and FLUXIQ_PROVISIONING_ADDRESS (shell
+# environment or a .env file beside this one) only if the default range
+# collides with a network on the host. The guide is
+# docs/operations/self-hosting.md.
+
+name: fluxiq-service
+
+services:
+  fluxiq:
+    image: ${FLUXIQ_IMAGE:-fluxiq-core:local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    env_file:
+      - ${FLUXIQ_ENV_FILE:-../env/service.env}
+    environment:
+      FLUXIQ_PROFILE: service
+      FLUXIQ_ROOT: /data
+      FLUXIQ_TRUST_PROXY: "true"
+      FLUXIQ_PROVISIONING_LISTEN: ${FLUXIQ_PROVISIONING_ADDRESS:-172.31.250.10}:4780
+      FLUXIQ_PROVISIONING_ALLOWED_CIDRS: ${FLUXIQ_PROVISIONING_SUBNET:-172.31.250.0/24}
+      FLUXIQ_PROVISIONING_TOKEN_FILE: /run/secrets/provisioning_token
+      FLUXIQ_SETUP_CODE_FILE: /run/secrets/setup_code
+    secrets:
+      - provisioning_token
+      - setup_code
+    volumes:
+      - fluxiq-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/apps/web/.next/cache
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 45s
+    restart: unless-stopped
+    networks:
+      edge: {}
+      provisioning:
+        ipv4_address: ${FLUXIQ_PROVISIONING_ADDRESS:-172.31.250.10}
+
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.10-alpine}
+    env_file:
+      - ${FLUXIQ_ENV_FILE:-../env/service.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ${CADDYFILE:-../caddy/Caddyfile.example}:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      fluxiq:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - edge
+
+networks:
+  edge: {}
+  provisioning:
+    name: fluxiq-provisioning
+    internal: true
+    ipam:
+      config:
+        - subnet: ${FLUXIQ_PROVISIONING_SUBNET:-172.31.250.0/24}
+
+secrets:
+  # One or two tokens (two while rotating), one per line, each at least 32
+  # bytes. The sign-up site's backend holds the same token.
+  provisioning_token:
+    file: ${FLUXIQ_SECRETS_DIR:-../secrets}/provisioning-token
+  # The code that claims the owner account on first start, at least 16
+  # characters. The server stops reading it once the owner is claimed.
+  setup_code:
+    file: ${FLUXIQ_SECRETS_DIR:-../secrets}/setup-code
+
+volumes:
+  fluxiq-data: {}
+  caddy-data: {}
+  caddy-config: {}

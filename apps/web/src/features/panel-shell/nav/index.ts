@@ -1,2 +1,2 @@
-export { PANEL_NAV_ITEMS, navItemForPath, type PanelNavItem } from "./panel-nav-items";
+export { PANEL_NAV_ITEMS, navItemForPath, navItemsForPages, type PanelNavItem } from "./items";
 export { PanelRail } from "./PanelRail";

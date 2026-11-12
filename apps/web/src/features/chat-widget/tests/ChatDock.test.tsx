@@ -136,7 +136,8 @@ let modalOpen = false;
 
 const launcher = (host: FakeElement) => host.byClass("chat-window-launcher")[0]!;
 const windowPanel = (host: FakeElement) => host.byClass("chat-window-panel")[0]!;
-const buttonNamed = (root: FakeElement, label: string) => root.descendants().find((node) => node.tagName === "BUTTON" && node.textContent === label);
+// The conversation list's own Delete confirmation also has a Cancel, so a card's button is found outside the list.
+const buttonNamed = (root: FakeElement, label: string) => root.descendants().find((node) => node.tagName === "BUTTON" && node.textContent === label && !String(node.className ?? "").includes("chat-thread-"));
 
 function reactButton(root: ReactTestInstance, label: string): ReactTestInstance {
   const found = root.findAllByType("button").find((candidate) =>

@@ -1,5 +1,7 @@
-import { PanelPlaceholderPage } from "../../../features/panel-shell";
+import { DataPage } from "../../../features/data";
+import { requirePanelScreen } from "../../product";
 
-export default function DataPage() {
-  return <PanelPlaceholderPage page="data" title="Data" summary="The data your Flows collected will be here, ready to look through and export." />;
+export default function Page() {
+  requirePanelScreen("data");
+  return <DataPage />;
 }

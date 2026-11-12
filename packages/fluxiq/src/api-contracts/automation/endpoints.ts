@@ -181,6 +181,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   runTaskAgain: "run-task-again",
   listProjectTasks: "list-project-tasks",
   renameTask: "rename-task",
+  updateTaskSettings: "update-task-settings",
   removeTask: "remove-task",
   getActivity: "get-activity",
   inspectStateDiff: "inspect-state-diff",

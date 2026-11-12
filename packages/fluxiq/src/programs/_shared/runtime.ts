@@ -16,6 +16,7 @@ import { AutomationStudioChannelScope } from "../../framework/automation-service
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../../runtime/recording/gateway-trace/wiring/index.ts";
 import { automationStudioTaskAttemptsInFlight } from "../../framework/automation-service/service/answer-first/attempt-in-flight/index.ts";
+import { AutomationStudioPersonHumanness } from "../../framework/automation-service/service/person-humanness/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -321,6 +322,8 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
   runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway: clientGateway }));
   automationStudio.bindRuntimeService(runtime);
+  // A run whose request carried no starting humanness starts from the person's own stored value (W2, t898).
+  AutomationStudioPersonHumanness.bind(automationStudio, (userId) => identityAccess.preferences.startingHumanness(userId));
 
   if (paths) {
     databaseManager

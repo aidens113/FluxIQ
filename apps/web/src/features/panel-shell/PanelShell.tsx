@@ -6,17 +6,17 @@
 
 import type { ReactNode } from "react";
 import "./panel-shell.css";
-import { PanelContextProvider } from "./context";
+import { PanelContextProvider, type PanelPage } from "./context";
 import { AssistantDock } from "./dock";
 import { PanelRail } from "./nav";
 import { TopBar } from "./top-bar";
 
-export function PanelShell(props: { children: ReactNode }) {
+export function PanelShell(props: { children: ReactNode; pages?: readonly PanelPage[] }) {
   return (
     <PanelContextProvider>
       <div className="panel-shell">
         <TopBar />
-        <PanelRail />
+        <PanelRail {...(props.pages ? { pages: props.pages } : {})} />
         <main className="panel-page" id="panel-page">{props.children}</main>
         <AssistantDock />
       </div>

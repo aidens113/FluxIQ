@@ -62,3 +62,11 @@ it("project authoring is read as its own mode, requires evidence-guided generati
   expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "project" }))).toThrow(/Project authoring cannot extend/);
   expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "legacy" }))).toThrow(/Candidate authoring/);
 });
+
+it("reads humanness as a whole number from 0 to 100, 0 included, and leaves it absent when not sent", () => {
+  for (const ok of [0, 1, 60, 100]) expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ humanness: ok }))).toMatchObject({ humanness: ok });
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("humanness");
+  for (const bad of [101, -1, 1.5, "x", null, Number.NaN]) {
+    expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ humanness: bad }))).toThrow(/humanness/);
+  }
+});

@@ -30,7 +30,7 @@ describe("onboarding cards", () => {
     expect(html).toContain("Get the extension");
     expect(html).toContain('href="https://example.test/store" rel="noopener noreferrer" target="_blank">Chrome Web Store</a>');
     expect(html).toContain("Add your model key");
-    expect(html).toContain('href="/programs/secret-keys"');
+    expect(html).toContain('href="/security/keys"');
   });
 
   it("hide the key card once a key exists", async () => {

@@ -2,3 +2,4 @@
 // only; client components import `./product/client`, which never reaches the
 // host module loader.
 export * from "./server/index.ts";
+export * from "./preset/index.ts";

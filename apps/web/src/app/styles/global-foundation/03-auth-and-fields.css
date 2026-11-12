@@ -9,15 +9,15 @@
   display: grid;
   gap: 14px;
   width: min(100%, 420px);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   padding: var(--space-xl);
 }
 
 .auth-panel-v1 {
-  box-shadow: 0 14px 34px rgb(24 35 34 / 12%);
+  box-shadow: var(--shadow);
 }
 
 .auth-title {
@@ -34,7 +34,7 @@
 }
 
 .field-label {
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-semibold);
 }
@@ -45,10 +45,10 @@
   width: 100%;
   min-width: 0;
   min-height: var(--control-height-comfortable);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: var(--space-sm) var(--space-dense);
 }
 
@@ -60,19 +60,19 @@
 .field > input:disabled,
 .field > select:disabled,
 .field > textarea:disabled {
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
+  background: var(--surface-raised);
+  color: var(--muted);
   cursor: not-allowed;
 }
 
 .field-error > input,
 .field-error > select,
 .field-error > textarea {
-  border-color: var(--color-danger);
+  border-color: var(--danger);
 }
 
 .field-message {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-compact);
 }
@@ -81,7 +81,7 @@
   display: inline-flex;
   align-items: flex-start;
   gap: var(--space-xs);
-  color: var(--color-danger);
+  color: var(--danger-text);
 }
 .auth-form {
   display: grid;
@@ -94,14 +94,14 @@
 }
 
 .auth-form label span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
 
 .auth-form input {
   min-height: 34px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   padding: 6px 9px;
 }
@@ -117,10 +117,10 @@
   width: 100%;
   min-width: 0;
   min-height: var(--control-height-comfortable);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: var(--space-sm) var(--space-dense);
 }
 
@@ -128,14 +128,14 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-sm);
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   line-height: var(--line-height-body);
 }
 
 .auth-setup-assurance svg {
   flex: 0 0 auto;
-  color: var(--color-success);
+  color: var(--success);
 }
 
 @media (max-width: 480px) {
@@ -150,7 +150,7 @@
 }
 
 .auth-role {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   text-transform: uppercase;
   white-space: nowrap;
@@ -171,10 +171,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
-}
-
-.program-topbar-title .breadcrumb {
-  flex: 1;
 }
 
 @media (max-width: 640px) {

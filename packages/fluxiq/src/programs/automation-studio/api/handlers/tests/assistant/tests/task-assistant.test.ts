@@ -18,13 +18,14 @@ describe("Task endpoints for the panel assistant", () => {
       const missing: Array<[string, Record<string, unknown>]> = [
         [E.getTaskAttempt, { projectId, attemptId: "attempt.none" }],
         [E.renameTask, { projectId, taskId: "task.none", title: "Weekly report" }],
+        [E.updateTaskSettings, { projectId, taskId: "task.none", humanness: 40 }],
         [E.removeTask, { projectId, taskId: "task.none" }],
         [E.runTaskAgain, { projectId, taskId: "task.none" }],
         [E.carryOnTaskAttempt, { projectId, attemptId: "attempt.none", addUsd: 0 }]
       ];
       for (const [endpoint, example] of missing) {
         const response = await callAcceptedExample(registry, endpoint, example);
-        expect(response.error ?? "", endpoint).not.toMatch(/does not accept|needs an amount|a name with words/iu);
+        expect(response.error ?? "", endpoint).not.toMatch(/does not accept|needs an amount|a name with words|humanness is a whole number/iu);
       }
     } finally {
       await cleanup();

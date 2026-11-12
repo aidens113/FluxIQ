@@ -85,7 +85,7 @@ describe("critical shared UI states", () => {
   it("renders an accessible keyboard menu with explicit action semantics", () => {
     const html = renderToStaticMarkup(<Menu defaultOpen label="Flow actions" options={[
       { id: "rename", label: "Rename", onSelect: () => undefined },
-      { id: "account", label: "Account", href: "/programs/identity-access" },
+      { id: "account", label: "Account", href: "/security/sign-in" },
       { id: "delete", label: "Delete", danger: true, onSelect: () => undefined },
     ]} />);
     expect(html).toContain('aria-haspopup="menu"');
@@ -94,7 +94,7 @@ describe("critical shared UI states", () => {
     expect(html).toContain('aria-label="Flow actions"');
     expect(html).toContain('role="menu"');
     expect(html).toContain('role="menuitem"');
-    expect(html).toContain('href="/programs/identity-access"');
+    expect(html).toContain('href="/security/sign-in"');
     expect(html).toContain('class="danger"');
   });
 
@@ -133,7 +133,7 @@ describe("critical shared UI states", () => {
       <Button variant="primary">Save</Button>
       <Button busy variant="danger">Delete</Button>
       <IconButton label="Save Flow"><Save size={14} aria-hidden /></IconButton>
-      <ActionLink href="/programs">Programs</ActionLink>
+      <ActionLink href="/flows">Flows</ActionLink>
     </div>);
     expect(html).toContain("button button-primary");
     expect(html).toContain('aria-busy="true"');
@@ -182,7 +182,7 @@ describe("critical shared UI states", () => {
   it("renders labelled toolbars, breadcrumbs, and keyboard splitters", () => {
     const html = renderToStaticMarkup(<div>
       <Toolbar label="Flow commands"><Button>Save</Button></Toolbar>
-      <Breadcrumb items={[{ label: "Projects", href: "/programs" }, { label: "Checkout" }]} />
+      <Breadcrumb items={[{ label: "Projects", href: "/flows" }, { label: "Checkout" }]} />
       <Splitter label="Resize hierarchy" max={40} min={15} onChange={() => undefined} onReset={() => undefined} orientation="vertical" value={24} />
     </div>);
     expect(html).toContain('role="toolbar"');

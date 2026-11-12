@@ -46,6 +46,8 @@ export type LaterAttemptOptions = {
   resolver?: { timeoutMs?: number };
   /** Started by a person's press of Run again on the task's answer (`../run-again/`), not by the words typed again. */
   runAgain?: boolean;
+  /** The person's starting humanness, as the request carries it. */
+  humanness?: number;
 };
 
 /** A Core that restarted: a new service over what an earlier lane left, on the same library. */
@@ -126,7 +128,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
     const guard = setTimeout(() => service.buildCancellation.cancel(project.id, flowId), HANG_GUARD_MS);
     const generate = async (startLocation = given.startLocation) => await service.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId, caller: caller(), evidenceGuided: true, authoringMode: "answer-first",
-      permittedConsequences: given.permittedConsequences ?? [], ...(startLocation ? { startLocation } : {})
+      permittedConsequences: given.permittedConsequences ?? [], ...(startLocation ? { startLocation } : {}), ...(given.humanness === undefined ? {} : { humanness: given.humanness })
     });
     let pressed: string | undefined;
     const answered = given.runAgain ? await (async () => {

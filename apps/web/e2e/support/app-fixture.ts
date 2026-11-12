@@ -16,6 +16,10 @@ export type PanelFixture = {
   /** The four steps' words, in order. */
   stepLabels: string[];
   modelKeyNames: string[];
+  /** The table Data lists: stored under the newest Old search run, with its columns and rows. */
+  dataset: { projectId: string; flowId: string; runId: string; datasetId: string; name: string; columns: string[]; rows: Array<Record<string, string>> };
+  /** The browser Security lists as paired. */
+  pairedClientName: string;
 };
 
 export type UiFixtureManifest = {

@@ -49,7 +49,7 @@ describe("the run endpoint and a run's model intent", () => {
     const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt" } });
 
     expect(response).toMatchObject({ ok: true });
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" } });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" } });
     // A person's own run pays for every result check it makes, as it always has (MVP item 23).
     expect((runRuntimeSession.mock.calls[0] as unknown[])[0]).not.toHaveProperty("resultCheckCallerPays");
   });
@@ -73,7 +73,7 @@ describe("the run endpoint and a run's model intent", () => {
     const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt" });
 
     expect(response).toMatchObject({ ok: true });
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
   });
 
   // The chat's "Run it" calls as the person's unlocked session, so the handler
@@ -87,7 +87,7 @@ describe("the run endpoint and a run's model intent", () => {
     const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } });
 
     expect(response).toMatchObject({ ok: true });
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
   });
 
   it("refuses any other choice of which result checks the caller pays for, and runs nothing", async () => {
@@ -120,7 +120,7 @@ describe("the run endpoint and a run's model intent", () => {
     const { response, runRuntimeSession } = await pairedRun("session.unlocked", { resultCheckCallerPays: "repair_checks" });
 
     expect(response).toMatchObject({ ok: true });
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one" });
   });
 
   it("runs a paired client's Flow deterministically, without a model, when the person has no unlocked session", async () => {
@@ -128,7 +128,7 @@ describe("the run endpoint and a run's model intent", () => {
 
     expect(response).toMatchObject({ ok: true, payload: { runtimeSession: { runId: "run.one" } } });
     expect(runRuntimeSession).toHaveBeenCalledTimes(1);
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one" });
     expect(Object.keys((response as { payload: object }).payload).sort()).toEqual(["createdAdaptationIds", "durableBehaviorChanged", "interventionCount", "runDetailLink", "runSummary", "runtimeSession", "terminalReason"]);
   });
 
@@ -150,7 +150,7 @@ describe("the run endpoint and a run's model intent", () => {
 
   it("runs a plain run, without a model intent, with no llmExecution", async () => {
     const { runRuntimeSession } = await runWith(async () => null);
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", personUserId: "user.one" });
   });
 });
 

@@ -7,51 +7,51 @@ import {
   readUiFixtureManifest,
 } from "./support/app-fixture";
 
-const globalPrograms = [
-  ["automation-studio", "Automation Studio"],
-  ["background-tasks", "Background Tasks"],
-  ["compute-control", "Compute Control"],
-  ["database-manager", "Database Manager"],
-  ["deployment-sync", "Deployment Sync"],
-  ["docs", "Documentation"],
-  ["identity-access", "Identity & Access"],
-  ["production-runner", "Production Runner"],
-  ["secret-keys", "Secret Keys"],
+// The old program pages redirect (see panel-redirects.spec.ts); the screens that replaced them are captured here.
+const panelSurfaces = [
+  ["security", "Security"],
+  ["security/keys", "Keys"],
+  ["security/sign-in", "Your sign-in"],
+  ["settings", "Settings"],
+  ["settings/background-tasks", "Background Tasks"],
+  ["settings/compute-control", "Compute Control"],
+  ["settings/database-manager", "Database Manager"],
+  ["settings/deployment-sync", "Deployment Sync"],
+  ["settings/docs", "Docs"],
+  ["settings/production-runner", "Production Runner"],
+  ["settings/runtime", "Runtime"],
 ] as const;
 
-for (const [programId, title] of globalPrograms) {
+for (const [path, title] of panelSurfaces) {
   test(`captures the ${title} default surface`, async ({ page }, testInfo) => {
     const manifest = await readUiFixtureManifest();
     await authenticate(page, manifest);
-    await page.goto(`/programs/${programId}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`/${path}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("main")).toBeVisible();
     await assertResponsiveSurface(page);
-    await captureState(page, testInfo, `program-${programId}-default`);
+    await captureState(page, testInfo, `panel-${path.replace("/", "-")}-default`);
   });
 }
-
 
 test("keeps capability inventories inside Technical Details", async ({ page }) => {
   const manifest = await readUiFixtureManifest();
   await authenticate(page, manifest);
-  await page.goto("/programs/database-manager", { waitUntil: "domcontentloaded" });
+  await page.goto("/settings/database-manager", { waitUntil: "domcontentloaded" });
 
-  const topbar = page.locator(".program-global-topbar");
-  await expect(topbar.getByRole("tab", { name: "API" })).toHaveCount(0);
-  await expect(topbar.getByRole("tab", { name: "Storage" })).toHaveCount(0);
-  await expect(topbar.getByRole("tab", { name: "Runtime" })).toHaveCount(0);
-
+  await expect(page.getByRole("tab", { name: "Storage" })).toHaveCount(0);
   const trigger = page.getByRole("button", { name: "Technical details" });
   await trigger.click();
   const details = page.getByRole("dialog", { name: "Technical details", exact: true });
   await expect(details).toBeVisible();
-  await expect(details).toHaveClass(/\bdrawer-panel\b/u);
+  await expect(details).toHaveClass(/drawer-panel/u);
   await details.getByRole("tab", { name: "Storage" }).click();
   await expect(details.getByRole("heading", { name: "Storage" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(details).toBeHidden();
   await expect(trigger).toBeFocused();
 });
+
+
 const studioViews = [
   "Connected browsers",
   "Recorded steps",

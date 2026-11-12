@@ -9,8 +9,23 @@ import { automationStudioLlmStepLogSpans } from "./span.ts";
 /** One node of a Flow run, as the step loop runs it: its id in the Flow and its definition. */
 type FlowNode = { nodeId: string; definitionId: string };
 
-/** How the node's pass ended, in closed words: the attempt's status and its failure code. */
-type FlowStepOutcome = { status: string; code?: string };
+/**
+ * How the node's pass ended, in closed words: the attempt's status and its failure code, and
+ * the attempt's outputs, read here only for the humanness record a page action returns.
+ */
+type FlowStepOutcome = { status: string; code?: string; outputs?: Readonly<Record<string, unknown>> };
+
+/** How a page action was made above humanness 0 (level, aim, misclick), from its result, or undefined. */
+function humannessRecord(outputs: Readonly<Record<string, unknown>> | undefined): { level: number; aimed: boolean; misclick?: { x: number; y: number } } | undefined {
+  const result = outputs?.["result"];
+  const record = typeof result === "object" && result !== null && !Array.isArray(result) ? (result as Record<string, unknown>)["humanness"] : undefined;
+  if (typeof record !== "object" || record === null || Array.isArray(record)) return undefined;
+  const { level, aimed, misclick } = record as Record<string, unknown>;
+  if (typeof level !== "number" || !Number.isFinite(level) || typeof aimed !== "boolean") return undefined;
+  const point = typeof misclick === "object" && misclick !== null ? misclick as Record<string, unknown> : undefined;
+  const x = point?.["x"], y = point?.["y"];
+  return { level, aimed, ...(typeof x === "number" && typeof y === "number" && Number.isFinite(x) && Number.isFinite(y) ? { misclick: { x, y } } : {}) };
+}
 
 /** One pass of the step loop over one node, timed as an `NNNN-flow-<definitionId>` step. */
 export type AutomationStudioLlmStepLogFlowStep = {
@@ -31,7 +46,9 @@ export type AutomationStudioLlmStepLogFlowStep = {
  * scope's part, round, phase and agent, `status` and `resultCode` from the
  * attempt, and `spans` -- the step loop's own parts (`arrival`, `execute`, ...)
  * and what the domain timed inside the dispatch (`send.<action>`, `page.<action>`,
- * `pressed`). Never inputs, outputs or page text.
+ * `pressed`), and, for a page action made above humanness 0, its `humanness`
+ * record (level, whether the press was aimed, a misclick's point), so a replay
+ * records every random choice. Never inputs, other outputs or page text.
  *
  * Undefined when the step log is off, and when a step is already collecting: a
  * node run inside a tool call (`core.run_node`, a test's replay) is that tool
@@ -73,13 +90,15 @@ export function automationStudioLlmStepLogFlowStep(node: FlowNode, env: Readonly
         const ended = Date.now();
         const status = outcome?.status ?? "ended";
         const summary = outcome?.code ? `${toolId} ${status} ${outcome.code}` : `${toolId} ${status}`;
+        const humanness = humannessRecord(outcome?.outputs);
         automationStudioLlmStepLogWriter(folder.path).meta({
           step: folder.step, kind: "flow", callId: null, toolId, nodeId: typeof node.nodeId === "string" ? node.nodeId : null,
           startedAt: new Date(started).toISOString(), finishedAt: new Date(ended).toISOString(), ms: ended - started,
           part: scope?.part ?? null, round: scope?.round ?? null, phase: scope?.phase ?? automationStudioLlmStepLogNaming.phaseOfKind("flow"),
           role: scope?.role ?? null, briefId: scope?.briefId ?? null,
           status, resultCode: outcome?.code ?? null, summary,
-          ...(spans.length > 0 ? { spans: automationStudioLlmStepLogSpans.written(spans, started) } : {})
+          ...(spans.length > 0 ? { spans: automationStudioLlmStepLogSpans.written(spans, started) } : {}),
+          ...(humanness ? { humanness } : {})
         });
         automationStudioLlmStepLogListStep(directory, { step: folder.step, kind: "flow", tool: toolId, summary, costUsd: undefined, role: scope?.role, briefId: scope?.briefId });
       } catch {

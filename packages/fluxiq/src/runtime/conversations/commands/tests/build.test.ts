@@ -112,3 +112,19 @@ describe("candidate authoring mode with a trial runner (t340)", () => {
     expect(await buildAutomationStudioFlowFromConversation(claimed.context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false });
   });
 });
+
+describe("the person's humanness", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
+
+  it("rides the generation request of a creation and of an extend when the context has it, and is absent otherwise", async () => {
+    for (const mode of ["create", "extend"] as const) {
+      const withIt = recording({ ok: true, payload: { candidate: CANDIDATE } });
+      await buildAutomationStudioFlowFromConversation({ ...withIt.context, humanness: 35 }, { flowId: "flow", mode });
+      expect(withIt.requests[0]?.payload).toMatchObject({ humanness: 35 });
+      const without = recording({ ok: true, payload: { candidate: CANDIDATE } });
+      await buildAutomationStudioFlowFromConversation(without.context, { flowId: "flow", mode });
+      expect(without.requests[0]?.payload).not.toHaveProperty("humanness");
+      expect(Object.keys(without.requests[0]?.payload ?? {})).not.toContain("humanness");
+    }
+  });
+});

@@ -32,25 +32,25 @@
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: 5px 7px;
   text-align: left;
   cursor: pointer;
 }
 
 .docs-source-list button:hover {
-  border-color: var(--color-border);
-  background: var(--color-surface);
+  border-color: var(--divider);
+  background: var(--surface);
 }
 
 .docs-source-list button.selected {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .docs-source-list small,
 .docs-tree-summary small {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .docs-tree-summary {
@@ -97,9 +97,9 @@
 
 .docs-warning-list {
   flex: 0 0 auto;
-  border: 1px solid var(--color-warning-border);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
   border-radius: var(--radius-control);
-  background: var(--color-warning-surface);
+  background: var(--warning-soft);
   padding: var(--space-sm);
 }
 
@@ -123,8 +123,8 @@
   width: 220px;
   min-width: 0;
   overflow: auto;
-  border-left: 1px solid var(--color-border);
-  background: var(--surface-tool);
+  border-left: 1px solid var(--divider);
+  background: var(--surface-muted);
   padding: 14px 10px;
   contain: layout paint style;
 }
@@ -147,7 +147,7 @@
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 4px 6px;
   text-align: left;
   text-overflow: ellipsis;
@@ -157,13 +157,9 @@
 
 .docs-outline-link:hover,
 .docs-outline-link:focus-visible {
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
-
-.docs-outline-link.level-2 { padding-left: 14px; }
-.docs-outline-link.level-3 { padding-left: 22px; }
-.docs-outline-link.level-4 { padding-left: 30px; }
 
 .docs-explorer-trigger {
   display: none;
@@ -188,7 +184,7 @@
 
   .docs-outline-panel {
     max-height: 180px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 

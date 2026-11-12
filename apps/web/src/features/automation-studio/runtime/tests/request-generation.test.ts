@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 describe("detail request generation guards", () => {
   it("invalidates late runtime and database detail responses", () => {
     const runtime = readFileSync(new URL("../RunActionLogView.tsx", import.meta.url), "utf8");
-    const database = readFileSync(new URL("../../../programs/live-views/database-manager.tsx", import.meta.url), "utf8");
-    const databaseRecords = readFileSync(new URL("../../../programs/database-records/useDatabaseRecords.ts", import.meta.url), "utf8");
+    const database = readFileSync(new URL("../../../settings-page/tools/database-manager/DatabaseManagerLive.tsx", import.meta.url), "utf8");
+    const databaseRecords = readFileSync(new URL("../../../settings-page/tools/database-manager/records/useDatabaseRecords.ts", import.meta.url), "utf8");
     expect(runtime).toContain("ownerRef.current.projectId !== props.projectId");
     expect(runtime).toContain("ownerRef.current.runId !== props.runId");
     expect(runtime).toContain("ownerRef.current.commands !== props.commands");
@@ -30,8 +30,9 @@ describe("detail request generation guards", () => {
     expect(databaseRecords).toContain("latest.current.owner === owner && latest.current.api === api");
     expect(databaseRecords).toContain("latest.current.query === query && latest.current.authority === authority");
     expect(databaseRecords).toContain("canRead() && selectedId.current === id && epoch === job.epoch && !controller.signal.aborted");
-    expect(databaseRecords).toContain('cancel("detail"); selectedId.current = ""; setDetail({ owner, query, authority, id: "", record: null');
-    expect(databaseRecords).toContain("++job.epoch; job.controller?.abort()");
+    // One statement per line since the move to Settings tools; the order of the statements is what is guarded.
+    expect(databaseRecords).toMatch(/cancel\("detail"\);\s*selectedId\.current = "";\s*setDetail\(\{ owner, query, authority, id: "", record: null/u);
+    expect(databaseRecords).toMatch(/\+\+job\.epoch;\s*job\.controller\?\.abort\(\)/u);
     expect(databaseRecords).toContain("selectedRecord: dataCurrent && detail.query === query && detail.authority === authority ? detail.record : null");
   });
 });

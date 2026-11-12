@@ -5,15 +5,15 @@
   gap: var(--space-2);
   align-items: end;
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-adaptation-filters > label {
   display: grid;
   gap: 4px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -22,10 +22,10 @@
   width: 100%;
   min-width: 0;
   height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: 4px;
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+  background: var(--surface-raised);
+  color: var(--text);
   padding: 0 var(--space-2);
 }
 
@@ -38,7 +38,7 @@
   z-index: 1;
   left: 10px;
   bottom: 9px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   pointer-events: none;
 }
 
@@ -51,17 +51,17 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: 4px;
-  background: var(--color-surface-raised);
-  color: var(--color-text);
+  background: var(--surface-raised);
+  color: var(--text);
 }
 
 .automation-adaptation-table {
   min-width: 0;
   overflow-x: auto;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-adaptation-table-head,
@@ -79,18 +79,18 @@
 
 .automation-adaptation-table-head {
   min-height: 34px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-subtle);
-  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: 600;
 }
 
 .automation-adaptation-table > button {
   border: 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -99,12 +99,12 @@
 }
 
 .automation-adaptation-table > button:hover {
-  background: var(--color-surface-hover);
+  background: var(--hover);
 }
 
 .automation-adaptation-table > button.selected {
-  box-shadow: inset 3px 0 var(--color-primary);
-  background: var(--color-selection);
+  box-shadow: inset 3px 0 var(--accent);
+  background: var(--accent-soft);
 }
 
 .automation-adaptation-table > button > span {
@@ -124,7 +124,7 @@
 }
 
 .automation-adaptation-table > button small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -153,9 +153,9 @@
   min-height: 42px;
   padding: 0 var(--space-3);
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-top: 0;
-  background: var(--color-surface);
+  background: var(--surface);
   scrollbar-gutter: stable;
 }
 
@@ -166,18 +166,18 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-weight: 600;
 }
 
 .automation-adaptation-tabs button:hover {
-  color: var(--color-text);
-  background: var(--color-surface-hover);
+  color: var(--text);
+  background: var(--hover);
 }
 
 .automation-adaptation-tabs button.selected {
-  border-bottom-color: var(--color-primary);
-  color: var(--color-primary);
+  border-bottom-color: var(--accent);
+  color: var(--accent-text);
 }
 
 .automation-adaptation-detail-body {
@@ -190,20 +190,20 @@
 }
 
 .automation-adaptation-detail-pagination {
-  border-top: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-top: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-adaptation-lead {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3);
-  border-left: 3px solid var(--color-primary);
-  background: var(--color-surface-subtle);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-muted);
 }
 
 .automation-adaptation-lead > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: 600;
 }
@@ -215,7 +215,7 @@
 .automation-adaptation-lead > p,
 .automation-adaptation-copy {
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   line-height: 1.5;
 }
 .automation-adaptation-change-list {
@@ -229,9 +229,9 @@
   gap: var(--space-3);
   min-width: 0;
   padding: var(--space-3);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: 6px;
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-adaptation-change > header {
@@ -249,13 +249,13 @@
 
 .automation-adaptation-change > header span,
 .automation-adaptation-change-target > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .automation-adaptation-change > header a {
   flex: 0 0 auto;
-  color: var(--color-primary);
+  color: var(--accent-text);
   font-size: var(--font-size-compact);
   font-weight: 600;
 }
@@ -273,14 +273,14 @@
 .automation-adaptation-diff {
   min-width: 0;
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
 }
 
 .automation-adaptation-diff > div {
   display: grid;
   grid-template-columns: minmax(140px, 0.7fr) minmax(180px, 1fr) minmax(180px, 1fr);
   min-width: 540px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .automation-adaptation-diff > div:last-child {
@@ -288,8 +288,8 @@
 }
 
 .automation-adaptation-diff > div:first-child {
-  background: var(--color-surface-subtle);
-  color: var(--color-text-muted);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -298,24 +298,24 @@
   min-width: 0;
   padding: var(--space-2);
   overflow-wrap: anywhere;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--divider);
   white-space: pre-wrap;
 }
 
 .automation-adaptation-diff span:last-child {
   border-right: 0;
-  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 
 .automation-adaptation-diff > div:not(:first-child) > span:nth-child(2) {
-  background: color-mix(in srgb, var(--color-danger) 7%, transparent);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
 }
 .automation-legacy-compatibility .automation-project-empty {
   gap: var(--space-3);
 }
 
 .automation-legacy-compatibility .automation-project-empty small {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .automation-legacy-compatibility-actions {
@@ -332,8 +332,8 @@
 .automation-problems-controls {
   display: grid;
   gap: 1px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-border);
+  border-bottom: 1px solid var(--divider);
+  background: var(--divider);
 }
 
 .automation-problem-filters button:disabled {
@@ -344,8 +344,8 @@
 .automation-problems-scope {
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--divider);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -358,8 +358,8 @@
 
 .automation-problem-group {
   display: grid;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--divider);
+  background: var(--surface);
 }
 
 .automation-problem-group + .automation-problem-group {
@@ -373,29 +373,29 @@
   min-height: 34px;
   gap: var(--space-2);
   padding: 0 var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-subtle);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-muted);
 }
 
 .automation-problem-group > header span,
 .automation-problem-severity-group > strong {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
 }
 
 .automation-problem-severity-group > strong {
   display: block;
   padding: 6px var(--space-2);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   text-transform: uppercase;
 }
 
 .automation-problem-severity-group.warning > strong {
-  color: var(--color-warning);
+  color: var(--warning-text);
 }
 
 .automation-problem-severity-group.error > strong {
-  color: var(--color-danger);
+  color: var(--danger-text);
 }
 
 .automation-problem-group .automation-problem-list {
@@ -403,8 +403,8 @@
 }
 
 .automation-problem-list button.selected {
-  box-shadow: inset 3px 0 var(--color-primary);
-  background: var(--color-selection);
+  box-shadow: inset 3px 0 var(--accent);
+  background: var(--accent-soft);
 }
 
 .automation-problem-list em {
@@ -414,6 +414,6 @@
 }
 
 .automation-problem-list em > span {
-  color: var(--color-text);
+  color: var(--text);
   font-weight: 600;
 }

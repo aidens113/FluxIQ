@@ -75,8 +75,10 @@ describe("the web runtime's workspaces", () => {
     expect(manager.primary().fluxiq).toBe(fluxiq);
     expect(getFluxIQ()).toBe(fluxiq);
     expect(manager.primary().heldKeys).toBeNull();
-    // As before: the importer root and the provider admission, nothing else.
-    expect(create.mock.calls.map(([options]) => Object.keys(options ?? {}).sort())).toEqual([["modelProvidersEnabled", "rootDir"]]);
+    // As before (the importer root and the provider admission), plus the decision audit: its workspace and
+    // its sink, and no profile or policy source, so decisions stay the runtime profile's, by permission.
+    expect(create.mock.calls.map(([options]) => Object.keys(options ?? {}).sort())).toEqual([["iam", "modelProvidersEnabled", "rootDir"]]);
+    expect(Object.keys((create.mock.calls[0]![0] as FluxIQOptions).iam!).sort()).toEqual(["audit", "workspaceId"]);
 
     const person = await signIn(fluxiq, "single-owner");
     const lease = await workspaceFluxIQ(requestWith(person.sessionId));
@@ -218,7 +220,8 @@ describe("the web runtime's workspaces", () => {
     const opened = vi.spyOn(IamAuditStore, "open");
     await initializeFluxIQWebRuntime();
     const audit = (create.mock.calls[0]![0] as FluxIQOptions).iam!.audit!;
-    audit.record({ category: "allow", time: 0, requestId: "cold", principal: "user/example", action: "studio:Projects", resources: [], decision: "allow", matched: "implicit", origin: "panel", ipPrefix: null });
+    // A refusal: an allowed read (`studio:Projects`) is never persisted, so it would leave nothing to flush.
+    audit.record({ category: "deny", time: 0, requestId: "cold", principal: "user/example", action: "studio:Projects", resources: [], decision: "deny", matched: "implicit", origin: "panel", ipPrefix: null });
     await closeFluxIQWebRuntime();
     expect(opened).toHaveBeenCalledTimes(1);
     expect(compose).not.toHaveBeenCalled();

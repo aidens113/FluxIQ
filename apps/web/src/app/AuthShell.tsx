@@ -39,7 +39,7 @@ export function AuthStatus(props: { displayName: string; roleId: string }) {
   }
 
   return <div className="auth-status"><Menu icon={<UserRound aria-hidden size={15} />} label={props.displayName} options={[
-    { id: "account", label: "Account and access", href: "/programs/identity-access", icon: <Settings aria-hidden size={14} /> },
+    { id: "account", label: "Account and access", href: "/security/sign-in", icon: <Settings aria-hidden size={14} /> },
     { id: "logout", label: busy ? "Signing out..." : "Log out", disabled: busy, onSelect: () => void logout(), icon: <LogOut aria-hidden size={14} /> }
   ]} /><span className="auth-role">{props.roleId}</span>
     {busy ? <span role="status">Signing out...</span> : null}

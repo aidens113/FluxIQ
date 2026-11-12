@@ -32,7 +32,7 @@ export type AutomationStudioStepTiming = {
 /** A run's step timing, over the step log the process environment names. */
 export function automationStudioStepTiming(env: Readonly<Record<string, string | undefined>> = process.env): AutomationStudioStepTiming {
   let step: AutomationStudioLlmStepLogFlowStep | undefined;
-  let outcome: { status: string; code?: string } | undefined;
+  let outcome: { status: string; code?: string; outputs?: Readonly<Record<string, unknown>> } | undefined;
   const close = (): void => {
     step?.finish(outcome);
     step = undefined;
@@ -56,7 +56,7 @@ export function automationStudioStepTiming(env: Readonly<Record<string, string |
     phase,
     async execute(work) {
       const attempt = await phase("execute", work);
-      outcome = { status: attempt.status, ...(attempt.failure?.code ? { code: attempt.failure.code } : {}) };
+      outcome = { status: attempt.status, ...(attempt.failure?.code ? { code: attempt.failure.code } : {}), outputs: attempt.outputs };
       return attempt;
     },
     end: close

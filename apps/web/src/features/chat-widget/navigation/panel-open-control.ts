@@ -1,16 +1,16 @@
 // The chat's "Open FluxIQ" control in this panel: a button that goes to the
 // screen where the question can be finished, in this window and never a new
 // tab, named for where it goes: this panel is FluxIQ, so "Open FluxIQ" would say
-// nothing. A model key to add goes to the Secret Keys program; a question only
-// the Studio can show goes to the Studio's project.
+// nothing. A model key to add goes to the Keys page under Security; a question only
+// the Studio can show goes to the project's Flows.
 
 import { createElement, type ChatOpenControl, type ChatOpenControlFactory } from "@fluxiq/ui-components";
 
-const SECRET_KEYS_HREF = "/programs/secret-keys";
+const SECRET_KEYS_HREF = "/security/keys";
 
-/** Where the Studio opens on a project. The Studio page resolves the domain itself. */
+/** Where a project's Flows open: the Flows screen, which reads `?project=`. */
 function studioHref(projectId: string | undefined): string {
-  return projectId ? `/programs/automation-studio?project=${encodeURIComponent(projectId)}` : "/programs/automation-studio";
+  return projectId ? `/flows?project=${encodeURIComponent(projectId)}` : "/flows";
 }
 
 /** `navigate` is the router's push, so the person stays in the panel. */

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { IamAuditRecord } from "../../types.ts";
+import { IamAuditDatabase } from "../database.ts";
 import { IamAuditStore } from "../store.ts";
 
 const DAY = 86_400;
@@ -79,6 +80,47 @@ describe("IamAuditStore", () => {
     expect(back).toEqual([...rows].reverse());
     expect(back[0]).not.toHaveProperty("consent");
     expect(back.at(-1)).not.toHaveProperty("via");
+  });
+
+  it("round-trips how many items a list request hid, and leaves every other row without it", async () => {
+    const rows: IamAuditRecord[] = [
+      record({ category: "deny", decision: "deny", time: T0 + 20, action: "studio:ListProjects", resources: ["frn:fluxiq:platform::workspace/ws1"], matched: "implicit", hidden: 7 }),
+      record({ category: "deny", decision: "deny", time: T0 + 30 }),
+      record({ time: T0 + 40 })
+    ];
+    await store.write(rows);
+    const back = await store.read();
+    expect(back).toEqual([...rows].reverse());
+    expect(back[0]).not.toHaveProperty("hidden");
+    expect(back[1]).not.toHaveProperty("hidden");
+  });
+
+  it("reads a file made before the hidden count existed, and adds the count to it", async () => {
+    const legacy = path.join(dir, "legacy.db");
+    const db = await IamAuditDatabase.open(legacy);
+    await db.exec("CREATE TABLE dict (id INTEGER PRIMARY KEY, value TEXT NOT NULL UNIQUE)");
+    await db.exec("CREATE TABLE long (cat INTEGER NOT NULL, dec INTEGER NOT NULL, t INTEGER NOT NULL, req INTEGER NOT NULL, p INTEGER NOT NULL, a INTEGER NOT NULL, r INTEGER NOT NULL, m INTEGER NOT NULL, o INTEGER NOT NULL, ip INTEGER); CREATE INDEX long_t ON long (t)");
+    const values = ["frn:fluxiq:iam:ws1:user/ada", "studio:GetFlow", "frn:fluxiq:studio:ws1:project/p2", "", "panel"];
+    for (const [index, value] of values.entries()) await db.run("INSERT INTO dict (id, value) VALUES (?, ?)", [index + 1, value]);
+    await db.run("INSERT INTO long (cat, dec, t, req, p, a, r, m, o, ip) VALUES (0, 0, ?, 9, 1, 2, 3, 4, 5, NULL)", [T0 + 5]);
+    await db.close();
+
+    const opened = await IamAuditStore.open(legacy);
+    try {
+      const old: IamAuditRecord = { category: "deny", time: T0 + 5, requestId: "9", principal: values[0]!, action: "studio:GetFlow", resources: ["frn:fluxiq:studio:ws1:project/p2"], decision: "deny", matched: "implicit", origin: "panel", ipPrefix: null };
+      expect(await opened.read()).toEqual([old]);
+      const fresh = record({ category: "deny", decision: "deny", time: T0 + 6, hidden: 2 });
+      await opened.write([fresh]);
+      expect(await opened.read()).toEqual([fresh, old]);
+    } finally {
+      await opened.close();
+    }
+    const again = await IamAuditStore.open(legacy);
+    try {
+      expect((await again.read()).map((row) => row.hidden ?? null)).toEqual([2, null]);
+    } finally {
+      await again.close();
+    }
   });
 
   it("partitions allow rows by UTC day across midnight", async () => {

@@ -24,7 +24,7 @@ describe("AI provider settings section", () => {
     const html = renderToStaticMarkup(createElement(AiProviderSettingsSection, { draft, keyAvailability: deepSeekKeyAvailability({ keys: [], loading: false, error: "" }), onDraftChange: () => undefined }));
     expect(html).toContain("AI Provider");
     expect(html).toContain("No DeepSeek API key has been added yet.");
-    expect(html).toContain('href="/programs/secret-keys"');
+    expect(html).toContain('href="/security/keys"');
     expect(html).toContain("Add DeepSeek key");
     const ready = renderToStaticMarkup(createElement(AiProviderSettingsSection, { draft, keyAvailability: deepSeekKeyAvailability({ keys: [{ id: "k", name: "Work key", kind: "llm", provider: "DeepSeek", scope: "global", enabled: true }], loading: false, error: "" }), onDraftChange: () => undefined }));
     expect(ready).toContain("Work key");

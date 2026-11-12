@@ -20,3 +20,21 @@ it("keeps the sign-in surface for a signed-out person, without the shell or the 
   expect(html).not.toContain("data-shell");
   expect(html).not.toContain("The page");
 });
+
+it("hands the shell the screens the deployment's preset shows", async () => {
+  process.env.FLUXIQ_PANEL_PRESET = "task-automation";
+  try {
+    const element = await PanelLayout({ children: <p>The page</p> });
+    expect(element.props.pages).toEqual(["home", "flows", "runs", "security", "settings"]);
+  } finally {
+    delete process.env.FLUXIQ_PANEL_PRESET;
+  }
+});
+it("fails plainly on an unknown preset", async () => {
+  process.env.FLUXIQ_PANEL_PRESET = "nope";
+  try {
+    await expect(PanelLayout({ children: <p>The page</p> })).rejects.toThrow("is not a panel preset");
+  } finally {
+    delete process.env.FLUXIQ_PANEL_PRESET;
+  }
+});

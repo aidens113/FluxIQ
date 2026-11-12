@@ -24,12 +24,17 @@ own resources.
 profile (`resolveFluxIQProfile(process.env)`, so `FLUXIQ_PROFILE` unset is
 `local`) and the `iam` option it is given (`FluxIQOptions.iam`): a local or
 self-hosted install decides exactly as before, and `service` decides by the
-policies `iam.source` attaches, recording each decision in `iam.audit`. Under
+policies `iam.source` attaches. On every profile each decision is recorded in
+`iam.audit` when one is given, and the web server gives one on every profile:
+its route decisions are persisted for every allowed state change and every
+refusal, while allowed reads are not persisted (see [Audit](#audit) and
+[Web workspace manager](#web-workspace-manager)). Under
 `service` the same runtime also bounds the client gateway's ended sessions to
 one hour (`endedSessionMaxAgeMs`). `PlatformServices.workspaceIam(workspaceId)`
 returns the per-workspace `IamStore` provisioning attaches member policies to,
-which the web workspace manager passes as its lazy `iam.source`. Every service
-workspace, including the primary, shares the root-owned buffered decision audit.
+which the web workspace manager passes as its lazy `iam.source`. Every
+workspace, on every profile and including the primary, shares the root-owned
+buffered decision audit.
 
 The plan's terms (principals, FRNs, policy kinds, actions) are in the
 [hosted production plan](../working/hosted-production-plan.md), "Permissions
@@ -48,7 +53,7 @@ sit in `iam/types.ts`.
 | `evaluate/` | Pure, deterministic policy evaluation. | `compileIamPolicySet`, `evaluateIamRequest`, `iamTrustAllows` |
 | `predefined/` | The seven FluxIQ-managed policies. | `IAM_PREDEFINED_POLICY_DEFINITIONS`, `resolveIamPredefinedPolicy`, one constant per policy |
 | `store/` | Persist policies, attachments, groups, roles, service identities. | `IamStore`, `IamStoreError`, `IamRecordRepository` |
-| `audit/` | Compact, day-partitioned decision log. | `IamAuditStore`, `BufferedIamAuditSink`, `MemoryIamAuditSink`, `iamIpPrefix` |
+| `audit/` | Compact, day-partitioned decision log, and the filter that keeps changes and refusals. | `IamAuditStore`, `BufferedIamAuditSink`, `MemoryIamAuditSink`, `iamIpPrefix`, `IamDecisionAuditFilter`, `iamReadActionsOf` |
 | `authorize/` | Resolve, evaluate, audit: the one entry point. | `IamAuthorizer`, `IamRequestAuthorizer`, `IamPolicySource` |
 | `catalog/` | Generate the action catalog from endpoint registrations. | `generateIamActionCatalog`, `IAM_READ_ONLY_ACTIONS`, `IAM_DESTRUCTIVE_ACTIONS` |
 | `parity/` | Prove IAM agrees with today's role checks. | `compareIamRoleParity` |
@@ -177,8 +182,8 @@ the generated lists" use `IAM_READ_ONLY_ACTIONS` and `IAM_DESTRUCTIVE_ACTIONS`.
 | --- | --- | --- |
 | `FluxIQOwnerFullAccess` | identity | `Allow *` on the workspace content and the workspace FRN, no condition, so it takes the fast path. Reaches nothing outside the workspace. |
 | `FluxIQAdministratorAccess` | identity | An unconditional `Allow *` on the workspace content, and `Allow` of the `studio`, `secrets`, `gateway`, `iam` and `ops` services on the workspace FRN. No `platform:*` (platform FRNs have no workspace segment, so the content grant cannot reach them). It reaches every endpoint today's admin does, and the content grant makes it full access, so the single local owner, who is `admin` today, keeps the list fast path. |
-| `FluxIQReadOnlyAccess` | identity | Exactly the 98 read-only actions, one statement per service, on the same two resources. Built from the generated list. |
-| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. Self-service password, PIN, TOTP, session and vault actions, and `secrets:Unlock`, on the principal's own user FRN. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
+| `FluxIQReadOnlyAccess` | identity | The actions in the generated `programs.read` list, one statement per service, on the same two resources. This includes explicitly registered self-service writes such as the caller's own preferences and username re-case. |
+| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential is refused them by IAM itself: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, the person's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`) and their own sign-in name in another case (`iam:RecaseMyUsername`, only its capitals), and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Reading the allowance is not among them: its endpoint declares the workspace, where the setting reads grant it. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed, chosen or offered by them. `secrets:OfferKey` (`offer-key`) on their own key is theirs under `OwnData`. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
 | `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace. Denies all `iam` actions, `secrets:RevealKey` and the 16 destructive actions. A connected browser acts as its user, narrowed by this. |
 | `FluxIQProvisioner` | identity | For the website's provisioning identity: allows `platform:*Account*` on account FRNs; denies everything on any FRN with a workspace segment and on workspace FRNs. |
 | `FluxIQServiceGuardrail` | guardrail | `Deny ops:*` and `Deny platform:*`. Keeps operator actions (including database migration and node registration) out of a hosted workspace. |
@@ -249,7 +254,7 @@ affordable.
 | --- | --- | --- |
 | `dict` | Every distinct principal, action, resource list, matched statement, origin, IP prefix and non-decimal request id | Loaded into memory at open; never collected |
 | `allow_YYYYMMDD` | One table per UTC day, allow decisions | All integer columns, created lazily, no secondary index |
-| `long` | Denies and IAM changes | Category column (deny or iam-change), index on time |
+| `long` | Denies and IAM changes | Category column (deny or iam-change), index on time; `hid`, the hidden-item count of a list's refusal row, null otherwise |
 
 Rows are compact because strings are interned: an allow row measured about 30
 bytes (29.9 over 10,000 polling-like rows). A request id that is a canonical
@@ -271,6 +276,31 @@ overlapping the range and return newest first. `expire` drops whole allow-day
 tables older than the allow retention and deletes aged rows from `long`
 according to its own retention. `iamIpPrefix` records a network prefix, not
 the full address. `MemoryIamAuditSink` is the in-process sink for tests.
+
+**What is persisted.** `IamDecisionAuditFilter(target, isRead)` sits in front
+of a sink and keeps every `deny` (a refused read included), every
+`iam-change`, and every `allow` of an action that changes state; it drops the
+`allow` of a read. It passes kept records through unchanged, and never awaits
+or throws: if `isRead` throws, the row is kept. `iamReadActionsOf(endpoints)`
+names the reads among a registry's endpoints: the actions whose catalog level
+(`iamEndpointAccessLevel`) is `Read` or `List`, counted as a read only when
+every program that registers the action registers it as one; an unknown
+classification is kept. The web server builds its `iam.audit` from these on
+every profile (see [Web workspace manager](#web-workspace-manager)).
+
+**A list is one row.** A list request that hides items from its caller
+(`IamRequestAuthorizer.filter`, behind every registry list through
+`filterProgramList`) still decides each item on its own, but writes one row for
+the request, never one per item: a `deny` naming the list's action and scope,
+citing the statement that denied the first hidden item, with `hidden`, how many
+items it hid. A list that hides nothing writes one `allow` row, which the
+filter above drops for a read, so it persists nothing. The full-access fast path
+and an empty list still write the scope's own row. The count is stored in
+`long.hid`; a file made before that column existed gains it at open (`ALTER
+TABLE ... ADD COLUMN`) and its rows read back without `hidden`. The Activity
+route copies `hidden` into an entry only as a positive whole number, from its
+field allow-list, and the Activity screen shows it as "N items hidden". The row
+does not say which items were hidden; the policies and owners at that time do.
 
 ## Authorizer
 
@@ -298,8 +328,10 @@ prefix). A request id comes from the context or is generated once per request.
 
 `filter` decides on the list's scope first. If that is allowed by the fast
 path and every item is covered by it, one row is written and all items are
-returned. Otherwise each item is decided and gets a row, and only allowed items
-are returned. An empty list writes the single scope row.
+returned. Otherwise each item is decided on its own and only allowed items are
+returned, but the request writes one row, never one per item: a `deny` with
+`hidden: k` when k items were hidden, else one `allow` (which the audit filter
+drops, since a list is a read). An empty list writes the single scope row.
 
 `assumeRole` writes one deny row (action `iam:AssumeRole`, the role FRN) for an
 unknown role, a missing workspace or a trust refusal. When trust allows, the
@@ -444,8 +476,9 @@ an edited role, an unmapped role and a `user` role, under `local` and
 (`api-iam-escalation.test.ts`) runs `service` with two `FluxIQUserAccess`
 users: neither reaches the other's project or its children, any operator
 endpoint, `iam:Snapshot`, `CreateUser` or `UpdateUser`, or any unfiltered
-action on the workspace other than a create, and each list shows only the
-caller's own items.
+action on the workspace other than a create and the named setting reads
+(`IAM_USER_WORKSPACE_SETTING_READS`, each a registered read the user is
+allowed), and each list shows only the caller's own items.
 
 Result: for all 236 registrations, admin and viewer have 0 mismatches
 (472 pairs, 944 decisions; 340 pairs allowed and 132 refused today). The
@@ -542,7 +575,11 @@ is decided on `account/unresolved`.
 
 Over `http` a password is refused as an unknown field, `setPassword` is
 `operation_unavailable`, an existing email answers `{status: "exists"}` instead of
-`email_taken`, and a `userId` comes back only for `created`. In-process callers
+`email_taken`, and a `userId` comes back only for `created`. An email a person without an
+account already signs in with, in any case, is an email in use the same way: identity
+access refuses the user (`IdentityUsernameTakenError`, code `identity.username_taken`)
+before writing it, and `createAccount` answers `email_taken` in-process or `exists` with
+the account-exists mail over HTTP, with nothing written. In-process callers
 may pass a password once and see `email_taken`. An input issue names the field
 with a fixed message and never echoes a value.
 
@@ -827,6 +864,46 @@ operation and shutdown prevents a replacement. Changing the host root requires
 a runtime restart; reload refuses it before closing the current primary, keeping
 tenant storage and audit ownership on one root.
 
+**IAM options per workspace.** `lib/fluxiq.ts` gives each instance its `iam`
+option from `workspaceIam(tenancy, workspaceId, deps)`
+(`lib/workspaces/iam-options.ts`). Under `multi` (`service`) that is
+`serviceWorkspaceIam`: decisions by the policies of the workspace's IAM store.
+Under `single` (`local`, `self-hosted`) it is `{ workspaceId, audit }` only, so
+decisions are made exactly as before, by the runtime's own profile and the
+caller's permissions, and only the audit is added.
+
+**Route decisions persisted on every profile.** Every instance records into
+one `WorkspaceDecisionAudit` (`lib/workspaces/decision-audit.ts`), which wraps
+the root-owned buffered sink (reached through a `DeferredIamAuditSink`, so the
+platform services are composed on first use) in `IamDecisionAuditFilter`. It
+persists each allowed decision of an action that changes state (a registry
+endpoint at `Write` or `PermissionsManagement` level, or an app route whose
+method is not `GET`) and every refusal, a refused read included. Allowed reads
+are not persisted. The reads are the app routes' `GET` actions
+(`appRouteReadActions()`), known from the start, and each instance's
+registered `Read` and `List` actions, learned (`learn(registry)`) as the
+instance opens and before it serves anything; until then an allowed decision
+of its actions is kept rather than dropped. Recording never awaits, so no
+request waits for storage. The Activity log reads these rows.
+
+**Account holders' authority.** As each instance opens (the primary, each
+reload and each tenant), `lib/fluxiq.ts` also hands its Identity Access
+authority over account holders to provisioning:
+`identityAccess.authority.holdElsewhere(platformAuthorityOwner)`
+(`server/provisioning-listener/platform-authority-owner.ts`). A person "has an
+account" when the platform store holds one for them, the same rule
+`/api/accounts/members` uses. For such a person, `update-user` refuses a
+sign-in name, role or sign-in on/off change with
+`identity.authority_managed_by_provisioning` (a re-case of their sign-in name,
+the same address, is not a change: an administrator may make it, and the
+person themselves through `recase-my-username`), and the identity `snapshot`
+endpoint marks them `authorityHeldElsewhere`, so the Security sign-in page
+offers none of those controls and says "Managed under Access" instead. Their
+role and on/off are changed through provisioning (`setPolicies`,
+`disableAccount`, `enableAccount`), and their sign-in name stays their account
+email. Installing the owner as each instance opens, not lazily, leaves no
+window in which such a change gets through.
+
 ## Model keys
 
 Where a model call finds its key is now owner-aware. In
@@ -845,6 +922,83 @@ Where a model call finds its key is now owner-aware. In
 
 The Flow's key comes from the `flowSecretKeyId({projectId, flowId})` option of the
 session key provider resolver, then from the request's `llmSecretKeyId` metadata.
+
+**The workspace's assistant key.** The panel assistant (the dock) answers with the key
+Secret Keys resolves for it (`ModelKeySettings.resolveAssistant`: the key chosen for the
+assistant, else the workspace's default key), whoever sends. In
+`runtime/conversations/assistant/model/key-model-source.ts`:
+
+- The sender's own key, or a legacy key nobody is stamped on, is released to the sender's
+  own unlock, as before.
+- **No key is ever shared automatically.** Another person's key pays for the sender's
+  message only when both hold, `resolveAssistant`'s `chosenForWorkspace` and
+  `offeredByHolder`:
+  - **Chosen**: an owner or administrator chose it as the workspace's key, with
+    `set-default-key` or `set-assistant-model` (both decided on the workspace, so locally a
+    role with `secrets.manage`). The chooser is recorded (`defaultChosenBy`,
+    `assistantChosenBy`, the acting user, never a payload). Choosing "the default key" for
+    the assistant records the default it names as chosen, so a default that later passes
+    on by itself is not. The oldest key standing as the default, a default that passed on
+    by itself, and the workspace's first key are chosen by nobody: adding a key chooses
+    nothing.
+  - **Offered**: its holder offered it to the workspace with `offer-key` (`{ id, offered }`,
+    `secrets:OfferKey`, declared on the key). IAM decides it under `OwnData`, so a member
+    reaches only their own key, and the service refuses anyone but the person who added it
+    (`createdBy`), an owner or administrator included: nobody offers another person's key.
+    A paired browser's call is refused. The offer is stored beside the choices
+    (`keyOffers`), shown on each model key of the snapshot (`offeredToWorkspace`), and goes
+    when the holder withdraws it or the key stops being a model key (removed, turned off,
+    changed); turning the key back on shares nothing until it is offered again.
+    Both `set-default-key` and `set-assistant-model` take another person's key
+    only once it is offered.
+- Every provider call re-resolves the current choice and the holder's consent,
+  before the asynchronous unlock/reveal and again before returning the value to
+  the provider adapter. A turn's initial resolution never grants a later call:
+  withdrawing the offer or clearing the workspace choice prevents that call.
+  A changed key, provider, model or holder refuses the old bound adapter, with
+  plain instructions to send the message again using the current choice. No
+  other key is tried, and the sender never receives the released value.
+- With both, it is released server-side, for that one call, to **the holder's own live
+  panel unlock** (`fallbackUnlockFor(holder, null)`, never a paired browser's), the only
+  thing that can open a key sealed under the holder's password. The sender never holds,
+  reads or names the value; what IAM decides for them is `studio:SendPanelMessage` on
+  their own user.
+- Otherwise the sender is answered in the thread, in plain words naming who can choose
+  one, and no model is called: "No model key has been chosen for this workspace's messages
+  yet. An owner or administrator of this workspace chooses one in Settings, from a key its
+  holder has offered to the workspace.", or, chosen but not offered, that the person who
+  added it has not offered it and an owner or administrator can choose another.
+- The sender's own key needs neither step, so a single person locally or self-hosted, and
+  an owner on their own key, work as before.
+- `get-assistant-model` carries `assistantKeyChosen` and `assistantKeyOffered` for the key
+  in use, and the snapshot marks the caller's own keys `heldByYou`. Settings shows an
+  "Offer to the workspace" control on each of the person's own model keys only, tells a
+  chooser whether the workspace's key pays for other people's messages (with a control to
+  choose the key in use when nobody has), and tells a member in plain words when no
+  chosen, offered key pays for their messages.
+- When no unlock of the holder holds the key, the call ends with the typed
+  `AutomationStudioSecretsLockedError` (`secrets.locked`) and no other key is tried. The
+  provider adapters turn a throw from the key lookup into a generic provider error, so the
+  model source remembers the lock and rethrows the typed error, for the holder's own
+  messages as well. The dock says it in the thread. The holder is told
+  `secretsLockedMessage` ("Unlock your model key: ..."); anyone else is told the
+  workspace's key is locked and its owner must unlock it (`workspaceKeyLockedMessage`,
+  contracts `platform/model-keys`, raised as `PanelAssistantWorkspaceKeyLockedError`, the
+  same code and type, with no sign-in link, since their own unlock cannot open it).
+- `get-assistant-model` (and the snapshot's `modelSettings`) carries `assistantProvider`,
+  the provider of the key in use, so Settings shows a member which provider and model
+  answer without listing a key that is not theirs, and offers no control to change it.
+- **The default key and the assistant's key are the workspace's choices.** `set-default-key`
+  and `set-assistant-model` both declare `endpointResource.workspace()`, so IAM decides
+  `secrets:SetDefaultKey` and `secrets:SetAssistantModel` on the workspace FRN, never on the
+  key: owning a key does not let a person make it everyone's default. Hosted, the Owner
+  and Administrator policies allow them and `FluxIQUserAccess` does not; local and
+  self-hosted, the role's `secrets.manage` decides (`admin` yes, `viewer` no). A person's
+  own key management (create, rename, rotate, reveal, delete) is unchanged, decided on the
+  key under `OwnData`. Settings hides both controls from a person whose role lacks
+  `secrets.manage` (`mayChooseWorkspaceKeys`), once the page is given the role's
+  permissions (`useSettingsData(port, { mayChooseForWorkspace })`); without it the page
+  offers them and the server refuses.
 
 **Unlock resolution happens on every model call.** The caller's own session is only
 the preferred one. If it was signed out, a panel caller's resolver tries
@@ -1136,4 +1290,8 @@ never imports `@fluxiq/contracts`).
 - **`platform:*Account*`** in the provisioner matches the ten provisioning
   actions of the frozen contract, every one of which names `Account`.
 - **Audit.** Non-decimal request ids are costly; multiple processes writing one
-  audit file, and expiry over a full 90 days of data, are untested.
+  audit file, and expiry over a full 90 days of data, are untested. The
+  `hid` column added to an existing audit file on open is untested with two
+  processes opening the same file at once.
+  Allowed rows flush up to 1 second after denials, so store order within one
+  second is not call order.

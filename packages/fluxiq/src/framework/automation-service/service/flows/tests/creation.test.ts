@@ -119,6 +119,29 @@ describe("real generated orchestration Flow writer ingress", () => {
     expect(flow.flowId).toMatch(/^flow\.[0-9a-f-]{36}$/);
     expect(await written(state, flow.flowId)).toEqual({ canonical: "Original Flow", document: "Original Flow", sql: "Original Flow", receipts: 2, feed: 1 });
   });
+  for (const mode of ["sql", "file"] as const) it(`creates a Flow with its starting humanness in the one creating write (${mode})`, async () => {
+    const state = await fixture(mode);
+    const flow = await state.creation.createFlow({ projectId: state.project.id, name: "Original Flow", humanness: 40 });
+    expect(flow.metadata?.humanness).toBe(40);
+    // The same effects as a plain create: one canonical write, no second settings update.
+    expect(await written(state, flow.flowId)).toEqual({ canonical: "Original Flow", document: "Original Flow", sql: "Original Flow", receipts: 2, feed: 1 });
+    const document = await new ProgramJsonStore(state.flowPaths.flowFile(state.project.id, flow.flowId), () => ({})).read() as { metadata?: { humanness?: unknown } };
+    expect(document.metadata?.humanness).toBe(40);
+  });
+  it("creates a Flow without a humanness key when none is given, and refuses one no run could use before any effect", async () => {
+    const state = await fixture("sql");
+    const plain = await state.creation.createFlow({ projectId: state.project.id, name: "Plain" });
+    expect(plain.metadata).not.toHaveProperty("humanness");
+    for (const humanness of [101, -1, 2.5, "40", null]) {
+      await expect(state.creation.createFlow({ projectId: state.project.id, name: "Refused", humanness })).rejects.toThrow("humanness must be a whole number from 0 to 100.");
+    }
+    const lease = await state.pool.acquire(state.project.id);
+    try {
+      expect((await lease.database.get<{ count: number }>("select count(*) as count from flows where name='Refused'"))?.count).toBe(0);
+    } finally {
+      await lease.release();
+    }
+  });
   for (const mode of ["sql", "file"] as const) it(`saves through all actual ${mode} effects under one parent`, async () => {
     const state = await fixture(mode, withFlow);
     const flow = state.flow!;

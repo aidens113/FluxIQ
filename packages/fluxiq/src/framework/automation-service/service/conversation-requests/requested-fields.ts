@@ -1,6 +1,7 @@
 // A conversation request's closed fields, read from what the caller sent: a
 // field that is half there or not one Core knows is refused rather than ignored.
 
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import {
   AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS,
   isAutomationStudioConversationStatus,
@@ -35,4 +36,11 @@ export function requiredAnswerKind(kind: unknown): AutomationStudioConversationA
     throw new Error(`An answer is one of: ${AUTOMATION_STUDIO_CONVERSATION_ANSWER_KINDS.join(", ")}.`);
   }
   return kind as AutomationStudioConversationAnswerKind;
+}
+
+/** The person's humanness, an integer from 0 to 100; absent stays absent, anything else is refused. */
+export function requestedHumanness(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!humannessSchema.safeParse(value).success) throw new Error("A turn's humanness must be an integer from 0 to 100.");
+  return value as number;
 }

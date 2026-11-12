@@ -3,6 +3,7 @@
 // pays, keeps a failed build's diagnostic for a later reader, and answers with
 // the build checked field by field.
 
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
 import type { GenerateFlowBootstrapAdaptationRequest, GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
@@ -31,7 +32,8 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "startLocation",
   "mode",
   "interpretationCostUsd",
-  "interpretationCalls"
+  "interpretationCalls",
+  "humanness"
 ]);
 
 function flowBootstrapRuntimeUnavailable(readiness: ReturnType<typeof flowBootstrapGenerationReadiness>) {
@@ -97,6 +99,8 @@ export async function generateFlowBootstrapAdaptationForRequest(
   if (interpretationCostUsd !== undefined && (typeof interpretationCostUsd !== "number" || !Number.isFinite(interpretationCostUsd) || interpretationCostUsd < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation cost." };
   const interpretationCalls = payload.interpretationCalls;
   if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation call count." };
+  const humanness = payload.humanness;
+  if (humanness !== undefined && !humannessSchema.safeParse(humanness).success) return { ok: false, error: "Flow bootstrap generation request contains an invalid humanness." };
   const readiness = flowBootstrapGenerationReadiness(service);
   if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
   // What the person allowed the build's actions to do. Absent is nothing;
@@ -139,6 +143,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
       ...(startLocation === undefined ? {} : { startLocation }),
       ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
       ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
+      ...(humanness === undefined ? {} : { humanness: humanness as number }),
       // Somebody has just pressed build, so a question this build raises is
       // worth holding it open for: answered, the build carries on with
       // permission instead of coming back needing another one.

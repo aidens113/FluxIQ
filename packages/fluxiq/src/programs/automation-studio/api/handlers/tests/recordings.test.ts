@@ -144,3 +144,18 @@ describe("reading the recording-capture policy", () => {
     expect(response).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 });
+
+describe("review-recording-flow-proposal", () => {
+  const reviewer: ProgramApiActor = { sessionId: "session.reviewer", userId: "user.reviewer", roleId: "admin", permissions: ["programs.read", "programs.write", "flows.write"] };
+  const review = (registry: GlobalProgramApiRegistry, payload: Record<string, unknown>) =>
+    registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.reviewRecordingFlowProposal, scope: {}, actor: reviewer, payload: { projectId: "project.one", proposalId: "proposal.one", decision: "rejected", ...payload } });
+
+  it("records the signed-in caller as the reviewer, whoever the body names", async () => {
+    const reviewRecordingFlowProposal = vi.fn(async (input: Record<string, unknown>) => input);
+    const registry = registryWith({ reviewRecordingFlowProposal });
+    await review(registry, { reviewerId: "user.someone-else" });
+    await review(registry, {});
+    expect(reviewRecordingFlowProposal).toHaveBeenCalledTimes(2);
+    expect(reviewRecordingFlowProposal.mock.calls.map(([input]) => input.reviewerId)).toEqual(["user.reviewer", "user.reviewer"]);
+  });
+});

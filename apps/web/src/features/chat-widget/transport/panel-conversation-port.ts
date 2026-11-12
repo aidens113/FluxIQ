@@ -1,6 +1,6 @@
 // The panel-wide thread's conversation, over the assistant's own endpoints
 // (`list-panel-threads`, `get-panel-thread`, `send-panel-message`,
-// `answer-panel-ask`). Only the transport's panel branch uses it; project
+// `answer-panel-ask`, and `open-panel-thread`, `rename-panel-thread` and `delete-panel-thread` for the list's controls). Only the transport's panel branch uses it; project
 // threads keep `conversation-port.ts` and its endpoints.
 //
 // A panel thread belongs to no project, so no request names one. Every send
@@ -14,10 +14,13 @@ import { chatFailure } from "./chat-failure";
 import { chatResult } from "./chat-result";
 
 const NO_MESSAGE = "There is no message to send.";
+const NO_TITLE = "A chat needs a name.";
 
 export type PanelConversationOptions = {
   /** The page and selection the person has open now. */
   onScreen(): ChatOnScreen;
+  /** The project the person has open: its threads join the list beside their own. Absent, or none open: their own alone. */
+  openProject?(): { projectId: string; name?: string | undefined } | undefined;
 };
 
 export function createPanelConversationPort(api: ProgramCommandTransport, options: PanelConversationOptions): ChatConversationPort {
@@ -49,6 +52,21 @@ export function createPanelConversationPort(api: ProgramCommandTransport, option
       if (!sent.ok) return chatFailure(sent);
       const conversation = sent.payload?.conversation;
       return { ok: true, value: conversation === undefined ? {} : { conversation } };
+    },
+
+    async newThread(request) {
+      return chatResult(await api.post<{ conversation?: unknown }>("open-panel-thread", request.title ? { title: request.title } : {}));
+    },
+
+    async renameThread(request) {
+      const title = request.title.trim();
+      if (!title) return { ok: false, code: "invalid_request", sentence: NO_TITLE };
+      return chatResult(await api.post<{ conversation?: unknown }>("rename-panel-thread", { conversationId: request.conversationId, title }));
+    },
+
+    // Core refuses a thread whose message is still being worked on, in its own sentence, which passes through.
+    async deleteThread(request) {
+      return chatResult(await api.post<{ deleted?: boolean }>("delete-panel-thread", { conversationId: request.conversationId }));
     },
 
     async answer(answer) {

@@ -48,4 +48,18 @@ describe("middleware", () => {
   it("leaves the sign-in pages and health reachable with no session", () => {
     for (const path of ["/welcome", "/reset", "/setup", "/api/health"]) expect(run(`https://app.getfluxiq.com${path}`, {}, PUBLIC_ENV).status).toBe(200);
   });
+  it("rewrites a screen the panel preset hides to a path no route serves, so it answers 404", () => {
+    const hidden = run("http://127.0.0.1:3000/data", {}, { FLUXIQ_PANEL_PRESET: "task-automation" });
+    expect(new URL(hidden.headers.get("x-middleware-rewrite") ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    const tool = run("http://127.0.0.1:3000/settings/database-manager", {}, { FLUXIQ_PANEL_PRESET: "data-collection" });
+    expect(new URL(tool.headers.get("x-middleware-rewrite") ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    const shown = run("http://127.0.0.1:3000/data", {}, { FLUXIQ_PANEL_PRESET: "data-collection" });
+    expect(shown.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(shown.status).toBe(200);
+  });
+  it("refuses every request when the panel preset is unknown", async () => {
+    const response = run("http://127.0.0.1:3000/", {}, { FLUXIQ_PANEL_PRESET: "no-such-preset" });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, code: "deployment_misconfigured" });
+  });
 });

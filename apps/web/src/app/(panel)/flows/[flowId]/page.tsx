@@ -1,4 +1,5 @@
 import { FlowEditorPage } from "../../../../features/flows";
+import { requirePanelScreen } from "../../../product";
 
 type FlowPageProps = {
   params: Promise<{ flowId: string }>;
@@ -6,6 +7,7 @@ type FlowPageProps = {
 };
 
 export default async function PanelFlowPage(props: FlowPageProps) {
+  requirePanelScreen("flows");
   const { flowId } = await props.params;
   const query = await props.searchParams;
   const projectId = typeof query.project === "string" && query.project ? query.project : undefined;

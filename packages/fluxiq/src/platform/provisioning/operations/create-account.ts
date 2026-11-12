@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { PlatformAccountRecord } from "../../store/index.ts";
-import { isWeakPassword, ProvisioningRefusal } from "../context/index.ts";
+import { isUsernameTaken, isWeakPassword, ProvisioningRefusal } from "../context/index.ts";
 import type { ProvisioningContext } from "../context/index.ts";
 import { mailAccountExists, mailWelcomeLink } from "../links/index.ts";
 import { checkProvisioningPolicies, identityRoleForPolicies, syncMemberPolicies } from "../policies/index.ts";
-import type { PlatformIdentityPort } from "../types.ts";
+import type { PlatformIdentityPort, PlatformProvisioningCaller } from "../types.ts";
 import { accountOrigin } from "./account-origin.ts";
 import { resolveAccountWorkspace } from "./resolve-account-workspace.ts";
 import type { ProvisioningOperation } from "./types.ts";
@@ -17,7 +17,10 @@ type UpsertUserParams = Parameters<PlatformIdentityPort["upsertUser"]>[0];
  * (`not_found`, `entitlement_required`), then the email. An email that
  * already has an account is `{status: "exists"}` over HTTP, with an
  * "account-exists" email to the address, and `email_taken` in-process. An
- * externalId that already names another account is `invalid_input`.
+ * externalId that already names another account is `invalid_input`. An
+ * email a person without an account already signs in with (identity access
+ * refuses the user, `identity.username_taken`, before writing it) is answered
+ * like an existing account, and nothing is written.
  *
  * Then: the identity user (username = email, the interim role from the
  * policies, the password when given), the account row, a personal workspace
@@ -36,11 +39,7 @@ export const createAccountOperation: ProvisioningOperation<"createAccount"> = {
     if (input.password !== undefined && isWeakPassword(input.password)) throw new ProvisioningRefusal("weak_password", "The password must be at least 12 characters.");
     const workspace = await resolveAccountWorkspace(context, input.workspace);
     const existing = await context.store.findAccountByEmail(input.email);
-    if (existing !== null) {
-      if (caller.transport !== "http") throw new ProvisioningRefusal("email_taken", "An account with this email already exists.");
-      await mailAccountExists(context, existing.email);
-      return { status: "exists" };
-    }
+    if (existing !== null) return emailInUse(context, existing.email, caller.transport);
     if (input.externalId !== undefined && (await context.store.findAccountByExternalId(input.externalId)) !== null) {
       throw new ProvisioningRefusal("invalid_input", "The externalId already names another account.", [{ path: "externalId", message: "Already names another account." }]);
     }
@@ -48,7 +47,15 @@ export const createAccountOperation: ProvisioningOperation<"createAccount"> = {
     const userId = accountId;
     const user: UpsertUserParams = { id: userId, username: input.email, displayName: input.displayName, roleId: identityRoleForPolicies(policies), enabled: true };
     if (input.password !== undefined) user.password = input.password;
-    await context.identity.upsertUser(user);
+    try {
+      await context.identity.upsertUser(user);
+    } catch (error) {
+      // A person without an account already signs in with this email (in any
+      // case). Identity access refused before writing, and nothing else has
+      // been written yet, so this is the same answer as an existing account.
+      if (isUsernameTaken(error)) return emailInUse(context, input.email, caller.transport);
+      throw error;
+    }
 
     const account: PlatformAccountRecord = {
       userId,
@@ -75,6 +82,18 @@ export const createAccountOperation: ProvisioningOperation<"createAccount"> = {
     return { status: "created", userId, workspaceId };
   }
 };
+
+/**
+ * An email already in use, by an account or by a person who signs in with it:
+ * `email_taken` in-process; over HTTP `{status: "exists"}` with an
+ * "account-exists" email to the address, so the listener never says whether
+ * an address is in use.
+ */
+async function emailInUse(context: ProvisioningContext, email: string, transport: PlatformProvisioningCaller["transport"]): Promise<{ status: "exists" }> {
+  if (transport !== "http") throw new ProvisioningRefusal("email_taken", "An account with this email already exists.");
+  await mailAccountExists(context, email);
+  return { status: "exists" };
+}
 
 /**
  * The workspace the account joins: a new personal workspace (row written,

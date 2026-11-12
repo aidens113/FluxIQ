@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { iamActionName } from "@fluxiq/contracts/iam";
 import { iamProgramService } from "../../../platform/iam/catalog/index.ts";
-import { IAM_USER_ACCESS } from "../../../platform/iam/predefined/index.ts";
+import { IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../../../platform/iam/predefined/index.ts";
 import type { ProgramApiEndpointSummary, ProgramApiHandler } from "../api.ts";
 import type { ProgramResourceRef } from "../iam/index.ts";
 import { createGlobalProgramRuntime } from "../runtime.ts";
@@ -80,15 +80,34 @@ describe("FluxIQUserAccess under service, over the live registry", () => {
     expect(refused, "add these to FILTERED_WORKSPACE_LISTS in platform/iam/predefined/user-access.ts").toEqual([]);
   });
 
-  it("refuses a user every unfiltered action on the workspace except a create", async () => {
+  // The deliberate workspace reads (`IAM_USER_WORKSPACE_SETTING_READS`) are the
+  // only exception: any other workspace grant that reaches a user fails here.
+  it("refuses a user every unfiltered action on the workspace except a create and the named setting reads", async () => {
     const reached: string[] = [];
-    const targets = endpoints.filter((endpoint) => endpoint.list === undefined && workspaceWide(endpoint) && !/:Create[A-Z]/u.test(actionOf(endpoint)));
+    const targets = endpoints.filter((endpoint) => endpoint.list === undefined && workspaceWide(endpoint) && !/:Create[A-Z]/u.test(actionOf(endpoint)) && !IAM_USER_WORKSPACE_SETTING_READS.includes(actionOf(endpoint)));
     for (const endpoint of targets) {
       if (outcomeOf(await callAs(bob, endpoint, NO_ID_PAYLOAD)) === "allow") reached.push(actionOf(endpoint));
     }
     console.info(JSON.stringify({ unfilteredWorkspaceTargets: targets.length, reached }));
     expect(targets.length).toBeGreaterThan(0);
     expect(reached).toEqual([]);
+  });
+
+  it("lets a user call each named setting read that a registration declares on the workspace", async () => {
+    const refused: string[] = [];
+    const reads = endpoints.filter((endpoint) => workspaceWide(endpoint) && IAM_USER_WORKSPACE_SETTING_READS.includes(actionOf(endpoint)));
+    for (const endpoint of reads) {
+      if (outcomeOf(await callAs(bob, endpoint, NO_ID_PAYLOAD)) !== "allow") refused.push(actionOf(endpoint));
+    }
+    console.info(JSON.stringify({ workspaceSettingReads: reads.map(actionOf), refused }));
+    expect(reads.map(actionOf)).toContain("secrets:GetAssistantModel");
+    expect(refused).toEqual([]);
+    // Each named action is a read some registration declares, never a write slipped into the list.
+    for (const action of IAM_USER_WORKSPACE_SETTING_READS) {
+      const declared = endpoints.filter((endpoint) => actionOf(endpoint) === action);
+      expect(declared.length, `${action} is registered`).toBeGreaterThan(0);
+      expect(declared.every((endpoint) => endpoint.accessLevel === "Read"), `${action} is a read`).toBe(true);
+    }
   });
 
   it("lets a user call their own unlock, whose handler keeps it to their own keys (secret-keys/api/tests/unlock-cross-user.test.ts)", async () => {

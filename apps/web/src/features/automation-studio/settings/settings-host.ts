@@ -14,6 +14,8 @@ export type SettingsViewHostCommands = Record<string, never>;
 
 export type SettingsCommands = {
   listLlmSecrets(): Promise<ApiResponse<{ keys?: any[] }>>;
+  /** The person's own preferences (identity-access `get-my-preferences`). Absent: no starting humanness is read. */
+  loadMyPreferences?(): Promise<ApiResponse<{ startingHumanness?: unknown }>>;
   listPublications(payload: Record<string, any>): ReturnType<typeof listFlowPublications>;
   loadFlow(payload: { projectId: string; flowId: string }): ReturnType<typeof loadFlowSettingsDetail>;
   loadSubflowResources(payload: { projectId: string; flowId: string; subflowId: string }): ReturnType<typeof loadSubflowSettingsResources>;
@@ -25,13 +27,15 @@ export type SettingsCommands = {
 export function useSettingsCommands(): SettingsCommands {
   const automationTransport = useProgramTransport("automation-studio");
   const secretTransport = useProgramTransport("secret-keys");
+  const identityTransport = useProgramTransport("identity-access");
   return useMemo(() => ({
     listLlmSecrets: () => secretTransport.get<{ keys?: any[] }>("snapshot"),
+    loadMyPreferences: () => identityTransport.get<{ startingHumanness?: unknown }>("get-my-preferences"),
     listPublications: (payload) => listFlowPublications(automationTransport, payload),
     loadFlow: (payload) => loadFlowSettingsDetail(automationTransport, payload),
     loadSubflowResources: (payload) => loadSubflowSettingsResources(automationTransport, payload),
     saveFlow: (payload) => saveFlowSettings(automationTransport, payload),
     updateSubflow: (payload) => updateSubflowSettings(automationTransport, payload),
     changeSubflowLifecycle: (endpoint, payload) => changeSubflowLifecycle(automationTransport, endpoint, payload)
-  }), [automationTransport, secretTransport]);
+  }), [automationTransport, secretTransport, identityTransport]);
 }

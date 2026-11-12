@@ -1,7 +1,4 @@
-.program-main-panel {
-  display: grid;
-  gap: 14px;
-}
+
 
 .program-workspace-grid {
   display: grid;
@@ -27,30 +24,6 @@
   gap: var(--space-md);
 }
 
-.panel-count {
-  min-width: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--surface-tool);
-  color: var(--color-text-muted);
-  padding: 2px 7px;
-  text-align: center;
-  font-size: var(--font-size-compact);
-  font-weight: var(--font-weight-bold);
-}
-
-.program-secondary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.compact-panel {
-  min-height: 120px;
-  box-shadow: none;
-}
-
 /* `sr-only` is the same rule under the name three automation-studio views use (sidebar, problems, router search labels). */
 .visually-hidden,
 .sr-only {
@@ -69,14 +42,14 @@
   justify-content: space-between;
   gap: var(--space-md);
   min-width: 0;
-  border-top: var(--border-width) solid var(--color-border);
-  background: var(--surface-tool);
+  border-top: var(--border-width) solid var(--divider);
+  background: var(--surface-muted);
   padding: var(--space-sm) var(--space-md);
 }
 
 .pagination-range,
 .pagination-actions > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -91,16 +64,16 @@
 
 .pagination-size {
   margin-left: auto;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .pagination-size select {
   min-height: var(--control-height-compact);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding-inline: var(--space-sm);
 }
 

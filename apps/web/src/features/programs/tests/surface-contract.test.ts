@@ -5,9 +5,11 @@ const globalCss = readCssManifest(new URL("../../../app/globals.css", import.met
 const studioCss = readCssManifest(new URL("../../../app/(panel)/flows/[flowId]/graph/graph.css", import.meta.url));
 
 describe("web surface hierarchy", () => {
-  it("defines shell, pane, tool, selected, and code roles", () => {
+  // The surface roles are the package's tokens (--canvas, --surface, --surface-raised,
+  // --accent-row, --code-bg); the panel must not define its own copies of them.
+  it("defines no surface roles of its own", () => {
     for (const role of ["--surface-shell", "--surface-pane", "--surface-tool", "--surface-selected", "--surface-code", "--content-code"]) {
-      expect(globalCss).toContain(`${role}:`);
+      expect(globalCss).not.toContain(`${role}:`);
     }
   });
 

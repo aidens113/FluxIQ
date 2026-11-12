@@ -146,7 +146,7 @@ export class SecretKeysService {
     return {
       modelSettings: this.modelKeys.view(),
       keys: this.store.list()
-        .map(toSummary)
+        .map((record) => ({ ...toSummary(record), ...(ModelKeySettings.isModelKey(record) ? { offeredToWorkspace: this.modelKeys.isOffered(record) } : {}) }))
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.name.localeCompare(right.name))
     };
   }
@@ -499,7 +499,7 @@ export class SecretKeysService {
   }
 
   /** A snapshot for one caller: each of their own keys says whether their unlock opens it, and which of their paired clients are locked. Nobody else's key says anything. */
-  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason }>; modelSettings?: SecretKeysSnapshot["modelSettings"]; lockedClients: SecretKeyLockedClient[] }> {
+  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: SecretKeysSnapshot["keys"]; modelSettings?: SecretKeysSnapshot["modelSettings"]; lockedClients: SecretKeyLockedClient[] }> {
     const { keys, modelSettings } = await this.snapshot();
     await this.credentialUnlocks.load();
     const held = caller.sessionId === null ? undefined : this.heldKeys.session(caller.sessionId);
@@ -511,7 +511,8 @@ export class SecretKeysService {
       keys: keys.map((key) => {
         if (key.createdBy !== undefined && key.createdBy !== caller.userId) return key;
         const unlocked = live?.decryptionKeys.get(key.id)?.keyUpdatedAtMs === key.updatedAtMs;
-        return { ...key, unlocked, ...(unlocked ? {} : { lockedBecause: this.keyLockReason({ userId: caller.userId, holderId: caller.holderId }) }) };
+        // `heldByYou` only on a key stamped with the caller: a legacy key nobody is stamped on is theirs to unlock, never to offer.
+        return { ...key, unlocked, ...(key.createdBy === caller.userId ? { heldByYou: true } : {}), ...(unlocked ? {} : { lockedBecause: this.keyLockReason({ userId: caller.userId, holderId: caller.holderId }) }) };
       }),
       lockedClients: await this.credentialUnlocks.lockedClientsFor(caller.userId)
     };

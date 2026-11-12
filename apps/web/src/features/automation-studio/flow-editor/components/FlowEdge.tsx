@@ -12,7 +12,7 @@ export function FlowEdge(props: EdgeProps) {
     : automationLaneEdgePath(props.sourceX, props.sourceY, props.targetX, props.targetY, route.lane);
   const label = String(props.label ?? props.data?.label ?? "");
   const configuredWidth = typeof props.style?.strokeWidth === "number" ? props.style.strokeWidth : 4;
-  const stroke = typeof props.style?.stroke === "string" && props.style.stroke ? props.style.stroke : "#2478bd";
+  const stroke = typeof props.style?.stroke === "string" && props.style.stroke ? props.style.stroke : "var(--accent)";
   return (
     <>
       <path

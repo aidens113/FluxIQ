@@ -102,6 +102,7 @@ describe("action permissions through the LLM build and run API", () => {
     expect(runRuntimeSession).toHaveBeenCalledWith({
       projectId: "project.one",
       flowId: "flow.one",
+      personUserId: "user.one",
       llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" },
       permittedConsequences: ["send_or_publish"]
     });

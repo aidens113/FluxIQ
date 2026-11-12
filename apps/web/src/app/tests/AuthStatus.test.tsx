@@ -14,7 +14,7 @@ const logout = () => view.root.findByProps({ "data-action": "logout" });
 const text = () => JSON.stringify(view.toJSON());
 function deferred() { let resolve!: (response: Response) => void, reject!: (error: unknown) => void; return { promise: new Promise<Response>((yes, no) => { resolve = yes; reject = no; }), resolve, reject }; }
 async function mount(fetcher: ReturnType<typeof vi.fn>) {
-  const location = { href: "https://panel.invalid/programs/background-tasks" };
+  const location = { href: "https://panel.invalid/flows" };
   vi.stubGlobal("window", { location }); vi.stubGlobal("fetch", fetcher);
   await act(async () => { view = create(<AuthStatus displayName="Synthetic operator" roleId="operator" />); });
   return location;
@@ -58,7 +58,7 @@ describe("logout acknowledgement and recovery", () => {
   });
   it("preserves account navigation and role display", async () => {
     await mount(vi.fn());
-    expect(view.root.findByType("a").props.href).toBe("/programs/identity-access"); expect(text()).toContain("operator");
+    expect(view.root.findByType("a").props.href).toBe("/security/sign-in"); expect(text()).toContain("operator");
   });
   it("rejects retained activation during unmount commit before passive cleanup", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));

@@ -7,6 +7,7 @@ import {
   SECRET_KEYS_ENDPOINTS,
   type CreateSecretKeyRequest,
   type DeleteSecretKeyRequest,
+  type OfferSecretKeyRequest,
   type RevealSecretKeyRequest,
   type RotateSecretKeyRequest,
   type SecretKeyAuthorizationPayload,
@@ -14,6 +15,7 @@ import {
   type UpdateSecretKeyRequest
 } from "./contracts.ts";
 import type { SecretKeyActorSession, SecretKeysService } from "../runtime/service.ts";
+import { unofferedKeyRefusal } from "./unoffered-key-refusal.ts";
 
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
@@ -166,12 +168,18 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     classification: "program-gated",
     action: "secrets:SetDefaultKey",
     accessLevel: "Write",
-    resource: endpointResource.key("id"),
-    assistant: { input: setDefaultKeyInput, summary: "Makes one of the person's model keys the default key.", phrases: ["use this key by default", "make this the default key"], contextArgs: { id: "keyId" } },
+    // The default is one choice for the whole workspace (every person's
+    // assistant and new Flows use it), so it is decided on the workspace, as
+    // `set-assistant-model` is, never on the key: owning a key must not let a
+    // person make it everyone's default.
+    resource: endpointResource.workspace(),
+    assistant: { input: setDefaultKeyInput, summary: "Makes one of the person's model keys the default key.", phrases: ["use this key by default", "make this the default key"], contextArgs: { id: "keyId" }, target: { id: "key" } },
     handler: async (request) => {
       const input = setDefaultKeyInput.read(request.payload);
       if (!input.ok) return { ok: false, error: "id is required" };
-      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setDefault(input.value.id) }));
+      const unoffered = await unofferedKeyRefusal(service, input.value.id, request.actor?.userId);
+      if (unoffered) return { ok: false, error: unoffered };
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setDefault(input.value.id, request.actor?.userId) }));
     }
   });
   registry.register({
@@ -192,18 +200,41 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     classification: "program-gated",
     action: "secrets:SetAssistantModel",
     accessLevel: "Write",
+    // The assistant's key and model are the workspace's choice: decided on the workspace.
     resource: endpointResource.workspace(),
     assistant: { input: setAssistantModelInput, summary: "Chooses the key and model the assistant uses; with neither, it uses the default key and that provider's normal model.", phrases: ["use a different model", "change the assistant's key"], contextArgs: { keyId: "keyId" }, target: { keyId: "key" } },
     handler: async (request) => {
       const input = setAssistantModelInput.read(request.payload);
       if (!input.ok) return { ok: false, error: input.error };
       const { keyId, model } = input.value;
-      // Someone else's key is never chosen for a person: the key must be theirs, or have no owner.
-      if (keyId !== undefined && request.actor) {
-        const owner = (await service.getKeySummary(keyId))?.createdBy;
-        if (owner !== undefined && owner !== request.actor.userId) return { ok: false, error: "That key belongs to someone else." };
+      if (keyId !== undefined) {
+        const unoffered = await unofferedKeyRefusal(service, keyId, request.actor?.userId);
+        if (unoffered) return { ok: false, error: unoffered };
       }
-      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setAssistant({ keyId, model }) }));
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setAssistant({ keyId, model, chosenBy: request.actor?.userId }) }));
+    }
+  });
+  registry.register({
+    programId: "secret-keys",
+    endpoint: SECRET_KEYS_ENDPOINTS.offerKey,
+    permission: "secrets.manage",
+    classification: "program-gated",
+    action: "secrets:OfferKey",
+    accessLevel: "Write",
+    // The holder's own consent for their own key: decided on the key, which
+    // `OwnData` reaches only for its holder, and refused by the service to
+    // anyone but the person who added it, an owner or administrator included.
+    resource: endpointResource.key("id"),
+    assistant: { hidden: "Lets a person's own key pay for other people's messages, so the person decides it themselves in Settings; the assistant never does it for them." },
+    handler: async (request) => {
+      const payload = request.payload as Partial<OfferSecretKeyRequest> | undefined;
+      if (typeof payload?.id !== "string" || !payload.id || typeof payload.offered !== "boolean") return { ok: false, error: "id and offered are required" };
+      if (!request.actor) return { ok: false, error: "Sign in to FluxIQ to offer your key to the workspace." };
+      // A paired browser's credential never makes this choice; the person makes it in the panel.
+      if (request.actor.channel === "paired-client") return { ok: false, error: "Offer a key to the workspace from Settings in the FluxIQ panel." };
+      const { id, offered } = payload;
+      const holderId = request.actor.userId;
+      return plainRefusal(async () => ({ ok: true, payload: await service.modelKeys.setOffered(id, offered, holderId) }));
     }
   });
 }

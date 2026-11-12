@@ -25,10 +25,10 @@
 .automation-instruction-library-footer select {
   min-width: 0;
   height: 34px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 0 28px 0 9px;
 }
 
@@ -44,9 +44,9 @@
   gap: 10px;
   min-width: 0;
   min-height: 42px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
   padding: 6px 2px 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -81,9 +81,9 @@
 .automation-instruction-editor-sections {
   display: grid;
   min-width: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-instruction-editor-section {
@@ -94,7 +94,7 @@
 }
 
 .automation-instruction-editor-section + .automation-instruction-editor-section {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
 }
 
 .automation-instruction-editor-section > header > div {
@@ -103,7 +103,7 @@
 }
 
 .automation-instruction-editor-section > header span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -111,7 +111,7 @@
   display: grid;
   gap: 6px;
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -121,20 +121,20 @@
 .automation-instruction-editor-section textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: 9px 10px;
   font: inherit;
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--font-weight-regular);
 }
 
 .automation-instruction-editor-section input:focus,
 .automation-instruction-editor-section select:focus,
 .automation-instruction-editor-section textarea:focus {
-  border-color: var(--color-primary);
-  outline: 2px solid color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 18%, transparent);
   outline-offset: 1px;
 }
 
@@ -154,8 +154,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--color-info-border);
-  background: var(--color-info-surface);
+  border: 1px solid var(--accent-edge);
+  background: var(--accent-soft);
   padding: 10px 12px;
 }
 
@@ -171,7 +171,7 @@
 }
 
 .automation-instruction-recovery span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -206,15 +206,15 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
+  background: var(--surface-muted);
   padding: 9px 10px;
 }
 
 .automation-instruction-scope-summary > svg {
   flex: 0 0 auto;
-  color: var(--color-primary);
+  color: var(--accent-text);
 }
 
 .automation-instruction-scope-summary > div {
@@ -231,7 +231,7 @@
 }
 
 .automation-instruction-scope-summary span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -246,15 +246,15 @@
   grid-template-columns: minmax(180px, 1fr) auto;
   align-items: end;
   gap: 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface-subtle);
+  background: var(--surface-muted);
   padding: 10px;
 }
 
 .automation-instruction-template-bar > span {
   grid-column: 1 / -1;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -270,13 +270,13 @@
 
 .automation-instruction-choice-field legend {
   margin-bottom: 6px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
 
 .automation-instruction-choice-field small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   line-height: 1.35;
 }
 
@@ -286,17 +286,17 @@
   grid-auto-flow: column;
   min-height: 38px;
   overflow: hidden;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-instruction-segments button {
   min-width: 0;
   border: 0;
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--divider);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 7px 8px;
   font: inherit;
   cursor: pointer;
@@ -304,11 +304,11 @@
 
 .automation-instruction-segments button:last-child { border-right: 0; }
 
-.automation-instruction-segments button:hover { background: var(--color-surface-hover); color: var(--color-text); }
+.automation-instruction-segments button:hover { background: var(--hover); color: var(--text); }
 
 .automation-instruction-segments button.selected {
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-weight: var(--font-weight-bold);
 }
 
@@ -318,7 +318,7 @@
   justify-self: start;
   border: 0;
   background: transparent;
-  color: var(--color-link);
+  color: var(--accent-text);
   padding: 2px 0;
   font: inherit;
   font-size: var(--font-size-compact);
@@ -331,7 +331,7 @@
   .automation-instruction-template-bar { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
   .automation-instruction-template-bar > span { grid-column: auto; }
   .automation-instruction-segments { grid-auto-flow: row; grid-auto-rows: minmax(36px, auto); }
-  .automation-instruction-segments button { border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .automation-instruction-segments button { border-right: 0; border-bottom: 1px solid var(--divider); }
   .automation-instruction-segments button:last-child { border-bottom: 0; }
 }
 .automation-instruction-view-tabs {
@@ -340,7 +340,7 @@
   gap: 2px;
   min-height: 42px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 0 12px;
 }
 
@@ -351,15 +351,15 @@
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 8px 12px;
   font: inherit;
   font-weight: var(--font-weight-bold);
   cursor: pointer;
 }
 
-.automation-instruction-view-tabs button:hover { color: var(--color-text); background: var(--color-surface-hover); }
-.automation-instruction-view-tabs button.selected { border-bottom-color: var(--color-primary); color: var(--color-primary-strong); }
+.automation-instruction-view-tabs button:hover { color: var(--text); background: var(--hover); }
+.automation-instruction-view-tabs button.selected { border-bottom-color: var(--accent); color: var(--accent-hover); }
 
 .automation-instruction-view-tabs button > span {
   position: absolute;
@@ -368,13 +368,13 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-warning);
+  background: var(--warning);
 }
 
 .automation-instructions-workspace {
   grid-template-columns: minmax(0, 1fr);
   min-height: min(680px, calc(100vh - 250px));
-  background: var(--color-surface-subtle);
+  background: var(--surface-muted);
 }
 
 .automation-instruction-list-pane[hidden],
@@ -395,7 +395,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 2px 0 10px;
 }
 
@@ -408,7 +408,7 @@
 
 .automation-instruction-effective-pane > header span,
 .automation-instruction-effective-intro span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -416,12 +416,12 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  border: 1px solid var(--color-info-border);
-  background: var(--color-info-surface);
+  border: 1px solid var(--accent-edge);
+  background: var(--accent-soft);
   padding: 10px 12px;
 }
 
-.automation-instruction-effective-intro > svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-primary); }
+.automation-instruction-effective-intro > svg { flex: 0 0 auto; margin-top: 1px; color: var(--accent); }
 
 .automation-instruction-effective-list {
   display: grid;
@@ -435,7 +435,7 @@
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   gap: 10px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 12px 4px;
 }
 
@@ -444,10 +444,10 @@
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: 50%;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
+  background: var(--surface);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -458,8 +458,8 @@
 .automation-instruction-effective-list article > header > div:first-child { display: grid; gap: 2px; min-width: 0; }
 .automation-instruction-effective-list article > header > div:last-child { display: flex; align-items: center; gap: 6px; }
 .automation-instruction-effective-list article > header span,
-.automation-instruction-effective-list article > footer { color: var(--color-text-muted); font-size: var(--font-size-compact); }
-.automation-instruction-effective-list article p { margin: 0; color: var(--color-text); line-height: 1.55; white-space: pre-wrap; }
+.automation-instruction-effective-list article > footer { color: var(--muted); font-size: var(--font-size-compact); }
+.automation-instruction-effective-list article p { margin: 0; color: var(--text); line-height: 1.55; white-space: pre-wrap; }
 .automation-instruction-importance-label { text-transform: capitalize; }
 
 @media (max-width: 760px) {
@@ -477,9 +477,9 @@
 
 .automation-instruction-token-meter > span,
 .automation-instruction-effective-budget span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
-  font-weight: var(--font-weight-normal);
+  font-weight: var(--font-weight-regular);
 }
 
 .automation-instruction-token-meter progress,
@@ -489,14 +489,14 @@
   overflow: hidden;
   border: 0;
   border-radius: 3px;
-  background: var(--color-border);
-  accent-color: var(--color-primary);
+  background: var(--divider);
+  accent-color: var(--accent);
 }
 
 .automation-instruction-effective-budget {
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.7fr);
   align-items: center;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 2px 0 10px;
 }
 
@@ -511,19 +511,19 @@
 
 .automation-instruction-diagnostics article small {
   overflow: hidden;
-  color: var(--color-text-subtle);
+  color: var(--text-dim);
   font-size: var(--font-size-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.automation-instruction-diagnostics article.severity-warning { border-left: 3px solid var(--color-warning); }
-.automation-instruction-diagnostics article.severity-error { border-left: 3px solid var(--color-danger); }
-.automation-instruction-diagnostics article.severity-info { border-left: 3px solid var(--color-info); }
+.automation-instruction-diagnostics article.severity-warning { border-left: 3px solid var(--warning); }
+.automation-instruction-diagnostics article.severity-error { border-left: 3px solid var(--danger); }
+.automation-instruction-diagnostics article.severity-info { border-left: 3px solid var(--accent-text); }
 
 .automation-instruction-effective-diagnostics {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-subtle);
+  border: 1px solid var(--divider);
+  background: var(--surface-muted);
   padding: 10px;
 }
 
@@ -536,20 +536,20 @@
   align-items: center;
   gap: 10px;
   margin: 0 12px;
-  border: 1px solid var(--color-warning-border);
-  background: var(--color-warning-surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--surface));
+  background: var(--warning-soft);
   padding: 10px 12px;
 }
 
-.automation-instruction-readiness-banner > svg { color: var(--color-warning-strong); }
+.automation-instruction-readiness-banner > svg { color: var(--warning-text); }
 .automation-instruction-readiness-banner > div { display: grid; gap: 2px; min-width: 0; }
-.automation-instruction-readiness-banner span { color: var(--color-text-muted); font-size: var(--font-size-compact); }
+.automation-instruction-readiness-banner span { color: var(--muted); font-size: var(--font-size-compact); }
 
 .automation-instruction-save-state {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -557,13 +557,13 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-text-subtle);
+  background: var(--text-dim);
 }
 
-.automation-instruction-save-state.saved > span { background: var(--color-success); }
-.automation-instruction-save-state.unsaved > span { background: var(--color-warning); }
-.automation-instruction-save-state.saving > span { background: var(--color-info); }
-.automation-instruction-save-state.failed > span { background: var(--color-danger); }
+.automation-instruction-save-state.saved > span { background: var(--success); }
+.automation-instruction-save-state.unsaved > span { background: var(--warning); }
+.automation-instruction-save-state.saving > span { background: var(--accent-text); }
+.automation-instruction-save-state.failed > span { background: var(--danger); }
 
 .automation-instruction-editor-footer {
   position: sticky;
@@ -573,9 +573,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid var(--color-border-strong);
-  box-shadow: 0 -6px 14px color-mix(in srgb, var(--color-text) 7%, transparent);
-  background: var(--color-surface);
+  border-top: 1px solid var(--edge);
+  box-shadow: 0 -6px 14px color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--surface);
   padding: 10px 12px;
 }
 

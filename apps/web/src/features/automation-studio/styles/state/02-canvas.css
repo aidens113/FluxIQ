@@ -7,9 +7,9 @@
   flex: 1 1 auto;
   height: 100%;
   min-height: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-state-canvas-shell {
@@ -50,11 +50,11 @@
   max-width: calc(100% - 20px);
   align-items: center;
   gap: var(--space-xs);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   padding: 3px;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .automation-state-zoom-controls button {
@@ -65,25 +65,25 @@
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: 0;
   cursor: pointer;
 }
 
 .automation-state-zoom-controls button:hover:not(:disabled) {
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .automation-state-zoom-controls button:disabled {
-  color: var(--color-text-muted);
+  color: var(--muted);
   cursor: not-allowed;
   opacity: 0.45;
 }
 
 .automation-state-zoom-controls span {
   min-width: 42px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   text-align: center;
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
@@ -98,14 +98,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 10px 12px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
 .automation-state-visual-fallback > div:first-child strong {
-  color: var(--color-text);
+  color: var(--text);
 }
 
 .automation-state-canvas {
@@ -116,21 +116,13 @@
   margin-inline: auto;
   height: auto;
   overflow: hidden;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-panel);
-  background:
-    linear-gradient(45deg, rgba(15, 20, 26, 0.04) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(15, 20, 26, 0.04) 25%, transparent 25%),
-    var(--color-surface-subtle);
-  background-size: 18px 18px;
+  background: var(--surface-muted);
 }
 
 .automation-state-canvas.surface-document {
-  background:
-    linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px),
-    #fbfdff;
-  background-size: 48px 48px;
+  background: var(--surface-muted);
 }
 
 .automation-state-layer,
@@ -149,9 +141,9 @@
   place-items: center;
   gap: var(--space-compact);
   overflow: hidden;
-  border: 1px dashed var(--color-border-strong);
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--color-text-muted);
+  border: 1px dashed var(--edge);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  color: var(--muted);
   padding: var(--space-sm);
   text-align: center;
 }
@@ -166,8 +158,8 @@
 }
 
 .automation-state-layer-text {
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--color-text);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  color: var(--text);
   padding: 3px 6px;
   font-size: var(--font-size-compact);
   line-height: 1.3;
@@ -183,8 +175,8 @@
 
 .automation-state-layer-region,
 .automation-state-layer-element {
-  border: 1px solid var(--state-visual-color, rgba(31, 41, 55, 0.45));
-  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--state-visual-color);
+  background: color-mix(in srgb, var(--surface) 8%, transparent);
   pointer-events: none;
 }
 
@@ -198,15 +190,15 @@
 .automation-state-layer-region.interactive:hover,
 .automation-state-layer-element.interactive:hover {
   border-width: 2px;
-  box-shadow: 0 0 0 2px rgba(36, 99, 235, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .automation-state-layer-region.selected,
 .automation-state-layer-element.selected {
   z-index: 7;
-  outline: 3px solid #2563eb;
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow);
 }
 
 .automation-state-layer-region.direct-rendered,
@@ -219,14 +211,14 @@
   min-height: 2px;
   overflow: hidden;
   border: 0;
-  outline: 1px solid var(--state-visual-color, rgba(31, 41, 55, 0.45));
+  outline: 1px solid var(--state-visual-color);
   outline-offset: 0;
-  background: rgba(255, 255, 255, 0.78);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
 .automation-state-layer-region.direct-rendered.selected,
 .automation-state-layer-element.direct-rendered.selected {
-  outline: 3px solid #2563eb;
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -238,7 +230,7 @@
   max-height: 100%;
   overflow: hidden;
   padding: 1px var(--state-direct-padding-x, 5px);
-  color: var(--color-text);
+  color: var(--text);
   font-size: clamp(var(--font-size-caption), min(var(--state-direct-fit-width, 24cqw), var(--state-direct-fit-height, 78cqh)), var(--font-size-title-small));
   line-height: var(--state-direct-line-height, 1.15);
   overflow-wrap: anywhere;
@@ -249,68 +241,67 @@
 .automation-state-viewport-rect {
   position: absolute;
   box-sizing: border-box;
-  border: 2px dashed #0f172a;
-  background: rgba(15, 23, 42, 0.04);
+  border: 2px dashed var(--edge);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   pointer-events: none;
 }
 
 .automation-state-overlay {
-  --state-overlay-accent: var(--color-primary);
+  --state-overlay-accent: var(--accent);
   position: absolute;
-  border: 2px solid var(--color-primary);
+  border: 2px solid var(--accent);
   border-radius: var(--radius-control);
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--surface) 8%, transparent);
   padding: 0;
   cursor: pointer;
 }
 
 .automation-state-overlay.tone-positive {
-  --state-overlay-accent: #159947;
-  border-color: #159947;
+  --state-overlay-accent: var(--success);
+  border-color: var(--success);
 }
 
 .automation-state-overlay.tone-weak {
-  --state-overlay-accent: #b7791f;
-  border-color: #b7791f;
+  --state-overlay-accent: var(--warning);
+  border-color: var(--warning);
 }
 
 .automation-state-overlay.tone-negative,
 .automation-state-overlay.tone-mismatch {
-  --state-overlay-accent: #cc3d3d;
-  border-color: #cc3d3d;
+  --state-overlay-accent: var(--danger);
+  border-color: var(--danger);
 }
 
 .automation-state-overlay.tone-neutral {
-  --state-overlay-accent: #6b7280;
-  border-color: #6b7280;
+  --state-overlay-accent: var(--text-dim);
+  border-color: var(--edge);
 }
 
 .automation-state-overlay.tone-action-target {
-  --state-overlay-accent: #f59e0b;
-  border: 3px solid #f59e0b;
-  background:
-    linear-gradient(135deg, rgba(245, 158, 11, 0.16), rgba(255, 255, 255, 0.04));
+  --state-overlay-accent: var(--warning);
+  border: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
-    0 0 0 2px rgba(245, 158, 11, 0.28),
-    0 10px 24px rgba(120, 53, 15, 0.24);
+    inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--warning) 28%, transparent),
+    0 10px 24px color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
 .automation-state-overlay.selected {
   z-index: 8;
-  outline: 3px solid #2563eb;
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .automation-state-overlay.tone-action-target.selected {
   z-index: 12;
-  outline: 2px solid rgba(255, 255, 255, 0.95);
+  outline: 2px solid color-mix(in srgb, var(--surface) 95%, transparent);
   outline-offset: 3px;
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.78),
-    0 0 0 3px rgba(245, 158, 11, 0.42),
-    0 12px 28px rgba(120, 53, 15, 0.3);
+    inset 0 0 0 1px color-mix(in srgb, var(--surface) 78%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--warning) 42%, transparent),
+    0 12px 28px color-mix(in srgb, var(--warning) 30%, transparent);
 }
 
 .automation-state-overlay-tag {
@@ -321,16 +312,16 @@
   max-width: min(180px, 60vw);
   min-height: 19px;
   align-items: center;
-  border: 1px solid #b45309;
+  border: 1px solid var(--warning);
   border-radius: var(--radius-control);
-  background: #fffbeb;
-  color: #78350f;
+  background: var(--warning-soft);
+  color: var(--warning-text);
   padding: 2px 7px;
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   line-height: 1;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(120, 53, 15, 0.18);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--warning) 18%, transparent);
   pointer-events: none;
 }
 
@@ -338,7 +329,7 @@
   position: absolute;
   width: 13px;
   height: 13px;
-  border-color: #78350f;
+  border-color: var(--warning);
   pointer-events: none;
 }
 
@@ -373,40 +364,40 @@
 .automation-state-layer-region.visual-control,
 .automation-state-layer-element.visual-control,
 .automation-state-overlay.visual-control {
-  --state-visual-color: #1d4ed8;
-  border-color: #1d4ed8;
-  background: rgba(29, 78, 216, 0.06);
+  --state-visual-color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .automation-state-layer-region.visual-link,
 .automation-state-layer-element.visual-link,
 .automation-state-overlay.visual-link {
-  --state-visual-color: #00a6d6;
-  border-color: #00a6d6;
-  background: rgba(0, 166, 214, 0.06);
+  --state-visual-color: var(--success);
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 
 .automation-state-layer-region.visual-input,
 .automation-state-layer-element.visual-input,
 .automation-state-overlay.visual-input {
-  --state-visual-color: #8b5cf6;
-  border-color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.055);
+  --state-visual-color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .automation-state-layer-region.visual-text,
 .automation-state-layer-element.visual-text,
 .automation-state-overlay.visual-text {
-  --state-visual-color: #ec4899;
-  border-color: #ec4899;
-  background: rgba(236, 72, 153, 0.045);
+  --state-visual-color: var(--text-soft);
+  border-color: var(--text-soft);
+  background: color-mix(in srgb, var(--text-soft) 8%, transparent);
 }
 
 .automation-state-layer-region.visual-region,
 .automation-state-layer-element.visual-region,
 .automation-state-overlay.visual-region {
-  --state-visual-color: #22c55e;
-  border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.045);
+  --state-visual-color: var(--success);
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
 }
 

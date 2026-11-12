@@ -15,6 +15,8 @@ export type CreateFlowRequest = FlowProjectRequest & {
   name?: unknown;
   description?: unknown;
   flowId?: unknown;
+  /** The humanness level the new Flow starts with (0-100); absent stores none, and the run uses the person's starting value. */
+  humanness?: unknown;
 };
 
 export type SaveFlowRequest = FlowProjectRequest & {

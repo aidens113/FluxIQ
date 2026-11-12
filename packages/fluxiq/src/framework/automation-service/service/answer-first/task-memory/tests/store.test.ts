@@ -122,6 +122,43 @@ describe("the task memory", () => {
     expect(read?.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt.1"]);
   });
 
+  it("keeps a task's own humanness level, a stored 0 included, and round-trips it from a new store", async () => {
+    const { store, paths } = await onDisk();
+    await store.update("project.1", "task.a", (memory) => ({ ...withAttempt("attempt.1")(memory), humanness: 40 }));
+    await store.update("project.1", "task.b", (memory) => ({ ...withAttempt("attempt.2")(memory), humanness: 0 }));
+    const again = new AutomationStudioAnswerFirstTaskMemoryStore(paths, PROJECTS);
+    await expect(again.get("project.1", "task.a")).resolves.toMatchObject({ humanness: 40 });
+    await expect(again.get("project.1", "task.b")).resolves.toMatchObject({ humanness: 0 });
+    expect((await again.list("project.1")).map((memory) => memory.humanness)).toEqual([40, 0]);
+    // A later write that leaves it as it is keeps it.
+    await again.update("project.1", "task.a", withAttempt("attempt.3"));
+    await expect(again.get("project.1", "task.a")).resolves.toMatchObject({ humanness: 40 });
+  });
+
+  it("reads and writes a task with no level exactly as before", async () => {
+    const { store, tasks } = await onDisk();
+    await store.update("project.1", "task.a", withAttempt("attempt.1"));
+    expect(await readFile(path.join(tasks, "task.a.json"), "utf8")).not.toContain("humanness");
+    expect(await store.get("project.1", "task.a")).not.toHaveProperty("humanness");
+  });
+
+  it("leaves off a level no save would take, and the rest of the task's memory stands", async () => {
+    const { store, tasks } = await onDisk();
+    const file = path.join(tasks, "task.a.json");
+    await store.update("project.1", "task.a", (memory) => ({ ...withAttempt("attempt.1")(memory), humanness: 40 }));
+    const written = await readFile(file, "utf8");
+    for (const bad of ["101", "-1", "2.5", "\"x\"", "null"]) {
+      await writeFile(file, written.replace(/"humanness":\s*40/u, `"humanness": ${bad}`));
+      const read = await store.get("project.1", "task.a");
+      expect(read, bad).not.toHaveProperty("humanness");
+      expect(read?.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt.1"]);
+    }
+    // The next write keeps the file and drops the bad level, as it does any other field that does not read.
+    await store.update("project.1", "task.a", withAttempt("attempt.2"));
+    expect(await readFile(file, "utf8")).not.toContain("humanness");
+    expect((await store.get("project.1", "task.a"))?.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt.1", "attempt.2"]);
+  });
+
   it("is one store per service owner", () => {
     const ports = { paths: new AutomationStudioProjectPaths(undefined), projects: PROJECTS } as AutomationStudioAnswerFirstTaskMemoryPorts;
     const owner = {};

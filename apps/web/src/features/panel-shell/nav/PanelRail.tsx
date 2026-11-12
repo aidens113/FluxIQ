@@ -5,14 +5,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PANEL_NAV_ITEMS, navItemForPath } from "./panel-nav-items";
+import type { PanelPage } from "../context";
+import { PANEL_NAV_ITEMS, navItemForPath, navItemsForPages } from "./items";
 
-export function PanelRail() {
+export function PanelRail(props: { pages?: readonly PanelPage[] }) {
+  const items = props.pages ? navItemsForPages(props.pages) : PANEL_NAV_ITEMS;
   const current = navItemForPath(usePathname() ?? "/");
   return (
     <nav className="panel-rail" aria-label="Main">
       <ul>
-        {PANEL_NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <li key={item.page}>
             <Link
               href={item.href}

@@ -60,3 +60,35 @@ test("a phone has no sideways scroll on the Runs list", async ({ page }) => {
   await settled(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
+
+// The seeded "Old search" Flow has twelve runs, two of them failed (see seed-fixtures.mjs), so the list's filters
+// and a run's page can be proven on known data.
+test("filters narrow the seeded runs: Old search has twelve, two of them failed", async ({ page }) => {
+  await settled(page);
+  const rows = page.getByRole("list", { name: "Runs" }).getByRole("listitem");
+  await page.getByLabel("Flow", { exact: true }).selectOption({ label: "Old search" });
+  await expect(rows).toHaveCount(12);
+  await page.getByLabel("Result", { exact: true }).selectOption("failed");
+  await expect(rows).toHaveCount(2);
+  for (const row of await rows.all()) await expect(row.getByRole("link")).toHaveAttribute("aria-label", /Old search: Failed/);
+  await page.getByLabel("Result", { exact: true }).selectOption("any");
+  await page.getByLabel("Flow", { exact: true }).selectOption({ label: "Spare copy" });
+  await expect(rows.first()).toContainText("Spare copy");
+  await page.getByLabel("Flow", { exact: true }).selectOption("any");
+  expect(await rows.count()).toBeGreaterThan(12);
+});
+
+test("a run opens from the list into its own page, with the way back", async ({ page }) => {
+  await settled(page);
+  await page.getByLabel("Flow", { exact: true }).selectOption({ label: "Old search" });
+  const first = page.getByRole("list", { name: "Runs" }).getByRole("listitem").first().getByRole("link");
+  const href = (await first.getAttribute("href")) ?? "";
+  expect(href).toMatch(/^\/runs\/[^/]+$/);
+  await first.click();
+  await expect(page).toHaveURL((url) => url.pathname === href);
+  await expect(page.getByRole("heading", { level: 1 })).not.toHaveText("Run", { timeout: 30_000 });
+  await expect(page.getByText("This run was not found.")).toHaveCount(0);
+  await expect(page.locator("main [role=alert]")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "All runs", exact: true })).toHaveAttribute("href", "/runs");
+  await expect(page.locator(".runs-detail")).toBeVisible();
+});

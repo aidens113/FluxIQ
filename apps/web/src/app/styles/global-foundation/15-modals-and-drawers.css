@@ -4,7 +4,7 @@
   z-index: var(--layer-overlay);
   display: grid;
   place-items: center;
-  background: rgb(0 0 0 / 35%);
+  background: color-mix(in srgb, var(--canvas) 70%, transparent);
   padding: var(--space-xl);
   pointer-events: auto;
   contain: layout paint style;
@@ -19,10 +19,10 @@
   width: min(100%, 520px);
   max-height: min(720px, calc(100dvh - 48px));
   overflow: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: 0 16px 36px rgb(0 28 36 / 22%);
+  background: var(--surface);
+  box-shadow: var(--shadow);
   padding: var(--space-lg);
   contain: layout paint style;
   overscroll-behavior: contain;
@@ -42,14 +42,14 @@
 }
 
 .modal-panel label span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
 
 .modal-panel input {
   min-height: 34px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   padding: 5px 9px;
 }
@@ -73,7 +73,7 @@
 .dialog-heading-copy p {
   max-width: 62ch;
   margin: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-body-small);
   line-height: var(--line-height-body);
 }
@@ -84,9 +84,9 @@
 }
 
 .dialog-object-label {
-  border: var(--border-width) solid var(--color-border);
+  border: var(--border-width) solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: var(--space-md);
 }
 
@@ -95,8 +95,8 @@
   bottom: calc(var(--space-lg) * -1);
   z-index: var(--layer-raised);
   margin: 0 calc(var(--space-lg) * -1) calc(var(--space-lg) * -1);
-  border-top: var(--border-width) solid var(--color-border);
-  background: var(--surface-pane);
+  border-top: var(--border-width) solid var(--divider);
+  background: var(--surface);
   padding: var(--space-md) var(--space-lg);
 }
 
@@ -104,7 +104,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--layer-overlay);
-  background: rgb(0 0 0 / 35%);
+  background: color-mix(in srgb, var(--canvas) 70%, transparent);
   contain: layout paint style;
   overscroll-behavior: contain;
 }
@@ -128,38 +128,5 @@
 .drawer-panel.left {
   left: 0;
   border-width: 0 var(--border-width) 0 0;
-}
-
-.global-client-pairing-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--layer-overlay);
-  display: grid;
-  place-items: center;
-  width: 100vw;
-  height: 100vh;
-  background: rgb(3 8 14 / 68%);
-  padding: var(--space-xl);
-  pointer-events: auto;
-}
-
-.global-client-pairing-panel {
-  position: relative;
-  z-index: var(--layer-modal);
-  display: grid;
-  gap: 14px;
-  width: min(100%, 520px);
-  max-height: min(720px, calc(100dvh - 48px));
-  overflow: auto;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-modal);
-  padding: var(--space-lg);
-}
-
-.global-client-pairing-panel label {
-  display: grid;
-  gap: 5px;
 }
 

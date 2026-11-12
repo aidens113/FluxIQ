@@ -63,6 +63,10 @@ export type PlatformProvisioningRequest<TName extends PlatformProvisioningOperat
  * cleared, as an administrator's reset does). It refuses an account with
  * two-factor sign-in whose credential is sealed by throwing an error whose
  * `code` is `"identity.two_factor_reset_refused"`, answered as `two_factor`.
+ * `upsertUser` refuses, before writing, a username another person already
+ * holds in any case by throwing an error whose `code` is
+ * `"identity.username_taken"`, which `createAccount` answers as an email in
+ * use (`email_taken` in-process, `exists` over HTTP).
  */
 export type PlatformIdentityPort = {
   upsertUser(params: { id: string; username: string; displayName: string; roleId: string; enabled?: boolean; password?: string }): Promise<{ id: string }>;

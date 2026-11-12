@@ -39,6 +39,34 @@ describe("the assistant's key and model", () => {
     expect(assistantChoice([], choices()).effectiveKey).toBeUndefined();
   });
 
+  it("is the person's own choice, with nothing shown as the workspace's, when the key is in their list", () => {
+    expect(assistantChoice(keys, choices()).workspace).toBeNull();
+    expect(assistantChoice([], choices({ defaultKeyId: null })).workspace).toBeNull();
+  });
+
+  it("shows the workspace's key by provider and model when it is not among the person's own keys", () => {
+    const member = assistantChoice([], choices({ defaultKeyId: "team", assistantKeyId: "team", assistantModel: "claude-haiku-5-5", assistantProvider: "Anthropic" }));
+    expect(member.workspace).toEqual({ provider: "Anthropic", model: "claude-haiku-5-5" });
+    // A member with keys of their own still sees the workspace's, which is what answers.
+    expect(assistantChoice(keys, choices({ defaultKeyId: "team", assistantProvider: "DeepSeek" })).workspace).toEqual({ provider: "DeepSeek", model: "" });
+  });
+
+  it("shows a person who does not choose for the workspace the key in use, even their own, with nothing to change", () => {
+    // Their own key is the workspace's default: shown, not offered.
+    expect(assistantChoice(keys, choices({ mayChoose: false, assistantProvider: "Anthropic" })).workspace).toEqual({ provider: "Anthropic", model: "" });
+    // Their own key picked for the assistant, with a model; the key's own provider when the answer names none.
+    expect(assistantChoice(keys, choices({ mayChoose: false, assistantKeyId: "b", assistantModel: "deepseek-flash" })).workspace).toEqual({ provider: "DeepSeek", model: "deepseek-flash" });
+    // No stored choice: the engine's first enabled key, still not theirs to choose.
+    expect(assistantChoice(keys, choices({ mayChoose: false, defaultKeyId: null })).workspace).toEqual({ provider: "Anthropic", model: "" });
+    // No key at all: nothing to show as the workspace's, so the page asks them to add one.
+    expect(assistantChoice([], choices({ mayChoose: false, defaultKeyId: null })).workspace).toBeNull();
+  });
+
+  it("offers a person who chooses for the workspace their own key, as before", () => {
+    expect(assistantChoice(keys, choices({ mayChoose: true })).workspace).toBeNull();
+    expect(assistantChoice(keys, choices({ mayChoose: true, defaultKeyId: null })).workspace).toBeNull();
+  });
+
   it("builds a payload that leaves out what means the default", () => {
     expect(assistantModelPayload({ keyId: "", model: "" })).toEqual({});
     expect(assistantModelPayload({ keyId: "b", model: "deepseek-flash" })).toEqual({ keyId: "b", model: "deepseek-flash" });

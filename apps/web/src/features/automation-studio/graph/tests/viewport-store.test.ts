@@ -69,7 +69,7 @@ describe("GraphViewportStore", () => {
   });
 
   it("colors MiniMap nodes by partition density metadata", () => {
-    expect(automationGraphMiniMapNodeColor(node("dense", 0, 0, { partitionDensity: "dense" }))).toBe("#b35c00");
-    expect(automationGraphMiniMapNodeColor(node("error", 0, 0, { partitionDensity: "error" }))).toBe("#d13212");
+    expect(automationGraphMiniMapNodeColor(node("dense", 0, 0, { partitionDensity: "dense" }))).toBe("var(--warning)");
+    expect(automationGraphMiniMapNodeColor(node("error", 0, 0, { partitionDensity: "error" }))).toBe("var(--danger)");
   });
 });

@@ -21,11 +21,10 @@ describe("panel branding", () => {
     const provided = renderToStaticMarkup(<PanelBrandingProvider branding={panelBranding(null)}><LoginPanel />{topbar}</PanelBrandingProvider>);
     expect(provided).toBe(bare);
     expect(bare).toContain('aria-label="FluxIQ programs"');
-    expect(bare).toContain('class="brand-mark"');
+    expect(bare).toContain('<img alt="" aria-hidden="true" class="brand-logo" height="28" src="/fluxiq-mark.svg" width="28"/>');
     expect(bare).toContain("<span>FluxIQ</span>");
     expect(bare).toContain('<strong id="auth-title">FluxIQ</strong><small>Sign in to continue</small>');
     expect(bare).not.toContain("product-auth-links");
-    expect(bare).not.toContain("<img");
   });
 
   it("loads the fixture host module only when asked to, in the Node runtime", async () => {
@@ -37,7 +36,7 @@ describe("panel branding", () => {
     process.env.NEXT_RUNTIME = "nodejs";
     const branding = await currentPanelBranding();
     expect(branding).toMatchObject({ name: "Fixture Product", shortName: "Fixture", logoUrl: "/product/assets/logo.svg", faviconUrl: "/product/assets/favicon.ico" });
-    expect(branding.style).toEqual({ "--color-primary": "#0b5cad", "--color-primary-hover": "#084a8a", "--color-focus": "#0b5cad" });
+    expect(branding.style).toEqual({ "--accent": "#0b5cad", "--accent-hover": "#084a8a", "--accent-text": "#0b5cad", "--accent-ink": "#ffffff", "--focus": "#0b5cad" });
     expect(await currentPanelBranding()).toEqual(branding);
   });
 
@@ -48,7 +47,7 @@ describe("panel branding", () => {
     expect(html).toContain('aria-label="Full Product programs"');
     expect(html).toContain('<img alt="Full Product" class="brand-logo" height="28" src="/product/assets/logo.svg" width="28"/>');
     expect(html).toContain("<span>Full Product</span>");
-    expect(html).not.toContain('class="brand-mark"');
+    expect(html).not.toContain("/fluxiq-mark.svg");
   });
 
   it("shows sign-in copy, the sign-up link and footer links on the login panel", () => {
@@ -68,5 +67,13 @@ describe("panel branding", () => {
     expect(checkPanelBrandContrast(FULL_PRODUCT).ok).toBe(true);
     registerProduct({ id: "fx", name: "Fx", shortName: "Fx", brand: { light: { primary: "#0b5cad", primaryHover: "#084a8a", focus: "#0b5cad" } } });
     expect(checkPanelBrandContrast(getPlatformRegistry().product()!).ok).toBe(true);
+  });
+});
+
+describe("stock branding", () => {
+  it("is FluxIQ, with no accent override on the page", async () => {
+    const branding = await currentPanelBranding();
+    expect(branding).toMatchObject({ name: "FluxIQ", shortName: "FluxIQ", logoUrl: null });
+    expect(branding.style).toEqual({});
   });
 });

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { SettingsData } from "../data";
-import { assistantChoice } from "../model";
+import { assistantChoice, workspaceKeyStatus } from "../model";
 
 /** "The assistant uses [key] [model]": the key and model behind the chat on the right. */
 export function AssistantModelSection(props: { data: SettingsData }) {
@@ -10,6 +10,7 @@ export function AssistantModelSection(props: { data: SettingsData }) {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const choice = assistantChoice(data.keys, data.choices);
+  const keyStatus = workspaceKeyStatus(data.keys, data.choices);
   async function save(pick: { keyId: string; model: string }) {
     setBusy(true);
     const failure = await data.saveAssistant(pick);
@@ -19,7 +20,15 @@ export function AssistantModelSection(props: { data: SettingsData }) {
   return (
     <section aria-labelledby="settings-assistant">
       <h2 id="settings-assistant">The assistant</h2>
-      {choice.keys.length === 0 ? <p>Add an AI key above to turn the assistant on.</p> : (
+      {choice.workspace && keyStatus === "not-chosen" ? (
+        <p className="settings-assistant-row">No key pays for your messages to the assistant yet. An owner or administrator of this workspace chooses one in Settings, from a key its holder has offered to the workspace.</p>
+      ) : choice.workspace && keyStatus === "not-offered" ? (
+        <p className="settings-assistant-row">The key chosen for this workspace has not been offered to it by the person who added it, so it does not pay for your messages yet. They can offer it in Settings, or an owner or administrator of this workspace can choose another.</p>
+      ) : choice.workspace ? (
+        <p className="settings-assistant-row">
+          The assistant uses this workspace&rsquo;s {choice.workspace.provider || "AI"} key, with {choice.workspace.model || <>the provider&rsquo;s usual model</>}. An owner or administrator of this workspace chooses them.
+        </p>
+      ) : choice.keys.length === 0 ? <p>Add an AI key above to turn the assistant on.</p> : (
         <div className="settings-assistant-row">
           <span>The assistant uses</span>
           <label>Key

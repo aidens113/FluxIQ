@@ -6,6 +6,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { RecordEnvelope, Repository } from "../../database-manager/index.ts";
 import type { Role, User, UserCredential, VaultRecord, VaultStatus } from "../types.ts";
 import { isSealedCredentialRecord, type SealedCredentialRecord } from "./credential-seal.ts";
+import { storedStartingHumanness } from "./preferences/index.ts";
 
 export type IdentityAccessState = {
   users: User[];
@@ -56,7 +57,7 @@ export async function readStoredState(repository: Repository): Promise<IdentityA
   for (const item of records) {
     const data = item.data;
     if (data.recordType === "user" && isObject(data.user)) {
-      state.users.push(data.user as unknown as User);
+      state.users.push(storedStartingHumanness(data.user as unknown as User));
     } else if (data.recordType === "role" && isObject(data.role)) {
       state.roles.push(data.role as unknown as Role);
     } else if (data.recordType === "credential" && data.encrypted === true && isObject(data.metadata) && isSealedCredentialRecord(data.sealed)) {

@@ -3,9 +3,8 @@
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../../../../api-contracts/automation.ts";
-import type { AutomationStudioFlowDocument } from "../../../../flows/authoring/model/index.ts";
 import { automationStudioWithWholeAttemptInputs } from "../../../../framework/automation-service/index.ts";
-import { runRuntimeSessionForRequest } from "../../../../framework/automation-service/service/run-requests/index.ts";
+import { runRuntimeSessionForRequest, startRuntimeSessionForRequest } from "../../../../framework/automation-service/service/run-requests/index.ts";
 import { AutomationStudioGatewayTraceInstallation } from "../../../../runtime/recording/gateway-trace/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { startRuntimeSessionInput, cancelRuntimeSessionInput, runRuntimeSessionInput } from "@fluxiq/contracts/program-api-inputs";
@@ -20,10 +19,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     action: "studio:StartRuntimeSession",
     accessLevel: "Write",
     resource: endpointResource.project(),
-    handler: async (request) => {
-      const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any; authorizedDomainIds?: string[] } : {};
-      return { ok: true, payload: { runtimeSession: automationStudioWithWholeAttemptInputs(await service.startRuntimeSession(payload)) } };
-    }
+    handler: async (request) => startRuntimeSessionForRequest(service, request)
   });
   // Stopping a run. Declared and implemented for as long as runs have been
   // cancellable, but never registered, so every Stop -- the web panel's run

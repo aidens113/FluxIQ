@@ -2,9 +2,53 @@
 
 FluxIQ global programs share one visual design language.
 
-The style should feel AWS-inspired: compact, modular, predictable, and
-optimized for repeated operational work. This is a visual style direction, not
-a requirement to copy AWS Console navigation or UX patterns.
+The style is the FluxIQ brand: an ink ground, one amber accent, Geist and
+Geist Mono, compact and predictable, optimized for repeated operational work.
+It is not a copy of AWS Console navigation or UX patterns.
+
+## One Token System
+
+The web panel (`apps/web`) and every other client of the chat share one set of
+design tokens: `packages/ui-components/src/theme/tokens.css`, published as
+`@fluxiq/ui-components/styles/tokens.css` (fonts: `.../styles/fonts.css`).
+`app/layout.tsx` imports both once, ahead of `app/globals.css`.
+
+- **Dark is the default.** `:root` holds the dark values. `data-theme="light"`
+  on `<html>` switches to the derived light values and `data-theme="system"`
+  follows the operating system.
+- **The panel owns no palette.** Its stylesheets read colour, shadow, font
+  family and the focus ring from the package's names: `--canvas`, `--surface`,
+  `--surface-raised`, `--surface-muted`, `--text`, `--text-soft`, `--muted`,
+  `--text-dim`, `--line`, `--divider`, `--edge`, `--hover`, `--accent`,
+  `--accent-hover`, `--accent-soft`, `--accent-edge`, `--accent-wash`,
+  `--accent-row`, `--accent-ink`, `--accent-text`, `--success`, `--warning`
+  (`-soft`, `-text`), `--danger` (`-soft`, `-text`), `--code-bg`, `--shadow`,
+  `--shadow-sm`, `--font-sans`, `--font-mono`, and `--focus`, `--focus-width`,
+  `--focus-offset` (a 2px amber ring at a 4px offset). A tint of a status colour
+  is `color-mix(in srgb, var(--success) 12%, var(--surface))`, never a literal.
+- **The chat widget has no bridge.** It reads the same tokens from `:root`, so a
+  theme change repaints it with the rest of the page.
+- **Panel-only values stay panel tokens**: `app/styles/global-foundation/
+  01-tokens-and-reset.css` keeps the type scale, spacing, control heights, radii,
+  motion durations and layer numbers. It defines no colour.
+- **No gradients, glows or icon tiles**, and no colour literal (hex, rgb, hsl) in
+  any panel stylesheet. Script-set values use `var(--token)` strings. The one
+  exception is the sandboxed documentation iframe
+  (`settings-page/tools/docs/model/sandboxedDocumentationHtml.ts`), whose
+  document cannot see `:root`.
+- **Appearance** is chosen in Settings (Dark / Light / System). The choice is kept
+  in `localStorage` (`fluxiq-theme`) and set on `<html>` by `settings-page/
+  appearance/`; a small inline script in `<head>` applies it before first paint,
+  so there is no flash. Dark when nothing is stored or storage is blocked.
+- **Mechanically guarded**: `apps/web/src/tests/panel-tokens.test.ts` fails when a
+  panel stylesheet defines a custom property that `tokens.css` defines, holds a
+  colour literal or a gradient, or uses a `var(--x)` that neither the package nor
+  the panel defines (a use with its own fallback is exempt).
+
+The sections below that name `--color-*` variables, blue primary actions, the
+orange focus ring or the `--surface-shell/pane/tool/selected/code` aliases
+describe the framework theme exported from `fluxiq/ui`; the panel no longer
+exposes them. Where they disagree with this section, this section holds.
 
 ## Principles
 
@@ -14,8 +58,8 @@ a requirement to copy AWS Console navigation or UX patterns.
 - Prefer dense panels, tables, lists, tabs, toolbars, and status badges.
 - Keep panels bordered and flat; avoid decorative gradients and oversized hero
   sections.
-- Use blue for primary actions, orange for focus/accent, and neutral grays for
-  structure.
+- Use the one amber accent for primary actions and focus, and the neutral ink
+  scale for structure.
 - Keep card radius at `8px` or less.
 - Do not let individual programs define their own color palettes.
 - Program alerts and action statuses route through the shared global alert
@@ -58,8 +102,8 @@ Color names describe UI meaning rather than a component or one-off shade:
 - technical content: `codeSurface` and `codeText`;
 - modal layering: `overlay`.
 
-The web shell exposes matching `--color-*` variables and keeps `--color-bg` and
-`--color-accent` only as legacy aliases. Do not add a literal selected, status,
+The framework theme names these `--color-*`; the web panel reads the package
+tokens in "One Token System" instead and has no `--color-*` variables. Do not add a literal selected, status,
 focus, code, or overlay color when a semantic token exists. Normal-size text
 pairs must meet 4.5:1 contrast; focus and meaningful non-text boundaries must
 meet 3:1. `packages/fluxiq/src/ui/index.test.ts` enforces the exported theme's
@@ -89,7 +133,7 @@ The public theme and web variables define:
 - 2px small, 4px control, 6px medium, 8px panel, and pill radii;
 - one- and two-pixel border roles;
 - panel, popover, and modal elevation;
-- a two-pixel orange focus ring with a two-pixel offset.
+- a two-pixel amber focus ring (`--focus`, `--focus-width`) with a four-pixel offset (`--focus-offset`).
 
 Use compact controls only in dense toolbars and grids. Forms use comfortable
 controls; ordinary commands use default controls. Cards and framed tools may use
@@ -123,8 +167,8 @@ Light UI depth uses five roles:
 - selected: the single selected/active item treatment;
 - code: raw JSON, source, logs, and other technical text with matching code content color.
 
-The web aliases are `--surface-shell`, `--surface-pane`, `--surface-tool`,
-`--surface-selected`, `--surface-code`, and `--content-code`. Do not create
+In the panel these are `--canvas`, `--surface`, `--surface-muted`,
+`--accent-soft`, and `--code-bg` (code text is `--text`). Do not create
 depth by wrapping page bands in decorative cards or nesting cards. Use borders
 for pane ownership, restrained elevation only for overlays, and selected surface
 only for actual selection or active state.

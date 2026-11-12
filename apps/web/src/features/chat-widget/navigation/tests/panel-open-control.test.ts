@@ -8,7 +8,7 @@ import { createPanelOpenControl } from "../panel-open-control";
 const status = (projectId?: string) => ({ connected: true, ownerKey: "k", recording: false, ...(projectId ? { projectId } : {}) });
 
 describe("the panel's Open FluxIQ control", () => {
-  it("takes a model key to the Secret Keys program, in place", async () => {
+  it("takes a model key to the Keys page under Security, in place", async () => {
     await withFakeDocument(() => {
       const navigate = vi.fn();
       const control = createPanelOpenControl(navigate)({ label: "Open FluxIQ", look: "small", purpose: "model-key" });
@@ -17,24 +17,24 @@ describe("the panel's Open FluxIQ control", () => {
       expect(button.getAttribute("type")).toBe("button");
       expect(button.getAttribute("target")).toBeNull();
       button.dispatch("click");
-      expect(navigate).toHaveBeenCalledWith("/programs/secret-keys");
+      expect(navigate).toHaveBeenCalledWith("/security/keys");
     });
   });
 
-  it("takes a question only the Studio can show to the Studio's project, never a new tab", async () => {
+  it("takes a question only the Studio can show to the project's Flows, never a new tab", async () => {
     await withFakeDocument(() => {
       const navigate = vi.fn();
       const control = createPanelOpenControl(navigate)({ label: "Open FluxIQ", look: "link", purpose: "ask" });
       control.observe(status("project one"));
       fake(control.element).dispatch("click");
       expect(fake(control.element).textContent).toBe("Open the Studio");
-      expect(navigate).toHaveBeenCalledWith("/programs/automation-studio?project=project%20one");
+      expect(navigate).toHaveBeenCalledWith("/flows?project=project%20one");
       expect(fake(control.element).getAttribute("rel")).toBeNull();
       expect(fake(control.element).getAttribute("href")).toBeNull();
     });
   });
 
-  it("goes to the Studio itself when no project is known, and does nothing when the chat says it may not", async () => {
+  it("goes to the Flows screen when no project is known, and does nothing when the chat says it may not", async () => {
     await withFakeDocument(() => {
       const navigate = vi.fn();
       let allowed = false;
@@ -43,7 +43,7 @@ describe("the panel's Open FluxIQ control", () => {
       expect(navigate).not.toHaveBeenCalled();
       allowed = true;
       fake(control.element).dispatch("click");
-      expect(navigate).toHaveBeenCalledWith("/programs/automation-studio");
+      expect(navigate).toHaveBeenCalledWith("/flows");
     });
   });
 });

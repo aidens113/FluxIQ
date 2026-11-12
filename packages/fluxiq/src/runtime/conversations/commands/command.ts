@@ -101,6 +101,8 @@ export type AutomationStudioConversationCommandContext = {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums, carried beside it into the Flow's spend as its "chat" calls. */
   interpretationCalls?: number;
+  /** The person's humanness (integer 0-100) from the turn that started this command, passed on to the build or run it starts. Absent means 0. */
+  humanness?: number;
   /**
    * The turn Core wrote in answer to the person's message that started this
    * command (`start.ts`). The person's own words are read from the turns before

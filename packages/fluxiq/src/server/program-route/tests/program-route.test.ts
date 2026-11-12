@@ -72,7 +72,10 @@ describe("a paired client on the program route", () => {
         "list-flow-subflows",
         "list-project-tasks",
         "rename-task",
+        "update-task-settings",
         "remove-task",
+        "get-flow-metadata-detail",
+        "update-flow-settings",
         "carry-on-task-attempt",
         "run-task-again",
         "run-runtime-session",
@@ -194,6 +197,163 @@ describe("a paired client on the program route", () => {
     expect(remove(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 
+  it("sets a task's humanness by project, task and level only", () => {
+    const settings = (payload: unknown) => narrowPairedClientRequest("automation-studio", "update-task-settings", payload);
+    expect(settings({ projectId: "p", taskId: "t", humanness: 40 })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t", humanness: 40 } });
+    expect(settings({ projectId: "p", taskId: "t", humanness: null })).toEqual({ ok: true, payload: { projectId: "p", taskId: "t", humanness: null } });
+    expect(settings({ projectId: "p", taskId: "t", humanness: 40, flowId: "f" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(settings({ projectId: "p", taskId: "t", title: "x" })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    expect(settings(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+  });
+
+  describe("a Flow's humanness (t898)", () => {
+    const settings = (payload: unknown) => narrowPairedClientRequest("automation-studio", "update-flow-settings", payload);
+    const refusal = (error: string) => ({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's Flow settings change ${error}` });
+    const change = (flow: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({ projectId: "p", flowId: "flow.one", flow, ...extra });
+
+    it("reads a Flow's settings detail, and changes nothing else of a Flow", () => {
+      expect(isPairedClientEndpoint("automation-studio", "get-flow-metadata-detail")).toBe(true);
+      expect(isPairedClientEndpoint("automation-studio", "update-flow-settings")).toBe(true);
+      for (const endpoint of ["get-flow", "save-flow", "apply-graph-patch", "create-flow", "publish-flow", "delete-flow"]) {
+        expect(isPairedClientEndpoint("automation-studio", endpoint), endpoint).toBe(false);
+      }
+      expect(narrowPairedClientRequest("automation-studio", "get-flow-metadata-detail", { projectId: "p", flowId: "flow.one" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one" } });
+    });
+
+    it("sets a level and clears it with null, with or without the Flow's id beside it", () => {
+      expect(settings(change({ metadata: { humanness: 40 } }))).toEqual({ ok: true, payload: change({ metadata: { humanness: 40 } }) });
+      expect(settings(change({ flowId: "flow.one", metadata: { humanness: 40 } }))).toEqual({ ok: true, payload: change({ flowId: "flow.one", metadata: { humanness: 40 } }) });
+      expect(settings(change({ metadata: { humanness: null } }))).toEqual({ ok: true, payload: change({ metadata: { humanness: null } }) });
+      // Bounds are the handler's (humannessSchema): an out-of-range number passes here and is refused there.
+      expect(settings(change({ metadata: { humanness: 101 } }))).toMatchObject({ ok: true });
+    });
+
+    it.each([
+      ["flow.metadata.flowSizeSettings", change({ metadata: { humanness: 40, flowSizeSettings: { maxNodesPerSubflow: 500 } } })],
+      ["flow.metadata.llmExecutionSettings", change({ metadata: { humanness: 40, llmExecutionSettings: {} } })],
+      ["flow.metadata.trainingModeSettings", change({ metadata: { humanness: 40, trainingModeSettings: {} } })],
+      ["flow.metadata.adaptationMode", change({ metadata: { humanness: 40, adaptationMode: "fully_adaptive" } })],
+      ["flow.name", change({ name: "Renamed", metadata: { humanness: 40 } })],
+      ["flow.description", change({ description: "d", metadata: { humanness: 40 } })],
+      ["flow.visibility", change({ visibility: "public", metadata: { humanness: 40 } })],
+      ["flow.interface", change({ interface: {}, metadata: { humanness: 40 } })],
+      ["flow.executionDefaults", change({ executionDefaults: {}, metadata: { humanness: 40 } })],
+      ["flow.source", change({ source: { mode: "code" }, metadata: { humanness: 40 } })],
+      ["expectedUpdatedAt", change({ metadata: { humanness: 40 } }, { expectedUpdatedAt: 1 })],
+      ["authSessionId", change({ metadata: { humanness: 40 } }, { authSessionId: "session" })],
+      ["anything", change({ metadata: { humanness: 40 } }, { anything: true })],
+      ["__proto__", JSON.parse('{"projectId":"p","flowId":"flow.one","flow":{"metadata":{"humanness":40}},"__proto__":{"name":"x"}}')],
+      ["flow.metadata.__proto__", JSON.parse('{"projectId":"p","flowId":"flow.one","flow":{"metadata":{"humanness":40,"__proto__":{"budgetUsd":9}}}}')],
+    ])("refuses %s by its path", (field, payload) => {
+      expect(settings(payload)).toEqual(refusal(`may not carry ${field}.`));
+    });
+
+    it("refuses a change that carries no level, names another Flow, or names its project or Flow by anything but a string", () => {
+      expect(settings(change({ metadata: {} }))).toEqual(refusal("must carry flow.metadata.humanness."));
+      expect(settings(change({}))).toEqual(refusal("must carry flow.metadata.humanness."));
+      expect(settings(change({ metadata: [40] }))).toEqual(refusal("must carry flow.metadata.humanness."));
+      expect(settings({ projectId: "p", flowId: "flow.one" })).toEqual(refusal("must carry flow.metadata.humanness."));
+      expect(settings({ projectId: "p", flowId: "flow.one", flow: [] })).toEqual(refusal("must carry flow.metadata.humanness."));
+      expect(settings(change({ flowId: "flow.other", metadata: { humanness: 40 } }))).toEqual(refusal("must name the same Flow in flow.flowId as in flowId."));
+      expect(settings(change({ flowId: null, metadata: { humanness: 40 } }))).toEqual(refusal("must name the same Flow in flow.flowId as in flowId."));
+      expect(settings({ projectId: "p", flow: { flowId: "flow.one", metadata: { humanness: 40 } } })).toEqual(refusal("must name its Flow by a string flowId."));
+      expect(settings({ projectId: 7, flowId: "flow.one", flow: { metadata: { humanness: 40 } } })).toEqual(refusal("must name its project by a string projectId."));
+      for (const humanness of ["50", undefined, true, {}]) {
+        expect(settings(change({ metadata: { humanness } }))).toEqual(refusal("must carry flow.metadata.humanness as a number, or null to clear it."));
+      }
+      expect(settings(undefined)).toEqual(refusal("must name a project and a Flow."));
+      expect(settings([])).toEqual(refusal("must name a project and a Flow."));
+    });
+
+    it("never names a refused field's value, and hands on only the accepted fields", () => {
+      const refused = settings(change({ name: "do-not-echo", metadata: { humanness: 40 } }));
+      expect(JSON.stringify(refused)).not.toContain("do-not-echo");
+      const mismatched = settings(change({ flowId: "flow.do-not-echo", metadata: { humanness: 40 } }));
+      expect(JSON.stringify(mismatched)).not.toContain("do-not-echo");
+      const accepted = settings(change({ metadata: { humanness: 40 } }));
+      expect(accepted.ok && Object.keys(accepted.payload as object)).toEqual(["projectId", "flowId", "flow"]);
+    });
+
+    describe("reading it", () => {
+      const read = (payload: unknown) => narrowPairedClientRequest("automation-studio", "get-flow-metadata-detail", payload);
+      const readRefusal = (error: string) => ({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's Flow settings read ${error}` });
+      const project = (response: { ok: boolean; payload?: unknown; error?: string; errorCode?: string }) => projectPairedClientResponse("automation-studio", "get-flow-metadata-detail", response);
+      const detail = (metadata: Record<string, unknown>) => ({
+        flowId: "flow.one", name: "Pay the invoices", description: "Every Monday", visibility: "project", status: "draft", graphRevision: 4,
+        settings: { interventionMode: "fully_adaptive", executionDefaults: { timeoutMs: 9000 }, training: {}, adaptation: { policyId: "policy.x" }, llm: { provider: "host", model: "model-do-not-leak", secretKeyId: "secret:do-not-leak", execution: { budgetUsd: 7 } }, safety: {} },
+        inputs: [{ portId: "account", name: "account", required: true, defaultValue: "ACCT-do-not-leak", description: "" }],
+        outputs: [{ portId: "total", name: "total", required: false, defaultValue: null, description: "" }],
+        variables: [{ variableId: "token", name: "token", initialValue: "VAR-do-not-leak", description: "" }],
+        errors: [{ errorId: "e", code: "e", description: "", metadata: { note: "err-do-not-leak" } }],
+        flowSizeSettings: { maxNodesPerSubflow: 150 },
+        metadata,
+      });
+
+      it("takes exactly a project and a Flow, both strings, and hands on only those", () => {
+        expect(read({ projectId: "p", flowId: "flow.one" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one" } });
+        for (const field of ["flow", "inputs", "variables", "name", "metadata", "includeSettings", "anything"]) {
+          expect(read({ projectId: "p", flowId: "flow.one", [field]: "x" }), field).toEqual(readRefusal(`may not carry ${field}.`));
+        }
+        expect(read(JSON.parse('{"projectId":"p","flowId":"flow.one","__proto__":{"x":1}}'))).toEqual(readRefusal("may not carry __proto__."));
+        expect(read({ projectId: "p" })).toEqual(readRefusal("must name its Flow by a string flowId."));
+        expect(read({ projectId: "p", flowId: 7 })).toEqual(readRefusal("must name its Flow by a string flowId."));
+        expect(read({ flowId: "flow.one" })).toEqual(readRefusal("must name its project by a string projectId."));
+        expect(read({ projectId: "", flowId: "flow.one" })).toEqual(readRefusal("must name its project by a string projectId."));
+        // A GET carries no body, so a token's read is refused there rather than handed an empty project.
+        expect(read(undefined)).toEqual(readRefusal("must name a project and a Flow."));
+        expect(read([])).toEqual(readRefusal("must name a project and a Flow."));
+        expect(JSON.stringify(read({ projectId: "p", flowId: "flow.one", name: "do-not-echo" }))).not.toContain("do-not-echo");
+      });
+
+      it("answers the Flow's id and its humanness, and nothing else of the detail", () => {
+        const projected = project({ ok: true, payload: { flow: detail({ humanness: 40, llmModel: "model-do-not-leak", flowSizeSettings: { maxNodesPerSubflow: 150 }, trainingModeSettings: { resultCheck: { authorization: "auth-do-not-leak" } } }) } });
+        expect(projected).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+        for (const leaked of ["Pay the invoices", "do-not-leak", "timeoutMs", "budgetUsd", "maxNodesPerSubflow", "settings", "inputs", "variables"]) {
+          expect(JSON.stringify(projected), leaked).not.toContain(leaked);
+        }
+      });
+
+      it("answers empty metadata for a Flow with no level, or a level that is not a number", () => {
+        expect(project({ ok: true, payload: { flow: detail({ llmModel: "m" }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        const { metadata: _metadata, ...noMetadata } = detail({});
+        expect(project({ ok: true, payload: { flow: noMetadata } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        for (const humanness of ["40", null, { level: 40 }, true]) {
+          expect(project({ ok: true, payload: { flow: detail({ humanness }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: {} } } });
+        }
+        expect(project({ ok: true, payload: { flow: detail({ humanness: 0 }) } })).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 0 } } } });
+      });
+
+      it("answers a Flow the detail does not describe as null, and a refusal as its sentence and code alone", () => {
+        for (const payload of [{ flow: null }, {}, undefined, { flow: [] }, { flow: { flowId: 7, metadata: { humanness: 40 } } }]) {
+          expect(project({ ok: true, payload })).toEqual({ ok: true, payload: { flow: null } });
+        }
+        expect(project({ ok: false, error: "Flow not found.", errorCode: "flow.not_found", payload: { flow: detail({ humanness: 40 }) } })).toEqual({ ok: false, error: "Flow not found.", errorCode: "flow.not_found" });
+        expect(project({ ok: false })).toEqual({ ok: false });
+      });
+
+      it("rebuilds the answer, so a top-level field beside the payload is not handed on", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40 }), extra: "payload-do-not-leak" }, extra: "top-do-not-leak" } as { ok: boolean; payload?: unknown };
+        expect(project(response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+      });
+
+      it("cuts the answer to setting the level the same way, since it is the same detail read back", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40, llmModel: "model-do-not-leak" }) } };
+        expect(projectPairedClientResponse("automation-studio", "update-flow-settings", response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+      });
+
+      it("projects the endpoint however its name is spelled, as the registry matches it", () => {
+        const response = { ok: true, payload: { flow: detail({ humanness: 40 }) } };
+        expect(projectPairedClientResponse(" Automation-Studio ", " GET-FLOW-METADATA-DETAIL ", response)).toEqual({ ok: true, payload: { flow: { flowId: "flow.one", metadata: { humanness: 40 } } } });
+        expect(narrowPairedClientRequest(" Automation-Studio ", " GET-FLOW-METADATA-DETAIL ", { projectId: "p", flowId: "f", name: "x" })).toMatchObject({ ok: false });
+      });
+    });
+
+    it("leaves a cookie caller's settings change as it was: narrowing is the token's alone", () => {
+      // The route narrows only a paired client's body (`handle-program-request.ts`, narrowPost); a person's goes to the handler as sent.
+      expect(withProgramAuthSession("automation-studio", change({ name: "Renamed", metadata: { flowSizeSettings: {} } }), "trusted")).toEqual(change({ name: "Renamed", metadata: { flowSizeSettings: {} } }, { authSessionId: "trusted" }));
+    });
+  });
+
   it("renames or deletes a conversation by project, thread and name only", () => {
     const rename = (payload: unknown) => narrowPairedClientRequest("automation-studio", "rename-conversation", payload);
     const remove = (payload: unknown) => narrowPairedClientRequest("automation-studio", "delete-conversation", payload);
@@ -232,6 +392,15 @@ describe("a paired client on the program route", () => {
     const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
     for (const authorizedDomainIds of [["desktop-automation"], ["web-automation"], [], null]) {
       expect(narrow({ projectId: "p", flowId: "flow.one", authorizedDomainIds })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry authorizedDomainIds." });
+    }
+  });
+
+  it("refuses a run naming whose key pays and acts, or whose preferences it reads, with or without an intent: both come from the authenticated caller alone", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
+    const other = { actorUserId: "user.other", actorSessionId: "session.other", intent: "explore_and_adapt" };
+    for (const intent of [{}, { runIntent: "explore_and_adapt" }]) {
+      expect(narrow({ projectId: "p", flowId: "flow.one", ...intent, llmExecution: other })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry llmExecution." });
+      expect(narrow({ projectId: "p", flowId: "flow.one", ...intent, personUserId: "user.other" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry personUserId." });
     }
   });
 

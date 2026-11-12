@@ -2,3 +2,4 @@
 export { ensurePlatformModulesLoaded, resetPlatformModulesLoadedForTests } from "./ensure-platform-modules-loaded";
 export { currentPanelBranding } from "./current-panel-branding";
 export { OnboardingCards } from "./OnboardingCards";
+export { accentTokens } from "./accent-tokens";

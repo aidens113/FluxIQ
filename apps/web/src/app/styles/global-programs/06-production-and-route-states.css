@@ -9,9 +9,9 @@
 .production-parameter-grid select {
   width: 100%;
   min-height: 34px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 5px 8px;
 }
 
@@ -19,7 +19,7 @@
   display: grid;
   gap: var(--space-sm);
   margin-top: var(--space-md);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
   padding-top: var(--space-md);
 }
 
@@ -30,7 +30,7 @@
   justify-content: center;
   gap: 10px;
   min-height: 160px;
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .program-route-loading {
@@ -41,8 +41,8 @@
 .program-route-loading > span {
   width: 16px;
   height: 16px;
-  border: 2px solid var(--color-border);
-  border-top-color: var(--color-primary);
+  border: 2px solid var(--divider);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -64,7 +64,7 @@
 }
 
 .route-error-reference {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 

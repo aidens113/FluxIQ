@@ -16,10 +16,11 @@ export type ProgramListFilterInput = {
 
 /**
  * Keeps the items of a list response the caller may `itemAction`, through
- * `IamRequestAuthorizer.filter`: one audit row when the full-access grant
- * covers the scope and every item, otherwise one per item. The response is
- * returned untouched when nothing was dropped, so a caller who may see every
- * item gets exactly the handler's payload.
+ * `IamRequestAuthorizer.filter`: each item is still decided on its own, and
+ * the list writes one audit row whatever its length, a `deny` carrying how
+ * many items were hidden when any was. The response is returned untouched
+ * when nothing was dropped, so a caller who may see every item gets exactly
+ * the handler's payload.
  */
 export async function filterProgramList(gate: ProgramIamGate, request: ProgramIamRequest, input: ProgramListFilterInput): Promise<ProgramApiResponse> {
   const items = input.list.items(input.response.payload);

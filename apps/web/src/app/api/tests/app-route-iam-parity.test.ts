@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", async () => (await import("./app-route-fixture")).nextHeadersMock());
 vi.mock("../../../lib/fluxiq", async () => (await import("./app-route-fixture")).fluxiqModuleMock());
+vi.mock("../../../server/provisioning-listener", async () => (await import("./app-route-fixture")).provisioningListenerMock());
+vi.mock("../security/server/platform-audit-reader", async () => (await import("./app-route-fixture")).platformAuditReaderMock());
 
 import { APP_ROUTE_IAM_CONTRACTS } from "../../../lib/app-route-iam";
 import { POST as callProgram } from "../programs/[programId]/[endpoint]/route";
@@ -49,8 +51,20 @@ const TODAY: Readonly<Record<string, Row>> = {
   "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": COOKIE_ONLY_READ,
   "GET /api/programs/automation-studio/state-assets/[projectId]/[sha256]": COOKIE_ONLY_READ,
   "PUT /api/programs/automation-studio/state-assets/[projectId]/[sha256]": ["allowed", "forbidden: Permission required: programs.write", "allowed", "allowed"],
-  "GET /api/recordings": ["allowed", "allowed", "allowed", "allowed"]
+  "GET /api/recordings": ["allowed", "allowed", "allowed", "allowed"],
+  // People and the activity log: only someone who manages people, and only by cookie.
+  "GET /api/accounts/members": needs("identity.manage"),
+  "POST /api/accounts/invite": needs("identity.manage"),
+  "POST /api/accounts/member (set-role)": needs("identity.manage"),
+  "POST /api/accounts/member (turn-off)": needs("identity.manage"),
+  "POST /api/accounts/member (turn-on)": needs("identity.manage"),
+  "POST /api/accounts/member (remove)": needs("identity.manage"),
+  "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
+  "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
+  "GET /api/security/audit": needs("identity.manage")
 };
+
+const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);
 
 function key(contract: (typeof APP_ROUTE_IAM_CONTRACTS)[number]): string {
   return `${contract.method} ${contract.path}${contract.variant === undefined ? "" : ` (${contract.variant})`}`;
@@ -83,6 +97,13 @@ describe("app route IAM parity on the local profile", () => {
       expect(seen).toEqual(row);
     });
   }
+
+  it("runs the people and activity routes to their end for an administrator, not merely past the decision", async () => {
+    for (const name of PEOPLE_AND_ACTIVITY) {
+      const response = await APP_ROUTE_CALLS[name]!({ kind: "cookie", person: "admin" }, { projectId: "project-1" });
+      expect([name, response.status]).toEqual([name, 200]);
+    }
+  });
 
   it("decides a self-hosted registry exactly as a local one", async () => {
     fixture.registry = new GlobalProgramApiRegistry({ iam: { profile: "self-hosted" } });

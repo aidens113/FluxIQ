@@ -5,6 +5,7 @@ export * from "./ai-provider-model";
 export * from "./SubflowSettingsView";
 export * from "./draft-field";
 export * from "./flow-settings-model";
+export * from "./humanness";
 export * from "./max-nodes-setting";
 export * from "./persistence-check";
 export * from "./settings-commands";

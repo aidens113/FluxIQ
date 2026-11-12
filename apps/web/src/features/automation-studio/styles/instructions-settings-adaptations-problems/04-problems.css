@@ -4,7 +4,7 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--surface);
 }
 
 .automation-problems-header {
@@ -12,7 +12,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-dense);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 10px 12px;
 }
 
@@ -37,16 +37,16 @@
 }
 
 .automation-problems-header > div span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
 }
 
 .automation-problems-header > span {
   min-width: 24px;
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: 3px 6px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-bold);
   text-align: center;
@@ -56,7 +56,7 @@
   display: flex;
   gap: 3px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: 6px 8px;
 }
 
@@ -68,7 +68,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--muted);
   padding: 5px 8px;
   font: inherit;
   font-size: var(--font-size-compact);
@@ -77,13 +77,13 @@
 }
 
 .automation-problem-filters button:hover {
-  background: var(--surface-tool);
+  background: var(--surface-muted);
 }
 
 .automation-problem-filters button[aria-pressed="true"] {
-  border-color: var(--color-selected-border);
-  background: var(--surface-selected);
-  color: var(--color-primary);
+  border-color: var(--accent-edge);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 
 .automation-problem-filters button span {
@@ -102,7 +102,7 @@
 }
 
 .automation-problem-list li + li {
-  border-top: 1px solid var(--color-border-subtle, var(--color-border));
+  border-top: 1px solid var(--line);
 }
 
 .automation-problem-list button {
@@ -115,7 +115,7 @@
   border: 0;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--color-text);
+  color: var(--text);
   padding: 9px 7px;
   text-align: left;
   cursor: pointer;
@@ -123,7 +123,7 @@
 
 .automation-problem-list button:hover,
 .automation-problem-list button:focus-visible {
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   outline: none;
 }
 
@@ -140,12 +140,12 @@
 }
 
 .automation-problem-list small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   line-height: 1.35;
 }
 
 .automation-problem-list em {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-style: normal;
 }
@@ -157,12 +157,12 @@
   gap: 6px;
   min-height: 180px;
   padding: 24px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   text-align: center;
 }
 
 .automation-problems-empty strong {
-  color: var(--color-text);
+  color: var(--text);
 }
 
 .automation-problems-empty span {

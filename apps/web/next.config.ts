@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 
@@ -33,20 +34,42 @@ export default function nextConfig(phase: string): NextConfig {
         }
       ];
     },
-    // The old Studio workspace, the domain pages and the first-run page are gone;
-    // links and bookmarks to them land on the page that replaced them. Not
-    // permanent: `/get-started` gets the setup wizard back when it lands. The
-    // query string is carried over, so `?project=` reaches `/flows`. Other
-    // `/programs/<id>` pages stay (Settings links to them), as do `/setup`,
-    // `/welcome`, `/reset` and sign-in.
+    // The old Studio workspace, the domain pages, the first-run page and the
+    // `/programs/*` screens are gone; links and bookmarks to them land on the page
+    // that replaced them. Not permanent: `/get-started` gets the setup wizard back
+    // when it lands. The query string is carried over, so `?project=` reaches
+    // `/flows` and `?doc=` reaches the Docs tool. Each retired program page goes to
+    // the screen that now does its job: keys and your own sign-in are Security's
+    // sub-pages, every other engine tool is a Settings sub-page of the same id, and
+    // bare `/programs` (or an id that never had a page) lands on Settings.
+    // `/setup`, `/welcome`, `/reset` and sign-in stay.
     async redirects() {
       return [
         { source: "/programs/automation-studio/chat", destination: "/?chat=open", permanent: false },
         { source: "/programs/automation-studio/:path*", destination: "/flows", permanent: false },
+        { source: "/programs/identity-access", destination: "/security/sign-in", permanent: false },
+        { source: "/programs/secret-keys", destination: "/security/keys", permanent: false },
+        { source: "/programs/:tool(background-tasks|compute-control|database-manager|deployment-sync|docs|production-runner|runtime)", destination: "/settings/:tool", permanent: false },
+        { source: "/programs/:path*", destination: "/settings", permanent: false },
         { source: "/domains/:path*", destination: "/flows", permanent: false },
         { source: "/get-started/:path*", destination: "/", permanent: false }
       ];
     },
-    ...(phase === PHASE_PRODUCTION_BUILD ? { typescript: { tsconfigPath: "tsconfig.build.json" } } : {})
+    ...(phase === PHASE_PRODUCTION_BUILD ? { typescript: { tsconfigPath: "tsconfig.build.json" } } : {}),
+    ...(process.env.FLUXIQ_WEB_STANDALONE === "1" ? standaloneOutput() : {})
   };
+}
+
+/**
+ * The container image's build (`deploy/docker/Dockerfile`) sets
+ * `FLUXIQ_WEB_STANDALONE=1`: Next then also writes `.next/standalone`, a
+ * server holding only the files it traced, so the image carries no workspace
+ * install. Tracing starts at the repository root because the panel reaches
+ * Core's packages through pnpm's workspace links above `apps/web`. Every
+ * other build, and `next dev`, are unchanged. Next compiles this file as
+ * CommonJS from `apps/web` (`next/dist/build/next-config-ts`), so `__dirname`
+ * is `apps/web`.
+ */
+function standaloneOutput(): Pick<NextConfig, "output" | "outputFileTracingRoot"> {
+  return { output: "standalone", outputFileTracingRoot: path.join(__dirname, "..", "..") };
 }

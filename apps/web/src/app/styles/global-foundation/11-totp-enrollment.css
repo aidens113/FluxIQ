@@ -1,36 +1,4 @@
-.totp-setup-shell {
-  display: grid;
-  gap: var(--space-md);
-}
 
-.totp-setup-summary {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-dense);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--surface-tool);
-  padding: var(--space-dense);
-}
-
-.totp-setup-summary > div {
-  display: grid;
-  gap: var(--space-xxs);
-  min-width: 0;
-}
-
-.totp-setup-summary strong,
-.totp-setup-summary small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.totp-setup-summary small {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-compact);
-}
 
 .totp-enrollment {
   display: grid;
@@ -43,15 +11,15 @@
   display: grid;
   justify-items: center;
   gap: var(--space-dense);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 14px;
   text-align: center;
 }
 
 .totp-qr-card span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -61,9 +29,9 @@
   place-items: center;
   width: 220px;
   height: 220px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .totp-qr-frame svg {
@@ -81,9 +49,9 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-dense);
   align-items: center;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: var(--space-dense);
 }
 
@@ -100,12 +68,12 @@
 .secret-copy-row code,
 .otpauth-details code {
   overflow-wrap: anywhere;
-  color: var(--color-text);
+  color: var(--text);
   font-size: var(--font-size-compact);
 }
 
 .otpauth-details {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 

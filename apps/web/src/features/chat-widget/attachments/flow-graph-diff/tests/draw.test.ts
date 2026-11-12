@@ -38,8 +38,18 @@ describe("a proposed Flow change", () => {
   it("refuses a change it cannot read rather than drawing half a Flow", async () => {
     await withFakeDocument(() => {
       const refused = fake(drawFlowGraphDiff({ added: [{ id: "<script>" }] }, ATTACHMENT));
-      expect(refused.textContent).toBe("This turn carries a Flow change (adaptation:a.1) that could not be read, so nothing is shown.");
+      expect(refused.textContent).toBe("The proposed Flow change could not be read here, so nothing is shown.");
       expect(refused.descendants().filter((element) => element.getAttribute("aria-label") === "Structural changes")).toHaveLength(0);
+    });
+  });
+
+  it("never prints the raw reference, whatever it carries", async () => {
+    await withFakeDocument(() => {
+      const ref = '{"projectId":"project.secret","adaptationId":"a.1"}';
+      const text = fake(drawFlowGraphDiff("nothing", { kind: "flow-graph-diff", ref })).textContent;
+      expect(text).not.toContain("project.secret");
+      expect(text).not.toContain("{");
+      expect(text).toContain("could not be read here");
     });
   });
 

@@ -6,7 +6,8 @@ const PASSWORD = "a strong new password";
 const URL_ = "https://app.example.test/welcome/submit";
 
 function post(body: unknown, headers: Record<string, string> = {}): Request {
-  return new Request(URL_, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  // A browser always sends the Host it addressed; the cross-site guard compares Origin with it.
+  return new Request(URL_, { method: "POST", headers: { "content-type": "application/json", host: new URL(URL_).host, ...headers }, body: JSON.stringify(body) });
 }
 
 function deps(harness: AccountLinkHarness) {
