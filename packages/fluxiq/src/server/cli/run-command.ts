@@ -1,6 +1,6 @@
 import { DEV_USAGE, parseDevArguments } from "./dev-arguments.ts";
 import { createFluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
-import { runDev } from "./run-dev.ts";
+import { runDev, type DevServer } from "./run-dev.ts";
 
 const USAGE = ["Usage: fluxiq <command>", "", "Commands:", "  dev   Serve FluxIQ on 127.0.0.1 without the web panel", "", DEV_USAGE].join("\n");
 
@@ -25,16 +25,15 @@ export async function runFluxIQCommand(argv: readonly string[]): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  // `fluxiq dev` serves the FluxNode API in local open mode (plan, K4); keys are P3b.
-  const dev = await runDev(parsed.value, console.log, {
-    createFluxNodes: (fluxiq) => createFluxNodeService({ service: fluxiq.programs.automationStudio, domainId: fluxiq.activeDomainId })
-  });
+  const controller = new AbortController();
+  let dev: DevServer | undefined;
   let stopping = false;
   const onSignal = (): void => {
     if (stopping) process.exit(130);
     stopping = true;
+    controller.abort(new Error("The engine was stopped."));
     console.log("Stopping FluxIQ...");
-    dev.stop().then(
+    dev?.stop().then(
       () => process.exit(0),
       (error: unknown) => {
         console.error("[FluxIQ] FluxIQ did not stop cleanly:", error);
@@ -44,4 +43,22 @@ export async function runFluxIQCommand(argv: readonly string[]): Promise<void> {
   };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
+  process.on("SIGHUP", onSignal);
+  if (process.platform === "win32") process.on("SIGBREAK", onSignal);
+  if (process.connected) process.on("disconnect", onSignal);
+  try {
+    // Install shutdown handling before startup: the wrapper can die while a
+    // browser is still launching, including on Windows where kill is abrupt.
+    dev = await runDev(parsed.value, console.log, { signal: controller.signal,
+      onHostFailure: () => process.exit(1),
+      createFluxNodes: (fluxiq, hosts) => createFluxNodeService({ service: fluxiq.programs.automationStudio, domainId: fluxiq.activeDomainId, hosts })
+    });
+    if (stopping) {
+      await dev.stop();
+      return;
+    }
+    process.send?.({ type: "fluxiq.ready", apiUrl: dev.server.apiUrl, gatewayUrl: dev.server.gatewayUrl });
+  } catch (error) {
+    if (!stopping) throw error;
+  }
 }

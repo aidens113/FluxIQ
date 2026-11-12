@@ -457,3 +457,21 @@ describe("FluxIQClientGatewayConnection credential", () => {
     expect(FakeSocket.latest().credentialsAcknowledged).toBe(1);
   });
 });
+
+describe("FluxIQClientGatewayConnection enrolment", () => {
+  it("hands the host's enrolment source to the socket, so a hello with no token carries its ticket once", async () => {
+    let held: string | undefined = "fxet_synthetic-ticket";
+    const take = (): string | undefined => {
+      const ticket = held;
+      held = undefined;
+      return ticket;
+    };
+    const h = harness({ overrides: { enrolment: { take } } });
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    const hello = FakeSocket.latest().sent.find((message) => message.type === "client.hello");
+    expect(hello?.payload).toMatchObject({ enrolmentTicket: "fxet_synthetic-ticket" });
+    expect(held).toBeUndefined();
+  });
+});

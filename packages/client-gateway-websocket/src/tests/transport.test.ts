@@ -149,3 +149,63 @@ describe("FluxIQClientGatewayWebSocketClient.send envelope", () => {
     expect("correlationId" in wire).toBe(false);
   });
 });
+
+// A managed host's one-time ticket rides only on a hello without a token, and
+// is taken at most once for each hello: a reconnect never resends it.
+describe("FluxIQClientGatewayWebSocketClient enrolment ticket", () => {
+  function enrolling(options: { token?: string; stored?: string } = {}): { gateway: FluxIQClientGatewayWebSocketClient; takes: () => number } {
+    let held: string | undefined = "fxet_synthetic-ticket";
+    let taken = 0;
+    const gateway = new FluxIQClientGatewayWebSocketClient({
+      url: "ws://127.0.0.1:1/client",
+      client: { clientId: "extension.test", clientType: "extension", ...(options.token === undefined ? {} : { token: options.token }) },
+      WebSocketImpl: SilentWebSocket,
+      tokenStorage: { read: () => options.stored, write: () => undefined },
+      enrolment: {
+        take: () => {
+          taken += 1;
+          const ticket = held;
+          held = undefined;
+          return ticket;
+        }
+      }
+    });
+    return { gateway, takes: () => taken };
+  }
+
+  async function helloOf(gateway: FluxIQClientGatewayWebSocketClient): Promise<Record<string, unknown>> {
+    const connected = gateway.connect();
+    const socket = SilentWebSocket.last!;
+    socket.dispatch("open");
+    await connected;
+    return (JSON.parse(socket.sent[0]!) as { payload: Record<string, unknown> }).payload;
+  }
+
+  it("carries the ticket in a hello with no token, and takes it once", async () => {
+    const { gateway, takes } = enrolling();
+    const hello = await helloOf(gateway);
+    expect(hello.enrolmentTicket).toBe("fxet_synthetic-ticket");
+    expect("token" in hello).toBe(false);
+    expect(takes()).toBe(1);
+  });
+
+  it("never sends or takes a ticket when the hello carries a stored or given token", async () => {
+    const stored = enrolling({ stored: "stored-token" });
+    expect(await helloOf(stored.gateway)).toMatchObject({ token: "stored-token" });
+    expect(stored.takes()).toBe(0);
+    const given = enrolling({ token: "given-token" });
+    const hello = await helloOf(given.gateway);
+    expect(hello.token).toBe("given-token");
+    expect("enrolmentTicket" in hello).toBe(false);
+    expect(given.takes()).toBe(0);
+  });
+
+  it("sends no ticket on a reconnect: the source gave it up already", async () => {
+    const { gateway, takes } = enrolling();
+    await helloOf(gateway);
+    SilentWebSocket.last!.dispatch("close", { code: 1006 });
+    const again = await helloOf(gateway);
+    expect("enrolmentTicket" in again).toBe(false);
+    expect(takes()).toBe(2);
+  });
+});

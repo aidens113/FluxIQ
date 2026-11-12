@@ -60,6 +60,8 @@ export type FluxNodeServiceOutcome<T> = { ok: true; value: T } | { ok: false; re
  * - `exportFlow`: POST fluxnodes/{name}/export, pinning when asked (plan, N8).
  */
 export type FluxNodeService = {
+  /** In-process lifecycle only: refuse new work, stop admitted runs and await their finalization. Not an HTTP endpoint. */
+  close?(): Promise<void>;
   register(caller: FluxNodeCaller, request: FluxNodeRegisterSpecRequest): Promise<FluxNodeServiceOutcome<FluxNodeRegisterSpecResponse>>;
   start(caller: FluxNodeCaller, request: FluxNodeRunRequest): Promise<FluxNodeServiceOutcome<FluxNodeRunStateBody>>;
   get(caller: FluxNodeCaller, runId: string): Promise<FluxNodeServiceOutcome<FluxNodeRunStateBody>>;

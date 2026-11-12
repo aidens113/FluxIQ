@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { ClientGatewayTrustEndedError } from "./trust-ended-error.ts";
-import type { ClientGatewayTrustedClient, ClientGatewayTrustedClientView } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayManagedHost, ClientGatewayTrustedClient, ClientGatewayTrustedClientView } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
 
 /** How often a client in steady use has its credential's life extended and stored: its next message would do, so this only saves writes. */
@@ -128,9 +128,10 @@ export class ClientGatewayTrustedClientRegistry {
   }
 
   /**
-   * Mint durable trust for a freshly paired session. Returns the one-time token
-   * with the client; `trustedClient.approvedAt` is the single timestamp the
-   * caller should reuse for the pairing and the session.
+   * Mint durable trust for a freshly paired or enrolled session. Returns the
+   * one-time token with the client; `trustedClient.approvedAt` is the single
+   * timestamp the caller should reuse for the pairing and the session.
+   * `managedHost` is kept with the trust when an enrolment ticket granted it.
    */
   async register(input: {
     clientId: string;
@@ -138,6 +139,7 @@ export class ClientGatewayTrustedClientRegistry {
     name: string;
     approvedByUserId: string;
     domainId: string | null;
+    managedHost?: ClientGatewayManagedHost;
   }): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
     const now = this.config.now();
     const trustedClientId = randomUUID();
@@ -152,6 +154,7 @@ export class ClientGatewayTrustedClientRegistry {
       tokenHash: this.hashToken(token),
       approvedByUserId: input.approvedByUserId,
       domainId: input.domainId,
+      ...(input.managedHost !== undefined ? { managedHost: { hostId: input.managedHost.hostId, profile: input.managedHost.profile } } : {}),
       approvedAt: now,
       createdAt: now,
       updatedAt: now,

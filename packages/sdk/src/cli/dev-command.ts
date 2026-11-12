@@ -44,7 +44,7 @@ export function devCommand(args: string[], io: CliIo): Promise<number> {
     return Promise.resolve(1);
   }
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [script, "dev", ...args], { cwd: io.cwd, env: io.env, stdio: "inherit" });
+    const child = spawn(process.execPath, [script, "dev", ...args], { cwd: io.cwd, env: io.env, stdio: ["inherit", "inherit", "inherit", "ipc"], windowsHide: true });
     child.on("error", (error) => {
       io.err(`Could not start the engine: ${error.message}\n`);
       resolve(1);

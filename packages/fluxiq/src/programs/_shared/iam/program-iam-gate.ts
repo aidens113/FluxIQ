@@ -112,8 +112,9 @@ export class ProgramIamGate {
    * written the same way and decides nothing either.
    */
   async open(actor: ProgramApiActor, origin?: FluxIQRequestOrigin, override?: ProgramIamActionOverride, via?: IamRequestVia, consent?: IamRequestConsent): Promise<ProgramIamRequest> {
-    const id = programIamIdSegment(actor.userId).segment;
-    const principal: IamPrincipal = { type: "user", id, workspaceId: this.workspaceId, frn: iamPrincipalFrn("user", this.workspaceId, id) };
+    const type = actor.serviceIdentity === undefined ? "user" : "service-identity";
+    const id = programIamIdSegment(actor.serviceIdentity?.id ?? actor.userId).segment;
+    const principal: IamPrincipal = { type, id, workspaceId: this.workspaceId, frn: iamPrincipalFrn(type, this.workspaceId, id) };
     this.requests = (this.requests + 1) % 1000;
     const requestId = `${Date.now()}${String(this.requests).padStart(3, "0")}`;
     const context: IamRequestContext = {
@@ -126,7 +127,7 @@ export class ProgramIamGate {
       ...(consent === undefined ? {} : { consent })
     };
     const compiled = await this.compiledFor(actor, principal, override);
-    return { authorizer: new IamRequestAuthorizer(compiled, principal, context, this.sink, requestId), compiled, resolveOwners: this.profile === "service", actorUserId: actor.userId };
+    return { authorizer: new IamRequestAuthorizer(compiled, principal, context, this.sink, requestId), compiled, resolveOwners: this.profile === "service", actorUserId: actor.serviceIdentity?.id ?? actor.userId };
   }
 
   /**
@@ -150,6 +151,9 @@ export class ProgramIamGate {
   }
 
   private async compiledFor(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<CompiledIamPolicySet> {
+    // A lease's resources change between calls of the same machine. Never
+    // reuse a person/role cache entry or a policy from its previous lease.
+    if (actor.serviceIdentity !== undefined) return this.compiledMachineSet(actor, principal);
     if (this.profile === "service") return this.compiledServiceSet(actor, principal, override);
     const key = [actor.userId, actor.roleId, [...new Set(actor.permissions)].sort().join(","), override === undefined ? "" : `${override.action}=${String(actor.permissions.includes(override.permission))}`].join("\u0001");
     const cached = this.compiledSets.get(key);
@@ -158,6 +162,20 @@ export class ProgramIamGate {
     if (this.compiledSets.size >= CACHE_LIMIT) this.compiledSets.delete(this.compiledSets.keys().next().value ?? key);
     this.compiledSets.set(key, compiled);
     return compiled;
+  }
+
+  private async compiledMachineSet(actor: ProgramApiActor, principal: IamPrincipal): Promise<CompiledIamPolicySet> {
+    try {
+      if (!actor.serviceIdentity || (this.profile === "service" && this.source === undefined)) return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+      const inherited = this.source === undefined ? NO_POLICIES : await this.source.resolvePolicySet(principal);
+      const identity: IamPolicy = { name: "FluxIQManagedHost", kind: "identity", document: actor.serviceIdentity.policy };
+      const session: IamPolicy = { name: "FluxIQManagedHostLease", kind: "session", document: actor.serviceIdentity.policy };
+      const guardrails = this.profile === "service" && !inherited.guardrails.some((policy) => policy.name === IAM_SERVICE_GUARDRAIL.name)
+        ? [...inherited.guardrails, IAM_SERVICE_GUARDRAIL] : inherited.guardrails;
+      return this.compileOrDeny(() => ({ ...inherited, identity: [...inherited.identity, identity], guardrails, sessions: [...inherited.sessions, session] }), principal);
+    } catch {
+      return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+    }
   }
 
   private async compiledServiceSet(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<CompiledIamPolicySet> {

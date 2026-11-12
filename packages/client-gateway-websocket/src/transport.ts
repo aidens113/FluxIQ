@@ -76,9 +76,12 @@ export class FluxIQClientGatewayWebSocketClient {
     this.emit({ type: "open" });
     const storedToken = await this.options.tokenStorage?.read();
     this.token = this.options.client.token ?? storedToken;
+    // A client with a credential resumes with it; only one without spends its enrolment ticket, once.
+    const enrolmentTicket = this.token ? undefined : this.options.enrolment?.take();
     await this.send("client.hello", {
       ...this.options.client,
-      ...(this.token ? { token: this.token } : {})
+      ...(this.token ? { token: this.token } : {}),
+      ...(enrolmentTicket ? { enrolmentTicket } : {})
     });
   }
 

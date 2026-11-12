@@ -12,7 +12,10 @@ import {
   type ClientGatewayActionCommand,
   type ClientGatewayClientHello,
   type ClientGatewayHostLease,
-  type ClientGatewayServerMessage
+  type ClientGatewayManagedHost,
+  type ClientGatewayServerMessage,
+  type ClientGatewaySession,
+  type ClientGatewayTrustedClient
 } from "../client-gateway.ts";
 import { parseAutomationStudioFailureRecord } from "../failure/index.ts";
 import { CLIENT_GATEWAY_PROTOCOL_VERSIONS, parseClientGatewayRunContext } from "../platform/index.ts";
@@ -80,5 +83,21 @@ describe("client gateway 0.2 compatibility with 0.1", () => {
   it("stamps a version the contract describes, under the same major as 0.2", () => {
     expect(CLIENT_GATEWAY_PROTOCOL_VERSIONS).toContain(CLIENT_GATEWAY_PROTOCOL_VERSION);
     expect(CLIENT_GATEWAY_PROTOCOL_VERSION.split(".")[0]).toBe("0");
+  });
+});
+
+describe("managed host enrolment is additive", () => {
+  it("keeps a hello without a ticket valid and carries one when a managed host is enrolled", () => {
+    const plain: ClientGatewayClientHello = { clientType: "extension", metadata: { domainId: "web" } };
+    const enrolling: ClientGatewayClientHello = { ...plain, enrolmentTicket: "fxet_example" };
+    expect(Object.hasOwn(plain, "enrolmentTicket")).toBe(false);
+    expect(JSON.parse(JSON.stringify(enrolling))).toEqual({ clientType: "extension", metadata: { domainId: "web" }, enrolmentTicket: "fxet_example" });
+    expectTypeOf<ClientGatewayClientHello["enrolmentTicket"]>().toEqualTypeOf<string | undefined>();
+  });
+
+  it("adds only optional managed-host fields to the session and the trusted client", () => {
+    expectTypeOf<ClientGatewaySession["managedHostId"]>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<ClientGatewayTrustedClient["managedHost"]>().toEqualTypeOf<ClientGatewayManagedHost | undefined>();
+    expectTypeOf<ClientGatewayManagedHost["profile"]>().toEqualTypeOf<"fresh" | "named">();
   });
 });

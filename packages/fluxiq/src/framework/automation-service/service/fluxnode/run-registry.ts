@@ -29,6 +29,41 @@ export class FluxNodeRunRegistry {
   private readonly learnedOn = new Map<string, { versions: number; candidateId: string; revision?: number | undefined; digest?: string | undefined }>();
   /** Per Flow: the judge-part digest of the latest run that a judge confirmed, so changed criteria are judged once even on a replay. */
   private readonly judgedOn = new Map<string, string>();
+  private readonly admitting = new Set<Promise<unknown>>();
+  private readonly finalizationErrors = new Set<unknown>();
+  private closed = false;
+  private closing: Promise<void> | undefined;
+
+  get accepting(): boolean { return !this.closed; }
+
+  /** Cleanup can fail without replacing a run's result; shutdown must still report that failure after draining. */
+  finalizationFailed(error: unknown): void { this.finalizationErrors.add(error); }
+
+  /** Registers the whole accepted operation before it can create a run asynchronously. */
+  track<T>(work: () => Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new Error("The FluxNode service is closing."));
+    const pending = Promise.resolve().then(work);
+    this.admitting.add(pending);
+    void pending.finally(() => this.admitting.delete(pending)).catch(/* best-effort: the original operation is awaited by its caller; this only removes its tracking entry */ () => undefined);
+    return pending;
+  }
+
+  /** Stop admissions first, then await accepted registrations, controllers, leaves and their owner cleanup. */
+  close(): Promise<void> {
+    if (this.closing) return this.closing;
+    this.closed = true;
+    return this.closing = Promise.resolve().then(async () => {
+      for (const { run } of this.runs.values()) run.stop("The FluxNode service is closing.");
+      const admitted = await Promise.allSettled([...this.admitting]);
+      // An admission already accepted before close may have registered while
+      // closing. No later admission is accepted; stop and drain those runs too.
+      for (const { run } of this.runs.values()) run.stop("The FluxNode service is closing.");
+      const ended = await Promise.allSettled([...this.runs.values()].map((held) => held.finished));
+      const failures = [...admitted, ...ended].filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+      const errors = new Set([...this.finalizationErrors, ...failures.map((failure) => failure.reason)]);
+      if (errors.size) throw new AggregateError([...errors], "Some FluxNode work could not finalize while closing.");
+    });
+  }
 
   /** The run an idempotency key started, when this request is the one it named; `conflict` when it named another. */
   keyed(key: string | undefined, request: unknown): { runId: string } | "conflict" | undefined {
@@ -40,6 +75,7 @@ export class FluxNodeRunRegistry {
 
   /** Holds `run` and starts `work` once its Flow is free. The key, when given, names this run from now on. */
   add(run: FluxNodeRun, registered: FluxNodeRegistered, work: () => Promise<void>, key?: { key: string; request: unknown }): void {
+    if (this.closed) run.stop("The FluxNode service is closing.");
     const before = this.flowTails.get(registered.flowId) ?? Promise.resolve();
     const finished = before.then(work);
     this.flowTails.set(registered.flowId, finished.then(() => undefined, () => undefined));

@@ -40,6 +40,7 @@ import { fluxNodeRunPin, type FluxNodePins } from "./pin/index.ts";
 import { fluxNodeResultOf } from "./result-of.ts";
 import { fluxNodeRunOverridesFrame } from "./overrides-frame.ts";
 import { fluxNodeInputsWithoutSecrets, fluxNodeSecretGoalInputs } from "./secrets/index.ts";
+import type { FluxNodeHostPool } from "./hosts/index.ts";
 
 /** How often a Stop that found no attempt registered yet is tried again. */
 const STOP_RETRY_MS = 25;
@@ -57,6 +58,7 @@ export type FluxNodeRunContext = {
   judgedWith?: ((flowId: string) => string | undefined) | undefined;
   /** The FluxNodes' pins (`./pin/`). Absent, no run is pinned. */
   pins?: Pick<FluxNodePins, "begin" | "settleUnpinned"> | undefined;
+  hosts?: Pick<FluxNodeHostPool, "domainId" | "run"> | undefined;
   now: () => number;
 };
 
@@ -68,7 +70,24 @@ export type FluxNodeRunOutcome = {
   judgeDigest?: string | undefined;
 };
 
-export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun, registered: FluxNodeRegisteredSpec, resumeHandle: string): Promise<FluxNodeRunOutcome> {
+export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun, registered: FluxNodeRegisteredSpec, resumeHandle: string, settled?: () => Promise<void>): Promise<FluxNodeRunOutcome> {
+  if (!context.hosts) return await runAttempt(context, run, registered, resumeHandle);
+  if (registered.spec.runtime !== context.hosts.domainId) throw new Error("managed_host.runtime_mismatch: The FluxNode must explicitly name this pool's runtime.");
+  const stopping = new AbortController();
+  run.whenStopped(() => stopping.abort(new Error("The FluxNode was stopped.")));
+  return await context.hosts.run(run.runId, registered.projectId, stopping.signal, async (signal) => {
+    const abort = (): void => run.stop("The run's managed host is stopping.");
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+    try { return await runAttempt(context, run, registered, resumeHandle); }
+    finally {
+      try { await settled?.(); }
+      finally { signal.removeEventListener("abort", abort); }
+    }
+  });
+}
+
+async function runAttempt(context: FluxNodeRunContext, run: FluxNodeRun, registered: FluxNodeRegisteredSpec, resumeHandle: string): Promise<FluxNodeRunOutcome> {
   const { spec } = registered;
   const inputs = run.carried.inputs;
   const secrets = fluxNodeSecretInputs(spec.inputs, inputs);
@@ -98,6 +117,7 @@ export async function runFluxNode(context: FluxNodeRunContext, run: FluxNodeRun,
     if (!run.stopRequested) {
       await runWithAutomationStudioRunSecrets(secrets.values, async () => await runWithAutomationStudioRunOverrides(frame, async () => {
         await context.flows.instruct(on, goal.value);
+        if (run.stopRequested) return;
         run.whenStopped(() => cancelUntilLanded(context.service, on, attempt));
         const start = context.startLocationOf(spec);
         const generated = await context.service.generateFlowBootstrapAdaptation({

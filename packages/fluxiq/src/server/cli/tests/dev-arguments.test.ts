@@ -22,4 +22,12 @@ describe("fluxiq dev arguments", () => {
     expect(parseDevArguments(["--port", "70000"], HOME)).toEqual({ ok: false, error: "--port must be a whole number from 0 to 65535." });
     expect(parseDevArguments(["--gateway-port", "-1"], HOME)).toEqual({ ok: false, error: "--gateway-port must be a whole number from 0 to 65535." });
   });
+
+  it("reads managed browser flags without requiring a panel", () => {
+    const parsed = parseDevArguments(["--browsers=2", "--browser-host", "./launcher.mjs", "--headless", "--browser-profile", "work"], HOME);
+    expect(parsed).toMatchObject({ ok: true, value: { hosts: 2, hostModule: "./launcher.mjs", headless: true, profileName: "work" } });
+    expect(parseDevArguments(["--browsers", "1.5"], HOME).ok).toBe(false);
+    expect(parseDevArguments(["--browsers", "17"], HOME).ok).toBe(false);
+    expect(parseDevArguments(["--browser-host", "--headless"], HOME).ok).toBe(false);
+  });
 });

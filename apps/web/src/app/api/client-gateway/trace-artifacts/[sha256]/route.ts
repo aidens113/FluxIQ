@@ -12,6 +12,7 @@
 // Neither the bytes nor the token is ever logged or echoed.
 
 import { NextResponse } from "next/server";
+import { uploadTraceArtifact } from "fluxiq/server";
 import { getFluxIQ } from "../../../../../lib/fluxiq";
 import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor } from "../../../../../lib/app-route-iam";
 import { pairedClientDomainScope, readBearerToken } from "../../../../../lib/program-route";
@@ -23,29 +24,6 @@ type RouteParams = {
     sha256: string;
   }>;
 };
-
-const MAX_TRACE_ARTIFACT_BYTES = 20 * 1024 * 1024;
-
-/** What a page snapshot is made of: its HTML, its stylesheets, its images and its fonts. An explicit list, never a prefix. */
-const ALLOWED_TRACE_ARTIFACT_MEDIA_TYPES: ReadonlySet<string> = new Set([
-  "text/html",
-  "text/css",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/avif",
-  "image/svg+xml",
-  "image/bmp",
-  "image/x-icon",
-  "image/vnd.microsoft.icon",
-  "font/woff",
-  "font/woff2",
-  "font/ttf",
-  "font/otf",
-  "font/sfnt",
-  "font/collection"
-]);
 
 export async function PUT(request: Request, context: RouteParams) {
   const { sha256 } = await context.params;
@@ -62,27 +40,7 @@ export async function PUT(request: Request, context: RouteParams) {
   const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "paired-client", actor, { trustedClientId: clientSession.trustedClientId });
   if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
 
-  const normalizedSha = sha256.toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(normalizedSha)) return NextResponse.json({ ok: false, error: "Invalid artifact digest" }, { status: 400 });
-
-  const mediaType = normalizeTraceArtifactMediaType(request.headers.get("content-type"));
-  if (!mediaType) return NextResponse.json({ ok: false, error: "Trace artifacts must be HTML, CSS, an image or a font." }, { status: 415 });
-
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > MAX_TRACE_ARTIFACT_BYTES) {
-    return NextResponse.json({ ok: false, error: "Trace artifact upload is too large." }, { status: 413 });
-  }
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  if (!bytes.byteLength) return NextResponse.json({ ok: false, error: "Trace artifact upload body is required." }, { status: 400 });
-  if (bytes.byteLength > MAX_TRACE_ARTIFACT_BYTES) return NextResponse.json({ ok: false, error: "Trace artifact upload is too large." }, { status: 413 });
-
-  const intake = fluxiq.programs.clientGateway.receiveTraceArtifact(clientSession.sessionId, { sha256: normalizedSha, mediaType, bytes });
-  if (intake.status === "refused") return NextResponse.json({ ok: false, error: "Trace artifact digest does not match its bytes." }, { status: 409 });
-  return NextResponse.json({ ok: true, payload: { sha256: normalizedSha, traces: intake.traces } }, { status: 200 });
-}
-
-/** The media type without parameters, lower case, when it is one a trace takes; otherwise null. */
-function normalizeTraceArtifactMediaType(value: string | null): string | null {
-  const mediaType = (value ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
-  return ALLOWED_TRACE_ARTIFACT_MEDIA_TYPES.has(mediaType) ? mediaType : null;
+  const result = await uploadTraceArtifact({ fluxiq, request, sha256, sessionId: clientSession.sessionId,
+    stillAuthorized: async () => (await fluxiq.programs.clientGateway.authorizeToken(bearerToken))?.sessionId === clientSession.sessionId });
+  return new Response(result.body, { status: result.status, headers: result.headers });
 }

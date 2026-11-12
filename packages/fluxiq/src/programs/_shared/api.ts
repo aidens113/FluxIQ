@@ -62,6 +62,8 @@ export type ProgramApiActor = {
   roleId: string;
   permissions: Permission[];
   channel?: "panel" | "paired-client";
+  /** Server-created machine authority, never read from a request body or hello. */
+  serviceIdentity?: { id: string; policy: import("@fluxiq/contracts/iam").IamPolicyDocument };
 };
 
 /**

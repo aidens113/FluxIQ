@@ -22,6 +22,8 @@ import {
   ClientGatewayAuditLog,
   ClientGatewayCommands,
   ClientGatewayEventBus,
+  ClientGatewayHostEnrolment,
+  ClientGatewayHostEnrolmentTickets,
   ClientGatewayInbound,
   ClientGatewayLifecycle,
   ClientGatewayPairingFlow,
@@ -31,6 +33,7 @@ import {
   ClientGatewayTransport,
   ClientGatewayCredentialCustodian,
   ClientGatewayTrustedClientRegistry,
+  ClientGatewayTrustGrant,
   ClientGatewayViews,
   resolveClientGatewayConfig,
   withoutClientGatewayAddresses
@@ -39,8 +42,12 @@ import {
 export type {
   ClientGatewayCommandClosure,
   ClientGatewayCommandOwnerRef,
+  ClientGatewayEnrolmentRefusalCode,
+  ClientGatewayHostEnrolmentRequest,
+  ClientGatewayHostEnrolmentTicket,
   ClientGatewayLateActionResult,
   ClientGatewayLateActionResultListener,
+  ClientGatewayManagedHosts,
   ClientGatewayItemKind,
   ClientGatewayServiceOptions,
   ClientGatewaySummaryItem,
@@ -54,13 +61,15 @@ export type {
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
+  CLIENT_GATEWAY_ENROLMENT_REFUSALS,
   CLIENT_GATEWAY_TRACE_TAP_STREAMS,
   CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
   CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES,
-  ClientGatewayPairingCapacityError
+  ClientGatewayPairingCapacityError,
+  FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -87,6 +96,12 @@ export class ClientGatewayService {
   private readonly activity: ClientGatewayActivityPublisher;
   private readonly trace: ClientGatewayTraceTap;
   private readonly pairings: ClientGatewayPairingRegistry;
+  /**
+   * Managed hosts (`service/enrolment/`): minting a host's one-time
+   * enrolment ticket and ending its trust. In-process callers only: no route
+   * reaches it, so neither a page nor a program can mint a ticket.
+   */
+  readonly managedHosts: ClientGatewayManagedHosts;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -108,8 +123,11 @@ export class ClientGatewayService {
       revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
-    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, trace, facade, custody });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, trace, facade, custody });
+    // Pairing and enrolment grant trust through this one path.
+    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody });
+    const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
+    const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody });
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
@@ -118,6 +136,7 @@ export class ClientGatewayService {
     this.transport = transport;
     this.events = events;
     this.pairingFlow = pairingFlow;
+    this.managedHosts = enrolment;
     this.lifecycle = lifecycle;
     this.commands = commands;
     this.trace = trace;

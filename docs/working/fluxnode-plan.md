@@ -3,7 +3,7 @@
 Status: Active
 Status detail: Revised 2026-11-09 with the user's second direction; execution started the same day (Wave 1).
 Created: 2026-11-09
-Last updated: 2026-11-09
+Last updated: 2026-11-12
 Owner: Senior supervisor agent
 Scope: The framework pivot. FluxNode becomes Core's main offering (a scoped automation a developer declares in code and runs on Core's engine). "Subflow" retires, so everything is a Flow in a project's folders. Data pipelines become first-class. One key-based access system covers every client. The panel is redesigned for setup, monitoring, security and an easy editor, with a panel-wide assistant. Simulated Android, Linux and Windows test environments are built, and the cloud comes later. The extension's finish, the managed browser host and the web Lab lane are owned by the paired document.
 Paired document: `C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-seal-plan.md`
@@ -13,8 +13,16 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 
 ## Current State
 
+**P5 integrated (2026-11-12).** Managed browser hosts are merged into Core dev a47f7dcf0 and downstream dev 01a01946a. Final-source provider-free proof returned ten exact datasets with eight zero-call predecessor-Flow replays and all fourteen lifecycle checks. Core finish passed70 mandatory contracts; affected typechecks/tests and both audits passed before integration. Public package versions: fluxiq0.48.0, contracts0.21.0, SDK0.4.0, gateway-websocket0.2.0. No package publication or main promotion. Result/source work, local-only security recovery, P2c, P3b and simulated environments remain open.
+
+**P5 final browser acceptance (2026-11-12).** Final synchronized t907 source passed provider-free run 25764f49-644e-4974-9763-7dae7a3112d3: ten exact four-row SDK results, eight predecessor-Flow continuations with zero engine/scripted calls, all fourteen lifecycle/isolation/accounting checks. Exploration used27 attributed scripted requests; paid calls/billed cost0. Lead independently passed Core43, SDK9, web17, downstream connection303, web-session15, host/script44 and guard31 tests, all affected package checks and both audits. Current libraries and Chromium assets were built under freshness guards. All owned run processes exited. Paired task integration is now authorized and underway; P3b production model custody and the release sweep remain separate.
+
+**Managed-host final acceptance (2026-11-12).** t907 is locally committed and synced with dev. The lead preserved host admission/shutdown during the merge and restored dev's strict corrupt-state regression. Independent final gate: seven affected test files / 43 tests passed in 74.71s; fluxiq, contracts and SDK typechecks passed; structure audit passed (544 warnings, 916 baselined, one lowerable entry). Review fixes report owner cleanup failures after draining all work and reject wrong-runtime nested leaves before admission. Public versions are fluxiq 0.48.0, contracts 0.21.0 and SDK 0.4.0; no publication occurred. Current-source libraries/downstream checks and the final provider-free host proof precede paired integration. P5 is not yet marked merged.
+
+**Codex continuation (2026-11-12).** Durable scoped execution, immutable source occurrences and admitted target/task binding (t909) are integrated and pushed in both repositories. Core dev is 9319a1410; downstream dev is a5ffd4035. The lead independently passed the final 31-case dependency gate and the merge passed all 70 mandatory contracts. The managed-host lane (t907) completed its provider-free browser proof: two explorations and eight successor runs, each returning the exact four-row result; every successor retained the saved Flow and made zero model requests. All 14 lifecycle/isolation/accounting checks passed. Its combined-source gate after importing final t909 is running before integration. Result evidence (t905), security/handler continuation (local-only t902), P2c/P3b and simulated-environment acceptance remain unfinished. No full sweep, main promotion or package publication is claimed. See the paired downstream MVP launch plan and lane reports for current ownership.
+
 **State (2026-11-11).** Main was promoted on 2026-11-11 with P1, P2a, P2b, P3a, P4, P7 and P9, and t899's developer overrides, docs, pinning and secret inputs (the extension's launch plan, W3). Per-FluxNode humanness (t898) and robot-check handlers (t902) are in their lanes. The user asked where FluxNodes stand on arbitrary environments, and the lead found four pieces unstaffed since the launch plan (2026-11-10). They are now running:
-- **P5 managed browser host:** lane t907, downstream with paired Core.
+- **P5 managed browser host:** integrated in both dev branches (t907); final browser and zero-call replay proof passed.
 - **P8 FluxNodes on the simulated environments:** explore, a zero-call replay and repair after a perturbation, with P11's example per environment. Branch feat/fluxnode-sims of `!FluxIQTestEnvironments`, which has no remote yet; asked of the user.
 - **P2c multi-runtime engine:** designed in `reports/p2c-multi-runtime-design.md`. The four service slots become the default, and other runtimes register beside them, so the web path stays byte-identical. Its build starts with phases 0, 1 and 3. Phase 2 (the lease fix) and phase 5 (host modules) share a seam with t907. Phases 4a and 4b wait for t898 and t902.
 - **P3b keys:** starts when t898 and t901 land, because they hold the permission and route files.
@@ -463,6 +471,22 @@ Discovery, 2026-11-09. "AF" is `packages/fluxiq/src/framework/automation-service
 6. **The cloud runs automation on third-party sites from FluxIQ's addresses,** which needs an acceptable-use policy before launch.
 
 ## Work Ledger
+
+### 2026-11-12 ? P5 paired integration
+
+- Agent: Codex lead; workers browser_host and host_integration_review.
+- Changed: managed-host lifecycle/admission, machine enrolment, gateway leases, CLI/SDK and shared upload boundaries; paired downstream host/proof implementation.
+- Validation: `pnpm task finish t907 --skip-checks` -> exit0, 70 mandatory contracts passed12.72s; repeated full suite intentionally omitted after focused checks. `pnpm lab fluxnode-host --scenario company-website --task company-website-apprentices --hosts 2 --scripted-model --attempts 4` -> exit0, ten exact results, eight zero-call continuations, fourteen checks passed, paid0.
+- Outcome: merged a47f7dcf0; paired downstream01a01946a passed its finish audit. Main promotion waits a qualifying full sweep. Final evidence: downstream codex-t907-final-source-proof.md.
+
+### 2026-11-12 - Durable scope, source and target acceptance
+
+- Agent: Codex lead; act_scope and act_scope_resume (Sol Max).
+- Changed: durable scoped act records, exclusive execution ownership, atomic task documents, immutable source references, original task and reachable target binding; architecture documentation.
+- Validation: lead `pnpm --filter fluxiq exec vitest run src/framework/automation-service/service/fluxnode/act-scope/tests/pipeline-source.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/source-continuation.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/source-secrets.test.ts src/framework/automation-service/service/fluxnode/tests/corrupt-scoped-memory.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/scoped-memory.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/execution-targets.test.ts src/framework/automation-service/service/fluxnode/act-scope/tests/execution-task.test.ts src/framework/automation-service/service/fluxnode/tests/pin-act-scope.test.ts src/framework/automation-service/service/fluxnode/pipeline/tests/pipeline-runs.test.ts --maxWorkers=1 --minWorkers=1` -> 9 files / 31 passed, exit 0, 130.21s. Earlier independent storage 27 and ownership/settlement 83 passed; worker final package check and full structure audit passed (544 warnings / 916 baselined, no growth).
+- Validation: `pnpm task finish t909 --skip-checks` -> merged with 70/70 mandatory contracts passed; the full sweep was not repeated per merge, under the standing sweep policy. Downstream `pnpm task finish t909` -> audit passed, merged, authoring worktree removed.
+- Outcome: integrated into both dev branches; no full sweep, paid run, package publication or main promotion. Downstream report codex-t909-resume.md records prior failures and the exact shared-seam integration patches.
+
 
 ### 2026-11-09 - Plan
 

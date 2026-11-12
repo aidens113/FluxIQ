@@ -26,6 +26,11 @@ async function opening(scope: string | undefined, change: (memory: AutomationStu
 }
 
 describe("the act record of one execution", () => {
+  it("propagates unreadable scoped state rather than starting empty, while unscoped chat retains recovery", async () => {
+    const broken = (memory: AutomationStudioAnswerFirstTaskMemory) => ({ ...memory, actsByScope: { first: { ...held, data: { ...held.data, schemaVersion: 2 } as unknown as typeof held.data } } });
+    await expect(opening("first", broken)).rejects.toThrow("stored execution state");
+    expect((await opening(undefined, broken)).seed).toBeUndefined();
+  });
   it("takes its own durable entry after other executions, without relying on attempt provenance", async () => {
     const result = await opening("first", (memory) => ({ ...memory, acts: { ...held, attemptId: "attempt.other" }, actsByScope: { first: held }, attempts: [] }));
     expect(result.seed?.acts).toHaveLength(1);
