@@ -50,3 +50,4 @@ export * from "./gateway-trace-schema/index.ts";
 export { sweepUnusedGatewayTraceChunks } from "./gateway-trace-chunk-rows/index.ts";
 export * from "./content-address/index.ts";
 export * from "./content-reseal/index.ts";
+export * from "./dataset-occurrences/index.ts";

@@ -11,6 +11,7 @@ import type { InternalSession } from "../types.ts";
 import { CLIENT_GATEWAY_ENROLMENT_REFUSALS, type ClientGatewayEnrolmentRefusalCode } from "./enrolment-refusal.ts";
 import type { ClientGatewayHostEnrolmentTickets } from "./host-enrolment-tickets.ts";
 import { FLUXIQ_MANAGED_HOST_PRINCIPAL } from "./managed-host-principal.ts";
+import { ClientGatewayManagedHostRuns } from "./managed-runs.ts";
 import type { ClientGatewayHostEnrolmentRequest, ClientGatewayHostEnrolmentTicket, ClientGatewayManagedHosts } from "./types.ts";
 
 type HostEnrolmentCollaborators = {
@@ -46,10 +47,15 @@ export class ClientGatewayHostEnrolment implements ClientGatewayManagedHosts {
   private readonly audit: ClientGatewayAuditLog;
   private readonly trustGrant: ClientGatewayTrustGrant;
   private readonly facade: ClientGatewayFacadePorts;
+  private readonly runs: ClientGatewayManagedHostRuns;
 
   constructor(collaborators: HostEnrolmentCollaborators) {
     this.tickets = collaborators.tickets;
     this.sessions = collaborators.sessions;
+    this.runs = new ClientGatewayManagedHostRuns(collaborators.sessions, (id) => {
+      const client = collaborators.trustedClients.get(id);
+      return client !== undefined && collaborators.trustedClients.isActive(client);
+    });
     this.trustedClients = collaborators.trustedClients;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
@@ -63,6 +69,9 @@ export class ClientGatewayHostEnrolment implements ClientGatewayManagedHosts {
     this.audit.record("enrolment.issued", "An enrolment ticket was minted for a managed host.", { hostId: request.hostId.trim(), domainId: request.domainId.trim(), profile: request.profile, expiresAt: minted.expiresAt });
     return minted;
   }
+
+  bindRun(input: Parameters<ClientGatewayManagedHostRuns["bind"]>[0]): () => void { return this.runs.bind(input); }
+  currentRun(sessionId: string): ReturnType<ClientGatewayManagedHostRuns["current"]> { return this.runs.current(sessionId); }
 
   /** A hello presented `ticket`: enrol the session, or refuse it and close it. The ticket is consumed either way. */
   async enrol(session: InternalSession, ticket: string): Promise<void> {

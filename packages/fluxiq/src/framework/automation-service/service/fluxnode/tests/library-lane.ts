@@ -2,7 +2,8 @@
 // of the Lab's realistic scenarios is: one real service with a scripted model, and the FluxNode service
 // over it, as a server builds it. The library gains one node a FluxNode needs: "Find loans" by a title,
 // a read whose rows depend on its parameter, at both doors -- by hand (the attempt's exploration) and
-// through the engine (a saved Flow's replay) -- so a replay with another input finds other rows.
+// through the engine (a saved Flow's replay) -- so a replay with another input finds other rows. "Renew
+// card" is at both doors too, a lasting act with no row, so a replay's act really lands (`engineCards`).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -16,7 +17,7 @@ import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationNodeExecutionRes
 import { AutomationStudioService } from "../../../service.ts";
 import { caller as modelCaller, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "../../answer-first/index.ts";
-import { fakeLibrary, fakeLibraryBinding, judgedYes, LOOK_TOOL, runNode, toolCall, type FakeLibrary } from "../../answer-first/tests/fake-library.ts";
+import { fakeLibrary, fakeLibraryBinding, judgedYes, LOOK_TOOL, RENEW_CARD, runNode, toolCall, type FakeLibrary } from "../../answer-first/tests/fake-library.ts";
 import { LOANS_OUTPUT } from "../../answer-first/tests/fake-library-engine.ts";
 import { createFluxNodeService, type FluxNodeCaller, type FluxNodeService } from "../index.ts";
 import { fluxNodePricedModels } from "./priced-models.ts";
@@ -37,6 +38,14 @@ const FIND_NODE: AutomationStudioNodeDefinition = {
   safety: { requiredPermissions: [] }
 };
 
+/** "Renew card" at the engine's door too, so a saved Flow's replay of a lasting act really lands: a save with no row, as a file's Save is. */
+const CARD_NODE: AutomationStudioNodeDefinition = {
+  ...FIND_NODE, id: RENEW_CARD, label: "Renew card", description: "Renew the library card.",
+  source: { kind: "importer", domainId: "library", packageId: "library.card", implementationKey: RENEW_CARD },
+  outputs: [{ id: "success", label: "Success", valueType: "any" }],
+  parameters: [{ id: "control", label: "Control", valueType: "string", required: false }]
+};
+
 /** The loans whose title has `words`, as a read shows them. */
 export function loansWith(library: FakeLibrary, words: unknown): JsonObject[] {
   const wanted = String(words ?? "").toLowerCase();
@@ -46,12 +55,12 @@ export function loansWith(library: FakeLibrary, words: unknown): JsonObject[] {
 /** A model's decision to find loans by hand, keeping its rows through a record output a Flow can run again. */
 export const findLoans = (title: string, callId = "find"): JsonObject => runNode(callId, FIND_LOANS, { title, recordOutput: LOANS_OUTPUT }, [], { add: true });
 
-type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject);
+type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject | Promise<JsonObject>);
 
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
 
 /** One service on one library, with the FluxNode service over it. */
-export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
+export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: { personWaitMs?: number; hosts?: Parameters<typeof createFluxNodeService>[0]["hosts"]; /** Models the host resolves, each at its price per token (`./priced-models.ts`); absent, one model for everything. */ models?: Readonly<Record<string, number>> } = {}) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-fluxnode-"));
   const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; runId?: string } = { script: [], judge: [], decided: 0 };
@@ -60,6 +69,8 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
   const engineFinds: unknown[] = [];
   /** The record output's label each engine press of "Find loans" ran with: which version of a Flow a replay ran. */
   const engineLabels: unknown[] = [];
+  /** The engine's own presses of "Renew card": a saved Flow's replay landing its lasting act. */
+  const engineCards: string[] = [];
   /** What an engine press of "Find loans" answers instead, or waits for: the site changed under a saved Flow. */
   const engine: { over?: ((parameters: Readonly<Record<string, unknown>>) => AutomationNodeExecutionResult | undefined | Promise<AutomationNodeExecutionResult | undefined>) | undefined } = {};
   let fluxNodes: FluxNodeService | undefined;
@@ -74,13 +85,14 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     // Past the script nothing would end the attempt but its purse, so the program stops it, as a person would.
     if (current.decided >= current.script.length && fluxNodes) void stopRunning(fluxNodes, current.runId);
     current.decided += 1;
-    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? next(request) : next }, usage: USAGE };
+    return { response: { kind: "evidence_tool_decision", summary: "Scripted.", decision: typeof next === "function" ? await next(request) : next }, usage: USAGE };
   };
   const provider = mockProvider(answer);
   const priced = options.models ? fluxNodePricedModels(options.models, answer) : undefined;
   const byHand = fakeLibraryBinding(library, ({ value }) => (value.node === FIND_LOANS ? foundByHand(library, value) : undefined));
-  const service = new AutomationStudioService({ dataDir, llmProviderResolver: priced?.resolver ?? (() => ({ provider })), llmEvidenceRuntime: byHand });
-  service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
+  const makeService = () => {
+    const service = new AutomationStudioService({ dataDir, llmProviderResolver: priced?.resolver ?? (() => ({ provider })), llmEvidenceRuntime: byHand });
+    service.bindNativeNodeRuntime(new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["library.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.find", packageVersion: "1.0.0", domainId: "library", nodes: [FIND_NODE] },
     { packageId: "library.find", packageVersion: "1.0.0", implementations: { [FIND_LOANS]: async ({ parameters }) => {
       engineFinds.push(parameters.title);
@@ -90,9 +102,19 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
       const found: AutomationNodeExecutionResult = { status: "success", route: "success", outputs: { success: true }, effects: [{ type: "records.write", payload: { recordOutput: parameters.recordOutput ?? LOANS_OUTPUT, records: loansWith(library, parameters.title) } }] };
       return found;
     } } }
+  ).register(
+    { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "library.card", packageVersion: "1.0.0", domainId: "library", nodes: [CARD_NODE] },
+    { packageId: "library.card", packageVersion: "1.0.0", implementations: { [RENEW_CARD]: async () => {
+      engineCards.push(RENEW_CARD);
+      library.renewals.card = (library.renewals.card ?? 0) + 1;
+      return { status: "success", route: "success", outputs: { success: true } };
+    } } }
   ));
-  automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
-  const made = () => createFluxNodeService({ service, domainId: "library", modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
+    automationStudioAnswerFirstAttemptPorts(service).sleep = async () => undefined;
+    return service;
+  };
+  let service = makeService();
+  const made = () => createFluxNodeService({ service, domainId: "library", hosts: options.hosts, modelCaller: modelCaller(), startLocationOf: () => undefined, personWaitMs: options.personWaitMs ?? 60_000 });
   fluxNodes = made();
   cleanups.push(async () => {
     await service.close();
@@ -145,7 +167,14 @@ export async function fluxNodeLane(cleanups: (() => Promise<void>)[], options: {
     return nodes;
   };
 
-  return { service, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engine, run, arm, restart, served: priced?.served ?? [], priced: priced?.priced ?? [] };
+  /** Closes Core and reopens its persisted project on the same isolated directory; the fake site keeps its state. */
+  const restartCore = async (): Promise<FluxNodeService> => {
+    await service.close();
+    service = makeService();
+    return restart();
+  };
+
+  return { get service() { return service; }, dataDir, get fluxNodes() { return nodes; }, library, requests, engineFinds, engineLabels, engineCards, engine, run, arm, restart, restartCore, served: priced?.served ?? [], priced: priced?.priced ?? [] };
 }
 
 /** Stops the run `runId` names, or every run still going where none is named: the program stopping what has no more to try. */

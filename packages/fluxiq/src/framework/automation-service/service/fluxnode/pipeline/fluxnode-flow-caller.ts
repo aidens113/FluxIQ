@@ -1,6 +1,6 @@
 import { fluxNodeSecretInputs } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { PipelineError, type FlowCaller } from "../../pipelines/index.ts";
+import { PipelineError, type FlowCaller, type PipelineCallInvocation } from "../../pipelines/index.ts";
 import type { FluxNodeRun } from "../fluxnode-run.ts";
 import type { FluxNodeOwnerFlows } from "../owner-flows.ts";
 import { PipelineCallEnded } from "./call-ended.ts";
@@ -10,7 +10,8 @@ import type { PipelineSpend } from "./spend.ts";
 import type { FluxNodeRegistered } from "./registered.ts";
 
 /** Starts a registered name as a run of its own with these inputs and answers the run, ended, or why it cannot start. */
-export type FluxNodeChildRunner = (registered: FluxNodeRegistered, inputs: JsonObject, parent: FluxNodeRun) => { run: FluxNodeRun; ended: Promise<unknown> } | { refusal: string };
+type StartedChild = { run: FluxNodeRun; ended: Promise<unknown> } | { refusal: string };
+export type FluxNodeChildRunner = (registered: FluxNodeRegistered, inputs: JsonObject, parent: FluxNodeRun, invocation?: PipelineCallInvocation) => StartedChild | Promise<StartedChild>;
 
 /**
  * The pipeline's `FlowCaller`, bound to the FluxNode runner: a map step's `{ fluxNode: name }` target runs that
@@ -22,13 +23,13 @@ export type FluxNodeChildRunner = (registered: FluxNodeRegistered, inputs: JsonO
  */
 export function fluxNodeFlowCaller(deps: { flows: Pick<FluxNodeOwnerFlows, "find">; runChild: FluxNodeChildRunner; parent: FluxNodeRun; spend: PipelineSpend; secrets: PipelineSecrets }): FlowCaller {
   const { parent } = deps;
-  return async (target, inputs, signal) => {
+  return async (target, inputs, signal, invocation) => {
     if (!("fluxNode" in target)) throw new PipelineError("pipeline.unsupported_target", "A pipeline calls a registered FluxNode by name; a call by Flow id is not available on this engine yet.");
     const found = await deps.flows.find(target.fluxNode);
     if ("missing" in found) throw new PipelineError("pipeline.unknown_fluxnode", `No FluxNode named "${target.fluxNode}" is registered on this engine.`);
     if (found.found.flowId === parent.target.flowId) throw new PipelineError("pipeline.self_call", `The pipeline "${target.fluxNode}" cannot call itself.`);
     if (!isRegisteredPipeline(found.found)) deps.secrets.meet(Object.values(fluxNodeSecretInputs(found.found.spec.inputs, inputs).values));
-    const started = deps.secrets.within(() => deps.runChild(found.found, inputs, parent));
+    const started = await deps.secrets.within(() => deps.runChild(found.found, inputs, parent, invocation));
     if ("refusal" in started) throw new PipelineError("pipeline.bad_call_inputs", started.refusal);
     const { run: child } = started;
     const stepId = `call.${child.runId}`.slice(0, 128);

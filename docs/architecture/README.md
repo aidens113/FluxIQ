@@ -78,6 +78,9 @@ Global program internals use the layout described in
 
 ## Authored Architecture Docs
 
+- [Managed hosts](managed-hosts.md): launcher lifecycle, gateway enrolment,
+  service IAM authority, per-run leases and execution-provider binding.
+
 - [Current System](current-system.md)
 - [Automation Studio Architecture](automation-studio.md)
   - [Workspace And Authoring UI](automation-studio/workspace.md)

@@ -5,3 +5,4 @@ export * from "./host-enrolment.ts";
 export * from "./host-enrolment-tickets.ts";
 export * from "./managed-host-principal.ts";
 export * from "./types.ts";
+export { ClientGatewayManagedHostRuns } from "./managed-runs.ts";

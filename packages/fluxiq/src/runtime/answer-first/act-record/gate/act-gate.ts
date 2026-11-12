@@ -95,6 +95,8 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
       answer = await input.executeTool(call);
     } catch (error) {
       if (read.kind === "act" && (begunWords || read.act.consequences.length > 0)) record.settled(read.act, { effectApplied: false, uncertain: true, words: begunWords ?? wordsFor(input.wordsOf?.(call, undefined)) });
+      try { await record.flushed(); }
+      catch (storageError) { throw new AggregateError([error, storageError], "The act's dispatch and settlement persistence both failed."); }
       throw error;
     }
     if (read.kind === "pass") return answer;
@@ -111,6 +113,8 @@ export function automationStudioAttemptActGate<Call extends AutomationStudioAtte
       const url = read.act.parameters.url;
       record.notePlace({ ...(said.location !== undefined ? { location: said.location } : {}), ...(typeof url === "string" ? { url } : {}), ...(said.actedOn !== undefined ? { actedOn: said.actedOn } : {}) });
     }
+    // Settlement queues its write; do not expose evidence to the next model call before that write commits.
+    await record.flushed();
     return answer;
   };
 }

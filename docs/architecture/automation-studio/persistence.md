@@ -57,6 +57,10 @@ recording-drain performance remains a separate validation requirement.
 
 ## Other persistence foundations
 
+Immutable source occurrence snapshots live in the project's SQLite database, independently of runtime runs. The store lives under `framework/persistence/automation/project/dataset-occurrences`, with its additive schema under `dataset-occurrence-schema`. `AutomationStudioRunDatasets.createImmutableSnapshot({projectId, rows})` accepts sanitized `{occurrenceId, row}` values and returns `{snapshotId, count}`; task memory holds that opaque reference. Migration `0037_dataset_snapshots` adds snapshot metadata and ordered occurrence rows. It is additive and independent of the run-batch evidence migration. Creation writes metadata and all occurrences in one transaction; duplicate occurrence IDs and non-JSON values refuse the entire snapshot. Duplicate row values remain separate occurrences.
+
+`readImmutableSnapshotPage({projectId, snapshotId, cursor?, limit?})` reads that immutable order, with a cursor bound to the snapshot and an explicit empty page for an empty snapshot. A missing snapshot is `null`. Snapshots survive process restart and remain isolated by the owning project database. The API provides no overwrite, creates no runtime session, and computes no digest of row contents. Callers retain secret references rather than resolved secret values. Snapshots remain project data until the owning project is removed; they are never browser cache.
+
 The isolated `framework/persistence/automation/project/accepted-state` foundation stores explicitly supplied
 complete visual-project snapshots in project SQLite. Its immutable snapshot and
 staged/tombstoned head are written with the existing unit-of-work mutation result

@@ -1,4 +1,4 @@
-import type { ClientGatewayManagedHost } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayManagedHost, ClientGatewayHostLease } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayEnrolmentRefusalCode } from "./enrolment-refusal.ts";
 
 /**
@@ -45,4 +45,17 @@ export type ClientGatewayManagedHosts = {
   revokeManagedHost(hostId: string, reason?: string): Promise<number>;
   /** At engine start: ends every active trust of a fresh-profile host, whose profile went with the run before. Answers how many ended. */
   revokeStaleManagedHosts(): Promise<number>;
+  /** The in-process runner binds one current lease; a browser cannot call this. */
+  bindRun(input: ClientGatewayManagedHostRun & { isCurrent(): boolean }): () => void;
+  /** The current server-owned run binding, or none after release, disconnect or revocation. */
+  currentRun(sessionId: string): ClientGatewayManagedHostRun | undefined;
+};
+
+/** A browser's authority while it executes one engine-owned run. Contains no credential. */
+export type ClientGatewayManagedHostRun = {
+  sessionId: string;
+  projectId: string;
+  domainId: string;
+  runId: string;
+  lease: ClientGatewayHostLease & { sessionId: string };
 };

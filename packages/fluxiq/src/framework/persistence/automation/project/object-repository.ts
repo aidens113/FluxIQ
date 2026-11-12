@@ -2,6 +2,7 @@ import type { AutomationStudioProjectDatabase, AutomationStudioProjectDatabaseLe
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION, requestContentAddressScrub } from "./content-address/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../migration-order/index.ts";
 
 export type AutomationStudioProjectObjectRecord = {
   objectId: string;
@@ -63,7 +64,7 @@ export class AutomationStudioProjectObjectRepository {
     try {
       await new AutomationStudioSchemaMigrationRunner({
         database: lease.database,
-        migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION],
+        migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION, AUTOMATION_STUDIO_PENDING_REMOVAL_PATH_MIGRATION]),
         ...(input.backup ? { backup: (context) => input.backup!(context.databasePath, context.pendingMigrationIds) } : {})
       }).migrate();
       return new AutomationStudioProjectObjectRepository(lease);

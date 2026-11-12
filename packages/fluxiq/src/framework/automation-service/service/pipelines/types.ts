@@ -11,7 +11,8 @@ export type PipelineRecord = { data: JsonObject; lineage: DataLineage[] };
 export type FlowCallResult = { outputs: JsonValue; lineage: DataLineage[] };
 
 /** Calls a Flow once. The real caller is the FluxNode runner; tests use a fake. */
-export type FlowCaller = (target: FlowCallTarget, inputs: JsonObject, signal: AbortSignal | undefined) => Promise<FlowCallResult>;
+export type PipelineCallInvocation = { stepId: string; invocationId: string };
+export type FlowCaller = (target: FlowCallTarget, inputs: JsonObject, signal: AbortSignal | undefined, invocation?: PipelineCallInvocation) => Promise<FlowCallResult>;
 
 /** The answer of a webhook: only its status is read. */
 export type PipelineFetchResponse = { ok: boolean; status: number };
@@ -46,6 +47,8 @@ export type PipelineState = {
 
 export type PipelinePorts = {
   callFlow?: FlowCaller;
+  /** Materializes and checkpoints the execution's immutable source enumeration before mapped calls. */
+  sourceSnapshot?: (load: () => Promise<PipelineRecord[]>) => Promise<PipelineRecord[]>;
   fetch?: PipelineFetch;
   writeDataset?: PipelineDatasetWriter;
   readDataset?: PipelineDatasetReader;

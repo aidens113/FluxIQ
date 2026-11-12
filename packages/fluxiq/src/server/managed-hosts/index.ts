@@ -3,3 +3,6 @@
 export type { FluxIQHostLaunchRequest } from "./host-launch-request.ts";
 export type { FluxIQHostLauncher } from "./host-launcher.ts";
 export type { FluxIQLaunchedHost } from "./launched-host.ts";
+export { loadManagedHostLauncher } from "./load-launcher.ts";
+export { startManagedHosts } from "./start-managed-hosts.ts";
+export { managedClientAuthority } from "./client-authority.ts";

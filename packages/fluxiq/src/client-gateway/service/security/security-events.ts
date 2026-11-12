@@ -10,6 +10,9 @@ import type { ClientGatewayAuditEntry } from "@fluxiq/contracts/client-gateway";
 export const CLIENT_GATEWAY_SECURITY_EVENT_TYPES = [
   // Pairing approved: durable trust was created.
   "session.paired",
+  "session.enrolled",
+  "enrolment.refused",
+  "enrolment.abandoned",
   // Pairing refused: the approval found the client not waiting, or the operator dismissed it.
   "pairing.refused",
   "pairing.dismissed",

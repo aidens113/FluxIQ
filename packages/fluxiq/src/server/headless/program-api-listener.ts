@@ -3,6 +3,7 @@ import { FLUXNODE_API_BASE_PATH } from "@fluxiq/contracts/fluxnode";
 import type { FluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
 import { fluxNodeApiHandler } from "../fluxnode-api/index.ts";
 import { handleProgramRequest, type ProgramRouteContext, type ProgramRouteResponse } from "../program-route/index.ts";
+import { handleManagedClientRequest } from "../client-gateway-routes/index.ts";
 
 const PROGRAM_PATH = /^\/api\/programs\/([^/]+)\/([^/]+)$/u;
 
@@ -41,6 +42,18 @@ function isFluxNodePath(request: IncomingMessage): boolean {
 
 async function answer(request: IncomingMessage, context: ProgramRouteContext): Promise<ProgramRouteResponse> {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  const managed = await handleManagedClientRequest({ url: url.href, method: request.method ?? "GET",
+    headers: new Headers(Object.entries(request.headers).flatMap(([key, value]) => value === undefined ? [] : (Array.isArray(value) ? value : [value]).map((entry) => [key, entry] as [string, string]))),
+    arrayBuffer: async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk as Buffer);
+      const bytes = Buffer.concat(chunks);
+      const buffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(buffer).set(bytes);
+      return buffer;
+    }
+  }, context.fluxiq);
+  if (managed) return managed;
   const match = PROGRAM_PATH.exec(url.pathname);
   if (!match) return plain(404, "Not found");
   const method = request.method ?? "GET";

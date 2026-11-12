@@ -4,3 +4,4 @@ export { createFluxNodeService, type FluxNodeServiceSource } from "./create-flux
 export * from "./fluxnode-service.ts";
 export { runFluxNode, type FluxNodeRunContext, type FluxNodeRunOutcome } from "./run-fluxnode.ts";
 export { createDirectoryFileWriter, createPipelineDatasets, fluxNodeFlowCaller, fluxNodePipelineResult, isRegisteredPipeline, pipelineSdkPort, runFluxNodePipeline, type FluxNodePipelineContext, type FluxNodeRegistered, type FluxNodeRegisteredPipeline } from "./pipeline/index.ts";
+export { FluxNodeHostPool } from "./hosts/index.ts";

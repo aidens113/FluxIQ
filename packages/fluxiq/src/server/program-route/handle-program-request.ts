@@ -2,6 +2,7 @@ import type { FluxIQ } from "../../framework/index.ts";
 import { programDrainRefusal } from "../drain/index.ts";
 import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal } from "./paired-client-project-domain.ts";
 import { presentPanelSession } from "./present-panel-session.ts";
+import { managedClientAuthority } from "../managed-hosts/index.ts";
 import { programJsonText } from "./program-json-text.ts";
 import {
   isPairedClientClassification,
@@ -59,7 +60,7 @@ export type ProgramRouteContext = {
  */
 type RouteCaller =
   | { kind: "person"; sessionId: string; userId: string; actor: ProgramActor; scope: ProgramCall["scope"] }
-  | { kind: "paired-client"; actor: ProgramActor; scope: ProgramCall["scope"]; currentProjectId: string | null | undefined };
+  | { kind: "paired-client"; actor: ProgramActor; scope: ProgramCall["scope"]; currentProjectId: string | null | undefined; managed?: NonNullable<ReturnType<typeof managedClientAuthority>> };
 
 /**
  * The program route: authenticate, refuse while draining, narrow a token
@@ -76,8 +77,14 @@ export async function handleProgramRequest(request: ProgramRouteRequest, context
   if (draining) return draining;
   const narrowed = request.method === "GET" ? narrowGet(programId, endpoint, caller) : await narrowPost(request, caller);
   if (!narrowed.ok) return refuse(403, narrowed.error, narrowed.errorCode);
+  if (caller.kind === "paired-client" && caller.managed) {
+    const payload = narrowed.payload;
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).some((key) => key !== "projectId"))) return refuse(403, "A managed host's policy read may name only its leased project.");
+    narrowed.payload = { projectId: caller.managed.projectId, ...(payload as object | undefined) };
+  }
   const outside = caller.kind === "paired-client" ? await refuseProjectOutsideDomain(fluxiq, programId, caller, narrowed.payload) : null;
   if (outside) return outside;
+  if (caller.kind === "paired-client" && caller.managed && !caller.managed.isCurrent()) return refuse(403, "The managed host's run lease is no longer current.");
   const response = request.method === "GET"
     ? await fluxiq.programs.api.call({ programId, endpoint, scope: caller.scope, actor: caller.actor, ...(narrowed.payload !== undefined ? { payload: narrowed.payload } : {}) })
     : await fluxiq.programs.api.call({ programId, endpoint, scope: caller.scope, actor: caller.actor, payload: narrowed.payload });
@@ -128,6 +135,12 @@ async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: Fl
   if (!isPairedClientClassification(classification)) return refuse(403, notAvailable);
   const session = await fluxiq.programs.clientGateway.authorizeToken(token);
   if (!session) return refuse(401, "Authentication required");
+  if (session.managedHostId !== undefined) {
+    const managed = managedClientAuthority(fluxiq, session);
+    if (!managed || programId !== "automation-studio" || endpoint !== "get-recording-capture-policy") return refuse(403, "This endpoint is not available to this managed host's run.");
+    const scope = pairedClientDomainScope(request.url, session);
+    return scope ? { kind: "paired-client", actor: managed.actor, scope, currentProjectId: managed.projectId, managed } : refuse(403, "A managed host may only reach its own domain.");
+  }
   const actor = pairedClientActor<ProgramActor["permissions"][number]>(session, await fluxiq.programs.identityAccess.snapshot());
   if (!actor) return refuse(401, "Authentication required");
   const scope = pairedClientDomainScope(request.url, session);
@@ -153,6 +166,7 @@ async function refuseProjectOutsideDomain(
   const target = pairedClientProjectTarget(programId, payload, caller.currentProjectId);
   if (!target.ok) return refuse(403, target.error, target.errorCode);
   if (target.projectId === null) return null;
+  if (caller.managed && target.projectId !== caller.managed.projectId) return refuse(403, "A managed host may only reach its leased run's project.");
   const refusal = await pairedClientProjectDomainRefusal(fluxiq.programs.automationStudio, target.projectId, caller.scope.domainId ?? null);
   return refusal ? refuse(403, refusal.error, refusal.errorCode) : null;
 }
