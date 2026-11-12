@@ -1,7 +1,7 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: W5 hosted-panel continuation passes focused functional, type, structure and generated-reference gates; ready for dev integration. Deployment acceptance remains open.
+Status detail: W5 hosted-panel continuation passes focused functional, type, structure and generated-reference gates; merged into dev with the 70-test contract gate passing. Deployment acceptance remains open.
 Created: 2026-10-17
 Last updated: 2026-11-11
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
@@ -60,7 +60,7 @@ document owns the extension, stores, website, infrastructure, docs, legal and La
 lanes in parallel to 11-08 (the extension's connection files merge 11-10); hosted gate 11-11 to
 11-12; store submission about 11-13; public when Google approves.
 
-**W5 continuation (2026-11-11).** t901 repairs atomic username recasing, the member's own-name UI without broader identity access, and fresh key-sharing consent before and after each asynchronous key reveal. The lead independently verified 25 casing/service tests, 12 key-source tests and 13 member UI/route tests and 77 shared API route tests; the lane's affected web tests pass 404/404. Package typechecks pass. Structure and generated-reference freshness also pass; dev integration is next; evidence and the independent security review are in the paired extension's `docs/working/mvp-launch-plan/reports/codex-t901*.md`. Deployment, Caddy/email/container and final production-browser acceptance remain open. No deployment or main promotion is implied.
+**W5 continuation (2026-11-11).** t901 repairs atomic username recasing, the member's own-name UI without broader identity access, and fresh key-sharing consent before and after each asynchronous key reveal. The lead independently verified 25 casing/service tests, 12 key-source tests and 13 member UI/route tests and 77 shared API route tests; the lane's affected web tests pass 404/404. Package typechecks pass. Structure and generated-reference freshness also pass; t901 is merged into dev and its mandatory contract gate passed all 70 tests; evidence and the independent security review are in the paired extension's `docs/working/mvp-launch-plan/reports/codex-t901*.md`. Deployment, Caddy/email/container and final production-browser acceptance remain open. No deployment or main promotion is implied.
 
 **Not verified** (open after H0).
 - Caddy itself (WebSocket pass-through, Caddyfile syntax, `header_up` replacing a client
