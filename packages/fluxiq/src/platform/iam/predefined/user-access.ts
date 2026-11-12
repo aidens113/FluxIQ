@@ -1,4 +1,5 @@
 import { defineIamPredefinedPolicy } from "./define-predefined-policy.ts";
+import { IAM_USER_WORKSPACE_SETTING_READS } from "./user-workspace-setting-reads.ts";
 import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 
 // The list endpoints across the workspace whose registration declares a
@@ -9,6 +10,32 @@ import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 // test fails when a declared filtered workspace list is missing here, and
 // another when a user reaches any unfiltered one (programs/_shared/tests).
 const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:Projects", "secrets:Snapshot"];
+
+// The panel assistant's endpoints a person needs for their own chats in the
+// dock: list, read, open, rename and delete their threads, read a turn's
+// attachment, send a message, and answer the assistant's Allow card. Named one
+// by one, never `*Panel*`. Each registration
+// declares `endpointResource.selfUser()` and the handler looks only in the
+// caller's own panel database, so another person's thread answers as a missing
+// one. An attachment that is a project's record is decided again on that
+// project (`OwnData`). Not `studio:SetPanelAssistantAllowance`: the allowance
+// is one record for the whole workspace (Secret Keys' model settings, beside
+// the workspace's assistant key), so setting it changes what every person's
+// messages may spend. A test of the panel endpoints fails when one is neither
+// here nor named as withheld (programs/automation-studio/api/panel-assistant/tests).
+// Reading the allowance, `studio:GetPanelAssistantAllowance`, is not here: its
+// endpoint declares the workspace, where `IAM_USER_WORKSPACE_SETTING_READS`
+// grants it.
+const OWN_PANEL_ASSISTANT: readonly string[] = [
+  "studio:ListPanelThreads",
+  "studio:GetPanelThread",
+  "studio:GetPanelThreadAttachment",
+  "studio:OpenPanelThread",
+  "studio:RenamePanelThread",
+  "studio:DeletePanelThread",
+  "studio:SendPanelMessage",
+  "studio:AnswerPanelAsk"
+];
 
 /**
  * `FluxIQUserAccess`: the own-data rule. What a user reaches is what they
@@ -27,16 +54,35 @@ const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations",
  *   project, under `OwnData`.
  * - `WorkspaceFilteredLists`: the workspace-wide list endpoints whose
  *   registration filters its items (`FILTERED_WORKSPACE_LISTS`), on the
- *   workspace FRN; the filter then shows only what `OwnData` allows. Nothing
- *   else is granted on the workspace FRN: an unfiltered list across the
- *   workspace, and an action on no specific resource, are denied.
+ *   workspace FRN; the filter then shows only what `OwnData` allows.
+ * - `WorkspaceSettingReads`: the workspace settings a person reads to use it
+ *   (`IAM_USER_WORKSPACE_SETTING_READS`: which provider and model the assistant
+ *   uses, and what one message to it may spend), on the workspace FRN, and
+ *   only when `fluxiq:RequestOrigin` is `panel`: Settings and the dock read
+ *   them, and a paired browser's credential is refused them by IAM itself, as
+ *   it is the panel assistant's own endpoints. Changing
+ *   them, and the workspace's default key, are the workspace's decisions and
+ *   are not granted. Nothing else is granted on the workspace FRN: an
+ *   unfiltered list across the workspace, and an action on no specific
+ *   resource, are denied. Sending to the assistant on the workspace's key needs
+ *   no key action: the key is released server-side for that one call
+ *   (`OwnPanelAssistant`'s `SendPanelMessage`), and `OwnData` never reaches
+ *   another person's key, so it is never revealed, listed or changed.
  * - `SelfService`: the actions that change only the caller's own credentials,
- *   and a person's own unlock of their own keys with their own password, on
+ *   the caller's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`:
+ *   their starting humanness), the caller's own sign-in name in another case
+ *   (`iam:RecaseMyUsername`: only its capitals, never another name), and a
+ *   person's own unlock of their own keys with their own password, on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
  *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
  *   also names browser management (covered by `OwnData` on the caller's own
  *   `gateway` browsers) and a deletion request, which has no action yet.
+ * - `OwnPanelAssistant`: the panel assistant's endpoints for the caller's own
+ *   chats (`OWN_PANEL_ASSISTANT`), on `user/${fluxiq:PrincipalId}`, which each
+ *   declares, and only when `fluxiq:RequestOrigin` is `panel`: a paired
+ *   browser's call carries `extension-chat`, so its credential never reaches
+ *   them through this statement (the handlers refuse it as well).
  * - No `ops:*`, `platform:*`: a user never reaches operator programs.
  */
 export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1", [
@@ -60,6 +106,13 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Resource: IAM_WORKSPACE_PATTERNS.workspace
   },
   {
+    Sid: "WorkspaceSettingReads",
+    Effect: "Allow",
+    Action: [...IAM_USER_WORKSPACE_SETTING_READS],
+    Resource: IAM_WORKSPACE_PATTERNS.workspace,
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
+  },
+  {
     Sid: "SelfService",
     Effect: "Allow",
     Action: [
@@ -73,8 +126,18 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
       "iam:RevokeSession",
       "iam:UnlockVault",
       "iam:LockVault",
-      "iam:MintPressGrant"
+      "iam:MintPressGrant",
+      "iam:GetMyPreferences",
+      "iam:UpdateMyPreferences",
+      "iam:RecaseMyUsername"
     ],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}"
+  },
+  {
+    Sid: "OwnPanelAssistant",
+    Effect: "Allow",
+    Action: [...OWN_PANEL_ASSISTANT],
+    Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
   }
 ]);

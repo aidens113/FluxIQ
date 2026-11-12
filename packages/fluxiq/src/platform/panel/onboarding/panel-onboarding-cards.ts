@@ -1,8 +1,8 @@
 import type { PanelProduct } from "@fluxiq/contracts/platform";
 import type { PanelOnboardingCard } from "./types.ts";
 
-/** The panel's secrets page, where a model key is added. */
-const SECRET_KEYS_HREF = "/programs/secret-keys";
+/** The Security screen's key manager, where a model key is added. */
+const SECRET_KEYS_HREF = "/security/keys";
 
 /** The first-run cards: where to get the client, and adding a model key while none exists. */
 export function panelOnboardingCards(input: { product: PanelProduct | null; hasModelKey: boolean }): readonly PanelOnboardingCard[] {

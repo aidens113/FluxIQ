@@ -1,0 +1,9 @@
+/* The Activity section (W5): the workspace's audit, newest first. Brand
+   tokens only (packages/ui-components theme). */
+.activity-row { gap: 2px; border-color: var(--line); background: var(--surface); color: var(--text); }
+.activity-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+.activity-outcome { padding: 0 6px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.8rem; color: var(--muted); }
+.activity-denied { border-color: var(--danger); color: var(--danger); }
+.activity-more { justify-self: start; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font: inherit; cursor: pointer; }
+.activity-more:disabled { opacity: 0.6; cursor: default; }
+.activity-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

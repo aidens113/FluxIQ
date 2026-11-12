@@ -47,6 +47,11 @@ describe("the attempt's call chain", () => {
     expect(answer).toMatchObject({ resultCode: "answer_first.no_reset", effectApplied: false });
     expect(events).toEqual([]);
     expect(counts.stepped).toBe(0);
+    // It says what was not done and what to do, and blames nothing on the task.
+    const said = String(((answer as AutomationStudioLlmEvidenceToolExecutionResult).evidence as JsonObject).instruction);
+    expect(said).toMatch(/nothing was sent and the page did not move/u);
+    expect(said).toMatch(/Carry on from here/u);
+    expect(said).not.toMatch(/task/u);
   });
 
   it("reads the witness before the first lasting act, tells the sink the answer, and refuses the same act again", async () => {

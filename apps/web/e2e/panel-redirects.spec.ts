@@ -10,6 +10,18 @@ const REDIRECTS = [
   ["/programs/automation-studio/runs/older/link", "/flows"],
   ["/programs/automation-studio/chat", "/?chat=open"],
   ["/programs/automation-studio/chat?projectId=p1", "/?chat=open&projectId=p1"],
+  ["/programs/identity-access", "/security/sign-in"],
+  ["/programs/secret-keys", "/security/keys"],
+  ["/programs/secret-keys?scope=global", "/security/keys?scope=global"],
+  ["/programs/background-tasks", "/settings/background-tasks"],
+  ["/programs/compute-control", "/settings/compute-control"],
+  ["/programs/database-manager?x=1", "/settings/database-manager?x=1"],
+  ["/programs/deployment-sync", "/settings/deployment-sync"],
+  ["/programs/docs?doc=guide", "/settings/docs?doc=guide"],
+  ["/programs/production-runner", "/settings/production-runner"],
+  ["/programs/runtime", "/settings/runtime"],
+  ["/programs/no-such-program", "/settings"],
+  ["/programs", "/settings"],
   ["/domains", "/flows"],
   ["/domains/web", "/flows"],
   ["/domains/web/programs/docs", "/flows"],
@@ -17,9 +29,9 @@ const REDIRECTS = [
   ["/get-started?domainId=web", "/?domainId=web"]
 ] as const;
 
-// Settings links to the other programs; hosted panels keep their account pages.
-const KEPT = ["/programs/secret-keys", "/programs/identity-access", "/programs/docs", "/setup", "/welcome", "/reset"] as const;
-const REPLACEMENTS = new Set(["/flows", "/", "/?chat=open"]);
+// Hosted panels keep their account pages.
+const KEPT = ["/setup", "/welcome", "/reset"] as const;
+const REPLACEMENTS = new Set(["/flows", "/", "/?chat=open", "/security/keys", "/security/sign-in", "/settings", "/settings/docs"]);
 
 function sameAddress(location: string, expected: string): void {
   const got = new URL(location, "http://panel.invalid");
@@ -73,10 +85,29 @@ test.describe("signed in", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeVisible();
   });
 
-  test("another program's page still opens", async ({ page }) => {
+  test("an old keys link opens the Keys page under Security", async ({ page }) => {
     await page.goto("/programs/secret-keys", { waitUntil: "domcontentloaded" });
-    await expect(page).toHaveURL(/\/programs\/secret-keys$/);
-    await expect(page.locator("main")).toBeVisible();
+    await expect(page).toHaveURL(/\/security\/keys$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Keys" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add Key" })).toBeVisible();
+  });
+
+  test("an old account link opens Your sign-in under Security", async ({ page }) => {
+    await page.goto("/programs/identity-access", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/security\/sign-in$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Your sign-in" })).toBeVisible();
+  });
+
+  test("an old engine tool link opens that tool under Settings", async ({ page }) => {
+    await page.goto("/programs/docs", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/settings\/docs$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Docs" })).toBeVisible();
+  });
+
+  test("an old link to a program that never had a page opens Settings", async ({ page }) => {
+    await page.goto("/programs/no-such-program", { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   });
 
   test("a graph link that names no project sends the person back to the Flow", async ({ page }) => {

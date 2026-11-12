@@ -341,10 +341,10 @@ export function automationGraphRevisionSignature(input: { flowId?: string; revis
 export function automationGraphMiniMapNodeColor(node: Node): string {
   const metadata = node.data && typeof node.data === "object" && !Array.isArray(node.data) ? (node.data as Record<string, unknown>).metadata : null;
   const density = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? String((metadata as Record<string, unknown>).partitionDensity ?? "") : "";
-  if (density === "capped" || density === "dense") return "#b35c00";
-  if (density === "loading" || density === "partial") return "#5f6b7a";
-  if (density === "error") return "#d13212";
-  return "#0972d3";
+  if (density === "capped" || density === "dense") return "var(--warning)";
+  if (density === "loading" || density === "partial") return "var(--muted)";
+  if (density === "error") return "var(--danger)";
+  return "var(--accent)";
 }
 
 function stableAutomationGraphEntitySignature(value: unknown): string {

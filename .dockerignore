@@ -1,0 +1,57 @@
+# The build context of deploy/docker/Dockerfile. Nothing private, generated
+# or machine-local goes into an image layer: runtime data, environment files,
+# secrets, installs, build output, test runs and worktrees stay out. The image
+# installs and builds everything it needs itself.
+
+# Version control and machine-local tooling
+.git
+.githooks
+.github
+.claude
+.codex
+.vscode
+.idea
+
+# Runtime data, environment files and secrets
+**/.fluxiq
+**/.env
+**/.env.*
+**/*.env
+deploy/env
+deploy/secrets
+**/*.pem
+**/*.key
+storage
+logs
+tmp
+.tmp
+
+# Installs and build output (rebuilt inside the image)
+**/node_modules
+**/.next
+**/dist
+**/.server-runtime
+**/.turbo
+**/*.tsbuildinfo
+**/.test-build
+**/.script-build
+**/.e2e-host
+
+# Test runs, reports and coverage
+**/test-runs
+**/test-results
+**/playwright-report
+**/coverage
+**/*.log
+
+# Worktrees and Lab checkouts
+fxwork
+fxlab
+lab-slots
+worktrees
+.worktrees
+spikes
+
+# Working documents and loose captures are not build inputs
+docs/working
+*.png

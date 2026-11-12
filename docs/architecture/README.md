@@ -89,6 +89,8 @@ Global program internals use the layout described in
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Runtime Kernel](runtime-kernel.md)
 - [Runtime Ownership](runtime-ownership.md)
+- [Humanness](humanness.md) — the 0-100 setting: what each level changes, level 0 as
+  today's path, the safety lines, seeds and replay
 - [Platform: The IAM Engine](platform.md) — inert IAM evaluator, store, audit,
   authorizer and catalog generator under `src/platform/`
 - [Documentation System](docs-system.md)

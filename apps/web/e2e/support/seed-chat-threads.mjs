@@ -1,17 +1,26 @@
 // Writes the conversation threads the chat widget spec reads, into the isolated fixture root
 // (`apps/web/.e2e-host`, made by `fixture:e2e`). It runs while no server has the root open, and it
-// calls no model: every turn goes in through Core's public conversations collaborator
-// (`fluxiq.programs.automationStudio.conversations`), the same writer Core's own runs speak through.
+// calls no model.
 //
-// Seeded in the "small" project (UI Fixture - Small):
-//   - a build thread holding a pending permission ask (send_or_publish, create_new)
-//   - a run thread holding a pending choice ask whose options are destructive (consequence: delete), below 14 filler turns
-//   - a project thread with an open ask, a flow-graph-diff reference to a real proposal held by Core, an adaptation
-//     reference and the panel's own `panel-capability-result` record after a person's turn.
-// The "empty" project is left without threads.
+// The docked Assistant shows the signed-in person's panel threads, which belong to no project and live in the
+// person's own database beside the projects' root (`<automation data>/panel-assistant`). Core has no public writer
+// for them, so this seed opens that store the way the panel's own endpoints do, through Core's built module, and
+// writes turns the way the assistant's loop writes them. It refuses anything but the marked fixture root.
+//
+// Seeded for the fixture person (`admin`):
+//   - "Weekly post build": an Allow card (send_or_publish, create_new) the person has not answered
+//   - "Cleanup run": 14 filler turns, then an Allow card whose consequence is delete, so the question sits below the
+//     fold and Show me has somewhere to scroll
+//   - "Planning notes": a person's turn, a reference to a real proposal Core holds on a Flow of its own, an adaptation
+//     reference, the panel's own `panel-capability-result` record after a person's turn, and no question
+// and, in the small project (listed in the dock beside them once the person opens it, answered through the project's
+// own conversation, never the panel's):
+//   - "Cleanup choice": a choice ask whose options are destructive (consequence delete)
+//   - "Project questions": an open ask that takes the person's own words
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { automationStudioFlowGraphDiffAttachment } from "fluxiq/automation";
 
@@ -22,11 +31,16 @@ if (!(await readFile(path.join(fixtureRoot, ".fluxiq-e2e-fixture-root"), "utf8")
 }
 const manifest = JSON.parse(await readFile(path.join(fixtureRoot, "fixture-manifest.json"), "utf8"));
 const projectId = manifest.projects.small.id;
+const PERSON = manifest.credentials.username;
+
+// Core's built panel-thread store: the module is not a public export, so it is loaded from the package's own dist.
+const coreEntry = fileURLToPath(import.meta.resolve("fluxiq/automation"));
+const coreDist = coreEntry.slice(0, coreEntry.lastIndexOf(`${path.sep}dist${path.sep}`) + 6);
+const { PanelAssistantThreads } = await import(pathToFileURL(path.join(coreDist, "runtime/conversations/assistant/store/panel-threads.js")).href);
 
 const fluxiq = FluxIQ.create({ rootDir: fixtureRoot, loadEnv: false });
 await fluxiq.setup();
 const studio = fluxiq.programs.automationStudio;
-const conversations = studio.conversations;
 
 // A proposed change Core really holds, on a Flow of its own: nothing is built and no model is called.
 const flow = await studio.createFlow({ projectId, name: "Weekly post" });
@@ -58,6 +72,24 @@ const proposal = await studio.createFlowBootstrapAdaptation({
   } }
 });
 
+// Beside the projects' root, as the panel's endpoints place it (`register.ts`: `path.dirname(projectsRoot)/panel-assistant`).
+const automationData = path.join(fixtureRoot, ".fluxiq", "artifacts", "automation-studio");
+if (!existsSync(path.join(automationData, "projects"))) {
+  throw new Error("The fixture root keeps no projects where the panel looks for them, so its panel threads would go unread.");
+}
+const threads = new PanelAssistantThreads({ rootDir: path.join(automationData, "panel-assistant") });
+const say = (conversationId, text, attachment) => threads.append(PERSON, { conversationId, author: "automation", text, attachment: attachment ?? null });
+const permissionCard = (conversationId, request) => threads.append(PERSON, {
+  conversationId,
+  author: "automation",
+  text: request.sentence,
+  ask: {
+    askId: request.requestId, kind: "permission", parks: true, timeoutMs: null, onTimeout: null, options: null, routes: null,
+    consequences: request.consequences, missing: request.missing,
+    control: { name: request.control.name, kind: request.control.kind }, permissionRequest: request
+  }
+});
+
 const permission = {
   schemaVersion: "automation-studio.action-permission-request.v1",
   requestId: "request.e2e.schedule-post",
@@ -70,16 +102,40 @@ const permission = {
   authority: { granted: [], instructed: [] },
   sentence: 'The Flow would press "Schedule post" (button) each time it runs, which would send or publish something. Neither its instruction nor a grant allows that, so the build stopped to ask.'
 };
+const destructive = {
+  ...permission,
+  requestId: "request.e2e.clear-drafts",
+  action: { kind: "flow_step", id: "node.press", ref: "step.5", verb: "press" },
+  control: { name: "Clear drafts", kind: "button" },
+  consequences: ["delete"],
+  missing: ["delete"],
+  sentence: 'The run would press "Clear drafts" (button), which would delete something. Neither its instruction nor a grant allows that, so it stopped to ask.'
+};
 
-const build = conversations.writerFor({ projectId, subject: { kind: "build", id: "build.e2e.weekly-post" }, title: "Weekly post build" });
-await build.say("I looked at the page and found the Schedule post button.");
-await build.askPermission(permission);
+const build = (await threads.open(PERSON, { title: "Weekly post build" })).conversationId;
+await say(build, "I looked at the page and found the Schedule post button.");
+await permissionCard(build, permission);
 
-const run = conversations.writerFor({ projectId, subject: { kind: "run", id: "run.e2e.cleanup" }, title: "Cleanup run" });
-await run.say("The run reached the old drafts list.");
-// Enough earlier turns that the question sits below the fold of the window, so Show me has somewhere to scroll.
-for (let step = 1; step <= 14; step += 1) await run.say(`Checked draft ${step} of 14 against the list.`);
-await run.ask({
+const run = (await threads.open(PERSON, { title: "Cleanup run" })).conversationId;
+await say(run, "The run reached the old drafts list.");
+// Enough earlier turns that the question sits below the fold of the dock, so Show me has somewhere to scroll.
+for (let step = 1; step <= 14; step += 1) await say(run, `Checked draft ${step} of 14 against the list.`);
+await permissionCard(run, destructive);
+
+const planning = (await threads.open(PERSON, { title: "Planning notes" })).conversationId;
+await threads.append(PERSON, { conversationId: planning, author: "person", text: "Please show me what the proposed change does.", actorId: PERSON });
+await say(planning, "Here is the change I would make to the Flow.", automationStudioFlowGraphDiffAttachment(flow.flowId, proposal.adaptationId));
+await say(planning, "A better selector exists for the title.", { kind: "adaptation", ref: "adaptation:adaptation.e2e.1" });
+await threads.append(PERSON, { conversationId: planning, author: "person", text: "Opened the Runs view.", actorId: PERSON, attachment: { kind: "panel-capability-result", ref: "result.e2e.1" } });
+await say(planning, "Anything else you want changed?");
+
+await threads.close();
+
+// The small project's own threads, written through Core's conversations collaborator, the writer Core's own runs speak through.
+const conversations = studio.conversations;
+const choice = conversations.writerFor({ projectId, subject: { kind: "run", id: "run.e2e.cleanup-choice" }, title: "Cleanup choice" });
+await choice.say("The run reached the old drafts list.");
+await choice.ask({
   text: "Two drafts match. Which should I clear?",
   ask: {
     askId: "ask.e2e.which-draft", kind: "choice", parks: true,
@@ -87,21 +143,11 @@ await run.ask({
     consequences: ["delete"]
   }
 });
+const questions = conversations.writerFor({ projectId, subject: { kind: "project", id: projectId }, title: "Project questions" });
+await questions.ask({ text: "What should the weekly post be called?", ask: { askId: "ask.e2e.name", kind: "open", parks: true } });
+const projectThreads = { choice: await choice.conversationId(), open: await questions.conversationId() };
 
-const project = conversations.writerFor({ projectId, subject: { kind: "project", id: projectId }, title: "Planning notes" });
-const conversationId = await project.conversationId();
-await conversations.appendTurn({ projectId, conversationId, text: "Please show me what the proposed change does.", actorId: "admin" });
-await project.say("Here is the change I would make to the Flow.", automationStudioFlowGraphDiffAttachment(flow.flowId, proposal.adaptationId));
-await project.say("A better selector exists for the title.", { kind: "adaptation", ref: "adaptation:adaptation.e2e.1" });
-await conversations.appendTurn({ projectId, conversationId, text: "Opened the Runs view.", actorId: "admin", attachment: { kind: "panel-capability-result", ref: "result.e2e.1" } });
-await project.ask({
-  text: "What should the weekly post be called?",
-  ask: { askId: "ask.e2e.name", kind: "open", parks: true }
-});
-
-const seeded = { projectId, emptyProjectId: manifest.projects.empty.id, threads: {
-  permission: await build.conversationId(), choice: await run.conversationId(), project: conversationId
-} };
+const seeded = { projectId, emptyProjectId: manifest.projects.empty.id, threads: { permission: build, destructive: run, planning }, projectThreads };
 await writeFile(path.join(fixtureRoot, "chat-threads-manifest.json"), `${JSON.stringify(seeded, null, 2)}\n`, "utf8");
 process.stdout.write(`${JSON.stringify(seeded, null, 2)}\n`);
 await fluxiq.close?.();

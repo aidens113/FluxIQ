@@ -2,6 +2,7 @@
 // from the results the loop already got, never refused and never run again.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { automationStudioLlmEvidenceCurrentView } from "../../decision-context/index.ts";
 import { automationStudioLlmEvidenceValidTools } from "../../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_DESCRIPTION, AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, automationStudioLlmEvidenceRecallBinding } from "../index.ts";
@@ -43,7 +44,7 @@ describe("the recall tool", () => {
     expect(given.executeTool).toHaveBeenCalledTimes(1);
     expect(answer).toEqual({
       kind: "llm_evidence_tool_execution",
-      evidence: { recalled: "read.1", restored: { read: { extracted: [{ name: "a" }, { name: "b" }], rejectedRows: { fields: ["name"] } } } },
+      evidence: { recalled: "read.1", restored: { page: "the page", read: { extracted: [{ name: "a" }, { name: "b" }], rejectedRows: { fields: ["name"] } } } },
       effectApplied: false,
       resultCode: "core.recall.restored"
     });
@@ -62,5 +63,36 @@ describe("the recall tool", () => {
     await bound.executeTool({ callId: "read.1", toolId: "web.inspect", value: {} });
     const answer = await bound.executeTool({ callId: "recall.2", toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { callId: "read.1" } }) as AutomationStudioLlmEvidenceToolExecutionResult;
     expect(answer.evidence).toEqual({ recalled: "read.1", restored: { read: { extracted: [{ name: "a" }, { name: "b" }] } } });
+  });
+
+  // run-mwc6ut8u-52e3c1b3 (R6): a press's page was gone from the window once the work moved on, and recall gave back only reads.
+  it("gives back the page a press ended on, as that call's page, beside the current one and never in its place", async () => {
+    const keys = ["page", "read.extracted"];
+    const pages: Record<string, string> = { "press.1": "the page the first press ended on", "press.2": "the page the second press ended on" };
+    const given = { ...loop(keys), executeTool: vi.fn(async (input: Call): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> =>
+      ({ kind: "llm_evidence_tool_execution", evidence: { ok: true, page: pages[input.callId] ?? "" }, effectApplied: true })) };
+    const bound = automationStudioLlmEvidenceRecallBinding(given);
+    await bound.executeTool({ callId: "press.1", toolId: "web.inspect", value: {} });
+    await bound.executeTool({ callId: "press.2", toolId: "web.inspect", value: {} });
+    const answer = await bound.executeTool({ callId: "recall.3", toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { callId: "press.1" } }) as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(given.executeTool).toHaveBeenCalledTimes(2);
+    expect(answer.evidence).toEqual({ recalled: "press.1", restored: { page: "the page the first press ended on" } });
+    const view = automationStudioLlmEvidenceCurrentView([
+      { callId: "press.1", toolId: "web.inspect", value: { ok: true, page: pages["press.1"]! } },
+      { callId: "press.2", toolId: "web.inspect", value: { ok: true, page: pages["press.2"]! } },
+      { callId: "recall.3", toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: answer.evidence }
+    ], keys);
+    const groups = (view.currentView!.value as { groups: Array<{ group: string; callId: string; value: JsonObject }> }).groups;
+    expect(groups.find((group) => group.group === "top")).toMatchObject({ callId: "press.2", value: { page: "the page the second press ended on" } });
+    expect(groups.find((group) => group.group.endsWith(":restored"))).toMatchObject({ callId: "recall.3", value: { restored: { page: "the page the first press ended on" } } });
+  });
+
+  it("gives a top-level view that holds a declared group back whole, once", async () => {
+    const value: JsonObject = { read: { extracted: [{ name: "a" }], meta: 1 } };
+    const given = { ...loop(["read", "read.extracted"]), executeTool: vi.fn(async (_input: Call): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult> => value) };
+    const bound = automationStudioLlmEvidenceRecallBinding(given);
+    await bound.executeTool({ callId: "read.1", toolId: "web.inspect", value: {} });
+    const answer = await bound.executeTool({ callId: "recall.2", toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { callId: "read.1" } }) as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(answer.evidence).toEqual({ recalled: "read.1", restored: { read: { extracted: [{ name: "a" }], meta: 1 } } });
   });
 });

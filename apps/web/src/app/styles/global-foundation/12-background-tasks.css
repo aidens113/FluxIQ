@@ -3,14 +3,14 @@
   gap: var(--space-xxs);
   border: 0;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--accent-text);
   padding: 0;
   text-align: left;
   cursor: pointer;
 }
 
 .link-button small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -23,9 +23,9 @@
 .summary-strip div {
   display: grid;
   gap: var(--space-xs);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: var(--space-dense);
 }
 
@@ -34,16 +34,9 @@
 }
 
 .summary-strip span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
-}
-
-.task-card-grid,
-.compute-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-md);
 }
 
 .background-task-shell {
@@ -70,10 +63,10 @@
 .background-task-detail,
 .background-task-main .panel {
   min-height: 460px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   padding: 14px;
 }
 
@@ -93,17 +86,17 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-dense);
   width: 100%;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-dense);
   text-align: left;
 }
 
 .task-list-item.selected,
 .task-list-item:hover {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .task-list-item span,
@@ -121,7 +114,7 @@
 
 .task-list-item small {
   margin-top: 2px;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -138,14 +131,14 @@
 .task-countdown-panel {
   display: grid;
   gap: var(--space-xs);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: var(--space-md);
 }
 
 .task-countdown-panel span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }
@@ -173,7 +166,7 @@
 }
 
 .task-progress-block > span {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
 }

@@ -1,6 +1,6 @@
 .workload-board {
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
 }
 
@@ -12,8 +12,8 @@
 }
 
 .workload-board-header {
-  background: var(--surface-tool);
-  color: var(--color-text-muted);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
   text-transform: none;
@@ -22,7 +22,7 @@
 .workload-board-header span,
 .workload-runtime,
 .workload-cell {
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--divider);
   padding: var(--space-dense);
 }
 
@@ -35,11 +35,11 @@
   display: grid;
   align-content: start;
   gap: 3px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
 }
 
 .workload-runtime small {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .workload-cell {
@@ -47,15 +47,15 @@
   align-content: start;
   gap: var(--space-sm);
   min-height: 180px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--divider);
 }
 
 .workload-chip {
   display: grid;
   gap: var(--space-sm);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: var(--space-dense);
 }
 
@@ -68,7 +68,7 @@
 }
 
 .workload-chip footer {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-compact);
 }
 
@@ -113,7 +113,7 @@
   align-items: center;
   gap: var(--space-xs);
   min-width: 0;
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-body-small);
 }
 
@@ -132,13 +132,13 @@
 
 .breadcrumb li a,
 .breadcrumb li button {
-  color: var(--color-primary);
+  color: var(--accent-text);
   cursor: pointer;
   text-decoration: none;
 }
 
 .breadcrumb [aria-current="page"] {
-  color: var(--color-text);
+  color: var(--text);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -148,7 +148,7 @@
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: 0;
   cursor: col-resize;
 }
@@ -168,7 +168,7 @@
 
 .splitter > span {
   border-radius: var(--radius-pill);
-  background: var(--color-border-strong);
+  background: var(--edge);
 }
 
 .splitter.vertical > span {
@@ -183,37 +183,37 @@
 
 .splitter:hover > span,
 .splitter:focus-visible > span {
-  background: var(--color-primary);
+  background: var(--accent);
 }
 
 .code-viewer,
 .json-viewer {
   min-width: 0;
   overflow: hidden;
-  border: var(--border-width) solid var(--color-border);
+  border: var(--border-width) solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--surface-pane);
+  background: var(--surface);
 }
 
 .code-viewer > .toolbar {
   border: 0;
-  border-bottom: var(--border-width) solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--divider);
   border-radius: 0;
-  background: var(--surface-tool);
+  background: var(--surface-muted);
 }
 
 .code-viewer-search input {
   width: min(180px, 30vw);
   min-height: var(--control-height-compact);
-  border: var(--border-width) solid var(--color-border-strong);
+  border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--surface-pane);
-  color: var(--color-text);
+  background: var(--surface);
+  color: var(--text);
   padding: var(--space-xs) var(--space-sm);
 }
 
 .code-viewer-matches {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   white-space: nowrap;
 }
@@ -222,10 +222,10 @@
   max-height: min(520px, 62vh);
   overflow: auto;
   margin: 0;
-  background: var(--surface-code);
-  color: var(--content-code);
+  background: var(--code-bg);
+  color: var(--text);
   padding: var(--space-md);
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
   font-size: var(--font-size-compact);
   line-height: var(--line-height-body);
   tab-size: 2;
@@ -243,21 +243,21 @@
   justify-content: space-between;
   gap: var(--space-md);
   min-height: var(--control-height-comfortable);
-  background: var(--surface-tool);
-  color: var(--color-text);
+  background: var(--surface-muted);
+  color: var(--text);
   padding: var(--space-sm) var(--space-md);
   cursor: pointer;
   font-weight: var(--font-weight-semibold);
 }
 
 .json-viewer > summary small {
-  color: var(--color-text-muted);
+  color: var(--muted);
   font-size: var(--font-size-caption);
   font-weight: var(--font-weight-regular);
 }
 
 .json-viewer[open] > summary {
-  border-bottom: var(--border-width) solid var(--color-border);
+  border-bottom: var(--border-width) solid var(--divider);
 }
 
 .json-viewer > .inline-notice,
@@ -268,14 +268,14 @@
   display: grid;
   gap: 0;
   margin: 0;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
 }
 
 .key-value-list div {
   display: grid;
   grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .key-value-list div:last-child {
@@ -289,8 +289,8 @@
 }
 
 .key-value-list dt {
-  background: var(--surface-tool);
-  color: var(--color-text-muted);
+  background: var(--surface-muted);
+  color: var(--muted);
   font-weight: var(--font-weight-bold);
 }
 
@@ -304,12 +304,12 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
-  color: var(--color-text-muted);
+  background: var(--surface-muted);
+  color: var(--muted);
   padding: 2px 7px;
-  font-family: var(--font-family-mono);
+  font-family: var(--font-mono);
   font-size: var(--font-size-compact);
 }
 
@@ -342,7 +342,7 @@
   .docs-explorer-panel {
     max-height: 420px;
     border-right: 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--divider);
   }
 
   .docs-viewer-panel {
@@ -356,7 +356,7 @@
   .db-sidebar,
   .db-inspector {
     border: 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--divider);
   }
 
   .db-toolbar {

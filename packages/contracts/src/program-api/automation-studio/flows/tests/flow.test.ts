@@ -29,7 +29,7 @@ describe("create-flow input", () => {
 
   it("describes every field a model may fill, with only projectId required", () => {
     const schema = createFlowInput.jsonSchema();
-    expect(Object.keys(schema.properties as object).sort()).toEqual(["description", "flowId", "name", "projectId"]);
+    expect(Object.keys(schema.properties as object).sort()).toEqual(["description", "flowId", "humanness", "name", "projectId"]);
     expect(schema.required).toEqual(["projectId"]);
     expect((schema.properties as Record<string, { description?: string }>).name?.description).toBeTruthy();
   });

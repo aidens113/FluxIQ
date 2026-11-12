@@ -13,6 +13,18 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 
 ## Current State
 
+**State (2026-11-11).** Main was promoted on 2026-11-11 with P1, P2a, P2b, P3a, P4, P7 and P9, and t899's developer overrides, docs, pinning and secret inputs (the extension's launch plan, W3). Per-FluxNode humanness (t898) and robot-check handlers (t902) are in their lanes. The user asked where FluxNodes stand on arbitrary environments, and the lead found four pieces unstaffed since the launch plan (2026-11-10). They are now running:
+- **P5 managed browser host:** lane t907, downstream with paired Core.
+- **P8 FluxNodes on the simulated environments:** explore, a zero-call replay and repair after a perturbation, with P11's example per environment. Branch feat/fluxnode-sims of `!FluxIQTestEnvironments`, which has no remote yet; asked of the user.
+- **P2c multi-runtime engine:** designed in `reports/p2c-multi-runtime-design.md`. The four service slots become the default, and other runtimes register beside them, so the web path stays byte-identical. Its build starts with phases 0, 1 and 3. Phase 2 (the lease fix) and phase 5 (host modules) share a seam with t907. Phases 4a and 4b wait for t898 and t902.
+- **P3b keys:** starts when t898 and t901 land, because they hold the permission and route files.
+
+Lead decisions on P2c (2026-11-11; the user may overrule):
+- A project holds one runtime, matching Core's rule that a Flow's domain is its project's.
+- The web domain gains a manifest `runtime: "web"` rather than a rename.
+- The proofs are a Core-only one (two runtimes on one engine) and a simulation-only one, with the web-plus-Android proof at phase 9.
+- A FluxNode whose declared runtime the instance does not serve is refused at once. Today it silently runs on the bound domain.
+
 **State (2026-11-09).** The user revised the direction the same day and asked for work to start at once ("Not in a few days"). Wave 1 is dispatched; the Wave 1 table below is the live list. Nothing is merged yet. The user's words are in "Direction". Everything else is the lead's design, marked (lead), and the user may overrule it.
 
 **Going in:**

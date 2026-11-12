@@ -47,7 +47,7 @@ async function credentials() {
 }
 
 beforeEach(() => {
-  browser = Object.assign(new EventTarget(), { location: { href: "/programs/secret-keys" } });
+  browser = Object.assign(new EventTarget(), { location: { href: "/security" } });
   vi.stubGlobal("window", browser);
   vi.stubGlobal("CustomEvent", class extends Event { detail: unknown; constructor(name: string, options?: { detail?: unknown }) { super(name); this.detail = options?.detail; } });
   auth.current.mockResolvedValue({ role: { permissions: [] } });
@@ -92,7 +92,7 @@ describe("authenticated root session recovery", () => {
     expect(fetch.mock.calls.filter(([url]) => url.includes("secret-keys"))).toHaveLength(2);
     expect(renderer!.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
     expect(renderer!.root.findByProps({ "aria-label": "Workspace draft" }).props.value).toBe("newer unsaved work");
-    expect(browser.location.href).toBe("/programs/secret-keys");
+    expect(browser.location.href).toBe("/security");
     expect(hasPendingProgramAuthentication()).toBe(false);
   });
 

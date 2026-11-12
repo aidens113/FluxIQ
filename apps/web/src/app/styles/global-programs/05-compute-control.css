@@ -4,10 +4,10 @@
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-panel);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .compute-control-toolbar {
@@ -16,15 +16,15 @@
   grid-template-columns: minmax(220px, 1fr) minmax(130px, 180px) minmax(150px, 220px) auto;
   gap: var(--space-sm);
   align-items: center;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: var(--space-sm);
 }
 
 .compute-control-toolbar select {
   min-height: 34px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-control);
-  background: var(--color-surface);
+  background: var(--surface);
   padding: 5px 8px;
 }
 
@@ -37,12 +37,12 @@
 }
 
 .compute-node-list {
-  border-right: 1px solid var(--color-border);
+  border-right: 1px solid var(--divider);
 }
 
 .compute-activity-panel {
-  border-left: 1px solid var(--color-border);
-  background: var(--surface-tool);
+  border-left: 1px solid var(--divider);
+  background: var(--surface-muted);
 }
 
 .compute-node-row {
@@ -63,8 +63,8 @@
 
 .compute-node-row.selected,
 .compute-node-row:hover {
-  border-color: var(--color-primary);
-  background: var(--surface-selected);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .compute-node-row span,
@@ -102,7 +102,7 @@
 
 .compute-detail-heading p,
 .compute-detail-section small {
-  color: var(--color-text-muted);
+  color: var(--muted);
 }
 
 .compute-detail-section {
@@ -117,9 +117,9 @@
 }
 
 .compute-token-list span {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--divider);
   border-radius: var(--radius-control);
-  background: var(--surface-tool);
+  background: var(--surface-muted);
   padding: 4px 7px;
   font-size: var(--font-size-compact);
 }
@@ -135,7 +135,7 @@
 .compute-lease-row {
   display: grid;
   gap: var(--space-xs);
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--divider);
   padding: var(--space-sm);
 }
 
@@ -155,7 +155,7 @@
   .compute-activity-panel {
     grid-column: 1 / -1;
     max-height: 320px;
-    border-top: 1px solid var(--color-border);
+    border-top: 1px solid var(--divider);
     border-left: 0;
   }
 }
@@ -173,7 +173,7 @@
   .compute-node-list {
     max-height: 300px;
     border-right: 0;
-    border-bottom: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--divider);
   }
 }
 

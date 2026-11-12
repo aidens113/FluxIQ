@@ -22,6 +22,37 @@ const action = { actionType: "activate-element", outputId: "activate-element", p
 // Every candidate scores below zero against this fingerprint, so the matcher returns none.
 const unmatchedTarget = { kind: "element", fingerprint: { visibleText: "Save" }, candidates: [{ candidateId: "cancel", visibleText: "Cancel" }] };
 
+describe("a run's humanness on the command the runtime policy dispatcher sends", () => {
+  it("adds no humanness key when the run set none, so the command is what it was before the field existed", async () => {
+    const commands: Array<Record<string, unknown>> = [];
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { referenceNow: 1 });
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { referenceNow: 1, humanness: 60 });
+    const [plain, human] = commands.map(({ commandId: _id, ...command }) => command);
+    expect(plain).not.toHaveProperty("humanness");
+    const { humanness, ...humanWithout } = human!;
+    expect(humanness).toBe(60);
+    expect(plain).toEqual(humanWithout);
+  });
+
+  it("sets it from the dispatch context, 0 included", async () => {
+    const commands: Array<Record<string, unknown>> = [];
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 60 });
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 0 });
+    expect(commands.map((command) => command.humanness)).toEqual([60, 0]);
+  });
+
+  it("copies the misclick mark only when the context carries it, and a command without it is exactly today's", async () => {
+    const commands: Array<Record<string, unknown>> = [];
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 60 });
+    await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeCapturing(commands))(effect, { humanness: 60, humannessMisclick: true });
+    const [plain, marked] = commands.map(({ commandId: _id, ...command }) => command);
+    expect(plain).not.toHaveProperty("humannessMisclick");
+    const { humannessMisclick, ...markedWithout } = marked!;
+    expect(humannessMisclick).toBe(true);
+    expect(plain).toEqual(markedWithout);
+  });
+});
+
 describe("a domain's output target preparer", () => {
   it("leaves parameters unread and claims nothing when no domain registered one", async () => {
     const parameters = { target: { kind: "custom", opaque: "domain-owned" }, empty: [] };
@@ -427,6 +458,22 @@ function ioWith(dispatch?: (request: OutputDispatchRequest) => OutputDispatchRes
     dispatch: dispatch ?? ((request) => ({ ok: true, outputId: request.outputId }))
   }));
   return io;
+}
+
+function runtimeCapturing(commands: unknown[]): RuntimeService {
+  const runtime = new RuntimeService();
+  runtime.registerAdapter({
+    adapterId: "example.runtime",
+    label: "Example Runtime",
+    transport: "direct",
+    domainId: "example",
+    capabilities: () => [{ id: "example.outputs", kind: "action", domainId: "example", outputIds: ["activate-element"] }],
+    execute: (command) => {
+      commands.push(command);
+      return { commandId: command.commandId ?? "command.runtime", status: "succeeded" };
+    }
+  });
+  return runtime;
 }
 
 function runtimeReturning(result: Omit<FluxIQRuntimeCommandResult, "commandId">): RuntimeService {

@@ -9,7 +9,7 @@ import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingT
 import { automationStudioFaultFromThrownError, automationStudioThrownErrorText } from "./defensive/index.ts";
 import { automationStudioTraceInFrame, runAutomationStudioGraphInFrame } from "./frames/index.ts";
 import { executeAutomationStudioNode } from "./node-execution/index.ts";
-import { automationStudioPaceAfterRateLimit } from "./pacing/index.ts";
+import { automationStudioHumannessSeeded, automationStudioPaceAfterRateLimit, automationStudioTraceWithHumanness } from "./pacing/index.ts";
 import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
 import { automationStudioPersonNeededEnding } from "./person-needed.ts";
 import { automationStudioStepAfterPersonCleared } from "./person-cleared.ts";
@@ -137,7 +137,7 @@ async function runGraphFromSeed(
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
   const { referenceNow: suppliedReferenceNow, ...baseOptions } = options;
   const referenceNow = automationStudioReferenceNow(seed?.referenceNow) ?? automationStudioReferenceNow(suppliedReferenceNow) ?? automationStudioReferenceNow(startedAt);
-  const executionOptions = { ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) };
+  const executionOptions = automationStudioHumannessSeeded({ ...baseOptions, ...(referenceNow !== undefined ? { referenceNow } : {}) }, startedAt);
   try {
     await options.commandRun?.checkpoint();
     // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
@@ -209,7 +209,7 @@ async function runGraphToTrace(
   // and discarded is the shape of bug this repository keeps meeting.
   // The paces it held nodes to ride beside it: a learned one is what a promotion writes back.
   const defence = runState.defence.summary(), pace = runState.pace.summary();
-  const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
+  const defended = automationStudioTraceWithHumanness(defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed, options);
   const withheld = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
   const saved = automationStudioTraceWithLifecycle(withheld, lifecycle, options.invocation);
   repeatTraceProvenance.copy(trace, defended);

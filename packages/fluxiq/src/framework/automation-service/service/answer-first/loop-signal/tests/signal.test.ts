@@ -16,10 +16,10 @@ describe("the attempt's answer to a loop signal", () => {
     expect(asked).toBe(0);
   });
 
-  it("ends the round on ask_person and says to ask", () => {
-    let asked = 0;
-    expect(automationStudioAnswerFirstLoopSignal({ askPerson: () => { asked += 1; } }).loopSignal(signal("ask_person"))).toBe("end");
-    expect(asked).toBe(1);
+  it("ends the round on ask_person and hands on what it found, which the steer and the question are built from", () => {
+    const found: AutomationStudioLlmLoopSignal[] = [];
+    expect(automationStudioAnswerFirstLoopSignal({ askPerson: (given) => { found.push(given); } }).loopSignal(signal("ask_person"))).toBe("end");
+    expect(found).toEqual([signal("ask_person")]);
   });
 });
 

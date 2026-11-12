@@ -1,0 +1,4 @@
+/* An engine tool's Settings sub-page: the tool's own view sets its width. */
+.settings-tool { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.settings-tool h1, .settings-tool-note { margin: 0; overflow-wrap: anywhere; }
+.settings-tool-actions { display: flex; flex-wrap: wrap; gap: 8px; }

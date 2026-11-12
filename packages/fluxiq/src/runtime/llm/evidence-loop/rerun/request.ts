@@ -116,7 +116,13 @@ export function automationStudioLlmEvidenceRerunRequest(
    * (`../node-tools/step-place.ts`), or absent for the page as it is now.
    */
   ranAlready: (toolId: string, input: JsonObject, at?: string) => AutomationStudioLlmEvidenceRepeatedOutcome | undefined = () => undefined,
-  deniedEvidenceKeys?: readonly string[]
+  deniedEvidenceKeys?: readonly string[],
+  /**
+   * `rerunsInPlace`: the caller puts no page back (answer-first, plan D1), so
+   * the rerun runs on the page as it is now, and is checked there, never on
+   * the page its step started on (`../../loop-configuration.ts`).
+   */
+  options: { rerunsInPlace?: boolean | undefined } = {}
 ): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[]; retainedRefusals?: { retained: AutomationStudioRerunArgumentMetadata; reason: "rerun_holds_binding" }[] } {
   let request: AutomationStudioLlmEvidenceRerunCall | undefined;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
@@ -161,7 +167,8 @@ export function automationStudioLlmEvidenceRerunRequest(
     }
     // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`) --
     // unless the step only reads and this changes its input, which changes the draft (header, D4-1).
-    const earlier = ranAlready(toolId, input, step.replay?.from ? step.stateBefore : undefined);
+    // Checked where it will run: the step's own page when it is put back there, else the page as it is now.
+    const earlier = ranAlready(toolId, input, step.replay?.from && options.rerunsInPlace !== true ? step.stateBefore : undefined);
     if (earlier && !changesARead(step, merged, earlier)) {
       refused.push({ step: amendment.step, reason: "changes_nothing" });
       continue;

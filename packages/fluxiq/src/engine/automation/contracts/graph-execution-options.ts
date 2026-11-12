@@ -34,8 +34,10 @@ export type AutomationStudioGraphExecutionOptions = {
   declaredInputDefaults?: Record<string, JsonValue>;
   variables?: Record<string, JsonValue>;
   maxSteps?: number;
-  /** How human the run's input looks, a whole number 0 to 100; absent means 0, today's path exactly. Nothing reads it yet. */
+  /** How human the run's input looks, a whole number 0 to 100; absent means 0, today's path exactly. Above 0 a run pauses a seeded, human-like moment before each node's first arrival (`pacing/human-pause.ts`). */
   humanness?: number;
+  /** The seed those pauses are drawn from. The run sets it when humanness is above 0 (a child frame inherits it); a caller may pass one to replay a run. */
+  humannessSeed?: number;
   random?: () => number;
   now?: () => number;
   /** Fixed epoch milliseconds for relative task dates; live timing still uses now(). */
@@ -73,9 +75,13 @@ export type AutomationStudioGraphExecutionOptions = {
    * Resolves runtime effects such as importer-owned policy outputs. The context's
    * `withheldValues` holds every value the run has resolved out of state so far,
    * for a dispatcher that keeps its own record of the command; the effect itself
-   * carries the real value.
+   * carries the real value. `humanness` is the run's level when its options set it,
+   * for the dispatcher to put on the command it sends. `humannessMisclick` is set
+   * only above humanness 0 on a node Core knows is not lasting: it declared an
+   * empty consequence list and nothing marks it as acting on the world
+   * (`node-execution/attempt.ts`). Absent, the client never misclicks.
    */
-  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: import("../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
+  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; referenceNow?: number; withheldValues?: FluxIQRuntimeWithheldValues; humanness?: number; humannessMisclick?: true; commandContext?: import("../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
   /**
    * Stores the rows a record output captured. Called once per capture, after
    * the dispatch succeeded and before the attempt is returned. A throw fails the

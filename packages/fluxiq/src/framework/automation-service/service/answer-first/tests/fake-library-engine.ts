@@ -214,6 +214,14 @@ export type FlowRunFixtureOptions = {
   instruction?: string;
   /** The Flow's size bounds, where its setting raised them. */
   size?: AutomationStudioAnswerFirstFlowRunPorts["input"]["size"];
+  /** The level the generate request set (the person's starting value), as the attempt input carries it. */
+  humanness?: number;
+  /** A caller's own level, an explicit run option (`input.caller.humanness`). */
+  callerHumanness?: number;
+  /** The task's stored level, as the Flow run stage hands it on. */
+  taskHumanness?: number;
+  /** The Flow's own stored level, written to the Flow's `metadata.humanness` before the run. */
+  flowHumanness?: number;
 };
 
 /** A real service on the fake target, and the Flow run stage's ports over it, with no model anywhere. */
@@ -228,7 +236,8 @@ export async function flowRunFixture(options: FlowRunFixtureOptions, cleanups: (
     await rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
   const project = await service.createProject({ name: "Library", domainId: "library" });
-  const flow = await service.createFlow({ projectId: project.id, flowId: "flow.loans", name: "Loans" });
+  const created = await service.createFlow({ projectId: project.id, flowId: "flow.loans", name: "Loans" });
+  const flow = options.flowHumanness === undefined ? created : await service.saveFlow({ projectId: project.id, flow: { ...created, metadata: { ...created.metadata, humanness: options.flowHumanness } } });
   const now = Date.now();
   const instructionText = options.instruction ?? "Renew every loan on my library account.";
   await service.saveFlowInstruction(project.id, {
@@ -258,7 +267,9 @@ export async function flowRunFixture(options: FlowRunFixtureOptions, cleanups: (
     projectId: project.id, flowId: flow.flowId, registry, resolution, binding: { ...fakeLibraryBinding(target.library), ...options.binding },
     instructionText, instructionIds: ["instruction.task"], startLocation: options.startLocation,
     routing: { signaturesOf: () => undefined }, cancellation: { signal: () => stop.signal },
-    ...(options.size ? { size: options.size } : {})
+    ...(options.size ? { size: options.size } : {}),
+    ...(options.humanness !== undefined ? { humanness: options.humanness } : {}),
+    ...(options.callerHumanness !== undefined ? { caller: { humanness: options.callerHumanness } } : {})
   };
   const engineOf = () => {
     const engine = automationStudioAnswerFirstFlowRunEngineOf({ ...input, owner: service });
@@ -266,6 +277,7 @@ export async function flowRunFixture(options: FlowRunFixtureOptions, cleanups: (
   };
   const ports: AutomationStudioAnswerFirstFlowRunPorts = {
     input, runId, record, sink, permissions, engine: engineOf,
+    ...(options.taskHumanness !== undefined ? { storedHumanness: { task: options.taskHumanness } } : {}),
     stepped: () => { counts.liveSteps += 1; },
     arrived: () => { counts.arrived = true; }
   };

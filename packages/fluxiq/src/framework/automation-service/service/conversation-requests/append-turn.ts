@@ -8,7 +8,7 @@ import {
 import { parseAutomationStudioPanelCapabilities } from "../../panel-capabilities/index.ts";
 import { commandContext } from "./command-context.ts";
 import { requestedOnScreen } from "./on-screen.ts";
-import { requestedAttachment } from "./requested-fields.ts";
+import { requestedAttachment, requestedHumanness } from "./requested-fields.ts";
 import type { AutomationStudioConversationRequest, AutomationStudioConversationRequestDependencies, AutomationStudioConversationRequestService } from "./types.ts";
 
 export async function appendConversationTurnForRequest(
@@ -18,6 +18,8 @@ export async function appendConversationTurnForRequest(
   payload: Partial<ConversationTurnAppendRequest>
 ) {
   const { service } = dependencies;
+  // Refused before anything is written, like any other field the request names wrongly.
+  const humanness = requestedHumanness(payload.humanness);
   const personTurn = {
     projectId,
     conversationId: String(payload.conversationId ?? ""),
@@ -44,7 +46,7 @@ export async function appendConversationTurnForRequest(
       caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null,
       ...(lookup ? { knownTask: automationStudioConversationKnownTask(lookup) } : {})
     });
-    const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls });
+    const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls, ...(humanness === undefined ? {} : { humanness }) });
     const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;
     return { turn: answer.turn, response: answer.response ? { ...answer.response, execution } : null, problem: answer.problem };
   }

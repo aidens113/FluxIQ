@@ -50,4 +50,31 @@ describe("the panel's attachment port", () => {
     const result = await readAttachment(api)({ attachment: { kind: "screenshot", ref: "capture:c.1" }, projectId: "p", conversationId: "c", turnId: "t" });
     expect(result).toMatchObject({ ok: false, sentence: "No such attachment." });
   });
+
+  describe("in a panel thread", () => {
+    const turn = { attachment: { kind: "flow-graph-diff", ref: "flow.1:adaptation.1" }, conversationId: "panel-1", turnId: "turn.1" };
+    const answer = { ok: true as const, status: 200, payload: { attachment: { attachment: turn.attachment, payload: { added: [] } } } };
+
+    it("reads through get-panel-thread-attachment with the open project, never the literal panel", async () => {
+      const api = fakeProgramApi({ "get-panel-thread-attachment": answer });
+      const result = await readAttachment(api, { panel: { openProjectId: () => "project.small" } })({ ...turn, projectId: "panel" });
+      expect(api.sentTo("get-panel-thread-attachment")).toEqual([{ conversationId: "panel-1", turnId: "turn.1", projectId: "project.small" }]);
+      expect(api.sentTo("get-conversation-attachment")).toEqual([]);
+      expect(result).toMatchObject({ ok: true });
+    });
+
+    it("keeps get-conversation-attachment, in its own project, for a project thread listed beside the panel's", async () => {
+      const api = fakeProgramApi({ "get-conversation-attachment": answer });
+      await readAttachment(api, { panel: { openProjectId: () => "project.small" } })({ ...turn, conversationId: "conv.p", projectId: "project.named" });
+      expect(api.sentTo("get-conversation-attachment")).toEqual([{ projectId: "project.named", conversationId: "conv.p", turnId: "turn.1" }]);
+      expect(api.sentTo("get-panel-thread-attachment")).toEqual([]);
+    });
+
+    it("names no project when none is open, so Core serves a navigation and refuses a proposal in its own words", async () => {
+      const api = fakeProgramApi({ "get-panel-thread-attachment": { ok: false, status: 400, error: "name the project." } });
+      const result = await readAttachment(api, { panel: { openProjectId: () => undefined } })({ ...turn, projectId: "panel" });
+      expect(api.sentTo("get-panel-thread-attachment")).toEqual([{ conversationId: "panel-1", turnId: "turn.1" }]);
+      expect(result).toMatchObject({ ok: false, sentence: "name the project." });
+    });
+  });
 });

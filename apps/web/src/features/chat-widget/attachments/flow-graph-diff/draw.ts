@@ -21,12 +21,13 @@ const CHANGES = [
   { key: "changed", word: "Changed", icon: "pencil" }
 ] as const;
 
-export function drawFlowGraphDiff(payload: unknown, attachment: ChatAttachment): HTMLElement {
+// The reference (which now carries its project as JSON) is for the program, never for a person: it is not printed.
+export function drawFlowGraphDiff(payload: unknown, _attachment: ChatAttachment): HTMLElement {
   const diff = parseFlowGraphDiff(payload);
   if (!diff) {
     return createElement("p", {
       className: "panel-diff-empty",
-      text: `This turn carries a Flow change (${attachment.ref}) that could not be read, so nothing is shown.`
+      text: "The proposed Flow change could not be read here, so nothing is shown."
     });
   }
   const rows = CHANGES.flatMap(({ key, word, icon }) => diff[key].map((entry) => row(key, word, icon, entry)));

@@ -9,11 +9,13 @@
 //
 //   1st refused again   refused and steered: it reads what would change things
 //   2nd                 the round ends, and the next is fresh from the page as it stands
-//   3rd, and each after it stops spending and asks the person
+//   3rd, and each after it the round ends, the next is steered onto a different way
+//                       (`./stuck-steer.ts`), and the person is asked what to do, without
+//                       waiting for the answer (`./stuck-question.ts`, R7)
 //
-// A second one goes straight to the person where fresh approaches have already been used up, as
-// the watch's signal does. Reaching the person is a wait and not an ending, and nobody to ask goes
-// on as `../attempt/stuck-ask.ts` says, so this adds no way for a task to end.
+// A second one goes to that last rung where fresh approaches have already been used up, as the
+// watch's signal does. The last rung neither waits nor parks, with or without somebody to ask
+// (`../attempt/rounds.ts`), so this adds no way for a task to end.
 //
 // **Counted where it happens.** `./loops-caught.ts` reads a round's rows, and a refused completion
 // has a row of its own code that names no pattern, so nothing here is counted twice. It is a near

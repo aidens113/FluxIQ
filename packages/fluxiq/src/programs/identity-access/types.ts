@@ -45,6 +45,13 @@ export type User = {
   totpEnabled: boolean;
   passwordConfigured?: boolean;
   pinConfigured?: boolean;
+  /**
+   * The person's own starting humanness (an integer 0-100; absent = none): what a run of
+   * theirs whose request carries no starting value uses. Read and set only by the person
+   * (`get-my-preferences`, `update-my-preferences`); it comes back with their own session
+   * (`validateSession`) and never with anyone else's view of them (`withoutPersonalPreferences`).
+   */
+  startingHumanness?: number;
   createdAtMs: number;
   updatedAtMs: number;
 };
@@ -78,6 +85,18 @@ export type IdentityAccessSnapshot = {
   sessions: Session[];
   vault: VaultStatus;
 };
+
+/**
+ * A person as the `snapshot` endpoint lists them. `authorityHeldElsewhere` is
+ * true exactly when `update-user` would refuse to change their sign-in name,
+ * role or on/off (`IdentityAuthorityDelegation`): an account holder, whose
+ * three are provisioning's, or a person the owner could not answer for. A
+ * client offers those changes only when it is false.
+ */
+export type IdentityAccessListedUser = User & { authorityHeldElsewhere: boolean };
+
+/** The snapshot as the `snapshot` endpoint answers it: each person marked as an `IdentityAccessListedUser`. */
+export type IdentityAccessListing = Omit<IdentityAccessSnapshot, "users"> & { users: IdentityAccessListedUser[] };
 
 export type VaultRecord = {
   id: string;
@@ -157,6 +176,21 @@ export type IdentitySessionEnd = {
   revoker: IdentitySessionRevoker;
 };
 export type IdentitySessionEndListener = (end: IdentitySessionEnd) => void | Promise<void>;
+
+/**
+ * Who holds a person's authority (their sign-in name, sign-in role and
+ * whether they may sign in) when Identity Access does not: the host's account
+ * provisioning, for a person with a platform account, whose role is derived
+ * from their workspace memberships' policies and whose sign-in name is their
+ * account email. `holdsAuthorityOf` is true for such a person; the
+ * `update-user` endpoint then refuses to change their sign-in name, role or
+ * on/off (`IdentityAuthorityManagedError`), while provisioning keeps writing
+ * them through the service directly. An answer that cannot be had (a throw)
+ * refuses the change too: it is never read as "no account".
+ */
+export type IdentityAuthorityOwner = {
+  holdsAuthorityOf(userId: string): Promise<boolean>;
+};
 
 export type IdentityAccessServiceOptions = {
   repository?: Repository | undefined;

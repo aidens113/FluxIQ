@@ -1,5 +1,5 @@
-import { PanelPlaceholderPage } from "../../../features/panel-shell";
+import { SecurityPage } from "../../../features/security";
 
-export default function SecurityPage() {
-  return <PanelPlaceholderPage page="security" title="Security" summary="Your keys, who can reach FluxIQ, and a log of what was done will be here." />;
+export default function SecurityRoute() {
+  return <SecurityPage />;
 }

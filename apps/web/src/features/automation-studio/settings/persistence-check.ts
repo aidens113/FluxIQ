@@ -131,6 +131,7 @@ const FLOW_SETTINGS_LABELS: Partial<Record<keyof FlowSettingsDraft, string>> = {
   maxRecoveryAttemptsPerSubflow: "Recovery attempts per subflow",
   maxReroutesPerRun: "Reroutes per run",
   maxNodesPerSubflow: FLOW_SIZE_SETTING.label,
+  humanness: "Humanness",
   interfaceInputs: "Flow inputs",
   interfaceOutputs: "Flow outputs",
   dependencyPins: "Dependencies",

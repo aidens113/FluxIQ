@@ -28,6 +28,7 @@
 // act's refusal is touched: anything it lets through goes on to all of them.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceTimingOf } from "../timing-free.ts";
 import { automationStudioLlmLoopAttemptRecord, type AutomationStudioLlmLoopAttemptRecord } from "./attempt-record.ts";
 import { automationStudioLlmLoopDetector } from "./detector.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_APPROACHES_BEFORE_ASKING, AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE } from "./limits.ts";
@@ -75,9 +76,11 @@ export function automationStudioLlmLoopWatch(options: {
   /** Whether a lasting act done again is refused: on the new path, never with no `loopSignal`. */
   refuseActs?: boolean | undefined;
   askedRepeats?: AutomationStudioLlmLoopAskedRepeats | undefined;
+  /** The parameters a node declares as timing (`../timing-free.ts`, R6): no part of what a call asks. */
+  timingOf?: AutomationStudioLlmEvidenceTimingOf | undefined;
 } = {}): AutomationStudioLlmLoopWatch {
   const record = options.record ?? automationStudioLlmLoopAttemptRecord();
-  const detector = automationStudioLlmLoopDetector({ record, holds: options.holds, askedRepeats: options.askedRepeats, judgesWithNoPage: options.refuseActs });
+  const detector = automationStudioLlmLoopDetector({ record, holds: options.holds, askedRepeats: options.askedRepeats, judgesWithNoPage: options.refuseActs, timingOf: options.timingOf });
   const caught = Object.fromEntries(AUTOMATION_STUDIO_LLM_LOOP_PATTERNS.map((pattern) => [pattern, 0])) as Record<AutomationStudioLlmLoopPattern, number>;
   const tally = { steered: 0, refused: 0, changeApproach: 0, askPerson: 0 };
   // `clear`: nothing standing. `steered`: told, and it has not yet been seen whether that worked. `refusing`: it did not.

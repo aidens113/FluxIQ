@@ -15,10 +15,11 @@ import { automationStudioFlowStartLocation } from "../../../../../runtime/flow-a
 import type { AutomationStudioBootstrapAdaptationMode } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../../runtime/llm/index.ts";
+import { humannessSchema } from "@fluxiq/contracts/automation";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "../field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls", "humanness"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -32,6 +33,8 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   /** `candidate`, `project` or `answer-first` (`../../../model/authoring-mode/`); absent is legacy. */
   authoringMode?: "candidate" | "project" | "answer-first";
   startLocation?: string;
+  /** How human the build's input looks, 0 to 100. Absent when none was sent. */
+  humanness?: number;
   /** What the chat's reading of the message cost, carried into the creation purse. Absent when none was sent. */
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums. Absent when none was sent. */
@@ -71,6 +74,8 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
   if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) {
     throw new Error("Flow Bootstrap generation interpretation call count must be a whole, non-negative number.");
   }
+  const humanness = unsafeInput.humanness;
+  if (humanness !== undefined && !humannessSchema.safeParse(humanness).success) throw new Error("Flow Bootstrap generation humanness must be a whole number from 0 to 100.");
   return {
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
@@ -80,6 +85,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     ...(startLocation === undefined ? {} : { startLocation }),
     ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
     ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
+    ...(humanness === undefined ? {} : { humanness: humanness as number }),
     caller: {
       actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
       actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")

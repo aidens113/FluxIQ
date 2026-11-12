@@ -15,6 +15,7 @@ import {
   type CredentialKey,
   type SealedCredentialRecord
 } from "./credential-seal.ts";
+import { IdentityAuthorityDelegation } from "./authority/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
@@ -23,6 +24,7 @@ import { runCredentialChange } from "./run-credential-change.ts";
 import { digestSessionId } from "./session-digest.ts";
 import { IdentityTwoFactorResetError } from "./two-factor-reset-error.ts";
 import { withCredentialStatus } from "./with-credential-status.ts";
+import { IdentityPersonalPreferences, withoutPersonalPreferences } from "./preferences/index.ts";
 import { deleteStoredSessions, IdentityCredentialAttempts, IdentitySessionRevocations, resolveSessionRevocation } from "./sessions/index.ts";
 import {
   credentialMetadata,
@@ -33,6 +35,8 @@ import {
   type StoredSession
 } from "./stored-state.ts";
 import { createTotpSecret, verifyTotp } from "./totp.ts";
+import { TotpRequiredError } from "./totp-required-error.ts";
+import { refuseTakenUsername, usernameKey } from "./usernames/index.ts";
 import type {
   IdentityAccessServiceOptions,
   IdentityAccessSnapshot,
@@ -52,17 +56,12 @@ import type {
 
 const INVALID_CREDENTIALS = "Invalid username or credentials";
 
-export class TotpRequiredError extends Error {
-  constructor(message = "Authenticator code required") {
-    super(message);
-    this.name = "TotpRequiredError";
-  }
-}
-
 export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export class IdentityAccessService {
   private readonly users = new Map<string, User>();
+  /** The person's own preferences, on their User record (`IdentityPersonalPreferences`); others' views of a user leave them out. */
+  readonly preferences = new IdentityPersonalPreferences({ users: this.users, ready: () => this.load(), persist: () => this.persist() });
   private readonly roles = new Map<string, Role>();
   private readonly credentials = new Map<string, UserCredential>();
   private readonly credentialMetadata = new Map<string, CredentialMetadata>();
@@ -78,6 +77,8 @@ export class IdentityAccessService {
   /** Raw ids of the sessions this process saw, in memory only, and who is told when one is revoked. */
   private readonly revocations: IdentitySessionRevocations;
   private readonly credentialAttempts = new IdentityCredentialAttempts();
+  /** Where account holders' role and on/off are held; the `update-user` endpoint asks it first. */
+  readonly authority = new IdentityAuthorityDelegation();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -126,6 +127,7 @@ export class IdentityAccessService {
     if ((existing || this.credentials.has(id) || this.encryptedCredentials.has(id)) && (params.password || params.pin)) {
       throw new Error("An existing account's or stored credential's password or PIN cannot be changed here; use a password or PIN change");
     }
+    refuseTakenUsername(this.users, id, params.username);
     const user: User = {
       id,
       username: params.username,
@@ -133,6 +135,7 @@ export class IdentityAccessService {
       roleId: params.roleId,
       enabled: params.enabled ?? existing?.enabled ?? true,
       totpEnabled: params.totpEnabled ?? existing?.totpEnabled ?? false,
+      ...(existing?.startingHumanness === undefined ? {} : { startingHumanness: existing.startingHumanness }),
       createdAtMs: existing?.createdAtMs ?? now,
       updatedAtMs: now
     };
@@ -140,14 +143,15 @@ export class IdentityAccessService {
     if (params.password) await this.setCredentialHash(user.id, "passwordHash", params.password);
     if (params.pin) await this.setCredentialHash(user.id, "pinHash", params.pin);
     await this.persist();
-    return user;
+    return withoutPersonalPreferences(user);
   }
 
-  async updateUser(params: IdentityUserUpdate): Promise<User> {
+  async updateUser(params: IdentityUserUpdate, usernameMode: "replace" | "recase" = "replace"): Promise<User> {
     await this.load();
     const existing = this.users.get(params.id);
     if (!existing) throw new Error(`Unknown user: ${params.id}`);
     if (params.roleId && !this.roles.has(params.roleId)) throw new Error(`Unknown role: ${params.roleId}`);
+    refuseTakenUsername(this.users, existing.id, params.username, usernameMode);
     const removesFinalAdmin = existing.enabled && existing.roleId === "admin"
       && (params.enabled === false || (params.roleId !== undefined && params.roleId !== "admin"))
       && ![...this.users.values()].some((user) => user.id !== existing.id && user.enabled && user.roleId === "admin");
@@ -164,7 +168,7 @@ export class IdentityAccessService {
     await this.persist();
     // Disabling takes the person's keys with it, in memory and in every browser, as provisioning's disable does.
     if (existing.enabled && !next.enabled) await this.revokeUserSessions(next.id);
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   /** Removes an account, its credential and its sessions (announced as revoked); false if unknown; refuses the final enabled admin, as `updateUser` does. */
@@ -299,7 +303,7 @@ export class IdentityAccessService {
     const next = { ...user, totpEnabled: true, updatedAtMs: Date.now() };
     this.users.set(userId, next);
     await this.persist();
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   async disableTotp(userId: string): Promise<User> {
@@ -313,13 +317,13 @@ export class IdentityAccessService {
     const next = { ...user, totpEnabled: false, updatedAtMs: Date.now() };
     this.users.set(userId, next);
     await this.persist();
-    return next;
+    return withoutPersonalPreferences(next);
   }
 
   async authenticate(params: { username: string; password: string; totp?: string; ttlMs?: number; nowMs?: number }): Promise<{ session: Session; user: User; role: Role }> {
     await this.load();
-    const username = params.username.trim().toLowerCase();
-    const user = [...this.users.values()].find((item) => item.username.toLowerCase() === username);
+    const username = usernameKey(params.username.trim());
+    const user = [...this.users.values()].find((item) => usernameKey(item.username) === username);
     if (!user || !user.enabled) {
       await runDummyCredentialDerivation(params.password, this.kdf);
       throw new Error(INVALID_CREDENTIALS);
@@ -500,7 +504,7 @@ export class IdentityAccessService {
       .filter((session) => session.expiresAtMs > nowMs)
       .map((session) => ({ id: session.digest, userId: session.userId, expiresAtMs: session.expiresAtMs }));
     return {
-      users: [...this.users.values()].map((user) => withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id))).sort((left, right) => left.username.localeCompare(right.username)),
+      users: [...this.users.values()].map((user) => withoutPersonalPreferences(withCredentialStatus(user, this.credentials.get(user.id), this.credentialMetadata.get(user.id)))).sort((left, right) => left.username.localeCompare(right.username)),
       roles: [...this.roles.values()].sort((left, right) => left.id.localeCompare(right.id)),
       sessions,
       vault: this.vault

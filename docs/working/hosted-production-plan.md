@@ -1,9 +1,9 @@
 # Hosted Production Plan
 
 Status: Active
-Status detail: C1 workspace/runtime and E/D5 product foundations independently verified and merged on dev. C2/C3 caller migration/routing and deployment gates remain.
+Status detail: W5 hosted-panel continuation passes focused functional, type, structure and generated-reference gates; merged into dev with the 70-test contract gate passing. Deployment acceptance remains open.
 Created: 2026-10-17
-Last updated: 2026-10-30
+Last updated: 2026-11-11
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
 Scope: Core side of running FluxIQ in production as one codebase with three deployments (getfluxiq.com, local, self-hosted): identity and account provisioning, IAM-style permissions on every surface, extension sign-in, gateway transport, tenancy and storage, panel extension points, bring-your-own-key model calls, deployment, security, tests, release cut. Browser, store, website, local simulation and Lab work is in the paired document.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/hosted-production-plan.md
@@ -60,11 +60,7 @@ document owns the extension, stores, website, infrastructure, docs, legal and La
 lanes in parallel to 11-08 (the extension's connection files merge 11-10); hosted gate 11-11 to
 11-12; store submission about 11-13; public when Google approves.
 
-**Next.** (1) Contracts frozen 2026-10-28 (t784, `@fluxiq/contracts` 0.3.0: `/platform`, `/iam`,
-gateway 0.2 additions; decisions in the paired document's ledger); B1 (t789) and B2 (t788) merged 10-28; B3 (t803), lane A (t802) and C0 (t808) merged 10-29 (B3 inert on `service` until C wires it); C1 with the IAM wiring (t813) and E with D5 (t814) in flight; C starts with
-the H0 changes, each as its own task. (2) The
-user answers N1 to N7 and creates the VM, DNS and store developer account (paired U9). Nothing
-blocks H1.
+**W5 continuation (2026-11-11).** t901 repairs atomic username recasing, the member's own-name UI without broader identity access, and fresh key-sharing consent before and after each asynchronous key reveal. The lead independently verified 25 casing/service tests, 12 key-source tests and 13 member UI/route tests and 77 shared API route tests; the lane's affected web tests pass 404/404. Package typechecks pass. Structure and generated-reference freshness also pass; t901 is merged into dev and its mandatory contract gate passed all 70 tests; evidence and the independent security review are in the paired extension's `docs/working/mvp-launch-plan/reports/codex-t901*.md`. Deployment, Caddy/email/container and final production-browser acceptance remain open. No deployment or main promotion is implied.
 
 **Not verified** (open after H0).
 - Caddy itself (WebSocket pass-through, Caddyfile syntax, `header_up` replacing a client

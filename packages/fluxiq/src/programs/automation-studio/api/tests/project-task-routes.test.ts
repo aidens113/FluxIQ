@@ -1,6 +1,6 @@
 // @fluxiq-test-group real-sql
-// Covers handlers/task/project-tasks.ts: a project's tasks listed from what each task remembers, renamed, and
-// forgotten, on a real service's disk. Rename and remove touch the task's memory entry and nothing else.
+// Covers handlers/task/project-tasks.ts: a project's tasks listed from what each task remembers, renamed, given their own
+// humanness level, and forgotten, on a real service's disk. Rename, settings and remove touch the task's memory entry and nothing else.
 
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -120,5 +120,38 @@ describe("rename-task and remove-task", () => {
     expect(thread.payload.outcomes.length).toBeGreaterThan(0);
     expect(await call(AUTOMATION_STUDIO_ENDPOINTS.removeTask, { projectId: project.id, taskId: "task.loans" })).toMatchObject({ ok: false, errorCode: "task.not_found" });
     expect(existsSync(service.projectPaths.projectFile(project.id, "task-memory", "task.loans.json"))).toBe(false);
+  });
+});
+
+describe("update-task-settings", () => {
+  it("sets and clears the task's own humanness, and the list carries it while it is set", async () => {
+    const { project, loans, call, task, memory, service } = await world();
+    await task("task.loans", loans.flowId, SOON);
+    const listedBefore = await call(AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks, { projectId: project.id });
+    expect(listedBefore.payload.tasks[0]).not.toHaveProperty("humanness");
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.loans", humanness: 40 })).toEqual({ ok: true, payload: { taskId: "task.loans", humanness: 40 } });
+    expect((await memory.get(project.id, "task.loans"))?.humanness).toBe(40);
+    expect((await call(AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks, { projectId: project.id })).payload.tasks[0]).toMatchObject({ taskId: "task.loans", humanness: 40 });
+    // A stored 0 is a level of its own, not a removal.
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.loans", humanness: 0 })).toEqual({ ok: true, payload: { taskId: "task.loans", humanness: 0 } });
+    expect((await call(AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks, { projectId: project.id })).payload.tasks[0].humanness).toBe(0);
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.loans", humanness: null })).toEqual({ ok: true, payload: { taskId: "task.loans", humanness: null } });
+    expect(await memory.get(project.id, "task.loans")).not.toHaveProperty("humanness");
+    expect((await call(AUTOMATION_STUDIO_ENDPOINTS.listProjectTasks, { projectId: project.id })).payload.tasks[0]).not.toHaveProperty("humanness");
+    // The rest of the task's memory and its Flow are untouched.
+    expect((await memory.get(project.id, "task.loans"))?.attempts).toHaveLength(2);
+    expect((await service.getFlow(project.id, loans.flowId)).metadata?.humanness).toBeUndefined();
+  });
+
+  it("refuses a level no save would take, a missing level and a task it does not hold", async () => {
+    const { project, loans, call, task, memory } = await world();
+    await task("task.loans", loans.flowId, SOON);
+    for (const humanness of [101, -1, 2.5, "x"]) {
+      expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.loans", humanness })).toMatchObject({ ok: false, errorCode: "task.humanness_invalid" });
+    }
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.loans" })).toMatchObject({ ok: false, errorCode: "task.humanness_invalid" });
+    expect(await memory.get(project.id, "task.loans")).not.toHaveProperty("humanness");
+    expect(await call(AUTOMATION_STUDIO_ENDPOINTS.updateTaskSettings, { projectId: project.id, taskId: "task.none", humanness: 40 })).toMatchObject({ ok: false, errorCode: "task.not_found" });
+    expect(await memory.get(project.id, "task.none")).toBeUndefined();
   });
 });

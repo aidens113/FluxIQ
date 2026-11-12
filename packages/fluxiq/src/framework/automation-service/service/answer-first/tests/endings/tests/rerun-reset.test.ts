@@ -1,8 +1,11 @@
 // @fluxiq-test-group real-sql
-// Nothing is put back on this path (D1). A forward run sends no reset, but a model's rerun of a
-// step on another page does (`runtime/llm/node-tools/step-place.ts`), which would take the page
-// away from what the attempt did. Through a real rerun: the reset is refused before it reaches
-// the target, the rerun runs nothing and says so, and the task goes on from the page as it stands.
+// Nothing is put back on this path (D1). A forward run sends no reset, and neither does a model's
+// rerun of a step that started on another page: the round tells the loop it reruns in place
+// (`rerunsInPlace`), so the rerun runs from the page as it stands (`runtime/llm/node-tools/step-place.ts`,
+// `forward_run`) and says where its step started. Run `run-mwc60eal-4c9fdf6f`: before this, the rerun
+// sent a reset, the attempt refused it, and the rerun ran nothing. Through a real rerun: no reset
+// reaches the target, the rerun's read runs on the moved shelf and says so, no act is repeated, and
+// the task reaches its result.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import { complete, fakeLibrary, READ_LOANS, RENEW_CARD, runNode, scriptedAttempt } from "../../fake-library.ts";
@@ -13,8 +16,8 @@ vi.setConfig({ testTimeout: 120_000 });
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
-describe("a rerun that would reset the target", () => {
-  it("is refused and said, nothing reaches the target, no act is repeated, and the task reaches its result", async () => {
+describe("a rerun of a step that started on another page", () => {
+  it("sends no reset, runs where the page stands and says so, repeats no act, and the task reaches its result", async () => {
     const library = fakeLibrary();
     let told = "";
     const attempt = await scriptedAttempt({
@@ -24,21 +27,28 @@ describe("a rerun that would reset the target", () => {
       script: [
         runNode("card", RENEW_CARD, {}, ["modify_existing"], { add: true }),
         runNode("read", READ_LOANS, {}, [], { add: true }),
-        // The page has moved since this step, so a rerun of it would put the target back first.
+        // The page has moved since this step started, so a rerun of it runs on the moved page.
         () => {
           library.shelf = "moved";
           return { kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { node: READ_LOANS, parameters: { sorted: true } } }] };
         },
         (request) => {
           told = JSON.stringify(request.context.evidenceLoop?.evidence);
-          return runNode("read.here", READ_LOANS, { here: true }, [], {});
-        },
-        complete("Renewed, and listed.")
+          return complete("Renewed, and listed.");
+        }
       ]
     }, cleanups);
-    expect(told).toContain("rerun_place_unreachable");
-    expect(told).toContain("answer_first.no_reset");
-    expect(library.calls.filter((call: { value: JsonObject }) => call.value.replay === "reset")).toEqual([]);
+    const calls = library.calls as { value: JsonObject }[];
+    expect(calls.filter((call) => call.value.replay === "reset")).toEqual([]);
+    // The rerun's read reached the target once, on the moved shelf, with nothing put back first. The read's act is done,
+    // so it goes as the dry run's check (`runtime/llm/node-tools/rerun-check.ts`), never as a reset or a step done again.
+    const reruns = calls.filter((call) => call.value.node === READ_LOANS && (call.value.parameters as JsonObject | undefined)?.sorted === true);
+    expect(reruns).toHaveLength(1);
+    expect(reruns[0]!.value.replay).toBe("verify");
+    expect(told).toContain("forward_run");
+    expect(told).toContain("stepStartedOn");
+    expect(told).not.toContain("rerun_place_unreachable");
+    expect(told).not.toContain("answer_first.no_reset");
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);
     expectPresses(attempt, { card: 1 });

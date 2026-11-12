@@ -77,6 +77,16 @@ describe("the app route IAM table", () => {
     expect(of("POST", context, { activeProjectId: "p", activeFlowId: "f" })).toEqual({ kind: "project-child", projectId: "p", child: "flow", childId: "f" });
     expect(of("POST", context, { activeProjectId: "p", activeFlowId: null })).toEqual({ kind: "project", projectId: "p" });
     expect(of("POST", context, { activeProjectId: null })).toEqual({ kind: "user", self: true });
-    for (const route of ["/api/recordings", "/api/client-gateway/snapshot", "/api/programs"]) expect(of("GET", route)).toEqual({ kind: "workspace" });
+    for (const route of ["/api/recordings", "/api/client-gateway/snapshot", "/api/programs", "/api/accounts/members", "/api/security/audit"]) expect(of("GET", route)).toEqual({ kind: "workspace" });
+    expect(of("POST", "/api/accounts/invite")).toEqual({ kind: "workspace" });
+    for (const variant of ["set-role", "turn-off", "turn-on", "remove", "resend-invite", "revoke-invite"]) {
+      expect(appRouteIamContract("POST", "/api/accounts/member", variant).resource.of({ userId: "u1" })).toEqual({ kind: "user", userId: "u1" });
+    }
+  });
+
+  it("decides people and the activity log by identity.manage, for a panel caller only", () => {
+    const managed = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit");
+    expect(managed).toHaveLength(9);
+    for (const contract of managed) expect([contract.path, contract.variant, contract.callers, contract.action.startsWith("iam:")]).toEqual([contract.path, contract.variant, { panel: "identity.manage" }, true]);
   });
 });
