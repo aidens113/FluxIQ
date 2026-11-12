@@ -149,10 +149,11 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
           execution = await native(request);
         } catch (error) {
           settling.threw(step);
-          throw error;
+          return await throwAfterFlush(record, error);
         }
         admitted = (execution?.result.effects ?? []).filter((effect) => effect.type === POLICY_OUTPUT_EFFECT).length;
         settling.nodeAnswered(step, execution?.result, dispatcher ? admitted : 0);
+        await record.flushed();
         return execution;
       }
       const execution = await native(request);
@@ -170,7 +171,10 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     if (admitted > 0 && effect.type === POLICY_OUTPUT_EFFECT) {
       admitted -= 1;
       if (!settling) return await dispatcher(effect, context);
-      const answer = await settling.outputSent(async () => await dispatcher(effect, context));
+      let answer: Awaited<ReturnType<Dispatcher>>;
+      try { answer = await settling.outputSent(async () => await dispatcher(effect, context)); }
+      catch (error) { return await throwAfterFlush(record, error); }
+      await record.flushed();
       const passRow = saidOfThePassRow(answer);
       if (passRow === "page-level-link") leftBehind = passing;
       else if (passRow === "own") leftBehind = undefined;
@@ -188,7 +192,11 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
       if (!settling) return await dispatcher(effect, context);
       const step = settling.stepOf({ actionId: outputId, parameters });
       if (await settling.begin(step) === "not_written") return notRecorded();
-      return await settling.coreSent(step, async () => await dispatcher(effect, context));
+      let answer: Awaited<ReturnType<Dispatcher>>;
+      try { answer = await settling.coreSent(step, async () => await dispatcher(effect, context)); }
+      catch (error) { return await throwAfterFlush(record, error); }
+      await record.flushed();
+      return answer;
     }
     skipped = true;
     told(outputId, act.what);
@@ -209,6 +217,13 @@ export function automationStudioAnswerFirstRunActGate(options: AutomationStudioG
     }) as Host;
   }
   return gated;
+}
+
+/** A dispatch failure and an unsaved settlement remain distinct causes. */
+async function throwAfterFlush(record: AutomationStudioAttemptActRecord, error: unknown): Promise<never> {
+  try { await record.flushed(); }
+  catch (storageError) { throw new AggregateError([error, storageError], "The run's dispatch and settlement persistence both failed."); }
+  throw error;
 }
 
 /** The chat's step: it was not done again. */

@@ -3,7 +3,8 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { PipelineError } from "../errors.ts";
 import { evaluateExpression } from "../expression/index.ts";
 import { deriveRecord, keyOf } from "../steps/index.ts";
-import type { FlowCallResult, PipelineRecord, PipelineRunContext } from "../types.ts";
+import type { FlowCallResult, PipelineCallInvocation, PipelineRecord, PipelineRunContext } from "../types.ts";
+import { pipelineMapInvocations } from "./invocations.ts";
 import { runLimited } from "./run-limited.ts";
 
 type MapDeclaration = Extract<DataStep, { kind: "map" }>;
@@ -21,7 +22,7 @@ function underField(lineage: readonly DataLineage[], field: string): DataLineage
   return lineage.map((entry) => ({ ...entry, pointer: `${prefix}${entry.pointer}` }));
 }
 
-async function callOnce(step: MapDeclaration, inputs: JsonObject, context: PipelineRunContext): Promise<FlowCallResult> {
+async function callOnce(step: MapDeclaration, inputs: JsonObject, context: PipelineRunContext, invocation: PipelineCallInvocation): Promise<FlowCallResult> {
   const { callFlow, state, now } = context.ports;
   if (callFlow === undefined) throw new PipelineError("pipeline.no_callFlow", `Step "${step.id}" calls a Flow, and no caller was given.`, step.id);
   const clock = now ?? Date.now;
@@ -30,7 +31,7 @@ async function callOnce(step: MapDeclaration, inputs: JsonObject, context: Pipel
     const reused = await state.getCachedCall(context.projectId, callKey, clock());
     if (reused !== undefined) return reused;
   }
-  const result = await callFlow(step.target, inputs, context.signal);
+  const result = await callFlow(step.target, inputs, context.signal, invocation);
   if (step.reuseResultsForMs !== undefined && state !== undefined) await state.putCachedCall(context.projectId, callKey, result, clock() + step.reuseResultsForMs);
   return result;
 }
@@ -47,13 +48,14 @@ async function callOnce(step: MapDeclaration, inputs: JsonObject, context: Pipel
  */
 export async function mapStep(step: MapDeclaration, records: readonly PipelineRecord[], context: PipelineRunContext): Promise<PipelineRecord[]> {
   const state = context.ports.state;
+  const invocations = pipelineMapInvocations(step.id, records);
   if (step.skipProcessedBy !== undefined && state === undefined) throw new PipelineError("pipeline.no_state", `Step "${step.id}" skips processed records, and no pipeline state was given.`, step.id);
   const results = await runLimited(records.length, step.concurrency, async (index): Promise<PipelineRecord | null> => {
     if (context.signal?.aborted === true) throw new PipelineError("pipeline.aborted", "The pipeline was stopped.", step.id);
     const record = records[index] as PipelineRecord;
     const key = step.skipProcessedBy === undefined ? undefined : keyOf(record.data, step.skipProcessedBy);
     if (key !== undefined && state !== undefined && (await state.isProcessed(context.projectId, context.pipeline, step.id, key))) return null;
-    const result = await callOnce(step, callInputs(step, record, context), context);
+    const result = await callOnce(step, callInputs(step, record, context), context, invocations[index]!);
     if (key !== undefined && state !== undefined) await state.markProcessed(context.projectId, context.pipeline, step.id, key);
     const lineage = [...record.lineage, ...underField(result.lineage, step.as)];
     return deriveRecord(context, step.id, { ...record.data, [step.as]: result.outputs }, [`/${index}`], lineage);

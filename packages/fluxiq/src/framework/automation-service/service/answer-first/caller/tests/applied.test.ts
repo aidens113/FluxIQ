@@ -1,6 +1,6 @@
 // A caller's grant and person port in an attempt's input: the scope replaces what the request
 // permitted and takes the gate's question away, and a sink takes the conversation's place.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioAsk, AutomationStudioParkingPort } from "../../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "../../attempt/index.ts";
 import { automationStudioAnswerFirstCallerApplied } from "../index.ts";
@@ -31,6 +31,18 @@ describe("a caller's options applied to an attempt", () => {
     expect(applied.permissionGround.permittedConsequences).toEqual(["create_new"]);
     expect(applied.permissionGround.ask).toBeUndefined();
     expect(applied.personAsk?.port).toBe(conversation);
+  });
+
+  it("a standing scope removes paid instruction inference, while unscoped callers keep it", () => {
+    const scoped = input({ scope: { permittedConsequences: ["modify_existing"] } });
+    const deriveInstructed = vi.fn();
+    scoped.permissionGround.deriveInstructed = deriveInstructed;
+    const applied = automationStudioAnswerFirstCallerApplied(scoped);
+    expect(applied.permissionGround.deriveInstructed).toBeUndefined();
+    expect(deriveInstructed).not.toHaveBeenCalled();
+    const unscoped = input({ taskKey: "chat" });
+    unscoped.permissionGround.deriveInstructed = deriveInstructed;
+    expect(automationStudioAnswerFirstCallerApplied(unscoped).permissionGround.deriveInstructed).toBe(deriveInstructed);
   });
 
   it("a sink takes every question, and its answer comes back by callback; with no scope it hears permission questions too", async () => {

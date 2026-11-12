@@ -8,6 +8,8 @@ export { automationStudioAnswerFirstFlowRunBatchSteps } from "./batch-steps.ts";
 export { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 export { automationStudioAnswerFirstFlowRunEngineOf } from "./engine-of.ts";
 export { automationStudioAnswerFirstFlowRun } from "./flow-run.ts";
+export { automationStudioAnswerFirstSourceAuthority, type AutomationStudioAnswerFirstSourceAuthority, type AutomationStudioAnswerFirstSourceOwner } from "./source-authority.ts";
+export { automationStudioAnswerFirstExecutionIdentity, type AutomationStudioAnswerFirstExecutableSource } from "./execution-identity.ts";
 export { automationStudioAnswerFirstInputBoundSteps } from "./input-bound-steps.ts";
 export { automationStudioAnswerFirstInputValuedSteps } from "./input-valued-steps.ts";
 export { automationStudioAnswerFirstFlowRunPersonCheckPort } from "./person-check-port.ts";

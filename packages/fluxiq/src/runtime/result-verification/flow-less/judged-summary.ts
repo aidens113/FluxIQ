@@ -20,6 +20,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultEndView } from "../result-summary.ts";
+import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
 import { automationStudioJudgeCriteriaText, automationStudioOverriddenText } from "../../run-overrides/index.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
@@ -45,7 +46,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const acts = summary.acts.map((act) => ({ what: words(act.what), where: words(act.where), classes: [...act.classes], state: act.state }));
   const looked = lookedShown(summary.looked ?? []);
   const readPages = automationStudioFlowLessReadPagesShown(summary, words, deniedEvidenceKeys);
-  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld;
+  const resultEvidence = summary.resultEvidence ? automationStudioResultEvidenceScreen(summary.resultEvidence, deniedEvidenceKeys) : undefined;
+  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld || resultEvidence?.withheld === true;
   const read: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: rows?.set.recordCount ?? 0,
@@ -71,7 +73,8 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
     ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
     ...(looked.looks.length ? { looked: looked.looks } : {}),
-    ...(readPages.pages.length ? { readPages: readPages.pages } : {})
+    ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
+    ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {})
   };
   return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
 }

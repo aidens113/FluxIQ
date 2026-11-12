@@ -38,15 +38,15 @@ const summary = () => automationStudioBuildTestResultSummary({
 });
 
 describe("a replayed press's change lines", () => {
-  it("are shown on its row, the lines about the control it pressed first, and at most a few", () => {
+  it("are shown on its row, the lines about the control it pressed first, with every line whole", () => {
     const steps = summary().buildTest!.steps;
     const first = steps.find((step) => step.step === 2)?.observed as JsonObject;
     // The pressed control's lines lead, in the domain's order (the replay knows no handle to tell the two apart), though it wrote the mark last.
     expect((first.changed as string[]).slice(0, 2)).toEqual(["t939 \"Space Grey\" gone", "t941 \"Space Grey\" no longer marked"]);
-    expect((first.changed as string[]).length).toBe(3);
-    expect(first.changedNotShown).toBe(2);
+    expect((first.changed as string[]).length).toBe(5);
+    expect(first.changedNotShown).toBeUndefined();
     // Nothing that only restates the outcome rides along (t193 1003 w3).
-    expect(Object.keys(first).sort()).toEqual(["changed", "changedNotShown"]);
+    expect(Object.keys(first).sort()).toEqual(["changed"]);
     expect(steps.find((step) => step.step === 3)?.observed).toEqual({ changed: ["t941 \"Space Grey\" now marked"] });
   });
 
@@ -86,8 +86,8 @@ describe("a quantity a press set", () => {
       report: report([replayed(go), replayed(plus)], [[plus, { ok: true, code: "core.replay.replayed", said: "the step ran again", changed: lines }]]),
       nodes: [], deniedEvidenceKeys: DENIED
     }).buildTest!.steps[1]?.observed as JsonObject;
-    expect(sent.changed).toEqual(["t932 \"2\" was \"1\"", "t880 \"Free delivery over 50 €\" appeared", "t881 \"Only 3 left\" appeared"]);
-    expect(sent.changedNotShown).toBe(1);
+    expect(sent.changed).toEqual(["t932 \"2\" was \"1\"", "t880 \"Free delivery over 50 €\" appeared", "t881 \"Only 3 left\" appeared", "t882 \"Bundle offer\" appeared"]);
+    expect(sent.changedNotShown).toBeUndefined();
   });
 
   it("counts the domain's own left-out lines among those not shown, never as a line", () => {

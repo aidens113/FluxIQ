@@ -5,9 +5,9 @@ import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
 import { automationStudioAnswerFirstResultWords as words } from "./statement-words.ts";
 import type { AutomationStudioAnswerFirstResultLedger } from "./types.ts";
 
-export function automationStudioAnswerFirstResultLookLine(ledger: AutomationStudioAnswerFirstResultLedger, source: string): string {
+export function automationStudioAnswerFirstResultLookLine(ledger: AutomationStudioAnswerFirstResultLedger, source: string, answerRows?: number): string {
   const output = automationStudioAnswerFirstResultOutputStep(ledger);
-  const rows = output ? words.keptCount(output) : 0;
+  const rows = answerRows ?? (output ? words.keptCount(output) : 0);
   const stands = output ? `${words.step(output)}, ${words.rows(rows)}` : "no read step in the draft, so no rows";
   const take = rows ? "" : `; a read is the result only as a draft step: amend_draft with change "take" and call "${source}" makes this one a step, with no new act`;
   return `a look: the result is unchanged (${stands})${take}.`;

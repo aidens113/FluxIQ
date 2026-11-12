@@ -9,13 +9,52 @@ function step(position: number, actionId: string, input: Record<string, string>,
 type Entry = {
   code: string;
   format?: string;
-  steps: { step: number; actionId: string; input?: unknown; bindable?: string[]; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
+  steps: { step: number; callId?: string; actionId: string; input?: unknown; bindable?: string[]; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
   unlisted?: number;
   omitted?: string[];
   instruction: string;
 };
 
 const value = (steps: readonly AutomationStudioFlowDraftStep[]): Entry => automationStudioFlowDraftEntry({ steps })!.value as Entry;
+
+describe("draft call identity", () => {
+  it("keeps the actual call id when draft positions move", () => {
+    const recorded = step(2, "read", { list: "items" }, { callId: "call.read.actual", effect: "observe", proposes: true });
+    expect(value([recorded]).steps[0]).toMatchObject({ step: 2, callId: "call.read.actual" });
+    expect(value([{ ...recorded, position: 7 }]).steps[0]).toMatchObject({ step: 7, callId: "call.read.actual" });
+  });
+
+  it("distinguishes two identical reads by their own calls", () => {
+    const same = { list: "items" };
+    const reads = [
+      step(1, "read", same, { callId: "read.one", effect: "observe", proposes: true }),
+      step(2, "read", same, { callId: "read.two", effect: "observe", proposes: true })
+    ];
+    expect(value(reads).steps.map(line => line.callId)).toEqual(["read.one", "read.two"]);
+  });
+
+  it("shows the replaced source's own call and replacement without its private resolved values", () => {
+    const source = step(1, "read", { list: "old" }, { id: "old", callId: "read.old", effect: "observe", proposes: true, disposition: "dropped", replacedBy: "new", ranWith: { private: "private-original-read" } });
+    const replacing = step(2, "read", { list: "new" }, { id: "new", callId: "read.new", effect: "observe", proposes: true });
+    const shown = value([source, replacing]);
+    expect(shown.steps[0]).toEqual({ step: 1, callId: "read.old", actionId: "read", replacedBy: 2, inResult: false });
+    expect(shown.steps[1]).toMatchObject({ callId: "read.new", inResult: true });
+    expect(JSON.stringify(shown)).not.toContain("private-original-read");
+  });
+
+  it("never infers a missing call from a checked candidate, prior execution, position or matching input", () => {
+    const original = step(1, "read", { list: "items" }, { callId: "read.original", ranWith: { private: "private-before" } });
+    const candidate = step(2, "read", { list: "items" }, { effectApplied: false, checkedCandidate: { callId: "read.checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true } });
+    delete candidate.callId;
+    const written = step(3, "read", { list: "items" }, { written: true, effectApplied: false });
+    delete written.callId;
+    const shown = value([candidate, written]);
+    expect(shown.steps[0]).not.toHaveProperty("callId");
+    expect(shown.steps[0]).toMatchObject({ checkedCandidate: { callId: "read.checked", performed: false }, priorExecution: { callId: "read.original", performed: true } });
+    expect(shown.steps[1]).not.toHaveProperty("callId");
+    expect(JSON.stringify(shown)).not.toContain("private-before");
+  });
+});
 
 describe("the draft entry a decision is shown", () => {
   it("shows checked intentions separately from private original performed proof", () => {
@@ -112,7 +151,8 @@ describe("the draft entry a decision is shown", () => {
       inResult: false,
       replayed: "changed",
       runs: "optional: the Flow carries on when this fails",
-      settings: { attempts: 2 }
+      settings: { attempts: 2 },
+      callId: "call.1"
     });
   });
 
@@ -311,7 +351,7 @@ describe("the attempt a rerun replaced", () => {
       receipt(3, "d6", "d18")
     ];
     const shown = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
-    expect(shown.steps[2]).toEqual({ step: 3, actionId: "list", replacedBy: 1, inResult: false });
+    expect(shown.steps[2]).toEqual({ step: 3, callId: "call.3", actionId: "list", replacedBy: 1, inResult: false });
     expect(shown.steps[0]).toMatchObject({ step: 1, input: { where: "fixed" }, inResult: true });
     expect(shown.instruction).toContain("A step showing replacedBy is the attempt a rerun replaced");
     // Said only where such an attempt is listed.

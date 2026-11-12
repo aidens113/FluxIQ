@@ -32,6 +32,11 @@ function lineageOfRecord(lineage: readonly DataLineage[], index: number): DataLi
  * - `flow`: the Flow's own lineage for each record when it gave some, otherwise a `read` of the call.
  */
 export async function loadPipelineSource(pipeline: DataPipeline, context: PipelineRunContext): Promise<PipelineRecord[]> {
+  const load = () => materialize(pipeline, context);
+  return context.ports.sourceSnapshot ? await context.ports.sourceSnapshot(load) : await load();
+}
+
+async function materialize(pipeline: DataPipeline, context: PipelineRunContext): Promise<PipelineRecord[]> {
   const source = pipeline.source;
   if (source.kind === "dataset") {
     if (context.ports.readDataset === undefined) throw new PipelineError("pipeline.no_readDataset", "The source is a dataset, and no dataset reader was given.", PIPELINE_SOURCE_STEP_ID);
@@ -48,7 +53,7 @@ export async function loadPipelineSource(pipeline: DataPipeline, context: Pipeli
   for (const [name, expression] of Object.entries(source.inputs ?? {})) {
     Object.defineProperty(inputs, name, { value: evaluateExpression(expression, { record: null, inputs: context.inputs }), enumerable: true, writable: true, configurable: true });
   }
-  const result = await context.ports.callFlow(source.target, inputs, context.signal);
+  const result = await context.ports.callFlow(source.target, inputs, context.signal, { stepId: PIPELINE_SOURCE_STEP_ID, invocationId: "source" });
   const rows = asObjects(result.outputs, "The outputs of the source Flow");
   return rows.map((data, index) => {
     const own = lineageOfRecord(result.lineage, index);

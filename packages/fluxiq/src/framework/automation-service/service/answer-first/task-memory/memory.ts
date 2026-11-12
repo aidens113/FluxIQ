@@ -27,6 +27,10 @@ export type AutomationStudioAnswerFirstTaskMemory = {
   attempts: AutomationStudioAnswerFirstAttemptProvenance[];
   /** What the task's latest attempt that acted has done on the site, whatever has run on its Flow since. */
   acts?: AutomationStudioAnswerFirstTaskActs;
+  /** Each code caller execution's acts, written with every act change. Independent of the latest record and trimmed attempt provenance. */
+  actsByScope?: Record<string, AutomationStudioAnswerFirstTaskActs>;
+  /** Immutable pipeline enumerations by execution scope. Dataset storage owns rows; the pipeline validates these references and refuses an unreadable one. */
+  pipelineSourcesByScope?: Record<string, { snapshotId: string; count: number }>;
   /** Each Flow this task saved under, newest last, the last 20: what its steps were last known against (`./flow-base.ts`). */
   flowBases?: AutomationStudioAnswerFirstFlowBase[];
 };

@@ -139,6 +139,9 @@ import { automationStudioBuildTestObservationReader } from "./observation.ts";
 import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
 import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
 import { automationStudioBuildTestStores } from "./stores.ts";
+import { automationStudioRecordReadListKey, automationStudioRecordReadLocation, automationStudioRecordReadPlace } from "../../../engine/automation/records/index.ts";
+import { automationStudioResultReadParameters } from "../read-account/index.ts";
+import { automationStudioResultEvidenceFromBatches, automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
 import { automationStudioBuildTestInputs } from "./test-inputs.ts";
 import { automationStudioReferenceNow } from "../../reference-time/index.ts";
 
@@ -311,6 +314,24 @@ export function automationStudioBuildTestResultSummary(input: {
       : [])
   });
   if (stored?.withheld) withheld = true;
+  const pageEntries = (report?.observations ?? []).flatMap((observation, at) => {
+    if (observation.records === undefined) return [];
+    const step = proposed.find((candidate) => observes(candidate, observation));
+    if (!step) return [];
+    const parameters = isRecord(step.input.parameters) ? step.input.parameters : undefined;
+    const read = automationStudioResultReadParameters(parameters);
+    const fields = read && isRecord(read.fields) ? read.fields : {};
+    const conditions = read && Array.isArray(read.where) ? read.where : [];
+    const where = automationStudioRecordReadLocation(observation.evidence, []);
+    const place = automationStudioRecordReadPlace(observation.evidence, []);
+    const listKey = automationStudioRecordReadListKey(observation.evidence, []);
+    const reported = isRecord(observation.evidence) && isRecord(observation.evidence.readRows) ? observation.evidence.readRows : undefined;
+    const source = `trial.${at + 1}`;
+    const page: JsonObject = { source, step: step.id ?? `step.${step.position}`, position: step.position, version: 1, conditions, fields, kept: observation.records.length, rows: [...observation.records], ...(where === undefined ? {} : { where }), ...(place === undefined ? {} : { place }), ...(listKey === undefined ? {} : { listKey }), ...(reported ? { leftOut: { reported, ...(parameters ? { parameters } : {}) } } : {}) };
+    return [{ datasetId: "trial", batchKey: source, evidence: { pages: [page], coverage: [], working: [], looks: [] } as JsonObject }];
+  });
+  const evidence = denied === undefined ? undefined : automationStudioResultEvidenceScreen(automationStudioResultEvidenceFromBatches({ datasets: pageEntries.length ? ["trial"] : [], entries: pageEntries, ...(input.instructionText === undefined ? {} : { instructionText: input.instructionText }) }), denied);
+  withheld ||= evidence?.withheld === true;
   const buildTest: AutomationStudioBuildTestAccount = {
     kind: "build_test",
     test: input.report ? (input.report.reused ? "reused" : "ran") : "not_run",
@@ -339,6 +360,7 @@ export function automationStudioBuildTestResultSummary(input: {
     flowShape: shape.flowShape,
     withheld: withheld || shape.withheld,
     buildTest,
+    ...(evidence ? { resultEvidence: evidence.value } : {}),
     ...(ended?.endView ? { endView: ended.endView } : {}),
     referenceNow
   };
@@ -487,3 +509,5 @@ function names(named: string, step: AutomationStudioFlowDraftStep): boolean {
   const position = /^(?:step\s*|#)?([0-9]{1,4})$/u.exec(trimmed)?.[1];
   return position !== undefined && Number(position) === step.position;
 }
+
+function isRecord(value: unknown): value is JsonObject { return typeof value === "object" && value !== null && !Array.isArray(value); }

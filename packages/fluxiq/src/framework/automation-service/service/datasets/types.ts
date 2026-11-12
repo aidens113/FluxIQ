@@ -1,5 +1,6 @@
 import type { AutomationStudioRunDatasetExportFormat, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioRecordBatch } from "../../executor/index.ts";
+export type { AutomationStudioDatasetSnapshot, AutomationStudioDatasetSnapshotPage, AutomationStudioDatasetSnapshotRow } from "../../../persistence/automation/index.ts";
 
 // Requests and answers of the run datasets collaborator. Endpoint handlers pass
 // request fields through by name. `limit` and `cursor` stay `unknown` because

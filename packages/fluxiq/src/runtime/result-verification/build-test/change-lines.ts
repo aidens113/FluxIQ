@@ -32,10 +32,8 @@ import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } fr
 export const AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY = "changed";
 
 /** The most change lines one answer is sent: the acted control's, then a value's, then the first others. */
-const CHANGE_LINES_MAX = 3;
 
 /** The longest change line sent; a view line is far shorter. */
-const CHANGE_LINE_CHARS = 160;
 
 /** The domain's own last line when it capped its list (`page-changes.ts`). */
 const DOMAIN_MORE = /^and (\d+) more changes?$/u;
@@ -59,7 +57,7 @@ export function automationStudioBuildTestChangeLines(recorded: JsonValue | undef
       more += Number(domainMore[1]);
       return [];
     }
-    const cut = line.trim().slice(0, CHANGE_LINE_CHARS);
+    const cut = line.trim();
     if (screenAutomationStudioLlmEvidence(cut, []).secretShaped) {
       withheld = true;
       return [];
@@ -72,7 +70,7 @@ export function automationStudioBuildTestChangeLines(recorded: JsonValue | undef
   const quoted = words.filter((word) => word.length > 1).map((word) => `"${word}"`);
   const rank = (line: string): number => quoted.some((word) => line.includes(word)) ? 0 : READS_OTHERWISE.test(line) ? 1 : 2;
   const ordered = lines.map((line, at) => ({ line, at, rank: rank(line) })).sort((a, b) => a.rank - b.rank || a.at - b.at).map((entry) => entry.line);
-  const shown = ordered.slice(0, CHANGE_LINES_MAX);
+  const shown = ordered;
   const notShown = ordered.length - shown.length + more;
   return { value: { changed: shown, ...(notShown > 0 ? { changedNotShown: notShown } : {}) }, withheld };
 }

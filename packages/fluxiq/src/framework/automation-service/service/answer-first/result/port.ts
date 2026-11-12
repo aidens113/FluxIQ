@@ -16,9 +16,9 @@ import type { AutomationStudioAnswerFirstResultEvent, AutomationStudioAnswerFirs
 
 export type AutomationStudioAnswerFirstResultPort = {
   /** Feed what one call or run did; answers the line its answer carries, or `undefined`. */
-  record(events: readonly AutomationStudioAnswerFirstResultEvent[]): string | undefined;
+  record(events: readonly AutomationStudioAnswerFirstResultEvent[], counts?: { before: number; after(): number }): string | undefined;
   /** The statement every model request carries (`./header.ts`). */
-  header(): string;
+  header(answerRows?: number): string;
   /** The output step, which the ending and the keep read back. */
   outputStep(): AutomationStudioAnswerFirstResultStep | undefined;
   /** The answer's rows under the contract (`./answer.ts`). */
@@ -33,7 +33,7 @@ export type AutomationStudioAnswerFirstResultPort = {
 export function automationStudioAnswerFirstResultPort(instruction: string): AutomationStudioAnswerFirstResultPort {
   let ledger = automationStudioAnswerFirstResultLedger(automationStudioAnswerFirstAnswerContractOf(instruction));
   return {
-    record(events) {
+    record(events, counts) {
       const before = ledger;
       const refused: string[] = [];
       let looked: string | undefined;
@@ -42,11 +42,12 @@ export function automationStudioAnswerFirstResultPort(instruction: string): Auto
         if (event.kind === "look") looked = event.read.source;
         ledger = automationStudioAnswerFirstResultApply(ledger, event);
       }
-      const said = automationStudioAnswerFirstResultChangeLine(before, ledger) ?? (looked === undefined ? undefined : automationStudioAnswerFirstResultLookLine(ledger, looked));
+      const answerCounts = counts ? { before: counts.before, after: counts.after() } : undefined;
+      const said = automationStudioAnswerFirstResultChangeLine(before, ledger, answerCounts) ?? (looked === undefined ? undefined : automationStudioAnswerFirstResultLookLine(ledger, looked, answerCounts?.after));
       const lines = [...refused.map((line) => `${line}.`), ...(said === undefined ? [] : [said])];
       return lines.length ? lines.join(" ") : undefined;
     },
-    header: () => automationStudioAnswerFirstResultHeader(ledger),
+    header: (answerRows) => automationStudioAnswerFirstResultHeader(ledger, answerRows),
     outputStep: () => automationStudioAnswerFirstResultOutputStep(ledger),
     answer: () => automationStudioAnswerFirstResultAnswer(ledger),
     emptyRefusal: () => automationStudioAnswerFirstResultEmptyRefusal(ledger),

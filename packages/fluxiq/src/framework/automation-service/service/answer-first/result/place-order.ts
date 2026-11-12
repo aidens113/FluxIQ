@@ -8,7 +8,7 @@
 //   tell a re-read from a next page, and none is guessed from the rows.
 import type { AutomationStudioAnswerFirstResultPage } from "./types.ts";
 
-const NUMBERED_PLACE = /^([a-z][a-z0-9_-]*)=(\d{1,15})$/u;
+const NUMBERED_PLACE = /^(page|offset)=(\d+)$/u;
 
 export function automationStudioAnswerFirstResultPlacePage(pages: readonly AutomationStudioAnswerFirstResultPage[], page: AutomationStudioAnswerFirstResultPage): AutomationStudioAnswerFirstResultPage[] {
   if (page.place !== undefined) {
@@ -27,5 +27,6 @@ export function automationStudioAnswerFirstResultPlacePage(pages: readonly Autom
 /** A place said as one `name=N`: its name and number. Anything else is not numbered. */
 export function automationStudioAnswerFirstResultNumberedPlace(place: string | undefined): { name: string; value: number } | undefined {
   const match = place === undefined ? null : NUMBERED_PLACE.exec(place);
-  return match ? { name: match[1]!, value: Number(match[2]) } : undefined;
+  const value = match ? Number(match[2]) : undefined;
+  return match && value !== undefined && Number.isSafeInteger(value) ? { name: match[1]!, value } : undefined;
 }

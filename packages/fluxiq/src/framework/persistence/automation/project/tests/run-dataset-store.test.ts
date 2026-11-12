@@ -55,13 +55,13 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const triggers = await query<{ name: string }>(pool, "select name from sqlite_master where type = 'trigger' and tbl_name = 'run_datasets' order by name");
     expect(triggers.map((row) => row.name)).toEqual(["fk_run_datasets_run_id_insert", "fk_run_datasets_run_id_update"]);
     const batchColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_batches)");
-    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms"]);
+    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms", "evidence_json"]);
     const rowColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_rows)");
     expect(rowColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "ordinal", "attempt_id", "batch_key", "row_json"]);
 
     const legacyPool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(rootDir, "legacy") });
     const lease = await legacyPool.acquire("project.legacy");
-    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers") }).migrate();
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers" && migration.id !== "0036_run_dataset_evidence") }).migrate();
     await expect(lease.database.get("select name from sqlite_master where name = 'run_datasets'")).resolves.toBeUndefined();
     const legacyStore = await AutomationStudioProjectRunDatasetStore.open({ pool: legacyPool, projectId: "project.legacy" });
     await expect(lease.database.get("select migration_id from automation_schema_migrations where migration_id = '0019_run_datasets'")).resolves.toEqual({ migration_id: "0019_run_datasets" });
@@ -69,6 +69,33 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     await lease.release();
     await legacyStore.close();
     await legacyPool.closeAll();
+  });
+
+  it("persists private provenance atomically and retains it independently of processed row order", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const evidence = { pages: [{ source: "capture.one", step: "read", version: 1, fields: { title: ".name" }, conditions: [], rows: items(2), kept: 2, place: "page=1" }], coverage: [], working: [], looks: [] };
+    await store.appendBatch(batch({ rows: items(2), evidence }));
+    await store.processRunDatasets("run.a");
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    await store.close();
+    const reopened = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
+    fixture!.store = reopened;
+    expect((await reopened.readBatchEvidence("run.a"))[0]?.evidence).toEqual(evidence);
+    expect((await reopened.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(2));
+    // A retried batch that genuinely carries no provenance must not inherit an older snapshot.
+    await reopened.appendBatch(batch({ rows: items(1) }));
+    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey }]);
+  });
+
+  it("rolls back replacement rows and their evidence together when the provenance write fails", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const evidence = { pages: [{ source: "original" }] };
+    await store.appendBatch(batch({ rows: items(1), evidence }));
+    const lease = await pool.acquire(PROJECT);
+    try { await lease.database.run("create trigger refuse_evidence_update before insert on run_dataset_batches when new.evidence_json is not null begin select raise(abort, 'fixture refuses evidence'); end"); } finally { await lease.release(); }
+    await expect(store.appendBatch(batch({ writeMode: "replace", rows: items(3), evidence: { pages: [{ source: "replacement" }] } }))).rejects.toThrow(/fixture refuses evidence/u);
+    expect((await store.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(1));
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
   });
 
   it("assigns ordinals 1..N on the first append and continues from N+1", async () => {

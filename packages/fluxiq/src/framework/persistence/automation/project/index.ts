@@ -40,6 +40,7 @@ export * from "./parts/index.ts";
 export * from "./ui-cache-store.ts";
 export * from "./reusable-llm-context-store.ts";
 export * from "./run-dataset-store.ts";
+export * from "./dataset-occurrences/index.ts";
 export * from "./candidate-verification/index.ts";
 export * from "./accepted-state/index.ts";
 export * from "./command-ledger/index.ts";

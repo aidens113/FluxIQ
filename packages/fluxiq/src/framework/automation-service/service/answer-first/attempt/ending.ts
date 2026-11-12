@@ -45,6 +45,8 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
   await run.witnesses.atEnd();
   const flushed = await flushedRecord(run);
+  run.result.draft(run.steps);
+  await run.sink.publish(run.result.rows(), run.result.evidence());
   const sessionEnded = await endedSession(run, ending);
   // Read back for what it does to the store: the run's datasets are processed for the Data window and an export. The answer is the attempt's one result (`../result-feed/`), the draft's output step.
   await run.sink.readBack();

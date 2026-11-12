@@ -8,7 +8,7 @@ import { automationStudioAnswerFirstResultWords as words } from "./statement-wor
 import { automationStudioAnswerFirstResultStepHolder } from "./holder.ts";
 import type { AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultPage, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 
-export function automationStudioAnswerFirstResultChangeLine(before: AutomationStudioAnswerFirstResultLedger, after: AutomationStudioAnswerFirstResultLedger): string | undefined {
+export function automationStudioAnswerFirstResultChangeLine(before: AutomationStudioAnswerFirstResultLedger, after: AutomationStudioAnswerFirstResultLedger, counts?: { before: number; after: number }): string | undefined {
   const outputBefore = automationStudioAnswerFirstResultOutputStep(before);
   const outputAfter = automationStudioAnswerFirstResultOutputStep(after);
   const parts: string[] = [];
@@ -43,8 +43,8 @@ export function automationStudioAnswerFirstResultChangeLine(before: AutomationSt
   const outputNow = outputBefore ? successor(after, outputBefore) : undefined;
   if (outputAfter && outputNow !== outputAfter) parts.push(`the result is now ${words.step(outputAfter)}'s${outputBefore ? ` (it was step ${outputBefore.position}'s)` : ""}`);
   if (!outputAfter && outputBefore) parts.push("no read step is the result now");
-  const rowsBefore = outputBefore ? words.keptCount(outputBefore) : 0;
-  const rowsAfter = outputAfter ? words.keptCount(outputAfter) : 0;
+  const rowsBefore = counts?.before ?? (outputBefore ? words.keptCount(outputBefore) : 0);
+  const rowsAfter = counts?.after ?? (outputAfter ? words.keptCount(outputAfter) : 0);
   if (!parts.length && rowsBefore === rowsAfter) return undefined;
   return `result ${rowsBefore} → ${words.rows(rowsAfter)}${parts.length ? `: ${parts.join("; ")}` : ""}.`;
 }

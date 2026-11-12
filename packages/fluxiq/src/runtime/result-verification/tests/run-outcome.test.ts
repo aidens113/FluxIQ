@@ -205,6 +205,29 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(request?.context.stage).toBeUndefined();
   });
 
+  it("reads persisted page evidence independently of the processed answer and sends its exact source rows", async () => {
+    const context = harness({ answer: ANSWER.unknown, instructions: [instruction("Give columns name and role.")] });
+    const pages: JsonObject[] = [
+      { source: "batch.page2", step: "n2", version: 2, conditions: [{ field: "role", equals: "admin" }], fields: { name: "name_field", role: "role_field" }, listKey: "list.members", place: "page=2", kept: 2, rows: [{ name: "B", role: "admin" }, { name: "A", role: "admin" }], carried: true },
+      { source: "batch.page3", step: "n2", version: 2, conditions: [{ field: "role", equals: "admin" }], fields: { name: "name_field", role: "role_field" }, listKey: "list.members", place: "page=3", kept: 0, rows: [], leftOut: { reported: { conditions: { rejected: [1] } } } }
+    ];
+    const read = vi.fn(async () => [{ datasetId: "members", batchKey: "result.publication", evidence: { pages, coverage: [], working: [], looks: [] } }]);
+    context.ports.readRunDatasetEvidence = read;
+    await verify(context);
+    expect(read).toHaveBeenCalledWith({ projectId: "project-1", runId: "run-1" });
+    const sent = context.requests[0]?.context.resultSummary?.resultEvidence;
+    expect(sent?.pages).toEqual(pages);
+    expect(sent?.answerContract).toEqual({ columns: ["name", "role"] });
+    expect(sent?.missingEvidence).toBeUndefined();
+  });
+
+  it("says that legacy page evidence is missing instead of inventing pages from the stored row count", async () => {
+    const context = harness({ answer: ANSWER.unknown });
+    context.ports.readRunDatasetEvidence = async () => [{ datasetId: "members", batchKey: "legacy" }];
+    await verify(context);
+    expect(context.requests[0]?.context.resultSummary?.resultEvidence).toMatchObject({ pages: [], missingEvidence: [{ datasetId: "members", batchKey: "legacy" }] });
+  });
+
   it("checks an empty result but keeps an unsupported negative judgement unverified", async () => {
     // The empty result must still be judged. Without any observed missing row,
     // two negatives do not prove matching rows exist (t752).

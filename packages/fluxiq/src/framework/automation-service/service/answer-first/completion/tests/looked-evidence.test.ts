@@ -70,12 +70,12 @@ describe("a look after the acts, as evidence for the check", () => {
     expect(judged[0]).not.toHaveProperty("looked");
   });
 
-  it("shows the latest few distinct looks, none of them cut", async () => {
+  it("shows every distinct look, none of them cut", async () => {
     const looks = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/page/${index}/`, found: `${index} ${"word ".repeat(400)}`.trim() }));
     const { check, judged } = made(() => looks);
     await check.check({ summary: "Done." });
     const shown = judged[0]!.looked!;
-    expect(shown).toEqual(looks.slice(-6));
+    expect(shown).toEqual(looks);
     for (const look of shown) expect([...look.found].length).toBeGreaterThan(600);
   });
 

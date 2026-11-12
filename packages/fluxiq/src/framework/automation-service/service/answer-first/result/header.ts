@@ -15,9 +15,9 @@ import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
 import { automationStudioAnswerFirstResultWords as words } from "./statement-words.ts";
 import type { AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 
-export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudioAnswerFirstResultLedger): string {
+export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudioAnswerFirstResultLedger, answerRows?: number): string {
   const output = automationStudioAnswerFirstResultOutputStep(ledger);
-  const sentences = [output ? `Result: ${resultWords(ledger, output)}.` : `Result: no rows: ${ledger.steps.length ? "every read step in the draft is marked intermediate" : "the draft has no read step yet"}.`];
+  const sentences = [output ? `Result: ${resultWords(ledger, output, answerRows)}.` : `Result: no rows: ${ledger.steps.length ? "every read step in the draft is marked intermediate" : "the draft has no read step yet"}.`];
   const working = ledger.steps.filter((step) => step !== output).sort((one, other) => one.position - other.position);
   if (working.length) sentences.push(`Working reads, not the answer: ${working.map((step) => `${words.step(step)} (${words.pageCount(step.pages.length)}, ${words.rows(words.keptCount(step))})`).join(", ")}.`);
   const holding = ledger.looks.filter((look) => look.kept.length > 0);
@@ -27,10 +27,11 @@ export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudio
   return sentences.join(" ");
 }
 
-function resultWords(ledger: AutomationStudioAnswerFirstResultLedger, output: AutomationStudioAnswerFirstResultStep): string {
+function resultWords(ledger: AutomationStudioAnswerFirstResultLedger, output: AutomationStudioAnswerFirstResultStep, answerRows?: number): string {
   const parts = [`${words.step(output)} (${words.version(output)})`];
   if (!output.pages.length) parts[0] += `, 0 rows: v${output.version} has read no page yet`;
-  else parts[0] += `, ${words.rows(words.keptCount(output))} over ${words.pageCount(output.pages.length)}: ${words.pages(output.pages)}`;
+  else parts[0] += `, ${words.rows(answerRows ?? words.keptCount(output))} over ${words.pageCount(output.pages.length)}: ${words.pages(output.pages)}`;
+  if (answerRows !== undefined && answerRows !== words.keptCount(output)) parts.push(`${words.rows(words.keptCount(output))} kept before result processing`);
   const columns = columnWords(ledger, output);
   if (columns) parts.push(columns);
   const coverage = coverageWords(output);

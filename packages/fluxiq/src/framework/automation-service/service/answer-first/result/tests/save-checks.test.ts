@@ -15,22 +15,40 @@ function ledgerOfLoop(conditions = [FREE]) {
 }
 
 describe("the saved Flow holds the output step as it reads (A)", () => {
-  const saved = (version: AutomationStudioAnswerFirstResultVersion) => new Map([["s1", version]]);
+  const saved = (version: AutomationStudioAnswerFirstResultVersion, written = version, resolved = written) => new Map([["s1", { written, resolved, saved: version }]]);
 
   it("a Flow whose read dropped the output step's conditions is refused", () => {
     const output = automationStudioAnswerFirstResultOutputStep(ledgerOfLoop([FREE, AISLE]).ledger());
-    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [FREE], fields: SEAT_FIELDS }))).toMatchObject({ ok: false, code: "answer_first.output_step_version_not_saved" });
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [FREE], fields: SEAT_FIELDS }, seatVersion([FREE, AISLE])))).toMatchObject({ ok: false, code: "answer_first.output_step_version_not_saved" });
     expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [AISLE, FREE], fields: SEAT_FIELDS }))).toEqual({ ok: true });
   });
 
   it("a Flow that lost a column, or holds no read of the output step, is refused; a field read in the domain's resolved form is the same column", () => {
     const output = automationStudioAnswerFirstResultOutputStep(ledgerOfLoop().ledger());
-    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [FREE], fields: { seat: "seat label" } }))).toMatchObject({ ok: false, code: "answer_first.output_step_version_not_saved" });
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [FREE], fields: { seat: "seat label" } }, seatVersion([FREE])))).toMatchObject({ ok: false, code: "answer_first.output_step_version_not_saved" });
     expect(automationStudioAnswerFirstResultOutputSaved(output, new Map())).toMatchObject({ ok: false, code: "answer_first.output_step_not_saved" });
-    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ conditions: [FREE], fields: { seat: "#seats .label", price: "#seats .price", state: "#seats .state" } }))).toEqual({ ok: true });
+    const resolved = { conditions: [FREE], fields: { seat: "#seats .label", price: "#seats .price", state: "#seats .state" } };
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, seatVersion([FREE]), resolved))).toEqual({ ok: true });
     // The folded step (step 4) is the output step too.
-    expect(automationStudioAnswerFirstResultOutputSaved(output, new Map([["s4", seatVersion([FREE])]]))).toEqual({ ok: true });
+    expect(automationStudioAnswerFirstResultOutputSaved(output, new Map([["s4", { written: seatVersion([FREE]), resolved: seatVersion([FREE]), saved: seatVersion([FREE]) }]]))).toEqual({ ok: true });
     expect(automationStudioAnswerFirstResultOutputSaved(undefined, new Map())).toEqual({ ok: true });
+  });
+
+  it("compares both sides of a recorded predicate resolution, rejecting stale authored versions and changed executable reads", () => {
+    const output = automationStudioAnswerFirstResultOutputStep(ledgerOfLoop([FREE]).ledger());
+    const written = seatVersion([FREE]);
+    const condition = { read: { kind: "text", selector: ".availability", required: false }, equals: "free" };
+    const resolved = { conditions: [condition], fields: { seat: ".label", price: ".price", state: ".state" } };
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written, resolved))).toEqual({ ok: true });
+    const refused = { ok: false, code: "answer_first.output_step_version_not_saved" };
+    // A saved executable match is not a proof that this is the version whose rows the ledger holds.
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, seatVersion([AISLE]), resolved))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, { ...written, fields: { ...written.fields, state: "other-state" } }, resolved))).toMatchObject(refused);
+    // Identical column names do not permit a different predicate or another field's executable read.
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, conditions: [] }, written, resolved))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, conditions: [{ ...condition, equals: "booked" }] }, written, resolved))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, fields: { ...resolved.fields, state: ".other-state" } }, written, resolved))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written))).toMatchObject(refused);
   });
 });
 
@@ -61,7 +79,11 @@ describe("a paging loop's own work done again by hand is no step of the saved Fl
   });
 
   it("without a loop on the read, a folded read is not this case and stays", () => {
-    const steps = draft().map((each) => (each.position === 1 ? { ...each, routing: undefined } : each));
+    const steps = draft().map((each) => {
+      if (each.position !== 1) return each;
+      const { routing: _routing, ...withoutLoop } = each;
+      return withoutLoop;
+    });
     expect(automationStudioAnswerFirstResultLoopCopies(steps, ledgerOfLoop().ledger(), idOf).size).toBe(0);
   });
 });

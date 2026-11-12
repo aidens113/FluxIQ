@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administ
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation, type AutomationStudioCommandConsumptionOwner } from "./contracts.ts";
 import { AutomationStudioCommandRunAdmission } from "./admission.ts";
 import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "./migration.ts";
@@ -21,7 +22,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     const lease = await input.pool.acquire(input.projectId);
     let unitOfWork: AutomationStudioProjectUnitOfWork | undefined;
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION] }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION]) }).migrate();
       unitOfWork = await AutomationStudioProjectUnitOfWork.open(input);
       return new AutomationStudioProjectCommandLedgerStore(lease, unitOfWork);
     } catch (error) { await unitOfWork?.close(); await lease.release(); throw error; }

@@ -99,7 +99,6 @@ const BY_CALLER_CHECK = "The caller's own check of the result.";
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
 /** The latest distinct looks the judge is shown, each whole (header). */
-const LOOKS_SHOWN = 6;
 /** Stands in for a line, or an address, the screen dropped whole. */
 const WITHHELD = "(withheld)";
 
@@ -156,6 +155,7 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   looked?: (() => readonly Look[]) | undefined;
   /** The reads the result's rows came from, with where each read and how many rows it kept (`../rows/sink-type.ts`, `readPages`). Absent, none. */
   readPages?: (() => NonNullable<AutomationStudioFlowLessSummary["readPages"]>) | undefined;
+  resultEvidence?: (() => NonNullable<AutomationStudioFlowLessSummary["resultEvidence"]>) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
   askedAgain?: boolean | undefined;
   judge(summary: AutomationStudioFlowLessSummary): Promise<AutomationStudioFlowLessJudgement>;
@@ -288,6 +288,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     ...(Object.keys(witnesses).length ? { witnesses } : {}),
     ...(looked.length ? { looked } : {}),
     ...(rows.datasetId !== undefined && readPages.length ? { readPages } : {}),
+    ...(input.resultEvidence ? { resultEvidence: input.resultEvidence() } : {}),
     ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
 }
@@ -300,7 +301,7 @@ function shownLooks(looks: readonly Look[]): Look[] {
     const key = JSON.stringify([shown.where, shown.found]);
     if (!kept.has(key)) kept.set(key, shown);
   }
-  return [...kept.values()].slice(-LOOKS_SHOWN);
+  return [...kept.values()];
 }
 
 /** One line through the screen a judge's own words pass: a credential-shaped line is dropped whole, a locator in one rewritten. */

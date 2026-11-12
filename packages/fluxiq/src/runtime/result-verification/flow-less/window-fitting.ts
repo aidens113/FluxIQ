@@ -69,6 +69,8 @@ function steps(summary: JsonObject): Step[] {
     { item: "endView.view", path: ["endView", "view"], account },
     { item: "looked", path: ["looked"], account },
     { item: "readPages", path: ["readPages"], account },
+    { item: "resultEvidence.looks", path: ["resultEvidence", "looks"], account },
+    { item: "resultEvidence.pages", path: ["resultEvidence", "pages"], account },
     { item: "acts", path: ["acts"], account },
     { item: "answerText.text", path: ["answerText", "text"], account },
     ...rows

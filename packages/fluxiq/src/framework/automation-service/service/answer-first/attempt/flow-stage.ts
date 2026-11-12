@@ -35,7 +35,7 @@
 // attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
 
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf } from "../flow-run/index.ts";
+import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf, automationStudioAnswerFirstSourceAuthority } from "../flow-run/index.ts";
 import type { AutomationStudioAnswerFirstSavedFlow } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
@@ -57,7 +57,7 @@ export async function automationStudioAnswerFirstFlowStage(run: AutomationStudio
   return undefined;
 }
 
-async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated">): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated" | "candidateId">): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
   const { input } = run;
   if (saved.steps.some(declaresLasting)) await run.witnesses.beforeFirstLastingAct();
   const sentBefore = run.liveSteps;
@@ -75,6 +75,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
     },
     arrived: () => { run.arrived = true; },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
+    sourceAuthority: automationStudioAnswerFirstSourceAuthority({ projectId: input.projectId, flowId: input.flowId, owner: input.owner, drafts: input.stores.drafts }),
     // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).
     ...(input.personAsk ? { personCheck: { port: input.personAsk.port, stopped: () => { personStopped = true; }, waiting: (state: "started" | "ended", waitedMs: number) => {
       run.waitingFor = state === "started" ? "person_only_check" : undefined;
@@ -102,7 +103,6 @@ async function judged(run: AutomationStudioAnswerFirstAttemptRun, flowRun: FlowR
   await automationStudioAnswerFirstBestEffort(() => check({ summary: WHOLE_RUN }));
   if (state.achieved) flowRun.judged = "yes";
   else if (state.refused) flowRun.judged = state.refused.verdict;
-  if (flowRun.judged === "no") run.sink.runRowsRefused();
 }
 
 function endedBy(run: AutomationStudioAnswerFirstAttemptRun): AutomationStudioAnswerFirstRoundsEnding | undefined {

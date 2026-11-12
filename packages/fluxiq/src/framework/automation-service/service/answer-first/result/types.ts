@@ -23,14 +23,14 @@ export type AutomationStudioAnswerFirstResultRead = {
   source: string;
   version: AutomationStudioAnswerFirstResultVersion;
   /** Where in the list, as the domain's answer said it (`page=2`, `offset=40`, `cursor=abc`). Absent: not said. */
-  place?: string;
+  place?: string | undefined;
   /** The rows the read's conditions kept, every one. */
   kept: readonly JsonObject[];
   /** What its conditions saw and did not keep. Evidence, never rows. */
-  leftOut?: AutomationStudioFlowLessReadLeftOut;
+  leftOut?: AutomationStudioFlowLessReadLeftOut | undefined;
   /** The view of the site it read, without what only turns the page. */
-  where?: string;
-  paging?: AutomationStudioAnswerFirstResultPaging;
+  where?: string | undefined;
+  paging?: AutomationStudioAnswerFirstResultPaging | undefined;
   /** Copied from an earlier attempt's result by a carry-on, not read in this attempt. */
   carried?: boolean;
 };

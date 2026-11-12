@@ -63,8 +63,6 @@ const FOUND_KEY = "found";
 const ELEMENT_KEY = "element";
 /** The page a call read, which is what it found only where it found nothing more particular (header). */
 const PAGE_KEY = "page";
-/** Looks remembered as already handed on; past this the oldest is forgotten, so a long attempt holds a bounded set. */
-const LOOKS_REMEMBERED = 200;
 /** Where a read's answer carries the result's line (header). */
 const RESULT_NOTE_KEY = "resultNote";
 
@@ -93,7 +91,6 @@ export function automationStudioAnswerFirstCallChain(input: {
     const key = JSON.stringify([look.where, look.found]);
     if (handedOn.has(key)) return;
     handedOn.add(key);
-    if (handedOn.size > LOOKS_REMEMBERED) handedOn.delete(handedOn.values().next().value!);
     input.looked(look);
   };
   const stored: Execute = async (call) => {
@@ -107,7 +104,8 @@ export function automationStudioAnswerFirstCallChain(input: {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
     // The result's line goes on the read's own answer (header).
-    const line = isExecution(answer) ? input.result?.called({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, rows) : undefined;
+    const recorded = isExecution(answer) ? input.result?.called({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, rows) : undefined;
+    const line = rows?.failure ? `The read's rows could not be stored (${rows.failure.code}). They did not enter the result. Recover the read before claiming these rows.` : recorded;
     return isExecution(answer) && line ? withResultNote(answer, line) : answer;
   };
   const described = (call: { toolId: string; value: JsonObject }) => {

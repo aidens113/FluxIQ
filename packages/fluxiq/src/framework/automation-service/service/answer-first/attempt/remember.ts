@@ -21,10 +21,11 @@ const NEEDS_A_PERSON = "It needed a person to clear a check on the page.";
 
 type Ended = { label: AutomationStudioTaskResultLabel; candidateId: string | undefined; stated: readonly AutomationStudioAnswerFirstStatedToggle[]; spend: { calls: number; usd: number }; atMs: number };
 
-/** Writes it. A failure costs this record and nothing else: the caller says part of it was not written. */
+/** Scoped completion must commit. Unscoped metadata retains its best-effort write and warning. */
 export async function automationStudioAnswerFirstRemember(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding, ended: Ended): Promise<{ ok: boolean }> {
   const { projectId, flowId } = run.input;
-  return await automationStudioAnswerFirstBestEffort(async () => {
+  const scope = run.input.caller?.actScope;
+  const save = async () => {
     // The Flow is the steps it proposes: a round's opening look, which is no part of it, does not make it another Flow, and an attempt that only looked left none.
     const proposed = run.steps.filter(automationStudioFlowDraftStepIsProposed);
     const steps = proposed.length ? run.steps : [];
@@ -41,15 +42,21 @@ export async function automationStudioAnswerFirstRemember(run: AutomationStudioA
     return await run.memory.update(projectId, run.taskId, (current) => {
       const best = automationStudioAnswerFirstBetterFlow(current.best, next, { flowFailedLive: flowFailedLive(run), wholeRunYes: wholeRunYes(run), keptAssembles: keptAssembles(run, current.best) });
       const known = current.attempts.some((each) => each.attemptId === run.attemptId);
+      const achieved = ending === "achieved" || ending === "taken_unverified";
+      const scoped = scope !== undefined && current.actsByScope && Object.hasOwn(current.actsByScope, scope) ? current.actsByScope[scope] : undefined;
       return {
         ...current, flowId, ...(best ? { best } : {}), latest: next,
         // An attempt that ended achieved says the task is done: what stood is marked, so the same words again press none of it once more (`runtime/answer-first/act-record/done-in-achieved.ts`).
-        ...((ending === "achieved" || ending === "taken_unverified") && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
+        ...(achieved && current.acts?.attemptId === run.attemptId ? { acts: { ...current.acts, data: automationStudioAttemptActMarkDoneInAchieved(current.acts.data) } } : {}),
+        ...(achieved && scope !== undefined && scoped?.attemptId === run.attemptId ? { actsByScope: { ...current.actsByScope, [scope]: { ...scoped, data: automationStudioAttemptActMarkDoneInAchieved(scoped.data) } } } : {}),
         notes: note ? [...current.notes, note] : current.notes,
         attempts: known ? current.attempts.map((each) => (each.attemptId === run.attemptId ? row : each)) : [...current.attempts, row]
       };
-    });
-  });
+    }, { scoped: scope !== undefined });
+  };
+  if (scope === undefined) return await automationStudioAnswerFirstBestEffort(save);
+  await save();
+  return { ok: true };
 }
 
 /** A run that sent nothing proves nothing: every step of it may have been refused as already done, and it is judged all the same. */

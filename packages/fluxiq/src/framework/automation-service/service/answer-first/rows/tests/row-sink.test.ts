@@ -3,139 +3,74 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../..
 import { automationStudioAnswerFirstRowSink } from "../index.ts";
 import { call, item, liveAnswer, READ_ROWS_KEY, replayedAnswer, stubStore } from "./support.ts";
 
-function sinkOver(store = stubStore()) {
-  return { store, sink: automationStudioAnswerFirstRowSink({ runId: "run.a", readRowsKey: READ_ROWS_KEY, onRecordBatch: (batch) => store.onRecordBatch(batch) }) };
-}
+const setup = () => {
+  const store = stubStore();
+  return { store, sink: automationStudioAnswerFirstRowSink({ runId: "run.a", readRowsKey: READ_ROWS_KEY, onRecordBatch: store.onRecordBatch }) };
+};
 
-describe("automationStudioAnswerFirstRowSink", () => {
-  it("stores a live read's kept rows as a real batch with a derived schema", async () => {
-    const { store, sink } = sinkOver();
-    const stored = await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)]));
-    expect(stored).toMatchObject({ rows: [item(1), item(2)], invalidCount: 0, truncated: false });
-    expect(store.batches).toHaveLength(1);
-    const [batch] = store.batches;
-    expect(batch).toMatchObject({ attemptId: "call.1", writeMode: "append", invalidCount: 0, truncated: false });
-    expect(batch!.schema).toEqual({ schemaVersion: "0.1", fields: [{ id: "title", label: "title", valueType: "string" }, { id: "price", label: "price", valueType: "number" }] });
-    expect(sink.summary()).toMatchObject({ datasetId: batch!.datasetId, totalRows: 2, truncated: false, columns: [{ id: "title" }, { id: "price" }], rows: [item(1), item(2)] });
-  });
-
-  it("stores a replayed read's outputs.records", async () => {
-    const { store, sink } = sinkOver();
-    await sink.fromCall(call("call.1", "core.run_flow"), replayedAnswer([item(1)]));
-    expect(store.batches[0]!.rows).toEqual([item(1)]);
-  });
-
-  it("adds a later page of the same read to the same dataset, with a batch key of its own", async () => {
-    const { store, sink } = sinkOver();
-    await sink.fromCall(call("call.1", "web.read", { target: "list", page: 1 }), liveAnswer([item(1), item(2)]));
-    await sink.fromCall(call("call.2", "web.read", { target: "list", page: 2 }), liveAnswer([item(3), item(4), item(5)]));
-    expect(store.batches[0]!.datasetId).toBe(store.batches[1]!.datasetId);
-    expect(store.batches[0]!.batchKey).not.toBe(store.batches[1]!.batchKey);
-    expect(sink.summary()).toMatchObject({ totalRows: 5 });
-    expect(sink.summary().rows.map((row) => row.price)).toEqual([1, 2, 3, 4, 5]);
-  });
-
-  it("counts a row read again on the same dataset once, as processing does", async () => {
-    const { sink } = sinkOver();
-    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)]));
-    await sink.fromCall(call("call.2"), liveAnswer([item(2), item(3)]));
-    expect(sink.summary().rows.map((row) => row.price)).toEqual([1, 2, 3]);
-  });
-
-  it("is honest about a read that returned more rows than are kept", async () => {
-    const { store, sink } = sinkOver();
-    const many = Array.from({ length: 10_001 }, (_, index) => ({ title: `T${index}`, price: index }));
-    const stored = await sink.fromCall(call("call.1"), liveAnswer(many));
-    expect(stored).toMatchObject({ truncated: true });
-    expect(store.batches[0]!.truncated).toBe(true);
-    expect(store.batches[0]!.rows).toHaveLength(10_000);
-    expect(sink.summary()).toMatchObject({ truncated: true, totalRows: 10_000 });
-  });
-
-  it("counts rows the schema refuses", async () => {
-    const { store, sink } = sinkOver();
-    const stored = await sink.fromCall(call("call.1"), liveAnswer([item(1), "not a row", item(2)]));
-    expect(stored).toMatchObject({ invalidCount: 1 });
-    expect(store.batches[0]).toMatchObject({ invalidCount: 1 });
-    expect(store.batches[0]!.rows).toHaveLength(2);
-  });
-
-  it("stores no minted field as a column or a cell", async () => {
-    const { store, sink } = sinkOver();
-    await sink.fromCall(call("call.1"), liveAnswer([{ title: "A", price: 1, $ref: "x", rowHandle: "h1", evidenceRef: "e1" }]));
-    expect(store.batches[0]!.schema.fields.map((field) => field.id)).toEqual(["title", "price"]);
-    expect(store.batches[0]!.rows).toEqual([{ title: "A", price: 1 }]);
-  });
-
-  it("stores nothing when a call's input holds rows", async () => {
-    const { store, sink } = sinkOver();
-    const inputRows = [item(1), item(2)];
-    const stored = await sink.fromCall({ callId: "call.1", toolId: "web.press", value: { rows: inputRows, records: inputRows, read: { extracted: inputRows } } }, { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true });
-    expect(stored).toBeUndefined();
-    expect(store.batches).toHaveLength(0);
+describe("a page store never chooses the attempt's result", () => {
+  it("stores real kept rows and a derived schema under the explicit source identity", async () => {
+    const { sink, store } = setup();
+    const read = await sink.fromCall(call("one"), liveAnswer([item(1), item(2)]));
+    expect(read).toMatchObject({ datasetId: "read.one", rows: [item(1), item(2)], invalidCount: 0, truncated: false });
+    expect(store.batches[0]).toMatchObject({ writeMode: "replace", schema: { fields: [{ id: "title", label: "title", valueType: "string" }, { id: "price", label: "price", valueType: "number" }] } });
     expect(sink.summary()).toEqual({ totalRows: 0, truncated: false, columns: [], rows: [] });
+    expect(sink.summary(read?.datasetId).rows).toEqual([item(1), item(2)]);
   });
-
-  it("stores nothing from a complete decision's result or a model-written field", async () => {
-    const { store, sink } = sinkOver();
-    expect(await sink.fromCall(call("call.1", "complete"), { kind: "llm_evidence_tool_execution", evidence: { result: { rows: [item(1)] }, answer: [item(2)] }, effectApplied: false })).toBeUndefined();
+  it("independent captures never join by target, overlap, address, column names or replay flags", async () => {
+    const { sink, store } = setup();
+    for (const id of ["one", "two"]) await sink.fromCall(call(id, "web.read", { target: "same", page: 1 }), liveAnswer([item(1)]));
+    await sink.fromCall(call("three", "web.read", { target: "same", replay: "step" }), replayedAnswer([item(1)]));
+    expect(new Set(store.batches.map((batch) => batch.datasetId)).size).toBe(3);
+    expect(sink.summary("read.one").totalRows).toBe(1);
+    expect(sink.summary("read.two").totalRows).toBe(1);
+    expect(sink.summary()).not.toHaveProperty("datasetId");
+  });
+  it("preserves a capture's repeated rows; only declared result processing decides dedupe", async () => {
+    const { sink } = setup();
+    await sink.fromCall(call("one"), liveAnswer([item(1), item(1)]));
+    expect(sink.summary("read.one").rows).toEqual([item(1), item(1)]);
+  });
+  it("validates all captured cells and strips minted handles rather than persisting them", async () => {
+    const { sink, store } = setup();
+    const read = await sink.fromCall(call("one"), liveAnswer([item(1), "not a row", { ...item(2), $ref: "x", rowHandle: "h1", evidenceRef: "e1" }]));
+    expect(read).toMatchObject({ invalidCount: 1, rows: [item(1), item(2)] });
+    expect(store.batches[0]?.schema.fields.map((field) => field.id)).toEqual(["title", "price"]);
+  });
+  it("reports declared record-output truncation honestly", async () => {
+    const { sink } = setup();
+    const read = await sink.fromCall(call("one"), liveAnswer(Array.from({ length: 10001 }, (_, index) => item(index))));
+    expect(read).toMatchObject({ truncated: true });
+    expect(sink.summary("read.one").rows).toHaveLength(10000);
+  });
+  it.each([
+    ["input", { rows: [item(1)] }, { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false }],
+    ["model answer", {}, { kind: "llm_evidence_tool_execution", evidence: { result: { rows: [item(1)] }, answer: [item(1)] }, effectApplied: false }],
+    ["failed call", {}, { ...liveAnswer([item(1)]), failure: { category: "output_not_observed", code: "failed", retryable: true, stage: "dispatch" } }]
+  ])("never stores rows from %s", async (_name, value, answer) => {
+    const { sink, store } = setup();
+    expect(await sink.fromCall(call("one", "web.read", value), answer as AutomationStudioLlmEvidenceToolExecutionResult)).toBeUndefined();
     expect(store.batches).toHaveLength(0);
   });
-
-  it("stores nothing from a failed call", async () => {
-    const { store, sink } = sinkOver();
-    const failed: AutomationStudioLlmEvidenceToolExecutionResult = { ...liveAnswer([item(1)]), failure: { category: "output_not_observed", code: "x.failed", retryable: true, stage: "dispatch" } };
-    expect(await sink.fromCall(call("call.1"), failed)).toBeUndefined();
-    expect(store.batches).toHaveLength(0);
-  });
-
-  it("reports a failed store as data, adds nothing to its account, and stores the rows when they come again", async () => {
-    const { store, sink } = sinkOver();
+  it("reports a lost capture without contributing rows or a successful read", async () => {
+    const { sink, store } = setup();
     store.refuse.on = true;
-    const failed = await sink.fromCall(call("call.1"), liveAnswer([item(1)]));
-    expect(failed).toMatchObject({ rows: [], failure: { code: "answer_first.rows_not_stored", errorName: "TypeError" } });
-    expect(JSON.stringify(failed)).not.toContain("refused a batch");
-    expect(sink.summary().totalRows).toBe(0);
-    store.refuse.on = false;
-    await sink.fromCall(call("call.2"), liveAnswer([item(1)]));
-    expect(sink.summary().totalRows).toBe(1);
-  });
-
-  it("keeps a read's schema across pages even when a later page's values look different", async () => {
-    const { store, sink } = sinkOver();
-    await sink.fromCall(call("call.1", "web.read", { page: 1 }), liveAnswer([{ title: "A", price: 1 }]));
-    const later = await sink.fromCall(call("call.2", "web.read", { page: 2 }), liveAnswer([{ title: "B", price: "free" }]));
-    expect(store.batches[1]!.schema).toEqual(store.batches[0]!.schema);
-    expect(later).toMatchObject({ invalidCount: 1 });
-  });
-
-  it("makes the dataset the latest read that stored rows the result, and an empty read displaces nothing", async () => {
-    const { store, sink } = sinkOver();
-    await sink.fromCall(call("call.1", "web.read.a"), liveAnswer([item(1)]));
-    await sink.fromCall(call("call.2", "web.read.b"), liveAnswer([{ name: "N", stock: 4 }]));
-    await sink.fromCall(call("call.3", "web.read.c"), liveAnswer([]));
-    const result = sink.summary();
-    expect(result.datasetId).toBe(store.batches[1]!.datasetId);
-    expect(result.columns.map((column) => column.id)).toEqual(["name", "stock"]);
-  });
-
-  // Lane B, run-mw45itmx-c4d6f5cb: whether a read ran, rows or none, is what lets a request for rows be
-  // refused while none has, and judged once an honest read found nothing (`../../completion/check.ts`).
-  it("counts each read that answered, an empty one too, but not a call that read nothing or a read the store lost", async () => {
-    const { store, sink } = sinkOver();
+    expect(await sink.fromCall(call("one"), liveAnswer([item(1)]))).toMatchObject({ rows: [], failure: { code: "answer_first.rows_not_stored", errorName: "TypeError" } });
     expect(sink.readsAnswered()).toBe(0);
-    await sink.fromCall(call("call.press", "web.click", { target: "button" }), { kind: "llm_evidence_tool_execution", evidence: { pressed: true }, effectApplied: true });
-    expect(sink.readsAnswered()).toBe(0);
-    store.refuse.on = true;
-    await sink.fromCall(call("call.lost"), liveAnswer([item(1)]));
-    expect(sink.readsAnswered()).toBe(0);
-    store.refuse.on = false;
-    await sink.fromCall(call("call.empty"), liveAnswer([]));
+    expect(sink.summary("read.one").totalRows).toBe(0);
+  });
+  it("distinguishes a successful empty read from no read and from a failed store", async () => {
+    const { sink } = setup();
+    await sink.fromCall(call("empty"), liveAnswer([]));
     expect(sink.readsAnswered()).toBe(1);
-    expect(sink.summary().totalRows).toBe(0);
-    await sink.fromCall(call("call.rows"), liveAnswer([item(1)]));
-    expect(sink.readsAnswered()).toBe(2);
-    await sink.recordBatch({ nodeId: "node.read", attemptId: "attempt.1", batchKey: "attempt.1", datasetId: "run.rows", writeMode: "append", schema: store.batches[0]!.schema, rows: [], invalidCount: 0, truncated: false });
-    expect(sink.readsAnswered()).toBe(3);
+    expect(sink.summary()).not.toHaveProperty("datasetId");
+  });
+  it("stores a saved batch under its explicit dataset with its source evidence unchanged", async () => {
+    const { sink, store } = setup();
+    await sink.fromCall(call("schema"), liveAnswer([item(1)]));
+    const batch = { ...store.batches[0]!, datasetId: "saved", evidence: { pages: [] } };
+    await sink.recordBatch(batch);
+    expect(sink.summary("saved").rows).toEqual([item(1)]);
+    expect(store.batches.at(-1)?.evidence).toEqual({ pages: [] });
   });
 });

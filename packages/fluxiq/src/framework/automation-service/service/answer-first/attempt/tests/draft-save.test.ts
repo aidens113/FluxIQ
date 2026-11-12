@@ -127,6 +127,30 @@ describe("an answer-first draft's save", () => {
         verdictFor.locator = undefined;
       }
     });
+
+    it("saves the same authored four-column read through its recorded resolution of an unprojected predicate", async () => {
+      const fields = { title: "card-title", store: "card-store", price: "card-price", rating: "card-rating" };
+      const where = [{ field: "sponsored-mark", is: "present", not: true }];
+      const resolved = {
+        fields: Object.fromEntries(Object.entries(fields).map(([key, selector]) => [key, { kind: "text", selector: `.${selector}`, required: false }])),
+        where: [{ read: { kind: "text", selector: ".sponsored-mark", required: false }, is: "present", not: true }]
+      };
+      const kept = { ...read, input: { node: "timetable.read", parameters: { extractList: { fields, where } } }, ranWith: { node: "timetable.read", parameters: { extractList: resolved } } };
+      const result = automationStudioAnswerFirstResultFeed({ instructionText: "List the products with title, store, price and rating.", readRowsKey: undefined });
+      result.port.record([{ kind: "page", step: { id: "departures", position: 2 }, read: { source: "departures", version: { conditions: where, fields }, kept: [{ title: "Dock", store: "Quay", price: "8", rating: "4.7" }] } }]);
+      verdictFor.plan = planReading({ extractList: resolved });
+      verdictFor.locator = { nodes: { "0.0": { draftStepId: "d2", draftStep: 2 } } };
+      const saved: AutomationStudioFlowCandidateDraftRecord[] = [];
+      try {
+        expect((await automationStudioAnswerFirstSaveDraft(runOf(undefined, saved, [kept], result), "Done.")).kind).toBe("saved");
+        expect(saved).toHaveLength(1);
+        expect(result.port.outputStep()).toMatchObject({ version: 1, reads: { conditions: where, fields } });
+        expect(Object.keys(result.port.outputStep()!.reads.fields)).toEqual(["title", "store", "price", "rating"]);
+      } finally {
+        verdictFor.plan = undefined;
+        verdictFor.locator = undefined;
+      }
+    });
   });
 
   // Lead addition C (lane t905, run-mwcncux8): a cinema's listings read in pages by a loop (read, Next page, repeat while

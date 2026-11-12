@@ -149,6 +149,7 @@ export type AutomationStudioResultVerificationPorts = {
    */
   listRunDatasets?: ((input: { projectId: string; runId: string }) => Promise<AutomationStudioRunDatasetSummary[]>) | undefined;
   getRunDatasetPage?: ((input: { projectId: string; runId: string; datasetId: string; limit?: unknown; cursor?: unknown }) => Promise<AutomationStudioRunDatasetPage | null>) | undefined;
+  readRunDatasetEvidence?: ((input: { projectId: string; runId: string }) => Promise<Array<{ datasetId: string; batchKey: string; evidence?: JsonObject }>>) | undefined;
   flowInstructionSet(input: { projectId: string; flowId: string; subflowId?: string }): Promise<AutomationStudioFlowInstruction[]>;
   getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
   saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
@@ -562,8 +563,12 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   const attempts = runDetail?.actionAttempts ? attemptsOfThisSession(runDetail.actionAttempts, session) : undefined;
   // Each part a Call Subflow step ran, at the revision it ran, so a part's read is told by its own node (`./called-nodes.ts`, t574).
   const calledNodes = attempts ? await automationStudioResultCalledNodes(attempts, input.calledGraphs) : undefined;
+  const batchEvidence = await input.ports.readRunDatasetEvidence?.({ projectId: input.projectId, runId: session.runId });
+  const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
+    ...(batchEvidence === undefined ? {} : { batchEvidence }),
+    instructionText: instructions.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n"),
     referenceNow: automationStudioReferenceNow(session.trace?.referenceNow) ?? session.startedAt ?? session.trace?.startedAt,
     // In the order the Flow runs them, never as its store lists the nodes (s1, s10, s11 ... s9: run-murwd8le's Cause 8).
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
@@ -586,7 +591,6 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   // From here a model is asked. The request and the steps that ran are read for
   // an empty result too: without them nothing can tell a Flow that searched and
   // found nothing from one that never looked.
-  const instructions = await input.ports.flowInstructionSet({ projectId: input.projectId, flowId: session.flowId, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   const instructionDigest = automationStudioFlowInstructionDigest(instructions);
   const resolved = await input.ports.resolveProvider?.({ projectId: input.projectId, flowId: session.flowId });
   const budget = resolved ? resolveAutomationStudioRecoveryRunBudget({

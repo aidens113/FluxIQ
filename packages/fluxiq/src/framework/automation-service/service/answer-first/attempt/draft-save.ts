@@ -81,14 +81,25 @@ function withoutLoopCopies(run: AutomationStudioAnswerFirstAttemptRun): void {
   automationStudioLlmStepLogNote(`Left out of the saved Flow as a paging loop's own work done again by hand: steps ${[...copies].map((step) => step.position).sort((one, other) => one - other).join(", ")}.`);
 }
 
-/** What the assembled plan reads for each draft step it holds a read of, by the step's id in the result (`../result-feed/feed.ts`). */
-function savedReads(run: AutomationStudioAnswerFirstAttemptRun, verdict: Extract<Awaited<ReturnType<typeof checkAutomationStudioFlowBootstrapCompletion>>, { ok: true }>): Map<string, AutomationStudioAnswerFirstResultVersion> {
-  const saved = new Map<string, AutomationStudioAnswerFirstResultVersion>();
+/** What each plan read was authored as, what it ran with, and what was assembled, by its stable ledger step id. */
+function savedReads(
+  run: AutomationStudioAnswerFirstAttemptRun,
+  verdict: Extract<Awaited<ReturnType<typeof checkAutomationStudioFlowBootstrapCompletion>>, { ok: true }>
+): Parameters<typeof automationStudioAnswerFirstResultOutputSaved>[1] {
+  const saved = new Map<string, {
+    written: AutomationStudioAnswerFirstResultVersion;
+    resolved: AutomationStudioAnswerFirstResultVersion;
+    saved: AutomationStudioAnswerFirstResultVersion;
+  }>();
   for (const [subflowIndex, subflow] of verdict.buildPlan.plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const place = verdict.locator?.nodes[`${subflowIndex}.${nodeIndex}`];
       const step = place === undefined ? undefined : run.steps.find((each) => (place.draftStepId !== undefined ? each.id === place.draftStepId : each.position === place.draftStep));
-      if (step) saved.set(run.result.idOf(step), automationStudioAnswerFirstResultVersionOf({ parameters: node.parameters ?? {} }));
+      if (step) saved.set(run.result.idOf(step), {
+        written: automationStudioAnswerFirstResultVersionOf(step.input),
+        resolved: automationStudioAnswerFirstResultVersionOf(step.ranWith ?? step.input),
+        saved: automationStudioAnswerFirstResultVersionOf({ parameters: node.parameters ?? {} })
+      });
     }
   }
   return saved;

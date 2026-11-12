@@ -61,6 +61,7 @@ import { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
 import { automationStudioAnswerFirstFlowRunBatchSteps } from "./batch-steps.ts";
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
+import { automationStudioAnswerFirstExecutionIdentity, type AutomationStudioAnswerFirstExecutableSource } from "./execution-identity.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
 import { automationStudioAnswerFirstStampedPlan } from "./stamped-plan.ts";
 import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
@@ -68,10 +69,12 @@ import { automationStudioAnswerFirstFlowRunPersonCheckPort } from "./person-chec
 import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
 import { automationStudioAnswerFirstFlowRunStoppedNote } from "./stopped-note.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
+import type { AutomationStudioAnswerFirstSourceRead } from "./source-authority.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
 
 type Assembled = Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>;
-type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
+type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; candidateId?: string | undefined; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
+type Ended = AutomationStudioAnswerFirstFlowRunEnded & { executableSource?: AutomationStudioAnswerFirstExecutableSource };
 
 /** What a thrown error reads as: its words may quote a value, so none is kept. */
 const THREW = "answer_first.flow_run_threw";
@@ -86,7 +89,9 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
   const signal = attempt ? AbortSignal.any([attempt, halt.signal]) : halt.signal;
   const stopped = (): boolean => signal.aborted;
   if (stopped()) return { kind: "stopped" };
-  const assembly = await automationStudioAnswerFirstFlowRunAssemble(ports, saved.steps);
+  const basis = await sourceOf(ports, saved);
+  if (stopped()) return { kind: "stopped" };
+  const assembly = await automationStudioAnswerFirstFlowRunAssemble(ports, saved.steps, basis.status === "bound" ? basis.record.candidate.summary : undefined);
   if (stopped()) return { kind: "stopped" };
   if (!assembly.ok) return { kind: "not_assembled", codes: assembly.codes };
   const scope = automationStudioAnswerFirstReplayScope(ports.input.caller?.scope);
@@ -98,7 +103,7 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved, watch, signal, () => halt.abort(), scope, batches);
+    const ended = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, batches);
     paged(ports, assembly, saved, ended, batches.splice(0));
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
@@ -109,11 +114,12 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
   }
 }
 
-function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: AutomationStudioAnswerFirstFlowRunEnded, watch: AutomationStudioAnswerFirstFlowRunWatch): AutomationStudioAnswerFirstFlowRunOutcome {
+function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: Ended, watch: AutomationStudioAnswerFirstFlowRunWatch): AutomationStudioAnswerFirstFlowRunOutcome {
   if (watch.anySent()) ports.arrived();
   const ran = automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, ended, watch });
   automationStudioAnswerFirstFlowRunStoppedNote(ran, ended.trace);
-  return ran;
+  const executableSource = ended.executableSource ?? (ports.sourceAuthority || saved.candidateId ? { status: "unknown" as const, code: "unavailable" as const } : undefined);
+  return executableSource ? { ...ran, executableSource } : ran;
 }
 
 /** The run's batches, as pages of their draft steps (header). A run that threw has no graph, and its batches stay with the row sink alone. */
@@ -123,15 +129,16 @@ function paged(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembl
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, batches: AutomationStudioRecordBatch[]): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, batches: AutomationStudioRecordBatch[]): Promise<Ended> {
   const { input, runId } = ports;
   const digest = saved.stepsDigest;
   const engine = ports.engine();
+  const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
+  const source = await automationStudioAnswerFirstExecutionIdentity({ projectId: input.projectId, flowId: input.flowId, candidateId: saved.candidateId, authority: ports.sourceAuthority, basis, buildPlan, currentBaseDigest: () => engine.currentBaseDigest() });
   const [parentFlow, baseDependencyDigest, snapshots, deprecatedPublicationIds] = await Promise.all([engine.parentFlow(), engine.currentBaseDigest(), engine.snapshots(), engine.deprecatedPublicationIds()]);
   const startedAt = Date.now();
   const identity: AutomationStudioCandidateVerificationIdentity = { projectId: input.projectId, flowId: input.flowId, revision: 1, digest, baseDependencyDigest, requirementsDigest: NO_REQUIREMENTS };
   const start: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.flow-run`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: input.startLocation ?? null, start: "not_reset" })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
-  const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
   const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
   let askedNobody = false;
   const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; }, halt);
@@ -150,7 +157,8 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   // A press whose answer the engine then failed on its checks may not have taken: without this it reads as landed, and a repair's retry is told it already happened.
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
   ports.permissions.exploredToggles?.trial(executed.trace?.attempts ?? [], executed.graph);
-  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}) };
+  const executableSource = ports.sourceAuthority || saved.candidateId ? await source.finish(baseDependencyDigest) : undefined;
+  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}), ...(executableSource ? { executableSource } : {}) };
 }
 
 /**
@@ -183,4 +191,15 @@ function scopeStepsOf(assembly: Assembled): { consequences: readonly unknown[]; 
 
 function isCancellation(error: unknown): boolean {
   return (error instanceof Error || error instanceof DOMException) && error.name === "AbortError";
+}
+
+/** The one source A selected before assembly. Errors/malformed ports leave ordinary legacy execution available. */
+async function sourceOf(ports: AutomationStudioAnswerFirstFlowRunPorts, saved: Saved): Promise<AutomationStudioAnswerFirstSourceRead> {
+  if (!saved.candidateId) return { status: "unknown", code: "candidate_missing" };
+  if (!ports.sourceAuthority) return { status: "unknown", code: "authority_missing" };
+  try {
+    const source = structuredClone(await ports.sourceAuthority.read(saved.candidateId));
+    if (source?.status === "unknown" || source?.status === "bound" && typeof source.record?.candidate?.summary === "string") return source;
+  } catch { return { status: "unknown", code: "unavailable" }; }
+  return { status: "unknown", code: "unavailable" };
 }

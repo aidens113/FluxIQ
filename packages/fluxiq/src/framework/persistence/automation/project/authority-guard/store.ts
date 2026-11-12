@@ -2,6 +2,7 @@ import type { AutomationStudioProjectDatabaseLease, AutomationStudioSqlExecutor 
 import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import { AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION } from "./migration.ts";
 import { AutomationStudioAuthorityGuardValidation as V } from "./validation.ts";
 import { AutomationStudioAuthorityGuardRecords as Records } from "./records.ts";
@@ -16,7 +17,11 @@ export class AutomationStudioProjectAuthorityGuardStore {
     const releaseOwner = input.captureReleaseOwner ? Object.freeze({ ownerKind: input.captureReleaseOwner.ownerKind, ownerId: input.captureReleaseOwner.ownerId, protocolVersion: input.captureReleaseOwner.protocolVersion, verifyReadOnlyRelease: input.captureReleaseOwner.verifyReadOnlyRelease.bind(input.captureReleaseOwner) }) : undefined;
     if (releaseOwner) { V.id(releaseOwner.ownerKind); V.id(releaseOwner.ownerId); if (releaseOwner.protocolVersion !== 1 || typeof releaseOwner.verifyReadOnlyRelease !== "function") throw new Error("authority_guard.release_owner"); }
     const lease = await pool.acquire(projectId); let unit: AutomationStudioProjectUnitOfWork | undefined;
-    try { await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION] }).migrate(); unit = await AutomationStudioProjectUnitOfWork.open({ pool, projectId }); return new AutomationStudioProjectAuthorityGuardStore(lease, unit, releaseOwner); }
+    try {
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION]) }).migrate();
+      unit = await AutomationStudioProjectUnitOfWork.open({ pool, projectId });
+      return new AutomationStudioProjectAuthorityGuardStore(lease, unit, releaseOwner);
+    }
     catch (error) { await unit?.close(); await lease.release(); throw error; }
   }
   async close(): Promise<void> { try { await this.unit.close(); } finally { await this.lease.release(); } }

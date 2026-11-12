@@ -6,9 +6,12 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, Auto
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
+import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {
+  /** The declared output version and all its pages, shared with finished-run judging. */
+  resultEvidence?: AutomationStudioResultEvidenceBundle;
   /** What the person asked for, in their words. */
   instructions: string;
   /** Rows real reads returned. A model never writes one. */

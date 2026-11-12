@@ -1037,18 +1037,39 @@ second ends the round so the next starts fresh, and the third asks the person wh
 evidence starts the ladder again. With nobody to ask the attempt waits (`waiting_for_person`,
 `stuck_in_a_loop`) and spends nothing more, since a refusal is never worth a budget; a person who says keep
 going carries it on. An empty balance at the judge ends the attempt as a budget-out, as it does at a
-decision, and is never read as "not judged". **The latest read decides** what a list holds
-(`rows/list-after-read.ts`): a read carries the list on or starts it over, a read's own declared
-`process` shapes its result as a saved run's would (the stored rows stay as read), and a later read that got
-smaller is said on the card ("An earlier read of this list had 5 rows. This is the latest, with 3."). The
-ending goes through
+decision, and is never read as "not judged". **The draft's read steps declare the result**
+(`service/answer-first/result/` and `result-feed/`). The last non-intermediate read step supplies
+the answer. Reads of one domain-declared list under the same conditions and fields fold into
+that step; changing its conditions or fields starts a new version. A read replaces only its
+own domain-declared place, and unknown place remains unknown. Call parameters, addresses,
+overlapping row values and smaller counts never choose result membership. A read outside
+the draft is a look; it changes the answer only when explicitly adopted with `take`.
+The fixed result header and each read's result note describe that same ledger.
+The ending goes through
 `checkAutomationStudioTaskAttemptResult`. The call answers `status: "answered"` however
 it ended, a budget-out included, so a task's ending is never a thrown failure. A
 pre-model refusal is a table entry (`runtime/answer-first/pre-model/`): resolved, or a
 normal `status: "setup_needed"` saying what to do, with no attempt started.
 
 **Rows** come only from a read's answer, through `recordBatchHandler`, under a session
-opened as a trial's is and marked `explorationAttempt`. A model never writes one.
+opened as a trial's is and marked `explorationAttempt`. A model never writes one. Raw read
+captures remain independent. Before progress and ending are stored, the ledger publishes
+its exact current answer into its step/version dataset with replacement semantics, so
+the returned rows, Data and export agree. Declared processing runs on original source
+records before requested-column projection; distinct source records with identical
+displayed columns survive unless declared dedupe merges them. Publication does not
+apply another default dedupe to the projected answer. Capture failure is stated on the
+read's result note and contributes no result page, while any applied-act receipt remains.
+
+Attempt, build-test and saved-run judges share the `resultEvidence` shape. Each contributing
+page carries its source, step/version, conditions, fields, declared list/place, kept rows
+and left-out account. Coverage states the places read and the pager verdict actually
+observed; it supplies no invented completeness verdict. Carried pages, working reads,
+unadopted looks and a sure named-column contract stay distinct. Saved runs persist this
+source evidence atomically with each batch before processing; legacy missing evidence
+is explicit and differs from a recorded empty page. Privacy screening preserves safe
+siblings and marks withheld cells. Values are otherwise whole; context fitting names
+each evidence item it summarizes rather than silently slicing pages or rows.
 
 **One act record** (`runtime/answer-first/act-record/`) merges the project ledger, the
 build record, the trial ledger and a run's completed acts into the contract's shape. It

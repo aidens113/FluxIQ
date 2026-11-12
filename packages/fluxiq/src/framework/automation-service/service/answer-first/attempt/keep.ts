@@ -100,6 +100,8 @@ function rowsOf(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStud
 export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswerFirstAttemptRun): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
     const waiting = run.waitingFor !== undefined;
+    run.result.draft(run.steps);
+    await run.sink.publish(run.result.rows(), run.result.evidence());
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
     await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...automationStudioAnswerFirstReplayKept(run.completion.state) });

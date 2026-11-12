@@ -11,7 +11,7 @@ import { parseAutomationStudioPermittedConsequences } from "../../../../../runti
 import { automationStudioAnswerFirstRunOverridesRead } from "./run-overrides-read.ts";
 import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFirstCallerScope, AutomationStudioAnswerFirstPersonAskSink } from "../../flow-bootstrap-commands/index.ts";
 
-const FIELDS: ReadonlySet<string> = new Set(["taskKey", "model", "budgetUsd", "judge", "check", "personAsk", "scope", "inputs", "humanness", "runOverrides"]);
+const FIELDS: ReadonlySet<string> = new Set(["taskKey", "actScope", "model", "budgetUsd", "judge", "check", "personAsk", "scope", "inputs", "humanness", "runOverrides"]);
 const SCOPE_FIELDS: ReadonlySet<string> = new Set(["permittedConsequences", "sites"]);
 const JUDGE_MODES: ReadonlySet<unknown> = new Set(["auto", "always", "off"]);
 const MOST_KEY_CHARS = 512;
@@ -22,10 +22,14 @@ export function automationStudioAnswerFirstCallerOptionsRead(given: unknown): Au
   const options = record(given, "Answer-first caller options must be an object.");
   for (const key of Object.keys(options)) if (!FIELDS.has(key)) throw new Error(`Answer-first caller options do not take "${key}".`);
   const read: AutomationStudioAnswerFirstCallerOptions = {};
-  const { taskKey, model, budgetUsd, judge, check, personAsk, scope, inputs, humanness, runOverrides } = options;
+  const { taskKey, actScope, model, budgetUsd, judge, check, personAsk, scope, inputs, humanness, runOverrides } = options;
   if (taskKey !== undefined) {
     if (typeof taskKey !== "string" || taskKey.trim().length === 0 || taskKey.length > MOST_KEY_CHARS) throw new Error(`Answer-first caller taskKey must be 1 to ${MOST_KEY_CHARS} characters, not blank.`);
     read.taskKey = taskKey;
+  }
+  if (actScope !== undefined) {
+    if (typeof actScope !== "string" || actScope.trim().length === 0 || actScope.length > MOST_KEY_CHARS) throw new Error(`Answer-first caller actScope must be 1 to ${MOST_KEY_CHARS} characters, not blank.`);
+    read.actScope = actScope;
   }
   // The same rules a FluxNode's own options are held to (`fluxNodeOptionsSchema`), so the two never disagree on what is valid.
   if (model !== undefined) {

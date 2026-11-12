@@ -6,7 +6,7 @@
 //   (`listKey`, `engine/automation/records/read/list-key.ts`). A draft step's version comes from its own written input,
 //   and a page read by any run of that step is recorded under that version, so a run that declares the person's
 //   columns on its call (a forward run's record output) is the same step version as the read that authored it.
-// - **The place** is where the domain said its pager was (`place`), and else the call's own page words or the address's.
+// - **The place** is where the domain said its pager was (`place`). A call's requested page or address cannot declare it.
 // - **The rows** are the ones the row sink stored from the answer: what the read kept, copied by the schema (D3).
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
@@ -15,9 +15,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { automationStudioResultReadParameters } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstResultRead, AutomationStudioAnswerFirstResultVersion } from "../result/index.ts";
-import { automationStudioAnswerFirstAddressSplit, automationStudioAnswerFirstReadEvidenceOf, type AutomationStudioAnswerFirstRowCall } from "../rows/index.ts";
-// Not on the rows barrel, which this lane may not edit: the one reader of what a batch's read left out (`../rows/read-evidence.ts`).
-import { automationStudioAnswerFirstBatchLeftOut } from "../rows/read-evidence.ts";
+import { automationStudioAnswerFirstAddressSplit, automationStudioAnswerFirstReadEvidenceOf, automationStudioAnswerFirstBatchLeftOut, type AutomationStudioAnswerFirstRowCall } from "../rows/index.ts";
 
 /** A read's version from the input it was written with (a call's value, a draft step's input), with the list's key where one was said. */
 export function automationStudioAnswerFirstResultVersionOf(input: JsonObject, listKey?: string): AutomationStudioAnswerFirstResultVersion {
@@ -45,7 +43,7 @@ export function automationStudioAnswerFirstResultReadOfCall(
   const path = readRowsKey?.split(".") ?? [];
   const listKey = automationStudioRecordReadListKey(answer.evidence, path);
   const evidence = automationStudioAnswerFirstReadEvidenceOf(call, answer, readRowsKey);
-  const place = automationStudioRecordReadPlace(answer.evidence, path) ?? evidence.place;
+  const place = automationStudioRecordReadPlace(answer.evidence, path);
   return {
     source: call.callId,
     version: automationStudioAnswerFirstResultVersionOf(step?.input ?? call.value, listKey),
@@ -59,7 +57,7 @@ export function automationStudioAnswerFirstResultReadOfCall(
 /** A saved Flow's record batch, as the read of the draft step its node stands for. */
 export function automationStudioAnswerFirstResultReadOfBatch(batch: AutomationStudioRecordBatch, step: AutomationStudioFlowDraftStep): AutomationStudioAnswerFirstResultRead {
   const at = batch.location === undefined ? undefined : automationStudioAnswerFirstAddressSplit(batch.location);
-  const place = batch.place ?? at?.place;
+  const place = batch.place;
   const leftOut = automationStudioAnswerFirstBatchLeftOut(batch.leftOut);
   return {
     source: batch.batchKey,

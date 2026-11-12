@@ -31,10 +31,12 @@ import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioFlowDraftStepIsAction, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import type { AutomationStudioFlowLessSummary } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioAnswerFirstResultCoverage } from "../result/index.ts";
 import { automationStudioAnswerFirstResultPort, automationStudioAnswerFirstResultStepHolder, type AutomationStudioAnswerFirstResultEvent, type AutomationStudioAnswerFirstResultPort, type AutomationStudioAnswerFirstResultRead, type AutomationStudioAnswerFirstResultStepRef } from "../result/index.ts";
 import { automationStudioAnswerFirstProcessedRows, automationStudioAnswerFirstReadSchema, type AutomationStudioAnswerFirstRowCall, type AutomationStudioAnswerFirstRowsStored, type AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstResultIntermediate, automationStudioAnswerFirstResultReadOfBatch, automationStudioAnswerFirstResultReadOfCall, automationStudioAnswerFirstResultVersionOf } from "./read-of.ts";
+import { automationStudioAnswerFirstStoredDatasetId } from "../rows/index.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -65,6 +67,8 @@ export type AutomationStudioAnswerFirstResultFeed = {
   rows(): AutomationStudioAnswerFirstRowsSummary;
   /** The output step's pages, as the judge is told them. */
   readPages(): ReadPages;
+  /** Every contributing page, its current conditions and coverage, the sure column contract and working evidence. */
+  evidence(): AutomationStudioResultEvidenceBundle;
   /** The empty result's refusal, where a look holds rows the draft could take; `undefined` otherwise. */
   emptyRefusal(): string | undefined;
   /** The ledger id of a draft step. */
@@ -111,15 +115,30 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     if (cut) truncated.add(source);
   };
 
+  const rows = (): AutomationStudioAnswerFirstRowsSummary => {
+      const output = port.outputStep();
+      if (!output) return EMPTY;
+      const answer = port.answer();
+      const sources = output.pages.map((page) => page.source);
+      const datasetId = automationStudioAnswerFirstStoredDatasetId("step", output.id, output.version);
+      if (!sources.length) return EMPTY;
+      // A row repeated whole on two pages is one row, as the store's default processing counts it.
+      const columns = answer.columns.length ? answer.columns : Object.keys(output.reads.fields);
+      const shaped = processed(output.pages.flatMap((page) => page.kept), columns, processes.get(output.id));
+      return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
+  };
+  const record = (events: readonly AutomationStudioAnswerFirstResultEvent[], before = rows().totalRows): string | undefined => port.record(events, { before, after: () => rows().totalRows });
+
   return {
     port,
     idOf,
     expect(next) {
       intent = next;
     },
-    called(call, answer, rows) {
-      const read = rows && !rows.failure ? automationStudioAnswerFirstResultReadOfCall(call, answer, rows.rows, input.readRowsKey) : undefined;
-      if (read) stored(call.callId, rows?.datasetId, rows?.truncated === true);
+    called(call, answer, storedRows) {
+      const before = rows().totalRows;
+      const read = storedRows && !storedRows.failure ? automationStudioAnswerFirstResultReadOfCall(call, answer, storedRows.rows, input.readRowsKey) : undefined;
+      if (read) stored(call.callId, storedRows?.datasetId, storedRows?.truncated === true);
       if (typeof call.value.replay === "string") {
         if (call.value.replay !== "reset") pass = read ? { read } : {};
         return undefined;
@@ -129,40 +148,43 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       intent = undefined;
       if (now?.kind === "add") declare(call.callId, call.value);
       if (now?.kind === "rerun") declare(idOf(now.step), call.value);
-      if (now?.kind === "add") return port.record([{ kind: "page", step: { id: call.callId, position: now.position, intermediate: now.intermediate }, read }]);
-      if (now?.kind === "rerun") return port.record([{ kind: "page", step: refOf(now.step), read }]);
-      return port.record([{ kind: "look", read }]);
+      if (now?.kind === "add") return record([{ kind: "page", step: { id: call.callId, position: now.position, intermediate: now.intermediate }, read }], before);
+      if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read }], before);
+      return record([{ kind: "look", read }], before);
     },
     passed(step, steps, answer) {
       const held = pass;
       pass = undefined;
       if (held?.read) {
-        told(port.record([{ kind: "page", step: refOf(step), read: { ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) } }]));
+        told(record([{ kind: "page", step: refOf(step), read: { ...held.read, version: automationStudioAnswerFirstResultVersionOf(step.input, held.read.version.listKey) } }]));
         return;
       }
       const loop = steps.find((each) => each.disposition === "kept" && each.routing?.kind === "repeat" && each.routing.while !== undefined && each.routing.while === step.id);
       if (!loop || !automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(loop))) return;
       const ended = endedWords(answer);
-      if (ended !== undefined) told(port.record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "ended", reason: ended } }]));
-      else if (answer.effectApplied) told(port.record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "moved" } }]));
+      if (ended !== undefined) told(record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "ended", reason: ended } }]));
+      else if (answer.effectApplied) told(record([{ kind: "paging", stepId: idOf(loop), paging: { verdict: "moved" } }]));
     },
     batches(entries) {
+      const before = rows().totalRows;
       const events: AutomationStudioAnswerFirstResultEvent[] = [];
       for (const { batch, step } of entries) {
         if (!step) continue;
+        declare(idOf(step), step.input);
         stored(batch.batchKey, batch.datasetId, batch.truncated);
         events.push({ kind: "page", step: refOf(step), read: automationStudioAnswerFirstResultReadOfBatch(batch, step) });
       }
-      if (events.length) told(port.record(events));
+      if (events.length) told(record(events, before));
     },
     carried(steps, rows, datasetId) {
       const kept = steps.filter((step) => step.disposition === "kept" && step.effect === "observe" && automationStudioFlowDraftStepIsAction(step) && !automationStudioAnswerFirstResultIntermediate(step.input));
       const step = kept.filter((each) => each.reads !== undefined || Object.keys(automationStudioAnswerFirstResultVersionOf(each.input).fields).length > 0).at(-1) ?? kept.at(-1);
       if (!step || !rows.length) return;
       stored(CARRIED_SOURCE, datasetId, false);
-      told(port.record([{ kind: "page", step: refOf(step), read: { source: CARRIED_SOURCE, version: automationStudioAnswerFirstResultVersionOf(step.input), kept: rows.map((row) => ({ ...row })), carried: true } }]));
+      told(record([{ kind: "page", step: refOf(step), read: { source: CARRIED_SOURCE, version: automationStudioAnswerFirstResultVersionOf(step.input), kept: rows.map((row) => ({ ...row })), carried: true } }]));
     },
     draft(steps) {
+      const before = rows().totalRows;
       const ledger = port.ledger();
       const reads = steps.filter(isReadStep);
       const live = new Set(reads.map(idOf));
@@ -173,23 +195,13 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         if (step.callId !== undefined && !automationStudioAnswerFirstResultStepHolder(ledger, ref.id) && isLook(step.callId)) events.push({ kind: "take", source: step.callId, step: ref });
         events.push({ kind: "step", step: ref, version: automationStudioAnswerFirstResultVersionOf(step.input) });
       }
-      if (events.length) told(port.record(events));
+      if (events.length) told(record(events, before));
     },
     slot() {
       const lines = said.splice(0);
-      return lines.length ? `${port.header()} Changed since your last decision: ${lines.join(" ")}` : port.header();
+      return lines.length ? `${port.header(rows().totalRows)} Changed since your last decision: ${lines.join(" ")}` : port.header(rows().totalRows);
     },
-    rows() {
-      const output = port.outputStep();
-      if (!output) return EMPTY;
-      const answer = port.answer();
-      const sources = output.pages.map((page) => page.source);
-      const datasetId = [...sources].reverse().map((source) => datasets.get(source)).find((id) => id !== undefined);
-      if (datasetId === undefined || !answer.rows.length) return EMPTY;
-      // A row repeated whole on two pages is one row, as the store's default processing counts it.
-      const shaped = processed(wholeOnce(answer.rows), answer.columns, processes.get(output.id));
-      return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
-    },
+    rows,
     readPages() {
       const output = port.outputStep();
       return (output?.pages ?? []).map((page) => ({
@@ -202,6 +214,19 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     emptyRefusal() {
       return port.ledger().looks.some((look) => look.kept.length > 0) ? port.emptyRefusal() : undefined;
+    },
+    evidence() {
+      const ledger = port.ledger();
+      const output = port.outputStep();
+      const page = (read: AutomationStudioAnswerFirstResultRead, step: string, version: number, position?: number): AutomationStudioResultEvidencePage => ({ source: read.source, step, version, ...(position === undefined ? {} : { position }), conditions: read.version.conditions, fields: read.version.fields, ...(read.version.listKey === undefined ? {} : { listKey: read.version.listKey }), ...(read.where === undefined ? {} : { where: read.where }), ...(read.place === undefined ? {} : { place: read.place }), kept: read.kept.length, rows: read.kept, ...(read.leftOut === undefined ? {} : { leftOut: read.leftOut }), ...(read.carried ? { carried: true } : {}) });
+      const coverage = output ? automationStudioAnswerFirstResultCoverage(output) : undefined;
+      return {
+        pages: output?.pages.map((read) => page({ ...read, version: output.reads }, output.id, output.version, output.position)) ?? [],
+        coverage: output && coverage ? [{ step: output.id, version: output.version, places: coverage.places, first: coverage.first, ...(coverage.last ? { last: { place: coverage.last.place, ...(coverage.last.paging ? { paging: coverage.last.paging } : {}) } } : {}) }] : [],
+        ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
+        working: ledger.steps.filter((step) => step !== output).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
+        looks: ledger.looks.map((read) => page(read, "look", 1))
+      };
     },
   };
 }
@@ -222,12 +247,13 @@ function declaredProcess(input: JsonObject): unknown {
 
 /** The answer's rows as the declared processing shapes them (header), or as they are. */
 function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown): { rows: JsonObject[]; columns: { id: string; label: string }[] } {
-  const plain = { rows: rows.map((row) => ({ ...row })), columns: columns.map((id) => ({ id, label: id })) };
-  if (declared === undefined) return plain;
   const schema = automationStudioAnswerFirstReadSchema(rows);
   const parsed = schema ? parseAutomationStudioRecordProcessing(declared, schema) : undefined;
-  if (!schema || !parsed?.ok) return plain;
-  return { rows: automationStudioAnswerFirstProcessedRows(rows, schema, parsed.processing).rows, columns: plain.columns };
+  const shaped = declared !== undefined && schema && parsed?.ok
+    ? automationStudioAnswerFirstProcessedRows(rows, schema, parsed.processing).rows : wholeOnce(rows);
+  // Dedupe compares the original whole rows before narrowing the answer. Two listings differing in an unasked
+  // column remain two listings; a declared dedupe (including false) and sort run against those full rows too.
+  return { rows: shaped.map((row) => Object.fromEntries(columns.filter((column) => Object.hasOwn(row, column)).map((column) => [column, row[column]!]))), columns: columns.map((id) => ({ id, label: id })) };
 }
 
 /** Rows without a row repeated whole, the first of each where it was. */

@@ -249,17 +249,48 @@ describe("persistence", () => {
     expect(fresh.admit(call({ actionId: "tap" }))).toEqual({ kind: "run" });
   });
 
-  it("keeps a failed write for flushed, and still writes the next", async () => {
+  it("keeps a failed write until a later whole-record replacement commits", async () => {
     let writes = 0;
+    let commit = (): void => undefined;
+    let reached = (): void => undefined;
+    const allowed = new Promise<void>((resolve) => { commit = resolve; });
+    const waiting = new Promise<void>((resolve) => { reached = resolve; });
+    let durable: AutomationStudioAttemptActRecordData | undefined;
     const record = new AutomationStudioAttemptActRecord({
-      persist: async () => {
+      persist: async (data) => {
         writes += 1;
         if (writes === 1) throw new Error("disk full");
+        reached();
+        await allowed;
+        durable = data;
       }
     });
     record.settled(call(), { effectApplied: true, words: WORDS });
-    record.settled(call({ actionId: "tap" }), { effectApplied: true, words: WORDS });
     await expect(record.flushed()).rejects.toThrow("disk full");
+    record.settled(call({ actionId: "tap" }), { effectApplied: true, words: WORDS });
+    let returned = false;
+    const flushing = record.flushed().then(() => { returned = true; });
+    await waiting;
+    expect(returned).toBe(false);
+    commit();
+    await flushing;
+    expect(durable?.acts).toHaveLength(2);
+    expect(durable).toEqual(record.data());
+    expect(writes).toBe(2);
+  });
+
+  it("never lets an older successful completion clear a newer failed snapshot", async () => {
+    let release = (): void => undefined;
+    const allowed = new Promise<void>((resolve) => { release = resolve; });
+    let writes = 0;
+    const record = new AutomationStudioAttemptActRecord({ persist: async () => {
+      if (++writes === 1) await allowed;
+      else throw new Error("newer replacement failed");
+    } });
+    record.settled(call(), { effectApplied: true, words: WORDS });
+    record.settled(call({ actionId: "tap" }), { effectApplied: true, words: WORDS });
+    release();
+    await expect(record.flushed()).rejects.toThrow("newer replacement failed");
     expect(writes).toBe(2);
   });
 

@@ -161,7 +161,6 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
 async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonObject): ReturnType<AutomationStudioAnswerFirstAttemptRun["completion"]["check"]> {
   const answer = await run.completion.check(result);
   const { state } = run.completion;
-  if (run.prior && state.refused?.verdict === "no") run.sink.runRowsRefused();
   if (answer.ok) return answer;
   const rung = answer.issueCodes.includes(AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE)
     ? automationStudioAnswerFirstCompletionRefusedAgain({ times: state.refusedAgain, evidence: state.refused?.digest ?? "", iteration: run.decidedAt ?? 0, record: run.tried, caught: run.loopsCaught, say: automationStudioAnswerFirstSay })
@@ -183,7 +182,7 @@ function sentAgain(issueCodes: readonly string[]): string {
 
 function resultHolds(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const { held } = run.completion.state;
-  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.result.rows(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? [], run.result.port.header());
+  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.result.rows(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? [], run.result.port.header(run.result.rows().totalRows));
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

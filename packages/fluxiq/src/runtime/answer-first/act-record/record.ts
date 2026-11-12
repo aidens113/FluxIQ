@@ -153,7 +153,8 @@ export class AutomationStudioAttemptActRecord {
   private readonly persist: ((data: AutomationStudioAttemptActRecordData) => Promise<void>) | undefined;
   private readonly now: () => number;
   private writing: Promise<void> = Promise.resolve();
-  private failure: { error: unknown } | undefined;
+  private failure: { error: unknown; revision: number } | undefined;
+  private writeRevision = 0;
   private readonly asked: ((call: AutomationStudioAttemptActCall) => number | undefined) | undefined;
   /** Keyed by the call itself: only the answer to that call may replace what it began. */
   private readonly open = new Map<AutomationStudioAttemptActCall, Begun>();
@@ -401,7 +402,7 @@ export class AutomationStudioAttemptActRecord {
     return structuredClone({ kind: "attempt_act_record", schemaVersion: 1, acts: this.entries, rows: this.ties.data(), ...(this.place ? { place: this.place } : {}) });
   }
 
-  /** Waits for every write asked so far; throws the first that failed. */
+  /** Waits for every write asked so far; throws an unsuperseded failure. A later committed whole snapshot repairs it. */
   async flushed(): Promise<void> {
     await this.writing;
     if (this.failure) throw this.failure.error;
@@ -614,12 +615,15 @@ export class AutomationStudioAttemptActRecord {
     const persist = this.persist;
     if (!persist) return Promise.resolve(true);
     const snapshot = this.data();
+    const revision = ++this.writeRevision;
     const written = this.writing.then(async () => {
       try {
         await persist(snapshot);
+        // Writes are serial and each replaces the whole record. Only this commit, never an earlier completion, repairs an older gap.
+        if (this.failure && this.failure.revision <= revision) this.failure = undefined;
         return true;
       } catch (error) {
-        this.failure ??= { error };
+        this.failure ??= { error, revision };
         return false;
       }
     });

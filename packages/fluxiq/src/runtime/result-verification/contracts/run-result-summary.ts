@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioTrialChangeFinding, AutomationStudioTrialSiteChange } from "../../flow-authoring/bootstrap/trial-change/index.ts";
 import type { AutomationStudioResultRecordSetSummary } from "../record-set-summary.ts";
 import type { AutomationStudioBuildTestAccount } from "./build-test.ts";
@@ -36,6 +36,8 @@ export type AutomationStudioResultLeftOutNamingTheItem = {
  * and node ids are the same identifiers a run's recent actions already carry.
  */
 export type AutomationStudioRunResultSummary = {
+  /** Both judges' screened source-page evidence. Missing legacy provenance is stated within it, never reconstructed. */
+  resultEvidence?: JsonObject;
   schemaVersion: "automation-studio.run-result-summary.v1";
   /** Fixed execution time, in epoch milliseconds, for interpreting relative dates when this result is checked again. */
   referenceNow?: number | undefined;

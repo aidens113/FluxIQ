@@ -10,6 +10,7 @@ import type { AutomationStudioGraphExecutionOptions } from "../../../executor/in
 import type { AutomationStudioAnswerFirstAttemptInput } from "../attempt/index.ts";
 import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
+import type { AutomationStudioAnswerFirstSourceAuthority } from "./source-authority.ts";
 
 /** What the engine runs a Flow with: the parts a trial's environment holds (`../../trial-ports/environment.ts`). */
 export type AutomationStudioAnswerFirstFlowRunEngine = {
@@ -50,6 +51,8 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   arrived(): void;
   /** Called inside the run's own care, so a service with no engine reads as a run that could not start. */
   engine(): AutomationStudioAnswerFirstFlowRunEngine;
+  /** Current persisted candidate/original-source authority. Absent legacy owners still run, with unknown identity. */
+  sourceAuthority?: AutomationStudioAnswerFirstSourceAuthority | undefined;
   /**
    * Where a check only a person can clear is put to them, and `waiting` told while it stands
    * (`./person-check-port.ts`). Absent, nobody can be asked, and a step meeting one ends the run.

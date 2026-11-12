@@ -12,9 +12,9 @@ export function automationStudioAnswerFirstResultCoverage(step: AutomationStudio
   const places = automationStudioAnswerFirstResultPlaceLabels(step.pages);
   const numbers = step.pages.flatMap((page) => {
     const numbered = automationStudioAnswerFirstResultNumberedPlace(page.place);
-    return numbered ? [numbered.value] : [];
+    return numbered ? [numbered] : [];
   });
-  const first = numbers.length ? (Math.min(...numbers) <= 1 ? "read" : "not read") : "unknown";
+  const first = numbers.length ? (numbers.some((place) => place.value === 0 || (place.name === "page" && place.value === 1)) ? "read" : "not read") : "unknown";
   const lastPage = step.pages[step.pages.length - 1];
   const last = lastPage ? { place: places[places.length - 1]!, paging: lastPage.paging } : undefined;
   return { places, first, last };
