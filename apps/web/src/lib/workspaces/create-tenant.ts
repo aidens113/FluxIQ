@@ -29,6 +29,7 @@ export async function createTenantFluxIQ(input: {
   iam?: FluxIQOptions["iam"];
   clientGatewayTrustedClientStore?: FluxIQOptions["clientGatewayTrustedClientStore"];
   clientGatewayTrustAuthority?: FluxIQOptions["clientGatewayTrustAuthority"];
+  clientGatewaySessionMetadata?: FluxIQOptions["clientGatewaySessionMetadata"];
   secretKeyPrincipalAuthority?: FluxIQOptions["secretKeyPrincipalAuthority"];
   secretKeyIdentityAuthority?: FluxIQOptions["secretKeyIdentityAuthority"];
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
@@ -45,6 +46,7 @@ export async function createTenantFluxIQ(input: {
     ...(input.secretKeyIdentityAuthority ? { secretKeyIdentityAuthority: input.secretKeyIdentityAuthority } : {}),
     ...(input.iam ? { iam: input.iam } : {}),
     ...(input.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: input.clientGatewayTrustAuthority } : {}),
+    ...(input.clientGatewaySessionMetadata ? { clientGatewaySessionMetadata: input.clientGatewaySessionMetadata } : {}),
     ...(input.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: input.clientGatewayTrustedClientStore } : {})
   });
   try {

@@ -21,6 +21,7 @@ export * from "./pairings.ts";
 export * from "./protocol-version.ts";
 export * from "./security/index.ts";
 export * from "./sessions.ts";
+export * from "./session-metadata/index.ts";
 export * from "./transport.ts";
 export * from "./trust-grant.ts";
 export * from "./trust-issuance/index.ts";

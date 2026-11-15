@@ -3,7 +3,7 @@ import { authenticatedModelKeyPorts, localSecretKeyUseAuthority, type SecretKeyP
 import type { SecretKeyHostProtection, SecretKeyUseAuthority } from "../secret-keys/index.ts";
 import path from "node:path";
 import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
-import { ClientGatewayService, type ClientGatewayCredentialCustody, type ClientGatewayCredentialHolder, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore, type ClientGatewayTrustAuthority } from "../../client-gateway/index.ts";
+import { ClientGatewayService, type ClientGatewayCredentialCustody, type ClientGatewayCredentialHolder, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore, type ClientGatewayTrustAuthority, type ClientGatewaySessionMetadataProvider } from "../../client-gateway/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
@@ -91,6 +91,7 @@ export type GlobalProgramRuntimeOptions = {
   /** Mandatory persistence supplied by a multi-tenant host; local instances retain their JSON default. */
   clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore;
   clientGatewayTrustAuthority?: ClientGatewayTrustAuthority;
+  clientGatewaySessionMetadata?: ClientGatewaySessionMetadataProvider;
   /**
    * Key custody that outlives this runtime (a workspace manager's entry), so
    * evicting an idle instance does not lock its users' keys. Absent, Secret
@@ -194,6 +195,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
       : paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     credentialCustody: secretKeysCredentialCustody(secretKeys),
     ...(options.clientGatewayTrustAuthority ? { trustAuthority: options.clientGatewayTrustAuthority } : {}),
+    ...(options.clientGatewaySessionMetadata ? { sessionMetadata: options.clientGatewaySessionMetadata } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
     ...(iamProfile === "service" ? { endedSessionMaxAgeMs: SERVICE_ENDED_SESSION_MAX_AGE_MS } : {}),
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})

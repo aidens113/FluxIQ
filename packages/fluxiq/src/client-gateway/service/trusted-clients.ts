@@ -95,6 +95,14 @@ export class ClientGatewayTrustedClientRegistry {
     return this.clients.get(trustedClientId);
   }
 
+  /** Detached committed proof; live records can expose a save's tentative values until rollback. */
+  async readCommittedCredential(client: ClientGatewayTrustedClient): Promise<Readonly<Pick<ClientGatewayTrustedClient, "tokenHash" | "expiresAt">> | undefined> {
+    return this.mutate(async () => {
+      if (this.clients.get(client.trustedClientId) !== client || !this.isActive(client)) return undefined;
+      return { tokenHash: client.tokenHash, expiresAt: client.expiresAt };
+    });
+  }
+
   /** The trusted client a raw bearer token maps to, active or not: its current credential, or the one before it while that is still unconfirmed and within its bound. */
   resolveByToken(token: string): ClientGatewayTrustedClient | undefined {
     const tokenHash = this.hashToken(token);

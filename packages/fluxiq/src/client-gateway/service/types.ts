@@ -48,6 +48,8 @@ export type ClientGatewayServiceOptions = {
   credentialCustody?: import("./credential-custody.ts").ClientGatewayCredentialCustody;
   /** Server-only authenticated issuance before a client socket exists. Unset, this path refuses all grants. */
   trustAuthority?: import("./trust-issuance/index.ts").ClientGatewayTrustAuthority;
+  /** Server-owned current identity for ordinary trusted clients; omission preserves generic local behavior. */
+  sessionMetadata?: import("./session-metadata/index.ts").ClientGatewaySessionMetadataProvider;
   createToken?: () => string;
   now?: () => number;
   resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;

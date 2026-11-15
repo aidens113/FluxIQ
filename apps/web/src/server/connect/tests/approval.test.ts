@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 describe("current platform consent authority", () => {
   it("derives user and tenant from the live session digest", async () => {
-    expect(await validateConnectApproval(digest)).toMatchObject({ allowed: true, user: { userId: "person-one" }, workspace: { workspaceId: "tenant-one" } });
+    expect(await validateConnectApproval(digest)).toMatchObject({ allowed: true, user: { userId: "person-one" }, workspace: { workspaceId: "tenant-one", name: "tenant-one" } });
     expect(state.getAccount).toHaveBeenCalledWith("person-one");
   });
   it("refuses raw or malformed session values before opening the platform", async () => {

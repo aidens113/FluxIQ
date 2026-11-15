@@ -1,6 +1,6 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { getBrowserTrustRepository } from "../server/browser-trust";
-import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority } from "../server/connect";
+import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority, createWorkspaceSessionMetadata } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
@@ -342,6 +342,7 @@ function createWebRuntimeState(): WebRuntimeState {
         workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
         clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
         clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
+        clientGatewaySessionMetadata: createWorkspaceSessionMetadata(workspaceId),
         secretKeyPrincipalAuthority: workspaceKeyPrincipalAuthority(workspaceId),
         secretKeyIdentityAuthority: async () => (await getFluxIQAfterReload()).programs.identityAccess,
         instantiate: async (options) => opened(await createTenantFluxIQInstance(options))

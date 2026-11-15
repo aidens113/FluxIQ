@@ -21,5 +21,5 @@ export async function validateConnectApproval(approvingSessionDigest: string): P
   if (account.emailVerifiedAtMs === null) return { allowed: false, error: "email_unverified" };
   const workspaceId = await defaultWorkspaceId({ userId: user.id, primaryWorkspaceId: manager.primaryWorkspaceId, store });
   if (!workspaceId) return { allowed: false, error: "invalid_grant" };
-  return { allowed: true, user: { userId: user.id, displayName: account.displayName, email: account.email }, workspace: { workspaceId, name: "Workspace" } };
+  return { allowed: true, user: { userId: user.id, displayName: account.displayName, email: account.email }, workspace: { workspaceId, name: workspaceId } };
 }

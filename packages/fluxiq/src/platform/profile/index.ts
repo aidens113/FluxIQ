@@ -18,6 +18,8 @@ export {
   connectRevokeRequestSchema,
   connectTokenErrorSchema,
   connectTokenResponseSchema,
+  connectUserSummarySchema,
+  connectWorkspaceSummarySchema,
   connectRedirectUri,
   parseConnectDoneFragment,
   CLIENT_GATEWAY_PROTOCOL_VERSIONS,

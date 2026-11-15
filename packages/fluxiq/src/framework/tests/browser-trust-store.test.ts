@@ -15,7 +15,12 @@ describe("public workspace browser trust injection", () => {
       save: vi.fn(async (clients) => { rows = structuredClone(clients); })
     };
     const factory = vi.fn((_paths: FluxIQHostPaths) => store);
-    const options = { rootDir: root, loadEnv: false, modelProvidersEnabled: false, clientGatewayTrustedClientStore: useFactory ? factory : store };
+    const metadata = vi.fn(async () => ({
+      user: { userId: "user.test", displayName: "Test person", email: "person@example.test" },
+      workspace: { workspaceId: "tenant.test", name: "tenant.test" }
+    }));
+    const options = { rootDir: root, loadEnv: false, modelProvidersEnabled: false,
+      clientGatewayTrustedClientStore: useFactory ? factory : store, clientGatewaySessionMetadata: metadata };
     let fluxiq = FluxIQ.create(options);
     try {
       const gateway = fluxiq.programs.clientGateway;
@@ -31,6 +36,7 @@ describe("public workspace browser trust injection", () => {
       expect(store.save).toHaveBeenCalled();
       expect(rows).toHaveLength(1);
       expect(rows[0]?.approvedByUserId).toBe("user.test");
+      expect(metadata).toHaveBeenCalledWith({ trustedClientId: rows[0]!.trustedClientId, userId: "user.test", clientType: "extension" });
       gateway.disconnect(session.sessionId, "test complete");
       await fluxiq.close();
       fluxiq = FluxIQ.create(options);

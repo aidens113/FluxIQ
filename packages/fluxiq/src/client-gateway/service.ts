@@ -15,6 +15,8 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import { ClientGatewaySessionMetadataResolver } from "./service/session-metadata/index.ts";
+export type { ClientGatewaySessionMetadata, ClientGatewaySessionMetadataProvider } from "./service/session-metadata/index.ts";
 import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
 import {
   ClientGatewayAccess,
@@ -130,12 +132,13 @@ export class ClientGatewayService {
       revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
+    const sessionMetadata = new ClientGatewaySessionMetadataResolver({ sessions, trustedClients, transport, audit, facade, provider: options.sessionMetadata });
     this.trust = new ClientGatewayTrustIssuer({ config, trustedClients, authority: options.trustAuthority, sessions, transport, audit, trace, facade, custody });
     // Pairing and enrolment grant trust through this one path.
-    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody });
+    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody, sessionMetadata });
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody, sessionMetadata });
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;

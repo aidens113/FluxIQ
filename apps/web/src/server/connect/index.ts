@@ -1,4 +1,5 @@
 export { validateConnectApproval } from "./approval";
+export { createWorkspaceSessionMetadata } from "./session-metadata";
 export { createWorkspaceTrustAuthority } from "./trust-authority";
 export { getConnectService } from "./service";
 export { closeConnectServices } from "./close";

@@ -11,6 +11,7 @@ import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
+import { ClientGatewaySessionMetadataUnavailableError, type ClientGatewayResolvedSessionMetadata, type ClientGatewaySessionMetadataResolver } from "./session-metadata/index.ts";
 
 type TrustGrantCollaborators = {
   sessions: ClientGatewaySessionRegistry;
@@ -23,6 +24,7 @@ type TrustGrantCollaborators = {
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
   custody: ClientGatewayCredentialCustodian;
+  sessionMetadata: ClientGatewaySessionMetadataResolver;
 };
 
 /** What one grant needs from the path that decided it: a person's approval of a pairing, or a redeemed enrolment ticket. */
@@ -70,6 +72,7 @@ export class ClientGatewayTrustGrant {
   private readonly trace: ClientGatewayTraceTap;
   private readonly facade: ClientGatewayFacadePorts;
   private readonly custody: ClientGatewayCredentialCustodian;
+  private readonly sessionMetadata: ClientGatewaySessionMetadataResolver;
 
   constructor(collaborators: TrustGrantCollaborators) {
     this.sessions = collaborators.sessions;
@@ -80,6 +83,7 @@ export class ClientGatewayTrustGrant {
     this.trace = collaborators.trace;
     this.facade = collaborators.facade;
     this.custody = collaborators.custody;
+    this.sessionMetadata = collaborators.sessionMetadata;
   }
 
   async grant(request: ClientGatewayTrustGrantRequest): Promise<ClientGatewaySession> {
@@ -97,26 +101,57 @@ export class ClientGatewayTrustGrant {
     // Saving the trust is asynchronous, and the client can leave meanwhile.
     // Trust for a session that is no longer waiting would hand its one-time
     // token to a closed socket, so take the trust back and say so.
-    const lateRefusal = request.lateRefusal();
-    if (lateRefusal) {
-      await this.trustedClients.revoke(trustedClient, request.lateRevocationReason);
-      throw lateRefusal;
+    const binding = this.sessionMetadata.capture(session, trustedClient);
+    let readyMetadata: ClientGatewayResolvedSessionMetadata;
+    try {
+      const lateRefusal = request.lateRefusal();
+      if (lateRefusal) throw lateRefusal;
+      const initial = await this.sessionMetadata.resolve(binding, token, true);
+      const changed = request.lateRefusal();
+      if (changed) throw changed;
+      this.sessionMetadata.assert(binding, initial.tokenHash);
+      await this.endEarlierTrust(trustedClient);
+      this.sessionMetadata.assert(binding, initial.tokenHash);
+      const ended = request.lateRefusal();
+      if (ended) throw ended;
+      // The independent credential's authority is established before publication.
+      await this.custody.issued({ holder: clientGatewayCredentialHolder(trustedClient), credential: token, approvedBySessionId: request.approvedBySessionId });
+      this.sessionMetadata.assert(binding, initial.tokenHash);
+      readyMetadata = await this.sessionMetadata.resolve(binding, token, true);
+      const finalRefusal = request.lateRefusal();
+      if (finalRefusal) throw finalRefusal;
+      this.sessionMetadata.assert(binding, readyMetadata.tokenHash);
+    } catch (error) {
+      // Preserve the granting path's actual late-refusal identity (notably
+      // managed enrolment abandonment) across metadata/custody waits too.
+      const refusal = request.lateRefusal() ?? error;
+      let cleanupFailed = false;
+      try {
+        const current = this.trustedClients.get(trustedClient.trustedClientId);
+        if (current && current.revokedAt === undefined) await this.trustedClients.revoke(current, refusal instanceof ClientGatewaySessionMetadataUnavailableError ? "session metadata unavailable before credential delivery" : request.lateRevocationReason);
+        await this.custody.forgotten(trustedClient.trustedClientId);
+      } catch {
+        cleanupFailed = true;
+        this.audit.record("trust.undelivered_cleanup_failed", "An undelivered trust could not be retired; no credential was published.", { trustedClientId: trustedClient.trustedClientId });
+      }
+      if (refusal instanceof ClientGatewaySessionMetadataUnavailableError || cleanupFailed) await this.sessionMetadata.refuse(session);
+      if (cleanupFailed) throw new ClientGatewaySessionMetadataUnavailableError();
+      throw refusal;
     }
-    await this.endEarlierTrust(trustedClient);
     const now = trustedClient.approvedAt;
     request.bind?.(trustedClient);
     this.sessions.attachTrustedClient(session, trustedClient);
     if (request.projectId !== undefined) session.projectId = request.projectId;
     session.pairedAt = now;
     this.trace.lifecycle({ sessionId, clientId: session.clientId }, request.traceEvent, request.traceDetail(trustedClient));
-    // Before the token leaves: this client's first request finds what its approver can open.
-    await this.custody.issued({ holder: clientGatewayCredentialHolder(trustedClient), credential: token, approvedBySessionId: request.approvedBySessionId });
     session.sentCredentialHash = this.trustedClients.hashToken(token);
     await this.transport.send(sessionId, this.transport.message("server.session_ready", {
       sessionId,
       token,
-      ...(request.projectId !== undefined ? { projectId: request.projectId } : {})
+      ...(request.projectId !== undefined ? { projectId: request.projectId } : {}),
+      ...readyMetadata.fields
     }, session));
+    if (!this.sessionMetadata.current(binding, readyMetadata.tokenHash)) return this.sessions.toPublic(this.sessions.get(sessionId) ?? session);
     this.audit.recordSecurity(request.audit.type, request.audit.message, request.audit.metadata(trustedClient));
     await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
     return this.sessions.toPublic(session);

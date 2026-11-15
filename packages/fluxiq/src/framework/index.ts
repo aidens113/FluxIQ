@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComponentRegistry } from "../components/index.ts";
-import type { ClientGatewayTrustedClientStore, ClientGatewayTrustAuthority } from "../client-gateway/index.ts";
+import type { ClientGatewayTrustedClientStore, ClientGatewayTrustAuthority, ClientGatewaySessionMetadataProvider } from "../client-gateway/index.ts";
 import { DomainRegistry, domainSummary, normalizeDomainId, type DomainRegistration } from "../domains/index.ts";
 import {
   IoRegistry,
@@ -97,6 +97,7 @@ export type FluxIQOptions = {
   clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore | ((paths: FluxIQHostPaths) => ClientGatewayTrustedClientStore);
   /** Trusted server authority for pre-socket client consent. Absent, consent issuance fails closed. */
   clientGatewayTrustAuthority?: ClientGatewayTrustAuthority;
+  clientGatewaySessionMetadata?: ClientGatewaySessionMetadataProvider;
   /**
    * How the program registry decides. Omitted, the profile comes from
    * `FLUXIQ_PROFILE` (`local` when unset) and decisions are today's. A hosted
@@ -218,6 +219,7 @@ export class FluxIQ {
       ...(options.secretKeyIdentityAuthority ? { secretKeyIdentityAuthority: options.secretKeyIdentityAuthority } : {}),
       ...(options.iam ? { iam: options.iam } : {}),
       ...(options.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: options.clientGatewayTrustAuthority } : {}),
+      ...(options.clientGatewaySessionMetadata ? { clientGatewaySessionMetadata: options.clientGatewaySessionMetadata } : {}),
       ...(options.clientGatewayTrustedClientStore ? {
         clientGatewayTrustedClientStore: typeof options.clientGatewayTrustedClientStore === "function"
           ? options.clientGatewayTrustedClientStore(this.paths) : options.clientGatewayTrustedClientStore
