@@ -3,7 +3,10 @@ import type { FluxIQ } from "../../framework/index.ts";
 /**
  * A signed-in person spoke, and their cookie is what opens their stored unlock, so
  * it survives a Core restart with no password. Cheap once held. Never fails what
- * they asked for: a key that stays locked says so itself. Moved from the web
+ * they asked for: a key that stays locked says so itself. The caller must have
+ * validated `auth` through its trusted identity authority. `fluxiq` is the
+ * selected data workspace: presentation opens only its stored credential boxes,
+ * never enrolls a new unlock or reads another workspace's key store. Moved from the web
  * panel's `lib/auth.ts`, which re-exports it, because the program route calls it.
  */
 export async function presentPanelSession(fluxiq: FluxIQ, sessionId: string, auth: { user: { id: string }; session: { expiresAtMs: number } }): Promise<void> {

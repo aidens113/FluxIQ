@@ -4,6 +4,7 @@ import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal
 import { presentPanelSession } from "./present-panel-session.ts";
 import { managedClientAuthority } from "../managed-hosts/index.ts";
 import { programJsonText } from "./program-json-text.ts";
+import type { ProgramRouteIdentityAuthority } from "./identity-authority.ts";
 import {
   isPairedClientClassification,
   isPairedClientEndpoint,
@@ -42,6 +43,8 @@ export type ProgramRouteResponse = { status: number; headers: Record<string, str
 
 export type ProgramRouteContext = {
   fluxiq: FluxIQ;
+  /** Trusted server authority for identities; defaults to this instance for single-root hosts. */
+  identityAuthority?: ProgramRouteIdentityAuthority;
   /**
    * What the web panel adds to `client-gateway-snapshot` for a signed-in
    * person (its runtime's status). A server with no panel leaves it out and
@@ -71,7 +74,8 @@ type RouteCaller =
 export async function handleProgramRequest(request: ProgramRouteRequest, context: ProgramRouteContext): Promise<ProgramRouteResponse> {
   const { programId, endpoint } = request;
   const { fluxiq } = context;
-  const caller = await authenticate(request, fluxiq);
+  const identityAuthority = context.identityAuthority ?? fluxiq.programs.identityAccess;
+  const caller = await authenticate(request, fluxiq, identityAuthority);
   if ("status" in caller) return caller;
   const draining = refuseWhileDraining(programId, endpoint);
   if (draining) return draining;
@@ -106,9 +110,9 @@ async function narrowPost(request: ProgramRouteRequest, caller: RouteCaller): Pr
     : narrowPairedClientRequest(request.programId, request.endpoint, withoutAuthSession(payload));
 }
 
-async function authenticate(request: ProgramRouteRequest, fluxiq: FluxIQ): Promise<RouteCaller | ProgramRouteResponse> {
+async function authenticate(request: ProgramRouteRequest, fluxiq: FluxIQ, identityAuthority: ProgramRouteIdentityAuthority): Promise<RouteCaller | ProgramRouteResponse> {
   const { sessionId } = request;
-  const auth = sessionId ? await fluxiq.programs.identityAccess.validateSession(sessionId) : null;
+  const auth = sessionId ? await identityAuthority.validateSession(sessionId) : null;
   if (sessionId && auth) {
     await presentPanelSession(fluxiq, sessionId, auth);
     return {
@@ -121,13 +125,13 @@ async function authenticate(request: ProgramRouteRequest, fluxiq: FluxIQ): Promi
   }
   const token = readBearerToken(request.authorization);
   if (!token) return refuse(401, "Authentication required");
-  return authenticatePairedClient(request, fluxiq, token);
+  return authenticatePairedClient(request, fluxiq, identityAuthority, token);
 }
 
 // A paired client's token. The endpoint is checked by name before the token is
 // looked at, so a token on an endpoint it may never call learns nothing about
 // whether it is valid.
-async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: FluxIQ, token: string): Promise<RouteCaller | ProgramRouteResponse> {
+async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: FluxIQ, identityAuthority: ProgramRouteIdentityAuthority, token: string): Promise<RouteCaller | ProgramRouteResponse> {
   const { programId, endpoint } = request;
   const notAvailable = "This endpoint is not available to a paired client.";
   if (!isPairedClientEndpoint(programId, endpoint)) return refuse(403, notAvailable);
@@ -141,7 +145,7 @@ async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: Fl
     const scope = pairedClientDomainScope(request.url, session);
     return scope ? { kind: "paired-client", actor: managed.actor, scope, currentProjectId: managed.projectId, managed } : refuse(403, "A managed host may only reach its own domain.");
   }
-  const actor = pairedClientActor<ProgramActor["permissions"][number]>(session, await fluxiq.programs.identityAccess.snapshot());
+  const actor = pairedClientActor<ProgramActor["permissions"][number]>(session, await identityAuthority.snapshot());
   if (!actor) return refuse(401, "Authentication required");
   const scope = pairedClientDomainScope(request.url, session);
   if (!scope) return refuse(403, "A paired client may only reach its own domain.");

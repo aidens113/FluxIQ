@@ -6,6 +6,7 @@ import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { getFluxIQAfterReload } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
+import { closeKeySessionServices } from "../key-sessions";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -58,6 +59,7 @@ export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAud
 
 /** Closes an already-open root audit after all workspaces have drained. Opens nothing at shutdown. */
 export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<void> {
+  await closeKeySessionServices(fluxiq.paths.fluxiq);
   const composition = compositions.get(fluxiq);
   try {
     if (composition) await composition;

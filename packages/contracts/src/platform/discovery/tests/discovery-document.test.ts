@@ -22,6 +22,13 @@ const LOCAL = {
   minimumClient: {}
 };
 
+const RUNTIME = {
+  schema: 1,
+  protocol: "fluxiq.core-runtime-identity.v1",
+  version: "0.49.0-experiment.1",
+  artifactDigest: "a".repeat(64)
+};
+
 describe("discovery document", () => {
   it("accepts the plan's service example and a local instance", () => {
     expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE)).toEqual(SERVICE);
@@ -30,6 +37,24 @@ describe("discovery document", () => {
 
   it("drops fields it does not know, so additions never break a client", () => {
     expect(fluxiqDiscoveryDocumentSchema.parse({ ...SERVICE, later: { feature: true } })).toEqual(SERVICE);
+  });
+
+  it("preserves optional build provenance without changing compatibility metadata", () => {
+    const document = { ...SERVICE, runtime: RUNTIME };
+    expect(fluxiqDiscoveryDocumentSchema.parse(document)).toEqual(document);
+    expect(fluxiqDiscoveryDocumentSchema.parse({ ...document, runtime: { ...RUNTIME, future: true } })).toEqual(document);
+    expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE).runtime).toBeUndefined();
+  });
+
+  it.each([
+    { ...RUNTIME, schema: 2 },
+    { ...RUNTIME, protocol: "unknown" },
+    { ...RUNTIME, version: "" },
+    { ...RUNTIME, artifactDigest: "placeholder" },
+    { ...RUNTIME, artifactDigest: "A".repeat(64) },
+    { fluxiqRuntimeIdentityPlaceholder: 302 }
+  ])("refuses malformed runtime provenance %j", (runtime) => {
+    expect(fluxiqDiscoveryDocumentSchema.safeParse({ ...SERVICE, runtime }).success).toBe(false);
   });
 
   it("checks the document names the origin it was fetched from", () => {

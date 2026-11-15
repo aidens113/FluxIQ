@@ -1,0 +1,11 @@
+# Program authority and data separation
+- Role/model: standard worker, gpt-6.1-sol, medium.
+- Goal: Complete reusable trusted identity authority seam in program request handler while preserving existing single-instance consumers; do not change runtime execution algorithms.
+- Read: Current State, reports/tenancy-discovery.md section B, server/program-route source and tests, code-structure.md.
+- Own: packages/fluxiq/src/server/program-route/** only, plus own report. No web routes yet, no workspace source, shared docs, other reports, git or package metadata.
+- ProgramRouteContext gains optional server-supplied identity authority port (structural validateSession/snapshot as needed). Default current fluxiq identity; never accept actor/authority from request JSON.
+- Valid cookie retains precedence. Data IO/domain checks, endpoint/classification allowlists, IAM call and secret presentation remain on context.fluxiq. Paired gateway stays data-instance gateway; platform identity validates its owning user. Managed-host authority retains existing narrow checks.
+- Trace presentPanelSession semantics so platform validated session can unlock only tenant keys via explicit trusted identity; do not copy sessions/identities into tenant stores.
+- Test authority identity differs from data identity: valid/revoked cookie, bearer owner, invalid body actor cannot elevate, scope/domain restrictions, absence of port backward compatibility. Use existing narrow tests, no full build/typecheck or paid calls.
+- Keep one-export/file budgets; if existing module budget exceeded, cohesive extraction with maintained public imports. No incidental runtime moves.
+- Report: docs/working/hosted-platform-launch-plan/reports/program-authority.md with exact test result, integration API and return contract. If stale dist blocks tests report, no rebuild while peers edit.

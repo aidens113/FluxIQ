@@ -7,8 +7,9 @@ import type { FluxIQWorkspaceManager } from "./workspace-manager";
  *
  * Sessions are the platform's: the primary instance's Identity Access checks
  * them under every tenancy. Under `single` every signed-in person is in the
- * primary workspace; under `multi` it is their oldest active membership, with
- * workspace id breaking a creation-time tie independently of store order.
+ * primary workspace; under `multi` it is their oldest active membership in
+ * an existing tenant workspace, with workspace id breaking a creation-time
+ * tie independently of store order. A membership alone never opens a root.
  */
 export async function sessionWorkspaceId(input: {
   sessionId: string;
@@ -19,8 +20,13 @@ export async function sessionWorkspaceId(input: {
   const auth = await manager.primary().fluxiq.programs.identityAccess.validateSession(input.sessionId);
   if (!auth) return null;
   if (manager.tenancy === "single") return manager.primaryWorkspaceId;
-  const memberships = await (await input.platformServices()).store.listMembershipsOfUser(auth.user.id);
-  const active = memberships.filter((membership) => membership.status === "active");
+  const { store } = await input.platformServices();
+  const memberships = await store.listMembershipsOfUser(auth.user.id);
+  const active = memberships.filter((membership) => membership.status === "active" && membership.workspaceId !== manager.primaryWorkspaceId);
   active.sort((left, right) => left.createdAtMs - right.createdAtMs || (left.workspaceId < right.workspaceId ? -1 : left.workspaceId > right.workspaceId ? 1 : 0));
-  return active[0]?.workspaceId ?? null;
+  for (const membership of active) {
+    const workspace = await store.getWorkspace(membership.workspaceId);
+    if (workspace) return workspace.workspaceId;
+  }
+  return null;
 }

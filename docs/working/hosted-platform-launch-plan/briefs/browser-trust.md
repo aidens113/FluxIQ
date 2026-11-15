@@ -1,0 +1,12 @@
+# Authoritative platform browser trust
+- Role/model: heavy worker, gpt-6.1-sol, max.
+- Goal: Implement browser-trust partition 1 in reports/browser-binding-discovery.md, preserving existing credential signing, rotation and reuse rules.
+- Read: Current State, that report; client-gateway/service/trusted-clients.ts, credential lifecycle tests, ClientGatewayTrustedClientStore type, existing SQLite transaction infrastructure, code-structure.md.
+- Own: new packages/fluxiq/src/platform/browser-trust/**; client-gateway/service/trusted-clients.ts and focused signature/proof extraction modules + tests in that directory; own report. Lead owns public platform export and all construction/listener/web integration.
+- Must not touch: API keys/commerce/mail, framework/runtime construction, managed-host ticket sources, existing gateway facade except reports of needed interface, shared docs/git/package versions.
+- First return proposed stable scoped-store + proof-lookup types, then WAIT for lead source-edit signal (validation reading tree). You may read and draft own report while waiting.
+- Store one authoritative private trust record plus immutable workspace binding, no duplicate JSON-index authority. Scoped saves cannot overwrite others; stale generations cannot revive revoked/rotated state. Atomic transaction/CAS failure rolls back, mandatory persistence failure must prevent credential publication.
+- Share existing signed-token proof logic, do not copy cryptography or replace signed reuse detection with digest-only acceptance. Preserve local default adapter and old digest credentials. Platform lookup must distinguish current/eligible previous/obsolete signed reuse/forged, not grant auth itself.
+- Tests real gateway grant/rotate/confirm/revoke/restart using scoped store plus independent workspace lookup; equal client ids in two workspaces; stale writer rejection; save failure never publishes unrouteable credential. No servers/models/cloud calls or whole package checks.
+- Coordinate safe SQLite concurrency pattern with lead key-store findings; no native busy wait starvation, no in-process-only claim of durable isolation.
+- Report docs/working/hosted-platform-launch-plan/reports/browser-trust.md with exact API, checks and return contract. Do not claim hosted consumer connect without PKCE/listener integration.

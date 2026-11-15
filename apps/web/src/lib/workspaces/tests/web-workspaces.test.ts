@@ -118,11 +118,12 @@ describe("the web runtime's workspaces", () => {
     expect(primaryOptions.iam?.audit).toBeDefined();
     expect(primaryOptions.heldKeys).toBeUndefined();
 
-    // Provisioning is single-tenancy today, so this person's membership in another workspace is written by hand.
+    // This test writes the workspace and membership directly to isolate routing from provisioning.
     const person = await signIn(primary, "tenant-member");
     const { getPlatformServices } = await import("../../../server/provisioning-listener");
     const services = await getPlatformServices();
     const now = Date.now();
+    await services.store.putWorkspace({ workspaceId: "ws-tenant", kind: "personal", ownerUserId: person.userId, createdAtMs: now });
     await services.store.putMembership({ workspaceId: "ws-tenant", userId: person.userId, policies: [], groups: [], status: "active", createdAtMs: now, updatedAtMs: now });
 
     const lease = await workspaceFluxIQ(requestWith(person.sessionId));
@@ -205,11 +206,88 @@ describe("the web runtime's workspaces", () => {
     const { getPlatformServices } = await import("../../../server/provisioning-listener");
     const { store } = await getPlatformServices();
     for (const [workspaceId, createdAtMs, status] of [["ws-new", 20, "active"], ["ws-old-z", 10, "active"], ["ws-removed", 0, "removed"], ["ws-old-a", 10, "active"]] as const) {
+      await store.putWorkspace({ workspaceId, kind: "personal", ownerUserId: person.userId, createdAtMs });
       await store.putMembership({ workspaceId, userId: person.userId, policies: [], groups: [], status, createdAtMs, updatedAtMs: createdAtMs });
     }
     const lease = await workspaceFluxIQ(requestWith(person.sessionId));
     expect(lease?.workspaceId).toBe("ws-old-a");
     lease?.release();
+  });
+
+  it("under service never acquires a workspace from missing, removed, dangling or primary memberships", async () => {
+    runtimeEnv("service");
+    const primary = await initializeFluxIQWebRuntime();
+    const person = await signIn(primary, "unroutable-member");
+    const manager = getFluxIQWorkspaces();
+    const acquire = vi.spyOn(manager, "acquire");
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const { store } = await getPlatformServices();
+    expect(await workspaceFluxIQ(requestWith(person.sessionId))).toBeNull();
+    await store.putWorkspace({ workspaceId: manager.primaryWorkspaceId, kind: "single", ownerUserId: null, createdAtMs: 0 });
+    await store.putWorkspace({ workspaceId: "ws-removed", kind: "personal", ownerUserId: person.userId, createdAtMs: 0 });
+    for (const [workspaceId, status] of [[manager.primaryWorkspaceId, "active"], ["ws-dangling", "active"], ["ws-removed", "removed"]] as const) {
+      await store.putMembership({ workspaceId, userId: person.userId, policies: [], groups: [], status, createdAtMs: 0, updatedAtMs: 0 });
+    }
+    expect(await workspaceFluxIQ(requestWith(person.sessionId))).toBeNull();
+    expect(acquire).not.toHaveBeenCalled();
+    expect(manager.workspaceIds()).toEqual([manager.primaryWorkspaceId]);
+  });
+
+  it("selects among existing workspaces and refuses a deleted workspace without reopening its root", async () => {
+    runtimeEnv("service");
+    const primary = await initializeFluxIQWebRuntime();
+    const person = await signIn(primary, "workspace-deleted");
+    const manager = getFluxIQWorkspaces();
+    const acquire = vi.spyOn(manager, "acquire");
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const { store } = await getPlatformServices();
+    for (const [workspaceId, createdAtMs] of [["ws-dangling", 0], ["ws-real", 10]] as const) {
+      await store.putMembership({ workspaceId, userId: person.userId, policies: [], groups: [], status: "active", createdAtMs, updatedAtMs: createdAtMs });
+    }
+    await store.putWorkspace({ workspaceId: "ws-real", kind: "personal", ownerUserId: person.userId, createdAtMs: 10 });
+    const lease = await workspaceFluxIQ(requestWith(person.sessionId));
+    expect(lease?.workspaceId).toBe("ws-real");
+    lease?.release();
+    await store.deleteWorkspace("ws-real");
+    acquire.mockClear();
+    expect(await workspaceFluxIQ(requestWith(person.sessionId))).toBeNull();
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it("propagates platform lookup errors before acquiring any workspace", async () => {
+    runtimeEnv("service");
+    const primary = await initializeFluxIQWebRuntime();
+    const person = await signIn(primary, "lookup-failure");
+    const manager = getFluxIQWorkspaces();
+    const acquire = vi.spyOn(manager, "acquire");
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const { store } = await getPlatformServices();
+    const memberships = vi.spyOn(store, "listMembershipsOfUser").mockRejectedValueOnce(new Error("membership lookup failed"));
+    await expect(workspaceFluxIQ(requestWith(person.sessionId))).rejects.toThrow("membership lookup failed");
+    memberships.mockRestore();
+    await store.putMembership({ workspaceId: "ws-error", userId: person.userId, policies: [], groups: [], status: "active", createdAtMs: 0, updatedAtMs: 0 });
+    vi.spyOn(store, "getWorkspace").mockRejectedValueOnce(new Error("workspace lookup failed"));
+    await expect(workspaceFluxIQ(requestWith(person.sessionId))).rejects.toThrow("workspace lookup failed");
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it("under service refuses absent, invalid and revoked platform sessions before membership lookup", async () => {
+    runtimeEnv("service");
+    const primary = await initializeFluxIQWebRuntime();
+    const person = await signIn(primary, "revoked-member");
+    const manager = getFluxIQWorkspaces();
+    const acquire = vi.spyOn(manager, "acquire");
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const { store } = await getPlatformServices();
+    await store.putWorkspace({ workspaceId: "ws-revoked", kind: "personal", ownerUserId: person.userId, createdAtMs: 0 });
+    await store.putMembership({ workspaceId: "ws-revoked", userId: person.userId, policies: [], groups: [], status: "active", createdAtMs: 0, updatedAtMs: 0 });
+    const memberships = vi.spyOn(store, "listMembershipsOfUser");
+    await primary.programs.identityAccess.revokeSession(person.sessionId);
+    expect(await workspaceFluxIQ(new Request("https://panel.example.test/"))).toBeNull();
+    expect(await workspaceFluxIQ(requestWith("invalid-session"))).toBeNull();
+    expect(await workspaceFluxIQ(requestWith(person.sessionId))).toBeNull();
+    expect(memberships).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
   });
 
   it("flushes a cold registry audit during shutdown without constructing platform identity services", async () => {

@@ -244,7 +244,10 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 | `FLUXIQ_DRAIN_SECONDS` | `30` off `local` | How long a stopping server lets work finish; keep `stop_grace_period` above it |
 | `FLUXIQ_LOG_FORMAT` | `json` off `local` | `json` or `text` |
 | `FLUXIQ_SETUP_CODE_FILE` | a generated code under `/data` | A file holding the owner setup code |
-| `FLUXIQ_EMAIL_SENDER` | `file` (outbox under `/data`) | `none`, `file` or `file:<dir>` |
+| `FLUXIQ_EMAIL_SENDER` | `file` (outbox under `/data`) | `none`, `file`, `file:<dir>` or `resend` |
+| `FLUXIQ_EMAIL_FROM` | unset | Required verified sender address for `resend` |
+| `FLUXIQ_EMAIL_API_KEY_FILE` | unset | Mounted Resend key file; mutually exclusive with `FLUXIQ_EMAIL_API_KEY` |
+| `FLUXIQ_EMAIL_API_KEY` | unset | Alternative operator environment credential; never commit or expose |
 | `FLUXIQ_INSTANCE_NAME` | `FluxIQ` | The name discovery gives the extension |
 | `FLUXIQ_SIGN_UP_URL` | none | Where the extension sends someone without an account |
 | `FLUXIQ_PANEL_PRESET` | `full` | Which panel screens and Settings tools show: `full`, `data-collection` or `task-automation` (see Customise The Panel) |
@@ -373,6 +376,52 @@ docker run -d --name fluxiq --read-only --tmpfs /tmp --tmpfs /app/apps/web/.next
 
 Publish 3000 and 4777 only to a proxy that terminates TLS and replaces
 `X-Forwarded-For`; without such a proxy, leave `FLUXIQ_TRUST_PROXY` unset.
+
+## SDK Keys
+
+Set `FLUXIQ_INSTANCE_ID` to a stable unique deployment identifier before
+enabling SDK access. Discovery publishes this identifier; signed proofs bind
+to the configured public origin and this identifier. Keep it unchanged
+across restarts and replicas. Changing it invalidates cached proof audiences.
+
+The panel's authenticated `GET/POST/DELETE /api/keys` manages the signed-in
+person's keys in their default workspace. POST accepts only a `publicKey`
+containing canonical base64url Ed25519 SPKI; DELETE accepts only `keyId`.
+Private keys stay with the SDK user. `POST /api/keys/session` exchanges a
+registered key's signed proof for a short bearer session. Registration is
+never implicit in a proof. The service rechecks account/membership eligibility
+and key revocation when authenticating a bearer. Local/self-hosted users
+retain their single-workspace mode without a cloud subscription.
+
+Key authentication is distinct from resource authorization and paid cloud
+admission. These endpoints alone do not enable hosted FluxNode execution.
+The database under `platform/keys.sqlite` stores public keys, token digests
+and replay protection; include it in encrypted backups. Do not log proofs,
+bearers or private key files. A production deployment must complete tenant
+routing and execution acceptance before offering SDK cloud runs.
+
+## Production Email
+
+Select `FLUXIQ_EMAIL_SENDER=resend` explicitly and set `FLUXIQ_EMAIL_FROM`
+to an address on a domain verified with Resend. Supply the API key using a
+read-only mounted file named by `FLUXIQ_EMAIL_API_KEY_FILE`, or the secret
+environment variable `FLUXIQ_EMAIL_API_KEY`, never both. Compose operators
+must add that secret mount; naming a path does not mount it. Local installs
+continue to use the file outbox unless another sender is selected.
+
+The adapter uses Resend's [send-email endpoint](https://resend.com/docs/api-reference/emails/send-email)
+over HTTPS. It refuses redirects and reports failures without including
+provider responses or credentials. A successful response means provider
+acceptance, not confirmed mailbox delivery. Tests simulate the provider;
+production DNS, domain verification and delivery still need operator validation.
+
+Callers may supply a stable `deliveryId` for retries of the same logical
+message. The adapter hashes it into Resend's
+[idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys),
+whose provider retention is 24 hours. New logical messages need new IDs.
+This transport does not provide a durable delivery queue; provisioning's
+existing failure reporting remains in effect, and an outbox dispatcher is
+required before claiming reliable retry delivery.
 
 ## Continuous Integration
 

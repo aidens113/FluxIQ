@@ -1,0 +1,13 @@
+# Durable SDK key sessions
+- Role/model: heavy worker, gpt-6.1-sol, max.
+- Goal: Implement durable enrolled-key -> SDK signed proof -> hashed bearer session -> authenticated principal in Core, without altering automation execution.
+- Read: plan Current State, reports/access-discovery.md, code-structure.md; SDK key/session wire code and existing SQLite repository infrastructure as needed.
+- Own: new packages/fluxiq/src/platform/keys/** and server/keys-api/** with tests/barrels. May add export to platform/index.ts and server/index.ts ONLY. Lead owns all composition/mount integration and package metadata.
+- Must not touch: SDK/contracts source, existing headless/FluxNode/automation/runtime sources, mail, workspace/web routes, shared docs/git/other reports.
+- Freeze protocol exactly as discovery. Server never stores private keys, never enrolls from proof. Public registration port takes an already authorized enrollment, not HTTP trust-on-first-use.
+- Dedicated SQLite durable key/session/nonce store must atomically consume nonce across independent connections, sessions digest only. Require explicit trusted account/membership eligibility callback at issuance AND authentication; failure closed.
+- Exact configured audience/instance, strict proof validation, Ed25519 only, timestamp +/-300s, nonce600s, revocation/expiry. SDK session lifetime 1h default 15m-12h configured range. Generic safe errors.
+- Thin Node HTTP handler factory accepts service dependency; no listener starts automatically, no unauthenticated remote fallback. Lead mounts later.
+- Prove real SQLite persistence/reopen/concurrent replay/revocation, malformed proof/foreign audience, account disabled, and SDK-compatible signed proof HTTP exchange with injected local-only test server if needed. No models/cloud/email/live user data.
+- No package-wide builds/checks while peers edit. Run narrow own tests. Keep module budgets, focused files/barrels, no new external package without reporting need.
+- Report: docs/working/hosted-platform-launch-plan/reports/key-sessions.md exact checks, limitations, integration API and return contract.
