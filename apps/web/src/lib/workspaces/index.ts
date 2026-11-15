@@ -14,6 +14,8 @@ export { instanceBusy } from "./instance-busy";
 export { workspaceManagerLimits } from "./manager-limits";
 export { primaryWorkspaceId } from "./primary-workspace-id";
 export { workspaceProgramContext } from "./program-context";
+export { workspaceRouteContext, withWorkspaceRouteJson } from "./routes";
+export type { WorkspaceRouteBinding, WorkspaceRouteCaller, WorkspaceRouteContext, WorkspaceRouteRefusal, WorkspaceRouteSelection, WorkspaceRouteValidation } from "./routes";
 export { serviceWorkspaceIam } from "./service-iam";
 export { sessionIdOf } from "./session-id-of";
 export { sessionWorkspaceId } from "./session-workspace";

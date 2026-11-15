@@ -14,6 +14,7 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
   }
   const signUpUrl = env.FLUXIQ_SIGN_UP_URL?.trim();
   const instanceId = env.FLUXIQ_INSTANCE_ID?.trim();
+  if (settings.profile === "service" && !instanceId) return { ok: false, fields: ["instance.id"] };
   const identity = readCoreRuntimeBuildIdentity();
   const candidate = {
     fluxiqDiscoveryVersion: 1,
@@ -25,7 +26,11 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
       tokenUrl: FLUXIQ_CONNECT_PATHS.token,
       revokeUrl: FLUXIQ_CONNECT_PATHS.revoke,
       codeEntryUrl: FLUXIQ_CONNECT_PATHS.codeEntry,
-      flows: { authorizationCodePkce: settings.profile === "service" && settings.gateway.enabled, referenceCode: false },
+      flows: {
+        authorizationCodePkce: settings.profile === "service" && settings.gateway.enabled,
+        referenceCode: false,
+        gatewayReferencePairing: (settings.profile === "local" || settings.profile === "self-hosted") && settings.gateway.enabled
+      },
       ...(signUpUrl ? { signUpUrl } : {})
     },
     protocols: { clientGateway: [...CLIENT_GATEWAY_PROTOCOL_VERSIONS] },

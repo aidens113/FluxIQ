@@ -10,6 +10,7 @@ import { sessionWorkspaceId } from "./session-workspace";
  * Single-root hosts retain their existing cookie and bearer precedence.
  */
 export async function workspaceProgramContext(source: WorkspaceRequestSource): Promise<{
+  workspaceId: string;
   context: ProgramRouteContext;
   acceptBearer: boolean;
   sessionId: string | undefined;
@@ -24,7 +25,7 @@ export async function workspaceProgramContext(source: WorkspaceRequestSource): P
   const authorization = source.headers?.get("authorization") ?? null;
   if (manager.tenancy === "single") {
     const lease = await manager.acquire(manager.primaryWorkspaceId);
-    return { context: { fluxiq: lease.fluxiq, webRuntimeStatus: getFluxIQWebRuntimeStatus }, acceptBearer: true, sessionId, authorization, release: lease.release };
+    return { workspaceId: lease.workspaceId, context: { fluxiq: lease.fluxiq, webRuntimeStatus: getFluxIQWebRuntimeStatus }, acceptBearer: true, sessionId, authorization, release: lease.release };
   }
   const identityAuthority = manager.primary().fluxiq.programs.identityAccess;
   if (!sessionId) {
@@ -38,6 +39,7 @@ export async function workspaceProgramContext(source: WorkspaceRequestSource): P
       return null;
     }
     return {
+      workspaceId: selected.lease.workspaceId,
       context: { fluxiq: selected.lease.fluxiq, identityAuthority, revalidateAuthority: async () => !source.signal?.aborted && await selected.revalidateAuthority() },
       acceptBearer: true, sessionId: undefined, authorization, release: selected.lease.release
     };
@@ -58,7 +60,7 @@ export async function workspaceProgramContext(source: WorkspaceRequestSource): P
     if (lease.workspaceId !== workspaceId || !await revalidateAuthority()) return null;
     retained = true;
     // Service runtime presentation needs its own workspace-scoped owner.
-    return { context: { fluxiq: lease.fluxiq, identityAuthority, revalidateAuthority }, acceptBearer: false, sessionId, authorization: null, release: lease.release };
+    return { workspaceId: lease.workspaceId, context: { fluxiq: lease.fluxiq, identityAuthority, revalidateAuthority }, acceptBearer: false, sessionId, authorization: null, release: lease.release };
   } finally {
     if (!retained) lease.release();
   }

@@ -24,7 +24,7 @@ describe("discovery runtime provenance", () => {
     expect(buildDiscoveryDocument({ FLUXIQ_INSTANCE_ID: "bad#id" })).toEqual({ ok: false, fields: ["instance.id"] });
   });
   it.each(["local", "self-hosted", "service"])("publishes executing artifact identity in %s", (profile) => {
-    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: profile, FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com" });
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: profile, FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_INSTANCE_ID: "production-1" });
     expect(built.ok).toBe(true);
     if (!built.ok) throw new Error("discovery build refused valid deployment");
     const parsed = parseFluxIQDiscoveryDocument(built.document, "https://app.example.com");
@@ -52,22 +52,50 @@ describe("discovery runtime provenance", () => {
 
 describe("explicit discovery connection flows", () => {
   it.each([
-    ["local", "true", false],
-    ["local", "false", false],
-    ["self-hosted", "true", false],
-    ["self-hosted", "false", false],
-    ["service", "true", true],
-    ["service", "false", false]
-  ])("advertises only actual hosted PKCE support for %s with gateway enabled=%s", (profile, enabled, authorizationCodePkce) => {
-    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: String(profile), FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_CLIENT_GATEWAY_ENABLED: String(enabled) });
+    ["local", "true", false, true],
+    ["local", "false", false, false],
+    ["self-hosted", "true", false, true],
+    ["self-hosted", "false", false, false],
+    ["service", "true", true, false],
+    ["service", "false", false, false]
+  ])("advertises actual connection support for %s with gateway enabled=%s", (profile, enabled, authorizationCodePkce, gatewayReferencePairing) => {
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: String(profile), FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_CLIENT_GATEWAY_ENABLED: String(enabled), FLUXIQ_INSTANCE_ID: "production-1" });
     expect(built.ok).toBe(true);
     if (!built.ok) throw new Error("Discovery refused valid profile settings.");
     const parsed = parseFluxIQDiscoveryDocument(built.document, "https://app.example.com");
     expect(parsed.success).toBe(true);
     if (!parsed.success) throw new Error("Discovery refused the explicit connect flow document.");
-    expect(parsed.data.connect.flows).toEqual({ authorizationCodePkce, referenceCode: false });
+    expect(parsed.data.connect.flows).toEqual({ authorizationCodePkce, referenceCode: false, gatewayReferencePairing });
     expect(parsed.data.connect).toMatchObject({ authorizeUrl: "/connect/authorize", tokenUrl: "/api/connect/token", revokeUrl: "/api/connect/revoke", codeEntryUrl: "/connect" });
     expect(parsed.data.fluxiqDiscoveryVersion).toBe(1);
     expect(parsed.data.protocols.clientGateway).toEqual(["0.1", "0.2"]);
+  });
+});
+
+describe("service discovery instance identity", () => {
+  it.each([undefined, "", " \t\n", "bad#synthetic.secret"])("refuses missing, blank or invalid configured service identity: %j", (instanceId) => {
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: "service", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_INSTANCE_ID: instanceId, FLUXIQ_INSTANCE_NAME: "synthetic.private.name" });
+    expect(built).toEqual({ ok: false, fields: ["instance.id"] });
+    expect(JSON.stringify(built)).not.toContain("synthetic.");
+  });
+
+  it("requires service identity even when the gateway is disabled", () => {
+    expect(buildDiscoveryDocument({ FLUXIQ_PROFILE: "service", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_CLIENT_GATEWAY_ENABLED: "false" })).toEqual({ ok: false, fields: ["instance.id"] });
+  });
+
+  it.each(["local", "self-hosted"])("allows %s discovery to omit instance identity", (profile) => {
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: profile, FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com" });
+    expect(built.ok).toBe(true);
+    if (!built.ok) throw new Error("Non-service discovery refused an optional instance identity.");
+    expect(built.document).not.toHaveProperty("instance.id");
+  });
+
+  it("keeps the configured service identity stable across different executing builds", () => {
+    const env = { FLUXIQ_PROFILE: "service", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_INSTANCE_ID: " production-1 " };
+    const first = buildDiscoveryDocument(env);
+    vi.mocked(readCoreRuntimeBuildIdentity).mockReturnValue({ ...identity, version: "0.50.0", artifactDigest: "c".repeat(64) });
+    const second = buildDiscoveryDocument(env);
+    expect(first.ok && first.document).toMatchObject({ instance: { id: "production-1" }, runtime: { version: identity.version } });
+    expect(second.ok && second.document).toMatchObject({ instance: { id: "production-1" }, runtime: { version: "0.50.0" } });
   });
 });

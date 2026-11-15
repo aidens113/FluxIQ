@@ -17,7 +17,7 @@ describe("managed host IAM identity", () => {
     expect(decide("studio:GetRecordingCapturePolicy", "p1")).toMatchObject({ decision: "allow", principal: "frn:fluxiq:iam:ws:service-identity/~6d616e616765643a6f6e65" });
     expect(decide("studio:GetRecordingCapturePolicy", "p2").decision).toBe("deny");
     expect(decide("studio:SaveFlow", "p1").decision).toBe("deny");
-    expect(opened.compiled.fullAccess).toBe(false);
+    expect(opened.compiled?.fullAccess).toBe(false);
   });
 
   it("never reuses a machine's policy from its previous project's lease", async () => {

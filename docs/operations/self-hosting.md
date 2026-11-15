@@ -168,7 +168,9 @@ pairing remains available. The extension origin must be admitted by
 New discovery documents explicitly publish `connect.flows`. Clients may
 start hosted PKCE only when `authorizationCodePkce` is true; it is advertised
 only for service mode with the gateway enabled. `referenceCode` stays false
-until that flow exists. A legacy document without these flags is unknown,
+until that flow exists. `gatewayReferencePairing` separately advertises the
+existing local/self-hosted gateway pairing when its gateway is enabled; it
+is false for service deployments. A legacy document without these flags is unknown,
 not proof that its listed connection URLs are implemented.
 
 ## Run: Service
@@ -394,7 +396,8 @@ Publish 3000 and 4777 only to a proxy that terminates TLS and replaces
 ## SDK Keys
 
 Set `FLUXIQ_INSTANCE_ID` to a stable unique deployment identifier before
-enabling SDK access. Discovery publishes this identifier; signed proofs bind
+starting a service deployment. Service discovery refuses to publish without
+it; local/self-hosted discovery retains legacy compatibility. Discovery publishes this identifier; signed proofs bind
 to the configured public origin and this identifier. Keep it unchanged
 across restarts and replicas. Changing it invalidates cached proof audiences.
 

@@ -24,6 +24,8 @@ const clientVersion = z.string().regex(/^\d{1,4}\.\d{1,4}\.\d{1,6}$/u);
  *   (`https:`, or `http:` on loopback) and comes from the product manifest;
  * - `connect.flows`: explicit support for each implemented connection flow.
  *   Missing means legacy/unknown; endpoint URL presence never implies support.
+ *   `gatewayReferencePairing` names the existing tokenless gateway hello and
+ *   local reference approval; it is distinct from typed `referenceCode` flow B.
  * - `protocols.clientGateway`: the gateway protocol versions served;
  * - `minimumClient`: the oldest client version accepted, by client kind.
  * - `runtime`: optional immutable Core build provenance, omitted when the
@@ -49,7 +51,11 @@ export const fluxiqDiscoveryDocumentSchema = z
       tokenUrl: samePath,
       revokeUrl: samePath,
       codeEntryUrl: samePath,
-      flows: z.object({ authorizationCodePkce: z.boolean(), referenceCode: z.boolean() }).optional(),
+      flows: z.object({
+        authorizationCodePkce: z.boolean(),
+        referenceCode: z.boolean(),
+        gatewayReferencePairing: z.boolean().optional()
+      }).optional(),
       signUpUrl: z.string().refine((value) => isSecureOrLoopbackUrl(value, "http"), "an https URL, or http on loopback").optional()
     }),
     protocols: z.object({ clientGateway: z.array(protocolVersion).min(1).max(16) }),

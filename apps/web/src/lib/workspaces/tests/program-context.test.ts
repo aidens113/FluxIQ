@@ -58,6 +58,7 @@ describe("a web program's workspace context", () => {
     expect(runtime.manager.acquire).toHaveBeenCalledTimes(1);
     expect(runtime.manager.acquire).toHaveBeenCalledWith("tenant-a");
     expect(selected?.context.fluxiq).toBe(runtime.tenant);
+    expect(selected?.workspaceId).toBe("tenant-a");
     expect(selected?.context.identityAuthority).toBe(runtime.primary.programs.identityAccess);
     expect(selected?.context.webRuntimeStatus).toBeUndefined();
     expect(selected?.acceptBearer).toBe(false);
@@ -86,6 +87,7 @@ describe("a web program's workspace context", () => {
     runtime.resolveBrowser.mockResolvedValue({ lease: { workspaceId: "browser-tenant", fluxiq: runtime.tenant, release: runtime.release }, revalidateAuthority: guard });
     const selected = await workspaceProgramContext(request("", "browser-token"));
     expect(selected?.sessionId).toBeUndefined();
+    expect(selected?.workspaceId).toBe("browser-tenant");
     expect(selected?.authorization).toBe("Bearer browser-token");
     expect(selected?.context.identityAuthority).toBe(runtime.primary.programs.identityAccess);
     expect(await selected?.context.revalidateAuthority?.()).toBe(true);
@@ -143,6 +145,7 @@ describe("a web program's workspace context", () => {
     expect(runtime.manager.acquire).toHaveBeenCalledTimes(1);
     expect(runtime.manager.acquire).toHaveBeenCalledWith("workspace-main");
     expect(selected?.context.fluxiq).toBe(runtime.primary);
+    expect(selected?.workspaceId).toBe("workspace-main");
     expect(selected?.context.webRuntimeStatus).toBe(runtime.presenter);
     expect(selected?.context.identityAuthority).toBeUndefined();
     expect(selected?.acceptBearer).toBe(true);

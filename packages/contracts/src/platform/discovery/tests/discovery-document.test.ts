@@ -34,6 +34,7 @@ describe("discovery document", () => {
     expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE)).toEqual(SERVICE);
     expect(fluxiqDiscoveryDocumentSchema.parse(LOCAL)).toEqual(LOCAL);
     expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE).connect.flows).toBeUndefined();
+    expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE).instance.id).toBeUndefined();
     expect(fluxiqDiscoveryDocumentSchema.parse(LOCAL).connect.flows).toBeUndefined();
   });
 
@@ -48,10 +49,26 @@ describe("discovery document", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) throw new Error("Valid explicit connect capabilities were refused.");
     expect(parsed.data.connect.flows).toEqual(flows);
+    expect(parsed.data.connect.flows?.gatewayReferencePairing).toBeUndefined();
     expect(parsed.data.fluxiqDiscoveryVersion).toBe(1);
     expect(parsed.data.protocols).toEqual(SERVICE.protocols);
     expect(parseFluxIQDiscoveryDocument(document, "https://evil.example").success).toBe(false);
     expect(fluxiqDiscoveryDocumentSchema.safeParse({ ...document, connect: { ...document.connect, tokenUrl: "https://evil.example/token" } }).success).toBe(false);
+  });
+
+  it.each([true, false])("retains explicit gateway reference pairing=%s independently of typed reference-code support", (gatewayReferencePairing) => {
+    const flows = { authorizationCodePkce: false, referenceCode: false, gatewayReferencePairing };
+    const parsed = parseFluxIQDiscoveryDocument({ ...LOCAL, connect: { ...LOCAL.connect, flows } }, LOCAL.origin);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("Valid gateway reference pairing capability was refused.");
+    expect(parsed.data.connect.flows).toEqual(flows);
+    expect(parsed.data.fluxiqDiscoveryVersion).toBe(1);
+    expect(parsed.data.minimumClient).toEqual(LOCAL.minimumClient);
+  });
+
+  it.each([null, "true", 0, [], {}])("rejects malformed gateway reference pairing: %j", (gatewayReferencePairing) => {
+    const flows = { authorizationCodePkce: true, referenceCode: false, gatewayReferencePairing };
+    expect(fluxiqDiscoveryDocumentSchema.safeParse({ ...SERVICE, connect: { ...SERVICE.connect, flows } }).success).toBe(false);
   });
 
   it.each([
@@ -69,8 +86,8 @@ describe("discovery document", () => {
   });
 
   it("drops future flow fields while retaining the known explicit support", () => {
-    const document = { ...SERVICE, connect: { ...SERVICE.connect, flows: { authorizationCodePkce: true, referenceCode: false, futureFlow: true } } };
-    expect(fluxiqDiscoveryDocumentSchema.parse(document).connect.flows).toEqual({ authorizationCodePkce: true, referenceCode: false });
+    const document = { ...SERVICE, connect: { ...SERVICE.connect, flows: { authorizationCodePkce: true, referenceCode: false, gatewayReferencePairing: false, futureFlow: true } } };
+    expect(fluxiqDiscoveryDocumentSchema.parse(document).connect.flows).toEqual({ authorizationCodePkce: true, referenceCode: false, gatewayReferencePairing: false });
   });
 
   it("drops fields it does not know, so additions never break a client", () => {
