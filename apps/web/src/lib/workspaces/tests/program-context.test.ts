@@ -9,6 +9,7 @@ const runtime = vi.hoisted(() => {
     tenant,
     release: vi.fn(),
     presenter: vi.fn(),
+    resolveBrowser: vi.fn(),
     manager: { tenancy: "multi", primaryWorkspaceId: "workspace-main", primary: () => ({ fluxiq: primary }), acquire: vi.fn() },
     store: { getAccount: vi.fn(), listMembershipsOfUser: vi.fn(), getWorkspace: vi.fn() }
   };
@@ -16,6 +17,7 @@ const runtime = vi.hoisted(() => {
 
 vi.mock("../../fluxiq", () => ({ getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter }));
 vi.mock("../../../server/provisioning-listener", () => ({ getPlatformServices: async () => ({ store: runtime.store }) }));
+vi.mock("../../../server/browser-trust", () => ({ resolveServiceClientHttpRoute: runtime.resolveBrowser }));
 
 import { FLUXIQ_SESSION_COOKIE } from "../../session-cookie";
 import { workspaceProgramContext } from "../program-context";
@@ -30,6 +32,7 @@ function request(cookie = "panel-cookie", bearer?: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.manager.tenancy = "multi";
+  runtime.resolveBrowser.mockResolvedValue(null);
   runtime.primary.programs.identityAccess.validateSession.mockResolvedValue({ user: { id: "person-a" } });
   runtime.store.getAccount.mockResolvedValue({ status: "active", deletion: null });
   runtime.store.listMembershipsOfUser.mockResolvedValue([{ workspaceId: "tenant-a", userId: "person-a", status: "active", createdAtMs: 0 }]);
@@ -63,17 +66,60 @@ describe("a web program's workspace context", () => {
     expect(runtime.release).toHaveBeenCalledOnce();
   });
 
-  it("refuses service bearer-only traffic without acquiring primary or scanning tenant gateways", async () => {
+  it("refuses an unproved service bearer without acquiring primary or scanning tenant gateways", async () => {
     expect(await workspaceProgramContext(request("", "browser-token"))).toBeNull();
     expect(runtime.primary.programs.identityAccess.validateSession).not.toHaveBeenCalled();
     expect(runtime.store.listMembershipsOfUser).not.toHaveBeenCalled();
     expect(runtime.manager.acquire).not.toHaveBeenCalled();
+    expect(runtime.resolveBrowser).toHaveBeenCalledWith("browser-token");
   });
 
   it("refuses invalid service cookies despite a bearer", async () => {
     runtime.primary.programs.identityAccess.validateSession.mockResolvedValue(null);
     expect(await workspaceProgramContext(request("expired-cookie", "browser-token"))).toBeNull();
     expect(runtime.manager.acquire).not.toHaveBeenCalled();
+    expect(runtime.resolveBrowser).not.toHaveBeenCalled();
+  });
+
+  it("freezes a proved browser channel without forwarding a cookie or choosing a body-supplied tenant", async () => {
+    const guard = vi.fn(async () => true);
+    runtime.resolveBrowser.mockResolvedValue({ lease: { workspaceId: "browser-tenant", fluxiq: runtime.tenant, release: runtime.release }, revalidateAuthority: guard });
+    const selected = await workspaceProgramContext(request("", "browser-token"));
+    expect(selected?.sessionId).toBeUndefined();
+    expect(selected?.authorization).toBe("Bearer browser-token");
+    expect(selected?.context.identityAuthority).toBe(runtime.primary.programs.identityAccess);
+    expect(await selected?.context.revalidateAuthority?.()).toBe(true);
+    expect(guard).toHaveBeenCalledOnce();
+    selected?.release();
+    expect(runtime.release).toHaveBeenCalledOnce();
+  });
+
+  it("releases a selected cookie workspace if membership changes during acquisition", async () => {
+    runtime.manager.acquire.mockImplementationOnce(async () => {
+      runtime.store.listMembershipsOfUser.mockResolvedValue([]);
+      return { workspaceId: "tenant-a", fluxiq: runtime.tenant, release: runtime.release };
+    });
+    expect(await workspaceProgramContext(request("panel-cookie", "other-token"))).toBeNull();
+    expect(runtime.release).toHaveBeenCalledOnce();
+    expect(runtime.resolveBrowser).not.toHaveBeenCalled();
+  });
+
+  it("keeps checking the cookie's original user and workspace after selection", async () => {
+    const selected = await workspaceProgramContext(request());
+    expect(selected?.authorization).toBeNull();
+    expect(await selected?.context.revalidateAuthority?.()).toBe(true);
+    runtime.primary.programs.identityAccess.validateSession.mockResolvedValue({ user: { id: "person-b" } });
+    expect(await selected?.context.revalidateAuthority?.()).toBe(false);
+    selected?.release();
+  });
+
+  it("releases the tenant when post-acquisition authority throws", async () => {
+    runtime.manager.acquire.mockImplementationOnce(async () => {
+      runtime.store.getAccount.mockRejectedValueOnce(new Error("Synthetic account read failure"));
+      return { workspaceId: "tenant-a", fluxiq: runtime.tenant, release: runtime.release };
+    });
+    await expect(workspaceProgramContext(request())).rejects.toThrow("Synthetic account read failure");
+    expect(runtime.release).toHaveBeenCalledOnce();
   });
 
   it.each(["absent", "removed", "primary", "dangling"])("refuses %s workspace membership before acquisition", async (state) => {

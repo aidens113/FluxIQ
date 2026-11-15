@@ -165,6 +165,12 @@ the installed extension supports this flow. Existing local/self-hosted
 pairing remains available. The extension origin must be admitted by
 `FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`.
 
+New discovery documents explicitly publish `connect.flows`. Clients may
+start hosted PKCE only when `authorizationCodePkce` is true; it is advertised
+only for service mode with the gateway enabled. `referenceCode` stays false
+until that flow exists. A legacy document without these flags is unknown,
+not proof that its listed connection URLs are implemented.
+
 ## Run: Service
 
 ```sh

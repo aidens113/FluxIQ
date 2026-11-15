@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { handleProgramRequest, type ProgramRouteResponse } from "fluxiq/server";
+import { handleProgramRequest, isPairedClientClassification, isPairedClientEndpoint, readBearerToken, type ProgramRouteResponse } from "fluxiq/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../lib/session-cookie";
 import { workspaceProgramContext } from "../../../../../lib/workspaces";
+import { getFluxIQWorkspaces } from "../../../../../lib/fluxiq";
 
 type RouteParams = {
   params: Promise<{
@@ -30,7 +31,13 @@ export async function POST(request: Request, context: RouteParams) {
 async function answer(request: Request, context: RouteParams, method: "GET" | "POST"): Promise<NextResponse> {
   const { programId, endpoint } = await context.params;
   const cookieStore = await cookies();
-  const selected = await workspaceProgramContext({ cookies: cookieStore });
+  const manager = getFluxIQWorkspaces();
+  // Reject disallowed token endpoints before proof lookup can reveal token validity or open any tenant.
+  if (manager.tenancy === "multi" && !cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value && readBearerToken(request.headers.get("authorization"))) {
+    const classification = manager.primary().fluxiq.programs.api.endpoints().find((entry) => entry.programId === programId && entry.endpoint === endpoint)?.classification;
+    if (!isPairedClientEndpoint(programId, endpoint) || !isPairedClientClassification(classification)) return NextResponse.json({ ok: false, error: "This endpoint is not available to a paired client." }, { status: 403 });
+  }
+  const selected = await workspaceProgramContext({ cookies: cookieStore, headers: request.headers, signal: request.signal });
   if (!selected) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
   try {
     const answered = await handleProgramRequest({
@@ -38,8 +45,8 @@ async function answer(request: Request, context: RouteParams, method: "GET" | "P
       url: request.url,
       programId,
       endpoint,
-      sessionId: cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value,
-      authorization: selected.acceptBearer ? request.headers.get("authorization") : null,
+      sessionId: selected.sessionId,
+      authorization: selected.authorization,
       readJson: () => request.json().catch(() => undefined),
     }, selected.context);
     return toNextResponse(answered);

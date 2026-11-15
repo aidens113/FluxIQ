@@ -25,6 +25,7 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
       tokenUrl: FLUXIQ_CONNECT_PATHS.token,
       revokeUrl: FLUXIQ_CONNECT_PATHS.revoke,
       codeEntryUrl: FLUXIQ_CONNECT_PATHS.codeEntry,
+      flows: { authorizationCodePkce: settings.profile === "service" && settings.gateway.enabled, referenceCode: false },
       ...(signUpUrl ? { signUpUrl } : {})
     },
     protocols: { clientGateway: [...CLIENT_GATEWAY_PROTOCOL_VERSIONS] },

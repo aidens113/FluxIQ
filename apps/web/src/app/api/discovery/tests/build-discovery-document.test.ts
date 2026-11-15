@@ -49,3 +49,25 @@ describe("discovery runtime provenance", () => {
     expect(buildDiscoveryDocument({})).toEqual({ ok: false, fields: ["runtime.artifactDigest"] });
   });
 });
+
+describe("explicit discovery connection flows", () => {
+  it.each([
+    ["local", "true", false],
+    ["local", "false", false],
+    ["self-hosted", "true", false],
+    ["self-hosted", "false", false],
+    ["service", "true", true],
+    ["service", "false", false]
+  ])("advertises only actual hosted PKCE support for %s with gateway enabled=%s", (profile, enabled, authorizationCodePkce) => {
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: String(profile), FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_CLIENT_GATEWAY_ENABLED: String(enabled) });
+    expect(built.ok).toBe(true);
+    if (!built.ok) throw new Error("Discovery refused valid profile settings.");
+    const parsed = parseFluxIQDiscoveryDocument(built.document, "https://app.example.com");
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("Discovery refused the explicit connect flow document.");
+    expect(parsed.data.connect.flows).toEqual({ authorizationCodePkce, referenceCode: false });
+    expect(parsed.data.connect).toMatchObject({ authorizeUrl: "/connect/authorize", tokenUrl: "/api/connect/token", revokeUrl: "/api/connect/revoke", codeEntryUrl: "/connect" });
+    expect(parsed.data.fluxiqDiscoveryVersion).toBe(1);
+    expect(parsed.data.protocols.clientGateway).toEqual(["0.1", "0.2"]);
+  });
+});

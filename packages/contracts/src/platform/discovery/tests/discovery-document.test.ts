@@ -33,6 +33,44 @@ describe("discovery document", () => {
   it("accepts the plan's service example and a local instance", () => {
     expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE)).toEqual(SERVICE);
     expect(fluxiqDiscoveryDocumentSchema.parse(LOCAL)).toEqual(LOCAL);
+    expect(fluxiqDiscoveryDocumentSchema.parse(SERVICE).connect.flows).toBeUndefined();
+    expect(fluxiqDiscoveryDocumentSchema.parse(LOCAL).connect.flows).toBeUndefined();
+  });
+
+  it.each([
+    { authorizationCodePkce: true, referenceCode: false },
+    { authorizationCodePkce: false, referenceCode: false },
+    { authorizationCodePkce: true, referenceCode: true },
+    { authorizationCodePkce: false, referenceCode: true }
+  ])("retains explicit flow support without changing discovery v1 or endpoint checks: %j", (flows) => {
+    const document = { ...SERVICE, connect: { ...SERVICE.connect, flows } };
+    const parsed = parseFluxIQDiscoveryDocument(document, SERVICE.origin);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) throw new Error("Valid explicit connect capabilities were refused.");
+    expect(parsed.data.connect.flows).toEqual(flows);
+    expect(parsed.data.fluxiqDiscoveryVersion).toBe(1);
+    expect(parsed.data.protocols).toEqual(SERVICE.protocols);
+    expect(parseFluxIQDiscoveryDocument(document, "https://evil.example").success).toBe(false);
+    expect(fluxiqDiscoveryDocumentSchema.safeParse({ ...document, connect: { ...document.connect, tokenUrl: "https://evil.example/token" } }).success).toBe(false);
+  });
+
+  it.each([
+    null,
+    [],
+    true,
+    "authorization_code_pkce",
+    {},
+    { authorizationCodePkce: true },
+    { referenceCode: false },
+    { authorizationCodePkce: "true", referenceCode: false },
+    { authorizationCodePkce: true, referenceCode: 0 }
+  ])("rejects malformed explicit flow support: %j", (flows) => {
+    expect(fluxiqDiscoveryDocumentSchema.safeParse({ ...SERVICE, connect: { ...SERVICE.connect, flows } }).success).toBe(false);
+  });
+
+  it("drops future flow fields while retaining the known explicit support", () => {
+    const document = { ...SERVICE, connect: { ...SERVICE.connect, flows: { authorizationCodePkce: true, referenceCode: false, futureFlow: true } } };
+    expect(fluxiqDiscoveryDocumentSchema.parse(document).connect.flows).toEqual({ authorizationCodePkce: true, referenceCode: false });
   });
 
   it("drops fields it does not know, so additions never break a client", () => {

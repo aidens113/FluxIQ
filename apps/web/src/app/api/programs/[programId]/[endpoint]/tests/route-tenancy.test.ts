@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => {
   const release = vi.fn();
   const validateSession = vi.fn();
-  const primary = { programs: { identityAccess: { validateSession, snapshot: vi.fn() }, api: { call: vi.fn() }, clientGateway: { authorizeToken: vi.fn() } } };
+  const primary = { programs: { identityAccess: { validateSession, snapshot: vi.fn() }, api: { call: vi.fn(), endpoints: vi.fn() }, clientGateway: { authorizeToken: vi.fn() } } };
   const tenant = {
     programs: {
       identityAccess: { validateSession: vi.fn(), snapshot: vi.fn() },
@@ -19,7 +19,7 @@ const runtime = vi.hoisted(() => {
     tenant,
     presenter: vi.fn(),
     manager: { tenancy: "multi", primaryWorkspaceId: "workspace-main", primary: () => ({ fluxiq: primary }), acquire: vi.fn() },
-    store: { listMembershipsOfUser: vi.fn(), getWorkspace: vi.fn() }
+    store: { getAccount: vi.fn(), listMembershipsOfUser: vi.fn(), getWorkspace: vi.fn() }
   };
 });
 
@@ -33,8 +33,10 @@ const params = { params: Promise.resolve({ programId: "automation-studio", endpo
 const request = () => new Request("https://panel.example.test/api/programs/automation-studio/client-gateway-snapshot", { headers: { authorization: "Bearer another-tenant-token" } });
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   runtime.cookie = "person-a-cookie";
+  runtime.primary.programs.api.endpoints.mockReturnValue([]);
+  runtime.store.getAccount.mockResolvedValue({ status: "active", deletion: null });
   runtime.primary.programs.identityAccess.validateSession.mockResolvedValue({ user: { id: "person-a" }, role: { id: "member", permissions: ["programs.read"] }, session: { expiresAtMs: Date.now() + 60_000 } });
   runtime.store.listMembershipsOfUser.mockResolvedValue([{ workspaceId: "tenant-a", userId: "person-a", status: "active", createdAtMs: 0 }]);
   runtime.store.getWorkspace.mockResolvedValue({ workspaceId: "tenant-a" });
@@ -58,8 +60,7 @@ describe("web program routing to a held tenant", () => {
     expect(runtime.release).toHaveBeenCalledOnce();
   });
 
-  it.each(["absent-cookie", "invalid-cookie", "no-membership", "missing-workspace"])("refuses service %s without dispatching or acquiring primary", async (state) => {
-    if (state === "absent-cookie") runtime.cookie = undefined;
+  it.each(["invalid-cookie", "no-membership", "missing-workspace"])("refuses service %s without dispatching or acquiring primary", async (state) => {
     if (state === "invalid-cookie") runtime.primary.programs.identityAccess.validateSession.mockResolvedValue(null);
     if (state === "no-membership") runtime.store.listMembershipsOfUser.mockResolvedValue([]);
     if (state === "missing-workspace") runtime.store.getWorkspace.mockResolvedValue(null);
@@ -70,6 +71,14 @@ describe("web program routing to a held tenant", () => {
     expect(runtime.primary.programs.api.call).not.toHaveBeenCalled();
     expect(runtime.tenant.programs.api.call).not.toHaveBeenCalled();
     expect(runtime.release).not.toHaveBeenCalled();
+  });
+
+  it("refuses a bearer on a panel-only endpoint before token lookup or tenant acquisition", async () => {
+    runtime.cookie = undefined;
+    expect((await GET(request(), params)).status).toBe(403);
+    expect(runtime.manager.acquire).not.toHaveBeenCalled();
+    expect(runtime.primary.programs.clientGateway.authorizeToken).not.toHaveBeenCalled();
+    expect(runtime.tenant.programs.api.call).not.toHaveBeenCalled();
   });
 
   it("propagates platform lookup failures before acquiring or dispatching", async () => {
@@ -87,14 +96,20 @@ describe("web program routing to a held tenant", () => {
   });
 
   it("releases its tenant lease when platform session revalidation fails", async () => {
-    runtime.primary.programs.identityAccess.validateSession.mockResolvedValueOnce({ user: { id: "person-a" } }).mockRejectedValueOnce(new Error("Identity lookup failed"));
+    runtime.manager.acquire.mockImplementationOnce(async () => {
+      runtime.primary.programs.identityAccess.validateSession.mockRejectedValueOnce(new Error("Identity lookup failed"));
+      return { workspaceId: "tenant-a", fluxiq: runtime.tenant, release: runtime.release };
+    });
     await expect(GET(request(), params)).rejects.toThrow("Identity lookup failed");
     expect(runtime.release).toHaveBeenCalledOnce();
     expect(runtime.tenant.programs.api.call).not.toHaveBeenCalled();
   });
 
   it("does not fall back to a bearer when the platform cookie is revoked after tenant selection", async () => {
-    runtime.primary.programs.identityAccess.validateSession.mockResolvedValueOnce({ user: { id: "person-a" } }).mockResolvedValueOnce(null);
+    runtime.manager.acquire.mockImplementationOnce(async () => {
+      runtime.primary.programs.identityAccess.validateSession.mockResolvedValue(null);
+      return { workspaceId: "tenant-a", fluxiq: runtime.tenant, release: runtime.release };
+    });
     const response = await GET(request(), params);
     expect(response.status).toBe(401);
     expect(runtime.tenant.programs.clientGateway.authorizeToken).not.toHaveBeenCalled();

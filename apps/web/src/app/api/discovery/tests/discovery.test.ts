@@ -15,6 +15,7 @@ describe("GET /api/discovery", () => {
     expect(document.instance).toEqual({ name: "FluxIQ", profile: "local" });
     expect(document.minimumClient).toEqual({ "browser-extension": "0.1.0" });
     expect(document.connect.signUpUrl).toBeUndefined();
+    expect(document.connect.flows).toEqual({ authorizationCodePkce: false, referenceCode: false });
   });
   it("serves the service profile with its name and sign-up URL", async () => {
     vi.stubEnv("FLUXIQ_PROFILE", "service");
@@ -26,6 +27,7 @@ describe("GET /api/discovery", () => {
     expect(document.instance.name).toBe("FluxIQ Cloud");
     expect(document.gatewayUrl.startsWith("wss:")).toBe(true);
     expect(document.connect.signUpUrl).toBe("https://getfluxiq.com/sign-up");
+    expect(document.connect.flows).toEqual({ authorizationCodePkce: true, referenceCode: false });
   });
   it("returns 500 with field paths only for a service profile on an http origin", async () => {
     vi.stubEnv("FLUXIQ_PROFILE", "service");
