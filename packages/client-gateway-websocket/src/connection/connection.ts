@@ -294,9 +294,9 @@ export class FluxIQClientGatewayConnection {
             this.onHelloToken(record, Boolean(hello.token ?? stored));
             return stored;
           },
-          write: (token) => {
+          write: (token, metadata) => {
             const write = this.credentialWrites.then(() => {
-              if (!this.superseded(record)) return tokenStorage.write(token);
+              if (!this.superseded(record)) return tokenStorage.write(token, metadata);
             });
             // Keep the sequencing tail settled; the original rejection still
             // returns to the transport, which publishes its terminal failure.

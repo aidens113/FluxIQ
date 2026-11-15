@@ -7,6 +7,7 @@ import {
   type ClientGatewayStateUpdate
 } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "@fluxiq/contracts/core";
+import type { ClientGatewayCredentialWriteMetadata } from "./credential-write-metadata.ts";
 import { FluxIQClientGatewayCredentialPersistenceError } from "./credential-persistence-error.ts";
 import { parseServerMessage } from "./messages.ts";
 import { FluxIQClientGatewayOpenError } from "./open-error.ts";
@@ -211,7 +212,9 @@ export class FluxIQClientGatewayWebSocketClient {
   private async commitSession(socket: FluxIQWebSocketLike, message: Extract<import("@fluxiq/contracts/client-gateway").ClientGatewayServerMessage, { type: "server.session_ready" }>): Promise<void> {
     if (this.socket !== socket) return;
     try {
-      await this.options.tokenStorage?.write(message.payload.token);
+      const { token, ...ready } = message.payload;
+      const metadata: ClientGatewayCredentialWriteMetadata = { ...structuredClone(ready), messageId: message.id };
+      await this.options.tokenStorage?.write(token, metadata);
     } catch {
       this.failCredentialPersistence(socket, "write");
       return;

@@ -1,5 +1,6 @@
 export * from "./automation-studio.ts";
 export * from "./connection/index.ts";
+export type { ClientGatewayCredentialWriteMetadata } from "./credential-write-metadata.ts";
 export * from "./host-lease/index.ts";
 export * from "./messages.ts";
 export * from "./open-error.ts";
