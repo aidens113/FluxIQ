@@ -44,7 +44,7 @@ export async function buildRelease(manifestPath, outputPath) {
         ],
       },
     },
-    secrets: { email_api_key: { file: '/etc/fluxiq/secrets/email-api-key' } },
+    secrets: { email_api_key: { file: '/etc/fluxiq/secrets/email-api-key' }, ...(manifest.profile === 'service' ? { secret_keyring: { file: '/etc/fluxiq/secrets/secret-keyring' } } : {}) },
   };
   // JSON is YAML-compatible and avoids a new parser/serializer dependency.
   await writeFile(resolve(output, 'cloud.compose.json'), `${JSON.stringify(overlay, null, 2)}\n`);

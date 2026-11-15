@@ -191,7 +191,8 @@ describe("SecretKeysService seal upgrade", () => {
     const unlocking = unlock(service, "session.one");
     await writing.started;
     const rotating = service.rotateKey({ id: record.id, value: "rotated-value", authorizationPassword: PASSWORD, actorUserId: "user.one", nowMs: 2000 });
-    await waitUntil(() => serviceRecord(service, record.id)?.lastRotatedAtMs === 2000);
+    // Neither operation publishes an unpersisted seal while the first write is held.
+    expect(serviceRecord(service, record.id)?.lastRotatedAtMs).toBe(record.lastRotatedAtMs);
     writing.release();
     await rotating;
     await unlocking;

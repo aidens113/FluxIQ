@@ -2,6 +2,7 @@ import type { EncryptedSecretValueRecord } from "../types.ts";
 import type { HeldKeys } from "./held-keys.ts";
 import type { SecretKeyStore } from "./key-store.ts";
 import type { SecretKeyValue, SecretValueSealer } from "./value-sealer.ts";
+import type { SecretKeyDataKeys } from "./access/index.ts";
 
 /**
  * Upgrades a verified older seal (version 1, or version 2 below the write cost)
@@ -19,12 +20,14 @@ export class SealUpgrades {
   private readonly sealer: SecretValueSealer;
   private readonly heldKeys: HeldKeys;
   private readonly onResealed: ((recordId: string, key: Buffer) => Promise<void>) | undefined;
+  private readonly dataKeys: SecretKeyDataKeys | undefined;
 
-  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; onResealed?: (recordId: string, key: Buffer) => Promise<void> }) {
+  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; dataKeys?: SecretKeyDataKeys; onResealed?: (recordId: string, key: Buffer) => Promise<void> }) {
     this.store = options.store;
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
     this.onResealed = options.onResealed;
+    this.dataKeys = options.dataKeys;
   }
 
   /**
@@ -62,14 +65,15 @@ export class SealUpgrades {
       next.key.fill(0);
       return;
     }
-    this.store.set({ ...current, sealed: next.sealed });
-    this.predecessors.set(next.sealed, opened);
-    this.heldKeys.replaceKey(recordId, next.key);
     try {
+      const candidate = { ...current, sealed: next.sealed, hostProtection: undefined };
+      const protectedRecord = this.dataKeys ? await this.dataKeys.protect(candidate, next.key, current.createdBy) : candidate;
+      if (!await this.store.commit(protectedRecord, current)) return;
+      this.predecessors.set(next.sealed, opened);
+      this.heldKeys.replaceKey(recordId, next.key);
       await this.onResealed?.(recordId, next.key);
     } finally {
       next.key.fill(0);
     }
-    await this.store.persist(recordId);
   }
 }

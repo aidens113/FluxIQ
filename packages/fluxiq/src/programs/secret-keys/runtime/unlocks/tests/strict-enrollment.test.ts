@@ -15,11 +15,11 @@ function fixture() {
   return result;
 }
 
-describe("strict locked credential enrollment", () => {
-  it("accepts zero keys and persists the exact locked binding without creating a held unlock", async () => {
+describe("strict authenticated credential enrollment", () => {
+  it("accepts zero keys and persists the exact independent binding without creating a held unlock", async () => {
     const f = fixture();
-    await f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
-    expect(f.stored()).toMatchObject({ holderKind: "paired-client", userId: f.holder.userId, approvingSessionDigest: f.holder.approvingSessionDigest, expiresAtMs: f.holder.expiresAtMs, boxes: {}, lockReason: "first_unlock", lockedAtMs: f.clock.now });
+    await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
+    expect(f.stored()).toMatchObject({ holderKind: "paired-client", userId: f.holder.userId, approvingSessionDigest: f.holder.approvingSessionDigest, expiresAtMs: f.holder.expiresAtMs, boxes: {} });
     expect(f.service.activeSessionUnlockCount()).toBe(0);
     expect(f.unlocks.storedText(f.holder.holderId)).not.toContain(f.credential);
     expect(f.unlocks.storedText(f.holder.holderId)).not.toContain("synthetic-approving-session");
@@ -29,22 +29,22 @@ describe("strict locked credential enrollment", () => {
     const f = fixture();
     const local = new SecretKeysService({ now: () => f.clock.now });
     services.push(local);
-    await expect(local.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("requires a persistence repository");
-    await expect(f.service.credentialUnlocks.enrollLockedCredential({ ...f.holder, approvingSessionDigest: "raw-cookie-is-not-a-digest" }, f.credential)).rejects.toThrow("Invalid strict");
-    await expect(f.service.credentialUnlocks.enrollLockedCredential({ ...f.holder, expiresAtMs: f.clock.now }, f.credential)).rejects.toThrow("Invalid strict");
-    await expect(f.service.credentialUnlocks.enrollLockedCredential({ ...f.holder, holderId: "panel-session:not-a-client" }, f.credential)).rejects.toThrow("Invalid strict");
+    await expect(local.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("requires a persistence repository");
+    await expect(f.service.credentialUnlocks.enrollCredential({ ...f.holder, approvingSessionDigest: "raw-cookie-is-not-a-digest" }, f.credential)).rejects.toThrow("Invalid strict");
+    await expect(f.service.credentialUnlocks.enrollCredential({ ...f.holder, expiresAtMs: f.clock.now }, f.credential)).rejects.toThrow("Invalid strict");
+    await expect(f.service.credentialUnlocks.enrollCredential({ ...f.holder, holderId: "panel-session:not-a-client" }, f.credential)).rejects.toThrow("Invalid strict");
     expect(f.unlocks.putCount()).toBe(0);
   });
 
   it.each(["same", "owner", "digest", "expiry", "credential"])("refuses an existing %s binding rather than reusing or overwriting it", async (difference) => {
     const f = fixture();
-    await f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     const before = f.unlocks.storedText(f.holder.holderId);
     const holder = { ...f.holder };
     if (difference === "owner") holder.userId = "user.someone-else";
     if (difference === "digest") holder.approvingSessionDigest = secretKeySessionDigest("another-session");
     if (difference === "expiry") holder.expiresAtMs += 1;
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(holder, difference === "credential" ? "another-credential" : f.credential)).rejects.toThrow("requires a fresh holder");
+    await expect(f.service.credentialUnlocks.enrollCredential(holder, difference === "credential" ? "another-credential" : f.credential)).rejects.toThrow("requires a fresh holder");
     expect(f.unlocks.storedText(f.holder.holderId)).toBe(before);
     expect(f.unlocks.putCount()).toBe(1);
     expect(f.service.activeSessionUnlockCount()).toBe(0);
@@ -53,11 +53,11 @@ describe("strict locked credential enrollment", () => {
   it("leaves no provisional memory or persistence after a refused write and really writes on retry", async () => {
     const f = fixture();
     vi.spyOn(f.unlocks.repository, "put").mockRejectedValueOnce(new Error("synthetic persistence rejection"));
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("synthetic persistence rejection");
+    await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("synthetic persistence rejection");
     expect(f.stored()).toBeUndefined();
     expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
     expect(f.service.activeSessionUnlockCount()).toBe(0);
-    await f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     expect(f.stored()).toMatchObject({ boxes: {}, approvingSessionDigest: f.holder.approvingSessionDigest });
     expect(f.unlocks.repository.put).toHaveBeenCalledTimes(2);
   });
@@ -69,10 +69,10 @@ describe("strict locked credential enrollment", () => {
       await put(record);
       throw new Error("synthetic post-commit rejection");
     });
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("post-commit rejection");
+    await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("post-commit rejection");
     expect(f.stored()).toBeUndefined();
     expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
-    await f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     expect(f.stored()?.boxes).toEqual({});
   });
 
@@ -84,21 +84,21 @@ describe("strict locked credential enrollment", () => {
       throw new Error("synthetic post-commit rejection");
     });
     vi.spyOn(f.unlocks.repository, "delete").mockRejectedValueOnce(new Error("synthetic cleanup rejection"));
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("provisional persistence could not be removed");
+    await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("provisional persistence could not be removed");
     expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
     expect(f.service.activeSessionUnlockCount()).toBe(0);
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("requires a fresh holder");
+    await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("requires a fresh holder");
     expect(f.unlocks.repository.put).toHaveBeenCalledTimes(1);
   });
 
   it("serializes overlapping same-holder enrollment and never exposes its provisional row", async () => {
     const f = fixture();
     const held = f.unlocks.holdNextPut();
-    const first = f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    const first = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     await held.started;
     expect(f.stored()).toBeUndefined();
     expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
-    const second = f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    const second = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     const refused = expect(second).rejects.toThrow("requires a fresh holder");
     held.release();
     await Promise.all([first, refused]);
@@ -109,13 +109,13 @@ describe("strict locked credential enrollment", () => {
   it.each(["owner", "digest", "expiry", "credential"])("rejects conflicting pending %s authority without replacing the first enrollment", async (difference) => {
     const f = fixture();
     const held = f.unlocks.holdNextPut();
-    const first = f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    const first = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     await held.started;
     const holder = { ...f.holder };
     if (difference === "owner") holder.userId = "user.someone-else";
     if (difference === "digest") holder.approvingSessionDigest = secretKeySessionDigest("another-session");
     if (difference === "expiry") holder.expiresAtMs += 1;
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(holder, difference === "credential" ? "another-credential" : f.credential)).rejects.toThrow("conflicts with a pending holder");
+    await expect(f.service.credentialUnlocks.enrollCredential(holder, difference === "credential" ? "another-credential" : f.credential)).rejects.toThrow("conflicts with a pending holder");
     held.release();
     await first;
     expect(f.stored()).toMatchObject({ userId: f.holder.userId, approvingSessionDigest: f.holder.approvingSessionDigest, expiresAtMs: f.holder.expiresAtMs });
@@ -130,7 +130,7 @@ describe("strict locked credential enrollment", () => {
       await f.service.unlockSession({ sessionId: `synthetic-session-${userId}`, userId, authorizationPassword: password, expiresAtMs: f.clock.now + 60_000 });
     }
     const count = f.service.activeSessionUnlockCount();
-    await f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     expect(f.stored()?.boxes).toEqual({});
     expect(f.service.activeSessionUnlockCount()).toBe(count);
     expect(f.service.holdingSession(f.service.credentialUnlocks.heldHandleFor(f.holder.holderId), f.holder.userId)).toBeNull();
@@ -142,7 +142,7 @@ describe("strict enrollment versus ending authority", () => {
   it.each(["forget", "lock", "person", "session", "whole-user", "own-signout"])("refuses and removes an enrollment whose %s arrives while persistence waits", async (ending) => {
     const f = fixture();
     const held = f.unlocks.holdNextPut();
-    const enrolled = f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    const enrolled = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     const refused = expect(enrolled).rejects.toThrow("authority ended");
     await held.started;
     let ended: Promise<void>;
@@ -161,7 +161,7 @@ describe("strict enrollment versus ending authority", () => {
   it("keeps a distinct live approving session independent of an unrelated signout", async () => {
     const f = fixture();
     const held = f.unlocks.holdNextPut();
-    const enrolled = f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential);
+    const enrolled = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     await held.started;
     await f.service.credentialUnlocks.sessionEnded({ digest: secretKeySessionDigest("another-session"), revokerUserId: f.holder.userId, administrator: false, liveSessionDigests: new Set([f.holder.approvingSessionDigest]) });
     held.release();
@@ -172,7 +172,7 @@ describe("strict enrollment versus ending authority", () => {
   it("rejects an approval digest already ended in this instance", async () => {
     const f = fixture();
     await f.service.credentialUnlocks.sessionEnded({ digest: f.holder.approvingSessionDigest, revokerUserId: f.holder.userId, administrator: false });
-    await expect(f.service.credentialUnlocks.enrollLockedCredential(f.holder, f.credential)).rejects.toThrow("authority ended");
+    await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("authority ended");
     expect(f.unlocks.putCount()).toBe(0);
   });
 
@@ -180,7 +180,7 @@ describe("strict enrollment versus ending authority", () => {
     const f = fixture();
     const holder: SecretKeyLockedCredentialHolder = { ...f.holder };
     const held = f.unlocks.holdNextPut();
-    const enrolled = f.service.credentialUnlocks.enrollLockedCredential(holder, f.credential);
+    const enrolled = f.service.credentialUnlocks.enrollCredential(holder, f.credential);
     const refused = expect(enrolled).rejects.toThrow("authority ended");
     await held.started;
     holder.userId = "user.mutated-by-caller";

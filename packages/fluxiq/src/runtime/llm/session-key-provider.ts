@@ -103,7 +103,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const factory = providerId === "anthropic" ? createAutomationStudioAnthropicProvider : createAutomationStudioDeepSeekProvider;
     // The adapter reports any failed secret resolution as `llm.provider_secret_unavailable`;
     // a locked key is remembered per request so the call fails with the typed error instead.
-    const locked = new Map<string, AutomationStudioSecretsLockedError>();
+    const locked = new Map<string, Error>();
     const adapter = factory({
       secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
       model,
@@ -120,7 +120,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
             ...(options.instanceHost ? { instanceHost: options.instanceHost } : {})
           });
         } catch (error) {
-          if (error instanceof AutomationStudioSecretsLockedError) locked.set(request.requestId, error);
+          if (error instanceof AutomationStudioSecretsLockedError || savedKeyUnavailable(error)) locked.set(request.requestId, error);
           throw error;
         }
         locked.delete(request.requestId);
@@ -191,4 +191,11 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
 function metadataKeyId(metadata: JsonObject | undefined): string | undefined {
   const keyId = metadata?.llmSecretKeyId;
   return typeof keyId === "string" && keyId.trim() ? keyId.trim() : undefined;
+}
+
+/** Keep actionable saved-key failures distinct from authentication or a removed unlock wait. */
+function savedKeyUnavailable(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false;
+  const code = (error as Error & { code?: unknown }).code;
+  return code === "legacy_recovery_required" || code === "host_protection_unavailable" || code === "ciphertext_invalid";
 }

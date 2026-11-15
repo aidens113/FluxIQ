@@ -1,6 +1,8 @@
 import type { JsonObject } from "../../core/index.ts";
 import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import type { ScryptParameters } from "../_shared/password-kdf/index.ts";
+import type { ModelKeyAvailability } from "@fluxiq/contracts/platform";
+import type { SecretKeyProtectedDataKey } from "../../platform/custody/protection/index.ts";
 
 export type SecretKeyKind = "llm" | "custom";
 
@@ -33,7 +35,12 @@ export type SecretKeyRecord = SecretKeySummary & {
    * first unlock or reveal it opens for; abort removes it.
    */
   pendingSealed?: EncryptedSecretValueRecordV2 | undefined;
+  hostProtection?: SecretKeyHostCustody | undefined;
+  pendingHostProtection?: SecretKeyHostCustody | undefined;
 };
+
+/** A ciphertext recovery key bound to its proven owner and exact value seal. */
+export type SecretKeyHostCustody = { ownerUserId: string; sealDigest: string; sealed: SecretKeyProtectedDataKey };
 
 /**
  * A version 1 seal: scrypt at Node's default cost (N=2^14), recording no
@@ -160,7 +167,7 @@ export type SecretKeysSnapshot = {
    * and only of that caller's own keys. `offeredToWorkspace`: its holder offered
    * it to the workspace (said of every model key).
    */
-  keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
+  keys: Array<SecretKeySummary & { availability?: ModelKeyAvailability; unlocked?: boolean; lockedBecause?: ModelKeyLockReason; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
   /** Which key is the default, and the assistant's choice. */
   modelSettings?: ModelKeySettingsView;
 };

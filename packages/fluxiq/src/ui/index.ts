@@ -107,3 +107,4 @@ export const fluxiqConsoleTheme: FluxIQTheme = {
     weights: { regular: 400, medium: 500, semibold: 600, bold: 700 }
   }
 };
+export { readModelKeyAvailability, type ModelKeyAvailability } from "@fluxiq/contracts/platform";

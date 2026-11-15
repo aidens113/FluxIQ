@@ -60,6 +60,7 @@ export function fakeTasks(nowMs: number): Record<"done" | "working" | "interrupt
   const interrupted = movedTo(outcomes.waitingForPerson, nowMs - HOUR);
   interrupted.attempt = { ...interrupted.attempt, taskId: "task-saved-searches", attemptId: "attempt-saved-searches-1", flowId: "flow-saved-searches", status: "waiting_for_person", waitingFor: "interrupted" } as unknown as ChatTaskOutcome["attempt"];
   interrupted.saved = { state: "needs_you", trust: "unproven", flowId: "flow-saved-searches", savedAtMs: nowMs - HOUR + 30_000 };
+  // Historical wait remains decodable; new clients offer no unlock ceremony.
   const keyLocked = movedTo(outcomes.waitingForPerson, nowMs - 2 * HOUR);
   keyLocked.attempt = { ...keyLocked.attempt, taskId: "task-news-summary", attemptId: "attempt-news-summary-1", flowId: "flow-news-summary", status: "waiting_for_person", waitingFor: "model_key_locked" } as unknown as ChatTaskOutcome["attempt"];
   keyLocked.saved = { state: "needs_you", trust: "unproven", flowId: "flow-news-summary", savedAtMs: nowMs - 2 * HOUR + 30_000 };

@@ -67,6 +67,9 @@ for (const profile of ['self-hosted', 'service']) {
       assert.deepEqual(publicPorts.sort(), ['443/tcp', '443/udp', '80/tcp']);
       assert.ok(core.secrets.some((secret) => secret.source === 'email_api_key'));
       if (profile === 'service') {
+        assert.equal(core.environment.FLUXIQ_SECRET_KEYS_KEYRING_FILE, '/run/secrets/secret_keyring');
+        assert.ok(core.secrets.some((secret) => secret.source === 'secret_keyring'));
+        assert.equal(config.secrets.secret_keyring.file, '/etc/fluxiq/secrets/secret-keyring');
         assert.equal(config.networks.provisioning.internal, true);
         assert.equal(config.services.caddy.networks.provisioning, undefined);
         assert.equal(core.environment.FLUXIQ_PROVISIONING_LISTEN, '172.31.250.10:4780');

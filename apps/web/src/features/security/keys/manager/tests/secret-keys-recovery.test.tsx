@@ -29,6 +29,18 @@ afterEach(() => {
   if (view) act(() => view.unmount());
   vi.unstubAllGlobals();
 });
+it("shows saved-key unavailability without a browser chooser, ticket or password ceremony", async () => {
+  apis.secret.get.mockResolvedValue({ ok: true, payload: {
+    keys: [{ ...key, kind: "llm", provider: "Anthropic", availability: { state: "unavailable", code: "legacy_recovery_required" } }],
+    lockedClients: [{ holderId: "paired-client:obsolete", neverUnlocked: true, label: "Old browser" }],
+    unlockTicket: "obsolete"
+  } });
+  await mount();
+  expect(text()).toContain("Saved key recovery required");
+  expect(text()).not.toMatch(/unlock|needs your password|Old browser/iu);
+  expect(view.root.findAllByType("input").filter(input => input.props.type === "password")).toHaveLength(0);
+  expect(apis.secret.post).not.toHaveBeenCalled();
+});
 it("project A/B/A publishes only the newest A request", async () => {
  const requests = [deferred(), deferred(), deferred()];
   let calls = 0;

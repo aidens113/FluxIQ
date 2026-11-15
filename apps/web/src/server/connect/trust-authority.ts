@@ -18,9 +18,9 @@ export function createWorkspaceTrustAuthority(workspaceId: string): ClientGatewa
       const { getFluxIQWorkspaces } = await import("../../lib/fluxiq");
       const tenant = getFluxIQWorkspaces().get(workspaceId);
       if (!tenant || tenant.primary) throw new Error("The approved tenant is unavailable.");
-      // A new holder starts locked. Only a later explicit key proof may box tenant keys to it.
+      // Authentication establishes independent access; host-protected keys do not need another password.
       // Calling the service directly preserves persistence failures; the legacy observer is best-effort.
-      await tenant.fluxiq.programs.secretKeys.credentialUnlocks.enrollLockedCredential({
+      await tenant.fluxiq.programs.secretKeys.credentialUnlocks.enrollCredential({
         holderKind: "paired-client", holderId: secretKeyPairedHolderId(input.trustedClientId),
         userId: input.userId, expiresAtMs: input.expiresAt, label: "Connected client",
         approvingSessionDigest: input.approvingSessionDigest

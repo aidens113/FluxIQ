@@ -13,7 +13,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type ProgramDirectory, type ProgramApiIamOptions } from "../programs/index.ts";
+import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type GlobalProgramRuntimeOptions, type ProgramDirectory, type ProgramApiIamOptions } from "../programs/index.ts";
 import { programStateConnections } from "./persistence/program-state/state-connections.ts";
 import { AutomationStudioIoRecorder, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration } from "./automation-service/public/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
@@ -82,6 +82,10 @@ export type FluxIQOptions = {
   loadEnv?: boolean;
   /** Omitted enables the host's built-in model provider bindings. */
   modelProvidersEnabled?: boolean;
+  secretKeyHostProtection?: GlobalProgramRuntimeOptions["secretKeyHostProtection"];
+  secretKeyProtectionStoreId?: string;
+  secretKeyPrincipalAuthority?: GlobalProgramRuntimeOptions["secretKeyPrincipalAuthority"];
+  secretKeyIdentityAuthority?: GlobalProgramRuntimeOptions["secretKeyIdentityAuthority"];
   envFiles?: string[];
   /**
    * Key custody owned by the host rather than this instance (a workspace
@@ -208,6 +212,10 @@ export class FluxIQ {
     this.programs = createGlobalProgramRuntime(this.paths, {
       ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}),
       ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}),
+      ...(options.secretKeyHostProtection ? { secretKeyHostProtection: options.secretKeyHostProtection } : {}),
+      ...(options.secretKeyProtectionStoreId ? { secretKeyProtectionStoreId: options.secretKeyProtectionStoreId } : {}),
+      ...(options.secretKeyPrincipalAuthority ? { secretKeyPrincipalAuthority: options.secretKeyPrincipalAuthority } : {}),
+      ...(options.secretKeyIdentityAuthority ? { secretKeyIdentityAuthority: options.secretKeyIdentityAuthority } : {}),
       ...(options.iam ? { iam: options.iam } : {}),
       ...(options.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: options.clientGatewayTrustAuthority } : {}),
       ...(options.clientGatewayTrustedClientStore ? {

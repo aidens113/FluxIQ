@@ -107,6 +107,21 @@ owner setup code. The service token is at least 32 bytes; the setup code is at
 least 16 characters. Never put real values into this example, Terraform
 variables, shell history or chat.
 
+Service configuration also requires `secrets.secret-keyring`, a JSON string with
+`version: 1`, a `currentKeyId`, and a `keys` map from version IDs to canonical
+base64-encoded 32-byte random keys. Generate it privately; the checked-in example
+is deliberately invalid. The service mounts it at `/run/secrets/secret_keyring`
+and selects that path with `FLUXIQ_SECRET_KEYS_KEYRING_FILE`. It protects the
+per-record encryption keys needed for authenticated model use after restart.
+There is no separate client unlock step. Missing or invalid protection causes
+an explicit unavailable result rather than silently generating a replacement.
+
+Back up this keyring separately and restore it with the database. Retain all old
+key IDs while any record still uses them; choosing a new current ID alone does
+not migrate every stored wrap. No automatic retirement command is provided.
+Self-hosted local protection has its own persisted keyring; include that in
+backup as well. See [Model keys](../architecture/platform.md#model-keys).
+
 `environment` accepts only the named public settings in `write-config.py`;
 runtime/profile overrides and environment credentials fail validation.
 Values are serialized as literal Compose env-file entries, never sourced or

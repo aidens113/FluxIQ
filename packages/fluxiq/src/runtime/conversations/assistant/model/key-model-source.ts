@@ -79,9 +79,9 @@ export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promis
       await checkCurrentChoice(caller.userId);
       const lent = lentTo(choice, caller.userId);
       // Lent: the holder's own live panel unlock (the host's fallback for a caller with no session of its own), never the sender's.
-      const payer = lent && choice.ownerId ? { userId: choice.ownerId, sessionId: null } : caller;
+      const payer = !input.keyPorts.createUseAuthorization && lent && choice.ownerId ? { userId: choice.ownerId, sessionId: null } : caller;
       try {
-        const value = await releaseAutomationStudioSessionProviderKey(input.keyPorts, payer, { provider: wanted, flowKeyId: choice.keyId, ...(choice.model ? { model: choice.model } : {}), ...(input.instanceHost ? { instanceHost: input.instanceHost } : {}) });
+        const value = await releaseAutomationStudioSessionProviderKey(input.keyPorts, payer, { provider: wanted, flowKeyId: choice.keyId, ...(lent && choice.ownerId ? { keyOwnerUserId: choice.ownerId } : {}), ...(choice.model ? { model: choice.model } : {}), ...(input.instanceHost ? { instanceHost: input.instanceHost } : {}) });
         await checkCurrentChoice(caller.userId);
         return value;
       } catch (error) {

@@ -350,7 +350,7 @@ context and 128K output. `FLUXIQ_LLM_DEFAULT_MODEL` accepts either provider's
 configured IDs; an explicit DeepSeek factory remains usable under a Claude
 global default. Explicit mismatched provider/model/key settings are refused;
 there is no cross-provider fallback. The host infers missing settings from a
-selected key's metadata, and resolves and validates its unlock on every call.
+selected key's metadata, and revalidates authenticated key-use authority on every call.
 Secret Keys stores the compatible `Anthropic` provider value while the panel
 labels it **Anthropic (Claude)**; Flow settings persist `anthropic` and the
 chosen model/key without loading key values.
@@ -382,7 +382,7 @@ and [pricing](https://platform.claude.com/docs/en/about-claude/pricing) referenc
 
 **A model call is paid for by the person it is made for, and needs nothing
 else.** Building, exploring, repairing, verifying or judging, diagnosing and
-adapting a Flow all call the model on the caller's own unlocked Secret Keys
+adapting a Flow all call the model on the authenticated caller's authorized Secret Keys
 key. No execution grant exists: nothing is issued, leased, preflighted,
 digest-checked, confirmed for size, or revoked before or during a provider
 call. The caller is `AutomationStudioLlmModelCaller`
@@ -396,12 +396,14 @@ The shipped host binds one resolver,
 `automationStudio.bindLlmExecutionProvider(resolver)`. A request with no
 caller resolves no provider. With a caller it returns the configured provider adapter
 whose secret is resolved per call: the Flow's chosen matching key, or the caller's own newest enabled key for that provider,
-released to the caller's own unlocked session by a one-use Secret Keys session
-reveal authorization, by the same rule the chat window's key follows
-(`runtime/llm/deepseek/panel-command-key.ts`). The unlock is established at
-login and lives only in memory; Automation Studio never accepts or retains a
-password or PIN, and a person whose keys are locked, or who has signed out,
-gets no key and the call fails as `llm.provider_secret_unavailable`. The
+released through a one-use Secret Keys authorization for the actual authenticated
+session or trusted client. Authority and the selected key are checked again at
+consumption. Durable host protection permits restart without a second unlock;
+ordinary panel logout does not end an independently approved client's access.
+Automation Studio never accepts or retains a password or PIN. An expired or
+revoked principal receives no key. Missing configuration and stored-key recovery
+failures remain distinct from authentication refusal; see
+[Model keys](platform.md#model-keys). The
 provider refuses an outbound body that contains the secret. The model is the
 request's supported `modelId`, the selected provider's default when only a
 provider is pinned, or Core's configured default. An unknown explicit model is
@@ -892,7 +894,7 @@ this matters for a host that turns it on.
 
 ### The standing authorization, for runs nobody is watching
 
-An interactive model call is paid for by a signed-in person's unlocked key, and
+An interactive model call is paid for by an authenticated person's authorized key, and
 a request with no caller resolves no provider. A Flow replaying on a schedule
 at three in the morning has no caller, so without a second instrument it could
 neither have its result judged nor repair itself when it failed. That
@@ -2285,7 +2287,7 @@ The service can run every path above for a host whose provider resolver returns
 a provider. The shipped app's framework host builds its programs with
 `createGlobalProgramRuntime`, which binds the session-key resolver: it returns a
 provider only for a request that names a caller, and pays with that caller's own
-unlocked key. A build's caller is the signed-in actor who asked for it; a run's
+authorized key. A build's caller is the signed-in actor who asked for it; a run's
 is the actor of a `run-runtime-session` request that names a `runIntent`. The
 intent selects the lane and is audit metadata; it does not authorize or filter
 task kinds. Each path reaches a model as follows:

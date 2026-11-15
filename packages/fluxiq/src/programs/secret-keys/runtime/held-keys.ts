@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
-import type { SecretKeyCredentialHolderKind } from "../types.ts";
+import type { SecretKeyCredentialHolderKind, SecretKeyRecord } from "../types.ts";
+import type { SecretKeyUsePrincipal } from "./access/index.ts";
 
 /** The longest delay `setTimeout` can count: anything longer fires at once. A 30-day credential is longer. */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -17,6 +18,9 @@ export type SecretRevealAuthorizationMetadata = {
 export type HeldRevealAuthorization = SecretRevealAuthorizationMetadata & {
   decryptionKey: Buffer;
   sessionId?: string;
+  usePrincipal?: SecretKeyUsePrincipal;
+  useOwnerUserId?: string;
+  useKeyVersion?: SecretKeyRecord;
   state: "available" | "claimed";
   expiryTimer: ReturnType<typeof setTimeout>;
 };

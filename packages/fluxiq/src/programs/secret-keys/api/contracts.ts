@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../core/index.ts";
-import type { ModelKeySettingsView, SecretKeyKind, SecretKeyLockedClient, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
+import type { ModelKeySettingsView, SecretKeyKind, SecretKeyScope, SecretKeysSnapshot, SecretKeySummary } from "../types.ts";
 
 export const SECRET_KEYS_ENDPOINTS = {
   snapshot: "snapshot",
@@ -70,12 +70,7 @@ export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & {
 /** `stillLocked`: those named that this did not lift. */
 export type UnlockSecretKeysResponse = { unlockedKeyCount: number; stillLocked: string[] };
 
-export type SecretKeysSnapshotResponse = SecretKeysSnapshot & {
-  /** For a paired client only: what starts its own unlock, when nobody has unlocked it yet. */
-  unlockTicket?: string;
-  /** The caller's paired clients that are locked, to choose among. */
-  lockedClients?: SecretKeyLockedClient[];
-};
+export type SecretKeysSnapshotResponse = SecretKeysSnapshot;
 export type SecretKeyMutationResponse = SecretKeySummary;
 export type RevealSecretKeyResponse = {
   key: SecretKeySummary;

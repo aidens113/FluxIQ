@@ -1,4 +1,5 @@
 import copy
+import base64
 import importlib.util
 import json
 import os
@@ -25,7 +26,8 @@ def payload():
             "FLUXIQ_INSTANCE_ID": "test-instance-1",
         },
         "secrets": {"provisioning-token": "fixture-token-" + "0123456789" * 4,
-                    "setup-code": "fixture-setup-code-0123456789"},
+                    "setup-code": "fixture-setup-code-0123456789",
+                    "secret-keyring": json.dumps({"version": 1, "currentKeyId": "fixture", "keys": {"fixture": base64.b64encode(bytes(32)).decode()}})},
     }
 
 
@@ -74,7 +76,7 @@ class ConfigurationTests(unittest.TestCase):
     def test_invalid_secret_and_profile_shapes_are_rejected(self):
         cases = []
         for change in [
-            {"provisioning-token": "short"}, {"setup-code": "short"},
+            {"provisioning-token": "short"}, {"setup-code": "short"}, {"secret-keyring": "invalid"},
             {"unknown-secret": "fixture-value"}, {"email-api-key": "bad\x00value"},
         ]:
             candidate = payload()

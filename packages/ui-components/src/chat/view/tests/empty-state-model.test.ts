@@ -4,7 +4,6 @@
 
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { modelKeyLockedWords, MODEL_KEY_LOCK_REASONS } from "fluxiq/ui";
 import { emptyStateModel, MODEL_KEY_LINE, ONBOARDING_CONCEPT } from "../empty-state-model.ts";
 
 const LATEST = { kind: "latest" } as const;
@@ -72,14 +71,17 @@ test("another project's empty thread keeps the plain invitation without the onbo
   assert.equal(model.examples.length, 3);
 });
 
-test("a locked key is a setup step in the empty latest chat: why, one action, and never \"sign in\" as the fix", () => {
-  for (const reason of MODEL_KEY_LOCK_REASONS) {
-    const line = emptyStateModel("empty", LATEST, `locked:${reason}`)?.keyLine ?? "";
-    assert.equal(line, modelKeyLockedWords(reason));
-    assert.match(line, /Open FluxIQ/);
-    assert.doesNotMatch(line, /sign out|sign in/i);
+test("saved-key problems explain their actual cause without a second client authentication step", () => {
+  for (const code of ["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid", "upgrade_required"] as const) {
+    const model = emptyStateModel("empty", LATEST, `unavailable:${code}`)!;
+    assert.ok(model.keyLine);
+    assert.doesNotMatch(model.keyLine, /unlock|password|PIN|sign out|sign in/iu);
+    assert.deepEqual(model.starts.map(start => start.id), ["describe", "extract"]);
   }
-  assert.match(emptyStateModel("empty", LATEST, "locked:signed_out")?.keyLine ?? "", /because you signed out/);
+  assert.match(emptyStateModel("empty", LATEST, "unavailable:legacy_recovery_required")?.keyLine ?? "", /needs recovery/u);
+  assert.match(emptyStateModel("empty", LATEST, "unavailable:host_protection_unavailable")?.keyLine ?? "", /host configuration/u);
+  assert.match(emptyStateModel("empty", LATEST, "unavailable:ciphertext_invalid")?.keyLine ?? "", /could not be read/u);
+  assert.match(emptyStateModel("empty", LATEST, "unavailable:upgrade_required")?.keyLine ?? "", /Update FluxIQ/u);
   assert.equal(emptyStateModel("empty", LATEST, "ready")?.keyLine, null);
   assert.equal(emptyStateModel("empty", LATEST, "missing")?.keyLine, MODEL_KEY_LINE);
 });

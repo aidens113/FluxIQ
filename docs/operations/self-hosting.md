@@ -465,17 +465,18 @@ extension to observe in its own tab and verify against its original state.
 The extension-side initiation and observer still need integration; the typed
 reference-code fallback is not implemented.
 
-Issuance persists a tenant-bound credential and a locked key holder before
-returning it. Connecting never borrows decrypted model keys from another
-session. An account-wide queue enforces the connected-client limit within the
+Issuance persists a tenant-bound credential and its custody holder before
+returning it. Approval is sufficient: there is no second model-key unlock.
+Only the exact validated approving session can delegate its own proven material;
+normal use checks the authenticated client and current tenant authority. An account-wide queue enforces the connected-client limit within the
 supported single Core process. Routed WebSockets resolve signed credential
 bindings, recheck account and membership eligibility, and hold a tenant lease
 until the socket closes. Managed hosts require a separate ticket authority
 and are refused by this ordinary-client routing path.
 
-Tenant HTTP routing, primary identity integration with tenant key APIs,
-durable logout/password-change propagation to cold tenants, runtime isolation
-and end-to-end extension acceptance remain launch prerequisites. These
+Generic program HTTP routing and primary identity integration with tenant key
+APIs are implemented. Dedicated tenant-sensitive routes, runtime isolation and
+end-to-end extension acceptance remain launch prerequisites. These
 features do not yet enable public customer execution. The deployment remains
 one Core process, not an active-active cluster.
 

@@ -89,19 +89,20 @@ describe("a new browser gets the key only on a proof", () => {
     await expect(service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true })).resolves.toEqual({ unlockedKeyCount: 0 });
     expect(await release(service, handle(service, holder), keyId)).toBeNull();
     expect(storedRow(repos, holder).boxes).toEqual({});
-    expect(storedRow(repos, holder).lockReason).toBe("first_unlock");
+    expect(storedRow(repos, holder).lockReason).toBeUndefined();
   });
 
-  it("is not reached by an ordinary sign-in afterwards, nor by a key added afterwards", async () => {
+  it('normal sign-in and later key creation reach current authorized holders without a lift', async () => {
     const repos = repositories();
     const { service, keyId } = await withKey(repos);
-    const holder = browser("new");
+    const holder = browser('new');
     await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    await signIn(service, "session.again");
-    const later = await service.createKey({ name: "Later", value: "dummy-later-value", authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
-    expect(storedRow(repos, holder).boxes).toEqual({});
-    expect(await release(service, handle(service, holder), keyId)).toBeNull();
-    expect(await release(service, handle(service, holder), later.id)).toBeNull();
+    await signIn(service, 'session.again');
+    const later = await service.createKey({ name: 'Later', value: 'dummy-later-value', authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
+    expect(storedRow(repos, holder).boxes[keyId]).toBeDefined();
+    expect(storedRow(repos, holder).boxes[later.id]).toBeDefined();
+    expect(await release(service, handle(service, holder), keyId)).toBe(KEY_VALUE);
+    expect(await release(service, handle(service, holder), later.id)).toBe('dummy-later-value');
   });
 
   it("the password at approval unlocks it at once, and it lasts", async () => {
@@ -123,7 +124,7 @@ describe("a new browser gets the key only on a proof", () => {
     await signIn(restarted);
     const holder = browser("older");
     await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    expect(restarted.keyLockReason({ userId: USER, holderId: holder.holderId })).toBe("first_unlock");
+    expect(restarted.keyLockReason({ userId: USER, holderId: holder.holderId })).toBe("unknown");
     expect(await release(restarted, handle(restarted, holder), keyId)).toBeNull();
     await signIn(restarted, SESSION, [holder.holderId]);
     expect(await release(restarted, handle(restarted, holder), keyId)).toBe(KEY_VALUE);
@@ -219,77 +220,47 @@ describe("a password change the person proved", () => {
     return { repos, service, keyId, kept, other };
   }
 
-  it("keeps the browser its session approved, and locks the other as a setup step", async () => {
+  it('keeps all independently authorized clients after an ordinary password change', async () => {
     const { service, keyId, kept, other, repos } = await twoBrowsers();
     expect(await release(service, handle(service, kept), keyId)).toBe(KEY_VALUE);
-    expect(await release(service, handle(service, other), keyId)).toBeNull();
-    expect(storedRow(repos, other).boxes).toEqual({});
-    expect(storedRow(repos, other).lockReason).toBe("password_changed");
-    expect(service.keyLockReason({ userId: USER, holderId: other.holderId })).toBe("password_changed");
+    expect(await release(service, handle(service, other), keyId)).toBe(KEY_VALUE);
+    expect(storedRow(repos, other).boxes[keyId]).toBeDefined();
+    expect(storedRow(repos, other).lockReason).toBeUndefined();
   });
 
-  it("the other stays locked across a restart, and other sessions' unlocks are gone", async () => {
+  it('both independent client credentials restore after password change and restart', async () => {
     const { service, keyId, kept, other, repos } = await twoBrowsers();
-    expect(await release(service, "session.elsewhere", keyId)).toBeNull();
     service.close();
     const restarted = boot(repos);
     await restarted.credentialUnlocks.presentCredential(kept, CREDENTIAL_ONE, { verified: true });
     await restarted.credentialUnlocks.presentCredential(other, CREDENTIAL_TWO, { verified: true });
     expect(await release(restarted, handle(restarted, kept), keyId)).toBe(KEY_VALUE);
-    expect(await release(restarted, handle(restarted, other), keyId)).toBeNull();
+    expect(await release(restarted, handle(restarted, other), keyId)).toBe(KEY_VALUE);
   });
 
-  it("with no session named, keeps no browser", async () => {
+  it('a password reseal with no actor-session link preserves independently authorized credentials', async () => {
     const repos = repositories();
     const { service, keyId } = await withKey(repos);
-    const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
-    const { changeId } = await service.prepareCredentialChange({ userId: USER, currentPassword: PASSWORD, nextPassword: "dummy-password-next" });
+    const holder = await unlockedBrowser(service, 'one', CREDENTIAL_ONE);
+    const { changeId } = await service.prepareCredentialChange({ userId: USER, currentPassword: PASSWORD, nextPassword: 'dummy-password-next' });
     await service.commitCredentialChange(changeId);
-    expect(await release(service, handle(service, holder), keyId)).toBeNull();
+    expect(await release(service, handle(service, holder), keyId)).toBe(KEY_VALUE);
   });
 });
 
-describe("an explicit unlock lifts only what the person chose", () => {
-  async function twoLocked() {
-    const repos = repositories();
-    const { service, keyId } = await withKey(repos);
-    const one = browser("one");
-    const two = browser("two");
-    await service.credentialUnlocks.presentCredential(one, CREDENTIAL_ONE, { verified: true });
-    await service.credentialUnlocks.presentCredential(two, CREDENTIAL_TWO, { verified: true });
-    return { repos, service, keyId, one, two };
-  }
-
-  it("lifts the one named, not the other", async () => {
-    const { service, keyId, one, two } = await twoLocked();
-    await signIn(service, SESSION, [one.holderId]);
-    expect(await release(service, handle(service, one), keyId)).toBe(KEY_VALUE);
-    expect(await release(service, handle(service, two), keyId)).toBeNull();
-    expect((await service.credentialUnlocks.lockedClientsFor(USER)).map((client) => client.holderId)).toEqual([two.holderId]);
+describe('a normal own-user proof reaches authorized holders', () => {
+    it('reaches both current clients without naming either one', async () => {
+      const repos = repositories();
+      const { service, keyId } = await withKey(repos);
+      const one = browser('one');
+      const two = browser('two');
+      await service.credentialUnlocks.presentCredential(one, CREDENTIAL_ONE, { verified: true });
+      await service.credentialUnlocks.presentCredential(two, CREDENTIAL_TWO, { verified: true });
+      await signIn(service);
+      expect(await release(service, handle(service, one), keyId)).toBe(KEY_VALUE);
+      expect(await release(service, handle(service, two), keyId)).toBe(KEY_VALUE);
+    });
   });
-
-  it("naming none lifts none", async () => {
-    const { service, keyId, one, two } = await twoLocked();
-    await signIn(service);
-    expect(await release(service, handle(service, one), keyId)).toBeNull();
-    expect(await release(service, handle(service, two), keyId)).toBeNull();
-  });
-
-  it("a lost laptop, locked by a sign-out, stays locked when the person unlocks their new one", async () => {
-    const { service, keyId, one, two } = await twoLocked();
-    await signIn(service, SESSION, [one.holderId]);
-    await service.credentialUnlocks.lock(one.holderId, "signed_out");
-    await signIn(service, SESSION, [two.holderId]);
-    expect(await release(service, handle(service, two), keyId)).toBe(KEY_VALUE);
-    expect(await release(service, handle(service, one), keyId)).toBeNull();
-  });
-
-  it("offers each locked browser with its label and last use, for choosing", async () => {
-    const { service, one } = await twoLocked();
-    const [listed] = await service.credentialUnlocks.lockedClientsFor(USER);
-    expect(listed).toMatchObject({ holderId: one.holderId, label: "Chrome one", lastUsedAtMs: NOW });
-  });
-});
 
 describe("a lock with a store that fails", () => {
   /** Refuses writes to the named rows, as a store error would. */
@@ -320,66 +291,31 @@ describe("a lock with a store that fails", () => {
     await expect(service.credentialUnlocks.presentCredential(one, CREDENTIAL_ONE, { verified: true })).resolves.toEqual({ unlockedKeyCount: 0 });
   });
 
-  it("a session ending attempts every browser it locks, the same way", async () => {
+  it('ordinary session ending does not mutate independent client rows even if their writes would fail', async () => {
     const repos = repositories();
     const refused = new Set<string>();
-    const { service } = await withKey(refusing(repos, refused));
-    const one = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
-    const two = await unlockedBrowser(service, "two", CREDENTIAL_TWO);
+    const { service, keyId } = await withKey(refusing(repos, refused));
+    const one = await unlockedBrowser(service, 'one', CREDENTIAL_ONE);
+    const two = await unlockedBrowser(service, 'two', CREDENTIAL_TWO);
     refused.add(one.holderId);
-    await expect(service.credentialUnlocks.sessionEnded({ digest: secretKeySessionDigest(SESSION), revokerUserId: USER, administrator: false, liveSessionDigests: new Set() })).rejects.toBeInstanceOf(AggregateError);
-    expect(storedRow(repos, two).lockReason).toBe("signed_out");
+    await expect(service.credentialUnlocks.sessionEnded({ digest: secretKeySessionDigest(SESSION), revokerUserId: USER, administrator: false, liveSessionDigests: new Set() })).resolves.toBeUndefined();
+    expect(storedRow(repos, two).lockReason).toBeUndefined();
+    expect(await release(service, handle(service, one), keyId)).toBe(KEY_VALUE);
+    expect(await release(service, handle(service, two), keyId)).toBe(KEY_VALUE);
   });
 });
 
-describe("a browser nobody has unlocked, as other things happen to the person", () => {
-  async function pairedWithoutProof() {
-    const repos = repositories();
-    const { service, keyId } = await withKey(repos);
-    const holder = browser("unproved");
-    await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    return { repos, service, keyId, holder };
-  }
-
-  async function stillNeverUnlocked(service: SecretKeysService, holder: SecretKeyCredentialHolder): Promise<void> {
-    const [listed] = await service.credentialUnlocks.lockedClientsFor(USER);
-    expect(listed).toMatchObject({ holderId: holder.holderId, neverUnlocked: true });
-    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], undefined)).resolves.toEqual(new Set());
-    const ticket = service.credentialUnlocks.unlockTicketFor(holder.holderId);
-    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], ticket)).resolves.toEqual(new Set([holder.holderId]));
-  }
-
-  it("is still not offered after a password change, and cannot be lifted without its ticket", async () => {
-    const { service, holder } = await pairedWithoutProof();
-    const { changeId } = await service.prepareCredentialChange({ userId: USER, currentPassword: PASSWORD, nextPassword: "dummy-password-next", actorSessionId: SESSION });
-    await service.commitCredentialChange(changeId);
-    await stillNeverUnlocked(service, holder);
+describe('retired first-unlock protocol', () => {
+    it('does not produce tickets or lists when a legacy holder has no boxes', async () => {
+      const repos = repositories();
+      const { service } = await withKey(repos);
+      const holder = browser('unproved');
+      await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
+      expect(storedRow(repos, holder).lockReason).toBeUndefined();
+      expect(service.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeUndefined();
+      expect(await service.credentialUnlocks.lockedClientsFor(USER)).toEqual([]);
+    });
   });
-
-  it.each(["sessions_ended", "password_reset", "administrator", "signed_out"] as const)("is still not offered after being locked for %s", async (reason) => {
-    const { service, holder } = await pairedWithoutProof();
-    await service.credentialUnlocks.lock(holder.holderId, reason);
-    await stillNeverUnlocked(service, holder);
-  });
-
-  it("is still not offered after every session of the person ends, and across a restart", async () => {
-    const { repos, service, holder } = await pairedWithoutProof();
-    await service.credentialUnlocks.lockPerson(USER, "sessions_ended");
-    service.close();
-    const restarted = boot(repos);
-    await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    await stillNeverUnlocked(restarted, holder);
-  });
-
-  it("a browser that was unlocked once can say why it locked, and be chosen", async () => {
-    const { service, holder } = await pairedWithoutProof();
-    await signIn(service, SESSION, [holder.holderId]);
-    await service.credentialUnlocks.lock(holder.holderId, "signed_out");
-    const [listed] = await service.credentialUnlocks.lockedClientsFor(USER);
-    expect(listed?.neverUnlocked).toBeUndefined();
-    await expect(service.credentialUnlocks.liftable(USER, [holder.holderId], undefined)).resolves.toEqual(new Set([holder.holderId]));
-  });
-});
 
 describe("work from a session that ended, as a password changes", () => {
   it("falls back until the person's own password changes, and is told apart from what ended after it", async () => {
@@ -401,15 +337,15 @@ describe("work from a session that ended, as a password changes", () => {
 });
 
 describe("a proof that opened nothing", () => {
-  it("lifts no lock from someone whose keys it could not open", async () => {
+  it('a wrong password supplies no key material, while a later legitimate proof needs no lift', async () => {
     const repos = repositories();
-    const { service } = await withKey(repos);
-    const holder = browser("new");
+    const { service, keyId } = await withKey(repos);
+    const holder = browser('new');
     await service.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    await service.unlockSession({ sessionId: "session.other", userId: USER, authorizationPassword: "dummy-other-password", expiresAtMs: NOW + DAY, nowMs: clock, unlockClients: [holder.holderId], passwordVerified: true });
-    expect((await service.credentialUnlocks.lockedClientsFor(USER)).map((client) => client.holderId)).toEqual([holder.holderId]);
-    await signIn(service, "session.later");
+    await service.unlockSession({ sessionId: 'session.other', userId: USER, authorizationPassword: 'dummy-other-password', expiresAtMs: NOW + DAY, nowMs: clock });
     expect(storedRow(repos, holder).boxes).toEqual({});
+    await signIn(service, 'session.later');
+    expect(storedRow(repos, holder).boxes[keyId]).toBeDefined();
   });
 
   it("still lifts for someone with no keys yet, whose first key then reaches that browser", async () => {

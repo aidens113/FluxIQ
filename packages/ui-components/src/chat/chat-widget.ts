@@ -86,7 +86,7 @@ import { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
 import type { ChatHostStatus, ChatOpenControl, ChatRunPort, ChatTransport } from "./ports/index.ts";
 import { readBeatMs } from "./read-beat.ts";
 import { createChatThreads, type ChatThreads } from "./threads/index.ts";
-import { modelReadinessLockReason, readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
+import { readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
 import { activityForTarget, buildChatStream, CHAT_STEP_MESSAGE_LIMIT, createTurnClock, followedRunTarget, threadKey, type QuestionTarget } from "./stream/index.ts";
 import type { ChatTarget } from "./target.ts";
 import { CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
@@ -212,7 +212,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   // and come back. Turning to the composer is when the line matters, so the
   // keys are read again then, not only on the next poll (round 5: a build
   // began under "FluxIQ needs a model key" and then ran with one).
-  const recheckReadiness = (): void => { if ((readiness === "missing" || modelReadinessLockReason(readiness) !== null) && readinessAsk !== null && readinessReading === null) askReadiness(); };
+  const recheckReadiness = (): void => { if ((readiness === "missing" || readiness.startsWith("unavailable:")) && readinessAsk !== null && readinessReading === null) askReadiness(); };
   composer.element.addEventListener("focusin", recheckReadiness);
   composer.element.addEventListener("input", recheckReadiness);
   const main = createElement("div", { className: "chat-main" }, [scroller, jump]);
@@ -385,8 +385,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // line: R4a's start card said no key was set while the build ran with
       // one (`run-mv2nlh9l-52e476da`, moment 1). Asked again only while the
       // empty latest chat is on screen and still says the key is missing.
-      // A key that was fine can lock while the chat is open (a sign-out elsewhere): the step must show without reopening, so that is read too, less often.
-      if (readinessAsk !== null && (readiness === "missing" || modelReadinessLockReason(readiness) !== null || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
+      // Saved-key availability can change while the chat is open, so refresh a ready read less often too.
+      if (readinessAsk !== null && (readiness === "missing" || readiness.startsWith("unavailable:") || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
     }, readBeatMs(background, owner.transport.changes !== undefined));
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {

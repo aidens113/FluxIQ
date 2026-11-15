@@ -1,5 +1,6 @@
 """Validate a fetched configuration without logging it, then write private runtime files."""
 import json
+import base64
 import os
 from pathlib import Path
 import re
@@ -43,11 +44,21 @@ def write_config(payload, profile, directory, owner=None):
     for origin_value in environment["FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS"].split(","):
         if not re.fullmatch(r"chrome-extension://[a-p]{32}|moz-extension://\*|moz-extension://[a-zA-Z0-9-]+", origin_value.strip()):
             raise ValueError("Extension origin allowlist is invalid or still contains placeholders")
-    if not isinstance(secrets, dict) or not set(secrets) <= {"provisioning-token", "setup-code", "email-api-key"}:
+    if not isinstance(secrets, dict) or not set(secrets) <= {"provisioning-token", "setup-code", "email-api-key", "secret-keyring"}:
         raise ValueError("Unknown secret file")
     if any(not isinstance(value, str) or "\x00" in value for value in secrets.values()):
         raise ValueError("Secret values must be text without NUL")
     if profile == "service":
+        try:
+            keyring = json.loads(secrets.get("secret-keyring", ""))
+            keys = keyring["keys"]
+            if type(keyring["version"]) is not int or keyring["version"] != 1 or not isinstance(keys, dict) or not isinstance(keyring["currentKeyId"], str) or keyring["currentKeyId"] not in keys:
+                raise ValueError()
+            for key_id, value in keys.items():
+                if not key_id or not isinstance(value, str) or len(base64.b64decode(value, validate=True)) != 32 or base64.b64encode(base64.b64decode(value, validate=True)).decode() != value:
+                    raise ValueError()
+        except Exception:
+            raise ValueError("Service requires a valid versioned secret keyring") from None
         tokens = secrets.get("provisioning-token", "").splitlines()
         if not tokens or len(tokens) > 2 or any(len(token.encode()) < 32 for token in tokens):
             raise ValueError("Service requires one or two provisioning tokens of at least 32 bytes")
@@ -69,7 +80,7 @@ def write_config(payload, profile, directory, owner=None):
     files = {
         directory / "runtime.env": "".join(f"{key}='{value}'\n" for key, value in sorted(environment.items())),
         directory / "environment.json": json.dumps(environment),
-        **{secret_directory / name: secrets.get(name, "") for name in ("provisioning-token", "setup-code", "email-api-key")},
+        **{secret_directory / name: secrets.get(name, "") for name in ("provisioning-token", "setup-code", "email-api-key", "secret-keyring")},
     }
     for path, content in files.items():
         temporary = path.with_suffix(".new")

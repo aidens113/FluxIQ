@@ -29,6 +29,8 @@ export async function createTenantFluxIQ(input: {
   iam?: FluxIQOptions["iam"];
   clientGatewayTrustedClientStore?: FluxIQOptions["clientGatewayTrustedClientStore"];
   clientGatewayTrustAuthority?: FluxIQOptions["clientGatewayTrustAuthority"];
+  secretKeyPrincipalAuthority?: FluxIQOptions["secretKeyPrincipalAuthority"];
+  secretKeyIdentityAuthority?: FluxIQOptions["secretKeyIdentityAuthority"];
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<FluxIQ> {
@@ -38,6 +40,9 @@ export async function createTenantFluxIQ(input: {
   await mkdir(rootDir, { recursive: true });
   const fluxiq = await input.instantiate({
     rootDir, loadEnv: false, heldKeys: input.heldKeys,
+    secretKeyProtectionStoreId: input.workspaceId,
+    ...(input.secretKeyPrincipalAuthority ? { secretKeyPrincipalAuthority: input.secretKeyPrincipalAuthority } : {}),
+    ...(input.secretKeyIdentityAuthority ? { secretKeyIdentityAuthority: input.secretKeyIdentityAuthority } : {}),
     ...(input.iam ? { iam: input.iam } : {}),
     ...(input.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: input.clientGatewayTrustAuthority } : {}),
     ...(input.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: input.clientGatewayTrustedClientStore } : {})

@@ -25,10 +25,11 @@ describe("section states", () => {
 
 describe("keys", () => {
   it("renders names and state, and no key value", () => {
-    const rows = [{ id: "k1", name: "Work", provider: "Anthropic", addedAt: 0, lastRevealedAt: undefined, enabled: true, lock: "locked" as const, value: "sk-SECRET-VALUE" }];
+    const rows = [{ id: "k1", name: "Work", provider: "Anthropic", addedAt: 0, lastRevealedAt: undefined, enabled: true, availability: { state: "unavailable" as const, code: "host_protection_unavailable" as const }, value: "sk-SECRET-VALUE" }];
     const html = renderToStaticMarkup(createElement(KeysList, { rows, now: 1000 }));
     expect(html).toContain("Work");
-    expect(html).toContain("Locked");
+    expect(html).toContain("Host key protection unavailable");
+    expect(html).not.toMatch(/unlock|password/iu);
     expect(html).toContain("Anthropic");
     expect(html).not.toContain("sk-SECRET-VALUE");
   });

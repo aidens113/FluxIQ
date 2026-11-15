@@ -35,7 +35,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           {children}
           <GlobalAlertViewport />
           {auth ? <SessionReauthentication /> : null}
-          {pairingEligible ? <GlobalClientGatewayPairing asksTotp={auth?.user.totpEnabled === true} /> : null}
+          {pairingEligible ? <GlobalClientGatewayPairing /> : null}
         </PanelBrandingProvider>
       </body>
     </html>

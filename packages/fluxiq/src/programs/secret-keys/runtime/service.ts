@@ -4,7 +4,6 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { PasswordKdfOptions } from "../../_shared/password-kdf/index.ts";
 import type { Repository } from "../../database-manager/index.ts";
 import type {
-  SecretKeyLockedClient,
   SecretKeyKind,
   SecretKeyRecord,
   SecretKeyScope,
@@ -19,6 +18,8 @@ import { SecretKeyStore } from "./key-store.ts";
 import { ModelKeySettings } from "./model-key-settings.ts";
 import { SealUpgrades } from "./seal-upgrades.ts";
 import { SecretValueSealer } from "./value-sealer.ts";
+import type { SecretKeyHostProtection } from "../../../platform/custody/protection/index.ts";
+import { SecretKeyAccess, SecretKeyDataKeys, sameSecretKeyVersion, type SecretKeyUseAuthority, type SecretKeyManagementProof } from "./access/index.ts";
 
 export type { SecretKeyCredentialChange, SecretKeyCredentialChangeInput } from "./credential-changes.ts";
 export type { SecretRevealAuthorizationMetadata } from "./held-keys.ts";
@@ -83,6 +84,7 @@ type RevealSecretKeyInput = {
   authorizationPassword?: string;
   /** The user whose password opens the key, stamped if the reveal upgrades its seal. */
   actorUserId?: string | undefined;
+  managementProof?: SecretKeyManagementProof;
   nowMs?: number;
 };
 
@@ -121,6 +123,8 @@ export class SecretKeysService {
   private readonly credentialChanges: CredentialChanges;
   /** Unlocks that outlive a process, for a holder's credential (`./unlocks/`). */
   readonly credentialUnlocks: CredentialUnlocks;
+  readonly access: SecretKeyAccess;
+  private readonly dataKeys: SecretKeyDataKeys;
   private readonly now: () => number;
 
   /**
@@ -128,16 +132,18 @@ export class SecretKeysService {
    * manager's): the service uses it and does not own it. Without it the service
    * holds its keys itself, and they end with it.
    */
-  constructor(options: { repository?: Repository; credentialUnlockRepository?: Repository | undefined; vouchForHolder?: SecretKeyHolderVouch | undefined; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined } = {}) {
+  constructor(options: { repository?: Repository; credentialUnlockRepository?: Repository | undefined; vouchForHolder?: SecretKeyHolderVouch | undefined; now?: () => number; passwordKdf?: PasswordKdfOptions; heldKeys?: HeldKeys | undefined; hostProtection?: SecretKeyHostProtection; protectionStoreId?: string; useAuthority?: SecretKeyUseAuthority } = {}) {
     this.heldKeys = options.heldKeys ?? new HeldKeys();
     this.ownsHeldKeys = options.heldKeys === undefined;
     this.now = options.now ?? Date.now;
     this.sealer = new SecretValueSealer(options.passwordKdf);
     this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
+    this.dataKeys = new SecretKeyDataKeys({ hostProtection: options.hostProtection, storeId: options.protectionStoreId, sealer: this.sealer });
+    this.access = new SecretKeyAccess({ store: this.store, heldKeys: this.heldKeys, dataKeys: this.dataKeys, authority: options.useAuthority, now: this.now, summary: toSummary });
     this.modelKeys = new ModelKeySettings({ repository: options.repository, kind: SecretKeysService.storeKind, store: this.store, now: this.now });
-    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder });
-    this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, onResealed: (recordId, key) => this.quietly(this.credentialUnlocks.resealed(recordId, key)) });
-    this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, onCommitted: (userId, keys, actorSessionId) => this.quietly(this.credentialUnlocks.passwordChanged(userId, keys, actorSessionId)) });
+    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder, onHeld: (held) => this.access.migrateHeldSession({ userId: held.userId, sessionId: held.sessionId }) });
+    this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, dataKeys: this.dataKeys, onResealed: (recordId, key) => this.quietly(this.credentialUnlocks.resealed(recordId, key)) });
+    this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, dataKeys: this.dataKeys, onCommitted: (userId, keys, actorSessionId) => this.quietly(this.credentialUnlocks.passwordChanged(userId, keys, actorSessionId)) });
   }
 
   async snapshot(): Promise<SecretKeysSnapshot> {
@@ -183,11 +189,16 @@ export class SecretKeysService {
       encrypted: true
     };
     const { sealed, key } = await this.sealer.seal({ id, value: input.value, updatedAtMs: now }, password, createdBy);
-    const record: SecretKeyRecord = { ...fields, sealed };
-    this.store.set(record);
+    let record: SecretKeyRecord;
+    try {
+      record = await this.dataKeys.protect({ ...fields, sealed }, key, createdBy);
+      if (!await this.store.commit(record, undefined)) throw new Error("Secret key changed during creation.");
+    } catch (error) {
+      key.fill(0);
+      throw error;
+    }
     await this.boxForProver(createdBy, record, key);
     const unlockNeeded = this.holdForActor(record, key, input.actorSession, createdBy);
-    await this.store.persist(id);
     await this.modelKeys.load();
     await this.modelKeys.ensureDefault();
     if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
@@ -233,25 +244,38 @@ export class SecretKeysService {
     const now = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
     const actorUserId = cleanOptional(input.actorUserId);
     const { sealed, key } = await this.sealer.seal({ id: existing.id, value: input.value, updatedAtMs: now }, password, actorUserId);
-    const current = this.store.get(existing.id);
+    let current = this.store.get(existing.id);
     if (!current) {
       key.fill(0);
       throw new Error(`Unknown secret key: ${existing.id}`);
     }
-    const next: SecretKeyRecord = {
+    let next: SecretKeyRecord = {
       ...current,
       updatedAtMs: Math.max(now, current.updatedAtMs + 1),
       lastRotatedAtMs: now,
       sealed,
-      pendingSealed: undefined
+      pendingSealed: undefined,
+      hostProtection: undefined,
+      pendingHostProtection: undefined
     };
-    this.store.set(next);
+    try {
+      for (;;) {
+        next = await this.dataKeys.protect(next, key, current.createdBy ?? actorUserId);
+        if (await this.store.commit(next, current)) break;
+        const latest = this.store.get(existing.id);
+        if (!latest || latest.lastRotatedAtMs !== current.lastRotatedAtMs) throw new Error("Secret key changed during rotation.");
+        current = latest;
+        next = { ...latest, updatedAtMs: Math.max(now, latest.updatedAtMs + 1), lastRotatedAtMs: now, sealed, hostProtection: next.hostProtection, pendingSealed: undefined, pendingHostProtection: undefined };
+      }
+    } catch (error) {
+      key.fill(0);
+      throw error;
+    }
     this.heldKeys.revokeKey(current.id);
     await this.quietly(this.credentialUnlocks.dropKey(current.id));
     // The rotator proved their password for this value: it reaches their own browsers, and only theirs. Anyone else's old box is gone with the old seal.
     if (actorUserId && (current.createdBy === undefined || current.createdBy === actorUserId)) await this.boxForProver(actorUserId, next, key);
     const unlockNeeded = this.holdForActor(next, key, input.actorSession, actorUserId);
-    await this.store.persist(current.id);
     if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
     return toSummary(next);
   }
@@ -260,7 +284,20 @@ export class SecretKeysService {
     await this.store.load();
     const record = this.store.require(input.id);
     const password = requirePassword(input.authorizationPassword);
-    const opened = await this.credentialChanges.openCurrentOrPending(record, password);
+    let opened: OpenedRecordSeal | null;
+    let recheck: (() => Promise<void>) | undefined;
+    if (input.managementProof) {
+      const management = await this.access.openForManagement(record, input.managementProof);
+      recheck = management.recheck;
+      if (management.key) {
+        const secret = this.sealer.openRecordWithKey(record, management.key);
+        if (!secret) {
+          management.key.fill(0);
+          throw new Error("Secret key could not be opened");
+        }
+        opened = { secret, key: management.key, sealed: record.sealed };
+      } else opened = await this.credentialChanges.openCurrentOrPending(record, password);
+    } else opened = await this.credentialChanges.openCurrentOrPending(record, password);
     if (!opened) throw new Error("Secret key could not be opened");
     opened.key.fill(0);
     const { secret } = opened;
@@ -276,6 +313,13 @@ export class SecretKeysService {
     const next: SecretKeyRecord = { ...current, lastRevealedAtMs: input.nowMs ?? Date.now() };
     this.store.set(next);
     await this.store.persist(current.id);
+    try {
+      await recheck?.();
+      if (!sameSecretKeyVersion(this.store.get(record.id), next)) throw new Error("Secret key changed during reveal");
+    } catch (error) {
+      secret.value = "";
+      throw error;
+    }
     return { key: toSummary(next), value: secret.value };
   }
 
@@ -415,7 +459,8 @@ export class SecretKeysService {
     try {
       await this.store.load();
       const existing = this.store.require(input.id);
-      if (existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
+      await this.access.assertAuthorization(authorization, existing);
+      if (!sameSecretKeyVersion(this.store.get(input.id), existing) || existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
       const secret = this.sealer.openRecordWithKey(existing, authorization.decryptionKey);
       if (!secret) throw new Error("Invalid secret key payload");
       const next: SecretKeyRecord = { ...existing, lastRevealedAtMs: nowMs };
@@ -426,6 +471,9 @@ export class SecretKeysService {
         secret.value = "";
         throw new Error("Secret reveal authorization is unavailable");
       }
+      await this.access.assertAuthorization(authorization, this.store.require(input.id));
+      if (!sameSecretKeyVersion(this.store.get(input.id), next)) throw new Error("Secret reveal authorization is no longer valid");
+      if (this.heldKeys.authorization(input.authorizationId) !== authorization || authorization.expiresAtMs <= this.now()) throw new Error("Secret reveal authorization is unavailable");
       const value = secret.value;
       this.heldKeys.revokeAuthorization(input.authorizationId);
       return { key: toSummary(next), value };
@@ -473,48 +521,33 @@ export class SecretKeysService {
     return this.heldKeys.whenChanged(userId, signal);
   }
 
-  /** Why this person's key is locked here, in the contract's closed reasons; ask only when `keyNeedsUnlockNow` says it is. */
+  /** @deprecated Compatibility only; authenticated access reports availability, not a key lock. */
   keyLockReason(input: { userId: string; holderId?: string | undefined }): ModelKeyLockReason {
     return this.credentialUnlocks.lockReasonFor({ ...input, ownKeys: this.ownEnabledModelKeys(input.userId) });
   }
 
-  /**
-   * True when this person has a model key of their own that the caller's unlock
-   * cannot open: what a setup step says before a task starts. False for a person
-   * with no key at all, who needs something else. `sessionId` is the unlock the
-   * caller may use, null when it has none.
-   */
+  /** @deprecated Compatibility only; the retired client-unlock gate is always false. */
   async keyNeedsUnlock(input: { userId: string; sessionId: string | null }): Promise<boolean> {
     await this.store.load();
     return this.keyNeedsUnlockNow(input);
   }
 
-  /** `keyNeedsUnlock` over what is already loaded: false before the store is read, so it never claims a lock it has not seen. */
+  /** @deprecated Compatibility only; actual recovery/configuration errors come from access. */
   keyNeedsUnlockNow(input: { userId: string; sessionId: string | null }): boolean {
-    const own = this.ownEnabledModelKeys(input.userId);
-    if (own.length === 0) return false;
-    const held = input.sessionId === null ? undefined : this.heldKeys.session(input.sessionId);
-    if (held?.userId !== input.userId || held.expiresAtMs <= this.now()) return true;
-    return !own.some((record) => held.decryptionKeys.get(record.id)?.keyUpdatedAtMs === record.updatedAtMs);
+    void input;
+    return false;
   }
 
-  /** A snapshot for one caller: each of their own keys says whether their unlock opens it, and which of their paired clients are locked. Nobody else's key says anything. */
-  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<{ keys: SecretKeysSnapshot["keys"]; modelSettings?: SecretKeysSnapshot["modelSettings"]; lockedClients: SecretKeyLockedClient[] }> {
+  /** Recoverability metadata for own keys; current use permission is checked separately. */
+  async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<SecretKeysSnapshot> {
     const { keys, modelSettings } = await this.snapshot();
-    await this.credentialUnlocks.load();
-    const held = caller.sessionId === null ? undefined : this.heldKeys.session(caller.sessionId);
-    const live = held?.userId === caller.userId && held.expiresAtMs > this.now() ? held : undefined;
-    const unlockTicket = caller.holderId === undefined ? undefined : this.credentialUnlocks.unlockTicketFor(caller.holderId);
     return {
-      ...(unlockTicket === undefined ? {} : { unlockTicket }),
       ...(modelSettings ? { modelSettings } : {}),
-      keys: keys.map((key) => {
-        if (key.createdBy !== undefined && key.createdBy !== caller.userId) return key;
-        const unlocked = live?.decryptionKeys.get(key.id)?.keyUpdatedAtMs === key.updatedAtMs;
-        // `heldByYou` only on a key stamped with the caller: a legacy key nobody is stamped on is theirs to unlock, never to offer.
-        return { ...key, unlocked, ...(key.createdBy === caller.userId ? { heldByYou: true } : {}), ...(unlocked ? {} : { lockedBecause: this.keyLockReason({ userId: caller.userId, holderId: caller.holderId }) }) };
-      }),
-      lockedClients: await this.credentialUnlocks.lockedClientsFor(caller.userId)
+      keys: await Promise.all(keys.map(async (key) => {
+        if (key.createdBy !== undefined && key.createdBy !== caller.userId) return { ...key, heldByYou: false };
+        const availability = await this.access.availability(this.store.require(key.id), caller);
+        return { ...key, availability, ...(key.createdBy === caller.userId ? { heldByYou: true } : {}) };
+      }))
     };
   }
 
@@ -530,13 +563,7 @@ export class SecretKeysService {
     return this.heldKeys.sessionCount();
   }
 
-  /**
-   * The session id of `userId`'s own unlock that opens at least one key and has the latest expiry still live
-   * at `nowMs`, or null when that person is locked or every unlock has expired.
-   * This is how a paired client acting for this person (whose own session never
-   * holds an unlock) reaches their key. Returns an id only, never key material,
-   * never another user's session, and creates, extends or revokes nothing.
-   */
+  /** Legacy custody enumeration; authenticated use never borrows another session through it. */
   unlockedSessionFor(userId: string, nowMs: number = this.now()): string | null {
     if (!userId) return null;
     let best: { sessionId: string; expiresAtMs: number } | null = null;
@@ -592,10 +619,9 @@ export class SecretKeysService {
   }
 
   /**
-   * Custody work that must not fail what asked for it: a sign-in, a new key or a
-   * rotation stands whether or not a holder's copy could be written, and the
-   * holder then finds itself locked, which it says. Only the error's name is
-   * logged, since a store's message could quote what it was writing.
+   * Best-effort legacy credential-box propagation. Required host protection and
+   * strict enrollment writes never use this helper; a box failure creates no
+   * client lock. Log only the name because store errors can contain secret data.
    */
   private async quietly(work: Promise<unknown>): Promise<void> {
     try {
@@ -672,6 +698,7 @@ export class SecretKeysService {
       // A failed write leaves the settled record in memory; after a restart the stored pending seal is settled again.
       await settling.catch(() => undefined);
       await this.upgrades.upgrade(recordId, opened.sealed, opened.secret, password, unlock.userId);
+      await this.access.migrateHeldSession({ userId: unlock.userId, sessionId: unlock.sessionId });
       opened.secret.value = "";
       return;
     }

@@ -11,6 +11,7 @@
   "secrets": {
     "provisioning-token": "",
     "setup-code": "",
-    "email-api-key": ""
+    "email-api-key": "",
+    "secret-keyring": "REPLACE_WITH_VERSIONED_KEYRING_JSON_FROM_PRIVATE_HOST_SECRET_STORAGE"
   }
 }

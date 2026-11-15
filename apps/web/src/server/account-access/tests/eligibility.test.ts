@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { keySessionEligible } from "../eligibility";
+import { workspaceAccountEligible as keySessionEligible } from "../eligibility";
 
 function input() {
   return {

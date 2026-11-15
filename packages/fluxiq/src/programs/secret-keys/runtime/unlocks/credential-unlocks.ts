@@ -6,10 +6,9 @@ import type { HeldKeys, HeldSessionUnlock } from "../held-keys.ts";
 import type { SecretKeyStore } from "../key-store.ts";
 import { RecordWriteQueue } from "../record-write-queue.ts";
 import type { SecretValueSealer } from "../value-sealer.ts";
-import { SecretKeyUnlockTickets } from "./unlock-tickets.ts";
 import { boxCredentialUnlockKey, newCredentialUnlockKeyPair, openCredentialUnlockBox, unwrapCredentialUnlockPrivateKey, wrapCredentialUnlockPrivateKey, type CredentialUnlockHolderBinding } from "./crypto.ts";
 import { secretKeySessionDigest, secretKeyPanelHolderId } from "./holder-identity.ts";
-import { LockedCredentialEnrollments, type SecretKeyLockedCredentialHolder } from "./locked-credential-enrollments.ts";
+import { CredentialEnrollments, type SecretKeyAuthenticatedCredentialHolder } from "./credential-enrollments.ts";
 import { createCredentialUnlockRecord } from "./create-credential-unlock-record.ts";
 
 export { secretKeySessionDigest, secretKeyPanelHolderId, secretKeyPairedHolderId } from "./holder-identity.ts";
@@ -35,10 +34,9 @@ type OpenedGeneration = { generation: "current" | "pending"; boxes: Readonly<Rec
  * credential.** Each presentation of a verified credential opens the data keys
  * boxed for that holder and holds them in memory, with no password and no prompt.
  *
- * **A holder gets a key only on a proof.** A paired client starts locked. The person's
- * password at its approval, or their explicit unlock naming it, lifts the lock. After
- * that, whatever they prove themselves for (a sign-in, a new or rotated key) is boxed
- * to it. Nothing is copied from a live session, so a stolen cookie cannot mint a holder.
+ * An independently approved holder may receive its owner's authorized keys at
+ * enrollment. Subsequent legitimate proofs box keys to every current vouched holder.
+ * Host-protected recovery is a separate authenticated per-use path.
  *
  * The store holds only ciphertext. Opening anything needs a credential, which the
  * store holds only as a digest, so reading the store opens nothing. Writing it is
@@ -70,7 +68,6 @@ export class CredentialUnlocks {
   private readonly forgotten = new Set<string>();
   /** Sessions a person is proving themselves on now, and how many proofs are running on each. */
   private readonly proofsRunning = new Map<string, number>();
-  private readonly unlockTickets: SecretKeyUnlockTickets;
   /** Sessions ended by their person's password change. Work one of them started may not fall back on the person's other unlocks. */
   // The order sessions ended and passwords changed in, as this process saw them. -1: ended by a change itself.
   private readonly sessionsEnded = new Map<string, number>();
@@ -79,18 +76,19 @@ export class CredentialUnlocks {
   /** Locks in memory whose write the store refused. */
   private readonly locksUnwritten = new Set<string>();
   private loading: Promise<void> | undefined;
-  private readonly enrollments: LockedCredentialEnrollments;
+  private readonly enrollments: CredentialEnrollments;
+  private readonly onHeld: ((held: HeldSessionUnlock) => Promise<void>) | undefined;
 
-  constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; now: () => number; vouch?: SecretKeyHolderVouch | undefined }) {
+  constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; now: () => number; vouch?: SecretKeyHolderVouch | undefined; onHeld?: (held: HeldSessionUnlock) => Promise<void> }) {
     this.repository = options.repository;
     this.kind = options.kind;
     this.store = options.store;
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
     this.now = options.now;
-    this.unlockTickets = new SecretKeyUnlockTickets(options.now);
     this.vouch = options.vouch;
-    this.enrollments = new LockedCredentialEnrollments({
+    this.onHeld = options.onHeld;
+    this.enrollments = new CredentialEnrollments({
       repository: this.repository,
       kind: this.kind,
       now: this.now,
@@ -98,7 +96,7 @@ export class CredentialUnlocks {
       known: (holderId) => this.records.has(holderId),
       forgotten: (holderId) => this.forgotten.has(holderId),
       publish: (record) => { this.records.set(record.id, record); },
-      newRecord: (holder, credential) => createCredentialUnlockRecord(holder, credential, undefined, { locked: true, nowMs: this.now() }),
+      newRecord: (holder, credential, keys) => withBoxes(createCredentialUnlockRecord(holder, credential, undefined, { nowMs: this.now() }), keys ?? new Map()),
       write: (holderId, operation) => this.writes.enqueue(holderId, operation)
     });
   }
@@ -108,9 +106,29 @@ export class CredentialUnlocks {
     this.vouch = vouch;
   }
 
-  /** Mandatory hosted enrollment: a fresh, persisted, locked holder; never borrows or holds a key. */
-  async enrollLockedCredential(holder: SecretKeyLockedCredentialHolder, credential: string): Promise<void> {
-    return this.enrollments.enroll(holder, credential);
+  /** @deprecated Use enrollCredential; independent authentication has no initial lock. */
+  async enrollLockedCredential(holder: SecretKeyAuthenticatedCredentialHolder, credential: string): Promise<void> {
+    return this.enrollCredential(holder, credential);
+  }
+
+  /** A validated independent principal; exact approving-session custody may delegate. */
+  async enrollCredential(holder: SecretKeyAuthenticatedCredentialHolder, credential: string, options: { delegateFrom?: { sessionId: string; userId: string } } = {}): Promise<void> {
+    await this.store.load();
+    const keys = new Map<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>();
+    if (options.delegateFrom) {
+      const source = this.heldKeys.session(options.delegateFrom.sessionId);
+      if (source?.userId !== holder.userId || options.delegateFrom.userId !== holder.userId || source.expiresAtMs <= this.now() || secretKeySessionDigest(options.delegateFrom.sessionId) !== holder.approvingSessionDigest) throw new Error("Credential delegation requires the approving user's current custody.");
+      await this.onHeld?.(source);
+      for (const [id, key] of source.decryptionKeys) {
+        const record = this.store.get(id);
+        if (record?.createdBy === holder.userId && record.updatedAtMs === key.keyUpdatedAtMs) keys.set(id, { ...key, decryptionKey: Buffer.from(key.decryptionKey) });
+      }
+    }
+    try {
+      await this.enrollments.enroll(holder, credential, keys);
+    } finally {
+      for (const key of keys.values()) key.decryptionKey.fill(0);
+    }
   }
 
   load(): Promise<void> {
@@ -163,7 +181,7 @@ export class CredentialUnlocks {
    * Cheap when they already are, since this runs on every request a client makes:
    * no cryptography until something changed.
    */
-  async presentCredential(holder: SecretKeyCredentialHolder, credential: string, options: { verified?: boolean | undefined } = {}): Promise<{ unlockedKeyCount: number }> {
+  async presentCredential(holder: SecretKeyCredentialHolder, credential: string, options: { verified?: boolean | undefined; delegateFrom?: { sessionId: string; userId: string } } = {}): Promise<{ unlockedKeyCount: number }> {
     await this.enrollments.settled(holder.holderId);
     await this.store.load();
     await this.load();
@@ -178,7 +196,7 @@ export class CredentialUnlocks {
     // Only a credential its owner verified may make or replace a record.
     if (!record && options.verified !== true) return { unlockedKeyCount: 0 };
     const held = this.heldKeys.session(heldAs);
-    if (record && held?.userId === holder.userId && held.decryptionKeys.size >= Object.keys(record.boxes).length) {
+    if (!options.delegateFrom && record && held?.userId === holder.userId && held.decryptionKeys.size >= Object.keys(record.boxes).length) {
       if (holder.holderKind === "paired-client") this.connected.add(heldAs);
       // Its life slid: what is held goes on as it is, so a call in flight is not cut.
       if (record.expiresAtMs !== holder.expiresAtMs) {
@@ -188,7 +206,7 @@ export class CredentialUnlocks {
       }
       return { unlockedKeyCount: held.decryptionKeys.size };
     }
-    const opened = record ? openingGeneration(record, credential, binding) : null;
+    let opened = record ? openingGeneration(record, credential, binding) : null;
     if (record && !opened && options.verified !== true) return { unlockedKeyCount: 0 };
     let current: SecretKeyCredentialUnlockRecord;
     if (opened && record) {
@@ -196,15 +214,53 @@ export class CredentialUnlocks {
       current = { ...record, expiresAtMs: holder.expiresAtMs, lastUsedAtMs: nowMs, updatedAtMs: nowMs, ...(holder.label ? { label: holder.label } : {}) };
     } else {
       // A first presentation, or a record this verified credential cannot open: nothing it held can be read, and nobody has proved anything for the new key pair.
-      current = createCredentialUnlockRecord(holder, credential, record, { locked: true, nowMs: this.now() });
+      current = createCredentialUnlockRecord(holder, credential, record, { nowMs: this.now() });
     }
-    this.records.set(current.id, current);
+    if (options.delegateFrom) {
+      const source = this.heldKeys.session(options.delegateFrom.sessionId);
+      if (options.verified !== true || source?.userId !== holder.userId || options.delegateFrom.userId !== holder.userId || source.expiresAtMs <= this.now() || secretKeySessionDigest(options.delegateFrom.sessionId) !== holder.approvingSessionDigest) {
+        opened?.privateKeyDer.fill(0);
+        throw new Error("Credential delegation requires the approving user's current custody.");
+      }
+      try {
+        await this.onHeld?.(source);
+        const keys = new Map([...source.decryptionKeys].filter(([id, key]) => {
+          const secret = this.store.get(id);
+          return secret?.createdBy === holder.userId && secret.updatedAtMs === key.keyUpdatedAtMs;
+        }));
+        current = withBoxes(current, keys);
+      } finally {
+        opened?.privateKeyDer.fill(0);
+      }
+      opened = openingGeneration(current, credential, binding);
+    }
+    try {
+      await this.writes.enqueue(current.id, async () => {
+        if (this.forgotten.has(current.id)) return;
+        if (this.records.get(current.id) !== existing) throw new Error("Credential custody changed during presentation.");
+        if (this.repository) await this.repository.put(createRecord({ id: current.id, kind: this.kind, data: current as unknown as JsonObject }));
+        if (this.forgotten.has(current.id)) {
+          if (this.repository) await this.repository.delete(current.id, {});
+          return;
+        }
+        this.records.set(current.id, current);
+      });
+    } catch (error) {
+      opened?.privateKeyDer.fill(0);
+      throw error;
+    }
+    if (this.forgotten.has(current.id)) {
+      opened?.privateKeyDer.fill(0);
+      return { unlockedKeyCount: 0 };
+    }
     try {
       this.hold(holder, current, opened);
     } finally {
       opened?.privateKeyDer.fill(0);
     }
     await this.persist(current.id);
+    const material = this.heldKeys.session(heldAs);
+    if (material) await this.onHeld?.(material);
     this.heldKeys.notifyChanged(holder.userId);
     return { unlockedKeyCount: this.heldKeys.session(heldAs)?.decryptionKeys.size ?? 0 };
   }
@@ -224,7 +280,7 @@ export class CredentialUnlocks {
       opened.privateKeyDer.fill(0);
       return;
     }
-    const record = createCredentialUnlockRecord(holder, input.sessionId, undefined, { locked: false, nowMs: this.now() });
+    const record = createCredentialUnlockRecord(holder, input.sessionId, undefined, { nowMs: this.now() });
     this.records.set(record.id, record);
     await this.persist(record.id);
   }
@@ -304,7 +360,7 @@ export class CredentialUnlocks {
     if (!record) return;
     const nowMs = this.now();
     // "Never unlocked" outlives every later lock: it is what keeps a browser nobody proved off the offer.
-    const lockReason = record.lockReason === "first_unlock" ? "first_unlock" : reason;
+    const lockReason = reason;
     const next: SecretKeyCredentialUnlockRecord = { ...record, boxes: {}, lockedAtMs: nowMs, lockReason, updatedAtMs: nowMs };
     if (next.pending) next.pending = { ...next.pending, boxes: {} };
     this.records.set(holderId, next);
@@ -342,37 +398,18 @@ export class CredentialUnlocks {
     raiseAll(failures);
   }
 
-  /** The one thing to say about why this person's key is locked here. `holderId` is the paired client asking, when one is. */
+  /** @deprecated Historical read compatibility; new clients never receive lock reasons. */
   lockReasonFor(input: { userId: string; holderId?: string | undefined; ownKeys: readonly SecretKeyRecord[] }): ModelKeyLockReason {
-    const person = this.people.get(input.userId);
-    const resetAt = person?.passwordResetAtMs;
-    if (resetAt !== undefined && input.ownKeys.every((key) => key.lastRotatedAtMs <= resetAt)) return "password_reset";
-    const record = input.holderId === undefined ? undefined : this.records.get(input.holderId);
-    const told = person?.firstUnlockToldAtMs !== undefined;
-    if (record?.userId === input.userId && record.lockedAtMs !== undefined) {
-      // A reset with a key added since: what it locked stays locked, and adding one is no longer what it needs.
-      if (record.lockReason === "password_reset") return "unknown";
-      if (record.lockReason === "first_unlock") return told ? "unknown" : "first_unlock";
-      return record.lockReason ?? "unknown";
-    }
-    return told ? "unknown" : "first_unlock";
+    void input;
+    return "unknown";
   }
 
-  /** They have been told why their key needs their password once: a thread does not say it a second time. The setup step itself stays until it is done. */
+  /** @deprecated No-op compatibility; there is no first-unlock notice to record. */
   async noteFirstUnlockTold(userId: string): Promise<void> {
-    await this.load();
-    if (this.people.get(userId)?.firstUnlockToldAtMs === undefined) await this.notePerson(userId, { firstUnlockToldAtMs: this.now() });
+    void userId;
   }
 
-  /**
-   * A panel session ended. Its own stored unlock goes. A browser it approved
-   * locks: that is signing out of that browser. An administrator's revoke stops
-   * there. A person's own sign-out also locks a browser whose approving session
-   * has already ended, because nothing else links that browser to any session and
-   * "still unlocked after I signed out" is the failure that must not happen; one
-   * explicit unlock restores it. Each record is attempted, and the failures raised
-   * together at the end.
-   */
+  /** Panel endings remove panel custody and pending approvals, not independent clients. */
   async sessionEnded(end: SecretKeySessionEnd): Promise<void> {
     await this.enrollments.sessionEnded(end);
     await this.load();
@@ -382,35 +419,21 @@ export class CredentialUnlocks {
     }
     const digest = end.digest;
     if (!digest) return;
-    const failures: unknown[] = [];
-    await attempt(failures, () => this.drop(secretKeyPanelHolderId(digest)));
-    for (const record of [...this.records.values()]) {
-      // Already locked says why it locked first.
-      if (record.holderKind !== "paired-client" || record.lockedAtMs !== undefined) continue;
-      const approvedHere = record.approvingSessionDigest === digest;
-      const ownSignOut = !end.administrator && end.revokerUserId === record.userId;
-      const linkEnded = record.approvingSessionDigest === undefined || (end.liveSessionDigests !== undefined && !end.liveSessionDigests.has(record.approvingSessionDigest));
-      if (approvedHere || (ownSignOut && linkEnded)) await attempt(failures, () => this.lock(record.holderId, end.administrator ? "administrator" : "signed_out"));
-    }
-    raiseAll(failures);
+    await this.drop(secretKeyPanelHolderId(digest));
   }
 
   /**
    * The person proved themselves for these keys. Each is boxed to their holders the
-   * host vouches for, and placed in the memory of those connected. A locked holder
-   * takes nothing unless the person named it (`reach.lift`), the only thing that lifts
-   * a lock, so a browser that was signed out stays locked until they choose it.
+   * host vouches for, and placed in the memory of those connected. No separate
+   * per-client password ceremony is required.
    */
   async personProved(userId: string, keys: SecretKeyProvedKeys, reach: ProofReach = {}): Promise<void> {
     await this.load();
     // A password that opened nothing proved nothing, unless the caller checked it and the person has nothing it should have opened.
-    if (keys.size === 0 && (reach.passwordVerified !== true || this.hasKeysItShouldOpen(userId))) return;
     const vouched = await this.vouchedHolders(userId);
     const changed: string[] = [];
     for (const record of [...this.records.values()]) {
       if (record.userId !== userId || !vouched.has(record.holderId)) continue;
-      const lifted = reach.lift?.has(record.holderId) === true;
-      if (record.lockedAtMs !== undefined && !lifted) continue;
       const next: SecretKeyCredentialUnlockRecord = { ...withBoxes(record, keys), updatedAtMs: this.now() };
       for (const [recordId, key] of keys) this.placeInMemory(record, recordId, key);
       delete next.lockedAtMs;
@@ -423,33 +446,16 @@ export class CredentialUnlocks {
   }
 
   /**
-   * A password the person proved has changed. Their keys now open under new seals, and
-   * only the session making the change, and a browser it approved, keep them. Everything
-   * else of theirs locks: a change often means they suspect someone. A Flow running
-   * elsewhere waits, as any locked key does.
+   * Replaces data keys for current authorized holders. Authentication revocation,
+   * when required by policy, is enforced by the host authority rather than a key lock.
    */
   async passwordChanged(userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined): Promise<void> {
     this.endings += 1;
     this.passwordsChanged.set(userId, this.endings);
     await this.load();
-    const digest = actorSessionId === undefined ? undefined : secretKeySessionDigest(actorSessionId);
-    const kept = (record: SecretKeyCredentialUnlockRecord): boolean => digest !== undefined && (record.holderId === secretKeyPanelHolderId(digest) || (record.holderKind === "paired-client" && record.lockedAtMs === undefined && record.approvingSessionDigest === digest));
-    const keptHandles = new Set<string>(actorSessionId === undefined ? [] : [actorSessionId]);
-    const failures: unknown[] = [];
-    for (const record of [...this.records.values()]) {
-      if (record.userId !== userId) continue;
-      if (kept(record)) {
-        if (record.holderKind === "paired-client") keptHandles.add(this.heldHandleFor(record.holderId));
-      } else {
-        await attempt(failures, () => (record.holderKind === "paired-client" ? this.lock(record.holderId, "password_changed") : this.drop(record.holderId)));
-      }
-    }
-    for (const unlock of this.heldKeys.liveUnlocksFor(userId, this.now())) {
-      if (!keptHandles.has(unlock.sessionId)) this.heldKeys.revokeSession(unlock.sessionId);
-    }
-    await attempt(failures, () => this.personProved(userId, keys));
+    void actorSessionId;
+    await this.personProved(userId, keys);
     this.heldKeys.notifyChanged(userId);
-    raiseAll(failures);
   }
 
   /** A record's seal changed under the same value (an upgrade): each holder that had a box gets one for the new seal. Never adds a holder. */
@@ -479,53 +485,29 @@ export class CredentialUnlocks {
     await Promise.all(changed.map((id) => this.persist(id)));
   }
 
-  /**
-   * A browser nobody has unlocked yet proves it is the person's own by starting its unlock
-   * from itself: only it can read this, so a browser paired by someone else with a stolen
-   * cookie is never offered to the person as theirs to unlock. Undefined for any other.
-   */
+  /** @deprecated No-op compatibility; unlock tickets are no longer issued. */
   unlockTicketFor(holderId: string): string | undefined {
-    const record = this.records.get(holderId);
-    if (record?.lockedAtMs === undefined || record.lockReason !== "first_unlock") return undefined;
-    return this.unlockTickets.for(holderId);
+    void holderId;
+    return undefined;
   }
 
-  /** Which of the holders a person named they may lift: one unlocked before, or one nobody has whose ticket came with the ask, which it uses up. */
+  /** @deprecated No-op compatibility; authenticated holders have no lift operation. */
   async liftable(userId: string, clientIds: readonly string[], ticket: string | undefined): Promise<Set<string>> {
-    await this.load();
-    const lifts = new Set<string>();
-    for (const holderId of clientIds) {
-      const record = this.records.get(holderId);
-      if (record?.userId !== userId) continue;
-      if (record.lockReason === "first_unlock" && !this.unlockTickets.redeem(holderId, ticket)) continue;
-      lifts.add(holderId);
-    }
-    return lifts;
+    void userId;
+    void clientIds;
+    void ticket;
+    return new Set();
   }
 
-  /** A person's paired clients that are locked, for them to choose among. Only ones the host vouches for. */
+  /** @deprecated No-op compatibility; returns no client unlock choices. */
   async lockedClientsFor(userId: string): Promise<SecretKeyLockedClient[]> {
-    await this.load();
-    const vouched = await this.vouchedHolders(userId);
-    return [...this.records.values()]
-      .filter((record) => record.userId === userId && record.holderKind === "paired-client" && record.lockedAtMs !== undefined && vouched.has(record.holderId))
-      .map((record) => ({
-        holderId: record.holderId,
-        label: record.label ?? "A paired client",
-        ...(record.pairedAtMs === undefined ? {} : { pairedAtMs: record.pairedAtMs }),
-        ...(record.lastUsedAtMs === undefined ? {} : { lastUsedAtMs: record.lastUsedAtMs }),
-        ...(record.lockReason === "first_unlock" ? { neverUnlocked: true } : {})
-      }));
+    void userId;
+    return [];
   }
 
   /** Forgets who is connected, for a shutdown. */
   closeConnections(): void {
     this.connected.clear();
-  }
-
-  /** They have sealed keys, and no reset explains why a password of theirs opens none of them. */
-  private hasKeysItShouldOpen(userId: string): boolean {
-    return this.store.sealedFor(userId).length > 0 && this.people.get(userId)?.passwordResetAtMs === undefined;
   }
 
   /** The holders of this person the host stands behind, asked before any box is written. */

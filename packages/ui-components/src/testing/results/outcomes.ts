@@ -323,7 +323,7 @@ function waitingForPerson(): ChatTaskOutcome {
   return waiting("person_only_check", "sign-in", fakeNoLoopsCaught());
 }
 
-/** Waiting for the person to unlock their model key: a setup step with one action. Not an ending. */
+/** A historical model-key wait, retained to prove old attempts remain readable. */
 function waitingForModelKey(): ChatTaskOutcome {
   return waiting("model_key_locked", "key", fakeNoLoopsCaught());
 }

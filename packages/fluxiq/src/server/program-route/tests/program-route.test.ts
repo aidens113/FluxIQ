@@ -478,14 +478,36 @@ describe("a paired client on the program route", () => {
     expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [] } })).toEqual({ ok: true, payload: { keys: [] } });
   });
 
-  it("hands a paired client what starts its own unlock, and nothing else new", () => {
+  it("never hands a paired client a retired unlock ticket or browser lock list", () => {
     const projected = projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { unlockTicket: "paired-client:one.part", lockedClients: [], keys: [] } });
-    expect(projected).toEqual({ ok: true, payload: { unlockTicket: "paired-client:one.part", keys: [] } });
+    expect(projected).toEqual({ ok: true, payload: { keys: [] } });
   });
 
-  it("tells a paired client whether its person's key opens for it, and never which browsers are locked", () => {
+  it("retains only legacy refusal evidence, never lock reasons or client lists", () => {
     const response = { ok: true, payload: { lockedClients: [{ holderId: "paired-client:one", label: "Chrome on Windows" }], keys: [{ id: "secret:1", name: "Mine", kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { id: "secret:2", kind: "llm", enabled: true }] } };
-    expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [{ kind: "llm", provider: "anthropic", enabled: true, unlocked: false, lockedBecause: "signed_out" }, { kind: "llm", provider: null, enabled: true }] } });
+    expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [{ kind: "llm", provider: "anthropic", enabled: true, unlocked: false }, { kind: "llm", provider: "deepseek", enabled: true }] } });
+  });
+
+  it("projects only sanitized availability and ownership for the actual extension response", () => {
+    const response = { ok: true, payload: { keys: [
+      { id: "private-key", kind: "llm", provider: "anthropic", enabled: true, heldByYou: true, availability: { state: "unavailable", code: "host_protection_unavailable", secret: "must-not-leak" } },
+      { kind: "llm", enabled: true, heldByYou: false, availability: { state: "available", hint: "must-not-leak" } }
+    ] } };
+    expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [
+      { kind: "llm", provider: "anthropic", enabled: true, heldByYou: true, availability: { state: "unavailable", code: "host_protection_unavailable" } },
+      { kind: "llm", provider: "deepseek", enabled: true, heldByYou: false, availability: { state: "available" } }
+    ] } });
+  });
+
+  it("keeps malformed availability unknown and explicit malformed providers non-default", () => {
+    const response = { ok: true, payload: { keys: [
+      { kind: "llm", provider: null, enabled: true, availability: { state: "unavailable", code: "private-unknown-cause" } },
+      { kind: "llm", provider: 12, enabled: true, heldByYou: "false", availability: null }
+    ] } };
+    expect(projectPairedClientResponse("secret-keys", "snapshot", response)).toEqual({ ok: true, payload: { keys: [
+      { kind: "llm", provider: null, enabled: true, availability: null },
+      { kind: "llm", provider: null, enabled: true, availability: null }
+    ] } });
   });
 
   it("answers the secret-keys snapshot with kind, provider and enabled only", () => {

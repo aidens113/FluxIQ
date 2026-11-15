@@ -1,3 +1,5 @@
+import { readModelKeyAvailability } from "@fluxiq/contracts/platform";
+
 const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
 
 export function programResponseStatus(response: { ok: boolean; errorCode?: string }): number {
@@ -160,7 +162,7 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "run-project-part",
   ]),
   "secret-keys": Object.freeze([
-    // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, unlocked and why not only, nothing that names or identifies a key.
+    // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, ownership and safe availability only, nothing that names or identifies a key.
     "snapshot",
   ]),
 });
@@ -548,16 +550,16 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
   return {
     ...response,
     payload: {
-      // What starts this browser's own unlock, when nobody has unlocked it yet. No use without its person's password.
-      ...(typeof payloadRecord(response.payload)?.unlockTicket === "string" ? { unlockTicket: payloadRecord(response.payload)?.unlockTicket } : {}),
       keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {
             kind: typeof summary.kind === "string" ? summary.kind : null,
-            provider: typeof summary.provider === "string" ? summary.provider : null,
+            provider: typeof summary.provider === "string" ? summary.provider : summary.provider === undefined && summary.kind === "llm" ? "deepseek" : null,
             enabled: summary.enabled === true,
+            ...(typeof summary.heldByYou === "boolean" ? { heldByYou: summary.heldByYou } : {}),
+            ...(Object.hasOwn(summary, "availability") ? { availability: readModelKeyAvailability(summary.availability) } : {}),
+            // Compatibility evidence from older producers must not become a false ready result.
             ...(typeof summary.unlocked === "boolean" ? { unlocked: summary.unlocked } : {}),
-            ...(typeof summary.lockedBecause === "string" ? { lockedBecause: summary.lockedBecause } : {}),
           };
         }),
     },

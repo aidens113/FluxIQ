@@ -3,14 +3,18 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { createRecord, type Repository } from "../../../database-manager/index.ts";
 import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockRecord, SecretKeySessionEnd } from "../../index.ts";
 import { secretKeySessionDigest } from "./holder-identity.ts";
+import type { SecretKeyProvedKeys } from "./credential-unlocks.ts";
 
 /** A trusted host's fresh paired-holder binding. A session digest is required; raw cookies never reach this record. */
-export type SecretKeyLockedCredentialHolder = Pick<SecretKeyCredentialHolder, "holderId" | "userId" | "expiresAtMs" | "label"> & {
+export type SecretKeyAuthenticatedCredentialHolder = Pick<SecretKeyCredentialHolder, "holderId" | "userId" | "expiresAtMs" | "label"> & {
   holderKind: "paired-client";
   approvingSessionDigest: string;
 };
 
-type Enrollment = { holder: SecretKeyLockedCredentialHolder; credentialDigest: string; ended: boolean };
+/** @deprecated Enrollment no longer creates a locked principal. */
+export type SecretKeyLockedCredentialHolder = SecretKeyAuthenticatedCredentialHolder;
+
+type Enrollment = { holder: SecretKeyLockedCredentialHolder; credentialDigest: string; ended: boolean; keys?: SecretKeyProvedKeys };
 type EnrollmentPorts = {
   repository: Repository | undefined;
   kind: string;
@@ -19,12 +23,12 @@ type EnrollmentPorts = {
   known(holderId: string): boolean;
   forgotten(holderId: string): boolean;
   publish(record: SecretKeyCredentialUnlockRecord): void;
-  newRecord(holder: SecretKeyLockedCredentialHolder, credential: string): SecretKeyCredentialUnlockRecord;
+  newRecord(holder: SecretKeyLockedCredentialHolder, credential: string, keys?: SecretKeyProvedKeys): SecretKeyCredentialUnlockRecord;
   write<T>(holderId: string, operation: () => Promise<T>): Promise<T>;
 };
 
 /** Fresh enrollment is persisted before publication and serialized per holder, independently of ordinary presentation. */
-export class LockedCredentialEnrollments {
+export class CredentialEnrollments {
   private readonly ports: EnrollmentPorts;
   private readonly pending = new Map<string, Set<Enrollment>>();
   private readonly tails = new Map<string, Promise<void>>();
@@ -34,13 +38,13 @@ export class LockedCredentialEnrollments {
     this.ports = ports;
   }
 
-  enroll(holder: SecretKeyLockedCredentialHolder, credential: string): Promise<void> {
+  enroll(holder: SecretKeyLockedCredentialHolder, credential: string, keys?: SecretKeyProvedKeys): Promise<void> {
     const binding = validatedHolder(holder, credential, this.ports.now());
     if (!this.ports.repository) return Promise.reject(new Error("Strict credential enrollment requires a persistence repository."));
     const pending = this.pending.get(binding.holderId) ?? new Set<Enrollment>();
     const credentialDigest = secretKeySessionDigest(credential);
     if ([...pending].some((enrollment) => enrollment.credentialDigest !== credentialDigest || !sameBinding(enrollment.holder, binding))) return Promise.reject(new Error("Strict credential enrollment conflicts with a pending holder."));
-    const enrollment: Enrollment = { holder: binding, credentialDigest, ended: false };
+    const enrollment: Enrollment = { holder: binding, credentialDigest, ended: false, ...(keys ? { keys } : {}) };
     pending.add(enrollment);
     this.pending.set(binding.holderId, pending);
     const previous = this.tails.get(binding.holderId) ?? Promise.resolve();
@@ -84,7 +88,7 @@ export class LockedCredentialEnrollments {
     await this.ports.ready();
     this.assertCurrent(enrollment);
     if (this.ports.known(holder.holderId)) throw new Error("Strict credential enrollment requires a fresh holder.");
-    const record = this.ports.newRecord(holder, credential);
+    const record = this.ports.newRecord(holder, credential, enrollment.keys);
     let writeStarted = false;
     try {
       await this.ports.write(holder.holderId, async () => {
