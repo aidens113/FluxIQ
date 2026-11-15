@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { keyManagementContext } from "../management-context";
-import { getKeySessionService } from "../service";
-import { manageKeys } from "../management";
+import { keyManagementContext } from "../context";
+import { getKeySessionService } from "../../service";
+import { manageKeys } from "../handle";
+import { KeyManagementRefusal } from "../refusal";
 
-vi.mock("../management-context", () => ({ keyManagementContext: vi.fn() }));
-vi.mock("../service", () => ({ getKeySessionService: vi.fn() }));
-vi.mock("../config", () => ({ keySessionConfig: () => ({ origin: "https://app.example.test", instanceId: "test" }) }));
+vi.mock("../context", () => ({ keyManagementContext: vi.fn() }));
+vi.mock("../../service", () => ({ getKeySessionService: vi.fn() }));
+vi.mock("../../config", () => ({ keySessionConfig: () => ({ origin: "https://app.example.test", instanceId: "test" }) }));
 const enrollKey = vi.fn();
 const listKeys = vi.fn();
 const revokeKey = vi.fn();
@@ -21,6 +22,14 @@ beforeEach(() => {
 });
 
 describe("account-owned API key management", () => {
+  it("does not open credential services when tenant IAM denies key management", async () => {
+    vi.mocked(keyManagementContext).mockRejectedValueOnce(new KeyManagementRefusal());
+    const response = await manageKeys(request("POST", { publicKey: "public-spki" }));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "key.forbidden" });
+    expect(getKeySessionService).not.toHaveBeenCalled();
+  });
+
   it("enrolls only a public key for the authenticated owner", async () => {
     const response = await manageKeys(request("POST", { publicKey: "public-spki" }));
     expect(response.status).toBe(201);

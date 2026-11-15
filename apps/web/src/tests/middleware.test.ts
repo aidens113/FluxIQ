@@ -48,6 +48,19 @@ describe("middleware", () => {
   it("leaves the sign-in pages and health reachable with no session", () => {
     for (const path of ["/welcome", "/reset", "/setup", "/api/health"]) expect(run(`https://app.getfluxiq.com${path}`, {}, PUBLIC_ENV).status).toBe(200);
   });
+  it("protects exact connection pages and API responses without relaxing cookie origin checks", () => {
+    for (const route of ["/connect", "/connect/authorize", "/connect/done", "/api/connect/authorize", "/api/connect/token", "/api/connect/revoke"]) {
+      const response = run(`https://app.getfluxiq.com${route}`, {}, PUBLIC_ENV);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+      expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
+    }
+    const refused = run("https://app.getfluxiq.com/api/connect/authorize", { method: "POST", headers: { cookie: "__Host-fluxiq_session=synthetic", origin: "https://evil.example", "sec-fetch-site": "cross-site" } }, PUBLIC_ENV);
+    expect(refused.status).toBe(403);
+    expect(refused.headers.get("cache-control")).toBe("no-store");
+    expect(run("https://app.getfluxiq.com/connectivity", {}, PUBLIC_ENV).headers.get("referrer-policy")).toBeNull();
+  });
   it("rewrites a screen the panel preset hides to a path no route serves, so it answers 404", () => {
     const hidden = run("http://127.0.0.1:3000/data", {}, { FLUXIQ_PANEL_PRESET: "task-automation" });
     expect(new URL(hidden.headers.get("x-middleware-rewrite") ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");

@@ -13,5 +13,5 @@ export const dynamic = "force-dynamic";
 export default async function SetupPage() {
   const settings = resolveFluxIQDeploymentSettings(process.env);
   if (settings.profile === "local" || !(await isOwnerClaimOpen(settings, getFluxIQ().paths.fluxiq))) notFound();
-  return <AccountLinkFrame title="Set up FluxIQ"><SetupClient /></AccountLinkFrame>;
+  return <AccountLinkFrame title="Set up FluxIQ"><SetupClient service={settings.profile === "service"} /></AccountLinkFrame>;
 }

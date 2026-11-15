@@ -28,6 +28,7 @@ export async function createTenantFluxIQ(input: {
   dataRoot: string;
   iam?: FluxIQOptions["iam"];
   clientGatewayTrustedClientStore?: FluxIQOptions["clientGatewayTrustedClientStore"];
+  clientGatewayTrustAuthority?: FluxIQOptions["clientGatewayTrustAuthority"];
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<FluxIQ> {
@@ -38,6 +39,7 @@ export async function createTenantFluxIQ(input: {
   const fluxiq = await input.instantiate({
     rootDir, loadEnv: false, heldKeys: input.heldKeys,
     ...(input.iam ? { iam: input.iam } : {}),
+    ...(input.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: input.clientGatewayTrustAuthority } : {}),
     ...(input.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: input.clientGatewayTrustedClientStore } : {})
   });
   try {

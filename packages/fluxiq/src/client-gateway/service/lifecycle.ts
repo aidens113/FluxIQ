@@ -196,7 +196,7 @@ export class ClientGatewayLifecycle {
   private async resumeTrustedSession(session: InternalSession, token: string): Promise<boolean> {
     await this.refuseReuse(token);
     const trustedClient = this.trustedClients.resolveByToken(token);
-    if (!trustedClient || !this.trustedClients.isActive(trustedClient) || trustedClient.clientId !== session.clientId) {
+    if (!trustedClient || !this.trustedClients.isActive(trustedClient) || trustedClient.clientId !== session.clientId || trustedClient.clientType !== session.clientType) {
       this.audit.record("session.credential_rejected", "Client credential was not accepted; pairing is required.", {
         sessionId: session.sessionId,
         clientId: session.clientId

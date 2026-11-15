@@ -3,6 +3,8 @@ import { ClientGatewayTrustEndedError } from "./trust-ended-error.ts";
 import type { ClientGatewayManagedHost, ClientGatewayTrustedClient, ClientGatewayTrustedClientView } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
 import { classifyClientGatewayCredential, clientGatewayCredentialHash, clientGatewayCredentialId, issueClientGatewayCredential } from "./credentials/index.ts";
+import type { ClientGatewayApprovedTrustInput, ClientGatewayTrustApproval } from "./trust-issuance/index.ts";
+import { ClientGatewayTrustIssuanceError, validateApprovedTrustInput, validateTrustApproval } from "./trust-issuance/index.ts";
 
 /** How often a client in steady use has its credential's life extended and stored: its next message would do, so this only saves writes. */
 const RENEW_EVERY_MS = 24 * 60 * 60_000;
@@ -17,6 +19,8 @@ type RegisterInput = {
   approvedByUserId: string;
   domainId: string | null;
   managedHost?: ClientGatewayManagedHost;
+  clientInstallId?: string;
+  approvingSessionDigest?: string;
 };
 
 /**
@@ -82,7 +86,7 @@ export class ClientGatewayTrustedClientRegistry {
 
   /** The trusted-client view callers outside the gateway see: no token hash. */
   toView(client: ClientGatewayTrustedClient): ClientGatewayTrustedClientView {
-    const { tokenHash: _tokenHash, previousTokenHash: _previousTokenHash, reuseKey: _reuseKey, ...view } = client;
+    const { tokenHash: _tokenHash, previousTokenHash: _previousTokenHash, reuseKey: _reuseKey, approvingSessionDigest: _approvingSessionDigest, ...view } = client;
     const status = client.revokedAt !== undefined ? "revoked" : client.expiresAt <= this.config.now() ? "expired" : "active";
     return { ...view, status };
   }
@@ -139,8 +143,67 @@ export class ClientGatewayTrustedClientRegistry {
     return this.mutate(() => this.registerCommitted(input));
   }
 
+  /**
+   * Authenticated ordinary trust: validate inside the same mutation queue as quota and replacement,
+   * then persist every old revocation and the fresh grant together. Independent stale stores refuse
+   * their generation CAS; they are not silently refreshed around other live gateway sessions.
+   */
+  async issueApproved(rawInput: ClientGatewayApprovedTrustInput, approval: () => Promise<ClientGatewayTrustApproval>): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string; replaced: ClientGatewayTrustedClient[] }> {
+    const input = validateApprovedTrustInput(rawInput);
+    return this.mutate(async () => {
+      const approved = validateTrustApproval(input, await approval());
+      const now = this.config.now();
+      const ttl = this.config.trustedClientTtlMs;
+      if (!Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(ttl) || ttl < 1 || !Number.isSafeInteger(now + ttl)) throw new ClientGatewayTrustIssuanceError("unavailable");
+      const active = this.list().filter((client) => client.approvedByUserId === approved.userId && client.managedHost === undefined && this.isActive(client));
+      const replaced = active.filter((client) => client.clientId === input.clientId && client.clientInstallId === input.clientInstallId);
+      if (active.length - replaced.length >= approved.maxActiveClients) throw new ClientGatewayTrustIssuanceError("client_limit_reached");
+      const { trustedClient, token } = this.createClient(input, now);
+      const before = replaced.map((client) => ({ client, updatedAt: client.updatedAt, revokedAt: client.revokedAt, revocationReason: client.revocationReason }));
+      for (const client of replaced) {
+        client.revokedAt = now;
+        client.revocationReason = "the same client installation was approved again";
+        client.updatedAt = now;
+        this.idByTokenHash.delete(client.tokenHash);
+        if (client.previousTokenHash) this.idByTokenHash.delete(client.previousTokenHash);
+      }
+      this.clients.set(trustedClient.trustedClientId, trustedClient);
+      this.idByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
+      try {
+        await this.persist();
+      } catch (error) {
+        this.clients.delete(trustedClient.trustedClientId);
+        this.idByTokenHash.delete(trustedClient.tokenHash);
+        for (const snapshot of before) {
+          snapshot.client.updatedAt = snapshot.updatedAt;
+          if (snapshot.revokedAt === undefined) delete snapshot.client.revokedAt;
+          else snapshot.client.revokedAt = snapshot.revokedAt;
+          if (snapshot.revocationReason === undefined) delete snapshot.client.revocationReason;
+          else snapshot.client.revocationReason = snapshot.revocationReason;
+          this.index(snapshot.client);
+        }
+        throw error;
+      }
+      return { trustedClient, token, replaced };
+    });
+  }
+
   private async registerCommitted(input: RegisterInput): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
     const now = this.config.now();
+    const { trustedClient, token } = this.createClient(input, now);
+    this.clients.set(trustedClient.trustedClientId, trustedClient);
+    this.idByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
+    try {
+      await this.persist();
+    } catch (error) {
+      this.clients.delete(trustedClient.trustedClientId);
+      this.idByTokenHash.delete(trustedClient.tokenHash);
+      throw error;
+    }
+    return { trustedClient, token };
+  }
+
+  private createClient(input: RegisterInput, now: number): { trustedClient: ClientGatewayTrustedClient; token: string } {
     const trustedClientId = randomUUID();
     const reuseKey = randomBytes(32).toString("base64url");
     const token = issueClientGatewayCredential(trustedClientId, reuseKey, this.config.createToken());
@@ -153,22 +216,15 @@ export class ClientGatewayTrustedClientRegistry {
       tokenHash: this.hashToken(token),
       approvedByUserId: input.approvedByUserId,
       domainId: input.domainId,
-      ...(input.managedHost !== undefined ? { managedHost: { hostId: input.managedHost.hostId, profile: input.managedHost.profile } } : {}),
       approvedAt: now,
       createdAt: now,
       updatedAt: now,
       lastUsedAt: now,
       expiresAt: now + this.config.trustedClientTtlMs
     };
-    this.clients.set(trustedClient.trustedClientId, trustedClient);
-    this.idByTokenHash.set(trustedClient.tokenHash, trustedClient.trustedClientId);
-    try {
-      await this.persist();
-    } catch (error) {
-      this.clients.delete(trustedClient.trustedClientId);
-      this.idByTokenHash.delete(trustedClient.tokenHash);
-      throw error;
-    }
+    if (input.managedHost !== undefined) trustedClient.managedHost = { hostId: input.managedHost.hostId, profile: input.managedHost.profile };
+    if (input.clientInstallId !== undefined) trustedClient.clientInstallId = input.clientInstallId;
+    if (input.approvingSessionDigest !== undefined) trustedClient.approvingSessionDigest = input.approvingSessionDigest;
     return { trustedClient, token };
   }
 

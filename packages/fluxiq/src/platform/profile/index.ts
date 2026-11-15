@@ -11,8 +11,18 @@ export {
   isPublicClientGatewayBind,
   parseClientGatewayOriginAllowlist,
   FLUXIQ_CONNECT_PATHS,
+  FLUXIQ_CONNECT_LIMITS,
+  isSessionDigest,
+  connectAuthorizeRequestSchema,
+  connectTokenRequestSchema,
+  connectRevokeRequestSchema,
+  connectTokenErrorSchema,
+  connectTokenResponseSchema,
+  connectRedirectUri,
+  parseConnectDoneFragment,
   CLIENT_GATEWAY_PROTOCOL_VERSIONS,
   FLUXIQ_DISCOVERY_MAX_AGE_SECONDS,
   fluxiqDiscoveryDocumentSchema,
   parseFluxIQDiscoveryDocument
 } from "@fluxiq/contracts/platform";
+export type { ConnectAuthorizeRequest, ConnectTokenRequest, ConnectTokenError, ConnectTokenErrorCode, ConnectTokenResponse, ConnectDoneFragment } from "@fluxiq/contracts/platform";

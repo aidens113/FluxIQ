@@ -1,6 +1,4 @@
-import { createHash } from "node:crypto";
 import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
-import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
 import type { JsonObject } from "../../../../core/index.ts";
 import { createRecord, type Repository } from "../../../database-manager/index.ts";
 import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockBox, SecretKeyCredentialUnlockGeneration, SecretKeyCredentialUnlockRecord, SecretKeyRecord, SecretKeyLockedClient, SecretKeySessionEnd, SecretKeyUnlockPersonRecord } from "../../types.ts";
@@ -10,21 +8,11 @@ import { RecordWriteQueue } from "../record-write-queue.ts";
 import type { SecretValueSealer } from "../value-sealer.ts";
 import { SecretKeyUnlockTickets } from "./unlock-tickets.ts";
 import { boxCredentialUnlockKey, newCredentialUnlockKeyPair, openCredentialUnlockBox, unwrapCredentialUnlockPrivateKey, wrapCredentialUnlockPrivateKey, type CredentialUnlockHolderBinding } from "./crypto.ts";
+import { secretKeySessionDigest, secretKeyPanelHolderId } from "./holder-identity.ts";
+import { LockedCredentialEnrollments, type SecretKeyLockedCredentialHolder } from "./locked-credential-enrollments.ts";
+import { createCredentialUnlockRecord } from "./create-credential-unlock-record.ts";
 
-/** The SHA-256 digest Identity Access stores a session under (`identity-access/runtime/session-digest.ts`); a runtime test pins the two together. */
-export function secretKeySessionDigest(sessionId: string): string {
-  return createHash("sha256").update(sessionId, "utf8").digest("hex");
-}
-
-/** The stored id of a panel session's unlock: its digest, never its raw id. */
-export function secretKeyPanelHolderId(digest: string): string {
-  return `panel-session:${digest}`;
-}
-
-/** The stored id of a paired client's unlock. Public, so it never reaches a reveal: its unlock is held under a random handle (`HeldKeys.pairedHandle`). */
-export function secretKeyPairedHolderId(trustedClientId: string): string {
-  return `${PAIRED_CLIENT_UNLOCK_PREFIX}${trustedClientId}`;
-}
+export { secretKeySessionDigest, secretKeyPanelHolderId, secretKeyPairedHolderId } from "./holder-identity.ts";
 
 /** Data keys a person just proved themselves for, by record id. */
 export type SecretKeyProvedKeys = ReadonlyMap<string, { keyUpdatedAtMs: number; decryptionKey: Buffer }>;
@@ -91,6 +79,7 @@ export class CredentialUnlocks {
   /** Locks in memory whose write the store refused. */
   private readonly locksUnwritten = new Set<string>();
   private loading: Promise<void> | undefined;
+  private readonly enrollments: LockedCredentialEnrollments;
 
   constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; now: () => number; vouch?: SecretKeyHolderVouch | undefined }) {
     this.repository = options.repository;
@@ -101,11 +90,27 @@ export class CredentialUnlocks {
     this.now = options.now;
     this.unlockTickets = new SecretKeyUnlockTickets(options.now);
     this.vouch = options.vouch;
+    this.enrollments = new LockedCredentialEnrollments({
+      repository: this.repository,
+      kind: this.kind,
+      now: this.now,
+      ready: () => this.load(),
+      known: (holderId) => this.records.has(holderId),
+      forgotten: (holderId) => this.forgotten.has(holderId),
+      publish: (record) => { this.records.set(record.id, record); },
+      newRecord: (holder, credential) => createCredentialUnlockRecord(holder, credential, undefined, { locked: true, nowMs: this.now() }),
+      write: (holderId, operation) => this.writes.enqueue(holderId, operation)
+    });
   }
 
   /** Connects the host's answer about which holders are real. The host builds this service before the things it asks. */
   bindVouch(vouch: SecretKeyHolderVouch): void {
     this.vouch = vouch;
+  }
+
+  /** Mandatory hosted enrollment: a fresh, persisted, locked holder; never borrows or holds a key. */
+  async enrollLockedCredential(holder: SecretKeyLockedCredentialHolder, credential: string): Promise<void> {
+    return this.enrollments.enroll(holder, credential);
   }
 
   load(): Promise<void> {
@@ -159,6 +164,7 @@ export class CredentialUnlocks {
    * no cryptography until something changed.
    */
   async presentCredential(holder: SecretKeyCredentialHolder, credential: string, options: { verified?: boolean | undefined } = {}): Promise<{ unlockedKeyCount: number }> {
+    await this.enrollments.settled(holder.holderId);
     await this.store.load();
     await this.load();
     if (this.locksUnwritten.size > 0) await this.writeUnwrittenLocks();
@@ -190,7 +196,7 @@ export class CredentialUnlocks {
       current = { ...record, expiresAtMs: holder.expiresAtMs, lastUsedAtMs: nowMs, updatedAtMs: nowMs, ...(holder.label ? { label: holder.label } : {}) };
     } else {
       // A first presentation, or a record this verified credential cannot open: nothing it held can be read, and nobody has proved anything for the new key pair.
-      current = this.newRecord(holder, credential, record, { locked: true });
+      current = createCredentialUnlockRecord(holder, credential, record, { locked: true, nowMs: this.now() });
     }
     this.records.set(current.id, current);
     try {
@@ -218,7 +224,7 @@ export class CredentialUnlocks {
       opened.privateKeyDer.fill(0);
       return;
     }
-    const record = this.newRecord(holder, input.sessionId, undefined, { locked: false });
+    const record = createCredentialUnlockRecord(holder, input.sessionId, undefined, { locked: false, nowMs: this.now() });
     this.records.set(record.id, record);
     await this.persist(record.id);
   }
@@ -232,6 +238,7 @@ export class CredentialUnlocks {
    * over, or the previous credential does not open it.
    */
   async rotateCredential(input: { holderId: string; userId: string; previousCredential: string; nextCredential: string }): Promise<boolean> {
+    await this.enrollments.settled(input.holderId);
     await this.load();
     const record = this.records.get(input.holderId);
     if (record?.userId !== input.userId) return false;
@@ -264,6 +271,7 @@ export class CredentialUnlocks {
    * own credential says so, and the next rotation replaces one that never was.
    */
   async confirmCredential(input: { holderId: string; userId: string; credentialDigest: string }): Promise<void> {
+    await this.enrollments.settled(input.holderId);
     await this.load();
     const record = this.records.get(input.holderId);
     if (record?.userId !== input.userId || record.pending?.credentialDigest !== input.credentialDigest) return;
@@ -281,6 +289,7 @@ export class CredentialUnlocks {
   /** A holder's trust ended (forgotten, revoked): nothing is left to open, and a reconnect in flight cannot bring it back. */
   async forget(holderId: string): Promise<void> {
     this.forgotten.add(holderId);
+    await this.enrollments.endHolder(holderId);
     await this.load();
     this.release(holderId);
     await this.drop(holderId);
@@ -288,6 +297,7 @@ export class CredentialUnlocks {
 
   /** Locks a paired holder until the person's own explicit unlock: its keys leave memory and the store. A client with no row yet starts locked anyway. */
   async lock(holderId: string, reason: ModelKeyLockReason): Promise<void> {
+    await this.enrollments.endHolder(holderId);
     await this.load();
     this.heldKeys.revokeSession(this.heldHandleFor(holderId));
     const record = this.records.get(holderId);
@@ -320,6 +330,7 @@ export class CredentialUnlocks {
    * rest unlocked; the failures are raised together at the end.
    */
   async lockPerson(userId: string, reason: ModelKeyLockReason): Promise<void> {
+    await this.enrollments.endUser(userId);
     await this.load();
     const failures: unknown[] = [];
     for (const unlock of this.heldKeys.liveUnlocksFor(userId, this.now())) this.heldKeys.revokeSession(unlock.sessionId);
@@ -363,6 +374,7 @@ export class CredentialUnlocks {
    * together at the end.
    */
   async sessionEnded(end: SecretKeySessionEnd): Promise<void> {
+    await this.enrollments.sessionEnded(end);
     await this.load();
     if (end.wholeUserId) {
       await this.lockPerson(end.wholeUserId, "sessions_ended");
@@ -590,37 +602,6 @@ export class CredentialUnlocks {
   /** The id a holder's unlock is held under: a panel session's own, or a paired client's random handle. */
   private heldAs(holder: SecretKeyCredentialHolder): string {
     return holder.holderKind === "paired-client" ? this.heldHandleFor(holder.holderId) : holder.heldAs ?? holder.holderId;
-  }
-
-  /** A new key pair for `holder`, its private half wrapped under `credential`, with no boxes. A lock on the record it replaces stays. */
-  private newRecord(holder: SecretKeyCredentialHolder, credential: string, previous: SecretKeyCredentialUnlockRecord | undefined, options: { locked: boolean }): SecretKeyCredentialUnlockRecord {
-    const pair = newCredentialUnlockKeyPair();
-    try {
-      const approvingSessionDigest = holder.approvingSessionDigest ?? previous?.approvingSessionDigest;
-      const label = holder.label ?? previous?.label;
-      const nowMs = this.now();
-      const lockReason = previous?.lockReason ?? (options.locked ? "first_unlock" : undefined);
-      return {
-        recordType: "secret-key-credential-unlock",
-        id: holder.holderId,
-        holderId: holder.holderId,
-        holderKind: holder.holderKind,
-        userId: holder.userId,
-        expiresAtMs: holder.expiresAtMs,
-        publicKey: pair.publicKey,
-        wrap: wrapCredentialUnlockPrivateKey(pair.privateKeyDer, credential, { holderId: holder.holderId, userId: holder.userId }),
-        boxes: {},
-        ...(approvingSessionDigest ? { approvingSessionDigest } : {}),
-        ...(label ? { label } : {}),
-        pairedAtMs: previous?.pairedAtMs ?? nowMs,
-        ...(options.locked || previous?.lockedAtMs !== undefined ? { lockedAtMs: previous?.lockedAtMs ?? nowMs } : {}),
-        ...(lockReason !== undefined ? { lockReason } : {}),
-        lastUsedAtMs: nowMs,
-        updatedAtMs: nowMs
-      };
-    } finally {
-      pair.privateKeyDer.fill(0);
-    }
   }
 
   private async notePerson(userId: string, note: Partial<Pick<SecretKeyUnlockPersonRecord, "firstUnlockToldAtMs" | "passwordResetAtMs">>): Promise<void> {

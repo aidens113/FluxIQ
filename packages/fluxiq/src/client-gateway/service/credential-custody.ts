@@ -16,7 +16,7 @@ export type ClientGatewayCredentialHolder = {
  */
 export type ClientGatewayCredentialCustody = {
   /** A person approved this client, in `approvedBySessionId` when the caller knows it. It starts locked: a proof, not the approval, opens anything for it. */
-  issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined }): Promise<void>;
+  issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined; approvedBySessionDigest?: string | undefined }): Promise<void>;
   /** The credential with this digest is confirmed in use, so what its predecessor could open ends. Told only of one that has really become the client's. */
   confirmed(input: { holder: ClientGatewayCredentialHolder; credentialDigest: string }): Promise<void>;
   /** Written ahead of the new credential's digest, so a crash either side of it leaves the accepted credential able to open what custody keeps. */

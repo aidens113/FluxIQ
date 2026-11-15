@@ -1,6 +1,6 @@
 import { FLUXIQ_CONNECT_LIMITS, connectAuthorizeRequestSchema, connectRedirectUri, connectTokenResponseSchema, isSecureOrLoopbackUrl, isSessionDigest } from "@fluxiq/contracts/platform";
 import type { ConnectService, ConnectServiceOptions } from "../model/index.ts";
-import { ConnectCredentialDeliveryError, validateConnectEligibility } from "../model/index.ts";
+import { ConnectCredentialDeliveryError, ConnectCredentialRefusal, validateConnectEligibility } from "../model/index.ts";
 import { connectCodeDigest, connectS256Challenge, createConnectAuthorizationCode } from "./pkce.ts";
 import { parseConnectTokenRequest } from "./requests.ts";
 
@@ -79,7 +79,8 @@ export function createConnectService(options: ConnectServiceOptions): ConnectSer
         });
         if (!response.success || response.data.credentialExpiresAt <= clock()) throw new ConnectCredentialDeliveryError();
         return { ok: true, response: response.data };
-      } catch {
+      } catch (error) {
+        if (error instanceof ConnectCredentialRefusal) return { ok: false, error: { error: error.error } };
         // Never preserve an issuer exception/cause: it may contain the raw credential or server state.
         throw new ConnectCredentialDeliveryError();
       }

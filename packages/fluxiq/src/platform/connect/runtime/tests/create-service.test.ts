@@ -2,7 +2,7 @@
 import { access, readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { connectTokenResponseSchema } from "@fluxiq/contracts/platform";
-import { ConnectCredentialDeliveryError } from "../../index.ts";
+import { ConnectCredentialDeliveryError, ConnectCredentialRefusal } from "../../index.ts";
 import { connectFixture } from "../../tests/connect-fixture.ts";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -182,6 +182,15 @@ describe("one-use credential delivery", () => {
     expect(competitors).toEqual(Array.from({ length: 7 }, () => ({ ok: false, error: { error: "invalid_grant" } })));
     release!();
     expect((await first).ok).toBe(true);
+    expect(f.issueCredential).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a trusted pre-issuance quota refusal while keeping the code spent", async () => {
+    const f = await connectFixture(cleanups);
+    const authorization = await f.authorize();
+    f.issueCredential.mockRejectedValueOnce(new ConnectCredentialRefusal("client_limit_reached"));
+    expect(await f.service.exchange(f.tokenRequest(authorization.code))).toEqual({ ok: false, error: { error: "client_limit_reached" } });
+    expect(await f.service.exchange(f.tokenRequest(authorization.code))).toEqual({ ok: false, error: { error: "invalid_grant" } });
     expect(f.issueCredential).toHaveBeenCalledTimes(1);
   });
 

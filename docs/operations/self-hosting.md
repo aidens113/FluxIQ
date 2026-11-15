@@ -157,10 +157,13 @@ read, and a generated code file is removed.
 
 ### Connect The Extension
 
-In the extension, add the server by its origin (`https://<your host>`). The
-extension reads `https://<your host>/.well-known/fluxiq`, signs in through a
-normal tab, and connects to the gateway over `wss`. If the extension cannot
-connect, check that its origin is in `FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`.
+The hosted connection protocol discovers the server at
+`https://<your host>/.well-known/fluxiq`, obtains consent in a normal tab and
+connects to the gateway over `wss`. Its extension-side initiation and tab
+observer are still being integrated; endpoint discovery alone does not prove
+the installed extension supports this flow. Existing local/self-hosted
+pairing remains available. The extension origin must be admitted by
+`FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`.
 
 ## Run: Service
 
@@ -181,6 +184,11 @@ source ranges and token file. Running the `service` profile for customers or
 other third parties needs a commercial licence
 ([COMMERCIAL-LICENSING.md](../../COMMERCIAL-LICENSING.md),
 [Licensing](../legal/licensing.md)).
+
+First-time service setup creates an administrator in a new personal
+workspace and retires the default admin login. It grants no primary-workspace
+or platform-wide authority. Operator provisioning remains on the private
+listener below. Self-hosted setup retains its single-workspace owner policy.
 
 ## The Provisioning Listener
 
@@ -442,9 +450,27 @@ Core also exposes a durable PKCE authorization-code service. Codes are stored
 only as digests, bound to the approving session, installation and exact
 redirect, and consumed atomically before credential issuance. An uncertain
 issuance result requires fresh consent; replay never mints another credential.
-This service alone does not supply the consent UI, gateway issuer or hosted
-WebSocket routing. Those integrations and tenant runtime isolation must pass
-acceptance before enabling public customer execution. The deployment remains
+In service mode, `/connect/authorize` presents authenticated consent and
+`/api/connect/authorize` checks the displayed request, same-origin evidence and
+the person's tenant policy before issuing a code. Public token and revocation
+requests require JSON and `fluxiq-client: browser-extension`; they do not use
+cookie authority. The completion code stays in the URL fragment for the
+extension to observe in its own tab and verify against its original state.
+The extension-side initiation and observer still need integration; the typed
+reference-code fallback is not implemented.
+
+Issuance persists a tenant-bound credential and a locked key holder before
+returning it. Connecting never borrows decrypted model keys from another
+session. An account-wide queue enforces the connected-client limit within the
+supported single Core process. Routed WebSockets resolve signed credential
+bindings, recheck account and membership eligibility, and hold a tenant lease
+until the socket closes. Managed hosts require a separate ticket authority
+and are refused by this ordinary-client routing path.
+
+Tenant HTTP routing, primary identity integration with tenant key APIs,
+durable logout/password-change propagation to cold tenants, runtime isolation
+and end-to-end extension acceptance remain launch prerequisites. These
+features do not yet enable public customer execution. The deployment remains
 one Core process, not an active-active cluster.
 
 ## Continuous Integration

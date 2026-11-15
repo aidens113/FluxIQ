@@ -30,7 +30,7 @@ export function createClientTrustScopedStore(options: ScopedStoreOptions): Clien
       generation = snapshot.generation;
       return snapshot.clients;
     }),
-    save: (clients) => {
+    save: async (clients) => {
       const snapshot = clients.map(copyClientTrustRecord);
       return serialize(async () => {
         if (generation === undefined) throw new ClientTrustConflictError("not-loaded");

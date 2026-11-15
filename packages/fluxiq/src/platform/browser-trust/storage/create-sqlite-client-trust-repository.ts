@@ -44,6 +44,12 @@ export function createSqliteClientTrustRepository(options: { filePath: string; n
         return result;
       }) ?? { status: "invalid", reason: "unknown" };
     }),
+    countActiveForUser: (userId, replacement) => track(async () => {
+      if (typeof userId !== "string" || !userId.trim()) throw new TypeError("A client owner is required.");
+      const time = now();
+      if (!Number.isSafeInteger(time) || time < 0) throw new TypeError("Invalid client trust clock.");
+      return await readClientTrustDatabase(options.filePath, (db) => new ClientTrustRecords(db).countActiveForUser(userId, time, replacement)) ?? 0;
+    }),
     close: async () => {
       closed = true;
       const results = await Promise.allSettled([...pending]);

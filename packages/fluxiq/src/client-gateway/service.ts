@@ -34,6 +34,7 @@ import {
   ClientGatewayCredentialCustodian,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayTrustGrant,
+  ClientGatewayTrustIssuer,
   ClientGatewayViews,
   resolveClientGatewayConfig,
   withoutClientGatewayAddresses
@@ -55,6 +56,9 @@ export type {
   ClientGatewayTraceArtifactIntake,
   ClientGatewayTraceArtifactUpload,
   ClientGatewayTrustedClientStore,
+  ClientGatewayApprovedTrustInput,
+  ClientGatewayIssuedTrust,
+  ClientGatewayTrustAuthority,
   ClientGatewayPeer,
   ClientGatewayPairingLimits,
   ClientGatewayPairingCapacityScope,
@@ -66,6 +70,7 @@ export {
   CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
   CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES,
   ClientGatewayPairingCapacityError,
+  ClientGatewayTrustIssuanceError,
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
@@ -102,6 +107,8 @@ export class ClientGatewayService {
    * reaches it, so neither a page nor a program can mint a ticket.
    */
   readonly managedHosts: ClientGatewayManagedHosts;
+  /** Server-authorized client consent before a socket exists; never accepts authority from a client message. */
+  readonly trust: ClientGatewayTrustIssuer;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -123,6 +130,7 @@ export class ClientGatewayService {
       revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
+    this.trust = new ClientGatewayTrustIssuer({ config, trustedClients, authority: options.trustAuthority, sessions, transport, audit, trace, facade, custody });
     // Pairing and enrolment grant trust through this one path.
     const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody });
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });

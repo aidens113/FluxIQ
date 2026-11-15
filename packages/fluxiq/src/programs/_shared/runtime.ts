@@ -1,7 +1,7 @@
 import path from "node:path";
 import { modelKeyLockedWords, type ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
-import { ClientGatewayService, type ClientGatewayCredentialCustody, type ClientGatewayCredentialHolder, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore } from "../../client-gateway/index.ts";
+import { ClientGatewayService, type ClientGatewayCredentialCustody, type ClientGatewayCredentialHolder, type ClientGatewayTrustedClient, type ClientGatewayTrustedClientStore, type ClientGatewayTrustAuthority } from "../../client-gateway/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
@@ -86,6 +86,7 @@ export type GlobalProgramRuntimeOptions = {
   modelProvidersEnabled?: boolean;
   /** Mandatory persistence supplied by a multi-tenant host; local instances retain their JSON default. */
   clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore;
+  clientGatewayTrustAuthority?: ClientGatewayTrustAuthority;
   /**
    * Key custody that outlives this runtime (a workspace manager's entry), so
    * evicting an idle instance does not lock its users' keys. Absent, Secret
@@ -184,6 +185,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
       ? { trustedClientStore: options.clientGatewayTrustedClientStore }
       : paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     credentialCustody: secretKeysCredentialCustody(secretKeys),
+    ...(options.clientGatewayTrustAuthority ? { trustAuthority: options.clientGatewayTrustAuthority } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
     ...(iamProfile === "service" ? { endedSessionMaxAgeMs: SERVICE_ENDED_SESSION_MAX_AGE_MS } : {}),
     ...(process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ? { publicUrl: process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL } : {})
@@ -488,8 +490,10 @@ function secretKeysCredentialCustody(secretKeys: SecretKeysService): ClientGatew
     ...(approvingSessionDigest ? { approvingSessionDigest } : {})
   });
   return {
-    async issued({ holder: client, credential, approvedBySessionId }) {
-      await secretKeys.credentialUnlocks.presentCredential(holder(client, approvedBySessionId ? secretKeySessionDigest(approvedBySessionId) : undefined), credential, { verified: true });
+    async issued({ holder: client, credential, approvedBySessionId, approvedBySessionDigest }) {
+      if (approvedBySessionId && approvedBySessionDigest && secretKeySessionDigest(approvedBySessionId) !== approvedBySessionDigest) throw new Error("Client approval session evidence does not agree.");
+      const digest = approvedBySessionDigest ?? (approvedBySessionId ? secretKeySessionDigest(approvedBySessionId) : undefined);
+      await secretKeys.credentialUnlocks.presentCredential(holder(client, digest), credential, { verified: true });
     },
     async confirmed({ holder: client, credentialDigest }) {
       await secretKeys.credentialUnlocks.confirmCredential({ holderId: secretKeyPairedHolderId(client.trustedClientId), userId: client.userId, credentialDigest });

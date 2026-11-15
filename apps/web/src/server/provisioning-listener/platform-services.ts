@@ -8,6 +8,7 @@ import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
 import { closeKeySessionServices } from "../key-sessions";
 import { closeBrowserTrustRepository } from "../browser-trust";
+import { closeConnectServices } from "../connect";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -62,7 +63,7 @@ export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAud
 export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<void> {
   const composition = compositions.get(fluxiq);
   try {
-    const closed = await Promise.allSettled([closeKeySessionServices(fluxiq.paths.fluxiq), closeBrowserTrustRepository(fluxiq.paths.fluxiq)]);
+    const closed = await Promise.allSettled([closeKeySessionServices(fluxiq.paths.fluxiq), closeBrowserTrustRepository(fluxiq.paths.fluxiq), closeConnectServices(fluxiq.paths.fluxiq)]);
     const failures = closed.filter((outcome) => outcome.status === "rejected");
     if (composition) await composition;
     if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Platform credential authorities could not all close cleanly.");

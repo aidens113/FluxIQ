@@ -56,6 +56,15 @@ function runtimeEnv(profile: string | undefined, extra: Record<string, string> =
 async function signIn(fluxiq: FluxIQ, username: string): Promise<{ userId: string; sessionId: string }> {
   // This file proves session routing, not password verification or key release.
   const user = await fluxiq.programs.identityAccess.upsertUser({ username, displayName: username, roleId: "admin" });
+  if (getFluxIQWorkspaces().tenancy === "multi") {
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const { store } = await getPlatformServices();
+    await store.putAccount({
+      userId: user.id, email: `${username}@example.test`, emailVerifiedAtMs: null, displayName: username,
+      externalId: null, identities: [], status: "active", disabledReason: null, createdVia: "provisioning-listener",
+      termsVersion: null, createdAtMs: Date.now(), updatedAtMs: Date.now(), lastSignInAtMs: null, deletion: null
+    });
+  }
   const session = await fluxiq.programs.identityAccess.createSession(user.id);
   return { userId: user.id, sessionId: session.id };
 }
@@ -82,7 +91,12 @@ describe("the web runtime's workspaces", () => {
       workspaceIds.push(workspaceId);
       expect(workspaceId).not.toBe(getFluxIQWorkspaces().primaryWorkspaceId);
       expect(await services.store.getWorkspace(workspaceId)).toMatchObject({ kind: "personal", ownerUserId: userId });
+      const account = await services.store.getAccount(userId);
+      if (!account) throw new Error("Expected provisioned account");
+      await services.store.putAccount({ ...account, emailVerifiedAtMs: Date.now() });
       const session = await primary.programs.identityAccess.createSession(userId);
+      const { authorizeConnectConsent } = await import("../../../server/connect");
+      expect(await authorizeConnectConsent(session.id)).toEqual({ allowed: true });
       const lease = await workspaceFluxIQ(requestWith(session.id));
       expect(lease?.workspaceId).toBe(workspaceId);
       expect(lease?.fluxiq).not.toBe(primary);

@@ -16,5 +16,7 @@ export type ClientTrustRepository = {
   /** One independent writer snapshot. Load before save; stale generations reject instead of replacing newer authority. */
   scopedStore(workspaceId: string): ClientGatewayTrustedClientStore;
   lookupCredential(token: string, options?: { request?: boolean }): Promise<ClientTrustCredentialProof>;
+  /** Current ordinary clients across all workspaces. A trusted issuer may exclude its own replacement installation. */
+  countActiveForUser(userId: string, replacement?: { workspaceId: string; clientId: string; clientInstallId: string }): Promise<number>;
   close(): Promise<void>;
 };

@@ -139,5 +139,12 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Action: [...OWN_PANEL_ASSISTANT],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
     Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
+  },
+  {
+    Sid: "OwnClientCredentials",
+    Effect: "Allow",
+    Action: ["gateway:ApprovePairing", "iam:ListApiKeys", "iam:EnrollApiKey", "iam:RevokeApiKey"],
+    Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
   }
 ]);

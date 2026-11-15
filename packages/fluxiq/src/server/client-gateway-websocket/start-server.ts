@@ -8,11 +8,14 @@ import { resolveClientGatewayPeer } from "./client-peer.ts";
 import type { NativeWebSocketConnection } from "./native-connection.ts";
 import { createClientGatewayOriginPolicy, type ClientGatewayOriginPolicy } from "./origin-policy.ts";
 import { rejectUpgrade } from "./reject-upgrade.ts";
+import { ClientGatewayTransportIdentityLeases, type ClientGatewayResolver } from "./routing/index.ts";
 import { serverEnvelope } from "./server-envelope.ts";
 import { resolveClientGatewayTransportLimits, type ClientGatewayTransportLimits } from "./transport-limits.ts";
 
 export type ClientGatewayWebSocketServerOptions = {
   gateway: ClientGatewayService;
+  /** Trusted first-hello authority. Null/error refuses; the default gateway is never a routing fallback. */
+  resolveGateway?: ClientGatewayResolver | undefined;
   host?: string;
   port?: number;
   path?: string;
@@ -59,6 +62,8 @@ export type ClientGatewayWebSocketServerHandle = {
 
 type TransportState = {
   gateway: ClientGatewayService;
+  resolveGateway: ClientGatewayResolver | undefined;
+  identities: ClientGatewayTransportIdentityLeases;
   path: string;
   originPolicy: ClientGatewayOriginPolicy;
   limits: ClientGatewayTransportLimits;
@@ -66,6 +71,9 @@ type TransportState = {
   connections: Set<NativeWebSocketConnection>;
   notified: WeakSet<NativeWebSocketConnection>;
   drain: ClientGatewayGoingAwayNotice | null;
+  closing: boolean;
+  pendingReleases: Set<Promise<void>>;
+  cleanupFailed: boolean;
 };
 
 export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocketServerOptions): ClientGatewayWebSocketServerHandle {
@@ -74,13 +82,13 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
   const path = normalizePath(options.path ?? "/client");
   const originPolicy = createClientGatewayOriginPolicy({ profile: options.profile ?? "local", host, allowedOrigins: options.allowedOrigins, warn: (message) => console.warn(message) });
   const limits = resolveClientGatewayTransportLimits(options.limits);
-  if (options.limits !== undefined) options.gateway.setPairingLimits({ perAddress: limits.pendingPairingsPerAddress, total: limits.pendingPairingsTotal });
   const publicHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const publicUrl = options.publicUrl ?? `ws://${publicHost}:${port}${path}`;
   const status: ClientGatewayWebSocketServerHandle["status"] = { listening: false };
-  const state: TransportState = { gateway: options.gateway, path, originPolicy, limits, trustProxy: options.trustProxy === true, connections: new Set(), notified: new WeakSet(), drain: null };
-  // Capture the original immutable anchor before listener or socket IO.
-  const lease = options.gateway.bindTransportBuildIdentity(options.buildIdentity);
+  const identities = new ClientGatewayTransportIdentityLeases(options.buildIdentity, options.limits === undefined ? undefined : limits);
+  // A local/default gateway is bound before IO. Routed gateways are bound only after authority resolves them.
+  if (!options.resolveGateway) identities.acquire(options.gateway);
+  const state: TransportState = { gateway: options.gateway, resolveGateway: options.resolveGateway, identities, path, originPolicy, limits, trustProxy: options.trustProxy === true, connections: new Set(), notified: new WeakSet(), drain: null, closing: false, pendingReleases: new Set(), cleanupFailed: false };
   const server = createServer((request, response) => {
     const requestPath = request.url ? new URL(request.url, "http://localhost").pathname : "/";
     response.setHeader("content-type", "application/json");
@@ -96,13 +104,26 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
     }));
   });
 
+  let finalization: Promise<void> | null = null;
+  const finalize = (): Promise<void> => {
+    finalization ??= finishReleases(state);
+    return finalization;
+  };
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer) => handleUpgrade(state, request, socket, head));
   server.on("close", () => {
     status.listening = false;
-    lease.release();
+    void finalize().catch((error: unknown) => {
+      status.error = "Client gateway route cleanup failed.";
+      recordCleanupFailure(state.gateway, "listener_close", error);
+    });
   });
   server.on("error", (error: NodeJS.ErrnoException) => {
-    lease.release();
+    state.closing = true;
+    for (const connection of state.connections) connection.terminate(1011, "listener error");
+    void finalize().catch((error: unknown) => {
+      status.error = "Client gateway route cleanup failed.";
+      recordCleanupFailure(state.gateway, "listener_error", error);
+    });
     status.listening = false;
     status.error = error.code === "EADDRINUSE"
       ? `Port ${port} is already in use. Stop the old FluxIQ dev server or change FLUXIQ_CLIENT_GATEWAY_PORT.`
@@ -110,7 +131,7 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
     console.warn(`[FluxIQ] Client gateway WebSocket server error: ${error.message}`);
   });
   server.on("listening", () => {
-    lease.activate();
+    identities.activate();
     status.listening = true;
     delete status.error;
   });
@@ -118,10 +139,11 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
   try {
     server.listen(port, host);
   } catch (error) {
-    lease.release();
+    identities.close();
     throw error;
   }
 
+  let closing: Promise<void> | null = null;
   return {
     server,
     host,
@@ -131,7 +153,19 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
     status,
     beginDrain: (input) => beginDrain(state, input),
     openConnectionCount: () => state.connections.size,
-    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    close: () => {
+      if (closing) return closing;
+      state.closing = true;
+      for (const connection of state.connections) connection.terminate(1001, "server shutdown");
+      closing = new Promise<void>((resolve, reject) => server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        void finalize().then(resolve, reject);
+      }));
+      return closing;
+    }
   };
 }
 
@@ -141,8 +175,8 @@ function handleUpgrade(state: TransportState, request: IncomingMessage, socket: 
     rejectUpgrade(socket, 404, "Not Found");
     return;
   }
-  if (state.drain !== null) {
-    rejectUpgrade(socket, 503, "Service Unavailable", { "Retry-After": String(Math.ceil(state.drain.retryAfterMs / 1000)) });
+  if (state.closing || state.drain !== null) {
+    rejectUpgrade(socket, 503, "Service Unavailable", { "Retry-After": String(Math.ceil((state.drain?.retryAfterMs ?? 0) / 1000)) });
     return;
   }
   const peer = resolveClientGatewayPeer(request, state.trustProxy);
@@ -163,12 +197,22 @@ function handleUpgrade(state: TransportState, request: IncomingMessage, socket: 
   }
   const connection = acceptClientGatewaySocket({
     gateway: state.gateway,
+    resolveGateway: state.resolveGateway,
+    identities: state.identities,
     request,
     socket,
     head,
     limits: state.limits,
     peer,
-    onClosed: (closed) => state.connections.delete(closed)
+    onClosed: (closed) => state.connections.delete(closed),
+    onRelease: (pending) => {
+      state.pendingReleases.add(pending);
+      void pending.then(() => state.pendingReleases.delete(pending), (error: unknown) => {
+        state.pendingReleases.delete(pending);
+        state.cleanupFailed = true;
+        recordCleanupFailure(state.gateway, "route_release", error);
+      });
+    }
   });
   if (connection?.open) state.connections.add(connection);
 }
@@ -188,4 +232,19 @@ function beginDrain(state: TransportState, input: ClientGatewayDrainInput): void
 
 function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
+}
+
+async function finishReleases(state: TransportState): Promise<void> {
+  // Unresolved user resolvers are aborted by socket closure, never awaited here. Late leases release on arrival.
+  while (state.pendingReleases.size) await Promise.allSettled([...state.pendingReleases]);
+  state.identities.close();
+  if (state.cleanupFailed) throw new Error("Client gateway route cleanup failed.");
+}
+
+function recordCleanupFailure(gateway: ClientGatewayService, phase: "listener_close" | "listener_error" | "route_release", error: unknown): void {
+  // A user-supplied resolver/release may put credentials in an exception. Only classify it here.
+  gateway.recordTransportEvent("transport.route_cleanup_failed", "Client gateway route cleanup failed.", {
+    phase,
+    failureKind: error instanceof Error ? "error" : "rejection"
+  });
 }

@@ -14,6 +14,18 @@ function refuse(code: string, status: number): NextResponse {
  */
 const HIDDEN_SCREEN_PATH = "/__fluxiq-hidden-by-panel-preset";
 
+/** Connection pages expose no authorization evidence to caches, referrers, framing or third-party resources. */
+function connectHeaders(pathname: string, response: NextResponse): NextResponse {
+  if (pathname === "/connect" || pathname.startsWith("/connect/") || pathname.startsWith("/api/connect/")) {
+    response.headers.set("cache-control", "no-store");
+    response.headers.set("referrer-policy", "no-referrer");
+    response.headers.set("x-frame-options", "DENY");
+    response.headers.set("x-content-type-options", "nosniff");
+    response.headers.set("content-security-policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  }
+  return response;
+}
+
 /** Discovery rewrite, operator-only endpoints on public profiles, screens the panel preset hides, and the cross-site guard for cookie-carrying writes. */
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
@@ -26,17 +38,17 @@ export function middleware(request: NextRequest): NextResponse {
     settings = resolveFluxIQDeploymentSettings(process.env);
     preset = currentPanelPreset();
   } catch {
-    return refuse("deployment_misconfigured", 500);
+    return connectHeaders(pathname, refuse("deployment_misconfigured", 500));
   }
-  if (settings.public && isOperatorOnlyPath(pathname)) return refuse("operator_only", 403);
-  if (isHiddenPanelPath(pathname, preset)) return NextResponse.rewrite(new URL(HIDDEN_SCREEN_PATH, request.url));
+  if (settings.public && isOperatorOnlyPath(pathname)) return connectHeaders(pathname, refuse("operator_only", 403));
+  if (isHiddenPanelPath(pathname, preset)) return connectHeaders(pathname, NextResponse.rewrite(new URL(HIDDEN_SCREEN_PATH, request.url)));
   const crossSite = isCrossSiteRequest({
     method: request.method,
     headers: request.headers,
     hasSessionCookie: request.cookies.has(settings.session.name),
     allowedOrigin: settings.public ? settings.publicOrigin : null
   });
-  return crossSite ? refuse("cross_site_request", 403) : NextResponse.next();
+  return connectHeaders(pathname, crossSite ? refuse("cross_site_request", 403) : NextResponse.next());
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };

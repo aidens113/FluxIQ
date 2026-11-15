@@ -1,5 +1,6 @@
 import type { PlatformServices } from "fluxiq/platform";
 import type { FluxIQWorkspaceManager } from "./workspace-manager";
+import { defaultWorkspaceId } from "./default-workspace";
 
 /**
  * The workspace a panel session works in, or null when the session is not a
@@ -21,12 +22,5 @@ export async function sessionWorkspaceId(input: {
   if (!auth) return null;
   if (manager.tenancy === "single") return manager.primaryWorkspaceId;
   const { store } = await input.platformServices();
-  const memberships = await store.listMembershipsOfUser(auth.user.id);
-  const active = memberships.filter((membership) => membership.status === "active" && membership.workspaceId !== manager.primaryWorkspaceId);
-  active.sort((left, right) => left.createdAtMs - right.createdAtMs || (left.workspaceId < right.workspaceId ? -1 : left.workspaceId > right.workspaceId ? 1 : 0));
-  for (const membership of active) {
-    const workspace = await store.getWorkspace(membership.workspaceId);
-    if (workspace) return workspace.workspaceId;
-  }
-  return null;
+  return defaultWorkspaceId({ userId: auth.user.id, primaryWorkspaceId: manager.primaryWorkspaceId, store });
 }

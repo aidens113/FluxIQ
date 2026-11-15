@@ -10,7 +10,7 @@ const runtime = vi.hoisted(() => {
     release: vi.fn(),
     presenter: vi.fn(),
     manager: { tenancy: "multi", primaryWorkspaceId: "workspace-main", primary: () => ({ fluxiq: primary }), acquire: vi.fn() },
-    store: { listMembershipsOfUser: vi.fn(), getWorkspace: vi.fn() }
+    store: { getAccount: vi.fn(), listMembershipsOfUser: vi.fn(), getWorkspace: vi.fn() }
   };
 });
 
@@ -31,6 +31,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   runtime.manager.tenancy = "multi";
   runtime.primary.programs.identityAccess.validateSession.mockResolvedValue({ user: { id: "person-a" } });
+  runtime.store.getAccount.mockResolvedValue({ status: "active", deletion: null });
   runtime.store.listMembershipsOfUser.mockResolvedValue([{ workspaceId: "tenant-a", userId: "person-a", status: "active", createdAtMs: 0 }]);
   runtime.store.getWorkspace.mockResolvedValue({ workspaceId: "tenant-a" });
   runtime.manager.acquire.mockImplementation(async (workspaceId: string) => ({
@@ -41,6 +42,13 @@ beforeEach(() => {
 });
 
 describe("a web program's workspace context", () => {
+  it.each([null, { status: "disabled", deletion: null }, { status: "active", deletion: { scheduled: true } }])("refuses inactive account state before workspace acquisition: %j", async (account) => {
+    runtime.store.getAccount.mockResolvedValue(account);
+    expect(await workspaceProgramContext(request())).toBeNull();
+    expect(runtime.store.listMembershipsOfUser).not.toHaveBeenCalled();
+    expect(runtime.manager.acquire).not.toHaveBeenCalled();
+  });
+
   it("selects the cookie's tenant and supplies platform identity without the primary runtime presenter", async () => {
     const selected = await workspaceProgramContext(request("panel-cookie", "other-tenant-token"));
     expect(runtime.primary.programs.identityAccess.validateSession).toHaveBeenCalledWith("panel-cookie");

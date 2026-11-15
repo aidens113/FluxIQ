@@ -30,6 +30,44 @@ function record(id = "synthetic-client", token = "legacy-synthetic-credential"):
 }
 
 describe("scoped authoritative browser trust persistence", () => {
+  it("counts active ordinary clients across tenants while excluding only the exact replacement", async () => {
+    const f = await browserTrustFixture(cleanups);
+    const first = f.repository.scopedStore("workspace.first");
+    const second = f.repository.scopedStore("workspace.second");
+    await Promise.all([first.load(), second.load()]);
+    const make = (id: string) => ({ ...record(id, `token-${id}`), clientInstallId: "installation-one" });
+    await first.save([
+      make("active-first"), { ...make("expired"), expiresAt: f.clock.now },
+      { ...make("revoked"), revokedAt: f.clock.now },
+      { ...make("managed"), managedHost: { hostId: "host-one", profile: "named" } },
+      { ...make("other-user"), approvedByUserId: "different-user" }
+    ]);
+    await second.save([make("active-second")]);
+    expect(await f.repository.countActiveForUser("user.synthetic")).toBe(2);
+    expect(await f.repository.countActiveForUser("user.synthetic", { workspaceId: "workspace.first", clientId: "extension.same-client-id", clientInstallId: "installation-one" })).toBe(1);
+    expect(await f.repository.countActiveForUser("user.synthetic", { workspaceId: "workspace.first", clientId: "extension.same-client-id", clientInstallId: "different-installation" })).toBe(2);
+    expect(await f.repository.countActiveForUser("different-user")).toBe(1);
+  });
+
+  it("keeps installation and approving-session bindings immutable and rejects raw-session metadata", async () => {
+    const f = await browserTrustFixture(cleanups);
+    const store = f.repository.scopedStore("workspace.consent");
+    await store.load();
+    const trusted = { ...record(), clientInstallId: "installation-one", approvingSessionDigest: "a".repeat(64) };
+    await store.save([trusted]);
+    for (const changed of [
+      { ...trusted, clientInstallId: "installation-two" },
+      { ...trusted, approvingSessionDigest: "b".repeat(64) },
+      { ...record() }
+    ]) await expect(store.save([changed])).rejects.toMatchObject({ reason: "trust-rebound" });
+    await expect(store.save([{ ...trusted, approvingSessionDigest: "raw-session-value" }])).rejects.toThrow("session digest");
+    await expect(store.save([{ ...trusted, clientInstallId: " " }])).rejects.toThrow("installation binding");
+    expect(await f.openRepository().scopedStore("workspace.consent").load()).toEqual([trusted]);
+    const proof = await f.repository.lookupCredential("legacy-synthetic-credential");
+    expect(JSON.stringify(proof)).not.toContain(trusted.approvingSessionDigest);
+    expect(proof).toMatchObject({ status: "current", binding: { workspaceId: "workspace.consent" } });
+  });
+
   it("does not create files or directories from empty load/lookup and arbitrates eight racing first saves", async () => {
     const f = await browserTrustFixture(cleanups);
     const freshPath = path.join(path.dirname(f.filePath), "fresh-root", "platform", "browser-trust.sqlite");

@@ -12,6 +12,8 @@ export function validateClientTrustRecord(value: unknown): asserts value is Clie
   if (client.previousTokenHash !== undefined && (typeof client.previousTokenHash !== "string" || !/^[a-f0-9]{64}$/u.test(client.previousTokenHash))) throw new TypeError("Invalid browser trust previous digest.");
   if (client.reuseKey !== undefined && (typeof client.reuseKey !== "string" || !client.reuseKey)) throw new TypeError("Invalid browser trust signing key.");
   if (client.domainId !== undefined && client.domainId !== null && typeof client.domainId !== "string") throw new TypeError("Invalid browser trust domain binding.");
+  if (client.clientInstallId !== undefined && (typeof client.clientInstallId !== "string" || !client.clientInstallId.trim() || client.clientInstallId.length > 128)) throw new TypeError("Invalid client installation binding.");
+  if (client.approvingSessionDigest !== undefined && (typeof client.approvingSessionDigest !== "string" || !/^[a-f0-9]{64}$/u.test(client.approvingSessionDigest))) throw new TypeError("Invalid approving session digest.");
   if (client.revocationReason !== undefined && typeof client.revocationReason !== "string") throw new TypeError("Invalid browser trust revocation reason.");
   for (const field of ["approvedAt", "createdAt", "updatedAt", "lastUsedAt", "expiresAt", "previousValidUntil", "lastMovedOnAt", "revokedAt"]) {
     const timestamp = client[field];

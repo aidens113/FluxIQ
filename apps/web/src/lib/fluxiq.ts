@@ -1,5 +1,6 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { getBrowserTrustRepository } from "../server/browser-trust";
+import { createWorkspaceTrustAuthority } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
@@ -340,6 +341,7 @@ function createWebRuntimeState(): WebRuntimeState {
       createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({
         workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
         clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
+        clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
         instantiate: async (options) => opened(await createTenantFluxIQInstance(options))
       }),
       removeTenantRoot: async ({ workspaceId, primary }) => {
@@ -556,6 +558,9 @@ function startSharedClientGateway(state: WebRuntimeState, settings: FluxIQDeploy
     profile: settings.profile,
     trustProxy: settings.trustProxy,
     limits: gateway.limits,
+    ...(settings.profile === "service" ? {
+      resolveGateway: async (input) => (await import("../server/browser-trust")).resolveServiceClientGatewayRoute(input)
+    } : {}),
     ...(gateway.allowedOrigins ? { allowedOrigins: gateway.allowedOrigins } : {})
   });
   logger.info(`[FluxIQ] Client gateway WebSocket bound to shared runtime ${state.runtimeId} at ${state.clientGatewayServer.publicUrl}`);

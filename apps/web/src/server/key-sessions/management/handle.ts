@@ -1,12 +1,14 @@
 import { KeySessionError } from "fluxiq/platform";
-import { keySessionConfig } from "./config";
-import { keyManagementContext } from "./management-context";
-import { readKeyJson } from "./read-json";
-import { getKeySessionService } from "./service";
+import { keySessionConfig } from "../config";
+import { readKeyJson } from "../read-json";
+import { getKeySessionService } from "../service";
+import { keyManagementContext } from "./context";
+import { KeyManagementRefusal } from "./refusal";
 
 /** Self-service key management; session owner and workspace come exclusively from platform authority. */
 export async function manageKeys(request: Request): Promise<Response> {
   try {
+    if (request.method !== "GET" && request.method !== "POST" && request.method !== "DELETE") return answer(405, { error: "key.method_not_allowed" });
     if (request.method !== "GET") {
       // This route uses cookies even when a Bearer header is present. Do not let
       // that unrelated header exempt it from browser-origin validation.
@@ -14,7 +16,7 @@ export async function manageKeys(request: Request): Promise<Response> {
       const site = request.headers.get("sec-fetch-site");
       if ((origin !== null && origin !== keySessionConfig().origin) || (site !== null && site !== "same-origin" && site !== "none")) return answer(403, { error: "key.cross_site" });
     }
-    const binding = await keyManagementContext();
+    const binding = await keyManagementContext(request.method);
     if (!binding) return answer(401, { error: "key.unauthorized" });
     const service = await getKeySessionService();
     if (request.method === "GET") return answer(200, { keys: await service.listKeys(binding) });
@@ -34,6 +36,7 @@ export async function manageKeys(request: Request): Promise<Response> {
     }
     return answer(400, { error: "key.invalid_request" });
   } catch (error) {
+    if (error instanceof KeyManagementRefusal) return answer(403, { error: "key.forbidden" });
     return error instanceof KeySessionError ? answer(error.status, { error: error.code }) : answer(503, { error: "key.unavailable" });
   }
 }

@@ -23,6 +23,7 @@ export * from "./security/index.ts";
 export * from "./sessions.ts";
 export * from "./transport.ts";
 export * from "./trust-grant.ts";
+export * from "./trust-issuance/index.ts";
 export * from "./trusted-clients.ts";
 export * from "./types.ts";
 export * from "./views.ts";

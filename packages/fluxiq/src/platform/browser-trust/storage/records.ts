@@ -60,6 +60,15 @@ export class ClientTrustRecords {
     return rows.map((row) => ({ workspaceId: row.workspaceId, client: readClient(row) }));
   }
 
+  async countActiveForUser(userId: string, now: number, replacement?: { workspaceId: string; clientId: string; clientInstallId: string }): Promise<number> {
+    const rows = await this.db.all<TrustRow>(`select ${COLUMNS} from browser_trust_records where present = 1 and json_extract(client_json, '$.approvedByUserId') = ?`, [userId]);
+    return rows.filter((row) => {
+      const client = readClient(row);
+      if (client.managedHost || client.revokedAt !== undefined || client.expiresAt <= now) return false;
+      return !(replacement && row.workspaceId === replacement.workspaceId && client.clientId === replacement.clientId && client.clientInstallId === replacement.clientInstallId);
+    }).length;
+  }
+
   private async put(workspaceId: string, client: ClientGatewayTrustedClient): Promise<void> {
     const row = await this.db.get<TrustRow>(`select ${COLUMNS} from browser_trust_records where trusted_client_id = ?`, [client.trustedClientId]);
     if (row) {
@@ -86,5 +95,5 @@ function readClient(row: TrustRow): ClientGatewayTrustedClient {
 }
 
 function sameBinding(before: ClientGatewayTrustedClient, after: ClientGatewayTrustedClient): boolean {
-  return before.clientId === after.clientId && before.clientType === after.clientType && before.approvedByUserId === after.approvedByUserId && before.domainId === after.domainId && before.managedHost?.hostId === after.managedHost?.hostId && before.managedHost?.profile === after.managedHost?.profile && (before.reuseKey === undefined || before.reuseKey === after.reuseKey);
+  return before.clientId === after.clientId && before.clientType === after.clientType && before.approvedByUserId === after.approvedByUserId && before.domainId === after.domainId && before.clientInstallId === after.clientInstallId && before.approvingSessionDigest === after.approvingSessionDigest && before.managedHost?.hostId === after.managedHost?.hostId && before.managedHost?.profile === after.managedHost?.profile && (before.reuseKey === undefined || before.reuseKey === after.reuseKey);
 }

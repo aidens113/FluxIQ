@@ -609,6 +609,10 @@ export type ClientGatewaySession = {
 export type ClientGatewayTrustedClient = {
   trustedClientId: string;
   clientId: string;
+  /** Installation approved by the authenticated connect flow; absent on legacy pairing records. */
+  clientInstallId?: string;
+  /** Private audit binding to the approving platform session digest, never a raw session or public view field. */
+  approvingSessionDigest?: string;
   clientType: ClientGatewayClientType;
   name: string;
   tokenHash: string;
@@ -638,7 +642,7 @@ export type ClientGatewayTrustedClient = {
   revocationReason?: string;
 };
 
-export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "reuseKey"> & {
+export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "reuseKey" | "approvingSessionDigest"> & {
   status: "active" | "expired" | "revoked";
 };
 
