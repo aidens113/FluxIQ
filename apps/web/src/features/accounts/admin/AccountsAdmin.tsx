@@ -17,14 +17,20 @@ export function AccountsAdmin(props: {
 }) {
   return (
     <div className="accounts-admin">
-      <h3>Invite someone</h3>
-      {props.view.assignableRoles.length > 0 ? (
-        <InviteForm roles={props.view.assignableRoles} onInvite={props.onInvite} onDone={props.onDone} />
+      {props.view.readOnly ? (
+        <p className="security-note">Members and invites are read-only here.</p>
       ) : (
-        <p className="security-note">No role can be given here.</p>
+        <>
+          <h3>Invite someone</h3>
+          {props.view.assignableRoles.length > 0 ? (
+            <InviteForm roles={props.view.assignableRoles} onInvite={props.onInvite} onDone={props.onDone} />
+          ) : (
+            <p className="security-note">No role can be given here.</p>
+          )}
+        </>
       )}
       <h3>Invites</h3>
-      <PendingInvites members={props.view.members} now={props.now} onApply={props.onApply} onDone={props.onDone} />
+      <PendingInvites members={props.view.members} now={props.now} readOnly={props.view.readOnly === true} onApply={props.onApply} onDone={props.onDone} />
     </div>
   );
 }

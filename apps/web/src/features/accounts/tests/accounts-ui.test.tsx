@@ -57,6 +57,24 @@ describe("MemberActions", () => {
     expect(renderer.root.findAllByType("input")[0]?.props.value).toBe("");
     expect(text(renderer)).not.toContain("dummy password");
   });
+
+  it.each(["active", "turned-off", "invited"] as const)("offers no global or membership mutation for a read-only %s row", state => {
+    const renderer = render(createElement(MemberActions, { member: member({ state }), view: { ...VIEW, readOnly: true }, onApply: done, onDone: () => undefined }));
+    expect(buttonLabels(renderer)).toEqual([]);
+    expect(renderer.root.findAllByType("select")).toEqual([]);
+    expect(renderer.root.findAllByType("form")).toEqual([]);
+  });
+
+  it("hides an already-open proof form when the current view becomes read-only", () => {
+    const onApply = vi.fn(done);
+    const renderer = render(createElement(MemberActions, { member: member({}), view: VIEW, onApply, onDone: () => undefined }));
+    act(() => { renderer.root.findByProps({ children: "Turn off" }).props.onClick(); });
+    expect(renderer.root.findAllByType("form")).toHaveLength(1);
+    act(() => { renderer.update(createElement(MemberActions, { member: member({}), view: { ...VIEW, readOnly: true }, onApply, onDone: () => undefined })); });
+    expect(renderer.root.findAllByType("form")).toHaveLength(0);
+    expect(buttonLabels(renderer)).toEqual([]);
+    expect(onApply).not.toHaveBeenCalled();
+  });
 });
 
 describe("PendingInvites", () => {
@@ -80,6 +98,16 @@ describe("PendingInvites", () => {
     await act(async () => { await renderer.root.findByProps({ children: "Resend" }).props.onClick(); });
     expect(onApply).toHaveBeenCalledWith({ action: "resend-invite", userId: "u1" });
     expect(text(renderer)).toContain("You do not have access to do this.");
+  });
+
+  it("keeps invite details but offers no resend or cancellation in a read-only view", () => {
+    const html = renderToStaticMarkup(createElement(PendingInvites, { members: [member({ state: "invited", name: "Ben" })], now: 0, readOnly: true, onApply: done, onDone: () => undefined }));
+    expect(html).toContain("Ben");
+    expect(html).toContain("ana@example.test");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("Cancel invite");
+    expect(html).not.toContain("Resend");
   });
 });
 
@@ -120,5 +148,15 @@ describe("AccountsAdmin", () => {
     const html = renderToStaticMarkup(createElement(AccountsAdmin, { view, now: 0, onInvite: done, onApply: done, onDone: () => undefined }));
     expect(html).toContain("Invite someone");
     expect(html).toContain("Ben");
+  });
+
+  it("shows read-only invite data without an invite form or account controls", () => {
+    const view: MembersView = { workspaceKind: "organisation", assignableRoles: ["administrator", "read-only", "member"], canRemove: false, readOnly: true, members: [member({ state: "invited", name: "Ben" })] };
+    const html = renderToStaticMarkup(createElement(AccountsAdmin, { view, now: 0, onInvite: done, onApply: done, onDone: () => undefined }));
+    expect(html).toContain("Ben");
+    expect(html).toContain("read-only");
+    expect(html).not.toContain("Invite someone");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<form");
   });
 });

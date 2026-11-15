@@ -4,7 +4,7 @@ import path from "node:path";
 import { FluxIQ, type FluxIQOptions } from "fluxiq";
 import { IamAuditStore } from "fluxiq/platform";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { closeFluxIQWebRuntime, getFluxIQ, getFluxIQWorkspaces, initializeFluxIQWebRuntime, reloadFluxIQWebInstance } from "../../fluxiq";
+import { closeFluxIQWebRuntime, getFluxIQ, getFluxIQWorkspaces, getWorkspaceWebPresentation, initializeFluxIQWebRuntime, isCurrentFluxIQPrimary, reloadFluxIQWebInstance } from "../../fluxiq";
 import { FLUXIQ_SESSION_COOKIE } from "../../session-cookie";
 import { workspaceManagerLimits } from "../manager-limits";
 import { sessionIdOf } from "../session-id-of";
@@ -74,6 +74,48 @@ function requestWith(sessionId: string): Request {
 }
 
 describe("the web runtime's workspaces", () => {
+  it("keeps selected status and pending context writes tied to each exact tenant runtime", async () => {
+    runtimeEnv("service");
+    await initializeFluxIQWebRuntime();
+    const manager = getFluxIQWorkspaces();
+    const first = await manager.acquire("presentation-a");
+    const second = await manager.acquire("presentation-b");
+    const caller = { userId: "same-user", clientId: "same-client" };
+    const a = getWorkspaceWebPresentation(first.workspaceId, first.fluxiq, caller);
+    const b = getWorkspaceWebPresentation(second.workspaceId, second.fluxiq, caller);
+    a.beginContextWrite().commit({ activeProjectId: "project-a" });
+    b.beginContextWrite().commit({ activeProjectId: "project-b" });
+    expect(a.present().automationStudio.activeProjectId).toBe("project-a");
+    expect(b.present().automationStudio.activeProjectId).toBe("project-b");
+    expect(a.present().runtimeId).not.toBe(b.present().runtimeId);
+    expect(a.present()).not.toHaveProperty("hostModulePath");
+    expect(() => getWorkspaceWebPresentation(second.workspaceId, first.fluxiq, caller)).toThrow();
+    const oldPrimary = manager.primary().fluxiq;
+    const primaryView = getWorkspaceWebPresentation(manager.primaryWorkspaceId, oldPrimary, caller);
+    const primaryWrite = primaryView.beginContextWrite();
+    expect(isCurrentFluxIQPrimary(oldPrimary)).toBe(true);
+    const reloading = reloadFluxIQWebInstance();
+    expect(isCurrentFluxIQPrimary(oldPrimary)).toBe(false);
+    await reloading;
+    expect(isCurrentFluxIQPrimary(oldPrimary)).toBe(false);
+    expect(isCurrentFluxIQPrimary(manager.primary().fluxiq)).toBe(true);
+    expect(() => primaryWrite.commit({ activeProjectId: "old-primary-project" })).toThrow();
+    expect(() => primaryView.present()).toThrow();
+    expect(a.present().automationStudio.activeProjectId).toBe("project-a");
+    expect(b.present().automationStudio.activeProjectId).toBe("project-b");
+    expect(getWorkspaceWebPresentation(manager.primaryWorkspaceId, manager.primary().fluxiq, caller).context()).toBeUndefined();
+    const pending = a.beginContextWrite();
+    first.release();
+    await manager.deleteWorkspace(first.workspaceId);
+    expect(() => pending.commit({ activeProjectId: "late-project" })).toThrow();
+    expect(() => a.present()).toThrow();
+    expect(b.present().automationStudio.activeProjectId).toBe("project-b");
+    second.release();
+    await closeFluxIQWebRuntime();
+    expect(isCurrentFluxIQPrimary(manager.get(manager.primaryWorkspaceId)!.fluxiq)).toBe(false);
+    expect(() => b.present()).toThrow();
+  });
+
   it("provisions service accounts into separate personal workspaces instead of the control workspace", async () => {
     runtimeEnv("service");
     const primary = await initializeFluxIQWebRuntime();

@@ -89,7 +89,10 @@ export class FluxIQWorkspaceManager {
   /** Puts a new primary instance in place (a reload); the caller closed the old one. */
   replacePrimary(fluxiq: FluxIQ): void {
     this.assertOpen();
-    if (this.primaryEntry) this.primaryEntry.fluxiq = fluxiq;
+    if (this.primaryEntry) {
+      if (this.primaryEntry.fluxiq !== fluxiq) this.retire(this.primaryEntry);
+      this.primaryEntry.fluxiq = fluxiq;
+    }
     else this.primaryEntry = new OpenWorkspace(this.primaryWorkspaceId, true, fluxiq, null, this.now(), (instance) => this.reportsWork(instance));
   }
 
@@ -230,6 +233,7 @@ export class FluxIQWorkspaceManager {
     const { workspaceId } = record;
     if (this.open.get(workspaceId) !== record) return this.closing.get(workspaceId) ?? Promise.resolve();
     this.open.delete(workspaceId);
+    this.retire(record);
     const closing: Promise<void> = record.fluxiq.close({ mode: "evict" }).then(() => {
       if (this.closing.get(workspaceId) === closing) this.closing.delete(workspaceId);
     }, (error: unknown) => {
@@ -266,6 +270,7 @@ export class FluxIQWorkspaceManager {
     try {
       if (record) {
         this.open.delete(workspaceId);
+        this.retire(record);
         const closing = record.fluxiq.close({ mode: "shutdown" });
         this.closing.set(workspaceId, closing);
         await closing;
@@ -286,6 +291,7 @@ export class FluxIQWorkspaceManager {
     const errors: unknown[] = [];
     const tenants = [...this.open.values()];
     this.open.clear();
+    for (const record of tenants) this.retire(record);
     const closed = await Promise.allSettled(tenants.map((record) => record.fluxiq.close({ mode: "shutdown" })));
     for (const result of closed) {
       if (result.status === "rejected") errors.push(result.reason);
@@ -297,6 +303,7 @@ export class FluxIQWorkspaceManager {
     for (const heldKeys of this.custody.values()) heldKeys.revokeAll();
     this.custody.clear();
     if (this.primaryEntry) {
+      this.retire(this.primaryEntry);
       try {
         await this.primaryEntry.fluxiq.close();
       } catch (error) {
@@ -305,6 +312,16 @@ export class FluxIQWorkspaceManager {
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "workspaces.close_failed");
+  }
+
+  private retire(record: OpenWorkspace): void {
+    try {
+      this.options.onRetire?.({ workspaceId: record.workspaceId, fluxiq: record.fluxiq });
+    } catch {
+      // Retirement observers cannot prevent storage cleanup. Callers also
+      // guard projections against the manager's current instance identity.
+      this.warn("[FluxIQ] Workspace projection retirement failed.", { code: "workspaces.retirement_failed" });
+    }
   }
 
   private sweepInBackground(): void {

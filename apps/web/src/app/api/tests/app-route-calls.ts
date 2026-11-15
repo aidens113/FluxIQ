@@ -94,11 +94,7 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
       params: Promise.resolve({ projectId: target.projectId, sha256: FIXTURE_SHA })
     }),
   "GET /api/recordings": (caller) => listRecordings(routeRequest(caller, "/api/recordings")),
-  // Takes no request either: the cookie is all it reads.
-  "GET /api/accounts/members": (caller) => {
-    routeRequest(caller, "/api/accounts/members");
-    return listMembers();
-  },
+  "GET /api/accounts/members": (caller) => listMembers(routeRequest(caller, "/api/accounts/members")),
   "POST /api/accounts/invite": (caller) =>
     inviteMember(routeRequest(caller, "/api/accounts/invite", { method: "POST", json: { email: "new@example.test", displayName: "New", role: "read-only", proof: PROOF } })),
   "POST /api/accounts/member (set-role)": memberChange("set-role"),

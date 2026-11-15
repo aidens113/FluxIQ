@@ -5,7 +5,7 @@ import { resetRouteRuntime, routeRequest, runtime } from "./route-runtime";
 
 vi.mock("../../../fluxiq", async () => {
   const { runtime } = await import("./route-runtime");
-  return { getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter };
+  return { getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter, isCurrentFluxIQPrimary: (instance: unknown) => instance === runtime.primary };
 });
 vi.mock("../../../../server/provisioning-listener", async () => {
   const { runtime } = await import("./route-runtime");

@@ -33,6 +33,7 @@ const CALLERS: readonly RouteCaller[] = [
 const COOKIE_ONLY_READ: Row = ["allowed", "allowed", "unauthenticated", "unauthenticated"];
 const SELECTED_PANEL_READ: Row = ["allowed", "allowed", "forbidden: This endpoint is not available to a paired client.", "forbidden: This endpoint is not available to a paired client."];
 const needs = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, "unauthenticated", "unauthenticated"];
+const selectedNeeds = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, SELECTED_PANEL_READ[2], SELECTED_PANEL_READ[3]];
 
 // Today's checks, route by route: the permission each read, and whether it took a token.
 const TODAY: Readonly<Record<string, Row>> = {
@@ -42,7 +43,7 @@ const TODAY: Readonly<Record<string, Row>> = {
   "DELETE /api/keys": COOKIE_ONLY_READ,
   "POST /api/client-gateway/approve-pairing": needs("runtime.control"),
   "POST /api/client-gateway/dismiss-pairing": needs("runtime.control"),
-  "POST /api/client-gateway/automation-studio-context": needs("runtime.control"),
+  "POST /api/client-gateway/automation-studio-context": selectedNeeds("runtime.control"),
   // A credential is the whole of the proof, and it can only end its own trust.
   "POST /api/client-gateway/forget-pairing": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
@@ -56,12 +57,12 @@ const TODAY: Readonly<Record<string, Row>> = {
   "GET /api/framework/io": SELECTED_PANEL_READ,
   "POST /api/framework/io/validate": SELECTED_PANEL_READ,
   "GET /api/programs": SELECTED_PANEL_READ,
-  "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": COOKIE_ONLY_READ,
+  "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": SELECTED_PANEL_READ,
   "GET /api/programs/automation-studio/state-assets/[projectId]/[sha256]": SELECTED_PANEL_READ,
   "PUT /api/programs/automation-studio/state-assets/[projectId]/[sha256]": ["allowed", "forbidden: Permission required: programs.write", "allowed", "allowed"],
   "GET /api/recordings": ["allowed", "allowed", "allowed", "allowed"],
   // People and the activity log: only someone who manages people, and only by cookie.
-  "GET /api/accounts/members": needs("identity.manage"),
+  "GET /api/accounts/members": selectedNeeds("identity.manage"),
   "POST /api/accounts/invite": needs("identity.manage"),
   "POST /api/accounts/member (set-role)": needs("identity.manage"),
   "POST /api/accounts/member (turn-off)": needs("identity.manage"),
@@ -69,7 +70,7 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/accounts/member (remove)": needs("identity.manage"),
   "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
   "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
-  "GET /api/security/audit": needs("identity.manage")
+  "GET /api/security/audit": selectedNeeds("identity.manage")
 };
 
 const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);

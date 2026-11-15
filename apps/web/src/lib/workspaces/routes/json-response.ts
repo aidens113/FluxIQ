@@ -15,7 +15,8 @@ export async function withWorkspaceRouteJson(request: Request, contract: AppRout
     if (payload instanceof Response || payload instanceof ReadableStream) throw new TypeError("This adapter supports buffered JSON data only.");
     const response = NextResponse.json(payload);
     const after = await context.revalidate();
-    return after.ok ? response : refusalResponse(after);
+    if (!after.ok) return refusalResponse(after);
+    return context.current() ? response : refusalResponse({ ok: false, status: 401, error: "Authentication required" });
   } catch {
     return NextResponse.json({ ok: false, error: "Request could not be completed." }, { status: 500 });
   } finally {

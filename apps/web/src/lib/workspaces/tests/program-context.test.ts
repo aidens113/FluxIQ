@@ -6,6 +6,8 @@ const runtime = vi.hoisted(() => {
   const tenant = { programs: { identityAccess: { validateSession: vi.fn(), snapshot: vi.fn() } } };
   return {
     primary,
+    primaryCurrent: true,
+    platformServices: vi.fn(),
     tenant,
     release: vi.fn(),
     presenter: vi.fn(),
@@ -15,8 +17,8 @@ const runtime = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../fluxiq", () => ({ getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter }));
-vi.mock("../../../server/provisioning-listener", () => ({ getPlatformServices: async () => ({ store: runtime.store }) }));
+vi.mock("../../fluxiq", () => ({ getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter, isCurrentFluxIQPrimary: (instance: unknown) => runtime.primaryCurrent && instance === runtime.primary }));
+vi.mock("../../../server/provisioning-listener", () => ({ getPlatformServices: runtime.platformServices }));
 vi.mock("../../../server/browser-trust", () => ({ resolveServiceClientHttpRoute: runtime.resolveBrowser }));
 
 import { FLUXIQ_SESSION_COOKIE } from "../../session-cookie";
@@ -32,6 +34,8 @@ function request(cookie = "panel-cookie", bearer?: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   runtime.manager.tenancy = "multi";
+  runtime.primaryCurrent = true;
+  runtime.platformServices.mockResolvedValue({ store: runtime.store });
   runtime.resolveBrowser.mockResolvedValue(null);
   runtime.primary.programs.identityAccess.validateSession.mockResolvedValue({ user: { id: "person-a" } });
   runtime.store.getAccount.mockResolvedValue({ status: "active", deletion: null });
@@ -45,6 +49,47 @@ beforeEach(() => {
 });
 
 describe("a web program's workspace context", () => {
+  it("exposes a synchronous primary-generation check without waiting on identity stores", async () => {
+    const selected = await workspaceProgramContext(request());
+    expect(selected!.current()).toBe(true);
+    runtime.primaryCurrent = false;
+    expect(selected!.current()).toBe(false);
+    selected!.release();
+  });
+
+  it("refuses a replacing primary before opening a tenant or resolving platform services", async () => {
+    runtime.primaryCurrent = false;
+    expect(await workspaceProgramContext(request())).toBeNull();
+    expect(runtime.platformServices).not.toHaveBeenCalled();
+    expect(runtime.manager.acquire).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original platform store for current-membership checks instead of reselecting primary services", async () => {
+    const selected = await workspaceProgramContext(request());
+    expect(selected).not.toBeNull();
+    runtime.platformServices.mockRejectedValue(new Error("A new selector would wait on primary reload"));
+    expect(await selected!.context.revalidateAuthority!()).toBe(true);
+    expect(await selected!.context.revalidateAuthority!()).toBe(true);
+    expect(runtime.platformServices).toHaveBeenCalledOnce();
+    runtime.store.listMembershipsOfUser.mockResolvedValue([]);
+    expect(await selected!.context.revalidateAuthority!()).toBe(false);
+    expect(runtime.platformServices).toHaveBeenCalledOnce();
+    selected!.release();
+  });
+
+  it("refuses reload beginning during identity validation without another platform lookup", async () => {
+    const selected = await workspaceProgramContext(request());
+    expect(selected).not.toBeNull();
+    runtime.store.listMembershipsOfUser.mockClear();
+    runtime.primary.programs.identityAccess.validateSession.mockImplementationOnce(async () => {
+      runtime.primaryCurrent = false;
+      return { user: { id: "person-a" } };
+    });
+    expect(await selected!.context.revalidateAuthority!()).toBe(false);
+    expect(runtime.store.listMembershipsOfUser).not.toHaveBeenCalled();
+    expect(runtime.platformServices).toHaveBeenCalledOnce();
+    selected!.release();
+  });
   it.each([null, { status: "disabled", deletion: null }, { status: "active", deletion: { scheduled: true } }])("refuses inactive account state before workspace acquisition: %j", async (account) => {
     runtime.store.getAccount.mockResolvedValue(account);
     expect(await workspaceProgramContext(request())).toBeNull();
@@ -146,7 +191,11 @@ describe("a web program's workspace context", () => {
     expect(runtime.manager.acquire).toHaveBeenCalledWith("workspace-main");
     expect(selected?.context.fluxiq).toBe(runtime.primary);
     expect(selected?.workspaceId).toBe("workspace-main");
-    expect(selected?.context.webRuntimeStatus).toBe(runtime.presenter);
+    selected?.context.webRuntimeStatus?.("person-a");
+    expect(runtime.presenter).toHaveBeenCalledWith("person-a");
+    runtime.primaryCurrent = false;
+    expect(await selected?.context.revalidateAuthority?.()).toBe(false);
+    expect(() => selected?.context.webRuntimeStatus?.("person-a")).toThrow("Workspace runtime is no longer current.");
     expect(selected?.context.identityAuthority).toBeUndefined();
     expect(selected?.acceptBearer).toBe(true);
     expect(runtime.primary.programs.identityAccess.validateSession).not.toHaveBeenCalled();

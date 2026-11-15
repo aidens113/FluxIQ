@@ -7,8 +7,9 @@ type Selected = NonNullable<Awaited<ReturnType<typeof workspaceProgramContext>>>
 
 /** Authenticates only on the selected gateway and current primary identity authority. */
 export async function readWorkspaceRouteCaller(input: { selected: Selected; channel: AppRouteCaller; sessionId: string | null; token: string | null; url: string }): Promise<WorkspaceRouteValidation> {
-  const { getFluxIQWorkspaces } = await import("../../fluxiq");
-  const primary = getFluxIQWorkspaces().primary().fluxiq.programs.identityAccess;
+  // Selection pins identity and data separately. Never reselect a global
+  // primary while this request holds its original workspace authority.
+  const primary = input.selected.context.identityAuthority ?? input.selected.context.fluxiq.programs.identityAccess;
   const workspaceId = input.selected.workspaceId;
   if (input.channel === "panel") {
     if (!input.sessionId || input.selected.sessionId !== input.sessionId) return unauthenticated();

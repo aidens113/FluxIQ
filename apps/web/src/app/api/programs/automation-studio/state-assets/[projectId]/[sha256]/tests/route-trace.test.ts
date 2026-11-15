@@ -5,7 +5,7 @@ import { PUT } from "../route";
 
 vi.mock("../../../../../../../../lib/fluxiq", async () => {
   const { runtime } = await import("../../../../../../../../lib/workspaces/routes/tests/route-runtime");
-  return { getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter };
+  return { getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter, isCurrentFluxIQPrimary: (instance: unknown) => instance === runtime.primary };
 });
 vi.mock("../../../../../../../../server/provisioning-listener", async () => {
   const { runtime } = await import("../../../../../../../../lib/workspaces/routes/tests/route-runtime");

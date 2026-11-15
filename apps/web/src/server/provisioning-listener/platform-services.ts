@@ -3,6 +3,7 @@ import path from "node:path";
 import { SQLiteRepository } from "fluxiq/database-manager";
 import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type IamAuditQuery, type IamAuditRecord, type PlatformServices } from "fluxiq/platform";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
+import type { FluxIQ } from "fluxiq";
 import { getFluxIQAfterReload, getFluxIQWorkspaces } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
@@ -36,6 +37,17 @@ export function getPlatformServices(): Promise<PlatformServices> {
   return platformComposition().then((composition) => composition.services);
 }
 
+/** Only account read methods from the existing composition for this exact held primary. */
+export async function platformReadStoreFor(primary: FluxIQ): Promise<Pick<PlatformServices["store"], "getAccount" | "getMembership" | "getWorkspace" | "listMembershipsOfWorkspace">> {
+  const store = (await platformCompositionFor(primary)).services.store;
+  return Object.freeze({
+    getAccount: (userId: string) => store.getAccount(userId),
+    getMembership: (workspaceId: string, userId: string) => store.getMembership(workspaceId, userId),
+    getWorkspace: (workspaceId: string) => store.getWorkspace(workspaceId),
+    listMembershipsOfWorkspace: (workspaceId: string) => store.listMembershipsOfWorkspace(workspaceId)
+  });
+}
+
 /** The buffered IAM decision audit the platform services write to; the workspace manager's registries record into it too. */
 export async function getPlatformIamAuditSink(): Promise<BufferedIamAuditSink> {
   const fluxiq = await getFluxIQAfterReload({ allowDuringShutdown: true });
@@ -57,6 +69,24 @@ export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAud
   const audit = await platformAudit(fluxiq.paths.fluxiq, platformDir);
   await audit.sink.flush().catch(/* best-effort: the sink keeps the rows and throws from its next flush */ () => undefined);
   return audit.store.read(query);
+}
+
+/**
+ * A read port for one already-held primary identity/runtime. It captures the
+ * existing root audit owner once; batches never select a replacement primary.
+ * The caller owns the primary lease and current-runtime checks around reads.
+ */
+export async function platformIamAuditReaderFor(primary: FluxIQ): Promise<{ read(query: IamAuditQuery): Promise<IamAuditRecord[]> }> {
+  const fluxiqDir = primary.paths.fluxiq;
+  const platformDir = path.join(fluxiqDir, "platform");
+  mkdirSync(platformDir, { recursive: true });
+  const audit = await platformAudit(fluxiqDir, platformDir);
+  return Object.freeze({
+    read: async (query: IamAuditQuery) => {
+      await audit.sink.flush().catch(/* best-effort: the shared sink retains failed rows for its next flush */ () => undefined);
+      return audit.store.read(query);
+    }
+  });
 }
 
 /** Closes an already-open root audit after all workspaces have drained. Opens nothing at shutdown. */
@@ -85,6 +115,10 @@ export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof ge
 
 async function platformComposition(): Promise<PlatformComposition> {
   const fluxiq = await getFluxIQAfterReload();
+  return platformCompositionFor(fluxiq);
+}
+
+function platformCompositionFor(fluxiq: FluxIQ): Promise<PlatformComposition> {
   const existing = compositions.get(fluxiq);
   if (existing !== undefined) return existing;
   const created = composePlatformServices(fluxiq);

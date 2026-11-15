@@ -24,7 +24,7 @@ const runtime = vi.hoisted(() => {
 });
 
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => runtime.cookie ? { value: runtime.cookie } : undefined }) }));
-vi.mock("../../../../../../lib/fluxiq", () => ({ getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter }));
+vi.mock("../../../../../../lib/fluxiq", () => ({ getFluxIQWorkspaces: () => runtime.manager, getFluxIQWebRuntimeStatus: runtime.presenter, isCurrentFluxIQPrimary: (instance: unknown) => instance === runtime.primary }));
 vi.mock("../../../../../../server/provisioning-listener", () => ({ getPlatformServices: async () => ({ store: runtime.store }) }));
 
 import { GET, POST } from "../route";

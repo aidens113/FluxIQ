@@ -23,6 +23,8 @@ export type WorkspaceManagerOptions = {
   createPrimary(): FluxIQ;
   createTenant?(input: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ }): Promise<FluxIQ>;
   removeTenantRoot?(input: { workspaceId: string; primary: FluxIQ }): Promise<void>;
+  /** Synchronous retirement of instance-bound projections before close/replacement. Never starts work. */
+  onRetire?(input: { workspaceId: string; fluxiq: FluxIQ }): void;
   isBusy?(fluxiq: FluxIQ): boolean;
   idleMs?: number;
   cacheMax?: number;

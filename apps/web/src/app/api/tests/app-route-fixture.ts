@@ -82,7 +82,7 @@ const fluxiq = {
         const person = personOf("token-", token);
         return person ? { sessionId: `gateway-${person.id}`, clientId: `client-${person.id}`, clientType: "extension", trustedClientId: `trusted-${person.id}`, operatorUserId: person.id, projectId: null, metadata: { domainId: "web-automation" } } : null;
       },
-      snapshot: () => ({ sessions: [] }),
+      snapshot: () => ({ enabled: true, sessions: [], pairings: [], trustedClients: [], auditLog: [] }),
       approvePairing: async () => ({ sessionId: "gateway-paired", status: "ready" }),
       dismissPairing: () => true,
       receiveTraceArtifact: () => ({ status: "accepted", traces: 1 })
@@ -90,6 +90,7 @@ const fluxiq = {
     automationStudio: {
       listRecordingSummaries: async () => ({ items: [], page: 1, pageSize: 10, total: 0 }),
       assertProjectDomainAccess: async () => undefined,
+      getFlow: async (projectId: string, flowId: string) => ({ projectId, flowId }),
       readProjectObjectAsset: async () => ({ content: new Uint8Array([1]), mediaType: "image/png", size: 1, sha256: SHA }),
       writeProjectObjectAsset: async () => ({ sha256: SHA, contentRef: `object:${SHA}` }),
       runDatasets: {
@@ -118,6 +119,7 @@ const workspaces = {
   get tenancy() { return fixture.tenancy; },
   get primaryWorkspaceId() { return fixture.tenancy === "multi" ? "platform-root" : FIXTURE_WORKSPACE; },
   primary: () => ({ fluxiq }),
+  get: (workspaceId: string) => workspaceId === FIXTURE_WORKSPACE || workspaceId === (fixture.tenancy === "multi" ? "platform-root" : FIXTURE_WORKSPACE) ? { workspaceId, fluxiq } : undefined,
   acquire: async (workspaceId: string) => ({ workspaceId, fluxiq, release: () => undefined })
 };
 
@@ -128,7 +130,15 @@ export function fluxiqModuleMock() {
     getFluxIQAfterReload: async () => fluxiq,
     getFluxIQWorkspaces: () => workspaces,
     getFluxIQWebRuntimeStatus: () => ({ automationStudio: { activeProjectId: "project-active" } }),
-    setAutomationStudioWebContext: () => undefined,
+    isCurrentFluxIQPrimary: (instance: unknown) => instance === fluxiq,
+    getWorkspaceWebPresentation: (workspaceId: string, instance: unknown) => {
+      if (instance !== fluxiq || !workspaces.get(workspaceId)) throw new Error("Unexpected presentation fixture instance");
+      return {
+        context: () => ({ activeProjectId: "project-active", activeFlowId: null }),
+        beginContextWrite: () => ({ commit: () => undefined }),
+        present: () => ({ workspaceId, automationStudio: { activeProjectId: "project-active", activeFlowId: null } })
+      };
+    },
     reloadFluxIQWebInstance: async () => fluxiq
   };
 }
@@ -158,6 +168,9 @@ export const FIXTURE_SHA = SHA;
 
 /** What a route did with the call: refused it unauthenticated, refused it forbidden, or let it through. */
 export async function outcome(response: Response): Promise<{ outcome: "unauthenticated" | "forbidden" | "allowed" | "unavailable"; error?: string }> {
+  // These parity assertions inspect status, not streamed data. Retire any
+  // unconsumed body so a lazy route can release its held workspace lease.
+  if (response.status !== 403) await response.body?.cancel();
   if (response.status >= 500) throw new Error(`Route fixture failed with HTTP ${response.status}`);
   if (response.status === 401) return { outcome: "unauthenticated" };
   if (response.status === 403) {
@@ -185,7 +198,13 @@ const platformServices = {
 
 /** The `server/provisioning-listener` module the accounts and activity routes load once a call is allowed. */
 export function provisioningListenerMock() {
-  return { getPlatformServices: async () => platformServices };
+  return { getPlatformServices: async () => platformServices, platformReadStoreFor: async (primary: unknown) => {
+    if (primary !== fluxiq) throw new Error("Unexpected account fixture instance");
+    return platformServices.store;
+  }, platformIamAuditReaderFor: async (primary: unknown) => {
+    if (primary !== fluxiq) throw new Error("Unexpected audit fixture instance");
+    return { read: async () => [] };
+  } };
 }
 
 /** The activity route's audit reader: an empty audit. */

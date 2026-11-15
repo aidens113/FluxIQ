@@ -27,6 +27,7 @@ vi.mock("../../../../../../lib/fluxiq", () => {
     getFluxIQ,
     getFluxIQWorkspaces: () => ({ tenancy: "single", primaryWorkspaceId: "workspace-main", acquire: async () => ({ fluxiq: getFluxIQ(), release: vi.fn() }) }),
     getFluxIQWebRuntimeStatus: vi.fn(),
+    isCurrentFluxIQPrimary: () => true,
   };
 });
 
