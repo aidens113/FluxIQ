@@ -54,6 +54,14 @@ safe readiness fields and omits host paths and raw gateway errors. Presentation
 is not authorization: routes must still verify current project visibility and
 gateway-row ownership before returning it.
 
+The shared `uploadTraceArtifact` helper accepts an optional synchronous
+`beforeIntake` veto after its awaited authorization check. Only a literal `true`
+allows intake when the hook is present; a false result preserves the stale-upload
+403 and a thrown hook returns a fixed 503. No await separates this guard from
+artifact intake. It supplements full authorization and does not replace it or
+provide an atomic transaction across external identity stores. Existing callers
+that omit the hook retain their behavior.
+
 ## Domain Inputs And Outputs
 
 Importer repositories are responsible for specifying what a domain can observe

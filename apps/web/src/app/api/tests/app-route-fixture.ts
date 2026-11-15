@@ -82,7 +82,11 @@ const fluxiq = {
         const person = personOf("token-", token);
         return person ? { sessionId: `gateway-${person.id}`, clientId: `client-${person.id}`, clientType: "extension", trustedClientId: `trusted-${person.id}`, operatorUserId: person.id, projectId: null, metadata: { domainId: "web-automation" } } : null;
       },
-      snapshot: () => ({ enabled: true, sessions: [], pairings: [], trustedClients: [], auditLog: [] }),
+      snapshot: () => ({
+        enabled: true, pairings: [], auditLog: [],
+        sessions: Object.values(PEOPLE).map(person => ({ sessionId: `gateway-${person.id}`, clientId: `client-${person.id}`, clientType: "extension", trustedClientId: `trusted-${person.id}`, operatorUserId: person.id, capabilities: [], name: "Fixture client", connectedAt: "2026-01-01T00:00:00.000Z", lastSeenAt: "2026-01-01T00:00:00.000Z", status: "ready", projectId: null, activeRecordingId: null, metadata: { domainId: "web-automation" } })),
+        trustedClients: Object.values(PEOPLE).map(person => ({ trustedClientId: `trusted-${person.id}`, clientId: `client-${person.id}`, clientType: "extension", approvedByUserId: person.id, status: "active", domainId: "web-automation" }))
+      }),
       approvePairing: async () => ({ sessionId: "gateway-paired", status: "ready" }),
       dismissPairing: () => true,
       receiveTraceArtifact: () => ({ status: "accepted", traces: 1 })

@@ -49,7 +49,7 @@ const TODAY: Readonly<Record<string, Row>> = {
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
   "POST /api/client-gateway/first-project": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
-  "PUT /api/client-gateway/trace-artifacts/[sha256]": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
+  "PUT /api/client-gateway/trace-artifacts/[sha256]": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
   "GET /api/framework/setup": COOKIE_ONLY_READ,
   "POST /api/framework/setup (setup)": needs("programs.write"),
   "POST /api/framework/setup (migrate)": needs("programs.write"),
