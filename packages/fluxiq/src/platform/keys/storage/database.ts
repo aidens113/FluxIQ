@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import { KEY_STORE_SCHEMA } from "./schema.ts";
-import { withSQLiteLockRetry } from "./sqlite-lock.ts";
+import { withSQLiteLockRetry } from "../../../framework/persistence/repository/locking/index.ts";
 
 export type KeyDatabase = {
   run(sql: string, params?: unknown[]): Promise<number>;

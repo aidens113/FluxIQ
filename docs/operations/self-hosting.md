@@ -423,6 +423,30 @@ This transport does not provide a durable delivery queue; provisioning's
 existing failure reporting remains in effect, and an outbox dispatcher is
 required before claiming reliable retry delivery.
 
+## Service Workspace Credentials
+
+The web service profile now provisions separate personal workspaces and uses
+one private `platform/browser-trust.sqlite` authority at the platform root.
+Each gateway receives a workspace-scoped store; a stale writer cannot replace
+newer trust or move a credential to another workspace. Local and self-hosted
+profiles retain the existing local trusted-client store. The service does not
+silently fall back to that local file if the platform authority fails, and no
+automatic migration of existing trusted-client JSON files is provided.
+
+Back up this database with the rest of the stopped platform state. It contains
+private credential signing material as well as digests and must never be
+served, logged or committed. A successful credential proof only identifies a
+workspace: callers must still check current account and membership authority.
+
+Core also exposes a durable PKCE authorization-code service. Codes are stored
+only as digests, bound to the approving session, installation and exact
+redirect, and consumed atomically before credential issuance. An uncertain
+issuance result requires fresh consent; replay never mints another credential.
+This service alone does not supply the consent UI, gateway issuer or hosted
+WebSocket routing. Those integrations and tenant runtime isolation must pass
+acceptance before enabling public customer execution. The deployment remains
+one Core process, not an active-active cluster.
+
 ## Continuous Integration
 
 `.github/workflows/deploy.yml` runs only when started by hand. Its image job

@@ -1,4 +1,5 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
+import { getBrowserTrustRepository } from "../server/browser-trust";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
@@ -327,13 +328,20 @@ function createWebRuntimeState(): WebRuntimeState {
     fluxiq.programs.identityAccess.authority.holdElsewhere(accountAuthority);
     return fluxiq;
   };
-  const createPrimary = () => opened(createFluxIQWebInstance(iamOf(primaryId)));
+  const createPrimary = () => opened(createFluxIQWebInstance({
+    ...iamOf(primaryId),
+    ...(tenancy === "multi" ? { clientGatewayTrustedClientStore: (paths: FluxIQ["paths"]) => getBrowserTrustRepository(paths.fluxiq).scopedStore(primaryId) } : {})
+  }));
   const workspaces = new FluxIQWorkspaceManager({
     tenancy,
     primaryWorkspaceId: primaryId,
     createPrimary,
     ...(tenancy === "multi" ? {
-      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({ workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId), instantiate: async (options) => opened(await createTenantFluxIQInstance(options)) }),
+      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({
+        workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
+        clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
+        instantiate: async (options) => opened(await createTenantFluxIQInstance(options))
+      }),
       removeTenantRoot: async ({ workspaceId, primary }) => {
         await removeFluxIQWorkspaceRoot(fluxiqLayoutV3Paths(primary.paths.root), workspaceId);
       }
@@ -352,10 +360,13 @@ function createWebRuntimeState(): WebRuntimeState {
   };
 }
 
-export function createFluxIQWebInstance(options: Pick<FluxIQOptions, "iam"> = {}): FluxIQ {
+export function createFluxIQWebInstance(options: Pick<FluxIQOptions, "iam" | "clientGatewayTrustedClientStore"> = {}): FluxIQ {
   const modelProvidersEnabled = resolveFluxIQModelProvidersEnabled();
   const rootDir = resolveFluxIQWebHostRoot(process.cwd());
-  const extra = options.iam ? { iam: options.iam } : {};
+  const extra = {
+    ...(options.iam ? { iam: options.iam } : {}),
+    ...(options.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: options.clientGatewayTrustedClientStore } : {})
+  };
   const host = (globalThis as FluxIQWebGlobal).__fluxiqWebHostModule;
   const hostPath = resolveFluxIQHostModulePath();
   if (hostPath && !explicitFluxIQDomainId() && (host?.path !== hostPath || host.domain?.rootDir !== rootDir)) {

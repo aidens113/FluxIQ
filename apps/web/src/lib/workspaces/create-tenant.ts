@@ -27,6 +27,7 @@ export async function createTenantFluxIQ(input: {
   heldKeys: HeldKeys;
   dataRoot: string;
   iam?: FluxIQOptions["iam"];
+  clientGatewayTrustedClientStore?: FluxIQOptions["clientGatewayTrustedClientStore"];
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<FluxIQ> {
@@ -34,7 +35,11 @@ export async function createTenantFluxIQ(input: {
   const rootDir = fluxiqWorkspaceRootDir(layout, input.workspaceId);
   refuseSharedStorageSettings(rootDir, input.env ?? process.env);
   await mkdir(rootDir, { recursive: true });
-  const fluxiq = await input.instantiate({ rootDir, loadEnv: false, heldKeys: input.heldKeys, ...(input.iam ? { iam: input.iam } : {}) });
+  const fluxiq = await input.instantiate({
+    rootDir, loadEnv: false, heldKeys: input.heldKeys,
+    ...(input.iam ? { iam: input.iam } : {}),
+    ...(input.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: input.clientGatewayTrustedClientStore } : {})
+  });
   try {
     await initializeFluxIQWebStorage(fluxiq);
   } catch (error) {

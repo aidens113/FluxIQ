@@ -1,7 +1,7 @@
 # Hosted Platform Implementation
 
 Status: Active
-Status detail: Isolated paired task t914: auth/tenant/commerce foundations validated; browser routing and portable cloud deployment continue. Nothing deployed.
+Status detail: Isolated paired task t914: cloud templates, credential persistence and PKCE services validated; hosted routing and consent integration continue. Nothing deployed.
 Created: 2026-11-14
 Last updated: 2026-11-14
 Owner: Senior supervisor
@@ -17,7 +17,9 @@ Task t914 uses paired worktrees under `C:/Users/osrs_/FluxStuff/fxwork/t914/`. C
 
 Implemented foundation units: strict panel workspace resolution; trusted platform identity separated from tenant program data; web program route holds tenant leases and refuses service bearer fallback until browser binding exists; durable enrolled SDK key/proof/session service with web enrollment/list/revoke/exchange; additive discovery instance/build identity; production email transport; transactional commerce ledger and provider-neutral cloud eligibility. Lead observed 102 authority/mail tests, 56 commerce tests, 22 discovery tests and 178 web tests passing. Key concurrency initially failed independent validation, was traced to SQLite WAL initialization, and now passes 58 tests including repeated eight-connection races and eight actual processes with rollback journaling. Final rebuild/types/structure checkpoint is underway.
 
-Active next units: portable Core control-plane deployments for AWS/GCP/Azure and authoritative browser trust (design frozen, source waits for foundation checkpoint). Written briefs are under `hosted-platform-launch-plan/briefs/`; reports under `reports/`. Production composition still hardcodes single tenancy; the advertised consumer connect/PKCE endpoints do not exist. Browser credential routing, global runtime state isolation, tenant key custody, durable run recovery, paid dispatch/metering, real runner provisioning and catalog remain incomplete. API authentication and commerce eligibility are not an implemented hosted execution path. No live deployment/model/email/paid call has run.
+Portable Core control-plane deployment templates for AWS/GCP/Azure passed independent provider-free validation. Authoritative client trust now has workspace-scoped durable storage, signed proof lookup, immutable bindings and generation CAS; registry mutation serialization fixes a reproduced rotation rollback race. The trusted-store constructor seam is integrated into web service workspaces; production account composition now uses multi tenancy, proven with two independently provisioned accounts. Core PKCE service has durable one-use code exchange and trusted validator/issuer ports. Written briefs are under `hosted-platform-launch-plan/briefs/`; reports under `reports/`.
+
+Active next units are pre-socket approved credential issuance and routed WebSocket transport. Consumer consent/token routes, browser HTTP routing, global runtime state isolation, tenant key custody, durable run recovery, paid dispatch/metering, real runner provisioning and catalog remain incomplete. API authentication and commerce eligibility are not an implemented hosted execution path. No live deployment/model/email/paid call has run. Existing JSON browser trust is not silently migrated; deployment is one Core process, with no active-active gateway coherence claim.
 
 ## Experimental Branch Integration Contract
 
@@ -103,6 +105,14 @@ Active next units: portable Core control-plane deployments for AWS/GCP/Azure and
 - Validation: Lead `node --test deploy/cloud/release/tests/release.test.mjs deploy/cloud/release/tests/compose.test.mjs deploy/cloud/runtime/tests/host-config.test.mjs` with verified standalone Compose -> 7 passed, zero skipped. Lead `python -m unittest discover -s deploy/cloud/runtime/tests -p 'test_*.py' -v` -> 12 passed. Lead Terraform 1.13.5 `fmt -check -recursive deploy/cloud` and each provider `validate -no-color` -> exit 0, all three configurations valid. No real cloud resources, secrets or paid services used.
 - Outcome: Foundation commits 8da1c6bc4/67dda7b70 and paired downstream 1d75a5181 pushed on task/t914-hosted-platform only. Portable deployment unit independently checked; actual VM, Docker, Linux security and live release acceptance remain unverified. No dev/main promotion.
 - Follow-up: Browser trust persistence and constructor integration, PKCE connect service and routed gateway transport continue in disjoint files. Credential-rotation concurrency regression reproduced by worker; fix and independent validation required before browser milestone acceptance.
+
+### 2026-11-14 — Durable client trust and connect service verification
+- Agent: Senior supervisor; browser-trust and connect-service workers.
+- Changed: Shared credential proof implementation, authoritative scoped SQLite trust store, serialized gateway mutations and rollback, constructor injection, root authority shutdown, PKCE service and service account composition; operator documentation.
+- Validation: Lead combined scoped run -> all 174 assertions passed, but constructor suite failed its real-SQL grouping guard. Added required marker, then reran constructor plus renamed trust store -> 20 tests in five files passed. Independent connect tests contributed 49 passes; worker reran 49 after barrel fix. Web workspace/program/shutdown integration -> 35 tests in four files passed, including two accounts provisioned to different tenant runtimes. Core build and typecheck passed. Full structure audit -> passed with 545 existing warnings and 916 baselines. Web typecheck pending.
+- Outcome: Cloud checkpoint 765f1a0ca committed locally, but initial push hook refused in-progress imports/vocabulary, a packed cloud test statement and stale working index. Corrected without baseline expansion or hook bypass. Client-trust public symbols now use domain-neutral ClientTrust names. Final checkpoint push pending current web check and documentation index refresh.
+- Validation: Final `pnpm.cmd --filter @fluxiq/web check` -> passed and cached. Core and web types now both pass for this checkpoint.
+- Follow-up: Complete approved gateway issuer and routed transport, then web consent and all tenant authority consumers. No live rollout or main promotion is implied.
 
 ## Open Questions
 

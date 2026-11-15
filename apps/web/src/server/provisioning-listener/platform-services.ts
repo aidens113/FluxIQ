@@ -3,10 +3,11 @@ import path from "node:path";
 import { SQLiteRepository } from "fluxiq/database-manager";
 import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type IamAuditQuery, type IamAuditRecord, type PlatformServices } from "fluxiq/platform";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { getFluxIQAfterReload } from "../../lib/fluxiq";
+import { getFluxIQAfterReload, getFluxIQWorkspaces } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
 import { closeKeySessionServices } from "../key-sessions";
+import { closeBrowserTrustRepository } from "../browser-trust";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -59,10 +60,12 @@ export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAud
 
 /** Closes an already-open root audit after all workspaces have drained. Opens nothing at shutdown. */
 export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<void> {
-  await closeKeySessionServices(fluxiq.paths.fluxiq);
   const composition = compositions.get(fluxiq);
   try {
+    const closed = await Promise.allSettled([closeKeySessionServices(fluxiq.paths.fluxiq), closeBrowserTrustRepository(fluxiq.paths.fluxiq)]);
+    const failures = closed.filter((outcome) => outcome.status === "rejected");
     if (composition) await composition;
+    if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Platform credential authorities could not all close cleanly.");
   } finally {
     const key = path.resolve(fluxiq.paths.fluxiq);
     const pending = audits.get(key);
@@ -102,7 +105,7 @@ async function composePlatformServices(fluxiq: Awaited<ReturnType<typeof getFlux
     email: resolveEmailSender(process.env.FLUXIQ_EMAIL_SENDER, path.join(platformDir, "outbox")),
     auditSink,
     publicOrigin: resolveFluxIQDeploymentSettings(process.env).publicOrigin,
-    tenancy: { mode: "single", workspaceId: primaryWorkspaceId() }
+    tenancy: getFluxIQWorkspaces().tenancy === "multi" ? { mode: "multi" } : { mode: "single", workspaceId: primaryWorkspaceId() }
   });
   return { services, auditSink };
 }

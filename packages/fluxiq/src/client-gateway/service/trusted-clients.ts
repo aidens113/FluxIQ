@@ -1,19 +1,23 @@
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { ClientGatewayTrustEndedError } from "./trust-ended-error.ts";
 import type { ClientGatewayManagedHost, ClientGatewayTrustedClient, ClientGatewayTrustedClientView } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
+import { classifyClientGatewayCredential, clientGatewayCredentialHash, clientGatewayCredentialId, issueClientGatewayCredential } from "./credentials/index.ts";
 
 /** How often a client in steady use has its credential's life extended and stored: its next message would do, so this only saves writes. */
 const RENEW_EVERY_MS = 24 * 60 * 60_000;
 
-/** A request sent just before its client stored the next credential can still arrive. A hello is never excused this way: a client stores what it was sent before it says hello again. */
-const REQUEST_IN_FLIGHT_MS = 2 * 60_000;
-
-/** How much of a credential's signature it carries. */
-const CREDENTIAL_SIGNATURE_BYTES = 16;
-
 /** The fields a rotation or a renewal changes, kept so a store that refuses the write can put them back. */
-type LifetimeFields = Pick<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "previousValidUntil" | "lastMovedOnAt" | "updatedAt" | "lastUsedAt" | "expiresAt">;
+type LifetimeFields = Pick<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "previousValidUntil" | "reuseKey" | "lastMovedOnAt" | "updatedAt" | "lastUsedAt" | "expiresAt">;
+
+type RegisterInput = {
+  clientId: string;
+  clientType: ClientGatewayTrustedClient["clientType"];
+  name: string;
+  approvedByUserId: string;
+  domainId: string | null;
+  managedHost?: ClientGatewayManagedHost;
+};
 
 /**
  * Owns durable client trust: the trusted-client map, the token-hash index that
@@ -44,6 +48,7 @@ export class ClientGatewayTrustedClientRegistry {
   private readonly config: ClientGatewayConfig;
   private readonly loaded: Promise<void>;
   private loadError: unknown;
+  private mutationTail = Promise.resolve();
 
   constructor(config: ClientGatewayConfig) {
     this.config = config;
@@ -58,26 +63,27 @@ export class ClientGatewayTrustedClientRegistry {
   }
 
   /**
-   * Resolves once the load this registry started when it was made has ended, however it ended.
+   * Resolves once this registry's initial load and already queued mutations have settled.
    * A close waits for it: that read holds the database file open, and whoever closed this
    * instance may remove the file next (t867).
    */
   async settled(): Promise<void> {
     await this.loaded;
+    await this.mutationTail;
   }
 
   hashToken(token: string): string {
-    return createHash("sha256").update(token, "utf8").digest("hex");
+    return clientGatewayCredentialHash(token);
   }
 
   isActive(client: ClientGatewayTrustedClient): boolean {
-    return !client.revokedAt && client.expiresAt > this.config.now();
+    return client.revokedAt === undefined && client.expiresAt > this.config.now();
   }
 
   /** The trusted-client view callers outside the gateway see: no token hash. */
   toView(client: ClientGatewayTrustedClient): ClientGatewayTrustedClientView {
     const { tokenHash: _tokenHash, previousTokenHash: _previousTokenHash, reuseKey: _reuseKey, ...view } = client;
-    const status = client.revokedAt ? "revoked" : client.expiresAt <= this.config.now() ? "expired" : "active";
+    const status = client.revokedAt !== undefined ? "revoked" : client.expiresAt <= this.config.now() ? "expired" : "active";
     return { ...view, status };
   }
 
@@ -103,15 +109,11 @@ export class ClientGatewayTrustedClientRegistry {
    * merely names a client, unsigned, is noise, so nobody can end someone's trust by naming it.
    */
   reuseOf(token: string, options: { request?: boolean } = {}): ClientGatewayTrustedClient | undefined {
-    const trustedClientId = token.split(".", 1)[0] ?? "";
-    const client = this.clients.get(trustedClientId);
-    if (!client?.reuseKey || !this.isActive(client) || !signedFor(client, token)) return undefined;
-    const tokenHash = this.hashToken(token);
-    if (client.tokenHash === tokenHash) return undefined;
-    const now = this.config.now();
-    if (client.previousTokenHash === tokenHash && (client.previousValidUntil ?? 0) > now) return undefined;
-    if (options.request === true && now - (client.lastMovedOnAt ?? 0) < REQUEST_IN_FLIGHT_MS) return undefined;
-    return client;
+    const trustedClientId = clientGatewayCredentialId(token);
+    const client = trustedClientId ? this.clients.get(trustedClientId) : undefined;
+    if (!client || !this.isActive(client)) return undefined;
+    const proof = classifyClientGatewayCredential(client, token, this.config.now(), options);
+    return proof.status === "obsolete" && proof.reuse === "revoke" ? client : undefined;
   }
 
   /** True when `token` is this client's current credential, not the one before it. */
@@ -133,18 +135,15 @@ export class ClientGatewayTrustedClientRegistry {
    * timestamp the caller should reuse for the pairing and the session.
    * `managedHost` is kept with the trust when an enrolment ticket granted it.
    */
-  async register(input: {
-    clientId: string;
-    clientType: ClientGatewayTrustedClient["clientType"];
-    name: string;
-    approvedByUserId: string;
-    domainId: string | null;
-    managedHost?: ClientGatewayManagedHost;
-  }): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
+  async register(input: RegisterInput): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
+    return this.mutate(() => this.registerCommitted(input));
+  }
+
+  private async registerCommitted(input: RegisterInput): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
     const now = this.config.now();
     const trustedClientId = randomUUID();
     const reuseKey = randomBytes(32).toString("base64url");
-    const token = issuedCredential(trustedClientId, reuseKey, this.config.createToken());
+    const token = issueClientGatewayCredential(trustedClientId, reuseKey, this.config.createToken());
     const trustedClient: ClientGatewayTrustedClient = {
       trustedClientId,
       reuseKey,
@@ -184,12 +183,22 @@ export class ClientGatewayTrustedClientRegistry {
    * (`./credential-custody.ts`).
    */
   async rotateToken(trustedClient: ClientGatewayTrustedClient, presented: string, beforeCommit?: (token: string) => Promise<void>): Promise<string> {
-    // A client paired before credentials named it gets its key here.
-    const reuseKey = trustedClient.reuseKey ?? randomBytes(32).toString("base64url");
-    const token = issuedCredential(trustedClient.trustedClientId, reuseKey, this.config.createToken());
-    await beforeCommit?.(token);
+    for (;;) {
+      // A client paired before credentials named it gets its key here.
+      const reuseKey = trustedClient.reuseKey ?? randomBytes(32).toString("base64url");
+      const token = issueClientGatewayCredential(trustedClient.trustedClientId, reuseKey, this.config.createToken());
+      // Custody must not hold the mutation queue: revocation can end trust while it waits.
+      await beforeCommit?.(token);
+      const committed = await this.mutate(() => this.commitRotation(trustedClient, presented, reuseKey, token));
+      if (committed) return token;
+      // Another legacy reconnect committed its signing key first. Prepare custody for that durable key.
+    }
+  }
+
+  private async commitRotation(trustedClient: ClientGatewayTrustedClient, presented: string, reuseKey: string, token: string): Promise<boolean> {
     // The write ahead took a moment, and the trust may have ended in it.
     if (!this.isActive(trustedClient)) throw new ClientGatewayTrustEndedError();
+    if (trustedClient.reuseKey !== undefined && trustedClient.reuseKey !== reuseKey) return false;
     const before = lifetimeFields(trustedClient);
     const now = this.config.now();
     const presentedHash = this.hashToken(presented);
@@ -215,60 +224,84 @@ export class ClientGatewayTrustedClientRegistry {
       this.restore(trustedClient, before);
       throw error;
     }
-    return token;
+    return true;
   }
 
   /** The client showed it has its current credential: the one before it is refused from now on. False when there was none. */
   async confirmCurrent(trustedClient: ClientGatewayTrustedClient): Promise<boolean> {
-    const previous = trustedClient.previousTokenHash;
-    if (!previous) return false;
-    const before = lifetimeFields(trustedClient);
-    delete trustedClient.previousTokenHash;
-    delete trustedClient.previousValidUntil;
-    trustedClient.lastMovedOnAt = this.config.now();
-    this.idByTokenHash.delete(previous);
-    try {
-      await this.persist();
-    } catch (error) {
-      this.restore(trustedClient, before);
-      throw error;
-    }
-    return true;
+    const expectedHash = trustedClient.tokenHash;
+    return this.mutate(async () => {
+      if (!this.isActive(trustedClient) || trustedClient.tokenHash !== expectedHash) return false;
+      const previous = trustedClient.previousTokenHash;
+      if (!previous) return false;
+      const before = lifetimeFields(trustedClient);
+      delete trustedClient.previousTokenHash;
+      delete trustedClient.previousValidUntil;
+      trustedClient.lastMovedOnAt = this.config.now();
+      this.idByTokenHash.delete(previous);
+      try {
+        await this.persist();
+      } catch (error) {
+        this.restore(trustedClient, before);
+        throw error;
+      }
+      return true;
+    });
   }
 
   /** The client used its current credential: its life slides, stored at most once a day. */
   async renew(trustedClient: ClientGatewayTrustedClient): Promise<void> {
-    const now = this.config.now();
-    const next = now + this.config.trustedClientTtlMs;
-    if (next - trustedClient.expiresAt < Math.min(RENEW_EVERY_MS, this.config.trustedClientTtlMs / 2)) return;
-    const before = lifetimeFields(trustedClient);
-    trustedClient.expiresAt = next;
-    trustedClient.lastUsedAt = now;
-    try {
-      await this.persist();
-    } catch (error) {
-      this.restore(trustedClient, before);
-      throw error;
-    }
+    return this.mutate(async () => {
+      if (!this.isActive(trustedClient)) return;
+      const now = this.config.now();
+      const next = now + this.config.trustedClientTtlMs;
+      if (next - trustedClient.expiresAt < Math.min(RENEW_EVERY_MS, this.config.trustedClientTtlMs / 2)) return;
+      const before = lifetimeFields(trustedClient);
+      trustedClient.expiresAt = next;
+      trustedClient.lastUsedAt = now;
+      try {
+        await this.persist();
+      } catch (error) {
+        this.restore(trustedClient, before);
+        throw error;
+      }
+    });
   }
 
   async revoke(trustedClient: ClientGatewayTrustedClient, reason: string): Promise<void> {
-    const now = this.config.now();
-    const previousUpdatedAt = trustedClient.updatedAt;
-    trustedClient.revokedAt = now;
-    trustedClient.revocationReason = reason;
-    trustedClient.updatedAt = now;
-    this.idByTokenHash.delete(trustedClient.tokenHash);
-    if (trustedClient.previousTokenHash) this.idByTokenHash.delete(trustedClient.previousTokenHash);
-    try {
-      await this.persist();
-    } catch (error) {
-      delete trustedClient.revokedAt;
-      delete trustedClient.revocationReason;
-      trustedClient.updatedAt = previousUpdatedAt;
-      this.index(trustedClient);
-      throw error;
-    }
+    return this.mutate(async () => {
+      const now = this.config.now();
+      const previousUpdatedAt = trustedClient.updatedAt;
+      const previousRevokedAt = trustedClient.revokedAt;
+      const previousReason = trustedClient.revocationReason;
+      trustedClient.revokedAt = now;
+      trustedClient.revocationReason = reason;
+      trustedClient.updatedAt = now;
+      this.idByTokenHash.delete(trustedClient.tokenHash);
+      if (trustedClient.previousTokenHash) this.idByTokenHash.delete(trustedClient.previousTokenHash);
+      try {
+        await this.persist();
+      } catch (error) {
+        if (previousRevokedAt === undefined) delete trustedClient.revokedAt;
+        else trustedClient.revokedAt = previousRevokedAt;
+        if (previousReason === undefined) delete trustedClient.revocationReason;
+        else trustedClient.revocationReason = previousReason;
+        trustedClient.updatedAt = previousUpdatedAt;
+        if (this.isActive(trustedClient)) this.index(trustedClient);
+        throw error;
+      }
+    });
+  }
+
+  /** A failed persistence rollback cannot overwrite another mutation's committed memory. */
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationTail.then(async () => {
+      await this.ready();
+      return operation();
+    });
+    // The returned promise retains failure; the tail only makes subsequent mutations wait for settlement.
+    this.mutationTail = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   private restore(trustedClient: ClientGatewayTrustedClient, before: LifetimeFields): void {
@@ -282,6 +315,8 @@ export class ClientGatewayTrustedClientRegistry {
     else trustedClient.previousValidUntil = before.previousValidUntil;
     if (before.lastMovedOnAt === undefined) delete trustedClient.lastMovedOnAt;
     else trustedClient.lastMovedOnAt = before.lastMovedOnAt;
+    if (before.reuseKey === undefined) delete trustedClient.reuseKey;
+    else trustedClient.reuseKey = before.reuseKey;
     this.index(trustedClient);
   }
 
@@ -307,31 +342,16 @@ export class ClientGatewayTrustedClientRegistry {
   }
 }
 
-function credentialSignature(trustedClientId: string, reuseKey: string, secret: string): string {
-  return createHmac("sha256", reuseKey).update(`${trustedClientId}.${secret}`, "utf8").digest().subarray(0, CREDENTIAL_SIGNATURE_BYTES).toString("base64url");
-}
-
-function issuedCredential(trustedClientId: string, reuseKey: string, secret: string): string {
-  return `${trustedClientId}.${secret}.${credentialSignature(trustedClientId, reuseKey, secret)}`;
-}
-
-/** Whether Core issued this credential to this client: it names the client and carries a signature only that client's key makes. */
-function signedFor(client: ClientGatewayTrustedClient, token: string): boolean {
-  const parts = token.split(".");
-  if (parts.length !== 3 || parts[0] !== client.trustedClientId || !client.reuseKey) return false;
-  const expected = Buffer.from(credentialSignature(client.trustedClientId, client.reuseKey, parts[1] ?? ""), "utf8");
-  const given = Buffer.from(parts[2] ?? "", "utf8");
-  return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
 function lifetimeFields(client: ClientGatewayTrustedClient): LifetimeFields {
-  return {
+  const fields: LifetimeFields = {
     tokenHash: client.tokenHash,
-    ...(client.previousTokenHash === undefined ? {} : { previousTokenHash: client.previousTokenHash }),
-    ...(client.previousValidUntil === undefined ? {} : { previousValidUntil: client.previousValidUntil }),
-    ...(client.lastMovedOnAt === undefined ? {} : { lastMovedOnAt: client.lastMovedOnAt }),
     updatedAt: client.updatedAt,
     lastUsedAt: client.lastUsedAt,
     expiresAt: client.expiresAt
   };
+  if (client.previousTokenHash !== undefined) fields.previousTokenHash = client.previousTokenHash;
+  if (client.previousValidUntil !== undefined) fields.previousValidUntil = client.previousValidUntil;
+  if (client.lastMovedOnAt !== undefined) fields.lastMovedOnAt = client.lastMovedOnAt;
+  if (client.reuseKey !== undefined) fields.reuseKey = client.reuseKey;
+  return fields;
 }

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComponentRegistry } from "../components/index.ts";
+import type { ClientGatewayTrustedClientStore } from "../client-gateway/index.ts";
 import { DomainRegistry, domainSummary, normalizeDomainId, type DomainRegistration } from "../domains/index.ts";
 import {
   IoRegistry,
@@ -88,6 +89,8 @@ export type FluxIQOptions = {
    * every key, as a single local install always has.
    */
   heldKeys?: HeldKeys;
+  /** Authoritative workspace-scoped browser trust, optionally resolved after host paths are known. Absent preserves local JSON. */
+  clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore | ((paths: FluxIQHostPaths) => ClientGatewayTrustedClientStore);
   /**
    * How the program registry decides. Omitted, the profile comes from
    * `FLUXIQ_PROFILE` (`local` when unset) and decisions are today's. A hosted
@@ -200,7 +203,15 @@ export class FluxIQ {
       artifacts: resolveInside(root, path.join(fluxiqDir, "artifacts")),
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
-    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}), ...(options.iam ? { iam: options.iam } : {}) });
+    this.programs = createGlobalProgramRuntime(this.paths, {
+      ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}),
+      ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}),
+      ...(options.iam ? { iam: options.iam } : {}),
+      ...(options.clientGatewayTrustedClientStore ? {
+        clientGatewayTrustedClientStore: typeof options.clientGatewayTrustedClientStore === "function"
+          ? options.clientGatewayTrustedClientStore(this.paths) : options.clientGatewayTrustedClientStore
+      } : {})
+    });
     this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);

@@ -65,6 +65,32 @@ function requestWith(sessionId: string): Request {
 }
 
 describe("the web runtime's workspaces", () => {
+  it("provisions service accounts into separate personal workspaces instead of the control workspace", async () => {
+    runtimeEnv("service");
+    const primary = await initializeFluxIQWebRuntime();
+    const { getPlatformServices } = await import("../../../server/provisioning-listener");
+    const services = await getPlatformServices();
+    const workspaceIds: string[] = [];
+    for (const name of ["first", "second"]) {
+      const result = await services.provisioning.run("createAccount", {
+        requestId: `create-${name}`, email: `${name}@example.test`, displayName: name,
+        policies: ["FluxIQUserAccess"], workspace: "new", sendWelcome: false
+      }, { kind: "in-process", actorUserId: null, transport: "in-process" });
+      expect(result.ok).toBe(true);
+      if (!result.ok || result.result.status !== "created") throw new Error("Expected created account");
+      const { userId, workspaceId } = result.result;
+      workspaceIds.push(workspaceId);
+      expect(workspaceId).not.toBe(getFluxIQWorkspaces().primaryWorkspaceId);
+      expect(await services.store.getWorkspace(workspaceId)).toMatchObject({ kind: "personal", ownerUserId: userId });
+      const session = await primary.programs.identityAccess.createSession(userId);
+      const lease = await workspaceFluxIQ(requestWith(session.id));
+      expect(lease?.workspaceId).toBe(workspaceId);
+      expect(lease?.fluxiq).not.toBe(primary);
+      lease?.release();
+    }
+    expect(new Set(workspaceIds).size).toBe(2);
+  });
+
   it.each([undefined, "local", "self-hosted"])("under profile %j holds exactly one workspace, created as before", async (profile) => {
     runtimeEnv(profile);
     const create = vi.spyOn(FluxIQ, "create");

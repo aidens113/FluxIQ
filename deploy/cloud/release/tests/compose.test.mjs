@@ -17,7 +17,10 @@ const manifest = {
 
 for (const profile of ['self-hosted', 'service']) {
   test(`${profile} actual Compose merge preserves private ports, hardened runtime, secrets and retained state`, async (context) => {
-    if (!standalone) { context.skip('Set FLUXIQ_COMPOSE_TEST_BINARY to a standalone Compose CLI; no engine is required'); return; }
+    if (!standalone) {
+      context.skip('Set FLUXIQ_COMPOSE_TEST_BINARY to a standalone Compose CLI; no engine is required');
+      return;
+    }
     const temp = await mkdtemp(resolve(tmpdir(), 'fluxiq-compose-contract-'));
     try {
       const source = resolve(temp, 'manifest.json');

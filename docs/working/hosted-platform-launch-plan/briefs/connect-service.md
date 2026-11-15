@@ -1,0 +1,13 @@
+# Hosted browser PKCE service
+- Role/model: heavy worker, gpt-6.1-sol, max.
+- Goal: Implement missing Core PKCE authorization-code service against existing platform/connect contracts, independent of web/UI and actual gateway construction.
+- Read: Current State, reports/browser-binding-discovery.md connect sections, packages/contracts/src/platform/connect/**, browser-trust model types, code-structure.md; primary OAuth PKCE documentation if protocol behavior uncertain.
+- Own: new packages/fluxiq/src/platform/connect/** with tests/barrels and own report only. Lead owns public platform export, all web routes/UI and gateway credential issuance wiring.
+- Must not touch: browser-trust, client-gateway, keys, commerce, framework/runtime, contracts unless report mismatch, shared docs/git/package metadata. No paid/model/cloud/server launches except isolated local test harness.
+- Freeze and send lead public API/types before implementing. Constructor requires trusted eligibility/approval-session validator and ordinary-browser credential issuer ports. Never accept approval actor, workspace or redirect allowlist from unauthenticated payload as authority.
+- Use existing authorization/token schemas and approved extension redirect policy; strict S256 PKCE, code bound to client/install/redirect/challenge/user/workspace/approving-session digest. Codes random cryptographic entropy, only digests persisted; no raw cookie/code/verifier/credential in store/logs.
+- Durable atomic one-use consumption across processes, expiry, wrong verifier/client/install/redirect refuses, current account/membership/approval session rechecked at exchange. No trust-on-first-use public-key or API-key substitution.
+- Define mint-failure and lost-reply semantics explicitly. Do not auto-retry a possibly completed trust issuance or pretend it is exactly-once; code replay must not mint a second credential. User can restart consent if delivery outcome unknown unless a safe durable receipt design is implemented.
+- Follow corrected SQLite pattern: DELETE rollback journal, FULL sync, async busy retry shared framework/persistence/repository/locking primitive; no WAL per-connection initialization race. Read-only missing store must not create storage during probes.
+- Tests real SQLite reopen/expiry/replay/concurrent separate connections/processes, malformed/forged PKCE, binding mismatch, eligibility revoked while waiting, issuer failure, response schema conformity. No whole builds/checks while peers edit.
+- Report: docs/working/hosted-platform-launch-plan/reports/connect-service.md with exact API, accepted/rejected flow, integration needs, test commands and return contract.

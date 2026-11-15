@@ -84,6 +84,8 @@ export type GlobalProgramRuntimeActivity = {
 /** How a program runtime is built; each field is optional, and absent means today's local behaviour. */
 export type GlobalProgramRuntimeOptions = {
   modelProvidersEnabled?: boolean;
+  /** Mandatory persistence supplied by a multi-tenant host; local instances retain their JSON default. */
+  clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore;
   /**
    * Key custody that outlives this runtime (a workspace manager's entry), so
    * evicting an idle instance does not lock its users' keys. Absent, Secret
@@ -178,7 +180,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     // The trace the dispatching async context records into: what the gateway sends and receives for a build, trial or run goes into that episode's trace (traces and offline trials, P2, D8). Passed only when tracing is on.
     ...(gatewayTrace.source ? { trace: gatewayTrace.source } : {}),
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
-    ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
+    ...(options.clientGatewayTrustedClientStore
+      ? { trustedClientStore: options.clientGatewayTrustedClientStore }
+      : paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     credentialCustody: secretKeysCredentialCustody(secretKeys),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),
     ...(iamProfile === "service" ? { endedSessionMaxAgeMs: SERVICE_ENDED_SESSION_MAX_AGE_MS } : {}),
