@@ -45,7 +45,6 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/client-gateway/dismiss-pairing": needs("runtime.control"),
   "POST /api/client-gateway/automation-studio-context": selectedNeeds("runtime.control"),
   // A credential is the whole of the proof, and it can only end its own trust.
-  "POST /api/client-gateway/forget-pairing": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
   "POST /api/client-gateway/first-project": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],

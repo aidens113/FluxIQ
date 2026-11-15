@@ -5,6 +5,7 @@ import type { ClientGatewayConfig } from "./config.ts";
 import { classifyClientGatewayCredential, clientGatewayCredentialHash, clientGatewayCredentialId, issueClientGatewayCredential } from "./credentials/index.ts";
 import type { ClientGatewayApprovedTrustInput, ClientGatewayTrustApproval } from "./trust-issuance/index.ts";
 import { ClientGatewayTrustIssuanceError, validateApprovedTrustInput, validateTrustApproval } from "./trust-issuance/index.ts";
+import { resolveClientGatewayForgetCredential } from "./revocation/index.ts";
 
 /** How often a client in steady use has its credential's life extended and stored: its next message would do, so this only saves writes. */
 const RENEW_EVERY_MS = 24 * 60 * 60_000;
@@ -333,28 +334,47 @@ export class ClientGatewayTrustedClientRegistry {
   }
 
   async revoke(trustedClient: ClientGatewayTrustedClient, reason: string): Promise<void> {
+    return this.mutate(() => this.commitRevocation(trustedClient, reason));
+  }
+
+  /** Decide absence and repetition only after earlier saves have committed or rolled back. */
+  async revokeById(trustedClientId: string, reason: string): Promise<{ trustedClient: ClientGatewayTrustedClient; changed: boolean } | undefined> {
     return this.mutate(async () => {
-      const now = this.config.now();
-      const previousUpdatedAt = trustedClient.updatedAt;
-      const previousRevokedAt = trustedClient.revokedAt;
-      const previousReason = trustedClient.revocationReason;
-      trustedClient.revokedAt = now;
-      trustedClient.revocationReason = reason;
-      trustedClient.updatedAt = now;
-      this.idByTokenHash.delete(trustedClient.tokenHash);
-      if (trustedClient.previousTokenHash) this.idByTokenHash.delete(trustedClient.previousTokenHash);
-      try {
-        await this.persist();
-      } catch (error) {
-        if (previousRevokedAt === undefined) delete trustedClient.revokedAt;
-        else trustedClient.revokedAt = previousRevokedAt;
-        if (previousReason === undefined) delete trustedClient.revocationReason;
-        else trustedClient.revocationReason = previousReason;
-        trustedClient.updatedAt = previousUpdatedAt;
-        if (this.isActive(trustedClient)) this.index(trustedClient);
-        throw error;
-      }
+      const trustedClient = this.clients.get(trustedClientId);
+      if (!trustedClient) return undefined;
+      if (trustedClient.revokedAt !== undefined) return { trustedClient, changed: false };
+      await this.commitRevocation(trustedClient, reason);
+      return { trustedClient, changed: true };
     });
+  }
+
+  /** Credential indexes and proof are read in the same queue that owns their rollback. */
+  async resolveForgetCredential(token: string): Promise<ReturnType<typeof resolveClientGatewayForgetCredential>> {
+    return this.mutate(async () => resolveClientGatewayForgetCredential(this.clients, token, this.config.now(), this.resolveByToken(token)));
+  }
+
+  private async commitRevocation(trustedClient: ClientGatewayTrustedClient, reason: string): Promise<void> {
+    if (this.clients.get(trustedClient.trustedClientId) !== trustedClient) throw new ClientGatewayTrustEndedError();
+    const now = this.config.now();
+    const previousUpdatedAt = trustedClient.updatedAt;
+    const previousRevokedAt = trustedClient.revokedAt;
+    const previousReason = trustedClient.revocationReason;
+    trustedClient.revokedAt = now;
+    trustedClient.revocationReason = reason;
+    trustedClient.updatedAt = now;
+    this.idByTokenHash.delete(trustedClient.tokenHash);
+    if (trustedClient.previousTokenHash) this.idByTokenHash.delete(trustedClient.previousTokenHash);
+    try {
+      await this.persist();
+    } catch (error) {
+      if (previousRevokedAt === undefined) delete trustedClient.revokedAt;
+      else trustedClient.revokedAt = previousRevokedAt;
+      if (previousReason === undefined) delete trustedClient.revocationReason;
+      else trustedClient.revocationReason = previousReason;
+      trustedClient.updatedAt = previousUpdatedAt;
+      if (this.isActive(trustedClient)) this.index(trustedClient);
+      throw error;
+    }
   }
 
   /** A failed persistence rollback cannot overwrite another mutation's committed memory. */

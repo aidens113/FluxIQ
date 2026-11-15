@@ -1,6 +1,6 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { fluxiqLayoutV3Paths, fluxiqWorkspaceRootDir, initializeFluxIQLayoutV3, type FluxIQ, type FluxIQOptions } from "fluxiq";
+import { fluxiqLayoutV3Paths, fluxiqWorkspaceRootDir, initializeFluxIQLayoutV3, inspectFluxIQLayoutV3, type FluxIQ, type FluxIQOptions } from "fluxiq";
 import type { HeldKeys } from "fluxiq/secret-keys";
 import { initializeFluxIQWebStorage } from "./initialize-storage";
 
@@ -22,7 +22,7 @@ const STORAGE_DIRECTORY_SETTINGS = [
  * Refuses a storage directory setting in the environment that would resolve
  * outside the tenant's root, since every tenant would then share it.
  */
-export async function createTenantFluxIQ(input: {
+type TenantInput = {
   workspaceId: string;
   heldKeys: HeldKeys;
   dataRoot: string;
@@ -34,11 +34,31 @@ export async function createTenantFluxIQ(input: {
   secretKeyIdentityAuthority?: FluxIQOptions["secretKeyIdentityAuthority"];
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
-}): Promise<FluxIQ> {
-  const layout = await initializeFluxIQLayoutV3(fluxiqLayoutV3Paths(input.dataRoot));
+};
+
+export function createTenantFluxIQ(input: TenantInput & { existingOnly: true; beforeOpen(): boolean }): Promise<FluxIQ | null>;
+export function createTenantFluxIQ(input: TenantInput & { existingOnly?: false }): Promise<FluxIQ>;
+export async function createTenantFluxIQ(input: TenantInput & { existingOnly?: boolean; beforeOpen?: () => boolean }): Promise<FluxIQ | null> {
+  const paths = fluxiqLayoutV3Paths(input.dataRoot);
+  const layout = input.existingOnly ? paths : await initializeFluxIQLayoutV3(paths);
   const rootDir = fluxiqWorkspaceRootDir(layout, input.workspaceId);
   refuseSharedStorageSettings(rootDir, input.env ?? process.env);
-  await mkdir(rootDir, { recursive: true });
+  if (input.existingOnly) {
+    if (input.beforeOpen?.() !== true) return null;
+    const inspection = inspectFluxIQLayoutV3(paths);
+    if (inspection.layout === "fresh") return null;
+    if (inspection.layout !== "v3") throw new Error("workspaces.existing_layout_invalid");
+    try {
+      if (!(await stat(rootDir)).isDirectory()) return null;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    // The manager owns deletion exclusion through construction; arbitrary external filesystem removal is outside this guarantee.
+    if (input.beforeOpen?.() !== true) return null;
+  } else {
+    await mkdir(rootDir, { recursive: true });
+  }
   const fluxiq = await input.instantiate({
     rootDir, loadEnv: false, heldKeys: input.heldKeys,
     secretKeyProtectionStoreId: input.workspaceId,

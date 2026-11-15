@@ -2,6 +2,7 @@ import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { getBrowserTrustRepository } from "../server/browser-trust";
 import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority, createWorkspaceSessionMetadata } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
+import type { HeldKeys } from "fluxiq/secret-keys";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -320,21 +321,26 @@ function createWebRuntimeState(): WebRuntimeState {
     ...iamOf(primaryId),
     ...(tenancy === "multi" ? { clientGatewayTrustedClientStore: (paths: FluxIQ["paths"]) => getBrowserTrustRepository(paths.fluxiq).scopedStore(primaryId) } : {})
   }));
+  const tenantOptions = ({ workspaceId, heldKeys, primary }: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ }) => ({
+    workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
+    clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
+    clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
+    clientGatewaySessionMetadata: createWorkspaceSessionMetadata(workspaceId),
+    secretKeyPrincipalAuthority: workspaceKeyPrincipalAuthority(workspaceId),
+    secretKeyIdentityAuthority: async () => (await getFluxIQAfterReload()).programs.identityAccess,
+    instantiate: createTenantFluxIQInstance
+  });
   const workspaces = new FluxIQWorkspaceManager({
     tenancy,
     primaryWorkspaceId: primaryId,
     createPrimary,
     onRetire: ({ workspaceId, fluxiq }) => { presentations.invalidate(workspaceId, fluxiq); },
     ...(tenancy === "multi" ? {
-      createTenant: async ({ workspaceId, heldKeys, primary }) => opened(workspaceId, await createTenantFluxIQ({
-        workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
-        clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
-        clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
-        clientGatewaySessionMetadata: createWorkspaceSessionMetadata(workspaceId),
-        secretKeyPrincipalAuthority: workspaceKeyPrincipalAuthority(workspaceId),
-        secretKeyIdentityAuthority: async () => (await getFluxIQAfterReload()).programs.identityAccess,
-        instantiate: createTenantFluxIQInstance
-      })),
+      createTenant: async input => opened(input.workspaceId, await createTenantFluxIQ(tenantOptions(input))),
+      openExistingTenant: async input => {
+        const instance = await createTenantFluxIQ({ ...tenantOptions(input), existingOnly: true, beforeOpen: input.beforeOpen });
+        return instance ? opened(input.workspaceId, instance) : null;
+      },
       removeTenantRoot: async ({ workspaceId, primary }) => {
         await removeFluxIQWorkspaceRoot(fluxiqLayoutV3Paths(primary.paths.root), workspaceId);
       }
