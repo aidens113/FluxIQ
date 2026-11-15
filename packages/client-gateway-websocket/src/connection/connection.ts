@@ -7,6 +7,7 @@
 // are the host's, through the options.
 
 import type { ClientGatewayActionResult, ClientGatewayClientMessage } from "@fluxiq/contracts/client-gateway";
+import { FluxIQClientGatewayCredentialPersistenceError } from "../credential-persistence-error.ts";
 import { createClientGatewayMessage } from "../messages.ts";
 import { clientGatewayLineageAfterReady, clientGatewayOutboxBinding, type ClientGatewayOutbox, type ClientGatewayOutboxBinding } from "../outbox/index.ts";
 import { FluxIQClientGatewayWebSocketClient } from "../transport.ts";
@@ -37,6 +38,7 @@ type SocketRecord = {
   // `server.session_ready` came on this socket and its lineage is decided:
   // only then may client data cross it.
   ready: boolean;
+  credentialPersistenceFailed: boolean;
   // Event types whose `on` subscriptions are already dispatched from this client.
   readonly dispatched: Set<FluxIQClientGatewayWebSocketEventType>;
 };
@@ -55,6 +57,8 @@ export class FluxIQClientGatewayConnection {
   private shouldStayConnected = false;
   // The trust lineage decided at the last `server.session_ready` in this process.
   private currentLineage: string | undefined;
+  private credentialWrites: Promise<void> = Promise.resolve();
+  private connectAttempt = 0;
 
   constructor(options: ClientGatewayConnectionOptions) {
     this.options = options;
@@ -74,11 +78,21 @@ export class FluxIQClientGatewayConnection {
   }
 
   async connect(): Promise<void> {
+    const attempt = ++this.connectAttempt;
     this.shouldStayConnected = true;
     this.clearReconnect();
     this.setState("connecting");
-    await this.options.beforeConnect?.();
-    await this.current?.client.close();
+    try {
+      await this.options.beforeConnect?.();
+    } catch (error) {
+      if (attempt !== this.connectAttempt) return;
+      throw error;
+    }
+    if (attempt !== this.connectAttempt) return;
+    const previous = this.current;
+    this.current = null;
+    await previous?.client.close();
+    if (attempt !== this.connectAttempt) return;
     const record = this.openRecord();
     this.current = record;
     this.attachClientHandlers(record);
@@ -88,7 +102,7 @@ export class FluxIQClientGatewayConnection {
       // An attempt a newer connect() replaced -- a second Connect, a reconnect --
       // owns nothing any more: failing here would mark the live attempt failed
       // and schedule a reconnect that closes its socket.
-      if (this.current !== record) return;
+      if (this.current !== record || attempt !== this.connectAttempt) return;
       this.fail(clientGatewayOpenFailureMessage(error));
       if (this.shouldStayConnected && this.options.autoReconnect()) this.scheduleReconnect();
     }
@@ -96,6 +110,7 @@ export class FluxIQClientGatewayConnection {
 
   /** Stops the connection reconnecting on its own. Separate from closing the socket so a host can tear down in its own order. */
   stopReconnecting(): void {
+    this.connectAttempt += 1;
     this.shouldStayConnected = false;
     this.clearReconnect();
   }
@@ -123,9 +138,11 @@ export class FluxIQClientGatewayConnection {
   }
 
   closeClient(): void {
+    this.connectAttempt += 1;
     this.stopHeartbeat();
-    void this.current?.client.close();
+    const previous = this.current;
     this.current = null;
+    void previous?.client.close();
   }
 
   markDisconnected(): void {
@@ -272,17 +289,27 @@ export class FluxIQClientGatewayConnection {
           // and before it sends the hello: the moment to learn whether the hello
           // carries a token, which is what the lineage rule and the state need.
           read: async () => {
+            await this.credentialWrites;
             const stored = await tokenStorage.read();
             this.onHelloToken(record, Boolean(hello.token ?? stored));
             return stored;
           },
-          write: (token) => tokenStorage.write(token),
+          write: (token) => {
+            const write = this.credentialWrites.then(() => {
+              if (!this.superseded(record)) return tokenStorage.write(token);
+            });
+            // Keep the sequencing tail settled; the original rejection still
+            // returns to the transport, which publishes its terminal failure.
+            this.credentialWrites = write.then(() => undefined, () => undefined);
+            return write;
+          },
           ...(tokenStorage.clear !== undefined ? { clear: () => tokenStorage.clear?.() } : {})
         }
       }),
       tokenInHello: false,
       pairingSeen: false,
       ready: false,
+      credentialPersistenceFailed: false,
       dispatched: new Set()
     };
     return record;
@@ -291,7 +318,7 @@ export class FluxIQClientGatewayConnection {
   // A socket a newer connect() replaced. Its late events (a close the browser
   // delivers after the new socket exists) describe nothing current.
   private superseded(record: SocketRecord): boolean {
-    return this.current !== null && this.current !== record;
+    return this.current !== record;
   }
 
   private onHelloToken(record: SocketRecord, carried: boolean): void {
@@ -310,6 +337,7 @@ export class FluxIQClientGatewayConnection {
     if (this.superseded(record)) return;
     this.stopHeartbeat();
     this.current = null;
+    if (record.credentialPersistenceFailed) return;
     if (this.shouldStayConnected && this.options.autoReconnect()) {
       this.scheduleReconnect();
     } else {
@@ -323,26 +351,30 @@ export class FluxIQClientGatewayConnection {
   // reported and a new lineage is minted, so nothing queued is delivered to a
   // trust it cannot be shown to belong to.
   private async onSessionReady(record: SocketRecord): Promise<void> {
+    if (this.superseded(record)) return;
     const outbox = this.options.outbox;
     let resumed = record.tokenInHello && !record.pairingSeen;
     let stored: string | undefined;
     try {
       stored = await outbox.lineage();
     } catch (error) {
+      if (this.superseded(record)) return;
       resumed = false;
       this.options.reportError(error instanceof Error ? `Could not read the connection lineage, so a new one was started: ${error.message}` : "Could not read the connection lineage, so a new one was started.");
     }
+    if (this.superseded(record)) return;
     const lineage = clientGatewayLineageAfterReady({
       stored,
       resumed,
       mint: () => this.options.mintLineage?.() ?? globalThis.crypto.randomUUID()
     });
-    this.currentLineage = lineage;
     try {
       await outbox.setLineage(lineage);
     } catch (error) {
+      if (this.superseded(record)) return;
       this.options.reportError(error instanceof Error ? error.message : "Could not store the connection lineage.");
     }
+    if (!this.superseded(record)) this.currentLineage = lineage;
   }
 
   private fail(message: string): void {
@@ -355,11 +387,21 @@ export class FluxIQClientGatewayConnection {
     const handlers = this.options.handlers;
     client.on("open", () => this.onOpen(record));
     client.on("close", () => this.onClose(record));
-    client.on("error", () => {
-      if (!this.superseded(record)) this.fail("WebSocket connection failed.");
+    client.on("error", ({ event }) => {
+      if (this.superseded(record)) return;
+      if (event instanceof FluxIQClientGatewayCredentialPersistenceError) {
+        record.credentialPersistenceFailed = true;
+        record.ready = false;
+        this.stopReconnecting();
+        this.stopHeartbeat();
+        this.fail(event.message);
+      } else this.fail("WebSocket connection failed.");
     });
-    client.on("message", ({ message }) => handlers.onServerMessage?.(message));
+    client.on("message", ({ message }) => {
+      if (!this.superseded(record)) handlers.onServerMessage?.(message);
+    });
     client.on("pairing_required", ({ message }) => {
+      if (this.superseded(record)) return;
       record.pairingSeen = true;
       this.pairingReferenceCode = message.payload.referenceCode;
       this.setState("pairing");
@@ -367,6 +409,7 @@ export class FluxIQClientGatewayConnection {
     });
     client.on("session_ready", async ({ message }) => {
       await this.onSessionReady(record);
+      if (this.superseded(record)) return;
       record.ready = true;
       handlers.onSessionReady?.(message);
     });

@@ -221,3 +221,11 @@ const session = pickClientGatewaySession(gatewayView.sessions, {
 Source-available under the FluxIQ license included with this package.
 Commercial rights outside its community terms are available from
 [license@getfluxiq.com](mailto:license@getfluxiq.com).
+
+## Credential persistence and connection replacement
+
+When a host supplies `tokenStorage`, the transport waits for its credential write to commit before adopting or publishing `server.session_ready` and acknowledging receipt. Later server frames remain ordered behind that commit. A failed read or write emits a fixed storage error, closes that socket and stops the reconnecting connection's automatic retries; the host may explicitly reconnect when storage is available. This is a storage failure, not an authentication lock or a second unlock step. Provider exception details and credentials are not included in that error.
+
+Socket callbacks and pending connect attempts are tied to the connection that created them. A late result from a replaced socket cannot publish readiness, run a command, or close its replacement. Credential writes already handed to host storage cannot be cancelled, so the connection serializes them and waits for previous writes before reading for the next hello. Host adapters still own audience-bound storage and must not combine a credential with independently mutable server settings.
+
+Explicit close publishes one close event; the later native event is suppressed. Existing lost-acknowledgement recovery is retained: if Core cannot receive `client.credential_received`, the next credential use remains its receipt proof. No wire protocol or default client-lock behavior is introduced.
