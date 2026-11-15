@@ -1,7 +1,7 @@
 # Hosted Platform Implementation
 
 Status: Active
-Status detail: Isolated paired task t914: authenticated client access replaces default locks; authenticated-access checkpoint verified. Dedicated tenant routes and app contract remain next. Nothing deployed.
+Status detail: Isolated paired task t914: authenticated client access replaces default locks; authenticated-access checkpoint verified. Dedicated route adapter and app registry are in focused acceptance. Nothing deployed.
 Created: 2026-11-14
 Last updated: 2026-11-14
 Owner: Senior supervisor
@@ -23,7 +23,7 @@ Portable Core control-plane deployment templates for AWS/GCP/Azure passed indepe
 
 Approved credential issuance, persisted tenant holder enrollment, routed WebSocket transport and consumer consent/token/revoke routes passed combined verification. Consent uses primary identity, tenant IAM and a root-owned account queue. The earlier locked-enrollment default is superseded by authenticated per-use access and durable host protection; final independent verification of that replacement is in progress. Service first-owner setup now creates a personal workspace administrator, proven against actual multi-tenancy; self-hosted retains its owner policy. Browser HTTP routing, global runtime state isolation, tenant key identity/revocation coordination, durable run recovery, paid dispatch/metering, real runner provisioning and catalog remain incomplete. API authentication and commerce eligibility are not an implemented hosted execution path. No live deployment/model/email/paid call has run. Existing JSON browser trust is not silently migrated; deployment is one Core process, with no active-active gateway coherence claim.
 
-User explicitly requested standardized custom-app frontend communication for demos/marketplace during the 2026-11-14 progress review. The paired document's "Standard Custom-App Frontend Contract" now makes this a prerequisite for the reference demo and catalog app integration. Core will own an app manifest/installation/operation API and a browser-safe SDK surface over the existing FluxNode/run/data contracts. Registered third-party app consent is distinct from fixed-client extension PKCE. User identity, installation permissions, environment and payer are resolved server-side; external/embedded publisher UI gets no panel cookie or developer private key. This contract is planned, not implemented; existing generic SDK capability is not a finished marketplace frontend integration.
+User explicitly requested standardized custom-app frontend communication for demos/marketplace during the 2026-11-14 progress review. The paired document's "Standard Custom-App Frontend Contract" now makes this a prerequisite for the reference demo and catalog app integration. Core will own an app manifest/installation/operation API and a browser-safe SDK surface over the existing FluxNode/run/data contracts. Registered third-party app consent is distinct from fixed-client extension PKCE. User identity, installation permissions, environment and payer are resolved server-side; external/embedded publisher UI gets no panel cookie or developer private key. The browser-safe manifest/installation/operation contract is implemented and independently passed 69 focused tests. The durable Core registry passed 8 storage tests; live-authority service and route adapter acceptance are in progress. Registered-app browser auth, SDK and invocation execution remain unimplemented, so generic SDK capability is not a finished marketplace frontend integration.
 
 ## Experimental Branch Integration Contract
 
@@ -190,3 +190,36 @@ User clarified on 2026-11-14: Website is `https://github.com/aidens113/FluxIQWeb
 - Follow-up: Commit/push coherent paired task checkpoint, then complete dedicated tenant routing and app manifest/install/operation contracts under separate file-owned briefs. Actual browser approval/restart demonstration and Linux/cloud rollout still require their own acceptance.
 
 - Final additional validation: lead `pnpm.cmd --dir packages/test-runner exec tsc -p tsconfig.json --noEmit --incremental false` in the paired downstream -> exit 0, no diagnostics.
+
+### 2026-11-14 ? Paired checkpoint pushed; next units assigned
+- Agent: Senior supervisor.
+- Checkpoint: Core `79f175d2a` and extension `1285dd320` committed and pushed to `origin/task/t914-hosted-platform`. Both pushes succeeded; dev/main and experiments were not moved. Generated IAM files have no semantic diff (line-ending/stat notices only).
+- Changed: Written next briefs for the dedicated tenant route adapter/program directory and the browser-safe app manifest/install/operation contract. These are disjoint web versus contracts source owners; dependency builds remain lead-coordinated.
+- Decision: Route selection reuses the existing primary-identity/tenant-lease seam and preserves service IAM. Custom apps receive declared typed operations bound to installed backend artifacts; the initial contract/kernel cannot claim accepted execution or relax the owner-only FluxNode API.
+- Validation: Previous unit passed recorded focused checks and branch pushes. New units are assigned, not implemented/verified yet.
+- Follow-up: Freeze shared route adapter and app schema, implement durable installation authority, then migrate remaining dedicated route partitions and registered-app execution/auth/SDK behind truthful capability gates.
+
+### 2026-11-14 ? App kernel persistence underway
+- Agent: Senior supervisor; schema and dedicated-route workers own separate source paths.
+- Changed: New Core platform/apps model/storage implementation in progress, using existing SQLiteRepository transactions. Immutable manifest versions, workspace-bound installation CAS, revision history and required mutation guard are the persistence boundary; no invocation endpoint/runner success is added.
+- Decision: Shared app shape is frozen with the contracts owner; typed JsonValue invocation inputs, explicit target versus payer, manifest/package digests and generation/revision remain distinct. Metadata is not authority. Root owns platform/apps and eventual platform barrel; workers do not edit them.
+- Validation: Not run yet; shared contracts are still being authored and no build may consume the moving source. This is ongoing work, not a verified app platform.
+- Follow-up: Complete storage regressions and trusted current-authority service; build stable contracts once, then focused kernel/web tests and integration. Preserve old execution/idempotency engine rather than inventing another.
+
+### 2026-11-14 ? App registry acceptance and connection persistence
+- Agent: Senior supervisor; bounded workers own service tests, tenant route adapter and transport persistence failure.
+- Changed: Browser-safe app contracts are stable; Core registry now has immutable manifests, installation CAS/history and required live authority/target ports. Added current-state custom-app architecture with explicit non-execution limits. Service acceptance tests are being authored; no HTTP/SDK execution claim.
+- Validation: `pnpm.cmd --filter @fluxiq/contracts build` -> exit 0. Lead `pnpm.cmd exec vitest run src/platform/apps/storage/tests/sqlite-app-registry-store.test.ts` -> 8 passed, including independent SQLite CAS and transactional rollback. Default-heap Core no-emit typecheck exhausted its 2GB heap before verdict; explicit 8GB retry is running. Initial structure audit reported route helper failure-as-empty (worker corrected) and stale working index (regeneration pending).
+- Decision: Final operation resolution rereads the installation after the final awaited authority call so changes during that call are detected. Resolution remains metadata requiring future dispatch-time authorization. Hosted extension discovery identified a token-storage rejection seam; a bounded transport fix is assigned, preserving existing rotation/recovery contracts.
+- Follow-up: Complete service, route and transport acceptance; coordinated builds and lead verification; commit/push coherent units. Hosted connection foundations and remaining tenant endpoints follow these stable seams.
+
+- Additional lead validation: `node --max-old-space-size=8192 node_modules/typescript/bin/tsc --noEmit -p tsconfig.json` in packages/fluxiq -> exit 0, no diagnostics. This completed before the worker service tests were added. `pnpm.cmd exec vitest run src/apps` in packages/contracts -> 69 passed across 5 files. Working index regenerated through its owning rule, without baseline expansion.
+
+- Next validation: Lead `pnpm.cmd exec vitest run src/platform/apps` -> 40 passed in 5 files, including 30 service and 10 storage regressions. `pnpm.cmd --filter fluxiq check` -> exit 0 with final app tests. Core/UI builds are running against frozen package source. Framework/recording migration proceeds under a file-owned brief; private extension credential foundation is assigned separately.
+
+### 2026-11-14 ? App kernel independently verified
+- Agent: Senior supervisor.
+- Changed: Added final expiry check after the last awaited installation read, with a real SQLite regression. Fixed a statement-packing finding in the new storage test without changing behavior.
+- Validation: Lead `pnpm.cmd exec vitest run src/platform/apps` -> 41 passed in 5 files. Contracts independently passed 69 tests. `node scripts/build-cache/cli.mjs fluxiq:build ui-components:build fluxiq:check` -> all three passed on final frozen source. The earlier UI build deliberately received no stamp because final Core source changed while it ran; it was rebuilt, not accepted as current.
+- Outcome: Browser-safe app data contract and durable installation/operation-resolution kernel are verified locally. Host authority adapters, registered-app authorization/SDK, real query/run dispatch, receipts/events and billing settlement remain unimplemented. No hosted execution or marketplace launch claim.
+- Follow-up: Commit app unit; finish web tenant-route and transport credential-storage acceptance. Extension private credential foundation is being authored independently; fake-indexeddb6.2.8 is a test-only dependency added by the lead.

@@ -9,3 +9,4 @@ export * from "./keys/index.ts";
 export * from "./commerce/index.ts";
 export * from "./browser-trust/index.ts";
 export * from "./connect/index.ts";
+export * from "./apps/index.ts";
