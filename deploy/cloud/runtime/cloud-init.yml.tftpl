@@ -1,0 +1,50 @@
+#cloud-config
+write_files:
+  - path: /etc/fluxiq-bootstrap.json
+    permissions: '0600'
+    encoding: b64
+    content: ${config}
+  - path: /opt/fluxiq-bootstrap/install.sh
+    permissions: '0700'
+    encoding: b64
+    content: ${install}
+  - path: /opt/fluxiq-bootstrap/mount-data.sh
+    permissions: '0700'
+    encoding: b64
+    content: ${mount_data}
+  - path: /opt/fluxiq-bootstrap/metadata-guard.sh
+    permissions: '0700'
+    encoding: b64
+    content: ${metadata_guard}
+  - path: /opt/fluxiq-bootstrap/fetch-config.py
+    permissions: '0700'
+    encoding: b64
+    content: ${fetch_config}
+  - path: /opt/fluxiq-bootstrap/write-config.py
+    permissions: '0700'
+    encoding: b64
+    content: ${write_config}
+  - path: /opt/fluxiq-bootstrap/extract-release.py
+    permissions: '0700'
+    encoding: b64
+    content: ${extract}
+  - path: /etc/systemd/system/fluxiq-bootstrap.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Install the pinned FluxIQ control plane using VM identity
+      After=network-online.target cloud-final.service
+      Wants=network-online.target
+      StartLimitIntervalSec=0
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash /opt/fluxiq-bootstrap/install.sh
+      RemainAfterExit=yes
+      Restart=on-failure
+      RestartSec=30
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, fluxiq-bootstrap.service]
+  - [systemctl, --no-block, start, fluxiq-bootstrap.service]

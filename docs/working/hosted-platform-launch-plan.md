@@ -97,6 +97,13 @@ Active next units: portable Core control-plane deployments for AWS/GCP/Azure and
 - Outcome: Foundation source ready to commit/push on task/t914-hosted-platform. Existing Core/downstream experiment worktrees remain untouched. Cloud deployment source and browser-trust design remain in progress and are not part of foundation acceptance.
 - Follow-up: Continue authoritative browser credential routing and portable deployment tests; no release/hosted-ready claim.
 
+### 2026-11-14 — Portable deployment checkpoint
+- Agent: Senior supervisor; cloud-portability worker.
+- Changed: Provider-neutral pinned Core release bundle, AWS/GCP/Azure Terraform entrypoints, retained state and metadata boot guards, secret-reference bootstrap and operator guide. Website remains separately released from FluxIQWebsite.
+- Validation: Lead `node --test deploy/cloud/release/tests/release.test.mjs deploy/cloud/release/tests/compose.test.mjs deploy/cloud/runtime/tests/host-config.test.mjs` with verified standalone Compose -> 7 passed, zero skipped. Lead `python -m unittest discover -s deploy/cloud/runtime/tests -p 'test_*.py' -v` -> 12 passed. Lead Terraform 1.13.5 `fmt -check -recursive deploy/cloud` and each provider `validate -no-color` -> exit 0, all three configurations valid. No real cloud resources, secrets or paid services used.
+- Outcome: Foundation commits 8da1c6bc4/67dda7b70 and paired downstream 1d75a5181 pushed on task/t914-hosted-platform only. Portable deployment unit independently checked; actual VM, Docker, Linux security and live release acceptance remain unverified. No dev/main promotion.
+- Follow-up: Browser trust persistence and constructor integration, PKCE connect service and routed gateway transport continue in disjoint files. Credential-rotation concurrency regression reproduced by worker; fix and independent validation required before browser milestone acceptance.
+
 ## Open Questions
 
 User clarified on 2026-11-14: Website is `https://github.com/aidens113/FluxIQWebsite`, remains separately released; no AWS account/region or payment provider chosen. Support portable containers and provider adapters for AWS, Google Cloud and Azure rather than hardcoding AWS into Core. Provider accounts, production mail/payment configuration and actual Hostinger deployed revision remain rollout inputs; no secret values requested in chat. Enterprise licensing and non-web automation remain future work per user. These do not block provider-free implementation.
