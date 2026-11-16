@@ -161,7 +161,7 @@ async function createHarness() {
   const resolveProvider = createAutomationStudioSessionKeyProviderResolver({
     ports: {
       snapshot: async () => ({ keys: [{ ...key }] }),
-      createSessionRevealAuthorization: async () => ({ authorizationId: `reveal-t176-${++revealCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs }),
+      createUseAuthorization: async () => ({ authorizationId: `reveal-t176-${++revealCount}`, keyId: key.id, keyUpdatedAtMs: key.updatedAtMs }),
       revealKeyWithAuthorization: async () => ({ value: "test-provider-secret" }),
       revokeRevealAuthorization: () => undefined
     },

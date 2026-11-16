@@ -13,8 +13,9 @@ const scope: AutomationStudioResultCheckProviderScope = {
   projectId: "project.checks",
   flowId: "flow.catalogue",
   keyId: "secret:deepseek.default",
-  unlockSessionId: "session.unlock.1",
+  authorizationId: "result-check:1",
   authorizedByUserId: "user.aiden",
+  purpose: "loop_verification",
   maxEstimatedCostUsd: 0.05
 };
 
@@ -23,7 +24,7 @@ const revoked: string[] = [];
 function ports(overrides: Partial<AutomationStudioResultCheckProviderPorts> = {}): AutomationStudioResultCheckProviderPorts {
   return {
     getKeySummary: async (id) => ({ id, kind: "llm", enabled: true, updatedAtMs: 55 }),
-    createSessionRevealAuthorization: async () => ({ authorizationId: "secret-reveal:1", keyId: scope.keyId, keyUpdatedAtMs: 55 }),
+    createUseAuthorization: async () => ({ authorizationId: "secret-reveal:1", keyId: scope.keyId, keyUpdatedAtMs: 55 }),
     revealKeyWithAuthorization: async () => ({ value: SECRET }),
     revokeRevealAuthorization: (authorizationId) => { revoked.push(authorizationId); },
     ...overrides
@@ -38,10 +39,14 @@ const reveal = (instance: AutomationStudioResultCheckProviderPorts, request: Par
   });
 
 describe("releasing the key for an unattended check", () => {
-  it("draws it from the person's own held key unlock, naming the user the authorization records", async () => {
+  it("authorizes the use as the person's standing grant on this Flow, naming no session or unlock", async () => {
     const created = vi.fn(async () => ({ authorizationId: "secret-reveal:1", keyId: scope.keyId, keyUpdatedAtMs: 55 }));
-    await expect(reveal(ports({ createSessionRevealAuthorization: created }))).resolves.toBe(SECRET);
-    expect(created).toHaveBeenCalledWith({ id: scope.keyId, sessionId: "session.unlock.1", userId: "user.aiden", ttlMs: 10_000 });
+    await expect(reveal(ports({ createUseAuthorization: created }))).resolves.toBe(SECRET);
+    expect(created).toHaveBeenCalledWith({
+      id: scope.keyId,
+      principal: { kind: "standing", userId: "user.aiden", authorizationId: "result-check:1", projectId: "project.checks", flowId: "flow.catalogue", purpose: "loop_verification" },
+      ttlMs: 10_000
+    });
   });
 
   it("refuses a request for a Flow the authorization was not given for", async () => {
@@ -49,9 +54,9 @@ describe("releasing the key for an unattended check", () => {
     await expect(reveal(ports(), { projectId: "project.other" })).rejects.toThrow("Result check scope mismatch.");
   });
 
-  it("refuses when the person's key unlock has lapsed, which is the three-in-the-morning case", async () => {
-    const lapsed = ports({ createSessionRevealAuthorization: async () => { throw new Error("Secret key session unlock is unavailable"); } });
-    await expect(reveal(lapsed)).rejects.toThrow("Secret key session unlock is unavailable");
+  it("refuses when the key's authority refuses the grant now: a revoked client, a disabled person, an IAM denial", async () => {
+    const refused = ports({ createUseAuthorization: async () => { throw new Error("Secret key use is not authorized."); } });
+    await expect(reveal(refused)).rejects.toThrow("Secret key use is not authorized.");
   });
 
   it("refuses a key that is gone, disabled, or no longer an LLM key", async () => {
@@ -62,7 +67,7 @@ describe("releasing the key for an unattended check", () => {
 
   it("refuses, and revokes the reveal it minted, when the key changed underneath the authorization", async () => {
     revoked.length = 0;
-    const rotated = ports({ createSessionRevealAuthorization: async () => ({ authorizationId: "secret-reveal:2", keyId: scope.keyId, keyUpdatedAtMs: 99 }) });
+    const rotated = ports({ createUseAuthorization: async () => ({ authorizationId: "secret-reveal:2", keyId: scope.keyId, keyUpdatedAtMs: 99 }) });
     await expect(reveal(rotated)).rejects.toThrow("changed");
     expect(revoked).toEqual(["secret-reveal:2"]);
   });

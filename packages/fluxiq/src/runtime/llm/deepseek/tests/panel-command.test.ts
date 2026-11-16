@@ -146,7 +146,7 @@ describe("the key the chat window's call is released", () => {
         { id: "key.off", kind: "llm", provider: "deepseek", enabled: false, updatedAtMs: 20 },
         { id: "key.deepseek", kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 10 }
       ] })),
-      createSessionRevealAuthorization: vi.fn(async (input: { id: string }) => ({ authorizationId: "auth.1", keyId: input.id, keyUpdatedAtMs: 10 })),
+      createUseAuthorization: vi.fn(async (input: { id: string }) => ({ authorizationId: "auth.1", keyId: input.id, keyUpdatedAtMs: 10 })),
       revealKeyWithAuthorization: vi.fn(async () => ({ value: KEY })),
       revokeRevealAuthorization: vi.fn(),
       ...overrides
@@ -156,12 +156,12 @@ describe("the key the chat window's call is released", () => {
   it("releases the newest enabled DeepSeek key to the caller's own unlocked session", async () => {
     const keys = ports();
     await expect(automationStudioPanelCommandKeyFromSecretKeys(keys)({ userId: "user.1", sessionId: "session.1" })).resolves.toBe(KEY);
-    expect(keys.createSessionRevealAuthorization).toHaveBeenCalledWith({ id: "key.deepseek", sessionId: "session.1", userId: "user.1", ttlMs: 10_000 });
+    expect(keys.createUseAuthorization).toHaveBeenCalledWith({ id: "key.deepseek", sessionId: "session.1", userId: "user.1", ttlMs: 10_000 });
   });
 
   it("releases nothing with no caller, and revokes a reveal for a key that changed underneath it", async () => {
     await expect(automationStudioPanelCommandKeyFromSecretKeys(ports())(null)).rejects.toThrow("No signed-in person");
-    const changed = ports({ createSessionRevealAuthorization: vi.fn(async () => ({ authorizationId: "auth.2", keyId: "key.deepseek", keyUpdatedAtMs: 99 })) });
+    const changed = ports({ createUseAuthorization: vi.fn(async () => ({ authorizationId: "auth.2", keyId: "key.deepseek", keyUpdatedAtMs: 99 })) });
     await expect(automationStudioPanelCommandKeyFromSecretKeys(changed)({ userId: "user.1", sessionId: "session.1" })).rejects.toThrow("changed");
     expect(changed.revokeRevealAuthorization).toHaveBeenCalledWith("auth.2");
     expect(changed.revealKeyWithAuthorization).not.toHaveBeenCalled();

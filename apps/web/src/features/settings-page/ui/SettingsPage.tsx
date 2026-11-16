@@ -6,6 +6,7 @@ import { useSettingsData, useSettingsPort } from "../data";
 import { AiKeysSection } from "./AiKeysSection";
 import { AppearanceSection } from "../appearance";
 import { StartingHumannessSection } from "../humanness";
+import { ConnectClientSection } from "../connect";
 import { AllowanceSection } from "./AllowanceSection";
 import type { EngineTool } from "../model";
 import { AssistantModelSection } from "./AssistantModelSection";
@@ -31,6 +32,7 @@ export function SettingsPage(props: { engineTools?: readonly EngineTool[]; mayCh
           <AllowanceSection data={data} />
         </>
       )}
+      <ConnectClientSection />
       <StartingHumannessSection port={port} />
       <AppearanceSection />
       <EngineToolsSection {...(props.engineTools ? { tools: props.engineTools } : {})} />

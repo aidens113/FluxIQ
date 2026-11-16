@@ -139,11 +139,23 @@ export function automationStudioConversationModelProblem(error: unknown): string
   if (/timeout|aborted/u.test(code) || name === "TimeoutError" || name === "AbortError") return "the model did not answer in time";
   if (/rate_limited/u.test(code)) return "the model was too busy to answer";
   if (/balance_exhausted/u.test(code)) return "the model account's balance has run out, so add credit with the model provider and try again";
-  if (/secret_unavailable/u.test(code)) return "your model key is locked on this browser, so open FluxIQ and enter your password once to unlock it and let the model read your messages";
+  if (/secret_unavailable/u.test(code)) return secretProblem(error instanceof Error ? error.message : "");
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
   if (/network|http|redirect/u.test(code)) return "the model could not be reached";
   // Never the code itself: the thread keeps these words, and shows them again (t276).
   return "the model call failed";
+}
+
+/**
+ * Why a model key could not be released, from the words the release gave
+ * (`models/secrets/session-key.ts`; the adapters keep them). No key at all and
+ * a saved key that needs one panel sign-in to be upgraded are different
+ * problems with different fixes, and neither claims a key exists when none does.
+ */
+function secretProblem(message: string): string {
+  if (/no enabled .* key|no configured model key|no model key/iu.test(message)) return "no model key is set up yet, so add one in Settings, under AI keys";
+  if (/requires recovery|protection key|could not be authenticated/iu.test(message)) return "the saved model key needs one sign-in to the panel to upgrade it, then try again";
+  return "the model key could not be used, so check the model key in FluxIQ and try again";
 }
 
 function fallback(input: AutomationStudioConversationInterpretInput, problem: string, attempts: number): AutomationStudioConversationInterpretation {

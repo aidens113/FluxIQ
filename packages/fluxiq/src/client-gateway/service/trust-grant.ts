@@ -142,6 +142,8 @@ export class ClientGatewayTrustGrant {
     request.bind?.(trustedClient);
     this.sessions.attachTrustedClient(session, trustedClient);
     if (request.projectId !== undefined) session.projectId = request.projectId;
+    // What a `client.focus_project` of null returns to (`./project-focus/`).
+    session.pairedProjectId = session.projectId ?? null;
     session.pairedAt = now;
     this.trace.lifecycle({ sessionId, clientId: session.clientId }, request.traceEvent, request.traceDetail(trustedClient));
     session.sentCredentialHash = this.trustedClients.hashToken(token);

@@ -54,7 +54,11 @@ and IAM after the asynchronous body read and before writing.
 Every leaf's action and evidence read uses its leased session. A leased run never
 falls back to another host. Concrete independent resources can run in one project;
 the resource scheduler excludes concurrent owners of the same resource. Runs
-without such a current lease retain the project admission gate.
+without such a current lease retain the project admission gate. The driving
+gate for a part run (`project-parts/run/driving-gate.ts`) asks admission with
+`ownLeaseAdmits: false`, so it always reads the project's sessions: it is asked
+from inside a lease, and the lease shortcut would otherwise hide a plain Flow
+run that holds none.
 
 The pool's domain must match the instance's explicit domain. A FluxNode must
 explicitly name that runtime; an absent or different runtime is refused before a

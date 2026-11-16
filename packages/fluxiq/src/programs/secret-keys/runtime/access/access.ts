@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PAIRED_CLIENT_UNLOCK_PREFIX, type ModelKeyAvailability } from "@fluxiq/contracts/platform";
+import { PAIRED_CLIENT_HOLDER_PREFIX, type ModelKeyAvailability } from "@fluxiq/contracts/platform";
 import type { SecretKeyRecord, SecretKeySummary } from "../../types.ts";
 import type { HeldKeys, HeldRevealAuthorization, SecretRevealAuthorizationMetadata } from "../held-keys.ts";
 import type { SecretKeyStore } from "../key-store.ts";
@@ -98,7 +98,7 @@ export class SecretKeyAccess {
 
   private exactHeld(record: SecretKeyRecord, principal: SecretKeyUsePrincipal): Buffer | undefined {
     if (principal.kind === "standing") return undefined;
-    const sessionId = principal.kind === "session" ? principal.sessionId : this.ports.heldKeys.pairedHandle(`${PAIRED_CLIENT_UNLOCK_PREFIX}${principal.trustedClientId}`);
+    const sessionId = principal.kind === "session" ? principal.sessionId : this.ports.heldKeys.pairedHandle(`${PAIRED_CLIENT_HOLDER_PREFIX}${principal.trustedClientId}`);
     const held = this.ports.heldKeys.session(sessionId);
     const key = held?.decryptionKeys.get(record.id);
     return held?.userId === principal.userId && held.expiresAtMs > this.ports.now() && key?.keyUpdatedAtMs === record.updatedAtMs ? Buffer.from(key.decryptionKey) : undefined;

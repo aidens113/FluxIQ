@@ -471,6 +471,28 @@ else: the actor comes from the session alone, an `authSessionId` the caller
 names is removed, and a review may not name a `reviewerId`. A token's reach is
 its approver's, in its bound domain, never another person's.
 
+**One person, one set of projects (t915).** The web panel's pages name no
+domain (no `?domainId=`), while a pairing binds the instance's domain
+(`FluxIQ.activeDomainId`). Two rules make them one view:
+
+- A signed-in person's Automation Studio call that names no domain works in
+  the instance's (`server/program-route/person-domain-scope.ts`), so a project,
+  category or recording the panel creates is the domain's, as one the extension
+  creates is, and its Flows can use the domain's nodes. Other programs keep the
+  URL's scope, since they key their own stores by it.
+- On an instance that serves a domain, the project list and the domain gate
+  treat "no domain" and that domain as one view
+  (`framework/automation-service/service/projects/domain-match.ts`,
+  `projectDomainMatches`): the instance's global projects, including every one
+  the panel made before t915, are listed and reachable beside the domain's, and
+  a route that names no domain reaches the domain's projects. A global project
+  stays global (its Flows keep the global scope).
+
+Before this, "no domain" was a partition of its own and each client saw only
+what it had made. Another named domain stays its own surface, IAM still
+decides each project per person, and a hosted tenant's projects live in its
+own instance's store. On an instance that serves no domain nothing changed.
+
 The allowlist lives in `packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`, and four rules
 bound it:
 

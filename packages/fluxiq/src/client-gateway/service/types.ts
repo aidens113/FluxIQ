@@ -101,6 +101,12 @@ export type ClientGatewayServiceOptions = {
    * `setTimeout`.
    */
   startTimer?: ClientGatewayTimerSource;
+  /**
+   * Decides a `client.focus_project` (`./project-focus/`); a host may also
+   * install it later through `ClientGatewayService.projectFocus`.
+   * Unset, every focus to a project is refused as `project_focus.unavailable`.
+   */
+  projectFocusAuthority?: ClientGatewayProjectFocusAuthority;
 };
 
 /** What the gateway is minting an id for (`ClientGatewayServiceOptions.createId`). */
@@ -130,7 +136,26 @@ export type InternalSession = ClientGatewaySession & {
   sentCredentialHash?: string;
   /** Where the transport says the connection came from; never public, audited as its prefix only. */
   peer?: import("./security/index.ts").ClientGatewayPeer;
+  /**
+   * The project the session was bound to when it became ready (its pairing's,
+   * or none on a reconnect), which a `client.focus_project` of null returns it
+   * to (`./project-focus/`). Never public.
+   */
+  pairedProjectId?: string | null;
+  /** How many `client.focus_project` requests this session has sent, so only the latest one decided is applied. Never public. */
+  focusRequests?: number;
 };
+
+/**
+ * Whether the person who paired `session` may read `projectId` in `domainId`,
+ * the domain the session declared: what a `client.focus_project` is decided by
+ * (`./project-focus/`). Supplied by the layer that owns identity and IAM; a
+ * thrown error reads as "could not decide".
+ */
+export type ClientGatewayProjectFocusAuthority = (request: { session: ClientGatewaySession; projectId: string; domainId: string | null }) => Promise<boolean>;
+
+/** Where a host installs the focus authority (`ClientGatewayService.projectFocus`); undefined refuses every focus to a project as unavailable. */
+export type ClientGatewayProjectFocusPort = { setAuthority(authority: ClientGatewayProjectFocusAuthority | undefined): void };
 
 /** An action command dispatched to a client and still awaiting its result. */
 export type PendingCommand = {

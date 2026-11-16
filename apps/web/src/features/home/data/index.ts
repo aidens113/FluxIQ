@@ -1,3 +1,3 @@
-export { loadClients, loadEngine, loadRuns, loadThreads, type HomeRuns } from "./load";
+export { loadClients, loadRuns, loadThreads, type HomeRuns } from "./load";
 export type { Resource } from "./resource";
-export { useResource } from "./use-resource";
+export { useResource, type UseResourceOptions } from "./use-resource";

@@ -39,7 +39,7 @@ function core(options: { knownFails?: boolean } = {}) {
     async pendingAsks() { return []; },
     async getAsk() { return null; }
   };
-  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", keyLocked: false, paired: false, startLocation: "https://library.example/account" };
+  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", paired: false, startLocation: "https://library.example/account" };
   const run = async (instruction: string) => {
     asked = instruction;
     const outcome = await AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.run(context, { instruction });

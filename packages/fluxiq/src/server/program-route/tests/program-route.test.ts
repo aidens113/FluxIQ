@@ -6,6 +6,7 @@ import {
   PAIRED_CLIENT_ENDPOINTS,
   pairedClientActor,
   pairedClientDomainScope,
+  pairedClientProjectTarget,
   programDomainScope,
   programResponseStatus,
   projectPairedClientResponse,
@@ -49,7 +50,9 @@ describe("a paired client on the program route", () => {
     expect(PAIRED_CLIENT_ENDPOINTS).toEqual({
       "automation-studio": [
         "get-runtime-build-identity",
-    "list-conversations",
+        "projects",
+        "create-project",
+        "list-conversations",
         "open-conversation",
         "get-conversation",
         "append-turn",
@@ -102,6 +105,12 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "get-runtime-run-control")).toBe(true);
     // What a recording may capture and whether direct requests are allowed: Core's policy, read before capture (t728).
     expect(isPairedClientEndpoint("automation-studio", "get-recording-capture-policy")).toBe(true);
+    // The extension's project switcher: listing and making a project, never renaming or deleting one.
+    expect(isPairedClientEndpoint("automation-studio", "projects")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "create-project")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "update-project")).toBe(false);
+    expect(isPairedClientEndpoint("automation-studio", "delete-project")).toBe(false);
+    expect(isPairedClientEndpoint("automation-studio", "create-project-category")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "delete-run-datasets")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "delete-recording")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "review-flow-adaptation")).toBe(false);
@@ -167,6 +176,59 @@ describe("a paired client on the program route", () => {
     expect(pairedClientDomainScope("http://localhost/x?domainId=other", session)).toBeUndefined();
     expect(pairedClientDomainScope("http://localhost/x", { sessionId: "g1" })).toEqual({ domainId: null });
     expect(pairedClientDomainScope("http://localhost/x?domainId=web-automation", { sessionId: "g1" })).toBeUndefined();
+  });
+
+  describe("projects (the extension's switcher)", () => {
+    it("lists with no body the handler could read, whatever the token sends", () => {
+      expect(narrowPairedClientRequest("automation-studio", "projects", undefined)).toEqual({ ok: true, payload: {} });
+      expect(narrowPairedClientRequest("automation-studio", "projects", { projectId: "p", domainId: "other", includeOwners: true })).toEqual({ ok: true, payload: {} });
+    });
+
+    it("makes a project from its name alone, ignoring a description, category, domain, PIN or session", () => {
+      const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", " Create-Project ", payload);
+      expect(narrow({ name: "Shop" })).toEqual({ ok: true, payload: { name: "Shop" } });
+      expect(narrow({ name: "Shop", description: "d", categoryId: "c", domainId: "other", authorizationPin: "1234", authSessionId: "s", projectId: "p" })).toEqual({ ok: true, payload: { name: "Shop" } });
+      for (const payload of [undefined, {}, { name: 7 }, ["Shop"]]) {
+        expect(narrow(payload)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's new project must carry its name as a string." });
+      }
+    });
+
+    it("targets no project, so neither is refused for the session's current one", () => {
+      expect(pairedClientProjectTarget("automation-studio", {}, "project.gone", "projects")).toEqual({ ok: true, projectId: null });
+      expect(pairedClientProjectTarget("automation-studio", { projectId: "project.other" }, "project.gone", "create-project")).toEqual({ ok: true, projectId: null });
+      // Every other endpoint still reaches the body's project, or the session's.
+      expect(pairedClientProjectTarget("automation-studio", {}, "project.current", "list-conversations")).toEqual({ ok: true, projectId: "project.current" });
+      expect(pairedClientProjectTarget("automation-studio", { projectId: "project.named" }, "project.current", "list-conversations")).toEqual({ ok: true, projectId: "project.named" });
+      expect(pairedClientProjectTarget("automation-studio", {}, "project.current")).toEqual({ ok: true, projectId: "project.current" });
+    });
+
+    it("answers a list with each project's id, name and last change, never its owner, description, category or domain", () => {
+      const answer = projectPairedClientResponse("automation-studio", "projects", {
+        ok: true,
+        payload: {
+          categories: [{ id: "cat.1", name: "Clients", order: 0, createdAt: 1, updatedAt: 1 }],
+          projects: [
+            { id: "p.1", name: "Shop", description: "secret-note", domainId: "web", categoryId: "cat.1", ownerUserId: "user.alice", members: ["user.bob"], createdAt: 1, updatedAt: 20 },
+            { id: "p.2", name: "Jobs", ownerUserId: null, createdAt: 1, updatedAt: 10 },
+            { id: 3, name: "bad id" },
+            { id: "p.4" },
+            null,
+          ],
+        },
+      });
+      expect(answer).toEqual({ ok: true, payload: { projects: [{ id: "p.1", name: "Shop", updatedAt: 20 }, { id: "p.2", name: "Jobs", updatedAt: 10 }] } });
+      for (const leaked of ["user.alice", "user.bob", "ownerUserId", "secret-note", "cat.1", "Clients", "domainId"]) expect(JSON.stringify(answer), leaked).not.toContain(leaked);
+      expect(projectPairedClientResponse("automation-studio", "projects", { ok: true, payload: {} })).toEqual({ ok: true, payload: { projects: [] } });
+      expect(projectPairedClientResponse("automation-studio", "projects", { ok: false, error: "No.", errorCode: "authorization.forbidden", payload: { projects: [{ id: "x", name: "y", ownerUserId: "user.alice" }] } }))
+        .toEqual({ ok: false, error: "No.", errorCode: "authorization.forbidden" });
+    });
+
+    it("answers a made project with its id, name and last change alone", () => {
+      const answer = projectPairedClientResponse("automation-studio", "create-project", { ok: true, payload: { project: { id: "p.9", name: "New", description: "", domainId: "web", categoryId: null, ownerUserId: "user.alice", createdAt: 5, updatedAt: 5 } } });
+      expect(answer).toEqual({ ok: true, payload: { project: { id: "p.9", name: "New", updatedAt: 5 } } });
+      expect(projectPairedClientResponse("automation-studio", "create-project", { ok: true, payload: {} })).toEqual({ ok: true, payload: { project: null } });
+      expect(projectPairedClientResponse("automation-studio", "create-project", { ok: false, error: "Project name is required." })).toEqual({ ok: false, error: "Project name is required." });
+    });
   });
 
   it("carries an attempt on by its id and an amount only, never a Flow, a mode, a grant or a session", () => {

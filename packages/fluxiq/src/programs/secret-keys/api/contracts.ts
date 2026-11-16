@@ -8,7 +8,6 @@ export const SECRET_KEYS_ENDPOINTS = {
   rotateKey: "rotate-key",
   revealKey: "reveal-key",
   deleteKey: "delete-key",
-  unlock: "unlock",
   setDefaultKey: "set-default-key",
   getAssistantModel: "get-assistant-model",
   setAssistantModel: "set-assistant-model",
@@ -58,17 +57,6 @@ export type RevealSecretKeyRequest = SecretKeyAuthorizationPayload & {
 export type DeleteSecretKeyRequest = SecretKeyAuthorizationPayload & {
   id: string;
 };
-
-/** The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. */
-export type UnlockSecretKeysRequest = SecretKeyAuthorizationPayload & {
-  /** The paired clients the person chose. */
-  clientIds?: string[];
-  /** From a browser nobody has unlocked yet, starting its own unlock (`CredentialUnlocks.unlockTicketFor`). */
-  unlockTicket?: string;
-};
-
-/** `stillLocked`: those named that this did not lift. */
-export type UnlockSecretKeysResponse = { unlockedKeyCount: number; stillLocked: string[] };
 
 export type SecretKeysSnapshotResponse = SecretKeysSnapshot;
 export type SecretKeyMutationResponse = SecretKeySummary;

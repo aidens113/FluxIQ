@@ -30,6 +30,7 @@ import {
   ClientGatewayLifecycle,
   ClientGatewayPairingFlow,
   ClientGatewayPairingRegistry,
+  ClientGatewayProjectFocus,
   ClientGatewaySessionRegistry,
   ClientGatewayTraceTap,
   ClientGatewayTransport,
@@ -64,6 +65,8 @@ export type {
   ClientGatewayPeer,
   ClientGatewayPairingLimits,
   ClientGatewayPairingCapacityScope,
+  ClientGatewayProjectFocusAuthority,
+  ClientGatewayProjectFocusPort,
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
@@ -76,7 +79,7 @@ export {
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -101,6 +104,8 @@ export class ClientGatewayService {
   private readonly commands: ClientGatewayCommands;
   private readonly audit: ClientGatewayAuditLog;
   private readonly activity: ClientGatewayActivityPublisher;
+  /** Where the layer owning identity and IAM installs what decides `client.focus_project` (`service/project-focus/`); unset, a focus is refused as unavailable. */
+  readonly projectFocus: ClientGatewayProjectFocusPort;
   private readonly trace: ClientGatewayTraceTap;
   private readonly pairings: ClientGatewayPairingRegistry;
   /**
@@ -152,7 +157,9 @@ export class ClientGatewayService {
     this.commands = commands;
     this.trace = trace;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade, custody });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, trace, facade });
+    const projectFocus = new ClientGatewayProjectFocus({ sessions, transport, audit, authority: options.projectFocusAuthority });
+    this.projectFocus = projectFocus;
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, projectFocus, audit, trace, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }

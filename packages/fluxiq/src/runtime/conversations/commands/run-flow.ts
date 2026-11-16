@@ -9,7 +9,7 @@
 // paired extension or the web panel -- the person's key pays only for the
 // result checks that judge a repair (MVP item 23): a run whose steps all
 // succeed makes no model call on it. The command asks for that itself, because
-// a paired client's calls reach the endpoint as its person's unlocked session
+// a paired client's calls reach the endpoint under its own authenticated session
 // and the endpoint cannot tell a chat's run from any other caller's.
 //
 // A run that ended without failing says in plain words what ran and how far it
@@ -32,7 +32,7 @@ import { automationStudioConversationAttemptOutcome, automationStudioConversatio
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { automationStudioConversationAnswerFirstAttempt } from "./build.ts";
 import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandContext, AutomationStudioConversationCommandOutcome, AutomationStudioConversationCommandPort } from "./command.ts";
-import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause, automationStudioModelKeySetupStep, type AutomationStudioConversationCommandProgress } from "./progress.ts";
+import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause, type AutomationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Run a Flow";
 
@@ -59,7 +59,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
   },
   announce: ({ flowName }) => `Running ${flowName ? `"${flowName}"` : "the Flow"} now. I'll say here how it went.`,
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
+    const progress = automationStudioConversationCommandProgress(TITLE);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow to run");
     progress.carry({ flowId });
@@ -94,14 +94,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
 
 /**
  * A Run of a task's Flow in answer-first mode: one attempt at the task, from where the task starts,
- * told as create-here and explore tell one. It needs the person's model key as they do, so a key
- * this caller cannot open is the same setup step, said before anything starts.
+ * told as create-here and explore tell one.
  */
 async function taskRun(context: AutomationStudioConversationCommandContext, progress: AutomationStudioConversationCommandProgress, flowId: string, task: AutomationStudioConversationTaskOfFlow): Promise<AutomationStudioConversationCommandOutcome> {
-  if (context.keyNeedsUnlock === true) {
-    context.noteKeySetupStepTold?.();
-    return progress.succeeded(automationStudioModelKeySetupStep(context.keyLockReason));
-  }
   const answered = await automationStudioConversationAnswerFirstAttempt(context, { flowId, startLocation: task.startLocation });
   if (!answered.ok) return progress.failed(answered.cause, { ending: answered.ending, kept: answered.candidateKept, told: answered.told });
   return automationStudioConversationAttemptOutcome(progress, answered);

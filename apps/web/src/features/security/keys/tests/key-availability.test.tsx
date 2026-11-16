@@ -6,7 +6,7 @@ import { KeyAvailability } from "../KeyAvailability";
 
 it.each([
   [{ state: "available" }, "Available"],
-  [{ state: "unavailable", code: "legacy_recovery_required" }, "Saved key recovery required"],
+  [{ state: "unavailable", code: "legacy_recovery_required" }, "Sign in to the panel once to upgrade this key, or add it again"],
   [{ state: "unavailable", code: "host_protection_unavailable" }, "Host key protection unavailable"],
   [{ state: "unavailable", code: "ciphertext_invalid" }, "Saved key could not be read"],
   [{ state: "unavailable", code: "future" }, "Availability not known"],

@@ -7,11 +7,12 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 809
-- Class: 49
-- Object: 91
-- Type: 524
-- Value: 145
+- Public declarations: 837
+- Class: 55
+- Interface: 1
+- Object: 92
+- Type: 543
+- Value: 146
 
 ## Public Declarations
 
@@ -71,6 +72,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `admitClientGatewayTraceForMatching` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/trace-admission.ts` | - |
 | `adoptUncommittedFluxIQStorage` | Value | `packages/fluxiq/src/framework/uncommitted-v2-adoption.ts` | - |
 | `AdvanceProductionRunRequest` | Type | `packages/fluxiq/src/programs/production-runner/api/contracts.ts` | - |
+| `AesGcmSecretKeyHostProtection` | Class | `packages/fluxiq/src/platform/custody/protection/aes-gcm.ts` | AES-GCM wrapping with a stable host-owned resolver, including retired readable ids. |
 | `assertFlowLlmExecutionSettings` | Value | `packages/fluxiq/src/framework/automation-service/service/flow-settings-requests/llm-execution-settings.ts` | - |
 | `AssistantModelChoice` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | What the panel assistant should call, or a plain reason there is none. Never carries a secret value. `ownerId` is the key's holder, its creator (absent for a legacy key nobody is stamped on). It pays for another person's message only when both hold (`ModelKeySettings.resolveAssistant`): `chosenForWorkspace`, an owner or administrator chose it as the workspace's key, and `offeredByHolder`, its holder offered it to the workspace. |
 | `atomicWriteJson` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
@@ -104,6 +106,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `CLIENT_GATEWAY_ACTIVITY_RECOVERY_OUTCOMES` | Object | `packages/contracts/src/client-gateway.ts` | How a recovery ended: it moved the run on, it failed, or a guard or budget refused it before it ran. |
 | `CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS` | Object | `packages/contracts/src/client-gateway.ts` | How a wait on the person ended, on the `ask` row that says so: - `answered`: the person answered (a robot check's Continue, a choice, words); - `allowed`: the person granted a permission ask; - `waited_out`: a check that clears by itself cleared while Core waited; - `declined`: the person refused, or pressed Stop at a robot check; - `timed_out`: nobody answered in time; - `cancelled`: the work stopped before anyone answered -- it was cancelled or failed while it waited, or the question could no longer be read. |
 | `CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS` | Object | `packages/contracts/src/client-gateway.ts` | Why a run step was skipped rather than run, on the `step` row that says so: - `already_done`: the run already completed the step's lasting act for the same row, so it was not done again (the executor's completed-act ledger); - `already_in_state`: the step's control already showed the state it asks for, so it was not pressed (no failure, and not a lasting act this run did); - `optional_absent`: a sometimes-present step whose target was not shown; - `state_routed`: the page was elsewhere, so state routing passed the step over and the run went on at the step the page is at. Additive: a client that does not know a reason reads the row as a plain step. |
+| `CLIENT_GATEWAY_ENROLMENT_REFUSALS` | Object | `packages/fluxiq/src/client-gateway/service/enrolment/enrolment-refusal.ts` | Why an enrolment ticket was refused, as `server.error.code` names it and the audit records it, with the words the client is told. A refused hello is closed; it never falls back to pairing. |
 | `CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES` | Object | `packages/contracts/src/client-gateway.ts` | Failure codes for a command refused because of its host lease; category `blocked_by_capability_or_policy`, effect `unacted`. |
 | `CLIENT_GATEWAY_PROTOCOL_VERSION` | Object | `packages/contracts/src/client-gateway.ts` | The version the gateway stamps on its envelopes. Gateway 0.2 (hosted production plan) is additive over 0.1 and shares its major version; the versions this contract describes are `CLIENT_GATEWAY_PROTOCOL_VERSIONS`. This stays `0.1` until the gateway sends the 0.2 messages, since it is also a recorded trace's contract version. |
 | `CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY` | Object | `packages/contracts/src/client-gateway.ts` | The capability metadata field a client sets to `true` to say it answers `server.reconcile_command`. Core asks only a session that declared it, on any capability; a session that did not is never asked, and a lost reply to it keeps the outcome it had (`timed_out`). |
@@ -150,9 +153,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayActivitySkip` | Type | `packages/contracts/src/client-gateway.ts` | The skip a `step` row reports, so a client draws its card from a closed field rather than from the row's shape or Core's sentence. `subject` is the plain words naming what was skipped: the list row's label ("Lin Zhao") or the step's authored label, never other page data. |
 | `ClientGatewayActivitySkipReason` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayAppendRecordingEntryRequest` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayApprovedTrustInput` | Type | `packages/fluxiq/src/client-gateway/service/trust-issuance/types.ts` | Server-only consent evidence. A public request must never choose its approver or session authority. |
 | `ClientGatewayAuditEntry` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCapability` | Type | `packages/contracts/src/client-gateway.ts` | - |
-| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | `token` is the client's credential: under gateway 0.2 the connected-client credential from the connect flow (`ConnectTokenResponse.credential`), under 0.1 a trusted-client token. |
+| `ClientGatewayClientHello` | Type | `packages/contracts/src/client-gateway.ts` | `token` is the client's credential: under gateway 0.2 the connected-client credential from the connect flow (`ConnectTokenResponse.credential`), under 0.1 a trusted-client token. `enrolmentTicket` is a one-time ticket the engine minted in its own process for a managed host it launched. A hello carrying one is enrolled without a person's approval, or refused with an `enrolment.*` code and closed; it never falls back to pairing. It is a credential: sent only by a client with no token, at most once, and never logged. |
 | `ClientGatewayClientMessage` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayClientType` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayCommandClosure` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | How Core had stopped waiting for a command when its late result came. |
@@ -163,15 +167,21 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayCredentialHolder` | Type | `packages/fluxiq/src/client-gateway/service/credential-custody.ts` | A trusted client as custody needs it: who it acts for, until when, and what to call it. No credential. |
 | `ClientGatewayDurableActionOptions` | Type | `packages/fluxiq/src/client-gateway/service/command-ledger/contracts.ts` | - |
 | `ClientGatewayDurableActionResponse` | Type | `packages/fluxiq/src/client-gateway/service/command-ledger/contracts.ts` | - |
+| `ClientGatewayEnrolmentRefusalCode` | Type | `packages/fluxiq/src/client-gateway/service/enrolment/enrolment-refusal.ts` | - |
 | `ClientGatewayEnvelope` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEvent` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayEventHandler` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayGoingAwayNotice` | Type | `packages/contracts/src/client-gateway.ts` | `server.going_away` (gateway 0.2): the server is draining. No new work is sent; the client keeps its credential and reconnects after `retryAfterMs`. |
 | `ClientGatewayHelloMetadata` | Type | `packages/contracts/src/client-gateway.ts` | A hello's metadata. Open, as in 0.1; gateway 0.2 names `clientLabel`, the person-readable name of this client ("Work laptop") that the connect consent page and the account's client list show. |
+| `ClientGatewayHostEnrolmentRequest` | Type | `packages/fluxiq/src/client-gateway/service/enrolment/types.ts` | What an enrolment ticket is minted for: the managed host it enrols, the domain that host's client must declare, whether its profile is thrown away on close, and how long the ticket lives (60 s when omitted). |
+| `ClientGatewayHostEnrolmentTicket` | Type | `packages/fluxiq/src/client-gateway/service/enrolment/types.ts` | A minted ticket. `ticket` is a credential: it is handed to the launcher in memory only, and never logged, printed, persisted or put in a status. |
 | `ClientGatewayHostLease` | Type | `packages/contracts/src/client-gateway.ts` | The host lease a command is issued under (automation-project-agents-plan, `Host resources and concurrency`). Core's gateway stamps it from the scheduler's scope; a caller never writes it. `resourceKey` is opaque to Core and names the domain's resource (for the web extension, its automation tab); `epoch` rises every time the resource is granted again, so a client refuses a command whose epoch is lower than the highest it has seen for that key. |
+| `ClientGatewayIssuedTrust` | Type | `packages/fluxiq/src/client-gateway/service/trust-issuance/types.ts` | - |
 | `ClientGatewayItemKind` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | - |
 | `ClientGatewayLateActionResult` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | A result that arrived for a command Core no longer awaited. It names the command and how it ended, never what the client said in words: no message, payload or target, so no page data reaches the run's evidence through it. |
 | `ClientGatewayLateActionResultListener` | Type | `packages/fluxiq/src/client-gateway/service/command-history.ts` | - |
+| `ClientGatewayManagedHost` | Type | `packages/contracts/src/client-gateway.ts` | The managed host a trust was enrolled for: `hostId` names the host the engine launched, and `profile` says whether its browser profile is thrown away when it closes (`fresh`, whose trust is revoked then and at the next engine start) or kept (`named`). |
+| `ClientGatewayManagedHosts` | Type | `packages/fluxiq/src/client-gateway/service/enrolment/types.ts` | What the engine does with managed hosts, from its own process: the gateway's `managedHosts`. Nothing routes to it. |
 | `ClientGatewayPairingCapacityError` | Class | `packages/fluxiq/src/client-gateway/service/security/pairing-capacity-error.ts` | A new pairing challenge refused because a pending-pairing cap was reached (`ClientGatewayPairingLimits`). `code` is what a caller reads; the client that asked is told the same code in `server.error`. |
 | `ClientGatewayPairingCapacityScope` | Type | `packages/fluxiq/src/client-gateway/service/security/pairing-capacity-error.ts` | Which pending-pairing cap a new challenge met. |
 | `ClientGatewayPairingChallenge` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -193,6 +203,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayService` | Class | `packages/fluxiq/src/client-gateway/service.ts` | The client gateway: pairing, durable client trust, session lifecycle, and the command channel to a paired client. This class is a facade. It holds no gateway state of its own; each method forwards to the collaborator under `service/` that owns the state it touches. Its public surface is the gateway contract every program imports, so a method is added or removed here only when that contract changes — the collaborators behind it can be reshaped freely. |
 | `ClientGatewayServiceOptions` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | Construction options for `ClientGatewayService`. |
 | `ClientGatewaySession` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewaySessionMetadata` | Type | `packages/fluxiq/src/client-gateway/service/session-metadata/types.ts` | - |
+| `ClientGatewaySessionMetadataProvider` | Type | `packages/fluxiq/src/client-gateway/service/session-metadata/types.ts` | - |
 | `ClientGatewaySessionReady` | Type | `packages/contracts/src/client-gateway.ts` | `server.session_ready`. Gateway 0.2 adds who the session acts as (`user`, `workspace`) and `credentialExpiresAt` (epoch milliseconds); a connected client's credential rotates on every connect, and `token` is then the new credential the client stores in place of the old one. |
 | `ClientGatewaySessionStatus` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewaySnapshot` | Type | `packages/contracts/src/client-gateway.ts` | - |
@@ -356,9 +368,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayTraceStoreWriter` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | The write side a recorder persists through. Artifacts, then events, then the manifest. |
 | `ClientGatewayTraceTerminationReason` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
 | `ClientGatewayTraceTime` | Type | `packages/fluxiq/src/client-gateway/trace/types.ts` | - |
+| `ClientGatewayTrustAuthority` | Type | `packages/fluxiq/src/client-gateway/service/trust-issuance/types.ts` | Authenticated platform composition owns account, membership, session validation and strict key delivery. |
 | `ClientGatewayTrustedClient` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayTrustedClientStore` | Type | `packages/fluxiq/src/client-gateway/service/types.ts` | Durable store the gateway reads trusted clients from and writes them back to. |
 | `ClientGatewayTrustedClientView` | Type | `packages/contracts/src/client-gateway.ts` | - |
+| `ClientGatewayTrustIssuanceError` | Class | `packages/fluxiq/src/client-gateway/service/trust-issuance/issuance-error.ts` | A sanitized refusal; never retains credentials, raw sessions or a store/provider exception cause. |
 | `ClientGatewayUnknownPayload` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `Clock` | Type | `packages/fluxiq/src/core/index.ts` | - |
 | `cloneClientGatewayTraceJson` | Value | `packages/fluxiq/src/client-gateway/trace/clone-json.ts` | - |
@@ -382,6 +396,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ComputeNode` | Type | `packages/fluxiq/src/programs/compute-control/types.ts` | - |
 | `ComputeStatus` | Type | `packages/fluxiq/src/programs/compute-control/types.ts` | - |
 | `ControlBackgroundTaskRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |
+| `CoreRuntimeBuildIdentity` | Type | `packages/fluxiq/src/runtime/build-identity/types.ts` | Build-time artifact hashes; the reader payload slot alone is normalized. |
 | `createClientGatewayTraceReplayGateway` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/gateway.ts` | - |
 | `createEnvelope` | Value | `packages/fluxiq/src/io/index.ts` | - |
 | `createGlobalProgramRuntime` | Value | `packages/fluxiq/src/programs/_shared/runtime.ts` | - |
@@ -493,6 +508,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `FlowValidationIssue` | Type | `packages/fluxiq/src/flows/index.ts` | - |
 | `FluxIQ` | Class | `packages/fluxiq/src/framework/index.ts` | - |
 | `FLUXIQ_LAYOUT_V3_VERSION` | Object | `packages/fluxiq/src/framework/layout-v3/version.ts` | - |
+| `FLUXIQ_MANAGED_HOST_PRINCIPAL` | Object | `packages/fluxiq/src/client-gateway/service/enrolment/managed-host-principal.ts` | Who a managed host's trust acts for. No person approves a host the engine launched itself, so its trust is approved by the principal open-mode FluxNode runs act as, and its program calls are judged as that principal's. |
 | `FLUXIQ_RUNTIME_WITHHELD_VALUE` | Object | `packages/fluxiq/src/runtime/contracts.ts` | What a withheld value reads as in a command attempt the runtime keeps. A constant rather than a removed field, so a reader can tell a value that was withheld from one that was never there. |
 | `FLUXIQ_STORAGE_LAYOUT_VERSION` | Object | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `FluxIQCloseOptions` | Type | `packages/fluxiq/src/framework/index.ts` | How `FluxIQ.close()` ends an instance. `shutdown` (the default) is a real stop: every held key is revoked. `evict` drops an idle instance a host will create again: key custody given in `FluxIQOptions.heldKeys` stays held, so its users stay unlocked. Both close the instance's own connections and detach it from process-wide state, and neither touches another instance's. |
@@ -617,9 +633,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `Migration` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `MigrationRun` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
 | `MockClientGatewayClient` | Class | `packages/fluxiq/src/client-gateway/testing/mock-client.ts` | - |
-| `MODEL_KEY_LOCK_REASONS` | Object | `packages/contracts/src/task-attempts/model-key-lock.ts` | Why a person's model key is locked where they are, and the one thing to do about it. Every sentence a person reads about a locked key comes from here: the empty chat's setup step, the reply to a task that did not start, the line a waiting task writes, so they cannot drift apart. - `first_unlock`: nothing has been stored for this person yet, as on the first start after unlocks began to last. Told once (`Unlock` then ends it for good). - `signed_out`: they signed out, and this browser went with it. - `administrator`: an administrator ended their session. - `sessions_ended`: all their sessions ended together, such as a disabled account brought back. - `password_changed`: they changed their password somewhere else, which ends every unlock but the session that changed it. A change often means they suspect someone. - `password_reset`: their password was reset without the old one, so nothing they can type opens the key: they add it again. - `unknown`: locked, with nothing more to say. |
-| `modelKeyLockedWords` | Value | `packages/contracts/src/task-attempts/model-key-lock.ts` | - |
-| `ModelKeyLockReason` | Type | `packages/contracts/src/task-attempts/model-key-lock.ts` | - |
+| `ModelKeyAvailability` | Type | `packages/contracts/src/platform/model-keys/availability.ts` | Safe saved-key status. Authentication and missing configuration are separate. |
 | `ModelKeySettingsRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Which model key is the workspace's default, and what the panel assistant uses. One small record beside the keys; it holds key ids, a model id and a notice, never a value. Absent until something sets it: the default is then the oldest enabled model key, so a workspace made before this record needs no migration. |
 | `ModelKeySettingsResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The reply of `set-default-key`, `get-assistant-model` and `set-assistant-model`. |
 | `ModelKeySettingsView` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | The model-key choices as a client shows them: no ids of values, only which key. |
@@ -683,8 +697,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `readClientGatewayTraceOperation` | Value | `packages/fluxiq/src/client-gateway/trace-matcher/operation/read.ts` | - |
 | `readClientGatewayTraceRecordedCommand` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-command.ts` | - |
 | `readClientGatewayTraceSessions` | Value | `packages/fluxiq/src/client-gateway/trace-replay/walk/recorded-sessions.ts` | - |
+| `readCoreRuntimeBuildIdentity` | Value | `packages/fluxiq/src/runtime/build-identity/read.ts` | - |
 | `readMigrationJournal` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
-| `readModelKeyLockReason` | Value | `packages/contracts/src/task-attempts/model-key-lock.ts` | - |
+| `readModelKeyAvailability` | Value | `packages/contracts/src/platform/model-keys/availability.ts` | - |
 | `readStorageConfig` | Value | `packages/fluxiq/src/framework/storage-layout.ts` | - |
 | `RecaseMyUsernameRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | The calling person's own sign-in name in another case (`recase-my-username`). It acts only on the caller (`request.actor.userId`): the request names no person, and one that carries any field but `username` is refused (`IDENTITY_RECASE_ERRORS.selfOnly`). `username` must equal the caller's current name ignoring case (`usernameKey`); it is written as sent and answered as the written person, the same as `update-user` answers. |
 | `RecordEnvelope` | Type | `packages/fluxiq/src/framework/persistence/repository/types.ts` | - |
@@ -743,7 +758,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SaveBackgroundTaskScheduleRequest` | Type | `packages/fluxiq/src/programs/background-tasks/api/contracts.ts` | - |
 | `SECRET_KEYS_ENDPOINTS` | Object | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `SECRET_KEYS_PROGRAM` | Object | `packages/fluxiq/src/programs/secret-keys/metadata.ts` | - |
+| `SecretKeyAccess` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/access/access.ts` | Authenticated per-call use, independent of a panel session's decryption cache. |
+| `SecretKeyAccessUnavailableError` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/access/unavailable-error.ts` | A real saved-key recovery/configuration problem, never a client unlock requirement. |
 | `SecretKeyActorSession` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/service.ts` | The signed-in session of the person changing a key, as the caller verified it: its id, its user and when it expires. Only that user's own session takes the key, and never past `expiresAtMs`. |
+| `SecretKeyAuthenticatedCredentialHolder` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-enrollments.ts` | A trusted host's fresh paired-holder binding. A session digest is required; raw cookies never reach this record. |
 | `SecretKeyAuthorizationPayload` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `SecretKeyCredentialChange` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/credential-changes.ts` | A prepared or committed credential change; `resealedKeyCount` counts the keys re-sealed under the next password. |
 | `SecretKeyCredentialChangeInput` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/credential-changes.ts` | - |
@@ -753,16 +771,26 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeyCredentialUnlockGeneration` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | One key pair of a holder: the private half under its credential, and what is boxed to the public half, by Secret Keys record id. |
 | `SecretKeyCredentialUnlockRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | What Core stores so a holder's unlock can come back with no password: nothing in it opens a key without the holder's credential, which Core keeps only as a digest. `pending` is a whole new key pair for the credential a rotation just sent, until it is confirmed in use. A box whose record was re-sealed no longer opens it, and is dropped when found. `lockedAtMs` is set when a holder is new (a paired client starts locked) and by a lock (a sign-out, a revoke): nothing but the person's own unlock naming this holder boxes a key for it again. |
 | `SecretKeyCredentialUnlockWrap` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A holder's private key, sealed under a key only its credential derives. |
+| `SecretKeyDataKeys` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/access/data-keys.ts` | Protects existing data keys without changing the encrypted provider values. |
+| `SecretKeyHostCustody` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A ciphertext recovery key bound to its proven owner and exact value seal. |
+| `SecretKeyHostProtection` | Interface | `packages/fluxiq/src/platform/custody/protection/types.ts` | - |
+| `SecretKeyHostProtectionKeyResolver` | Type | `packages/fluxiq/src/platform/custody/protection/types.ts` | - |
+| `SecretKeyIdentityAuthority` | Type | `packages/fluxiq/src/programs/secret-keys/api/handlers.ts` | Trusted host identity authority; tenant storage never becomes the account authority. |
 | `SecretKeyKind` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeyLockedClient` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A locked paired client as its person chooses among them. |
+| `SecretKeyLockReason` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Why a holder was locked, recorded in the credential-unlock store only. Not user-facing wording. |
 | `SecretKeyMutationResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |
 | `SecretKeyOffer` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A holder's offer of their own key to the workspace: the key, who offered it (its holder then), and when. |
-| `secretKeyPairedHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-unlocks.ts` | - |
-| `secretKeyPanelHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-unlocks.ts` | - |
+| `secretKeyPairedHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/holder-identity.ts` | - |
+| `secretKeyPanelHolderId` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/holder-identity.ts` | - |
+| `SecretKeyProtectedDataKey` | Type | `packages/fluxiq/src/platform/custody/protection/types.ts` | Ciphertext only; the wrapping key remains with the host's resolver. |
+| `SecretKeyProtectionContext` | Type | `packages/fluxiq/src/platform/custody/protection/types.ts` | Authenticated context for one encrypted record's decryption key. |
+| `SecretKeyProtectionUnavailableError` | Class | `packages/fluxiq/src/platform/custody/protection/unavailable-error.ts` | Host protection is not configured or cannot resolve the required wrapping key. |
 | `SecretKeyRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeysCloseMode` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/service.ts` | How `SecretKeysService.close` ends. `shutdown` revokes and zeroes every held key. `evict` drops the instance but leaves a `HeldKeys` the service was given as it is, so the next service over the same repository releases the same unlocks; a service's own `HeldKeys` is revoked either way. |
 | `SecretKeyScope` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
-| `secretKeySessionDigest` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/credential-unlocks.ts` | - |
+| `secretKeySealDigest` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/access/seal-digest.ts` | - |
+| `secretKeySessionDigest` | Value | `packages/fluxiq/src/programs/secret-keys/runtime/unlocks/holder-identity.ts` | - |
 | `SecretKeySessionEnd` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | A panel session that ended, as Identity Access announced it: `digest` is the session's stored digest, null when a whole person's sessions ended together (`wholeUserId`). `administrator` is true for an administrator's revoke. |
 | `SecretKeysService` | Class | `packages/fluxiq/src/programs/secret-keys/runtime/service.ts` | Secret Keys: values sealed under account passwords. This class is the public surface; records and their writes live in `SecretKeyStore`, held derived keys in `HeldKeys`, seal upgrades in `SealUpgrades`, and credential changes, including pending seals, in `CredentialChanges`. |
 | `SecretKeysSnapshot` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
@@ -770,6 +798,9 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `SecretKeySummary` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | - |
 | `SecretKeyUnlockPersonRecord` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | What is remembered of one person across restarts: nothing secret. |
 | `SecretKeyUnlockRevoker` | Type | `packages/fluxiq/src/programs/secret-keys/types.ts` | Who asks for a session's unlock to be dropped (`revokeSessionUnlock`): the user asking (null when nobody vouches for one), and whether they are an administrator. `administrator` is true only when the caller's own permission check admitted them (`identity.manage`), never because they hold a session id. |
+| `SecretKeyUseAuthority` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/access/types.ts` | Rechecked at mint and consumption against current identity, tenant and IAM authority. |
+| `SecretKeyUseAuthorization` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/access/types.ts` | - |
+| `SecretKeyUsePrincipal` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/access/types.ts` | Trusted in-process references; a user id alone is never an authenticated principal. |
 | `SecretRevealAuthorizationMetadata` | Type | `packages/fluxiq/src/programs/secret-keys/runtime/held-keys.ts` | - |
 | `serializedMetricBytes` | Value | `packages/fluxiq/src/framework/persistence/performance-metrics/performance-metrics.ts` | - |
 | `Session` | Type | `packages/fluxiq/src/programs/identity-access/types.ts` | - |
@@ -806,8 +837,6 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `UnitHistoryLimits` | Type | `packages/fluxiq/src/ui/activity-status/unit-history.ts` | The bounds, as `ACTIVITY_HISTORY_LIMITS` sets them; a build's ceiling defaults to that. |
 | `UnitSituation` | Class | `packages/fluxiq/src/ui/activity-status/unit-situation.ts` | - |
 | `UnitState` | Type | `packages/fluxiq/src/ui/activity-status/unit-situation.ts` | - |
-| `UnlockSecretKeysRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | The person's own unlock, with their password: this session, and the locked paired clients they chose, by `holderId`. Named or not lifted: never one they did not choose. |
-| `UnlockSecretKeysResponse` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | `stillLocked`: those named that this did not lift. |
 | `UpdateIdentityUserRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | - |
 | `UpdateMyPreferencesRequest` | Type | `packages/fluxiq/src/programs/identity-access/api/contracts.ts` | `startingHumanness`: an integer 0-100, or null to clear it. |
 | `UpdateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts` | - |

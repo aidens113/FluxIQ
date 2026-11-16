@@ -1,11 +1,12 @@
 // The standing authorization that lets a run nobody is watching obtain a model
 // to judge its own result.
 //
-// Why this exists at all. A model call is paid with a person's own key, which
-// the host releases only to that person's live, unlocked session. A Flow
-// replayed on a schedule at three in the morning has no such session, so
-// without this its result could never be judged -- and checking runs nobody is
-// watching is the entire point of the schedule beside this.
+// Why this exists at all. A model call is paid with a person's own key, used
+// per call on the authority of whoever is calling: a signed-in person, or a
+// client paired for them. A Flow replayed on a schedule at three in the morning
+// has no caller, so without this its result could never be judged -- and
+// checking runs nobody is watching is the entire point of the schedule beside
+// this.
 //
 // The user settled the shape directly, on being shown the recommendation:
 // "Yes this is how it should be. If a user says do this to acheive automation,
@@ -21,9 +22,17 @@
 //     spending without a limit the person set;
 //   * an expiry, after which checking stops until the person renews it.
 //
-// It is deliberately NOT a way to reach a person's session key without them.
-// A key released without a session would let unattended work reach exploring
-// and the Flow-building kinds as well.
+// **Whose authority it carries (2026-11-16).** It records who gave it and how:
+// the person themselves, or a client paired for them (`grantedThrough`). Each
+// use is authorized again, at the moment of use, as that principal: the key's
+// own per-use authority (`secret-keys/runtime/access`) is asked with a
+// `standing` principal bound to this record's `authorizationId`, and refuses
+// when the client was revoked, the person disabled, the key disabled or
+// replaced, or IAM no longer lets that person use that key. No held session,
+// unlock or password is involved: "if a client is connected, they are
+// CONNECTED" (user, 2026-11-16). A record stored before this carried an
+// `unlockSessionId` instead; it reads back as `legacy_unlock` and is refused
+// with a plain request to turn checking on again.
 //
 // **The repair clause.** That paragraph used to end "and the repair a
 // refutation triggers is a separate authorization question with a separate
@@ -79,28 +88,39 @@ export type AutomationStudioUnattendedRepairClause = {
   maxCostUsdPerRun: number;
 };
 
+/**
+ * How the person gave a standing authorization: themselves, signed in, or
+ * through a client paired for them. What each use is re-authorized as.
+ */
+export type AutomationStudioResultCheckGrantor =
+  | { kind: "person" }
+  | { kind: "client"; trustedClientId: string };
+
+/**
+ * A stored authorization's grant, as read back. `legacy_unlock` is a record
+ * written before per-use authority, which named a held key unlock rather than
+ * a grantor; it is never redeemed, and says so (`renew`).
+ */
+export type AutomationStudioResultCheckGrant = AutomationStudioResultCheckGrantor | { kind: "legacy_unlock" };
+
 export type AutomationStudioResultCheckAuthorization = {
   /** Always `loop_verification`. Stored so the record states its own bound rather than relying on the reader. */
   taskKind: typeof AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND;
-  /** Who turned result checking on. An audit field: it is never re-validated as a live session, which is the point. */
-  authorizedByUserId: string;
   /**
-   * The Secret Keys unlock the checks draw the key from.
-   *
-   * Not a secret, and not an identity session: it is the handle a held key
-   * unlock is keyed by, and the host checks it against `authorizedByUserId`
-   * together, so a mismatched pair opens nothing. It is here because this is
-   * the one thing an unattended check genuinely cannot do without -- Core holds
-   * no credential, and `revealKey` wants a password nobody is present to give.
-   * When the unlock has lapsed the host resolves no provider and the run
-   * records `unverified`, which is the failing direction to pick.
+   * Names this one grant. Each use is authorized as a `standing` principal
+   * carrying it, and the authority finds this record by it, so a replaced or
+   * withdrawn grant authorizes nothing however the request was built.
    */
-  unlockSessionId: string;
+  authorizationId: string;
+  /** The person who turned result checking on, and whose key and authority pay for it. */
+  authorizedByUserId: string;
+  /** Whether they did it themselves or through a client paired for them. */
+  grantedThrough: AutomationStudioResultCheckGrant;
   /** The configured LLM key the checks are paid for with. */
   keyId: string;
-  /** What every check under this authorization may spend in total before the person renews it. */
+  /** What every check under this authorization may spend in total before the person renews it. The person's own choice. */
   maxTotalCostUsd: number;
-  /** The most any single verification call may cost. */
+  /** The most any single verification call may cost. The person's own choice. */
   maxCostUsdPerCall: number;
   grantedAtMs: number;
   /** When checking stops until the person renews. Binds a repair exactly as it binds a check. */
@@ -121,8 +141,8 @@ export type AutomationStudioResultCheckRedemption =
   | {
     redeemed: true;
     keyId: string;
-    /** The key unlock to draw the credential from, and the user it must belong to. Checked together by the host. */
-    unlockSessionId: string;
+    /** The grant each use is authorized under, and the person it belongs to. Checked again by the key's authority at use. */
+    authorizationId: string;
     authorizedByUserId: string;
     /** The narrower of the authorization's per-call ceiling and what it has left in total. */
     maxEstimatedCostUsd: number;
@@ -167,5 +187,10 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES = Object.freeze(
   /** The authorization has lapsed and the person must renew it. */
   expired: "core.check.authorization_expired",
   /** The cost ceiling the person set has been reached. */
-  exhausted: "core.check.authorization_exhausted"
+  exhausted: "core.check.authorization_exhausted",
+  /** Stored before per-use authority: it names a key unlock rather than a grantor, so the person turns checking on again. */
+  renew: "core.check.authorization_renew"
 });
+
+/** Why a record stored before per-use authority is not redeemed. Plain, and never an unlock prompt. */
+export const AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON = "Result checking for this Flow was turned on before FluxIQ changed how saved model keys are used. Turn result checking on again in the Flow's settings to keep checking runs nobody is watching.";

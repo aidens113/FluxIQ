@@ -24,3 +24,4 @@
   .home-section { padding: 12px; }
   .home-row-side { align-items: flex-start; text-align: left; }
 }
+.home-retry { font: inherit; color: inherit; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }

@@ -14,6 +14,8 @@
 @import "./view/thread-list/thread-list.css";
 /* One task's humanness slider, on its answer card and wherever a host mounts it. */
 @import "./controls/humanness/humanness.css";
+/* The project switcher a host mounts in its own header. */
+@import "../project-switcher/project-switcher.css";
 
 :where(.chat-panel), :where(.chat-panel) *, :where(.chat-panel) *::before, :where(.chat-panel) *::after { box-sizing: border-box; }
 :where(.chat-panel) button, :where(.chat-panel) input, :where(.chat-panel) select, :where(.chat-panel) textarea { font: inherit; }

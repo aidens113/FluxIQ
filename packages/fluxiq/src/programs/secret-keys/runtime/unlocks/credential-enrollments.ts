@@ -1,4 +1,4 @@
-import { PAIRED_CLIENT_UNLOCK_PREFIX } from "@fluxiq/contracts/platform";
+import { PAIRED_CLIENT_HOLDER_PREFIX } from "@fluxiq/contracts/platform";
 import type { JsonObject } from "../../../../core/index.ts";
 import { createRecord, type Repository } from "../../../database-manager/index.ts";
 import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockRecord, SecretKeySessionEnd } from "../../index.ts";
@@ -127,7 +127,7 @@ export class CredentialEnrollments {
 }
 
 function validatedHolder(holder: SecretKeyLockedCredentialHolder, credential: string, now: number): SecretKeyLockedCredentialHolder {
-  if (!Number.isSafeInteger(now) || now < 0 || typeof holder !== "object" || holder === null || holder.holderKind !== "paired-client" || typeof holder.holderId !== "string" || !holder.holderId.startsWith(PAIRED_CLIENT_UNLOCK_PREFIX) || holder.holderId.length <= PAIRED_CLIENT_UNLOCK_PREFIX.length || typeof holder.userId !== "string" || !holder.userId || typeof holder.approvingSessionDigest !== "string" || !/^[a-f0-9]{64}$/u.test(holder.approvingSessionDigest) || !Number.isSafeInteger(holder.expiresAtMs) || holder.expiresAtMs <= now || typeof credential !== "string" || !credential || "heldAs" in holder || (holder.label !== undefined && typeof holder.label !== "string")) throw new TypeError("Invalid strict credential enrollment binding.");
+  if (!Number.isSafeInteger(now) || now < 0 || typeof holder !== "object" || holder === null || holder.holderKind !== "paired-client" || typeof holder.holderId !== "string" || !holder.holderId.startsWith(PAIRED_CLIENT_HOLDER_PREFIX) || holder.holderId.length <= PAIRED_CLIENT_HOLDER_PREFIX.length || typeof holder.userId !== "string" || !holder.userId || typeof holder.approvingSessionDigest !== "string" || !/^[a-f0-9]{64}$/u.test(holder.approvingSessionDigest) || !Number.isSafeInteger(holder.expiresAtMs) || holder.expiresAtMs <= now || typeof credential !== "string" || !credential || "heldAs" in holder || (holder.label !== undefined && typeof holder.label !== "string")) throw new TypeError("Invalid strict credential enrollment binding.");
   const binding: SecretKeyLockedCredentialHolder = { holderKind: "paired-client", holderId: holder.holderId, userId: holder.userId, expiresAtMs: holder.expiresAtMs, approvingSessionDigest: holder.approvingSessionDigest };
   if (holder.label !== undefined) binding.label = holder.label;
   return binding;

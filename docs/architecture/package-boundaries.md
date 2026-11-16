@@ -201,6 +201,36 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a Flow's standing result-check authorization names its grantor, not a key unlock (`fluxiq`)
+
+A Flow's standing result-check authorization no longer depends on a held key
+unlock or any session. It records who gave it and how, and every use is
+authorized again by the key's per-use authority.
+
+- `AutomationStudioResultCheckAuthorization` drops `unlockSessionId` and gains
+  `authorizationId` and `grantedThrough` (`{ kind: "person" }` or
+  `{ kind: "client", trustedClientId }`; `{ kind: "legacy_unlock" }` only when
+  read back from an older record). The redemptions and
+  `AutomationStudioResultCheckProviderRequest` carry `authorizationId`, and the
+  request also carries `purpose` (`loop_verification` or `repair`).
+- `AutomationStudioResultCheckProviderPorts.createSessionRevealAuthorization` is
+  replaced by `createUseAuthorization({ id, principal, ttlMs })`, where
+  `principal` is Secret Keys' `standing` principal. A host passes
+  `secretKeys.access.createUseAuthorization`. `localSecretKeyUseAuthority`
+  takes `resolveStanding` to bind that principal to the Flow's stored grant;
+  without it, every standing use is refused. A host with its own
+  `resolvePrincipal` receives the `standing` principal for a person's grant,
+  and a `client` principal for a grant made through a paired client.
+- The refusal codes add `core.check.authorization_renew` and
+  `core.repair.authorization_renew`, for a record stored before this change. It
+  is never redeemed, and the run says to turn result checking on again.
+- `update-flow-settings` takes an optional top-level `resultCheckAuthorization`
+  (`{ keyId, maxTotalCostUsd?, maxCostUsdPerCall?, ttlMs?, repair? }`, or `null`
+  to withdraw). It is granted as the request's own actor, the person or the
+  paired client acting for them. An authorization in the Flow's metadata is
+  still ignored on every write.
+- `secrets:Unlock` is removed from `FluxIQUserAccess`. No endpoint declares it.
+
 ### 0.6.0: the tasks and library screens, two stylesheets, a step's provenance and `fillComposer` (`@fluxiq/ui-components`)
 
 Added only; nothing a client already imports changed shape.
@@ -634,8 +664,8 @@ call `runRuntimeSession` or `run-runtime-session` from a paired client.
 
 **Changed.**
 - `run-runtime-session` sets `resultCheckCallerPays: "repair_checks"` when the
-  actor is a paired client (`client-gateway:` session) mapped to an unlocked
-  session. Its routine checks then fall to the Flow's standing result-check
+  actor is a paired client (`client-gateway:` session), which keeps its
+  own session. Its routine checks then fall to the Flow's standing result-check
   authorization, or are not made at all. A person's own session is unchanged.
 - A re-authored Flow's re-run (`rerunRepairedFlow`) is now judged under the
   repaired-run decision, as the resumed retry already was, so the caller pays
@@ -946,7 +976,8 @@ test pins a limit below.
 
 LLM execution grants are removed. A model call made while building, exploring,
 repairing, verifying or judging, diagnosing or adapting a Flow runs on the
-caller's own unlocked Secret Keys key: nothing is issued, leased, preflighted,
+caller's own configured Secret Keys key, authorized for the caller's
+authenticated principal: nothing is issued, leased, preflighted,
 digest-checked, confirmed for size, or revoked before or during a provider
 call. The grant, purpose, lifetime, high-token and failure-for-the-grant
 passages of the 0.6.0 and 0.7.0 entries below describe what was removed. Read
@@ -1224,11 +1255,10 @@ lease.**
   `AUTOMATION_STUDIO_LLM_EXECUTION_GRANT_MAX_RUN_MS`, 600,000 ms. A claimed
   grant used to be refused and revoked at `expiresAtMs`. It now keeps calling
   until the lease ends, the host revokes it, a limit is reached, or the actor's
-  session or Secret Keys unlock ends. A host that shows `expiresAtMs` as the
+  session ends. A host that shows `expiresAtMs` as the
   grant's lifetime under-reports a claimed grant.
 - **Fresh authorizations.** A call made after the claim window swaps its reveal
-  authorization for a fresh one, minted from the actor's unlocked Secret Keys
-  session. The swap is one for one, so reveals stay capped at the call count.
+  authorization for a fresh one, minted for the actor's authenticated principal. The swap is one for one, so reveals stay capped at the call count.
 
 **A recovery is bounded by cost, tokens, time and progress, not by a call
 count.** This covers every failed run the model is asked about, with or without

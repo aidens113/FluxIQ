@@ -3,6 +3,7 @@
 import { QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, InlineNotice, Modal } from "../features/programs/shared-ui";
+import "./client-pairing-modal.css";
 
 export type ClientPairingRequest = {
   pairingCode: string;
@@ -228,12 +229,19 @@ export function GlobalClientGatewayPairing() {
       {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
-      <div className="automation-client-pairing-modal">
-        <QrCode aria-hidden size={20} />
-        <strong>{pendingPairing.requestedByClientName ?? pendingSession?.name ?? "Extension client"}</strong>
-        <span>Approve only when this reference matches the requesting client.</span>
-        <code>{pendingPairing.referenceCode ?? pendingPairing.pairingCode}</code>
-        <small>{pendingSession?.clientId ?? pendingPairing.requestedByClientId ?? snapshot.webRuntime?.clientGatewayPublicUrl ?? "Waiting client"} | {pairingExpiryLabel(pendingPairing.expiresAt, nowMs)}</small>
+      <div className="client-pairing-request">
+        <div className="client-pairing-request-head"><QrCode aria-hidden size={20} /><span>A browser is asking to connect</span></div>
+        <dl className="client-pairing-request-lines">
+          <dt>Client</dt>
+          <dd><strong>{pendingPairing.requestedByClientName ?? pendingSession?.name ?? "Extension client"}</strong></dd>
+          <dt>Client id</dt>
+          <dd>{pendingSession?.clientId ?? pendingPairing.requestedByClientId ?? snapshot.webRuntime?.clientGatewayPublicUrl ?? "Waiting client"}</dd>
+          <dt>Code</dt>
+          <dd><code className="client-pairing-request-code">{pendingPairing.referenceCode ?? pendingPairing.pairingCode}</code></dd>
+          <dt>Time left</dt>
+          <dd>{pairingExpiryLabel(pendingPairing.expiresAt, nowMs)}</dd>
+        </dl>
+        <p className="client-pairing-request-effect">Approve only when this code matches the one the client shows. Approving lets that browser use this workspace; rejecting leaves it unpaired.</p>
       </div>
       <div className="modal-actions">
         <Button busy={busyAction === "reject"} disabled={busyAction === "approve"} onClick={() => void resolvePairing("reject")}>Reject</Button>

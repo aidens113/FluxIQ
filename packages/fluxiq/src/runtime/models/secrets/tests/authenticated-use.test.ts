@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioSessionKeyLocked, releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../session-key.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../session-key.ts";
 
 function fixture() {
   const ports: AutomationStudioSessionKeyPorts = {
     snapshot: async () => ({ keys: [{ id: "key", kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 1, createdBy: "owner" }] }),
     createUseAuthorization: vi.fn(async () => ({ authorizationId: "one-use", keyId: "key", keyUpdatedAtMs: 1 })),
-    createSessionRevealAuthorization: vi.fn(async () => { throw new Error("No second unlock"); }),
     revealKeyWithAuthorization: vi.fn(async () => ({ value: "fake-provider-value" })),
-    revokeRevealAuthorization: vi.fn(),
-    sessionHoldsKey: async () => false
+    revokeRevealAuthorization: vi.fn()
   };
   return ports;
 }
@@ -28,21 +26,17 @@ describe("authenticated provider-key use", () => {
     await expect(releaseAutomationStudioSessionProviderKey(ports, caller, { provider: "anthropic", flowKeyId: "old-unrecoverable" })).rejects.toThrow("requires recovery");
     expect(ports.createUseAuthorization).toHaveBeenCalledTimes(3);
   });
-  it("uses the actual client principal without any held panel session or lock wait", async () => {
+  it("uses the actual client principal without any held panel session", async () => {
     const ports = fixture();
     const caller = { userId: "owner", sessionId: "client-gateway:live" };
-    expect(await automationStudioSessionKeyLocked(ports, caller, { provider: "anthropic" })).toBe(false);
     expect(await releaseAutomationStudioSessionProviderKey(ports, caller, { provider: "anthropic" })).toBe("fake-provider-value");
     expect(ports.createUseAuthorization).toHaveBeenCalledWith({ id: "key", userId: "owner", sessionId: "client-gateway:live", ttlMs: 10_000 });
-    expect(ports.createSessionRevealAuthorization).not.toHaveBeenCalled();
   });
-  it("does not replace a denied current principal with another owner's live session", async () => {
+  it("does not replace a denied current principal with any other session", async () => {
     const ports = fixture();
     ports.createUseAuthorization = async () => { throw new Error("Current authority revoked"); };
-    ports.unlockedSessionFor = () => "unrelated-panel";
     await expect(releaseAutomationStudioSessionProviderKey(ports, { userId: "owner", sessionId: "client-gateway:revoked" }, { provider: "anthropic" })).rejects.toThrow("Current authority revoked");
     expect(ports.revealKeyWithAuthorization).not.toHaveBeenCalled();
-    expect(ports.createSessionRevealAuthorization).not.toHaveBeenCalled();
   });
   it("retains the requesting identity when the host selects a workspace payer", async () => {
     const ports = fixture();
@@ -55,5 +49,15 @@ describe("authenticated provider-key use", () => {
     await expect(releaseAutomationStudioSessionProviderKey(ports, { userId: "owner", sessionId: "session" }, { provider: "anthropic" })).rejects.toThrow("changed");
     expect(ports.revokeRevealAuthorization).toHaveBeenCalledWith("stale");
     expect(ports.revealKeyWithAuthorization).not.toHaveBeenCalled();
+  });
+});
+
+describe("the ports type", () => {
+  it("requires createUseAuthorization, so ports without it do not compile", () => {
+    const { createUseAuthorization: _removed, ...legacy } = fixture();
+    void _removed;
+    // @ts-expect-error the legacy held-session shape is refused: createUseAuthorization is required.
+    const refused: AutomationStudioSessionKeyPorts = legacy;
+    void refused;
   });
 });

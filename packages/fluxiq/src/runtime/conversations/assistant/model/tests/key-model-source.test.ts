@@ -4,7 +4,6 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioSessionKeyPorts } from "../../../../llm/index.ts";
-import { secretsLockedMessage, workspaceKeyLockedMessage, isSecretsLockedError } from "@fluxiq/contracts/platform";
 import { panelAssistantKeyModelSource, type PanelAssistantKeyChoice } from "../key-model-source.ts";
 
 const CALLER = { userId: "user.ada", sessionId: "session.ada" };
@@ -12,7 +11,7 @@ const CALLER = { userId: "user.ada", sessionId: "session.ada" };
 function ports(): AutomationStudioSessionKeyPorts {
   return {
     snapshot: async () => ({ keys: [{ id: "key.chosen", kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 1, createdBy: "user.ada" }, { id: "key.other", kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 2, createdBy: "user.ada" }] }),
-    createSessionRevealAuthorization: async ({ id }) => ({ authorizationId: `auth.${id}`, keyId: id, keyUpdatedAtMs: 1 }),
+    createUseAuthorization: async ({ id }) => ({ authorizationId: `auth.${id}`, keyId: id, keyUpdatedAtMs: 1 }),
     revealKeyWithAuthorization: async ({ id }) => ({ value: `dummy-value-of-${id}` }),
     revokeRevealAuthorization: () => undefined
   };
@@ -46,23 +45,22 @@ describe("panelAssistantKeyModelSource", () => {
 });
 
 describe("panelAssistantKeyModelSource on another person's key", () => {
-  const HOST = "app.example.test";
   const GRACE = "user.grace";
-  /** Grace holds the workspace's key; `unlocked` says whether her live unlock holds it. Ada (CALLER) sends. */
+  /** Grace holds the workspace's key; `unlocked` says whether the host can open it. Ada (CALLER) sends. */
   function lentPorts(unlocked: boolean) {
     const revealed: string[] = [];
     const keyPorts: AutomationStudioSessionKeyPorts = {
       snapshot: async () => ({ keys: [{ id: "key.team", kind: "llm", provider: "anthropic", enabled: true, updatedAtMs: 1, createdBy: GRACE }] }),
-      createSessionRevealAuthorization: async ({ id, sessionId, userId }) => {
-        if (!unlocked || sessionId !== "session.grace" || userId !== GRACE) throw new Error("This unlock does not hold that key.");
+      // The sender's own principal asks; the host's protection opens a lent key, so it only needs to be available.
+      createUseAuthorization: async ({ id, sessionId, userId, workspaceAssistant }) => {
+        if (!unlocked || sessionId !== CALLER.sessionId || userId !== CALLER.userId || workspaceAssistant !== true) throw new Error("This saved key is not available.");
         return { authorizationId: `auth.${id}`, keyId: id, keyUpdatedAtMs: 1 };
       },
       revealKeyWithAuthorization: async ({ id }) => {
         revealed.push(id);
         return { value: `dummy-value-of-${id}` };
       },
-      revokeRevealAuthorization: () => undefined,
-      fallbackUnlockFor: (userId) => (userId === GRACE ? "session.grace" : null)
+      revokeRevealAuthorization: () => undefined
     };
     return { keyPorts, revealed };
   }
@@ -88,7 +86,7 @@ describe("panelAssistantKeyModelSource on another person's key", () => {
     expect(revealed).toEqual([]);
   });
 
-  it("releases a chosen and offered key to its holder's unlock for the sender's call", async () => {
+  it("releases a chosen and offered key for the sender's own call", async () => {
     const { keyPorts, revealed } = lentPorts(true);
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
     const source = panelAssistantKeyModelSource({ resolveAssistant: async () => team({ chosenForWorkspace: true, offeredByHolder: true }), keyPorts, fetchImpl });
@@ -97,17 +95,13 @@ describe("panelAssistantKeyModelSource on another person's key", () => {
     expect(new Headers(fetchImpl.mock.calls[0]![1]!.headers).get("authorization")).toBe("Bearer dummy-value-of-key.team");
   });
 
-  it("tells the sender the workspace's key is locked and its owner must unlock it; its holder keeps their own words", async () => {
+  it("passes an unavailable key on as it is, never as an unlock step, and reaches no provider", async () => {
     const { keyPorts } = lentPorts(false);
     const fetchImpl = vi.fn<typeof fetch>();
-    const source = panelAssistantKeyModelSource({ resolveAssistant: async () => team({ chosenForWorkspace: true, offeredByHolder: true }), keyPorts, instanceHost: HOST, fetchImpl });
+    const source = panelAssistantKeyModelSource({ resolveAssistant: async () => team({ chosenForWorkspace: true, offeredByHolder: true }), keyPorts, fetchImpl });
     const bySender = await decide(source, CALLER);
-    expect(isSecretsLockedError(bySender)).toBe(true);
-    expect((bySender as Error).message).toBe(workspaceKeyLockedMessage(HOST));
-    expect((bySender as { signInUrl?: string }).signInUrl).toBeUndefined();
-    const byHolder = await decide(source, { userId: GRACE, sessionId: "session.grace" });
-    expect(isSecretsLockedError(byHolder)).toBe(true);
-    expect((byHolder as Error).message).toBe(secretsLockedMessage(HOST));
+    expect(bySender).toBeInstanceOf(Error);
+    expect((bySender as Error).message).not.toMatch(/unlock|password/iu);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

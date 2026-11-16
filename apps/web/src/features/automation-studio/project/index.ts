@@ -6,3 +6,4 @@ export * from "./project-lifecycle";
 export * from "./use-project-lifecycle";
 export * from "./ProjectCatalogSurface";
 export * from "./use-project-catalog-loader";
+export * from "./use-project-list";

@@ -286,7 +286,7 @@ function sessionKeyPorts(): AutomationStudioSessionKeyPorts {
   let minted = 0;
   return {
     snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
-    createSessionRevealAuthorization: async (input) => { minted += 1; return { authorizationId: `secret-reveal:${minted}`, keyId: input.id, keyUpdatedAtMs: 1 }; },
+    createUseAuthorization: async (input) => { minted += 1; return { authorizationId: `secret-reveal:${minted}`, keyId: input.id, keyUpdatedAtMs: 1 }; },
     revealKeyWithAuthorization: async () => ({ value: "test-deepseek-credential" }),
     revokeRevealAuthorization: () => {}
   };

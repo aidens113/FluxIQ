@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export * from "./grant.ts";
 export * from "./provider.ts";
 export * from "./provider-contract.ts";
 export * from "./redeem.ts";

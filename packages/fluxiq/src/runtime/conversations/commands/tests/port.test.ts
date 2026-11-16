@@ -6,16 +6,14 @@ import { automationStudioConversationEffectiveCaller, AUTOMATION_STUDIO_PAIRED_C
 import { automationStudioConversationCommandVocabulary } from "../vocabulary.ts";
 
 describe("automationStudioConversationEffectiveCaller", () => {
-  it("leaves a person's own session alone", () => {
-    expect(automationStudioConversationEffectiveCaller({ userId: "u", sessionId: "session.1" }, () => "session.other")).toEqual({ userId: "u", sessionId: "session.1", preferredSessionId: "session.1", paired: false, keyLocked: false, keyNeedsUnlock: false, keyLockReason: null });
+  it("keeps a person's own session as it is", () => {
+    expect(automationStudioConversationEffectiveCaller({ userId: "u", sessionId: "session.1" })).toEqual({ userId: "u", sessionId: "session.1", preferredSessionId: "session.1", paired: false });
   });
 
-  // The session is only where model calls start: each call resolves the person's live unlock again (H0-S5).
-  it("maps a paired client to its person's unlocked session, or says the key is locked", () => {
+  // A connected client is connected: its own gateway session stays the principal, with no substitute session and no unlock.
+  it("keeps a paired client's own session and says it is paired", () => {
     const paired = { userId: "u", sessionId: `${AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX}gateway.9` };
-    expect(automationStudioConversationEffectiveCaller(paired, (userId) => (userId === "u" ? "session.unlocked" : null))).toEqual({ userId: "u", sessionId: "session.unlocked", preferredSessionId: "session.unlocked", paired: true, keyLocked: false, keyNeedsUnlock: false, keyLockReason: null });
-    expect(automationStudioConversationEffectiveCaller(paired, () => null)).toEqual({ userId: "u", sessionId: paired.sessionId, preferredSessionId: null, paired: true, keyLocked: true, keyNeedsUnlock: false, keyLockReason: null });
-    expect(automationStudioConversationEffectiveCaller(paired, null)).toMatchObject({ sessionId: paired.sessionId, keyLocked: true });
+    expect(automationStudioConversationEffectiveCaller(paired)).toEqual({ userId: "u", sessionId: paired.sessionId, preferredSessionId: paired.sessionId, paired: true });
   });
 });
 

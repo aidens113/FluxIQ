@@ -4104,7 +4104,7 @@
       "name": "secret-keys__snapshot",
       "programId": "secret-keys",
       "endpoint": "snapshot",
-      "summary": "Lists the person's model keys by name and provider, and says which is the default and whether they are unlocked. A key's value is never shown.",
+      "summary": "Lists the person's model keys by name and provider, and says which is the default and whether saved keys are available. A key's value is never shown.",
       "phrases": [
         "list my keys",
         "which model keys do I have"
@@ -5149,12 +5149,6 @@
       "programId": "secret-keys",
       "endpoint": "rotate-key",
       "reason": "Takes a new key value and the person's password, which are never given to the assistant."
-    },
-    {
-      "name": "secret-keys__unlock",
-      "programId": "secret-keys",
-      "endpoint": "unlock",
-      "reason": "Takes the person's password and authenticator code, which are never given to the assistant."
     },
     {
       "name": "secret-keys__update-key",

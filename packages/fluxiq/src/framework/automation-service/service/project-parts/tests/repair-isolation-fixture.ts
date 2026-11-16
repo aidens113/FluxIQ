@@ -140,7 +140,7 @@ export type PartGraph = { nodes: AutomationStudioFlowNode[]; edges: AutomationSt
 export async function adaptingFlow(world: RepairWorld, projectId: string, flowId: string): Promise<{ flowId: string }> {
   const { service } = world;
   const base = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.test", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.test", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
   const created = await service.createFlow({ projectId, flowId, name: flowId });
   const trainingModeSettings = { ...(base.trainingModeSettings as JsonObject), resultCheck: { schedule: SCHEDULE, authorization } };
   await service.saveFlow({ projectId, flow: { ...created, metadata: { ...(created.metadata ?? {}), ...base, trainingModeSettings } } });

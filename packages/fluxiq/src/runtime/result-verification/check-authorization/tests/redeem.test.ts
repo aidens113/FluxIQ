@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES,
   AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS,
+  AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON,
   redeemAutomationStudioResultCheckAuthorization,
   type AutomationStudioResultCheckAuthorization
 } from "../index.ts";
@@ -10,8 +11,9 @@ const NOW = 1_700_000_000_000;
 
 const authorization = (overrides: Partial<AutomationStudioResultCheckAuthorization> = {}): AutomationStudioResultCheckAuthorization => ({
   taskKind: "loop_verification",
+  authorizationId: "result-check:1",
   authorizedByUserId: "user.aiden",
-  unlockSessionId: "session.unlock.1",
+  grantedThrough: { kind: "person" },
   keyId: "key.deepseek",
   maxTotalCostUsd: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS.maxTotalCostUsd,
   maxCostUsdPerCall: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS.maxCostUsdPerCall,
@@ -23,7 +25,7 @@ const authorization = (overrides: Partial<AutomationStudioResultCheckAuthorizati
 describe("standing result-check authorization", () => {
   it("lets an unattended run obtain a model, with no actor session anywhere in the call", () => {
     const redemption = redeemAutomationStudioResultCheckAuthorization({ authorization: authorization(), taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 });
-    expect(redemption).toEqual({ redeemed: true, keyId: "key.deepseek", unlockSessionId: "session.unlock.1", authorizedByUserId: "user.aiden", maxEstimatedCostUsd: 0.05, remainingCostUsd: 1 });
+    expect(redemption).toEqual({ redeemed: true, keyId: "key.deepseek", authorizationId: "result-check:1", authorizedByUserId: "user.aiden", maxEstimatedCostUsd: 0.05, remainingCostUsd: 1 });
   });
 
   it("refuses an expired authorization", () => {
@@ -56,7 +58,7 @@ describe("standing result-check authorization", () => {
   it("refuses when nobody authorized checking, and when the stored record is unusable", () => {
     expect(redeemAutomationStudioResultCheckAuthorization({ authorization: undefined, taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 }))
       .toMatchObject({ redeemed: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.absent });
-    for (const broken of [{ keyId: "  " }, { unlockSessionId: "" }, { maxTotalCostUsd: 0 }, { maxCostUsdPerCall: -1 }, { maxTotalCostUsd: Number.NaN }]) {
+    for (const broken of [{ keyId: "  " }, { authorizationId: "" }, { authorizedByUserId: "" }, { maxTotalCostUsd: 0 }, { maxCostUsdPerCall: -1 }, { maxTotalCostUsd: Number.NaN }]) {
       expect(redeemAutomationStudioResultCheckAuthorization({ authorization: authorization(broken), taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 }))
         .toMatchObject({ redeemed: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.invalid });
     }
@@ -65,5 +67,17 @@ describe("standing result-check authorization", () => {
   it("never returns a per-call ceiling above what the authorization has left", () => {
     const redemption = redeemAutomationStudioResultCheckAuthorization({ authorization: authorization({ maxTotalCostUsd: 0.04, maxCostUsdPerCall: 0.05 }), taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 });
     expect(redemption).toMatchObject({ redeemed: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.exhausted });
+  });
+
+  it("redeems a grant made through a paired client exactly as one the person made", () => {
+    const redemption = redeemAutomationStudioResultCheckAuthorization({ authorization: authorization({ grantedThrough: { kind: "client", trustedClientId: "client.one" } }), taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 });
+    expect(redemption).toMatchObject({ redeemed: true, authorizationId: "result-check:1", authorizedByUserId: "user.aiden" });
+  });
+
+  it("asks for a fresh grant, in plain words, for a record stored under the old key unlock", () => {
+    const redemption = redeemAutomationStudioResultCheckAuthorization({ authorization: authorization({ grantedThrough: { kind: "legacy_unlock" } }), taskKind: "loop_verification", nowMs: NOW, spentUsd: 0 });
+    expect(redemption).toEqual({ redeemed: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.renew, reason: AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON });
+    expect(AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON).toMatch(/Turn result checking on again/);
+    expect(AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON).not.toMatch(/unlock|password/i);
   });
 });

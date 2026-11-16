@@ -9,7 +9,7 @@ export function KeyAvailability({ row }: { row: KeyRow | undefined }) {
   else if (state?.state === "unavailable") {
     switch (state.code) {
       case "legacy_recovery_required":
-        words = "Saved key recovery required";
+        words = "Sign in to the panel once to upgrade this key, or add it again";
         break;
       case "host_protection_unavailable":
         words = "Host key protection unavailable";

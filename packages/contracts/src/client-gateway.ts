@@ -310,6 +310,27 @@ export type ClientGatewayReconcileAnswer = {
 export const CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID = "fluxiq.activity";
 
 /**
+ * `client.focus_project`: the project the person is working in now. Core moves
+ * the session's project to it (so that project's `server.activity` reaches the
+ * session) only for a ready session a person paired and a project that person
+ * may read in the session's domain; `null` returns to the project the session
+ * was bound to when it became ready. Answered by `server.project_focused`, or by
+ * `server.error` with a `CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES` code and the
+ * session unchanged, each with the request's id as `correlationId`.
+ */
+export type ClientGatewayFocusProjectRequest = { projectId: string | null };
+/** `server.project_focused`: the session's project is now `projectId` (null: none). */
+export type ClientGatewayProjectFocused = { projectId: string | null };
+/** Why a focus was refused: a malformed request, a session no person paired, a project the person may not read there (or none), or Core could not decide. */
+export const CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES = Object.freeze({
+  invalid: "project_focus.invalid",
+  notPaired: "project_focus.not_paired",
+  refused: "project_focus.refused",
+  unavailable: "project_focus.unavailable"
+} as const);
+export type ClientGatewayProjectFocusRefusalCode = (typeof CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES)[keyof typeof CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES];
+
+/**
  * What FluxIQ is doing now. Each value is set only by a real Core event.
  *
  * `paused` is a run held at a step boundary because it was paused, usually
@@ -717,6 +738,8 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.forget_pairing", Record<string, never>>
   // The client stored the credential in its last `server.session_ready`, so the one before it may end now. An older Core ignores it, and the next use of the new one says the same.
   | ClientGatewayEnvelope<"client.credential_received", Record<string, never>>
+  // `ClientGatewayFocusProjectRequest`; an older Core ignores it.
+  | ClientGatewayEnvelope<"client.focus_project", ClientGatewayFocusProjectRequest>
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewayServerMessage =
@@ -733,6 +756,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.disconnect", { reason: string }>
   | ClientGatewayEnvelope<"server.revoked", ClientGatewayRevokedNotice>
   | ClientGatewayEnvelope<"server.going_away", ClientGatewayGoingAwayNotice>
+  | ClientGatewayEnvelope<"server.project_focused", ClientGatewayProjectFocused>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewaySnapshotView = {

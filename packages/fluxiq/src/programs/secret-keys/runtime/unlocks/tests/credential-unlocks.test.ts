@@ -534,7 +534,6 @@ describe('saved-key availability without connection locks', () => {
 describe('historical unlock metadata compatibility', () => {
     it('never produces a new first-unlock gate or ticket', async () => {
       const { service, holder } = await paired(repositories());
-      expect(service.keyNeedsUnlockNow({ userId: USER, sessionId: null })).toBe(false);
       expect(service.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeUndefined();
       expect(await service.credentialUnlocks.lockedClientsFor(USER)).toEqual([]);
     });

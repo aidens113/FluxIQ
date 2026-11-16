@@ -58,7 +58,7 @@ export {
   type AutomationStudioDeepSeekPanelCommandOptions,
   type AutomationStudioPanelCommandKeyPorts
 } from "./deepseek/index.ts";
-export { AutomationStudioSecretsLockedError, releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyOptions, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
+export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyOptions, type AutomationStudioSessionKeyPorts } from "./deepseek/index.ts";
 export * from "./failure-disposition.ts";
 export * from "./evidence-loop.ts";
 // How a loop that asks again counts the replies it could not read, and what the
@@ -116,7 +116,7 @@ export type {
 export * from "./model-caller.ts";
 export * from "./runtime-session-llm.ts";
 // The host's provider for calls made on a person's behalf: their own key,
-// released per call to their unlocked session (`session-key-provider.ts`).
+// released per call to their authenticated principal (`session-key-provider.ts`).
 export * from "./session-key-provider.ts";
 export * from "./resolver-contract.ts";
 // A resolution narrowed by the Flow's own configured call count, token limits,

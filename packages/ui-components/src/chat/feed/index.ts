@@ -9,3 +9,5 @@ export {
   type ActivityPushListener
 } from "./activity-feed.ts";
 export { threadRefreshWanted, type ThreadRefreshDecision } from "./thread-refresh.ts";
+export type { ChatActivitySource, ChatFeedView } from "./activity-source.ts";
+export { createInjectedFeed } from "./injected-feed.ts";

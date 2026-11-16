@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { PasswordKdfOptions } from "../../_shared/password-kdf/index.ts";
 import type { Repository } from "../../database-manager/index.ts";
@@ -508,36 +507,6 @@ export class SecretKeysService {
     return held?.userId === userId && held.expiresAtMs > nowMs && held.decryptionKeys.size > 0 ? sessionId : null;
   }
 
-  /** Whether this person's own unlock `sessionId` holds this key at its current version. No key material. */
-  async sessionHoldsKey(input: { sessionId: string; userId: string; id: string }): Promise<boolean> {
-    await this.store.load();
-    const held = this.heldKeys.session(input.sessionId);
-    const record = this.store.get(input.id);
-    return held?.userId === input.userId && held.expiresAtMs > this.now() && record !== undefined && held.decryptionKeys.get(input.id)?.keyUpdatedAtMs === record.updatedAtMs;
-  }
-
-  /** Resolves when something this person holds changes, or when `signal` aborts. */
-  whenUnlockChanges(userId: string, signal?: AbortSignal): Promise<void> {
-    return this.heldKeys.whenChanged(userId, signal);
-  }
-
-  /** @deprecated Compatibility only; authenticated access reports availability, not a key lock. */
-  keyLockReason(input: { userId: string; holderId?: string | undefined }): ModelKeyLockReason {
-    return this.credentialUnlocks.lockReasonFor({ ...input, ownKeys: this.ownEnabledModelKeys(input.userId) });
-  }
-
-  /** @deprecated Compatibility only; the retired client-unlock gate is always false. */
-  async keyNeedsUnlock(input: { userId: string; sessionId: string | null }): Promise<boolean> {
-    await this.store.load();
-    return this.keyNeedsUnlockNow(input);
-  }
-
-  /** @deprecated Compatibility only; actual recovery/configuration errors come from access. */
-  keyNeedsUnlockNow(input: { userId: string; sessionId: string | null }): boolean {
-    void input;
-    return false;
-  }
-
   /** Recoverability metadata for own keys; current use permission is checked separately. */
   async snapshotFor(caller: { userId: string; sessionId: string | null; holderId?: string | undefined }): Promise<SecretKeysSnapshot> {
     const { keys, modelSettings } = await this.snapshot();
@@ -600,11 +569,6 @@ export class SecretKeysService {
     if (options.mode !== "evict" || this.ownsHeldKeys) this.heldKeys.revokeAll();
     this.credentialChanges.forgetAll();
     this.credentialUnlocks.closeConnections();
-  }
-
-  /** This person's enabled model keys: their own, and legacy keys nobody is stamped on. */
-  private ownEnabledModelKeys(userId: string): SecretKeyRecord[] {
-    return this.store.list().filter((record) => record.enabled && record.kind === "llm" && (record.createdBy === undefined || record.createdBy === userId));
   }
 
   /** Boxes a key its prover just sealed to their holders; `key` stays theirs to hold or zero. */

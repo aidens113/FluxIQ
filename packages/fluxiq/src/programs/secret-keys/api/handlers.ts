@@ -23,7 +23,7 @@ type IdentityAuthoritySource = SecretKeyIdentityAuthority | (() => Promise<Secre
 
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
-// `keySessionOf` names the unlock a caller may use (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
+// `keySessionOf` names the session a caller acts under (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
 export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAuthoritySource, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }): void {
   // A key's owner is the user that created it (`createdBy`, stamped from the
   // acting user on create), so the service already records it and no separate

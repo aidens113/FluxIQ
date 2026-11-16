@@ -25,15 +25,18 @@ export type AutomationStudioResultCheckProviderResolution = AutomationStudioResu
 
 /**
  * Everything the host is told about a redeemed standing authorization: the
- * scope, the key, the unlock to draw it from, and the ceiling for this one
- * call. Never the authorization record, and never a purpose it could widen.
+ * scope, the key, the grant each use is authorized under, what the use is for,
+ * and the ceiling for it. Never the authorization record. The purpose is set
+ * here and in `repair-authority.ts`, never by a caller, and the key's authority
+ * refuses a repair the stored grant does not cover.
  */
 export type AutomationStudioResultCheckProviderRequest = {
   projectId: string;
   flowId: string;
   keyId: string;
-  unlockSessionId: string;
+  authorizationId: string;
   authorizedByUserId: string;
+  purpose: "loop_verification" | "repair";
   maxEstimatedCostUsd: number;
 };
 
@@ -46,9 +49,9 @@ export type AutomationStudioRunResultCheck = {
   reason: string;
   /** The ceiling this one verification may spend. Present only when `checked`. */
   maxEstimatedCostUsd?: number;
-  /** The key the check is paid for with, and the unlock to draw it from. Present only when `checked`. */
+  /** The key the check is paid for with, and the grant it is authorized under. Present only when `checked`. */
   keyId?: string;
-  unlockSessionId?: string;
+  authorizationId?: string;
   authorizedByUserId?: string;
   /** The schedule's own decision, kept whole so a reader can see what the curve said before the money did. */
   decision: AutomationStudioResultCheckDecision;
@@ -96,7 +99,7 @@ export function automationStudioRunResultCheck(input: {
     reason: decision.reason,
     maxEstimatedCostUsd: redemption.maxEstimatedCostUsd,
     keyId: redemption.keyId,
-    unlockSessionId: redemption.unlockSessionId,
+    authorizationId: redemption.authorizationId,
     authorizedByUserId: redemption.authorizedByUserId,
     decision
   };
@@ -189,8 +192,8 @@ export async function resolveAutomationStudioResultCheckProvider(input: {
   const callerPaysThisCheck = input.callerPays !== "repair_checks" || automationStudioResultCheckJudgesRepair(check);
   const callers = callerPaysThisCheck ? await input.resolveCallerProvider?.() : undefined;
   if (callers) return callers;
-  if (!check?.checked || !check.keyId || !check.unlockSessionId || !check.authorizedByUserId || check.maxEstimatedCostUsd === undefined || !input.resolveStandingProvider) return undefined;
-  const resolved = await input.resolveStandingProvider({ ...input.scope, keyId: check.keyId, unlockSessionId: check.unlockSessionId, authorizedByUserId: check.authorizedByUserId, maxEstimatedCostUsd: check.maxEstimatedCostUsd });
+  if (!check?.checked || !check.keyId || !check.authorizationId || !check.authorizedByUserId || check.maxEstimatedCostUsd === undefined || !input.resolveStandingProvider) return undefined;
+  const resolved = await input.resolveStandingProvider({ ...input.scope, keyId: check.keyId, authorizationId: check.authorizationId, authorizedByUserId: check.authorizedByUserId, purpose: "loop_verification", maxEstimatedCostUsd: check.maxEstimatedCostUsd });
   if (!resolved) return undefined;
   // The redemption's ceiling is applied here as well as wherever the host
   // applied one: `run-outcome.ts` takes the narrower of the two, and a host

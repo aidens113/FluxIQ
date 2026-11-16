@@ -108,3 +108,4 @@
   .flows-steps .flows-steps { padding-left: 10px; }
   .flows-run-control { justify-items: start; }
 }
+.flows-picker { display: grid; gap: 12px; min-width: 0; }

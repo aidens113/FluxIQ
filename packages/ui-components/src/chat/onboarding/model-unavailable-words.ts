@@ -4,7 +4,7 @@ import type { ModelReadiness } from "./model-readiness.ts";
 export function modelUnavailableWords(readiness: ModelReadiness): string | null {
   switch (readiness) {
     case "unavailable:legacy_recovery_required":
-      return "This saved model key needs recovery in FluxIQ before AI can use it.";
+      return "This saved model key was stored before FluxIQ upgraded how keys are kept. Sign in to the FluxIQ panel once to finish upgrading it. If it still does not work, add the key again in FluxIQ.";
     case "unavailable:host_protection_unavailable":
       return "This FluxIQ host cannot open saved model keys right now. Check the host configuration.";
     case "unavailable:ciphertext_invalid":

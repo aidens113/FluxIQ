@@ -43,7 +43,7 @@ describe("independent authenticated-client model access through the real runtime
   it("uses an approved client's configured key immediately without a second password", async () => {
     const { runtime, login, key, client, principal } = await paired();
     const caller = runtime.automationStudio.conversations.callerFor({ userId: login.user.id, sessionId: `client-gateway:${client.gatewaySessionId}` });
-    expect(caller.keyNeedsUnlock).toBe(false);
+    expect(caller).toMatchObject({ paired: true, sessionId: `client-gateway:${client.gatewaySessionId}` });
     const authorization = await runtime.secretKeys.access.createUseAuthorization({ id: key.id, principal });
     expect(authorization.remainingUses).toBe(1);
     expect((await runtime.secretKeys.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id })).value).toBe(RUNTIME_KEY_VALUE);

@@ -71,8 +71,7 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  * - `SelfService`: the actions that change only the caller's own credentials,
  *   the caller's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`:
  *   their starting humanness), the caller's own sign-in name in another case
- *   (`iam:RecaseMyUsername`: only its capitals, never another name), and a
- *   person's own unlock of their own keys with their own password, on
+ *   (`iam:RecaseMyUsername`: only its capitals, never another name), on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
  *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
@@ -116,7 +115,6 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Sid: "SelfService",
     Effect: "Allow",
     Action: [
-      "secrets:Unlock",
       "iam:SetPassword",
       "iam:SetPin",
       "iam:BeginTotp",

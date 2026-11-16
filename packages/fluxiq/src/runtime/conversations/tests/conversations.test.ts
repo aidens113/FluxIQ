@@ -121,6 +121,16 @@ describe("AutomationStudioConversations", () => {
     expect(await conversations.getConversation({ projectId: PROJECT, conversationId: "conversation.absent" })).toBeNull();
   });
 
+  it("titles a thread nobody named from the person's first message, and keeps a title once it has one", async () => {
+    const conversations = openConversations();
+    const writer = conversations.writerFor({ projectId: PROJECT, subject: { kind: "project", id: PROJECT } });
+    const { conversationId } = await writer.say("Hello.");
+    await conversations.appendTurn({ projectId: PROJECT, conversationId, text: "  Find   the cheapest kettle  ", actorId: "user.aiden" });
+    await conversations.appendTurn({ projectId: PROJECT, conversationId, text: "Now sort them", actorId: "user.aiden" });
+    const thread = await conversations.getConversation({ projectId: PROJECT, conversationId });
+    expect(thread?.conversation.title).toBe("Find the cheapest kettle");
+  });
+
   it("narrows a listing to one subject, and offers a choice the person settles by naming an option", async () => {
     const conversations = openConversations();
     const runWriter = conversations.writerFor({ projectId: PROJECT, subject: { kind: "run", id: "run.17" } });

@@ -18,6 +18,7 @@ export * from "./inbound.ts";
 export * from "./lifecycle.ts";
 export * from "./pairing-flow.ts";
 export * from "./pairings.ts";
+export * from "./project-focus/index.ts";
 export * from "./protocol-version.ts";
 export * from "./security/index.ts";
 export * from "./sessions.ts";

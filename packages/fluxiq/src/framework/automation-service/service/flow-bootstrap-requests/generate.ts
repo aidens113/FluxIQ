@@ -1,5 +1,5 @@
 // What `generate-flow-bootstrap-adaptation` does with a request: refuses what it
-// cannot honour before anything runs, runs the build as whoever's unlocked key
+// cannot honour before anything runs, runs the build as whoever's configured key
 // pays, keeps a failed build's diagnostic for a later reader, and answers with
 // the build checked field by field.
 
@@ -124,11 +124,9 @@ export async function generateFlowBootstrapAdaptationForRequest(
       projectId,
       flowId,
       // Whose key pays for the build's model calls. Not an authorization,
-      // and not a fixed key handle: the session is the one the build
-      // started from, which each call tries first before the person's
-      // other live unlocks (`runtime/llm/session-key-provider.ts`). A
-      // sign-out of it mid-build no longer fails the build while another
-      // unlock of theirs lives; with none, the next call is `secrets.locked`.
+      // and not a fixed key handle: each call is authorized for this
+      // authenticated principal (`runtime/llm/session-key-provider.ts`), so a
+      // key that is missing is a setup step, never an unlock.
       caller: { actorUserId: actor.userId, actorSessionId: actor.sessionId },
       // A build that meets an act outside these asks the person; empty
       // permits nothing lasting.

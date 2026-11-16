@@ -36,7 +36,7 @@ it("shows saved-key unavailability without a browser chooser, ticket or password
     unlockTicket: "obsolete"
   } });
   await mount();
-  expect(text()).toContain("Saved key recovery required");
+  expect(text()).toContain("Sign in to the panel once to upgrade this key, or add it again");
   expect(text()).not.toMatch(/unlock|needs your password|Old browser/iu);
   expect(view.root.findAllByType("input").filter(input => input.props.type === "password")).toHaveLength(0);
   expect(apis.secret.post).not.toHaveBeenCalled();

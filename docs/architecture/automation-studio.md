@@ -398,7 +398,7 @@ caller resolves no provider. With a caller it returns the configured provider ad
 whose secret is resolved per call: the Flow's chosen matching key, or the caller's own newest enabled key for that provider,
 released through a one-use Secret Keys authorization for the actual authenticated
 session or trusted client. Authority and the selected key are checked again at
-consumption. Durable host protection permits restart without a second unlock;
+consumption. Durable host protection permits restart with no unlock step;
 ordinary panel logout does not end an independently approved client's access.
 Automation Studio never accepts or retains a password or PIN. An expired or
 revoked principal receives no key. Missing configuration and stored-key recovery
@@ -904,6 +904,36 @@ given once by a person rather than prompted for per occurrence. It is not a
 caller, it never reaches `input.llmExecution`, and so it never implies
 `manual_approval`. It is unchanged by the removal of interactive execution
 grants.
+
+**Who gives it, and what each use is checked against.** A person turns it on
+through `update-flow-settings`, with a top-level `resultCheckAuthorization`
+(`{ keyId, maxTotalCostUsd?, maxCostUsdPerCall?, ttlMs?, repair? }`, or `null`
+to withdraw it). Core grants it as the request's own actor, never as anyone the
+body names. That actor is either the person on a panel session or a client
+paired for them, which may authorize a check for its person as it may make any
+other model call for them. The record keeps `authorizedByUserId`,
+`grantedThrough` (`person`, or `client` with its `trustedClientId`) and an
+`authorizationId`. It names no session and no unlock.
+
+Each use mints a one-use key authorization through Secret Keys' per-use
+authority. It uses the `standing` principal (person, `authorizationId`, project,
+Flow and purpose). The runtime binds that principal to the grant stored on the
+Flow (`automationStudioStandingResultCheckGrant`): same id, same person,
+unexpired, and covering the purpose. A repair is covered only when the repair
+clause is on. The authority then checks that the person is still enabled, that a
+client they granted through is still vouched for by the gateway, that the key
+is theirs and enabled, and that IAM still allows `secrets:UseKey`. A host
+restart with nobody signed in changes none of this, because the key is opened
+from host custody. A revoked client, a disabled key or person, a withdrawn or
+replaced grant, or an IAM denial refuses the use, and the run records
+`unverified`.
+
+A record stored before 2026-11-16 carries `unlockSessionId` instead of a
+grantor. It reads back as `legacy_unlock` and both redemptions refuse it with
+`core.check.authorization_renew` or `core.repair.authorization_renew`, saying
+to turn result checking on again. It is not mapped to the person, because until
+2026-11-04 anyone who could edit the Flow could write it, and an unlock handle
+is not an identity a later use can be authorized as.
 
 One record, with one key, one purse (`maxTotalCostUsd`), one expiry, and two
 clauses the person switches on separately:

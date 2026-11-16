@@ -75,10 +75,11 @@ test("saved-key problems explain their actual cause without a second client auth
   for (const code of ["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid", "upgrade_required"] as const) {
     const model = emptyStateModel("empty", LATEST, `unavailable:${code}`)!;
     assert.ok(model.keyLine);
-    assert.doesNotMatch(model.keyLine, /unlock|password|PIN|sign out|sign in/iu);
+    // A legacy key is the one case that asks the person to sign in to the panel, once, to finish upgrading it; never an unlock or a password.
+    assert.doesNotMatch(model.keyLine, code === "legacy_recovery_required" ? /unlock|password|PIN|sign out/iu : /unlock|password|PIN|sign out|sign in/iu);
     assert.deepEqual(model.starts.map(start => start.id), ["describe", "extract"]);
   }
-  assert.match(emptyStateModel("empty", LATEST, "unavailable:legacy_recovery_required")?.keyLine ?? "", /needs recovery/u);
+  assert.match(emptyStateModel("empty", LATEST, "unavailable:legacy_recovery_required")?.keyLine ?? "", /Sign in to the FluxIQ panel once/u);
   assert.match(emptyStateModel("empty", LATEST, "unavailable:host_protection_unavailable")?.keyLine ?? "", /host configuration/u);
   assert.match(emptyStateModel("empty", LATEST, "unavailable:ciphertext_invalid")?.keyLine ?? "", /could not be read/u);
   assert.match(emptyStateModel("empty", LATEST, "unavailable:upgrade_required")?.keyLine ?? "", /Update FluxIQ/u);

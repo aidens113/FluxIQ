@@ -16,3 +16,6 @@
 .settings-page button { min-height: 36px; }
 .settings-appearance { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-appearance-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
+.settings-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; min-width: 0; }
+.settings-copy-label { font-weight: 600; flex-basis: 100%; }
+.settings-copy-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; margin: 0; }

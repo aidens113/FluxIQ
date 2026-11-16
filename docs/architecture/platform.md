@@ -670,7 +670,7 @@ so a weak password (under 12 characters) or a disabled account leaves it usable.
 string that is not 43 base64url characters is `invalid_link` without a store read,
 and unknown, used and expired tokens share that one code. Both purposes set
 `emailVerifiedAtMs` if it is unset, set the password, and revoke all the account's
-sessions (which also drops each session's key unlock).
+sessions (which also drops each session's held-key cache, the legacy-key migration state).
 
 The link is the authority for the new password, so it never asks for the old one.
 The password is set through `PlatformIdentityPort.resetPassword`, which
@@ -714,7 +714,7 @@ Core's own pages are in `apps/web/src/app/`.
 | Route | What it does |
 | --- | --- |
 | `/welcome` | Reads `#token=` and clears it from the address bar at once. Asks for a password and confirmation, posts to `/welcome/submit`, then goes to the returned `continueUrl` or `/`. With no token or a bad one it shows a single message. |
-| `/welcome/submit` | Refuses a cross-site request (403), requires JSON of at most 8 KiB and redeems the link. It then creates a session, unlocks the person's Secret Keys with the new password (revoking the session if that fails), records the sign-in and sets the session cookie with the login route's options. Responses are `no-store`; only codes are echoed. |
+| `/welcome/submit` | Refuses a cross-site request (403), requires JSON of at most 8 KiB and redeems the link. It then creates a session and opens the person's legacy Secret Keys with the new password, which only migrates keys stored before host protection (revoking the session if that fails), records the sign-in and sets the session cookie with the login route's options. Responses are `no-store`; only codes are echoed. |
 | `/reset` | With no fragment, an email form posting to `/reset/request`, which answers the same for every address ("if an account uses that address, we sent a link"). With `#token=`, a new-password form posting to `/reset/submit`, then a link to sign in. A reset does not sign the person in. |
 
 Both modes of the reset page warn that model keys saved under the old password
@@ -1036,7 +1036,8 @@ passes the caller as an administrator by that permission check.
 
 **Wiring.** `createGlobalProgramRuntime` subscribes
 `secretKeys.revokeSessionUnlock(sessionId, revoker)` to these revokes, so an
-admin revoke, a sign-out, a reset and a deletion take the key unlock away.
+admin revoke, a sign-out, a reset and a deletion clear the held-key cache (the legacy-key migration state;
+model use is authorized per call and does not read it).
 `revokeSessionUnlock` drops an unlock only for the user it belongs to or an
 administrator; anyone else is refused and the unlock kept, so knowing a session
 id is not enough. The sign-out route no longer drops the unlock itself. Likewise

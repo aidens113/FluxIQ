@@ -2,6 +2,7 @@ import type { FluxIQ } from "../../framework/index.ts";
 import type { ClientGatewaySession } from "../../client-gateway/index.ts";
 import { programDrainRefusal } from "../drain/index.ts";
 import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal } from "./paired-client-project-domain.ts";
+import { personDomainScope } from "./person-domain-scope.ts";
 import { presentPanelSession } from "./present-panel-session.ts";
 import { managedClientAuthority } from "../managed-hosts/index.ts";
 import { programJsonText } from "./program-json-text.ts";
@@ -13,7 +14,6 @@ import {
   pairedClientActor,
   pairedClientDomainScope,
   pairedClientProjectTarget,
-  programDomainScope,
   programResponseStatus,
   projectPairedClientResponse,
   readBearerToken,
@@ -99,7 +99,7 @@ export async function handleProgramRequest(request: ProgramRouteRequest, context
     if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).some((key) => key !== "projectId"))) return refuse(403, "A managed host's policy read may name only its leased project.");
     narrowed.payload = { projectId: caller.managed.projectId, ...(payload as object | undefined) };
   }
-  const outside = caller.kind === "paired-client" ? await refuseProjectOutsideDomain(fluxiq, programId, caller, narrowed.payload) : null;
+  const outside = caller.kind === "paired-client" ? await refuseProjectOutsideDomain(fluxiq, programId, endpoint, caller, narrowed.payload) : null;
   if (outside) return outside;
   if (caller.kind === "paired-client" && caller.managed && !caller.managed.isCurrent()) return refuse(403, "The managed host's run lease is no longer current.");
   let dispatchCaller = caller;
@@ -151,7 +151,7 @@ async function authenticate(request: ProgramRouteRequest, fluxiq: FluxIQ, identi
       sessionId,
       userId: auth.user.id,
       actor: { sessionId, userId: auth.user.id, roleId: auth.role.id, permissions: auth.role.permissions, channel: "panel" },
-      scope: programDomainScope(request.url),
+      scope: personDomainScope(request.url, request.programId, fluxiq.activeDomainId),
     };
   }
   if (channel === "person") return refuse(401, "Authentication required");
@@ -235,10 +235,11 @@ function sameCallerBinding(first: RouteCaller, current: RouteCaller): boolean {
 async function refuseProjectOutsideDomain(
   fluxiq: FluxIQ,
   programId: string,
+  endpoint: string,
   caller: Extract<RouteCaller, { kind: "paired-client" }>,
   payload: unknown,
 ): Promise<ProgramRouteResponse | null> {
-  const target = pairedClientProjectTarget(programId, payload, caller.currentProjectId);
+  const target = pairedClientProjectTarget(programId, payload, caller.currentProjectId, endpoint);
   if (!target.ok) return refuse(403, target.error, target.errorCode);
   if (target.projectId === null) return null;
   if (caller.managed && target.projectId !== caller.managed.projectId) return refuse(403, "A managed host may only reach its leased run's project.");

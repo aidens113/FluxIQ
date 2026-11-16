@@ -11,8 +11,9 @@ const model: AutomationStudioLlmProvider = { metadata: { provider: "mock", model
 
 const authorization = (overrides: Partial<AutomationStudioResultCheckAuthorization> = {}): AutomationStudioResultCheckAuthorization => ({
   taskKind: "loop_verification",
+  authorizationId: "result-check:1",
   authorizedByUserId: "user.aiden",
-  unlockSessionId: "session.unlock.1",
+  grantedThrough: { kind: "person" },
   keyId: "key.deepseek",
   maxTotalCostUsd: 1,
   maxCostUsdPerCall: 0.05,
@@ -65,19 +66,19 @@ function context(options: {
 }
 
 /** What `resultPorts.resolveProvider` answers for this run, with no caller anywhere. */
-async function unattendedProvider(instance: AutomationStudioRuntimeAdaptationContext, asked: Array<{ keyId: string; maxEstimatedCostUsd: number }>) {
+async function unattendedProvider(instance: AutomationStudioRuntimeAdaptationContext, asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }>) {
   const check = automationStudioRunResultCheck({ context: instance, nowMs: NOW });
   const resolution = await resolveAutomationStudioResultCheckProvider({
     scope: { projectId: instance.projectId, flowId: instance.flowId },
     check,
-    resolveStandingProvider: async (request) => { asked.push({ keyId: request.keyId, maxEstimatedCostUsd: request.maxEstimatedCostUsd }); return { provider: model }; }
+    resolveStandingProvider: async (request) => { asked.push({ keyId: request.keyId, authorizationId: request.authorizationId, purpose: request.purpose, maxEstimatedCostUsd: request.maxEstimatedCostUsd }); return { provider: model }; }
   });
   return { check, resolution };
 }
 
 describe("an unattended run obtaining a model", () => {
   it("obtains one on the runs the schedule picks, and on no other", async () => {
-    const asked: Array<{ keyId: string; maxEstimatedCostUsd: number }> = [];
+    const asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }> = [];
     const reached: number[] = [];
     let lastCheckedOrdinal: number | null = null;
     for (let ordinal = 1; ordinal <= 12; ordinal += 1) {
@@ -89,7 +90,7 @@ describe("an unattended run obtaining a model", () => {
     }
     expect(reached).toEqual([1, 2, 3, 8]);
     expect(asked).toHaveLength(4);
-    expect(asked[0]).toEqual({ keyId: "key.deepseek", maxEstimatedCostUsd: 0.05 });
+    expect(asked[0]).toEqual({ keyId: "key.deepseek", authorizationId: "result-check:1", purpose: "loop_verification", maxEstimatedCostUsd: 0.05 });
   });
 
   it("records why an unchecked run was not judged, rather than being silent about it", async () => {
@@ -99,7 +100,7 @@ describe("an unattended run obtaining a model", () => {
   });
 
   it("obtains no model when the authorization has expired, and says so", async () => {
-    const asked: Array<{ keyId: string; maxEstimatedCostUsd: number }> = [];
+    const asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }> = [];
     const { check, resolution } = await unattendedProvider(context({ ordinal: 1, authorization: authorization({ expiresAtMs: NOW - 1 }) }), asked);
     expect(resolution).toBeUndefined();
     expect(asked).toEqual([]);
@@ -107,7 +108,7 @@ describe("an unattended run obtaining a model", () => {
   });
 
   it("obtains no model when the authorization's ceiling has been spent, and says so", async () => {
-    const asked: Array<{ keyId: string; maxEstimatedCostUsd: number }> = [];
+    const asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }> = [];
     const { check, resolution } = await unattendedProvider(context({ ordinal: 1, authorization: authorization(), spentUsd: 0.99 }), asked);
     expect(resolution).toBeUndefined();
     expect(asked).toEqual([]);
@@ -115,14 +116,14 @@ describe("an unattended run obtaining a model", () => {
   });
 
   it("obtains no model when nobody authorized checking, however willing the schedule is", async () => {
-    const asked: Array<{ keyId: string; maxEstimatedCostUsd: number }> = [];
+    const asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }> = [];
     const { check, resolution } = await unattendedProvider(context({ ordinal: 1, authorization: undefined }), asked);
     expect(resolution).toBeUndefined();
     expect(check).toMatchObject({ checked: false, code: AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.absent });
   });
 
   it("never reaches the authorization at all on a run the schedule passed over", async () => {
-    const asked: Array<{ keyId: string; maxEstimatedCostUsd: number }> = [];
+    const asked: Array<{ keyId: string; authorizationId?: string; purpose?: string; maxEstimatedCostUsd: number }> = [];
     const { check } = await unattendedProvider(context({ ordinal: 5, lastCheckedOrdinal: 3, lastStatus: "confirmed", authorization: authorization() }), asked);
     expect(check.code.startsWith("core.check.authorization")).toBe(false);
     expect(asked).toEqual([]);

@@ -16,7 +16,7 @@ const attempt = {
 const result = (checkedWhat: string): AutomationStudioTaskResult => ({ attemptId: "attempt.2", kind: "rows", label: "confirmed", timesChecked: 1, checkedWhat } as unknown as AutomationStudioTaskResult);
 
 function said(answered: AutomationStudioConversationAnswered): string | undefined {
-  return automationStudioConversationAttemptOutcome(automationStudioConversationCommandProgress("Create an automation here", null), answered).summary;
+  return automationStudioConversationAttemptOutcome(automationStudioConversationCommandProgress("Create an automation here"), answered).summary;
 }
 
 describe("what the chat says of an achieved attempt", () => {

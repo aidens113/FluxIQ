@@ -2,21 +2,17 @@
 //
 // A build, an exploration, a run's diagnosis and repair, and the check of its
 // result all reach the model the same way: on the key of the person they are
-// made for, released per call to that person's own unlocked session
+// made for, released per call for that person's authenticated principal
 // (`deepseek/session-key.ts`). Nothing is issued first and nothing is held
 // between calls, so nothing can lapse, be revoked, or be refused because the
 // Flow changed underneath it -- a Flow that writes itself is the normal case,
 // not an integrity failure.
 //
-// **The unlock is resolved on each call, not fixed for the build (H0-S5).** The
-// caller's `actorSessionId` is only the session to try first -- the one the
-// work started from. When that session has logged out, expired or been revoked
-// by an administrator, the call uses the person's live unlock in this workspace
-// (`unlockedSessionFor`), so a build or run keeps going while any unlock of
-// theirs lives. When none does, the call waits for the person before its attempt
-// starts its clock, and carries on when they unlock (`whenReady`,
-// `../models/secrets/locked-wait.ts`). Only where nothing can wake it does a call
-// fail with the typed `secrets.locked` error (`AutomationStudioSecretsLockedError`).
+// **Use authority is resolved on each call, not fixed for the build.** The
+// caller's authenticated principal authorizes each release
+// (`createUseAuthorization`); the host's protection key opens the stored key, so
+// no held session or unlock step exists. A missing, turned-off or unrecoverable
+// key fails with its own plain error, which the host turns into a setup step.
 // The key is the Flow's own `llmSecretKeyId` when it names one, read from the
 // call's metadata or the host's `flowSecretKeyId` lookup; otherwise the
 // caller's own newest DeepSeek key.
@@ -27,8 +23,7 @@
 // test runtime alone applies the environment ceiling to every such total.
 
 import { resolveAutomationStudioLlmBuildCallLimit } from "../../flows/authoring/model/index.ts";
-import { AutomationStudioSecretsLockedError } from "./deepseek/index.ts";
-import { automationStudioPersonWaitClock, releaseAutomationStudioSessionProviderKey, waitWhileAutomationStudioSessionKeyLocked, type AutomationStudioLockedKeyWaitEvent, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
+import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../models/secrets/index.ts";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS, automationStudioLlmModelProvider, automationStudioLlmProviderDefaultModel, assertAutomationStudioLlmModelBinding, isAutomationStudioAnthropicModel } from "./models/index.ts";
 import type { JsonObject } from "../../core/index.ts";
 // Read at module evaluation, so from the leaf that imports no value rather than
@@ -75,20 +70,17 @@ export const AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS = Object.freeze({
  * A provider resolver for the host: `undefined` when the call is made for
  * nobody (an unattended run takes its key from its standing result-check
  * authorization instead), otherwise a DeepSeek provider on the caller's own
- * key with the defaults above. `instanceHost` names where the person signs in
- * in the locked sentence (default "the FluxIQ panel"); `flowSecretKeyId` is
+ * key with the defaults above. `flowSecretKeyId` is
  * the host's lookup of a Flow's `llmSecretKeyId`, for calls whose metadata
  * does not carry it.
  */
 export function createAutomationStudioSessionKeyProviderResolver(options: {
-  /** Secret Keys' own service in the host; its `unlockedSessionFor` is what every call falls back to. */
+  /** Secret Keys' own service in the host. Its `createUseAuthorization` is required: ports without it are refused when the resolver is built. */
   ports: AutomationStudioSessionKeyPorts;
   fetchImpl?: typeof fetch;
-  instanceHost?: string;
   flowSecretKeyId?: (scope: { projectId: string; flowId: string }) => Promise<string | undefined> | string | undefined;
-  /** Told when a task begins waiting for the person to unlock their key, and when it carries on; where it may say so. */
-  onKeyWait?: (event: AutomationStudioLockedKeyWaitEvent & { projectId: string; flowId: string; userId: string; sessionId: string | null }) => void | Promise<void>;
 }): (input: AutomationStudioLlmProviderResolverInput) => AutomationStudioLlmProviderResolution | undefined {
+  if (typeof options.ports.createUseAuthorization !== "function") throw new Error("Model key ports must provide createUseAuthorization: a connected client uses the configured key through its authenticated principal, with no unlock step.");
   return (input) => {
     const caller = input.caller;
     if (!caller) return undefined;
@@ -102,7 +94,7 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const model = selectedModel ?? automationStudioLlmProviderDefaultModel(providerId);
     const factory = providerId === "anthropic" ? createAutomationStudioAnthropicProvider : createAutomationStudioDeepSeekProvider;
     // The adapter reports any failed secret resolution as `llm.provider_secret_unavailable`;
-    // a locked key is remembered per request so the call fails with the typed error instead.
+    // an unavailable saved key is remembered per request so the call fails with its own error instead.
     const locked = new Map<string, Error>();
     const adapter = factory({
       secretReference: { kind: "secret_reference", id: `secret:session-${providerId}-key` },
@@ -110,17 +102,16 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
       ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
       resolveSecret: async (request) => {
         if (request.projectId !== input.projectId || request.flowId !== input.flowId) throw new Error("LLM request scope mismatch.");
-        // Resolved now, for this call: the started-from session if it still holds the key, else the person's live unlock, else `secrets.locked`.
+        // Resolved now, for this call, for the caller's authenticated principal.
         const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
         let secret: string;
         try {
           secret = await releaseAutomationStudioSessionProviderKey(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
             provider: providerId, model,
-            ...(flowKeyId ? { flowKeyId } : {}),
-            ...(options.instanceHost ? { instanceHost: options.instanceHost } : {})
+            ...(flowKeyId ? { flowKeyId } : {})
           });
         } catch (error) {
-          if (error instanceof AutomationStudioSecretsLockedError || savedKeyUnavailable(error)) locked.set(request.requestId, error);
+          if (savedKeyUnavailable(error)) locked.set(request.requestId, error);
           throw error;
         }
         locked.delete(request.requestId);
@@ -128,39 +119,8 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
         return secret;
       }
     });
-    const holdListeners = new Set<(state: "started" | "ended", heldMs: number) => void>();
     const provider: AutomationStudioLlmProvider = {
       ...adapter,
-      observeHolds: (listener) => {
-        holdListeners.add(listener);
-        return () => holdListeners.delete(listener);
-      },
-      whenReady: async (request, execution) => {
-        const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
-        // What a limit on this Flow's work should not count (`../models/secrets/person-wait-clock.ts`).
-        let endHold: (() => void) | undefined;
-        let heldSince: number | undefined;
-        try {
-          await waitWhileAutomationStudioSessionKeyLocked(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
-            provider: providerId, model,
-            ...(flowKeyId ? { flowKeyId } : {}),
-            ...(execution?.signal ? { signal: execution.signal } : {}),
-            onWait: (event) => {
-              if (event.phase === "waiting") {
-                endHold = automationStudioPersonWaitClock.begin({ projectId: input.projectId, flowId: input.flowId });
-                heldSince = Date.now();
-                for (const listener of holdListeners) listener("started", 0);
-              }
-              return options.onKeyWait?.({ ...event, projectId: input.projectId, flowId: input.flowId, userId: caller.actorUserId, sessionId: caller.actorSessionId });
-            }
-          });
-        } finally {
-          endHold?.();
-          // Ended by an unlock or by a Stop, what listened hears it.
-          if (heldSince !== undefined) for (const listener of holdListeners) listener("ended", Date.now() - heldSince);
-        }
-        void request;
-      },
       runTask: async (request, execution) => {
         try {
           return await adapter.runTask(request, execution);
@@ -193,7 +153,7 @@ function metadataKeyId(metadata: JsonObject | undefined): string | undefined {
   return typeof keyId === "string" && keyId.trim() ? keyId.trim() : undefined;
 }
 
-/** Keep actionable saved-key failures distinct from authentication or a removed unlock wait. */
+/** Keep actionable saved-key failures distinct from authentication failures. */
 function savedKeyUnavailable(error: unknown): error is Error {
   if (!(error instanceof Error)) return false;
   const code = (error as Error & { code?: unknown }).code;

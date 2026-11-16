@@ -26,7 +26,7 @@ const WAITING: Readonly<Record<AutomationStudioTaskAttemptWaitReason, string>> =
   permission: "A person needs to allow a lasting act before the run can go on.",
   person_only_check: "A person needs to clear a check on the page before the run can go on.",
   stuck_in_a_loop: "The run kept getting stuck, and a person needs to say whether it should keep going.",
-  model_key_locked: "The model key cannot be opened here, and a person needs to unlock it.",
+  model_key_locked: "Model access was unavailable. A person needs to check the model configuration before the run can go on.",
   interrupted: "Core restarted while the run was working, and a person needs to say whether it should go on."
 });
 const ID = /^[A-Za-z0-9._:-]{1,128}$/u;

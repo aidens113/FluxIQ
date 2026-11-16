@@ -5,6 +5,7 @@ import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 import type { ClientGatewayLifecycle } from "./lifecycle.ts";
 import type { ClientGatewayPairingFlow } from "./pairing-flow.ts";
+import type { ClientGatewayProjectFocus } from "./project-focus/index.ts";
 import { clientGatewayProtocolVersionVerdict } from "./protocol-version.ts";
 import { readClientGatewayActionResult } from "./action-result-reading.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
@@ -18,6 +19,7 @@ type InboundCollaborators = {
   lifecycle: ClientGatewayLifecycle;
   pairingFlow: ClientGatewayPairingFlow;
   commands: ClientGatewayCommands;
+  projectFocus: ClientGatewayProjectFocus;
   audit: ClientGatewayAuditLog;
   trace: ClientGatewayTraceTap;
   // Disconnecting a refused session is a public service method, so it goes through the facade (./facade-ports.ts).
@@ -36,6 +38,7 @@ export class ClientGatewayInbound {
   private readonly lifecycle: ClientGatewayLifecycle;
   private readonly pairingFlow: ClientGatewayPairingFlow;
   private readonly commands: ClientGatewayCommands;
+  private readonly projectFocus: ClientGatewayProjectFocus;
   private readonly audit: ClientGatewayAuditLog;
   private readonly trace: ClientGatewayTraceTap;
   private readonly facade: ClientGatewayFacadePorts;
@@ -47,6 +50,7 @@ export class ClientGatewayInbound {
     this.lifecycle = collaborators.lifecycle;
     this.pairingFlow = collaborators.pairingFlow;
     this.commands = collaborators.commands;
+    this.projectFocus = collaborators.projectFocus;
     this.audit = collaborators.audit;
     this.trace = collaborators.trace;
     this.facade = collaborators.facade;
@@ -121,6 +125,10 @@ export class ClientGatewayInbound {
     if (message.type === "client.credential_received") {
       await this.lifecycle.credentialReceived(session);
       return "credential_confirmed";
+    }
+    if (message.type === "client.focus_project") {
+      // The project its person is working in now: decided, then answered `server.project_focused` or a typed refusal.
+      return await this.projectFocus.answer(session, message);
     }
     if (message.type === "client.forget_pairing") {
       // The person pressed Forget in this browser: its trust ends here, and what its credential kept with it.

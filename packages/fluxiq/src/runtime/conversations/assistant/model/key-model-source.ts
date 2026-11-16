@@ -7,28 +7,25 @@
 // Nothing here holds a value: the adapter asks for it per call and it lives
 // only in that call's scope.
 //
-// Whose unlock opens it. The sender's own, when the key is theirs (or a legacy
+// Whose key opens it. The sender's own, when the key is theirs (or a legacy
 // key nobody is stamped on). No key is ever shared automatically: another
 // person's key pays for the sender's message only when an owner or
 // administrator chose it as the workspace's key (`chosenForWorkspace`) and its
 // holder offered it to the workspace (`offeredByHolder`). Then it is released
-// server-side, for this one call, to the holder's own live panel unlock, the
-// only thing that can open a key sealed under their password. The sender never
-// holds, reads or names its value. Otherwise the sender is answered in plain
-// words naming who can choose one, and no model is called. When no unlock of
-// the holder holds it the call ends with the typed `secrets.locked` error,
-// worded for the workspace's key, never another key.
+// server-side, for this one call, under the sender's own authenticated
+// principal and the host's protection key. The sender never holds, reads or
+// names its value. Otherwise the sender is answered in plain words naming who
+// can choose one, and no model is called.
 //
 // Bound by the host, which holds Secret Keys (`programs/_shared/runtime.ts`).
 // Each release checks the current choice and consent before and after the
-// asynchronous unlock/reveal. A turn's earlier choice never authorizes a
+// asynchronous release. A turn's earlier choice never authorizes a
 // later call after that choice or the holder's offer has changed.
 
-import { AutomationStudioSecretsLockedError, createAutomationStudioAnthropicPanelCommandModel, createAutomationStudioDeepSeekPanelCommandModel, isAutomationStudioDeepSeekModel, releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../../../llm/index.ts";
+import { createAutomationStudioAnthropicPanelCommandModel, createAutomationStudioDeepSeekPanelCommandModel, isAutomationStudioDeepSeekModel, releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../../../llm/index.ts";
 import { isAutomationStudioAnthropicModel } from "../../../models/index.ts";
 import type { PanelAssistantModel, PanelAssistantModelSource } from "../types.ts";
 import { panelAssistantModelOf } from "./conversation-model.ts";
-import { PanelAssistantWorkspaceKeyLockedError } from "./workspace-key-locked-error.ts";
 
 /**
  * What Secret Keys answers about the assistant's key: an id, a provider and its
@@ -53,7 +50,7 @@ const CHOICE_CHANGED = "The model key or model chosen for this workspace's messa
  * cannot call, or a model that provider does not offer, is answered with a
  * plain reason rather than a guess at another.
  */
-export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promise<PanelAssistantKeyChoice>; keyPorts: AutomationStudioSessionKeyPorts; instanceHost?: string; fetchImpl?: typeof fetch }): PanelAssistantModelSource {
+export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promise<PanelAssistantKeyChoice>; keyPorts: AutomationStudioSessionKeyPorts; fetchImpl?: typeof fetch }): PanelAssistantModelSource {
   return async (sender) => {
     const choice = await input.resolveAssistant();
     if (!choice.ok) return { ok: false, reason: choice.reason };
@@ -61,7 +58,7 @@ export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promis
     if (refusal) return { ok: false, reason: refusal };
     const provider = choice.provider?.trim().toLowerCase();
     // The adapters wrap key lookup errors, so preserve known consent refusals
-    // and typed locks without exposing an unrelated internal lookup failure.
+    // without exposing an unrelated internal lookup failure.
     let releaseFailure: Error | undefined;
     const refuseRelease = (reason: string): never => {
       releaseFailure = new Error(reason);
@@ -78,18 +75,9 @@ export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promis
       if (!caller) throw new Error("No signed-in person sent this message, so no model key can be released for it.");
       await checkCurrentChoice(caller.userId);
       const lent = lentTo(choice, caller.userId);
-      // Lent: the holder's own live panel unlock (the host's fallback for a caller with no session of its own), never the sender's.
-      const payer = !input.keyPorts.createUseAuthorization && lent && choice.ownerId ? { userId: choice.ownerId, sessionId: null } : caller;
-      try {
-        const value = await releaseAutomationStudioSessionProviderKey(input.keyPorts, payer, { provider: wanted, flowKeyId: choice.keyId, ...(lent && choice.ownerId ? { keyOwnerUserId: choice.ownerId } : {}), ...(choice.model ? { model: choice.model } : {}), ...(input.instanceHost ? { instanceHost: input.instanceHost } : {}) });
-        await checkCurrentChoice(caller.userId);
-        return value;
-      } catch (error) {
-        if (!(error instanceof AutomationStudioSecretsLockedError)) throw error;
-        // The holder sees their own words; anyone else is told it is the workspace's key, and its owner unlocks it.
-        releaseFailure = lent ? new PanelAssistantWorkspaceKeyLockedError({ instanceHost: input.instanceHost, cause: error }) : error;
-        throw releaseFailure;
-      }
+      const value = await releaseAutomationStudioSessionProviderKey(input.keyPorts, caller, { provider: wanted, flowKeyId: choice.keyId, ...(lent && choice.ownerId ? { keyOwnerUserId: choice.ownerId } : {}), ...(choice.model ? { model: choice.model } : {}) });
+      await checkCurrentChoice(caller.userId);
+      return value;
     };
     const typed = (model: PanelAssistantModel): PanelAssistantModel => ({
       name: model.name,
@@ -122,7 +110,7 @@ function notReleasable(choice: { chosenForWorkspace?: boolean | undefined; offer
   return undefined;
 }
 
-/** Whether the key is another person's than `userId`'s. A key with no owner stamp is released only to the caller's own unlock, as before. */
+/** Whether the key is another person's than `userId`'s. A key with no owner stamp is released only to the caller's own principal, as before. */
 function lentTo(choice: { ownerId?: string | undefined }, userId: string): boolean {
   return choice.ownerId !== undefined && choice.ownerId !== userId;
 }

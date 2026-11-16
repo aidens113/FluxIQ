@@ -399,7 +399,7 @@ test("without a history option the window is as it was, with no control", async 
 
 test("the heading is a title in words with one thread and no host title bar, never an id", async () => {
   const core = threadsCore([thread("conv-secret-id-1", { subjectKind: "project", title: null })]);
-  await mounted(core.transport(), { threads: hear().threads }, { projectName: "Company website" }, async (_chat, root) => {
+  await mounted(core.transport(), { threads: hear().threads, chatBar: false }, { projectName: "Company website" }, async (_chat, root) => {
     await settle();
     const title = root.byClass("chat-thread-title")[0]!;
     assert.equal(title.hidden, false);
@@ -510,7 +510,7 @@ test("New chat asks Core for a fresh thread about the host's project, opens it, 
     assert.equal(nav.hidden, true, "the new chat takes the drawer's place");
     assert.equal(toggle.getAttribute("aria-expanded"), "false");
     assert.ok(core.calls.listAll.length > lists, "the list is read again");
-    assert.deepEqual(rowNames(root), ["Bravo", "This project", "Charlie", "Alpha"]);
+    assert.deepEqual(rowNames(root), ["Bravo", "New chat", "Charlie", "Alpha"]);
     assert.equal(row(root, "conv-new-4").getAttribute("data-selected"), "true");
   });
   const panel = threadsCore([]);

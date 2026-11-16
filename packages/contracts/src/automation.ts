@@ -16,6 +16,7 @@ export * from "./recording-capture/index.ts";
 export * from "./task-attempts/index.ts";
 // Humanness: the 0-100 level of human-like input, its default, schema and normalizer.
 export * from "./humanness/index.ts";
+export * from "./humanness/schema/index.ts";
 
 export type AutomationStudioSchemaVersion = "0.1";
 export type StateValueType = "string" | "number" | "integer" | "boolean" | "point" | "rectangle" | "entity_ref" | "entity_ref_list" | "hash" | "json" | "unknown";

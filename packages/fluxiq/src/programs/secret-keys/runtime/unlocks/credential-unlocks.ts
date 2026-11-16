@@ -1,7 +1,6 @@
-import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../core/index.ts";
 import { createRecord, type Repository } from "../../../database-manager/index.ts";
-import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockBox, SecretKeyCredentialUnlockGeneration, SecretKeyCredentialUnlockRecord, SecretKeyRecord, SecretKeyLockedClient, SecretKeySessionEnd, SecretKeyUnlockPersonRecord } from "../../types.ts";
+import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockBox, SecretKeyCredentialUnlockGeneration, SecretKeyCredentialUnlockRecord, SecretKeyRecord, SecretKeyLockedClient, SecretKeyLockReason, SecretKeySessionEnd, SecretKeyUnlockPersonRecord } from "../../types.ts";
 import type { HeldKeys, HeldSessionUnlock } from "../held-keys.ts";
 import type { SecretKeyStore } from "../key-store.ts";
 import { RecordWriteQueue } from "../record-write-queue.ts";
@@ -352,7 +351,7 @@ export class CredentialUnlocks {
   }
 
   /** Locks a paired holder until the person's own explicit unlock: its keys leave memory and the store. A client with no row yet starts locked anyway. */
-  async lock(holderId: string, reason: ModelKeyLockReason): Promise<void> {
+  async lock(holderId: string, reason: SecretKeyLockReason): Promise<void> {
     await this.enrollments.endHolder(holderId);
     await this.load();
     this.heldKeys.revokeSession(this.heldHandleFor(holderId));
@@ -385,7 +384,7 @@ export class CredentialUnlocks {
    * revoked. Each record is attempted, so one that cannot be written does not leave the
    * rest unlocked; the failures are raised together at the end.
    */
-  async lockPerson(userId: string, reason: ModelKeyLockReason): Promise<void> {
+  async lockPerson(userId: string, reason: SecretKeyLockReason): Promise<void> {
     await this.enrollments.endUser(userId);
     await this.load();
     const failures: unknown[] = [];
@@ -396,17 +395,6 @@ export class CredentialUnlocks {
     }
     if (reason === "password_reset") await attempt(failures, () => this.notePerson(userId, { passwordResetAtMs: this.now() }));
     raiseAll(failures);
-  }
-
-  /** @deprecated Historical read compatibility; new clients never receive lock reasons. */
-  lockReasonFor(input: { userId: string; holderId?: string | undefined; ownKeys: readonly SecretKeyRecord[] }): ModelKeyLockReason {
-    void input;
-    return "unknown";
-  }
-
-  /** @deprecated No-op compatibility; there is no first-unlock notice to record. */
-  async noteFirstUnlockTold(userId: string): Promise<void> {
-    void userId;
   }
 
   /** Panel endings remove panel custody and pending approvals, not independent clients. */

@@ -17,7 +17,6 @@ export function authenticatedModelKeyPorts(keys: SecretKeysService, gateway: Cli
       }
       return keys.access.createUseAuthorization({ id, principal: { kind: "session", userId, sessionId, ...purpose }, ttlMs });
     },
-    createSessionRevealAuthorization: (input) => keys.createSessionRevealAuthorization(input),
     revealKeyWithAuthorization: (input) => keys.revealKeyWithAuthorization(input),
     revokeRevealAuthorization: (id) => keys.revokeRevealAuthorization(id)
   };

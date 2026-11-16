@@ -78,7 +78,7 @@ import { createRecordingAttachment } from "./attachment/index.ts";
 import { createComposer, createConversationController, createReadNotice, type ConversationController } from "./conversation/index.ts";
 import { createAnswerReader, type AnswerHost, type AnswerReader } from "./answer/index.ts";
 import { askOffersStop, attemptEnded, createWorkHeaderView, meterOfOutcomes, savedOfOutcomes, type WorkMeter } from "./work-header/index.ts";
-import { createActivityFeed, threadRefreshWanted } from "./feed/index.ts";
+import { createActivityFeed, createInjectedFeed, threadRefreshWanted, type ChatFeedView } from "./feed/index.ts";
 import { sameTarget } from "./same-target.ts";
 import { sameThread } from "./same-thread.ts";
 import { createHoldControl, createStopControl } from "./controls/index.ts";
@@ -142,6 +142,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
         ...(deleteThread === undefined ? {} : { deleteThread: (request) => owner.transport.conversation.deleteThread!(request) })
       },
       focusComposer: () => composer.focus(),
+      bar: options.chatBar !== false,
       projectId: () => latestStatus?.projectId,
       projectName: () => latestStatus?.projectName,
       target: () => shownTarget,
@@ -303,12 +304,13 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (captured === owner && captured.current()) renderAll();
     });
   }
-  function makeFeed(captured: ChatOwner) {
-    return createActivityFeed({ activity: captured.transport.activity }, () => {
+  function makeFeed(captured: ChatOwner): ChatFeedView {
+    const changed = (): void => {
       if (captured === owner && captured.current()) {
         onFeedChange();
       }
-    });
+    };
+    return options.activity === undefined ? createActivityFeed({ activity: captured.transport.activity }, changed) : createInjectedFeed(options.activity, changed);
   }
   function refreshControls(renewBack = false): void {
     const scope = {};
@@ -401,6 +403,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     feed = makeFeed(owner);
     // With a thread list the latest chat is the host's project, so a first message has somewhere to open a thread.
     shownTarget = threads !== undefined && latestStatus?.projectId !== undefined ? { kind: "latest", projectId: latestStatus.projectId } : { kind: "latest" };
+    // The new controller reads and writes the project on screen, not whichever one the transport finds.
+    if (shownTarget.projectId !== undefined) controller.setTarget(shownTarget);
     threads?.reset();
     answerIn = null;
     questionKey = "";
@@ -627,13 +631,18 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   return {
     element,
     render(status) {
+      const movedProject = latestStatus !== undefined && latestStatus.projectId !== status.projectId;
       latestStatus = status;
       const next = status.connected;
       const changed = next !== connected;
       connected = next;
       const observation = owners.observe(status);
+      // The host's project moved under the same owner key: the thread list and the open chat follow it.
+      const followed = movedProject && !observation.changed;
       if (observation.changed) {
         resetOwner(owners.capture(), observation.initial);
+      } else if (followed) {
+        resetOwner(owners.rotate(), false);
       } else {
         composer.setOwner(draftOwners.capture(owner, draftProject(), latestStatus?.projectId));
       }
@@ -644,7 +653,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       keyOpener?.observe(status);
       controller.setConnected(next && actionsAllowed() && !unsupported);
       if (changed) renderAll();
-      if (observation.changed || changed) startReads();
+      if (observation.changed || followed || changed) startReads();
     },
     setActive(next) {
       const first = !activationObserved;

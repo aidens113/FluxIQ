@@ -124,7 +124,6 @@ describe("a new browser gets the key only on a proof", () => {
     await signIn(restarted);
     const holder = browser("older");
     await restarted.credentialUnlocks.presentCredential(holder, CREDENTIAL_ONE, { verified: true });
-    expect(restarted.keyLockReason({ userId: USER, holderId: holder.holderId })).toBe("unknown");
     expect(await release(restarted, handle(restarted, holder), keyId)).toBeNull();
     await signIn(restarted, SESSION, [holder.holderId]);
     expect(await release(restarted, handle(restarted, holder), keyId)).toBe(KEY_VALUE);
@@ -489,7 +488,6 @@ describe("after setup, a normal person is not asked again", () => {
     const { service, keyId } = await withKey(repos);
     const holder = await unlockedBrowser(service, "one", CREDENTIAL_ONE);
     const notAsked = async (current: SecretKeysService): Promise<void> => {
-      expect(current.keyNeedsUnlockNow({ userId: USER, sessionId: handle(current, holder) })).toBe(false);
       expect(await release(current, handle(current, holder), keyId)).toBe(KEY_VALUE);
     };
     await notAsked(service);

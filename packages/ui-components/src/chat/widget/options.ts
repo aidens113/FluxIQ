@@ -1,6 +1,7 @@
 // How a client mounts the chat.
 
 import type { ChatComposerOptions } from "../conversation/index.ts";
+import type { ChatActivitySource } from "../feed/index.ts";
 import type { ChatAskPort, ChatAttachmentPort, ChatOpenControlFactory, ChatThreadsOptions, ChatWelcome } from "../ports/index.ts";
 import type { TurnMeta } from "../view/index.ts";
 
@@ -35,6 +36,18 @@ export type ChatWidgetOptions = {
    * the conversation port carries `newThread`, `renameThread` and `deleteThread`.
    */
   threads?: ChatThreadsOptions;
+  /**
+   * The chat bar above the thread (default true; needs `threads` in a drawer): the chat's name, a "Chats"
+   * button with how many chats wait on the person, and "+ New chat" where the transport can make one. The
+   * bar draws the name itself, so a host that also takes it through `threads.onTitle` shows it twice.
+   */
+  chatBar?: boolean;
+  /**
+   * The host's own activity feed, so the chat reads and hears the one the host already runs instead of
+   * starting a second (`ChatActivitySource`). The host starts and stops it; the chat only hears it. Absent,
+   * the chat starts its own from the transport's `activity` port.
+   */
+  activity?: ChatActivitySource;
   /** What the empty chat says instead of its onboarding about the page. */
   welcome?: ChatWelcome;
   /** The fallback's words instead of "Talk to FluxIQ in the FluxIQ window.". */

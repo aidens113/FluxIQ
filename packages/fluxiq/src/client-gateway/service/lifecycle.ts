@@ -251,6 +251,8 @@ export class ClientGatewayLifecycle {
       const current = await this.sessionMetadata.resolve(binding, rotatedToken, true);
       this.sessionMetadata.assert(binding, tokenHash);
       this.sessions.attachTrustedClient(session, trustedClient);
+      // What a `client.focus_project` of null returns to (`./project-focus/`): a reconnect binds no project.
+      session.pairedProjectId = session.projectId ?? null;
       session.sentCredentialHash = tokenHash;
       await this.transport.send(session.sessionId, this.transport.message("server.session_ready", {
         sessionId: session.sessionId, token: rotatedToken,

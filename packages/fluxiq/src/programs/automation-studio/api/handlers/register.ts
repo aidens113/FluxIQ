@@ -33,6 +33,7 @@ import { registerClientGatewayEndpoints } from "./client-gateway.ts";
 import { registerRuntimeIdentityEndpoint } from "./diagnostics/index.ts";
 import { registerPanelAssistantEndpoints } from "../panel-assistant/index.ts";
 import { registerFlowOutlineEndpoints } from "../flow-outline/index.ts";
+import { installPairedProjectFocus } from "../project-focus/index.ts";
 import { AutomationStudioProjectOwnerships } from "../../../../framework/persistence/automation/ownership/index.ts";
 import { automationStudioConversationRunLinks } from "../../../../framework/automation-service/service/conversation-requests/index.ts";
 
@@ -68,4 +69,6 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerClientGatewayEndpoints(dependencies);
   registerRuntimeIdentityEndpoint(dependencies);
   registerPanelAssistantEndpoints(dependencies);
+  // What decides a paired client's `client.focus_project`: the gateway holds no identity or IAM, so it is installed from here.
+  installPairedProjectFocus(dependencies);
 }

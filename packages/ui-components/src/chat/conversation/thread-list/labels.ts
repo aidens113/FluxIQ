@@ -10,7 +10,7 @@ import type { ChatThreadSummary, ThreadSubjectKind } from "./summary.ts";
 const RAW_ID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b|\b[0-9a-f]{16,}\b/iu;
 
 const SUBJECT_NOUN: Readonly<Record<ThreadSubjectKind, string>> = Object.freeze({
-  project: "This project",
+  project: "New chat",
   flow: "This Flow",
   build: "This Flow build",
   run: "This run",

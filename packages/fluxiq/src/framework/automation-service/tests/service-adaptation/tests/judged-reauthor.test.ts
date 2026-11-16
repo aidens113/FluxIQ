@@ -162,7 +162,7 @@ async function reauthoredRun(options: { repairVerdict: "yes" | "no"; rerunFails?
   projectId = project.id;
   const flow = await service.createFlow({ projectId, flowId: "flow.judged-reauthor", name: "Judged re-author Flow" });
   const training = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
   await service.saveFlow({
     projectId,
     flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...training, trainingModeSettings: { ...(training.trainingModeSettings as JsonObject), resultCheck: { schedule: { enabled: true, shape: "every_run", initialRunCount: 3, interval: 5, decay: 5 }, authorization } } } }

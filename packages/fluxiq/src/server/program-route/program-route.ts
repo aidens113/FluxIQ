@@ -79,7 +79,15 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 // endpoint, with fewer permissions; nothing in a request makes it speak for
 // anyone else (the actor comes from the session alone, a named auth session is
 // removed, a review may not name a reviewer). Its reach is therefore its
-// approver's, in its bound domain, never another person's.
+// approver's, in its bound domain, never another person's. Which of the
+// domain's projects that is, IAM decides per project as it does for the
+// person's login: `projects` lists only those the approver may read (the
+// registry's list filter, which under the `service` profile reads each
+// project's owner), and every project-scoped endpoint decides its project the
+// same way. On a hosted server the token selects its tenant's own instance
+// before this route runs (`resolveServiceClientHttpRoute` in the web panel),
+// so another tenant's project id is one this instance does not hold, and the
+// domain gate refuses it as it refuses any id it cannot find.
 //
 // No auth session is injected into a token call's payload: the gateway session
 // is not an identity session, so a PIN check a handler runs against it fails
@@ -90,6 +98,12 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "automation-studio": Object.freeze([
     "get-runtime-build-identity",
+    // The extension's project switcher (usable client, 2026-11-16). Listing the projects the person may read in the bound
+    // domain, `read`, projected to each project's id, name and last change, never its owner. Making one, `authoring`
+    // (programs.write), narrowed to its name alone, in the bound domain, owned by the approving person. Renaming and
+    // deleting a project stay the signed-in person's alone. Neither reaches a project, so neither is gated on the session's.
+    "projects",
+    "create-project",
     "list-conversations",
     "open-conversation",
     "get-conversation",
@@ -248,6 +262,13 @@ export function pairedClientDomainScope(requestUrl: string, session: PairedSessi
   return { domainId };
 }
 
+/**
+ * The allowlisted Automation Studio endpoints that reach no project: each acts
+ * on the bound domain (its scope) as a whole, and its narrowing hands the
+ * handler no `projectId` to read.
+ */
+const PAIRED_CLIENT_PROJECTLESS_ENDPOINTS: readonly string[] = Object.freeze(["projects", "create-project"]);
+
 /** The project a token call reaches, which the route checks against the bound domain, or the refusal of a malformed one. */
 export type PairedClientProjectTarget =
   | { ok: true; projectId: string | null }
@@ -261,10 +282,16 @@ export type PairedClientProjectTarget =
  * project (the build identity; a thread list across the domain, which its
  * handler already scopes to the domain). A `projectId` that is not a string is
  * refused rather than read, since handlers would coerce it.
+ *
+ * An endpoint that reaches no project (`PAIRED_CLIENT_PROJECTLESS_ENDPOINTS`)
+ * targets none, whatever the body or the session names: listing projects is
+ * how a client recovers when the session's project was deleted or moved to
+ * another domain, so it must not be refused for that project.
  */
-export function pairedClientProjectTarget(programId: string, payload: unknown, currentProjectId: string | null | undefined): PairedClientProjectTarget {
+export function pairedClientProjectTarget(programId: string, payload: unknown, currentProjectId: string | null | undefined, endpoint?: string): PairedClientProjectTarget {
   // Projects are Automation Studio's; the secret-keys snapshot names none.
   if (programId.trim().toLowerCase() !== "automation-studio") return { ok: true, projectId: null };
+  if (endpoint !== undefined && PAIRED_CLIENT_PROJECTLESS_ENDPOINTS.includes(endpoint.trim().toLowerCase())) return { ok: true, projectId: null };
   const named = payloadRecord(payload)?.projectId;
   if (named !== undefined && named !== null && typeof named !== "string") {
     return { ok: false, errorCode: "authorization.forbidden", error: "A paired client must name its project by a string projectId." };
@@ -321,6 +348,8 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   const program = programId.trim().toLowerCase();
   const name = endpoint.trim().toLowerCase();
   if (program !== "automation-studio") return { ok: true, payload };
+  if (name === "projects") return { ok: true, payload: {} };
+  if (name === "create-project") return narrowCreateProject(payload);
   if (name === "run-runtime-session") return narrowRunRuntimeSession(payload);
   if (name === "carry-on-task-attempt") return narrowCarryOnTaskAttempt(payload);
   if (name === "run-task-again") return narrowRunTaskAgain(payload);
@@ -336,6 +365,21 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
   if (name === "run-project-part") return narrowRunProjectPart(payload);
   return { ok: true, payload };
+}
+
+/**
+ * A project made by token is exactly `{ name }`: the handler would otherwise
+ * also take a description, a category (another person's grouping) and a PIN,
+ * so the payload handed on is rebuilt from the name alone and every other key
+ * is ignored rather than refused, as the switcher's "New project" sends only a
+ * name. The domain is never the body's: the handler takes the route's scope,
+ * which for a token is the bound domain. An empty name is the handler's to
+ * refuse, in its own words.
+ */
+function narrowCreateProject(payload: unknown): PairedClientRequestNarrowing {
+  const name = payloadRecord(payload)?.name;
+  if (typeof name !== "string") return forbidden("A paired client's new project must carry its name as a string.");
+  return { ok: true, payload: { name } };
 }
 
 function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
@@ -543,6 +587,8 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
   const program = programId.trim().toLowerCase();
   const name = endpoint.trim().toLowerCase();
   if (program === "automation-studio" && FLOW_HUMANNESS_DETAIL_ENDPOINTS.includes(name)) return projectFlowHumannessDetail(response);
+  if (program === "automation-studio" && name === "projects") return projectProjectList(response);
+  if (program === "automation-studio" && name === "create-project") return projectCreatedProject(response);
   if (program !== "secret-keys" || name !== "snapshot" || !response.ok) return response;
   const keys = payloadRecord(response.payload)?.keys;
   // No snapshot list means readiness is unknown, not that no key exists.
@@ -564,6 +610,42 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
         }),
     },
   };
+}
+
+/** A project as a paired client reads it: its id, its name and when it last changed (epoch milliseconds). */
+type PairedClientProjectSummary = { id: string; name: string; updatedAt: number };
+
+/**
+ * The projects a paired client may read, as it reads them: exactly `{
+ * projects: [{ id, name, updatedAt }] }`, newest first as the handler sorts
+ * them. Each project also carries its owner (`ownerUserId`, which IAM reads),
+ * its description, category and domain, and the list its categories; none of
+ * that is the switcher's, and an owner is another person's identity, so the
+ * answer is rebuilt from the three fields and never copied and pruned. An
+ * entry missing its id or name is left out. A refusal keeps only its sentence
+ * and its code.
+ */
+function projectProjectList(response: ProgramAnswer): ProgramAnswer {
+  if (!response.ok) return refusalOnly(response);
+  const projects = payloadRecord(response.payload)?.projects;
+  const summaries = Array.isArray(projects) ? projects.map(pairedClientProjectSummary).filter((summary) => summary !== null) : [];
+  return { ok: true, payload: { projects: summaries } };
+}
+
+/** A project made by token, answered as `{ project: { id, name, updatedAt } }`, or `{ project: null }` when the answer holds none. */
+function projectCreatedProject(response: ProgramAnswer): ProgramAnswer {
+  if (!response.ok) return refusalOnly(response);
+  return { ok: true, payload: { project: pairedClientProjectSummary(payloadRecord(response.payload)?.project) } };
+}
+
+function pairedClientProjectSummary(value: unknown): PairedClientProjectSummary | null {
+  const project = payloadRecord(value);
+  if (!project || typeof project.id !== "string" || typeof project.name !== "string") return null;
+  return { id: project.id, name: project.name, updatedAt: typeof project.updatedAt === "number" && Number.isFinite(project.updatedAt) ? project.updatedAt : 0 };
+}
+
+function refusalOnly(response: ProgramAnswer): ProgramAnswer {
+  return { ok: false, ...(typeof response.error === "string" ? { error: response.error } : {}), ...(typeof response.errorCode === "string" ? { errorCode: response.errorCode } : {}) };
 }
 
 /**

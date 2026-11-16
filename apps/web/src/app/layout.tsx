@@ -17,7 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: branding.shortName,
     description: "Domain-neutral automation framework control panel",
-    ...(branding.faviconUrl ? { icons: { icon: branding.faviconUrl } } : {})
+    // Always an icon: with none declared the browser asks for /favicon.ico, which the panel does not serve, and logs a 404 on every page.
+    icons: { icon: branding.faviconUrl || "/fluxiq-mark.svg" }
   };
 }
 

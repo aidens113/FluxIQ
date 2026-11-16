@@ -27,7 +27,18 @@ export function HomeSection<T>(props: HomeSectionProps<T>) {
         {props.action}
       </div>
       {resource.state === "loading" ? <p className="home-note" role="status">Loading…</p> : null}
-      {resource.state === "error" ? <p className="home-note home-error" role="alert">{props.errorText}</p> : null}
+      {resource.state === "error" ? (
+        <p className="home-note home-error" role="alert">
+          {props.errorText}
+          {resource.retry ? <> <button type="button" className="home-retry" onClick={resource.retry}>Try again</button></> : null}
+        </p>
+      ) : null}
+      {resource.state === "ready" && resource.stale ? (
+        <p className="home-note home-error" role="alert">
+          Could not refresh this just now. Showing what was read before.
+          {resource.retry ? <> <button type="button" className="home-retry" onClick={resource.retry}>Try again</button></> : null}
+        </p>
+      ) : null}
       {resource.state === "ready" ? (props.isEmpty(resource.data) ? <p className="home-note">{props.emptyText}</p> : props.render(resource.data)) : null}
     </section>
   );
