@@ -6,7 +6,7 @@
    load only with the graph editor, so on this page these classes had none (live walk-through, D8). */
 .projects-page .automation-project-browser { display: grid; gap: 16px; min-width: 0; }
 .projects-page .automation-project-browser-heading { display: flex; align-items: center; gap: 12px; }
-.projects-page .automation-project-browser-heading h1 { margin: 0; font-size: 22px; }
+.projects-page .automation-project-browser-heading h1 { margin: 0; font-size: inherit; }
 .projects-page .automation-project-browser-heading p { margin: 2px 0 0; color: var(--muted); }
 .projects-page .automation-project-browser-icon,
 .projects-page .automation-project-row-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--surface-muted, var(--divider)); color: var(--muted); }

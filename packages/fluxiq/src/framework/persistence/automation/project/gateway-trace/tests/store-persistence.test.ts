@@ -2,8 +2,8 @@
 // What only the persisted store has to prove: traces survive the pool being
 // closed and reopened, large events are kept as chunks the trace uses and come
 // back identical, manifests list by episode, a deleted trace takes its rows and
-// its content references with it, and the migrations sort after the
-// administration ledger they are appended to.
+// its content references with it, and its migrations take IDs of their own
+// beside the administration ledger they are composed with, chunks after traces.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TRACE_ID, artifactInput, correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
@@ -103,12 +103,15 @@ describe("AutomationStudioProjectGatewayTraceStore persistence", () => {
     expect((await fixture.store.readEventRange(TRACE_ID, 2, Number.POSITIVE_INFINITY)).map((event) => event.sequence)).toEqual([2, 3]);
   });
 
-  it("sorts its migrations after every administration migration they are appended to, chunks after traces", () => {
+  // The store composes these with the administration ledger in ID order
+  // (`automationStudioSchemaMigrationOrder`, t909), so an administration migration
+  // may sort after them (0037_dataset_snapshots does). What the store needs is IDs
+  // no administration migration uses, and the chunk migration, which alters the
+  // trace tables, sorting after the migration that creates them.
+  it("gives its migrations IDs of their own beside the administration ledger, chunks after traces", () => {
     const ids = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id);
-    const last = [...ids].sort().at(-1) ?? "";
     expect(ids).not.toContain(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id);
     expect(ids).not.toContain(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION.id);
-    expect(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id > last).toBe(true);
     expect(AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_CHUNK_MIGRATION.id > AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION.id).toBe(true);
   });
 });

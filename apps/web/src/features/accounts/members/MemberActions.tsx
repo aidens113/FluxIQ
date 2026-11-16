@@ -44,16 +44,16 @@ export function MemberActions(props: { member: MemberRow; view: Pick<MembersView
               {roles.map((candidate) => <option key={candidate} value={candidate}>{ACCOUNT_ROLES[candidate].label}</option>)}
             </select>
           </label>
-          <button type="button" className="accounts-button" disabled={role === member.role} onClick={() => setStep({ change: { action: "set-role", userId: member.userId, role }, question: `Make ${name} ${ACCOUNT_ROLES[role].label.toLowerCase()}? ${ACCOUNT_ROLES[role].summary}`, confirmLabel: "Change role", danger: false })}>Change role</button>
+          <button type="button" className="button" disabled={role === member.role} onClick={() => setStep({ change: { action: "set-role", userId: member.userId, role }, question: `Make ${name} ${ACCOUNT_ROLES[role].label.toLowerCase()}? ${ACCOUNT_ROLES[role].summary}`, confirmLabel: "Change role", danger: false })}>Change role</button>
         </>
       ) : null}
       {member.state === "turned-off" ? (
-        <button type="button" className="accounts-button" onClick={() => setStep({ change: { action: "turn-on", userId: member.userId }, question: `Let ${name} sign in again?`, confirmLabel: "Turn on", danger: false })}>Turn on</button>
+        <button type="button" className="button" onClick={() => setStep({ change: { action: "turn-on", userId: member.userId }, question: `Let ${name} sign in again?`, confirmLabel: "Turn on", danger: false })}>Turn on</button>
       ) : (
-        <button type="button" className="accounts-button" onClick={() => setStep({ change: { action: "turn-off", userId: member.userId }, question: `Turn ${name} off? They are signed out everywhere and cannot sign in until turned on.`, confirmLabel: "Turn off", danger: true })}>Turn off</button>
+        <button type="button" className="button" onClick={() => setStep({ change: { action: "turn-off", userId: member.userId }, question: `Turn ${name} off? They are signed out everywhere and cannot sign in until turned on.`, confirmLabel: "Turn off", danger: true })}>Turn off</button>
       )}
       {canRemove ? (
-        <button type="button" className="accounts-button accounts-danger" onClick={() => setStep({ change: { action: "remove", userId: member.userId }, question: `Remove ${name}? Their account is deleted and they can no longer sign in. This cannot be undone.`, confirmLabel: "Remove", danger: true })}>Remove</button>
+        <button type="button" className="button danger" onClick={() => setStep({ change: { action: "remove", userId: member.userId }, question: `Remove ${name}? Their account is deleted and they can no longer sign in. This cannot be undone.`, confirmLabel: "Remove", danger: true })}>Remove</button>
       ) : null}
     </span>
   );

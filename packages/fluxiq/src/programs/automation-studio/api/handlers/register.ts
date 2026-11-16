@@ -21,6 +21,7 @@ import { registerSubflowEndpoints } from "./subflows.ts";
 import { registerProjectPartEndpoints } from "./project-parts.ts";
 import { registerInstructionEndpoints } from "./instructions.ts";
 import { registerRunEndpoints } from "./runs.ts";
+import { registerAcrossProjectEndpoints } from "./across-projects/index.ts";
 import { registerRunDatasetEndpoints } from "./datasets.ts";
 import { registerAutomationStudioConversationEndpoints } from "./conversations.ts";
 import { registerAutomationStudioActivityEndpoints } from "./activity.ts";
@@ -55,6 +56,7 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerProjectPartEndpoints(dependencies);
   registerInstructionEndpoints(dependencies);
   registerRunEndpoints(dependencies);
+  registerAcrossProjectEndpoints(dependencies);
   registerRunDatasetEndpoints(dependencies);
   registerTaskAttemptEndpoints(dependencies);
   registerProjectTaskEndpoints(dependencies);

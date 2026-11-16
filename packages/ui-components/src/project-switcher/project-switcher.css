@@ -4,7 +4,7 @@
 :where(.project-switcher), :where(.project-switcher) *, :where(.project-switcher) *::before, :where(.project-switcher) *::after { box-sizing: border-box; }
 :where(.project-switcher) button, :where(.project-switcher) input { font: inherit; }
 :where(.project-switcher) button { cursor: pointer; }
-:where(.project-switcher) button:disabled { cursor: default; opacity: .48; }
+:where(.project-switcher) button:disabled { cursor: default; opacity: .62; }
 :where(.project-switcher) p, :where(.project-switcher) ul { margin: 0; }
 
 .project-switcher { position: relative; display: inline-block; min-width: 0; max-width: 100%; }

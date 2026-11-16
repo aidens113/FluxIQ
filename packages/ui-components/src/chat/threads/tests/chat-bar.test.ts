@@ -52,6 +52,24 @@ test("the bar names the chat, has Chats with how many wait, and makes a new chat
   });
 });
 
+test("one New chat control at a time: the bar's hides while the list, which has its own, is open", async () => {
+  const core = threadsCore([inProject("alpha")]);
+  await mounted(core.transport({ actions: true }), { threads: {} }, async (_chat, root) => {
+    await settle();
+    const fresh = root.byClass("chat-bar-new")[0]!;
+    const toggle = root.byClass("chat-thread-toggle")[0]!;
+    const nav = root.byClass("chat-thread-nav")[0]!;
+    const visibleNew = () => root.byClass("chat-bar-new").filter((b) => !b.hidden).length + (nav.hidden ? 0 : root.byClass("chat-thread-new").filter((b) => !b.hidden).length);
+    assert.equal(visibleNew(), 1, "closed: only the bar's");
+    toggle.dispatch("click");
+    assert.equal(fresh.hidden, true);
+    assert.equal(visibleNew(), 1, "open: only the list's");
+    toggle.dispatch("click");
+    assert.equal(fresh.hidden, false);
+    assert.equal(visibleNew(), 1);
+  });
+});
+
 test("the title opens the drawer like the Chats button, and the list can be left again", async () => {
   const core = threadsCore([inProject("alpha")]);
   await mounted(core.transport({ actions: true }), { threads: {} }, async (_chat, root) => {

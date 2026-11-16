@@ -12,13 +12,13 @@ export function ConnectClientSection() {
   const { state, reload } = useConnectView();
   const studio = useProgramTransport("automation-studio");
   return (
-    <section aria-labelledby="settings-connect">
+    <section aria-labelledby="settings-connect" className="settings-connect">
       <h2 id="settings-connect">Connect a client</h2>
       {state.state === "loading" ? <p role="status">Loading connection details...</p> : null}
       {state.state === "error" ? (
         <div role="alert">
           <p>Could not read the connection details. Check that the engine is running.</p>
-          <button type="button" onClick={reload}>Try again</button>
+          <button type="button" className="button" onClick={reload}>Try again</button>
         </div>
       ) : null}
       {state.state === "ready" ? (
@@ -27,7 +27,7 @@ export function ConnectClientSection() {
           <CopyField label="Gateway address" value={state.view.info.gatewayUrl} missing="The gateway is not switched on." />
           <CopyField label="Discovery data (/.well-known/fluxiq)" value={state.view.info.discoveryText} multiline missing={state.view.discoveryFailed ? "Could not be read. Reload to try again." : "Unavailable"} />
           <h3>Pair the browser extension</h3>
-          <ol>
+          <ol className="settings-steps">
             <li>Open the FluxIQ extension and choose Connect.</li>
             <li>Enter the panel address above, or let the extension find it.</li>
             <li>Approve the request below when its code matches. The extension can then use models straight away.</li>

@@ -94,6 +94,13 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
       problem = "the model's answer could not be read";
     } catch (error) {
       problem = automationStudioConversationModelProblem(error);
+      // With no usable key the words are still read: a confident match (running a saved Flow,
+      // which needs no model) still acts. Anything else gets the setup message alone, not an
+      // unrelated "could not tell what you wanted" ahead of it.
+      if (keySetupProblem(problem)) {
+        const matched = fallback(input, problem, attempts);
+        return { ...(matched.decision.kind === "reply" ? setupReply(problem, attempts) : matched), ...priced(costUsd, pricedCalls) };
+      }
       if ((error as { retryable?: unknown } | null)?.retryable === false) break;
       await clock.wait(Math.min(limits.backoffMs * 2 ** (attempts - 1), Math.max(0, limits.deadlineMs - (clock.now() - started))));
     }
@@ -152,10 +159,24 @@ export function automationStudioConversationModelProblem(error: unknown): string
  * a saved key that needs one panel sign-in to be upgraded are different
  * problems with different fixes, and neither claims a key exists when none does.
  */
+const NO_KEY = "no model key is set up yet, so add one in Settings, under AI keys";
+const NEEDS_SIGN_IN = "the saved model key needs one sign-in to the panel to upgrade it, then try again";
+
 function secretProblem(message: string): string {
-  if (/no enabled .* key|no configured model key|no model key/iu.test(message)) return "no model key is set up yet, so add one in Settings, under AI keys";
-  if (/requires recovery|protection key|could not be authenticated/iu.test(message)) return "the saved model key needs one sign-in to the panel to upgrade it, then try again";
+  if (/no enabled .* key|no configured model key|no model key/iu.test(message)) return NO_KEY;
+  if (/requires recovery|protection key|could not be authenticated/iu.test(message)) return NEEDS_SIGN_IN;
   return "the model key could not be used, so check the model key in FluxIQ and try again";
+}
+
+const KEY_SETUP_PROBLEMS = [NO_KEY, NEEDS_SIGN_IN];
+
+function keySetupProblem(problem: string): boolean {
+  return KEY_SETUP_PROBLEMS.includes(problem);
+}
+
+/** The person's message was not read at all: the one thing to tell them is how to make the model usable. */
+function setupReply(problem: string, attempts: number): AutomationStudioConversationInterpretation {
+  return { decision: { kind: "reply", text: `${problem.charAt(0).toUpperCase()}${problem.slice(1)}.` }, source: "closest_match", modelProblem: problem, keySetup: true, attempts };
 }
 
 function fallback(input: AutomationStudioConversationInterpretInput, problem: string, attempts: number): AutomationStudioConversationInterpretation {

@@ -173,7 +173,7 @@ function withoutAskIds(decision: AutomationStudioConversationInterpretation["dec
 }
 
 function withProblem(text: string, interpretation: AutomationStudioConversationInterpretation): string {
-  if (interpretation.source === "model" || !interpretation.modelProblem) return text;
+  if (interpretation.source === "model" || !interpretation.modelProblem || interpretation.keySetup) return text;
   return `${text}\n\n(I read your message without the model, because ${interpretation.modelProblem}. If I got it wrong, say it again another way.)`;
 }
 

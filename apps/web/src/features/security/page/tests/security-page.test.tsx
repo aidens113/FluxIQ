@@ -62,13 +62,13 @@ describe("access", () => {
     expect(managed).toContain("ACTIONS-u1");
     expect(managed).toMatch(/data-slot="access-admin"[^>]*><p>ADMIN-TOOLS<\/p>/u);
   });
-  it("offers Forget only for a browser still trusted", () => {
+  it("offers Forget for every paired browser, trusted or not", () => {
     const rows = [
       { trustedClientId: "t1", name: "Chrome", clientType: "extension", status: "active", approvedAt: 1, lastUsedAt: 2 },
       { trustedClientId: "t2", name: "Old", clientType: "extension", status: "revoked", approvedAt: 1, lastUsedAt: 2 }
     ];
     const html = renderToStaticMarkup(createElement(PairedClientsList, { rows, now: 10, onForget: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
-    expect(html.match(/>Forget</g)).toHaveLength(1);
+    expect(html.match(/>Forget</g)).toHaveLength(2);
   });
 });
 

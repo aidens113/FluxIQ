@@ -44,8 +44,8 @@ function PendingInvite(props: { member: MemberRow; now: number; readOnly: boolea
         <ProofForm question={`Cancel ${member.name}'s invite? Their link stops working and their account is deleted.`} confirmLabel="Cancel invite" danger onConfirm={(proof) => props.onApply({ action: "revoke-invite", userId: member.userId }, proof)} onDone={finish} onCancel={() => setRevoking(false)} />
       ) : (
         <span className="accounts-actions">
-          <button type="button" className="accounts-button" disabled={busy} onClick={() => void resend()}>{busy ? "Sending…" : "Resend"}</button>
-          <button type="button" className="accounts-button accounts-danger" disabled={busy} onClick={() => setRevoking(true)}>Cancel invite</button>
+          <button type="button" className="button" disabled={busy} onClick={() => void resend()}>{busy ? "Sending…" : "Resend"}</button>
+          <button type="button" className="button danger" disabled={busy} onClick={() => setRevoking(true)}>Cancel invite</button>
           {note ? <span className="accounts-muted" role="status">{note}</span> : null}
         </span>
       )}

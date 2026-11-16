@@ -9,7 +9,7 @@ import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 // session, every recording) would show a user other users' data. A registry
 // test fails when a declared filtered workspace list is missing here, and
 // another when a user reaches any unfiltered one (programs/_shared/tests).
-const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:Projects", "secrets:Snapshot"];
+const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:ListRecentFlowRuns", "studio:ListWorkspaceFlowSummaries", "studio:Projects", "secrets:Snapshot"];
 
 // The panel assistant's endpoints a person needs for their own chats in the
 // dock: list, read, open, rename and delete their threads, read a turn's

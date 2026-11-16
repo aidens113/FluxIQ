@@ -473,6 +473,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     }, THREAD_REFRESH_DEBOUNCE_MS);
   }
 
+  let wasSending = false;
   function renderAll(): void {
     const raw = feed.snapshot().state.current;
     const paced = feed.snapshot().state.display;
@@ -484,6 +485,9 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     hold.update(live);
     if (followed !== null && followRunNow()) return;
     let state = controller.state();
+    // Core names an unnamed thread from its first message while it stores it, so the list is read as soon as a send ends, not on the next beat.
+    if (wasSending && !state.sending && active) void threads?.read();
+    wasSending = state.sending;
     if (state.fallbackReason === "unsupported") unsupported = true;
     if (unsupported) state = { ...state, mode: connected ? "fallback" : "offline", fallbackReason: "unsupported" };
     const activity = activityForTarget(feed.snapshot().state, shownTarget, state.conversationId);

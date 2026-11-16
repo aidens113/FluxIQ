@@ -88,12 +88,12 @@
   gap: var(--space-md);
 }
 
-.auth-form label {
+.auth-form label:not(.field-label) {
   display: grid;
   gap: var(--space-compact);
 }
 
-.auth-form label span {
+.auth-form label:not(.field-label) span {
   color: var(--muted);
   font-size: var(--font-size-compact);
   font-weight: var(--font-weight-bold);
@@ -138,8 +138,7 @@
   color: var(--success);
 }
 
-@media (max-width: 480px) {
-  .auth-status .menu > .button {
+.auth-status .menu > .button {
   max-width: min(240px, 34vw);
 }
 
@@ -200,17 +199,16 @@
     display: none;
   }
 }
-.auth-page {
-    place-items: stretch;
-    min-height: 100dvh;
+
+@media (max-width: 480px) {
+  .auth-page {
+    place-items: start stretch;
     padding: var(--space-md);
   }
 
   .auth-card {
-    align-content: center;
+    align-content: start;
     width: 100%;
-    border-inline: 0;
-    box-shadow: none;
     padding: var(--space-lg);
   }
 }

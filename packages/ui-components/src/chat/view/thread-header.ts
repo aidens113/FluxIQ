@@ -110,7 +110,8 @@ function createBar(layout: ChatThreadsLayout, button: HTMLButtonElement, title: 
       if (badge.hidden === (waiting !== "")) badge.hidden = waiting === "";
       button.setAttribute("aria-expanded", String(model.open));
       nameButton.setAttribute("aria-expanded", String(model.open));
-      const offered = model.canCreate === true;
+      // The open list has its own "New chat"; two primary buttons would stack.
+      const offered = model.canCreate === true && !model.open;
       if (create.hidden === offered) create.hidden = !offered;
       create.disabled = model.busy === true;
     }

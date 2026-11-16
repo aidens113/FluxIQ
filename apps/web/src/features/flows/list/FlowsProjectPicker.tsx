@@ -51,12 +51,12 @@ export function FlowsProjectPicker() {
           ))}
         </ul>
       ) : null}
-      <form className="flows-search" onSubmit={(event) => void create(event)}>
-        <label className="flows-search">
+      <form className="flows-new" onSubmit={(event) => void create(event)}>
+        <label className="flows-new-field">
           <span>New project</span>
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name the project" />
         </label>
-        <div className="flows-tool-row">
+        <div className="flows-new-actions">
           <button type="submit" className="flows-button flows-primary" disabled={busy || !name.trim()}>Create project</button>
           <Link className="flows-button" href="/projects">All projects</Link>
         </div>

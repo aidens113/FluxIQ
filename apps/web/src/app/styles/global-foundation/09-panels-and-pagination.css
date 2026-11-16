@@ -8,12 +8,16 @@
 
 .workspace-panel {
   display: grid;
-  grid-column: span 6;
   gap: var(--space-md);
   min-height: 180px;
 }
 
-.workspace-panel:first-child {
+/* Column spans belong to the 12-column grid only; panels in plain blocks must not create implicit tracks. */
+.program-workspace-grid > .workspace-panel {
+  grid-column: span 6;
+}
+
+.program-workspace-grid > .workspace-panel:first-child {
   grid-column: span 12;
 }
 
