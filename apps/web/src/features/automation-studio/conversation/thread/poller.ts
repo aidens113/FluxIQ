@@ -1,14 +1,15 @@
 // How a turn written by a server-side run reaches the person at all.
 //
-// Nothing pushes to this browser. There is no `EventSource` and no client
-// `WebSocket` anywhere in the panel; the gateway socket serves the extension.
-// The project change feed is not on a timer either -- it fires on start, on
-// `hasMore`, and on a mutation this same tab dispatched, and pauses while the
-// tab is hidden. So a turn Core wrote during a run would never arrive.
+// Nothing pushes conversation turns to this browser. The panel's one push
+// channel, `/api/client-gateway/changes` (`features/client-gateway-changes/`),
+// carries only pairing and client changes; the gateway socket serves the
+// extension. The project change feed is not on a timer either -- it fires on
+// start, on `hasMore`, and on a mutation this same tab dispatched, and pauses
+// while the tab is hidden. So a turn Core wrote during a run would never arrive.
 //
-// The one mechanism in the product that has ever reached an unattended person
-// is the global pairing prompt's adaptive backoff, and this is that mechanism
-// made reusable and testable: a fast beat while something is pending, decaying
+// This is an adaptive backoff, the mechanism the global pairing prompt used
+// before pairing changes were pushed, made reusable and testable: a fast beat
+// while something is pending, decaying
 // towards a ceiling while nothing is, a slow beat while the tab is hidden, and
 // an immediate read when it becomes visible again. `setInterval` is not used --
 // a fixed interval would stack reads on a slow answer, and a source-text test
@@ -22,9 +23,8 @@
 // zero reads. Hidden now means the read still happens, on the five-second beat,
 // which is the whole point of having a hidden beat at all.
 //
-// The existing `createActivePoller` is not reused because its delay is fixed at
-// construction. A conversation needs the delay to move with what the last read
-// found, which is the whole point of the backoff.
+// The delay moves with what the last read found, which is the whole point of
+// the backoff; a fixed-delay poller would not do.
 
 export const CONVERSATION_POLL_FAST_MS = 1_000;
 export const CONVERSATION_POLL_CEILING_MS = 10_000;

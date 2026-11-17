@@ -11,6 +11,7 @@ import { connectRequestParams } from "../../../features/connect/model";
 import { POST as connectAuthorize } from "../connect/authorize";
 import { GET as listKeys, POST as enrollKey, DELETE as revokeKey } from "../keys/route";
 import { POST as approvePairing } from "../client-gateway/approve-pairing/route";
+import { GET as gatewayChanges } from "../client-gateway/changes/route";
 import { POST as setStudioContext } from "../client-gateway/automation-studio-context/route";
 import { POST as dismissPairing } from "../client-gateway/dismiss-pairing/route";
 import { POST as firstProject } from "../client-gateway/first-project/route";
@@ -68,6 +69,7 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
     setStudioContext(routeRequest(caller, "/api/client-gateway/automation-studio-context", { method: "POST", json: { activeProjectId: target.projectId, activeFlowId: `${target.projectId}-flow` } })),
   "POST /api/client-gateway/first-project": (caller) => firstProject(routeRequest(caller, "/api/client-gateway/first-project", { method: "POST" })),
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
+  "GET /api/client-gateway/changes": (caller) => gatewayChanges(routeRequest(caller, "/api/client-gateway/changes")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),
   // Takes no request: building one sets the caller's cookie, which is all it reads.

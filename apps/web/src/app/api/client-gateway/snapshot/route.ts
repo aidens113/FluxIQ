@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { resolveFluxIQProfile } from "fluxiq/platform/profile";
 import { appRouteIamContract } from "../../../../lib/app-route-iam";
-import { getWorkspaceWebPresentation } from "../../../../lib/fluxiq";
 import { workspaceRouteContext } from "../../../../lib/workspaces";
 import { WorkspacePresentationError } from "../../../../lib/workspaces/presentation";
-import { GatewaySnapshotRefusal, snapshotCaller } from "./authority";
-import { snapshotProject, revalidateSnapshotProject } from "./project";
-import { callerGatewaySnapshot } from "./view";
+import { GatewaySnapshotRefusal } from "./authority";
+import { callerGatewayView } from "./caller-view";
+import { revalidateSnapshotProject } from "./project";
 
 const ROUTE = appRouteIamContract("GET", "/api/client-gateway/snapshot");
 
@@ -16,14 +14,7 @@ export async function GET(request: Request) {
   const owner = selected.context;
   try {
     await owner.fluxiq.programs.clientGateway.ready();
-    const caller = await snapshotCaller(owner);
-    const binding = caller.binding;
-    const presentation = getWorkspaceWebPresentation(owner.workspaceId, owner.fluxiq, { userId: binding.userId, channel: binding.channel, ...(binding.channel === "paired-client" ? { clientId: binding.clientId } : {}) });
-    const current = presentation.present();
-    const project = await snapshotProject(owner, request.url, current.automationStudio);
-    await revalidateSnapshotProject(owner, request.url, project);
-    const webRuntime = presentation.present();
-    const snapshot = callerGatewaySnapshot(owner.fluxiq.programs.clientGateway.snapshot(), binding, resolveFluxIQProfile(process.env), project.projectId);
+    const { snapshot, project, presentation, webRuntime } = await callerGatewayView(owner, request.url);
     const response = NextResponse.json({ ok: true, payload: {
       ...snapshot,
       webRuntime: { ...webRuntime, automationStudio: { ...webRuntime.automationStudio, activeProjectId: project.projectId, activeFlowId: project.flowId, activeProjectName: project.name } }

@@ -5,6 +5,7 @@ import { ProgramJsonStore, programDataFile } from "../../../persistence/program-
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";
 import type { AutomationStudioProjectIndex, AutomationStudioProjectRecord } from "./types.ts";
 import type { CanonicalAuthorityWholeOperation } from "../../../persistence/automation/canonical-authority/index.ts";
+import { AutomationStudioProjectRemovals } from "./removals.ts";
 
 // The project catalogue: the index that lists every project, the per-project
 // manifest and hierarchy documents, and the one-time migration off the legacy
@@ -12,6 +13,8 @@ import type { CanonicalAuthorityWholeOperation } from "../../../persistence/auto
 // paths collaborator, which this one reads it from.
 export class AutomationStudioProjectStore {
   readonly indexStore?: ProgramJsonStore<AutomationStudioProjectIndex>;
+  /** Each project removed from this catalogue, announced once its removal succeeded. */
+  readonly removals = new AutomationStudioProjectRemovals();
   private readonly legacyStore?: ProgramJsonStore<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProjectRecord[] }>;
   private storageReady?: Promise<void>;
   // A service with no storage root keeps its project catalogue here, for its

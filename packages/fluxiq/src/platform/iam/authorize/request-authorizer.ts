@@ -25,6 +25,17 @@ export class IamRequestAuthorizer {
   }
 
   /**
+   * Decides `action` on `resources` and records nothing: for a holder that
+   * reuses the decision until the policies behind it change, and records the
+   * events it acts on itself (the client gateway's activity delivery, through
+   * `GlobalProgramApiRegistry.decideUnrecorded`), as `filter` decides each
+   * item of a list without a row of its own.
+   */
+  decideUnrecorded(action: string, resources: readonly IamResource[]): IamDecision {
+    return this.evaluate(action, resources);
+  }
+
+  /**
    * Keeps the items the principal may `action`, locating each by `toResource`,
    * and records exactly one audit row for the list, naming `action` and
    * `listScope`:

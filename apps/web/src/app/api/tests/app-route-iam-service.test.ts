@@ -111,7 +111,7 @@ describe("app routes on the service profile", () => {
   }
 
   it("refuses a user a list across the workspace, which would show other users' items", async () => {
-    for (const name of ["GET /api/recordings", "GET /api/client-gateway/snapshot"]) {
+    for (const name of ["GET /api/recordings", "GET /api/client-gateway/snapshot", "GET /api/client-gateway/changes"]) {
       await expect(call(name, { kind: "cookie", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
       await expect(call(name, { kind: "token", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
     }

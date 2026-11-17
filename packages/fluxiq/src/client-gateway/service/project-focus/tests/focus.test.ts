@@ -34,18 +34,21 @@ function countingAuthority(allowed: (request: FocusRequest) => boolean) {
 
 describe("client.focus_project", () => {
   it("moves a paired session to a project its person may read: that project's activity arrives and the old one's stops", async () => {
-    const { authority, asked } = countingAuthority((request) => request.projectId === "project.next");
+    const { authority, asked } = countingAuthority((request) => request.projectId === "project.next" || request.projectId === "project.paired");
     const gateway = new ClientGatewayService({ projectFocusAuthority: authority });
     const client = await paired(gateway, "project.paired");
     expect(gateway.publishActivity(activity("project.paired"), { projectId: "project.paired" })).toBe(1);
+    await settle();
 
     const id = await client.send("client.focus_project", { projectId: "project.next" });
 
     expect(client.last()).toEqual(expect.objectContaining({ type: "server.project_focused", correlationId: id, payload: { projectId: "project.next" } }));
-    expect(asked).toEqual([{ session: expect.objectContaining({ sessionId: client.sessionId, operatorUserId: APPROVER, projectId: "project.paired" }), projectId: "project.next", domainId: DOMAIN }]);
+    // The focus asked once; the activity's own delivery may have asked about its project too (`../activity-delivery.ts`).
+    expect(asked.filter((request) => request.projectId === "project.next")).toEqual([{ session: expect.objectContaining({ sessionId: client.sessionId, operatorUserId: APPROVER, projectId: "project.paired" }), projectId: "project.next", domainId: DOMAIN }]);
     expect(projectOf(gateway, client.sessionId)).toBe("project.next");
     expect(gateway.publishActivity(activity("project.paired"), { projectId: "project.paired" })).toBe(0);
     expect(gateway.publishActivity(activity("project.next"), { projectId: "project.next" })).toBe(1);
+    await settle();
     expect(client.activity().map((sent) => sent.payload.subject.projectId)).toEqual(["project.paired", "project.next"]);
   });
 
@@ -78,7 +81,7 @@ describe("client.focus_project", () => {
 
   it("refuses a project the person may not read, or one in another domain, and keeps the session where it was", async () => {
     // The authority is where both are decided; here it reads the domain it is handed.
-    const gateway = new ClientGatewayService({ projectFocusAuthority: countingAuthority(({ projectId, domainId }) => domainId === DOMAIN && projectId === "project.own").authority });
+    const gateway = new ClientGatewayService({ projectFocusAuthority: countingAuthority(({ projectId, domainId }) => domainId === DOMAIN && (projectId === "project.own" || projectId === "project.paired")).authority });
     const client = await paired(gateway, "project.paired");
 
     for (const projectId of ["project.someone-elses", "project.other-domain"]) {
@@ -250,6 +253,11 @@ async function paired(gateway: ClientGatewayService, projectId?: string, domainI
 
 function projectOf(gateway: ClientGatewayService, sessionId: string): string | null | undefined {
   return gateway.snapshot().sessions.find((session) => session.sessionId === sessionId)?.projectId;
+}
+
+/** Lets activity waiting on its delivery check go out. */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 }
 
 function activity(projectId: string): ClientGatewayActivity {

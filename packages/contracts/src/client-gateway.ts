@@ -321,6 +321,8 @@ export const CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID = "fluxiq.activity";
 export type ClientGatewayFocusProjectRequest = { projectId: string | null };
 /** `server.project_focused`: the session's project is now `projectId` (null: none). */
 export type ClientGatewayProjectFocused = { projectId: string | null };
+/** `server.project_access_ended`, unprompted: the pairing person can no longer read the session's project `projectId` (access removed, disabled, or deleted), so its activity stopped; Core moved the session where a null focus goes (`currentProjectId`) and says why in `message`. */
+export type ClientGatewayProjectAccessEnded = { projectId: string; currentProjectId: string | null; message: string };
 /** Why a focus was refused: a malformed request, a session no person paired, a project the person may not read there (or none), or Core could not decide. */
 export const CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES = Object.freeze({
   invalid: "project_focus.invalid",
@@ -757,6 +759,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.revoked", ClientGatewayRevokedNotice>
   | ClientGatewayEnvelope<"server.going_away", ClientGatewayGoingAwayNotice>
   | ClientGatewayEnvelope<"server.project_focused", ClientGatewayProjectFocused>
+  | ClientGatewayEnvelope<"server.project_access_ended", ClientGatewayProjectAccessEnded>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewaySnapshotView = {

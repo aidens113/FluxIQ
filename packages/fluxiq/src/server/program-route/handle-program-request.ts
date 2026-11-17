@@ -108,6 +108,9 @@ export async function handleProgramRequest(request: ProgramRouteRequest, context
     const current = await guardedAuthenticate(request, fluxiq, identityAuthority, guard, caller.kind);
     if ("status" in current) return current;
     if (!sameCallerBinding(caller, current)) return refuse(401, "Authentication required");
+    // The call's project was bound once, from the first authentication, and gated above; a
+    // `client.focus_project` that moved the session meanwhile moves later calls, never this one.
+    if (caller.kind === "paired-client" && current.kind === "paired-client") current.currentProjectId = caller.currentProjectId;
     const authorityRefusal = await checkAuthorityGuard(guard);
     if (authorityRefusal) return authorityRefusal;
     // The original predicate captures the original run/lease epoch, even when a refresh sees the same host on a new run.
@@ -211,10 +214,16 @@ function authorityUnavailable(error: unknown): ProgramRouteResponse {
   return json(503, JSON.stringify({ ok: false, error: "Request authority could not be verified." }));
 }
 
+// Whether the refreshed caller is still the one first authenticated: the same person or paired
+// client, session, trust and domain. A paired session's current project is deliberately not part of
+// it. It moves whenever the person focuses another project (`client.focus_project`), and the call's
+// project was already bound from the first authentication and domain-gated
+// (`refuseProjectOutsideDomain`), so comparing it only failed a call a concurrent focus overtook.
+// What the call may do on that project is decided by the registry's IAM for the refreshed actor.
 function sameCallerBinding(first: RouteCaller, current: RouteCaller): boolean {
   if (first.kind !== current.kind || first.actor.userId !== current.actor.userId || first.actor.sessionId !== current.actor.sessionId || (first.scope?.domainId ?? null) !== (current.scope?.domainId ?? null)) return false;
   if (first.kind === "person") return current.kind === "person" && first.sessionId === current.sessionId && first.userId === current.userId;
-  if (current.kind !== "paired-client" || (first.currentProjectId ?? null) !== (current.currentProjectId ?? null)) return false;
+  if (current.kind !== "paired-client") return false;
   for (const key of ["trustedClientId", "clientId", "clientType", "managedHostId"] as const) {
     if (first.binding[key] !== current.binding[key]) return false;
   }

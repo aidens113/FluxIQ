@@ -67,7 +67,7 @@ describe("guarded buffered program authority", () => {
     expect(h.present).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["token", "owner", "role", "session", "trust", "client", "type", "domain", "project"])("rejects paired %s changes during a body await", async (kind) => {
+  it.each(["token", "owner", "role", "session", "trust", "client", "type", "domain"])("rejects paired %s changes during a body await", async (kind) => {
     const h = authorityHarness();
     const entered = deferred<void>();
     const body = deferred<unknown>();
@@ -85,7 +85,6 @@ describe("guarded buffered program authority", () => {
     if (kind === "client") h.state.session = { ...session, clientId: "client-two" };
     if (kind === "type") h.state.session = { ...session, clientType: "custom" };
     if (kind === "domain") h.state.session = { ...session, metadata: { domainId: "domain-two" } };
-    if (kind === "project") h.state.session = { ...session, projectId: "project-two" };
     body.resolve({ projectId: "project-one", flowId: "flow-one" });
     expect((await pending).status).toBe(401);
     expect(h.call).not.toHaveBeenCalled();
@@ -116,7 +115,7 @@ describe("guarded buffered program authority", () => {
     expect(h.present).not.toHaveBeenCalled();
   });
 
-  it.each(["membership", "token", "role", "project"])("rechecks %s after awaited project-domain work", async (kind) => {
+  it.each(["membership", "token", "role"])("rechecks %s after awaited project-domain work", async (kind) => {
     const h = authorityHarness();
     const entered = deferred<void>();
     const domain = deferred<void>();
@@ -129,7 +128,6 @@ describe("guarded buffered program authority", () => {
     if (kind === "membership") h.state.eligible = false;
     if (kind === "token") h.state.session = null;
     if (kind === "role") h.state.roles = [];
-    if (kind === "project") h.state.session = { ...h.state.session!, projectId: "project-two" };
     domain.resolve();
     expect((await pending).status).toBe(401);
     expect(h.call).not.toHaveBeenCalled();

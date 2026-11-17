@@ -4,6 +4,7 @@ import { IamRequestAuthorizer, type IamPolicySource } from "../../../platform/ia
 import { compileIamPolicySet, type CompiledIamPolicySet } from "../../../platform/iam/evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../../platform/iam/frn/index.ts";
 import { IAM_SERVICE_GUARDRAIL, resolveIamPredefinedPolicy } from "../../../platform/iam/predefined/index.ts";
+import { iamStoreChanges } from "../../../platform/iam/store/index.ts";
 import type { IamAuditSink, IamPolicy, IamPolicySet, IamPrincipal, IamRequestConsent, IamRequestContext, IamRequestVia, IamResource } from "../../../platform/iam/index.ts";
 import { rolePolicyNames } from "../../identity-access/runtime/roles.ts";
 import type { Permission } from "../../identity-access/index.ts";
@@ -86,6 +87,7 @@ export class ProgramIamGate {
   private readonly source: IamPolicySource | undefined;
   private readonly sink: IamAuditSink;
   private readonly compiledSets = new Map<string, CompiledIamPolicySet>();
+  private readonly changeListeners = new Set<() => void>();
   private requests = 0;
 
   constructor(
@@ -100,9 +102,29 @@ export class ProgramIamGate {
     this.sink = options.audit ?? DISCARD;
   }
 
-  /** Drops every cached set; the registry calls it when a registration is added. */
+  /** Drops every cached set; the registry calls it when a registration is added. Decisions made before may now differ, so holders are told. */
   invalidate(): void {
     this.compiledSets.clear();
+    for (const listener of [...this.changeListeners]) listener();
+  }
+
+  /**
+   * Tells `listener` whenever a decision this gate made may since have
+   * changed: a registration was added (the permission policies are built from
+   * them), or a write to an IAM store of this gate's workspace or of the
+   * platform level (`iamStoreChanges`), where `service` reads its policies.
+   * Who the actor is (their role, whether they are enabled) is the caller's to
+   * watch. Returns the function that stops it.
+   */
+  subscribeChanges(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    const stopStore = iamStoreChanges.subscribe((workspaceId) => {
+      if (workspaceId === null || workspaceId === this.workspaceId) listener();
+    });
+    return () => {
+      this.changeListeners.delete(listener);
+      stopStore();
+    };
   }
 
   /**

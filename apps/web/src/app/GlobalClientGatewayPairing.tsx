@@ -2,6 +2,7 @@
 
 import { QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useGatewayChanges, type GatewayChangeStatus } from "../features/client-gateway-changes";
 import { Button, InlineNotice, Modal } from "../features/programs/shared-ui";
 import "./client-pairing-modal.css";
 
@@ -98,58 +99,36 @@ function closedApprovalNotice(message: string): PairingNotice {
   return { title: "Nothing was paired", message, tone: "error" };
 }
 
+/**
+ * What to tell the person while the panel is not hearing gateway changes, or
+ * null while it is. The request on screen may have been approved, dismissed
+ * or withdrawn elsewhere meanwhile; the panel reads it again as soon as the
+ * stream is back, and never on a timer.
+ */
+export function liveUpdatesNotice(status: GatewayChangeStatus): string | null {
+  if (status === "live" || status === "connecting") return null;
+  if (status === "reconnecting") return "Live updates dropped and are reconnecting. This request may have changed meanwhile; it is read again as soon as they are back.";
+  return "Live updates are off. This request may have changed; it is read again when this tab is shown again or the network returns.";
+}
+
 export function GlobalClientGatewayPairing() {
+  // The page's shared gateway subscription: it reads the snapshot when the stream opens and on each change it signals.
+  const changes = useGatewayChanges();
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>({});
   const [dismissedCodes, setDismissedCodes] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
   // Outlives the request it is about: the request leaves the list at the next
-  // poll, and the person must still learn that nothing was paired.
+  // read, and the person must still learn that nothing was paired.
   const [closedNotice, setClosedNotice] = useState<PairingNotice | null>(null);
   const shownPairing = useRef<ClientPairingRequest | null>(null);
 
+  // A refusal clears the shared snapshot, so a signed-out page shows no request.
   useEffect(() => {
-    let cancelled = false;
-    let timer = 0;
-    let delayMs = 1_000;
-
-    async function refresh() {
-      if (cancelled) return;
-      if (document.visibilityState === "hidden") {
-        timer = window.setTimeout(() => void refresh(), 5_000);
-        return;
-      }
-      const response = await fetch("/api/client-gateway/snapshot", { cache: "no-store" }).catch(() => null);
-      if (cancelled) return;
-      if (response?.status === 401) return;
-      const result = response ? await response.json().catch(() => undefined) as { ok?: boolean; payload?: ClientGatewaySnapshot } | undefined : undefined;
-      if (result?.ok) {
-        const next = pairingSnapshot(result.payload);
-        setSnapshot((current) => pairingSnapshotsEqual(current, next) ? current : next);
-        const hasPending = pendingPairingRequests(next.pairings ?? [], Date.now(), []).length > 0;
-        delayMs = hasPending ? 1_000 : Math.min(10_000, Math.round(delayMs * 1.6));
-      } else {
-        delayMs = Math.min(10_000, Math.round(delayMs * 1.8));
-      }
-      timer = window.setTimeout(() => void refresh(), delayMs);
-    }
-
-    function resumeWhenVisible() {
-      if (document.visibilityState !== "visible") return;
-      window.clearTimeout(timer);
-      delayMs = 1_000;
-      void refresh();
-    }
-
-    void refresh();
-    document.addEventListener("visibilitychange", resumeWhenVisible);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", resumeWhenVisible);
-    };
-  }, []);
+    const next = pairingSnapshot(changes.snapshot as ClientGatewaySnapshot | undefined);
+    setSnapshot((current) => pairingSnapshotsEqual(current, next) ? current : next);
+  }, [changes.snapshot]);
 
   const pending = useMemo(() => pendingPairingRequests(snapshot.pairings ?? [], nowMs, dismissedCodes), [dismissedCodes, nowMs, snapshot.pairings]);
   useEffect(() => {
@@ -225,6 +204,7 @@ export function GlobalClientGatewayPairing() {
 
   return (
     <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Confirm that the reference code matches the client requesting access." title="Client pairing request" onClose={dismissPairingPrompt}>
+      {liveUpdatesNotice(changes.status) ? <InlineNotice message={liveUpdatesNotice(changes.status) ?? ""} title="Not live" tone="warning" /> : null}
       {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
       {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}

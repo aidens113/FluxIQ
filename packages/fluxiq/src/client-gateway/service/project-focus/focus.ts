@@ -4,6 +4,8 @@ import { declaredDomainId } from "../declared-domain.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayProjectFocusAuthority, ClientGatewayProjectFocusPort, InternalSession } from "../types.ts";
+import { ClientGatewayProjectActivityDelivery } from "./activity-delivery.ts";
+import { personPaired } from "./person-paired.ts";
 
 type FocusMessage = Extract<ClientGatewayClientMessage, { type: "client.focus_project" }>;
 
@@ -35,23 +37,39 @@ const REFUSAL_WORDS: Record<ClientGatewayProjectFocusRefusalCode, string> = {
  * Only the latest request a session sent is applied and answered: one still
  * being decided when a newer one arrives is dropped, so a slow check can never
  * move the session back to a project the person has since left.
+ *
+ * A focus is decided once, and `activity` reuses that decision for the
+ * project's `server.activity` only until access changes (`setAuthority`), when
+ * it asks the same authority again and moves the session off a project its
+ * person can no longer read (`./activity-delivery.ts`).
  */
 export class ClientGatewayProjectFocus implements ClientGatewayProjectFocusPort {
   private readonly sessions: ClientGatewaySessionRegistry;
   private readonly transport: ClientGatewayTransport;
   private readonly audit: ClientGatewayAuditLog;
   private authority: ClientGatewayProjectFocusAuthority | undefined;
+  /** What the activity publisher hands each person-paired session's activity to, decided by this authority as it stands. */
+  readonly activity: ClientGatewayProjectActivityDelivery;
 
   constructor(collaborators: ProjectFocusCollaborators) {
     this.sessions = collaborators.sessions;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
     this.authority = collaborators.authority;
+    this.activity = new ClientGatewayProjectActivityDelivery({ sessions: this.sessions, transport: this.transport, audit: this.audit, authority: () => this.authority });
   }
 
-  /** Replaces the authority; undefined refuses every focus to a project as `unavailable`. */
+  /**
+   * Replaces the authority; undefined refuses every focus to a project as
+   * `unavailable`. Installing one, even the one installed already, says that
+   * what decisions were made from changed: every decision `activity` reused
+   * is void and each paired session's own project is decided again now. The
+   * host installs it again whenever a person's identity, policies,
+   * membership or sharing, or a project changes.
+   */
   setAuthority(authority: ClientGatewayProjectFocusAuthority | undefined): void {
     this.authority = authority;
+    this.activity.accessChanged();
   }
 
   /** Handles one request from a ready session and says what became of it, as a trace disposition. */
@@ -65,6 +83,7 @@ export class ClientGatewayProjectFocus implements ClientGatewayProjectFocusPort 
     if (requested === null) return await this.apply(session, message, session.pairedProjectId ?? null);
     const authority = this.authority;
     if (!authority) return await this.refuse(session, message, CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES.unavailable, requested);
+    const mark = this.activity.decisionMark();
     let allowed: boolean;
     try {
       allowed = await authority({ session: this.sessions.toPublic(session), projectId: requested, domainId: declaredDomainId(session.metadata) }) === true;
@@ -77,6 +96,7 @@ export class ClientGatewayProjectFocus implements ClientGatewayProjectFocusPort 
     // The session may have left, been unpaired, or asked again while this was decided.
     if (!this.stillCurrent(session, sequence, trustedClientId)) return "focus_superseded";
     if (!allowed) return await this.refuse(session, message, CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES.refused, requested);
+    this.activity.focusAllowed(session, requested, mark);
     return await this.apply(session, message, requested);
   }
 
@@ -103,14 +123,6 @@ export class ClientGatewayProjectFocus implements ClientGatewayProjectFocusPort 
     });
     return "project_focus_refused";
   }
-}
-
-/** A session a person paired: trusted, acting for its approver, and neither a managed host nor a channel-scoped stand-in. */
-function personPaired(session: InternalSession): boolean {
-  return session.trustedClientId !== undefined
-    && typeof session.operatorUserId === "string" && session.operatorUserId !== ""
-    && session.managedHostId === undefined
-    && session.channelScope === undefined;
 }
 
 /** The project asked for: a non-blank id as sent, null to return, or undefined for anything else. */

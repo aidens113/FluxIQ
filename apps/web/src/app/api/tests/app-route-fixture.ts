@@ -77,6 +77,7 @@ const fluxiq = {
     },
     clientGateway: {
       ready: async () => undefined,
+      changes: { subscribe: () => () => undefined, version: () => 0 },
       access: { forgetByCredential: async () => true },
       authorizeToken: async (token: string) => {
         const person = personOf("token-", token);
