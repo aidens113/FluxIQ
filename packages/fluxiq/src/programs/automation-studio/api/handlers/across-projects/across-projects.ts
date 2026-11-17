@@ -31,7 +31,7 @@ export function registerAcrossProjectEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listRecentFlowRuns,
-    assistant: { hidden: "The same runs as the per-project run listing, newest first from every project at once, for screens such as Home; people ask for their runs." },
+    assistant: { hidden: "A screen read for Home: the same runs as the per-project run listing, from every project at once. The assistant answers a request for runs with the per-project listing of the project in view." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListRecentFlowRuns",
@@ -50,7 +50,7 @@ export function registerAcrossProjectEndpoints(dependencies: AutomationStudioApi
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.listWorkspaceFlowSummaries,
-    assistant: { hidden: "The Flow list of every project at once, each Flow naming its project, for screens that show Flow names across projects; people ask for the Flow list." },
+    assistant: { hidden: "A screen read for pages that name Flows across projects: the Flow list of every project at once. The assistant answers a request for Flows with the per-project Flow listing of the project in view." },
     permission: "programs.read",
     classification: "read",
     action: "studio:ListWorkspaceFlowSummaries",

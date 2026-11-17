@@ -55,6 +55,22 @@ export function loansWith(library: FakeLibrary, words: unknown): JsonObject[] {
 /** A model's decision to find loans by hand, keeping its rows through a record output a Flow can run again. */
 export const findLoans = (title: string, callId = "find"): JsonObject => runNode(callId, FIND_LOANS, { title, recordOutput: LOANS_OUTPUT }, [], { add: true });
 
+/**
+ * The title an attempt was asked to find, read from its instruction as a model reads it (`findLoansSpec`'s goal). A
+ * script that answers several runs at once must answer each the run it was given: which of two concurrent calls of
+ * one FluxNode explores, and which replays what it saved, is not fixed.
+ */
+export function titleAsked(request: AutomationStudioLlmTaskRequest): string {
+  for (const { body } of request.context.instructions.instructions) {
+    const asked = /whose title has (.+?) in it/u.exec(body)?.[1];
+    if (asked !== undefined) return asked;
+  }
+  throw new Error("the attempt's instruction names no title to find");
+}
+
+/** A model's decision to find the loans with the title its instruction asks for. */
+export const findLoansAsked = (request: AutomationStudioLlmTaskRequest): JsonObject => findLoans(titleAsked(request));
+
 type Decision = JsonObject | ((request: AutomationStudioLlmTaskRequest) => JsonObject | Promise<JsonObject>);
 
 export type FluxNodeLane = Awaited<ReturnType<typeof fluxNodeLane>>;
