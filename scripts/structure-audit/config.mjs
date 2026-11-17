@@ -157,6 +157,7 @@ export const CONFIG = {
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/contracts/src/automation.ts",
       "packages/contracts/src/fluxnode.ts",
+      "packages/contracts/src/platform.ts",
       "packages/client-gateway-websocket/src/index.ts",
       "packages/fluxiq/src/ui/index.ts",
       "packages/ui-components/src/index.ts",

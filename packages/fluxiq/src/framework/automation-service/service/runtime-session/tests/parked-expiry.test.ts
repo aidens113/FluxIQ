@@ -4,6 +4,7 @@ import type { AutomationStudioRuntimeSession } from "../../../../../flows/author
 import { automationStudioActivityHub } from "../../../../../runtime/automation-activity/index.ts";
 import { automationStudioParkedRun, automationStudioPersonNeededAsk, automationStudioPersonNeededAskDraft } from "../../../../../runtime/automation-parking/index.ts";
 import { AutomationStudioService } from "../../../index.ts";
+import { AutomationStudioProjectRemovals } from "../../projects/index.ts";
 import { AutomationStudioParkedRunExpiry } from "../index.ts";
 
 let seen: ClientGatewayActivity[];
@@ -149,12 +150,21 @@ describe("parked runtime-session expiry", () => {
     const removeIndex = vi.fn(async () => {
       expect(resolutions()).toEqual(["cancelled"]); expect(f.read()?.status).toBe("cancelled");
     });
+    // The service announces a removal only once it succeeded (`projects/removals.ts`), so the listener hears it after the index write.
+    const removals = new AutomationStudioProjectRemovals();
+    const announced = vi.fn((projectId: string) => {
+      expect(removeIndex).toHaveBeenCalledOnce();
+      return projectId;
+    });
+    removals.subscribe(announced);
     const receiver = {
-      parkedRunExpiry: f.clock, projects: { requireProject: async () => undefined, writeProjectIndex: removeIndex },
+      parkedRunExpiry: f.clock, projects: { requireProject: async () => undefined, writeProjectIndex: removeIndex, removals },
       projectPaths: {}, uiCache: { purgeProject: async () => undefined }
     } as unknown as AutomationStudioService;
     expect(await AutomationStudioService.prototype.deleteProject.call(receiver, "project.one")).toEqual({ deletedProjectId: "project.one" });
     expect(removeIndex).toHaveBeenCalledOnce();
+    expect(announced).toHaveBeenCalledOnce();
+    expect(announced).toHaveBeenCalledWith("project.one");
   });
 
   it("does not delete or resolve when cancelling a parked session cannot be persisted", async () => {
