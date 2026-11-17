@@ -4587,6 +4587,12 @@
       "reason": "Fills the editor's palette of published Flows to drop onto a canvas; a person does not ask for it."
     },
     {
+      "name": "automation-studio__list-recent-flow-runs",
+      "programId": "automation-studio",
+      "endpoint": "list-recent-flow-runs",
+      "reason": "A screen read for Home: the same runs as the per-project run listing, from every project at once. The assistant answers a request for runs with the per-project listing of the project in view."
+    },
+    {
       "name": "automation-studio__list-recording-domains",
       "programId": "automation-studio",
       "endpoint": "list-recording-domains",
@@ -4603,6 +4609,12 @@
       "programId": "automation-studio",
       "endpoint": "list-signal-registries",
       "reason": "An internal list the editor reads to fill its pickers; a person does not ask for it."
+    },
+    {
+      "name": "automation-studio__list-workspace-flow-summaries",
+      "programId": "automation-studio",
+      "endpoint": "list-workspace-flow-summaries",
+      "reason": "A screen read for pages that name Flows across projects: the Flow list of every project at once. The assistant answers a request for Flows with the per-project Flow listing of the project in view."
     },
     {
       "name": "automation-studio__migrate-flows",
