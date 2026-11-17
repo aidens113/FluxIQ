@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { closedPairingNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
+import { closedPairingNotice, liveUpdatesNotice, pairingExpiryLabel, pairingSnapshot, pairingSnapshotsEqual, pendingPairingRequests, vanishedPairingNotice, type ClientPairingRequest } from "../GlobalClientGatewayPairing";
 
 const nowMs = 1_000_000;
 const request = (overrides: Partial<ClientPairingRequest> = {}): ClientPairingRequest => ({
@@ -88,5 +88,22 @@ describe("Global client pairing dismissal", () => {
     const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
     expect(source).toContain("if (dismissedCodes.includes(shown.pairingCode)) return;");
     expect(source).toContain("setClosedNotice(vanishedPairingNotice(shown, snapshot.pairings ?? [], Date.now()));");
+  });
+
+  // t916: the prompt hears pairing changes through the page's shared gateway
+  // subscription; it reads nothing on a timer, and says so while not live.
+  it("learns of requests by push and keeps only the countdown's local tick", () => {
+    const source = readFileSync(new URL("../GlobalClientGatewayPairing.tsx", import.meta.url), "utf8");
+    expect(source).toContain("useGatewayChanges()");
+    expect(source).not.toContain("/api/client-gateway/snapshot");
+    expect(source).not.toContain("setTimeout");
+    expect(source.match(/setInterval/gu)).toHaveLength(1);
+  });
+
+  it("tells the person when live updates are down, and nothing while they are live", () => {
+    expect(liveUpdatesNotice("live")).toBeNull();
+    expect(liveUpdatesNotice("connecting")).toBeNull();
+    expect(liveUpdatesNotice("reconnecting")).toMatch(/reconnecting/u);
+    expect(liveUpdatesNotice("closed")).toMatch(/off/u);
   });
 });

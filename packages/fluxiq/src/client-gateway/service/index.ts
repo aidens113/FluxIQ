@@ -2,6 +2,7 @@ export * from "./access.ts";
 export * from "./action-result-reading.ts";
 export * from "./activity-publisher.ts";
 export * from "./audit-log.ts";
+export * from "./change-feed/index.ts";
 export * from "./channel-scope/index.ts";
 export * from "./command-answer-margin.ts";
 export * from "./command-history.ts";

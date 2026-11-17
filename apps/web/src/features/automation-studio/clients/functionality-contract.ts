@@ -40,7 +40,7 @@ export const clientsFunctionalityContract = {
     "permission": "Keep connection summaries visible while disabling recording, execute, trust, revoke, or pairing actions."
   },
   "scale": {
-    "strategy": "active-only-polling-and-pagination",
+    "strategy": "active-only-push-refresh-and-pagination",
     "pageSize": 100,
     "mountedItemBudget": 100,
     "fixtureSize": 10000,
@@ -62,7 +62,7 @@ export const clientsFunctionalityContract = {
   ],
   "accessibility": {
     "keyboard": "Client rows, pairing controls, activity, refresh, authorization, and lifecycle actions are keyboard reachable.",
-    "screenReader": "Announce connection state, capability count, polling errors, authorization state, and action result."
+    "screenReader": "Announce connection state, live-update state, capability count, read errors, authorization state, and action result."
   },
   "narrowScreen": "Stack client list and selected detail, use action menus, and keep pairing codes and status text contained.",
   "rawDataAccess": {
@@ -70,7 +70,7 @@ export const clientsFunctionalityContract = {
     "defaultClosed": true,
     "disclosure": "Connection diagnostics and audit payloads are opt-in; ordinary lifecycle actions use typed controls."
   },
-  "warmViewRestoration": "Restore selected session, client page, filters, and open detail; resume polling only when the view becomes active.",
+  "warmViewRestoration": "Restore selected session, client page, filters, and open detail; read again when the view becomes active and on each gateway change signal while it is.",
   "behaviorMatrix": [
     {
       "state": "loading",
@@ -98,15 +98,15 @@ export const clientsFunctionalityContract = {
     },
     {
       "state": "warm",
-      "contract": "Restore selected session, client page, filters, and open detail; resume polling only when the view becomes active."
+      "contract": "Restore selected session, client page, filters, and open detail; read again when the view becomes active and on each gateway change signal while it is."
     }
   ],
   "automatedEvidence": [
-    "tests/active-poller.test.ts",
+    "tests/useClientGatewayController.test.tsx",
     "tests/large-project-behavior.test.ts"
   ],
   "browserOnlyCertification": [
-    "Active/inactive polling certification with real visibility and tab changes.",
+    "Active/inactive push refresh certification with real visibility, tab and network changes.",
     "Focus behavior through authorization and revoke confirmation overlays.",
     "Narrow pairing-code, status, and capability-list containment."
   ]

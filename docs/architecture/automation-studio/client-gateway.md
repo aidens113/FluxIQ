@@ -351,6 +351,8 @@ Automation Studio exposes framework API endpoints for the editor:
 The web shell exposes global client-gateway endpoints:
 
 - `GET /api/client-gateway/snapshot`
+- `GET /api/client-gateway/changes` (Server-Sent Events; see "How the panel
+  hears pairing and client changes" below)
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
@@ -963,15 +965,15 @@ until a signed-in web-panel user approves the request.
 The `Connected Clients` inner-window view below belonged to the retired Studio workspace; in the new panel, connected clients show on Home and will move to Security. It listed paired
 sessions, starts/stops recordings, queues snapshots, and sends test actions
 using client-declared action capabilities. Pairing itself is globalized at the
-web-panel shell through `/api/client-gateway/snapshot`, so a request can pop up
-from any signed-in page or program instead of requiring Automation Studio to be
-open. Closing or dismissing the pairing modal calls
+web-panel shell through `/api/client-gateway/snapshot`, read when the gateway
+signals a change (below), so a request can pop up from any signed-in page or
+program instead of requiring Automation Studio to be open. Closing or dismissing the pairing modal calls
 `/api/client-gateway/dismiss-pairing` and removes the pending challenge from
 the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
 then receives `server.session_ready` with its client credential. Raw
 credentials are never included in session snapshots. The Client Gateway view
-lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. Snapshot polling runs only while the view is active, rejects stale responses, and uses a five-second interval. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
+lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. The view reads only while it is active, when it becomes active and on each gateway change signal, and rejects stale responses; it reads on no timer. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
 
 Extension/client connection flow:
 
@@ -1006,6 +1008,59 @@ pnpm --filter @fluxiq/web mock:client
 
 The mock client will print the reference code it receives and then wait for
 approval from the web panel.
+
+## How the panel hears pairing and client changes
+
+The panel learns of pairing and client changes by push and reads the snapshot
+only when something changed; nothing in it reads the snapshot on a timer (t916).
+
+- **Core.** `ClientGatewayService.changes` (`service/change-feed/`) signals a
+  change as `{ kind, version }`: `pairing.requested`, `pairing.expired`,
+  `pairing.withdrawn`, `pairing.approved`, `pairing.denied`, `pairing.refused`,
+  `client.paired`, `client.revoked`, `client.connected`,
+  `client.disconnected`. It hears the audit's security events (approval,
+  dismissal, withdrawal, refusal, revocation, trust given without pairing), the
+  event bus (a session ready or ended), and the pairing registry, which signals
+  a challenge created and challenges lapsing. The registry waits for the
+  earliest waiting challenge's expiry, so a lapse is signalled when it happens,
+  not when something next reads. Changes in one synchronous turn are one signal
+  (an approval readies its session in the same turn), and a session under a
+  channel scope is never signalled. `version` counts signals since the gateway
+  started.
+- **Route.** `GET /api/client-gateway/changes` streams Server-Sent Events
+  (`event: change`, `data: {"version"}`), on Node, dynamic,
+  `cache-control: private, no-store, no-transform` and `x-accel-buffering: no`,
+  with a comment line after 25 s of silence. It is decided by the same IAM row
+  as the snapshot (`gateway:Snapshot`, panel and paired-client callers) through
+  `withWorkspaceRouteStream`, which re-checks the caller's authority around
+  every chunk.
+- **Only the caller's own changes.** The gateway signal is workspace-wide, but
+  an event goes to a caller only when that caller's own view changed. Both the
+  snapshot route and the stream resolve the view with `callerGatewayView`
+  (`api/client-gateway/snapshot/caller-view.ts`: the caller, its visible
+  project, then `callerGatewaySnapshot`'s filtering), so what a caller may read
+  and what it is told changed come from one place. The stream fingerprints that
+  view when it opens, recomputes it on each gateway signal, and sends an event
+  only when the fingerprint differs. A service-profile panel user or a paired
+  browser, whose view holds only its own sessions and trusted clients and no
+  pending pairings, hears nothing when someone else's client pairs, connects or
+  is revoked, or when a pairing is requested; a local or self-hosted panel
+  user's view is the whole snapshot, so pairing requests and approvals reach
+  them. `version` is a per-stream sequence that starts at 1 and counts the
+  events this stream sent; it is neither the gateway's version nor a kind, so
+  it cannot show how much happened to anyone else. Changes found while the
+  reader is not waiting are sent as one event. An event never carries a pairing
+  code, a credential or a client or session identity: the browser reads the
+  snapshot.
+- **Browser.** `features/client-gateway-changes/` holds the page's one
+  subscription, shared by the global pairing prompt, Settings > Connect and the
+  Studio clients view. It opens one `EventSource`, reads the snapshot each time
+  the stream opens or re-opens (so a change made while it was down is not
+  missed) and once per signal, never overlapping reads and never losing one.
+  While the stream is down readers show that (`reconnecting`, or `closed` when
+  the browser gave up) instead of reading on an interval; a closed stream opens
+  again when the tab is shown, the network returns, or a reader refreshes. The
+  pairing countdown's one-second tick is local and reads nothing.
 
 ## Client half
 

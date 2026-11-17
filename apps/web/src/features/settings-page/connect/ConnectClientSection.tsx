@@ -9,7 +9,7 @@ import { useConnectView } from "./use-connect-view";
 
 /** Settings: what a client needs to connect, the requests waiting to pair, and the clients already paired. */
 export function ConnectClientSection() {
-  const { state, reload } = useConnectView();
+  const { state, reload, live } = useConnectView();
   const studio = useProgramTransport("automation-studio");
   return (
     <section aria-labelledby="settings-connect" className="settings-connect">
@@ -33,6 +33,10 @@ export function ConnectClientSection() {
             <li>Approve the request below when its code matches. The extension can then use models straight away.</li>
           </ol>
           <h3>Waiting to pair</h3>
+          {live === "reconnecting" ? <p role="status" className="settings-muted">Live updates dropped and are reconnecting. The lists below are read again as soon as they are back.</p> : null}
+          {live === "closed" ? (
+            <p role="status" className="settings-muted">Live updates are off, so the lists below may be out of date. <button type="button" className="button" onClick={reload}>Reconnect</button></p>
+          ) : null}
           <PendingPairings requests={state.view.pending} onDone={reload} />
           <h3>Connected clients</h3>
           <PairedClientsList rows={state.view.clients} now={Date.now()} onForget={(id) => forgetPairedClient(studio, id)} onDone={reload} />

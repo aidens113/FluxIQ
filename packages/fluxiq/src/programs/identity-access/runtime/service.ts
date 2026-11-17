@@ -16,6 +16,7 @@ import {
   type SealedCredentialRecord
 } from "./credential-seal.ts";
 import { IdentityAuthorityDelegation } from "./authority/index.ts";
+import { IdentityDirectoryChanges } from "./directory/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
@@ -79,6 +80,8 @@ export class IdentityAccessService {
   private readonly credentialAttempts = new IdentityCredentialAttempts();
   /** Where account holders' role and on/off are held; the `update-user` endpoint asks it first. */
   readonly authority = new IdentityAuthorityDelegation();
+  /** Told when a person, their role or enabled flag, or a role's permissions changed, as each state is stored. */
+  readonly directoryChanges = new IdentityDirectoryChanges();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -528,17 +531,13 @@ export class IdentityAccessService {
       for (const id of state.rawSessionRecordIds) await this.repository.delete(id, {});
       for (const record of state.pinVerifierRecords) await this.repository.put(record);
     }
-    if (await this.ensureDefaultAdmin()) {
-      await this.persist();
-    }
+    if (await this.ensureDefaultAdmin()) await this.persist();
   }
 
   private async reloadFromStore(): Promise<void> {
     if (!this.repository) return;
     this.applyState(await readStoredState(this.repository));
-    if (await this.ensureDefaultAdmin()) {
-      await this.persist();
-    }
+    if (await this.ensureDefaultAdmin()) await this.persist();
   }
 
   /**
@@ -577,6 +576,7 @@ export class IdentityAccessService {
   }
 
   private async persist(): Promise<void> {
+    this.directoryChanges.observe(this.users.values(), this.roles.values());
     if (!this.repository) return;
     const now = Date.now();
     for (const user of this.users.values()) {

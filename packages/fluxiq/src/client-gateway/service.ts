@@ -22,6 +22,7 @@ import {
   ClientGatewayAccess,
   ClientGatewayActivityPublisher,
   ClientGatewayAuditLog,
+  ClientGatewayChangeFeed,
   ClientGatewayCommands,
   ClientGatewayEventBus,
   ClientGatewayHostEnrolment,
@@ -44,6 +45,10 @@ import {
 } from "./service/index.ts";
 
 export type {
+  ClientGatewayChange,
+  ClientGatewayChangeKind,
+  ClientGatewayChangeListener,
+  ClientGatewayChangesPort,
   ClientGatewayCommandClosure,
   ClientGatewayCommandOwnerRef,
   ClientGatewayEnrolmentRefusalCode,
@@ -70,6 +75,7 @@ export type {
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
+  CLIENT_GATEWAY_CHANGE_KINDS,
   CLIENT_GATEWAY_ENROLMENT_REFUSALS,
   CLIENT_GATEWAY_TRACE_TAP_STREAMS,
   CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
@@ -79,7 +85,7 @@ export {
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayChangesPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -106,6 +112,13 @@ export class ClientGatewayService {
   private readonly activity: ClientGatewayActivityPublisher;
   /** Where the layer owning identity and IAM installs what decides `client.focus_project` (`service/project-focus/`); unset, a focus is refused as unavailable. */
   readonly projectFocus: ClientGatewayProjectFocusPort;
+  /**
+   * Pairing and client changes, signalled as they happen (`service/change-feed/`):
+   * a change names only its kind and a version, never a code, a credential or
+   * a client, so what changed is read from `snapshot()` under the reader's
+   * own authority.
+   */
+  readonly changes: ClientGatewayChangesPort;
   private readonly trace: ClientGatewayTraceTap;
   private readonly pairings: ClientGatewayPairingRegistry;
   /**
@@ -122,8 +135,9 @@ export class ClientGatewayService {
     const audit = new ClientGatewayAuditLog(config.now, config.auditLimit);
     const events = new ClientGatewayEventBus();
     const sessions = new ClientGatewaySessionRegistry(config.now, config.sessionRetention);
+    const changes = new ClientGatewayChangeFeed({ audit, events, sessions });
     // The per-address pairing cap reads the requesting session's peer address, which never leaves the gateway.
-    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null);
+    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null, { changed: (kind) => changes.signal(kind) });
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
     const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId, sessionViewOf: (sessionId) => sessions.get(sessionId) });
@@ -147,6 +161,7 @@ export class ClientGatewayService {
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
+    this.changes = changes;
     this.pairings = pairings;
     this.audit = audit;
     this.transport = transport;
@@ -160,7 +175,8 @@ export class ClientGatewayService {
     const projectFocus = new ClientGatewayProjectFocus({ sessions, transport, audit, authority: options.projectFocusAuthority });
     this.projectFocus = projectFocus;
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, projectFocus, audit, trace, facade });
-    this.activity = new ClientGatewayActivityPublisher(sessions, transport);
+    // Activity reaches a person-paired session only while its person may read the project (project-focus/activity-delivery.ts).
+    this.activity = new ClientGatewayActivityPublisher(sessions, transport, projectFocus.activity);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 
@@ -369,8 +385,13 @@ export class ClientGatewayService {
   /**
    * Pushes `server.activity` to every ready session that advertised the
    * activity capability and is bound to `target.projectId` or to no project.
-   * The message skips the outbound queue and is dropped on a closed socket.
-   * Returns how many sessions it was sent to.
+   * A session a person paired receives it only while that person may read
+   * the project, as the installed focus authority decides; that decision is
+   * reused until the authority is installed again, and losing access to the
+   * session's own project moves it and sends `server.project_access_ended`
+   * (`service/project-focus/activity-delivery.ts`). The message skips the
+   * outbound queue and is dropped on a closed socket. Returns how many
+   * sessions it was sent to, or queued for behind that decision.
    */
   publishActivity(activity: ClientGatewayActivity, target: { projectId: string }): number {
     return this.activity.publish(activity, target);

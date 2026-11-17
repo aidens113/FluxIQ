@@ -58,14 +58,21 @@ function stub(snapshotOk: boolean, discoveryOk = true) {
   return calls;
 }
 
+// Each render joins the page's one shared gateway subscription; unmounting leaves it, so the next test starts afresh.
+const rendered: ReactTestRenderer[] = [];
+
 async function render(): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(createElement(ConnectClientSection)); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  rendered.push(renderer);
   return renderer;
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  for (const renderer of rendered.splice(0)) act(() => renderer.unmount());
+  vi.unstubAllGlobals();
+});
 const buttons = (r: ReactTestRenderer, label: string) => r.root.findAll((node) => node.type === "button" && node.children.includes(label));
 
 describe("ConnectClientSection", () => {
@@ -99,5 +106,75 @@ describe("ConnectClientSection", () => {
     const renderer = await render();
     expect(JSON.stringify(renderer.toJSON())).toContain("Could not read the connection details");
     expect(buttons(renderer, "Try again")).toHaveLength(1);
+  });
+});
+
+// t916: the page learns of a new request by push, not by reading on a timer.
+const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class FakeEventSource {
+  static last: FakeEventSource | undefined;
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private readonly changeListeners: Array<() => void> = [];
+  constructor(readonly url: string) {
+    FakeEventSource.last = this;
+  }
+  addEventListener(_type: string, listener: () => void) {
+    this.changeListeners.push(listener);
+  }
+  close() {
+    this.readyState = 2;
+  }
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  change() {
+    for (const listener of this.changeListeners) listener();
+  }
+  giveUp() {
+    this.readyState = 2;
+    this.onerror?.();
+  }
+}
+
+describe("ConnectClientSection live updates", () => {
+  it("shows a new request when the gateway signals a change, and reads nothing on its own", async () => {
+    const calls = stub(true);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const renderer = await render();
+    const stream = FakeEventSource.last!;
+    expect(stream.url).toBe("/api/client-gateway/changes");
+    await act(async () => {
+      stream.open();
+      await settle(20);
+    });
+    expect(JSON.stringify(renderer.toJSON())).toContain("Edge");
+    const reads = () => calls.filter((call) => call.url === "/api/client-gateway/snapshot").length;
+    expect(reads()).toBe(1);
+    await act(async () => { await settle(100); });
+    expect(reads()).toBe(1);
+    await act(async () => {
+      stream.change();
+      await settle(20);
+    });
+    expect(reads()).toBe(2);
+  });
+
+  it("says live updates are off and offers to reconnect when the stream closed", async () => {
+    stub(true);
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const renderer = await render();
+    const first = FakeEventSource.last!;
+    await act(async () => {
+      first.open();
+      await settle(20);
+    });
+    await act(async () => { first.giveUp(); });
+    expect(JSON.stringify(renderer.toJSON())).toContain("Live updates are off");
+    await act(async () => { buttons(renderer, "Reconnect")[0]!.props.onClick(); });
+    expect(FakeEventSource.last).not.toBe(first);
   });
 });

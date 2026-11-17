@@ -14,7 +14,7 @@ export function ClientGatewayView(props: { active: boolean; projectId: string | 
   return (
     <section className="automation-client-gateway-view">
       <header>
-        <div><strong>Client Gateway</strong><span>{snapshot.webRuntime?.clientGatewayListening === false ? "Unavailable" : `${controller.pages.sessions.total} connected`}{controller.loading ? " | refreshing" : ""}</span></div>
+        <div><strong>Client Gateway</strong><span>{snapshot.webRuntime?.clientGatewayListening === false ? "Unavailable" : `${controller.pages.sessions.total} connected`}{controller.loading ? " | refreshing" : ""}{controller.liveUpdates === "reconnecting" ? " | live updates reconnecting" : controller.liveUpdates === "closed" ? " | live updates off (Refresh reconnects)" : ""}</span></div>
         <button className="button compact" disabled={controller.loading} onClick={() => void controller.refreshGateway()} type="button"><RefreshCcw size={13} aria-hidden />Refresh</button>
       </header>
       <div className="automation-client-gateway-grid">

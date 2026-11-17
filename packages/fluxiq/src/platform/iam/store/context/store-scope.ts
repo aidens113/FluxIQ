@@ -3,6 +3,7 @@ import type { IamAuditSink, IamPolicy } from "../../types.ts";
 import { IamRecords } from "../repository/index.ts";
 import type { IamChangeContext } from "./change-context.ts";
 import { emitIamChange } from "./emit-change.ts";
+import { iamStoreChanges } from "./announced-changes.ts";
 import type { IamStoreOptions } from "./store-options.ts";
 
 /**
@@ -33,7 +34,9 @@ export class IamStoreScope {
     return formatFluxIQResourceName({ service: "iam", workspaceId: this.workspaceId, resourceType: "policy", resourceId: name });
   }
 
+  /** Records a write that succeeded, and announces it to whoever holds decisions made from this store (`./announced-changes.ts`). */
   audit(context: IamChangeContext, action: string, resources: readonly string[]): void {
     emitIamChange(this.auditSink, this.now(), context, action, resources);
+    iamStoreChanges.announce(this.workspaceId);
   }
 }
