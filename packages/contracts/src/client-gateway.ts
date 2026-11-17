@@ -323,6 +323,16 @@ export type ClientGatewayFocusProjectRequest = { projectId: string | null };
 export type ClientGatewayProjectFocused = { projectId: string | null };
 /** `server.project_access_ended`, unprompted: the pairing person can no longer read the session's project `projectId` (access removed, disabled, or deleted), so its activity stopped; Core moved the session where a null focus goes (`currentProjectId`) and says why in `message`. */
 export type ClientGatewayProjectAccessEnded = { projectId: string; currentProjectId: string | null; message: string };
+/**
+ * `server.conversation_changed`, unprompted: a chat the pairing person may read
+ * changed (a turn written, a reply finished, an ask answered or expired, a
+ * rename or a delete), wherever the change was made. It carries no content: the
+ * client reads the chat again through its existing reads. `projectId` is the
+ * project the chat belongs to, or null for the person's own panel thread.
+ * Nothing is replayed after a reconnect: a client reads its chats again once
+ * its session is ready (`server.session_ready`).
+ */
+export type ClientGatewayConversationChanged = { conversationId: string; projectId: string | null };
 /** Why a focus was refused: a malformed request, a session no person paired, a project the person may not read there (or none), or Core could not decide. */
 export const CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES = Object.freeze({
   invalid: "project_focus.invalid",
@@ -760,6 +770,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.going_away", ClientGatewayGoingAwayNotice>
   | ClientGatewayEnvelope<"server.project_focused", ClientGatewayProjectFocused>
   | ClientGatewayEnvelope<"server.project_access_ended", ClientGatewayProjectAccessEnded>
+  | ClientGatewayEnvelope<"server.conversation_changed", ClientGatewayConversationChanged>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewaySnapshotView = {
