@@ -3755,7 +3755,7 @@ export class AutomationStudioService {
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
     await this.projects.requireProject(projectId);
-    return await this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
+    return await this.projects.removals.run(projectId, () => this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
       if (this.objectStore && this.projects.indexStore) {
         await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
           const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
@@ -3774,7 +3774,7 @@ export class AutomationStudioService {
       if (this.projectPaths.root) await removeAutomationStudioProjectFiles({ objectStore: this.objectStore, pool: this.runtimeProjectDatabasePool, projectId, projectDirectory: this.projectPaths.projectDirectory(projectId) });
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
-    });
+    }));
   }
 
   async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {

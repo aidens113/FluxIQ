@@ -307,6 +307,11 @@ export const CONFIG = {
   // call written there fails the build instead of only a Lab network policy.
   restrictedReferences: [],
 
+  // Next.js apps, for the server-client-boundary rule: each { name, src },
+  // `src` being the app's source root (ending in `/`), which `@/` names. A
+  // repository with none, such as the web extension, leaves the rule inert.
+  nextApps: [{ name: "Core web app", src: "apps/web/src/" }],
+
   // Modules that must never load others through any chain of imports, for the
   // module-reach rule. Each entry is { name, from, to, reason, remedy }; a
   // prefix ending in `/` is a directory, any other names one file. A `from`

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createActivePoller } from "./active-poller";
+import { useGatewayChanges } from "../../client-gateway-changes";
 import { useClientGatewayPort } from "./client-api";
 import {
   buildClientCommand,
@@ -15,6 +15,10 @@ import {
 
 export function useClientGatewayController(props: { active: boolean; projectId: string | null }) {
   const port = useClientGatewayPort();
+  // The page's shared gateway subscription: its revision moves when the stream opens or re-opens and on each change.
+  const changes = useGatewayChanges();
+  const changeRevision = changes.revision;
+  const reopenChanges = changes.refresh;
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>(emptyClientGatewaySnapshot);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [pinnedSession, setPinnedSession] = useState<any | null>(null);
@@ -104,24 +108,24 @@ export function useClientGatewayController(props: { active: boolean; projectId: 
     setItemErrors((errors) => ({ ...errors, [kind]: "" }));
   };
 
+  // Read when the view becomes active, and again each time the gateway signals a change or its stream re-opens
+  // while it is; never on a timer. A newer read supersedes one still under way.
   useEffect(() => {
-    const poller = createActivePoller({
-      active: () => props.active,
-      run: refreshGateway,
-      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
-      cancel: (timer) => window.clearTimeout(timer),
-      delayMs: 5_000
-    });
-    if (props.active) poller.sync();
+    if (props.active) void refreshGateway();
     else {
       refreshRequestRef.current += 1;
       setLoading(false);
     }
     return () => {
-      poller.dispose();
       refreshRequestRef.current += 1;
     };
-  }, [props.active, refreshGateway]);
+  }, [props.active, refreshGateway, changeRevision]);
+
+  // The Refresh button: read now, and re-open a change stream the browser gave up on.
+  const refreshNow = useCallback(async () => {
+    reopenChanges();
+    await refreshGateway();
+  }, [refreshGateway, reopenChanges]);
 
   const sessions = snapshot.sessions;
   useEffect(() => { const visible = sessions.find((session) => session.sessionId === selectedSessionId); if (visible) { setPinnedSession(visible); setSelectedSessionExists(true); } }, [selectedSessionId, sessions]);
@@ -251,7 +255,8 @@ export function useClientGatewayController(props: { active: boolean; projectId: 
     authorizeAction,
     captureSnapshot,
     resolvePairing,
-    refreshGateway
+    refreshGateway: refreshNow,
+    liveUpdates: changes.status
     ,pages
     ,navigateItems
     ,searchDrafts

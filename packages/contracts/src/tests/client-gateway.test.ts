@@ -115,6 +115,12 @@ describe("project focus is additive", () => {
     expectTypeOf<Extract<ClientGatewayClientMessage, { type: "client.focus_project" }>["payload"]>().toEqualTypeOf<{ projectId: string | null }>();
   });
 
+  it("says, unprompted, which project's access ended, where the session went and why", () => {
+    const ended: ClientGatewayServerMessage = { ...envelope, type: "server.project_access_ended", payload: { projectId: "project.1", currentProjectId: null, message: "No longer readable." } };
+    expect(ended.type).toBe("server.project_access_ended");
+    expectTypeOf<Extract<ClientGatewayServerMessage, { type: "server.project_access_ended" }>["payload"]>().toEqualTypeOf<{ projectId: string; currentProjectId: string | null; message: string }>();
+  });
+
   it("names four frozen refusal codes under project_focus.", () => {
     expect(Object.isFrozen(CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES)).toBe(true);
     expect(CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES).toEqual({

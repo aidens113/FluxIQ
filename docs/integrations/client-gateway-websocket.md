@@ -288,12 +288,17 @@ working in reaches it as it happens:
 Core accepts it only from a ready session a person paired (never a managed
 host's or a channel-scoped stand-in), and only for a project the approving
 person may read in the domain the session declared at `client.hello`. It is
-decided as the person's own paired program calls are (`programs/automation-studio/api/project-focus/`):
-the project's domain must be the session's, and the registry's `projects` call
-as that person, narrowed to `programs.read` on the `paired-client` channel, must
-list it under IAM. Another tenant's project is unknown to the instance and is
-refused the same way. `"projectId": null` returns the session to the project it
-was bound to when it became ready.
+decided as reading that one project through the person's own paired program
+calls is (`programs/automation-studio/api/project-focus/`): the person is read
+from the identity source the paired program route reads (on a hosted tenant,
+the host's platform identity, not the tenant instance's own), must be enabled
+and have a role, and is narrowed to `programs.read` on the `paired-client`
+channel; the project must exist and its domain must be the session's; and the
+registry's IAM must allow the `projects` listing's action on the workspace and
+on that project, the two decisions a listing makes before it keeps a project.
+Another tenant's project is unknown to the instance and is refused the same
+way. `"projectId": null` returns the session to the project it was bound to
+when it became ready.
 
 Core answers `server.project_focused` with `{ "projectId": ... }`, or
 `server.error` with one of `CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES` and the
@@ -308,6 +313,73 @@ project reaches, and the one a recording started without one is created in.
 Send it only over a ready session, never from an offline queue, and again after
 every `server.session_ready` while a choice is held, since each new session
 starts at its pairing's project. An older Core ignores the message.
+
+#### Activity follows current access
+
+Only an instance's own projects' activity reaches its gateway. The activity
+hub is process-wide, and a hosted process runs a runtime per tenant, so each
+runtime hands its gateway an activity only when its own project catalogue lists
+the activity's project (`programs/automation-studio/api/project-focus/own-project-activity.ts`):
+another tenant's activity never reaches its gateway or its access check. Each
+project id is read from the catalogue once (ids are minted unique), and a
+deleted project's id is read again.
+
+A session a person paired then hears a project's activity only while that
+person may read it, asked with the focus question
+(`client-gateway/service/project-focus/activity-delivery.ts`). The answer is
+asked once per session and project (a focus's allowed answer counts) and
+reused for every later activity, because it changes only when what it is
+decided from changes. Core installs the focus authority again at each such
+change, which voids every reused answer and re-decides each paired session's
+own project at that moment, so losing access takes effect at the change, not
+at the next activity and not on a timer. The changes are:
+
+- an IAM store write in the instance's workspace or at the platform level
+  (`iamStoreChanges`, announced by every `IamStore` write beside its
+  `iam-change` audit record), which covers policies and hosted membership;
+- a change of a person's role or enabled flag, a person removed, or a role's
+  permissions, in the identity source the focus reads people from
+  (`IdentityAccessService.directoryChanges`; a login is not one);
+- a registration added to the program registry;
+- a project removed from the catalogue (`AutomationStudioProjectRemovals`).
+
+An answer whose question was still running when access changed is void and
+asked again. Reused answers are decided without an IAM audit row
+(`GlobalProgramApiRegistry.decideUnrecorded`, as a list decides its items under
+one row): the gateway audits the events instead, `project_focus.access_ended`
+and `project_focus.delivery_check_failed`. Each session's activity is
+delivered in publish order; while anything waits on a session, later activity
+waits behind it, and what waited during one question is decided together with
+one question per project not yet decided. A session bound to no project hears
+only the projects its person may read. Managed hosts and channel-scoped
+stand-ins have no person to ask and are sent activity as before.
+
+These change signals are in-process: a write made by another process (a
+second web host process sharing the stores) is not announced, and the
+identity directory announces only changes this process stores.
+
+When the refused project is the session's own (focused, or bound at pairing),
+the person's access has ended: their policy, membership or sharing was removed,
+they were disabled, or the project was deleted. At that change Core stops that
+project's activity, moves the session where a focus of `null` would take it (its
+pairing's project, or none when that is the project lost), and sends once,
+unprompted:
+
+```json
+{ "type": "server.project_access_ended", "payload": { "projectId": "lost-project", "currentProjectId": null, "message": "..." } }
+```
+
+A client that chose `projectId` drops the choice, falls back as it does for a
+cleared choice, and shows `message`. When Core cannot decide (its IAM policies
+are unavailable) it sends nothing and moves nothing: an outage never ends
+access.
+
+A paired client's program call binds its project once, from its first
+authentication (the body's `projectId`, or the session's project then) and
+domain-gates it. On a guarded (hosted) server the caller is authenticated
+again before dispatch; a focus that moved the session in between does not fail
+the call, which still acts only on the project it was bound to, and the
+registry's IAM decides it for the refreshed caller.
 
 Clients may stream `client.snapshot` state frames at screenshot cadence when a
 recording is active. FluxIQ batches those recording appends internally and
@@ -332,6 +404,7 @@ FluxIQ may send:
 - `server.disconnect`
 - `server.activity` (to a session that advertised `fluxiq.activity`)
 - `server.project_focused` (the answer to `client.focus_project`)
+- `server.project_access_ended` (the person lost the session's project; see Project Focus)
 - `server.error`
 
 ## Typed WebSocket Client Package
@@ -514,6 +587,10 @@ to the Studio tab republishes on focus.
 The global web shell uses these authenticated endpoints:
 
 - `GET /api/client-gateway/snapshot`
+- `GET /api/client-gateway/changes` (Server-Sent Events, authorized as the
+  snapshot: one `change` event, `{ "version": n }` numbered from 1 per stream,
+  each time this caller's own filtered view of pairings and clients changed;
+  never a kind, a code, a token or which client it was)
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
@@ -559,8 +636,9 @@ request at a time. Multiple pending requests remain queued and advance only
 after the current server action succeeds. Approve and reject are not optimistic:
 a network or server failure keeps the request visible with its error.
 
-Snapshot discovery pauses its fast cycle while the document is hidden and backs
-off from one to ten seconds while idle or failing. A visible pending request
-returns to one-second refresh and shows a live expiration countdown. Dismissed
-codes are locally bounded to prevent an already rejected snapshot from flashing
-back before gateway persistence catches up.
+The panel reads the snapshot when the stream at `GET /api/client-gateway/changes`
+opens or reopens and once per change it signals; it reads on no timer. A visible
+pending request shows a live expiration countdown from a local one-second tick
+that reads nothing. While the stream is down the prompt says so. Dismissed codes
+are locally bounded to prevent an already rejected snapshot from flashing back
+before gateway persistence catches up.

@@ -11,6 +11,7 @@ import { AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX } from "../../runtime/co
 import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioAnthropicPanelCommandModel, automationStudioLlmModelProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver } from "../../framework/automation-service/public/index.ts";
 import { registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index.ts";
+import { installPairedProjectFocus, relayOwnProjectActivity } from "../automation-studio/api/project-focus/index.ts";
 import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
@@ -49,8 +50,10 @@ export type GlobalProgramRuntime = {
   runtime: RuntimeService;
   secretKeys: SecretKeysService;
   /**
-   * Removes what this runtime attached to process-wide state (its activity-hub
-   * subscription), so a closed instance is not kept reachable or fed another
+   * Removes what this runtime attached to process-wide or longer-lived state
+   * (its activity-hub subscription, and the IAM, identity and catalogue change
+   * listeners of its paired project authority, the host's identity among
+   * them), so a closed instance is not kept reachable or fed another
    * workspace's events. Idempotent; `FluxIQ.close()` calls it (t808).
    */
   detach(): void;
@@ -212,8 +215,14 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     await automationStudio.lateActionResults.record(late);
   });
   // What a build or run is doing reaches the paired clients of its project that asked for it (`server.activity`), never queued.
-  // The hub is process-wide, so the subscription is removed by `detach` when the instance closes (t808).
-  const stopActivity = automationStudioActivityHub.subscribe((activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); });
+  // The hub is process-wide, so only this instance's own projects' activity is handed to its gateway (a hosted process
+  // runs one runtime per tenant), and the subscription is removed by `detach` when the instance closes (t808).
+  const stopActivity = relayOwnProjectActivity({
+    hub: automationStudioActivityHub,
+    holds: async (projectId) => (await automationStudio.projects.readProjectIndex()).projects.some((project) => project.id === projectId),
+    removals: automationStudio.projects.removals,
+    publish: (activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); }
+  });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;
   const identityUsersRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "identity.users", layoutVersion: storageLayoutVersion }) : undefined;
   const backgroundTasks = new BackgroundTasksService(backgroundTasksRepository ? { repository: backgroundTasksRepository } : {});
@@ -351,6 +360,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   }
 
   registerAutomationStudioApi(api, automationStudio, identityAccess, automationStudioClientGateway, clientGateway);
+  // What decides a paired client's project focus and each activity it is sent, reading people where the paired
+  // program route does: the host's identity when it supplies one (a tenant's people live in its platform's), else
+  // this instance's own (`server/program-route/`, `identityAuthority`; the web host passes that same identity here).
+  // Installed again at each change of what it decides from; those listeners go with the instance (`detach`).
+  const stopProjectFocus = installPairedProjectFocus({ registry: api, service: automationStudio, identity: options.secretKeyIdentityAuthority ?? (async () => identityAccess), clientGateway });
   // The panel-wide assistant answers with the key chosen in Settings (by default
   // the first key entered), released per call to the signed-in person, and
   // spends within the per-message allowance set beside it. On the e2e fixture
@@ -400,7 +414,10 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     productionRunner,
     runtime,
     secretKeys,
-    detach: stopActivity,
+    detach: () => {
+      stopActivity();
+      stopProjectFocus();
+    },
     activity: () => ({
       openProjectDatabases: AutomationStudioGatewayTraceServicePools.of(automationStudio)?.stats().openProjects ?? 0,
       backgroundTasksRunning: backgroundTasks.activity().running,

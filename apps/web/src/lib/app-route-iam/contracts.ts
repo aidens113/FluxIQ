@@ -93,6 +93,8 @@ export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.fr
   { path: "/api/client-gateway/dismiss-pairing", method: "POST", action: "gateway:DismissPairing", callers: { panel: "runtime.control" }, resource: workspace },
   { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control" }, resource: studioContext },
   { path: "/api/client-gateway/snapshot", method: "GET", action: "gateway:Snapshot", callers: { panel: "none", "paired-client": "none" }, resource: workspace },
+  // The change stream signals when the snapshot is worth reading again, so it is decided exactly as the snapshot is.
+  { path: "/api/client-gateway/changes", method: "GET", action: "gateway:Snapshot", callers: { panel: "none", "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/trace-artifacts/[sha256]", method: "PUT", action: "gateway:PutTraceArtifact", callers: { "paired-client": "none" }, resource: pairedBrowser },
   framework("GET", "/api/framework/setup", "ops:InspectFrameworkSetup", "programs.read"),
   framework("POST", "/api/framework/setup", "ops:SetupFramework", "programs.write", "setup"),
