@@ -121,6 +121,9 @@ const CLASSIFICATIONS: Record<string, string> = {
   "get-project-part": "read",
   "save-project-part": "authoring",
   "run-project-part": "authoring",
+  // As handlers/projects.ts registers them: listing reads, creating authors.
+  "projects": "read",
+  "create-project": "authoring",
 };
 
 /** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */
@@ -249,6 +252,17 @@ describe("a paired client's bearer token", () => {
         }
       } });
     }
+    // Core's project answers carry owners and descriptions; a paired client is
+    // answered only each project's id, name and update time.
+    if (endpoint === "projects") {
+      call.mockResolvedValue({ ok: true, requestContext: { personUserId: "fixture-person" }, payload: {
+        projects: [{ id: "project-1", name: "Loans", description: "Fixture description", owners: ["user:owner"], updatedAt: 5 }],
+        categories: [{ id: "category-1", name: "Fixture category" }]
+      } });
+    }
+    if (endpoint === "create-project") {
+      call.mockResolvedValue({ ok: true, payload: { project: { id: "project-2", name: "Loans", owners: ["user:owner"], categoryId: "category-1", updatedAt: 6 } } });
+    }
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
     expect(response.status).toBe(200);
@@ -268,7 +282,11 @@ describe("a paired client's bearer token", () => {
     });
     expect(await response.json()).toEqual({ ok: true, payload: flowDetail
       ? { flow: { flowId: "flow-1", metadata: { humanness: 40 } } }
-      : { conversation: { id: "c1" } } });
+      : endpoint === "projects"
+        ? { projects: [{ id: "project-1", name: "Loans", updatedAt: 5 }] }
+        : endpoint === "create-project"
+          ? { project: { id: "project-2", name: "Loans", updatedAt: 6 } }
+          : { conversation: { id: "c1" } } });
   });
 
   it("mirrors Core's paired-client allowlist for Automation Studio exactly", () => {
