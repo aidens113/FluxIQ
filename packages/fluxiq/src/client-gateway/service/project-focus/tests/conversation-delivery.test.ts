@@ -4,11 +4,12 @@
 // another person's session, a project the person may not read, a session no person paired, or a panel thread (null
 // project). The decision is asked once and reused until access changes (the authority is installed again). The message
 // names the chat and its project and nothing else.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayConversationChanged, type ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import {
   ClientGatewayAuditLog,
   ClientGatewayConversationChangeDelivery,
+  ClientGatewayEventBus,
   ClientGatewaySessionRegistry,
   ClientGatewayTransport,
   type ClientGatewayConversationReadAuthority,
@@ -45,7 +46,8 @@ function gatewayParts(authority?: ClientGatewayConversationReadAuthority) {
   const sessions = new ClientGatewaySessionRegistry(now);
   const transport = new ClientGatewayTransport(sessions, now);
   const audit = new ClientGatewayAuditLog(now);
-  const delivery = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit, authority });
+  const events = new ClientGatewayEventBus();
+  const delivery = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit, events, authority });
   /** A ready session focused on `projectId`: paired by `person` unless it is a stand-in or a managed host. */
   const session = (input: { person?: string; projectId?: string | null; standIn?: boolean; managedHost?: boolean }) => {
     const socket = new RecordingSocket();
@@ -66,7 +68,7 @@ function gatewayParts(authority?: ClientGatewayConversationReadAuthority) {
     };
   };
   const publish = (projectId: string | null, conversationId = "conversation.1") => delivery.publish({ conversationId, projectId });
-  return { sessions, audit, delivery, session, publish };
+  return { sessions, transport, audit, events, delivery, session, publish };
 }
 
 const settle = async () => {
@@ -139,6 +141,7 @@ describe("a person-paired session is told which chats it may read changed", () =
   });
 
   it("sends nothing while no authority is installed, or when the authority cannot decide, and audits only the failure's kind", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const parts = gatewayParts();
     const alice = parts.session({});
     expect(parts.publish("project.a")).toBe(0);
@@ -154,6 +157,9 @@ describe("a person-paired session is told which chats it may read changed", () =
     expect(failed).toHaveLength(1);
     expect(JSON.stringify(failed)).not.toContain("secret://place");
     expect(failed[0]?.metadata).toEqual(expect.objectContaining({ projectId: "project.a", failureKind: "TypeError" }));
+    // Undecided is not denied: the change waits for its retry rather than being dropped.
+    expect(vi.getTimerCount()).toBe(1);
+    vi.useRealTimers();
   });
 
   it("asks once per session and project and reuses it, then forgets it when access changes", async () => {
@@ -216,6 +222,168 @@ describe("a person-paired session is told which chats it may read changed", () =
 
     expect(asked).toHaveLength(2);
     expect(browser.changed().map((change) => change.conversationId)).toEqual(["conversation.1"]);
+  });
+});
+
+describe("a change whose answer could not be made waits and is asked again", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** An authority answering each question from `answers` in turn ("throw", true or false), then the last answer forever. */
+  function scripted(...answers: Array<"throw" | boolean>) {
+    const asked: Request[] = [];
+    const authority: ClientGatewayConversationReadAuthority = async (request) => {
+      asked.push(request);
+      const answer = answers[Math.min(asked.length - 1, answers.length - 1)];
+      if (answer === "throw") throw new TypeError("policy store unavailable");
+      return answer === true;
+    };
+    return { asked, authority };
+  }
+  const advance = async (ms: number) => {
+    await vi.advanceTimersByTimeAsync(ms);
+    await settle();
+  };
+
+  it("delivers exactly once after two failed answers, waiting one second then two, and audits the outage once", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { asked, authority } = scripted("throw", "throw", true);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+
+    parts.publish("project.a");
+    await settle();
+    expect(alice.changed()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await advance(1_000);
+    expect(asked).toHaveLength(2);
+    expect(alice.changed()).toEqual([]);
+
+    // The second wait is two seconds, not one.
+    await advance(1_999);
+    expect(asked).toHaveLength(2);
+    await advance(1);
+    expect(asked).toHaveLength(3);
+    expect(alice.changed()).toEqual([{ conversationId: "conversation.1", projectId: "project.a" }]);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(parts.audit.recent(100).filter((entry) => entry.type === "conversation_push.check_failed")).toHaveLength(1);
+
+    // Nothing more is asked or sent once it was delivered.
+    await advance(60_000);
+    expect(asked).toHaveLength(3);
+    expect(alice.changed()).toHaveLength(1);
+  });
+
+  it("never delivers a change whose retried answer is a denial, and leaves no wait behind", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { asked, authority } = scripted("throw", false);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+
+    parts.publish("project.a");
+    await settle();
+    await advance(1_000);
+
+    expect(asked).toHaveLength(2);
+    expect(alice.changed()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(60_000);
+    expect(asked).toHaveLength(2);
+  });
+
+  it("cancels the wait at once when the session disconnects, and sends nothing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { asked, authority } = scripted("throw", true);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+
+    parts.publish("project.a");
+    await settle();
+    expect(vi.getTimerCount()).toBe(1);
+
+    Object.assign(alice.session, { status: "disconnected", disconnectedAt: 2_000 });
+    await parts.events.emit({ type: "session.disconnected", session: parts.sessions.toPublic(alice.session) });
+
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(60_000);
+    expect(asked).toHaveLength(1);
+    expect(alice.changed()).toEqual([]);
+  });
+
+  it("sends nothing to a session that now speaks for someone else, and leaves no wait behind", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    // After the outage the authority allows anyone, so only the change of person keeps the change from the new person.
+    const { authority } = scripted("throw", true);
+    const parts = gatewayParts(authority);
+    const browser = parts.session({});
+
+    parts.publish("project.a");
+    await settle();
+    browser.session.operatorUserId = "user.bob";
+    await advance(1_000);
+
+    expect(browser.changed()).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("sends a chat that changed again while waiting once, beside the other chats that waited", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { authority } = scripted("throw", true);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+
+    parts.publish("project.a", "conversation.1");
+    await settle();
+    parts.publish("project.a", "conversation.1");
+    parts.publish("project.a", "conversation.2");
+    parts.publish("project.a", "conversation.1");
+    await advance(1_000);
+
+    expect(alice.changed().map((change) => change.conversationId)).toEqual(["conversation.1", "conversation.2"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("keeps what was waiting when the drain itself fails, and sends it once on the retry", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { authority } = scripted(true);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+    const message = parts.transport.message.bind(parts.transport);
+    vi.spyOn(parts.transport, "message").mockImplementationOnce(() => {
+      throw new RangeError("could not build the message");
+    }).mockImplementation(message);
+
+    parts.publish("project.a");
+    await settle();
+    expect(alice.changed()).toEqual([]);
+    expect(parts.audit.recent(100).filter((entry) => entry.type === "conversation_push.delivery_failed").map((entry) => entry.metadata?.failureKind)).toEqual(["RangeError"]);
+
+    await advance(1_000);
+    expect(alice.changed()).toEqual([{ conversationId: "conversation.1", projectId: "project.a" }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("starts the next outage's wait at one second again once an outage ended", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { asked, authority } = scripted("throw", "throw", true, "throw", true);
+    const parts = gatewayParts(authority);
+    const alice = parts.session({});
+
+    parts.publish("project.a", "conversation.1");
+    await settle();
+    await advance(1_000);
+    await advance(2_000);
+    expect(alice.changed()).toHaveLength(1);
+
+    // Access changed, so the next change is asked again, and that answer fails.
+    parts.delivery.setAuthority(authority);
+    parts.publish("project.a", "conversation.2");
+    await settle();
+    expect(asked).toHaveLength(4);
+    await advance(1_000);
+    expect(alice.changed().map((change) => change.conversationId)).toEqual(["conversation.1", "conversation.2"]);
   });
 });
 

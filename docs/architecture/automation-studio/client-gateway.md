@@ -1102,7 +1102,13 @@ gateway socket as `server.conversation_changed`
   again at an IAM store write, an identity change, a registration or a project
   removal; one asked while access changed is asked again, and one made for
   whoever the session spoke for before is not reused. Nothing is sent without
-  an authority or on an answer that could not be made. The message skips the
+  an authority. An answer that could not be made, or a drain that failed, is
+  not a denial: the extension keeps no timer, so the change stays in the
+  session's lane and is asked again after 1 s, doubling to 30 s, reset once
+  everything waiting is decided, audited once per outage. It is discarded only
+  on a denial or when the session ends or speaks for someone else; a
+  `session.disconnected` or `session.ready` cancels the wait at once. The
+  message skips the
   outbound queue, is untraced like `server.activity`, and is not replayed: a
   client reads its chats again on `server.session_ready`.
 

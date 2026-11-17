@@ -190,7 +190,7 @@ export class ClientGatewayService {
     // Activity reaches a person-paired session only while its person may read the project (project-focus/activity-delivery.ts).
     this.activity = new ClientGatewayActivityPublisher(sessions, transport, projectFocus.activity);
     // A chat's change reaches a person-paired session only while its person may read that chat (project-focus/conversation-delivery.ts).
-    this.conversationPush = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit });
+    this.conversationPush = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit, events });
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 

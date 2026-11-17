@@ -396,8 +396,15 @@ project in the session's domain, and the registry's IAM allowing
 `get-conversation`'s action on that project
 (`programs/automation-studio/api/project-focus/authority.ts`). The answer is
 asked once per session and project and reused until access changes, at the
-same changes that void the activity answers above; an answer that could not be
-made sends nothing (`conversation_push.check_failed`, kind only). A person's
+same changes that void the activity answers above. A change is sent only once
+an answer allows it and discarded only on a denial or when the session goes
+away or speaks for someone else. An answer that could not be made (an outage,
+not a denial) or a delivery that failed keeps the change waiting in the
+session's lane, and it is asked again after a wait of one second that doubles to
+thirty, back to one once everything waiting is decided; a chat that changes
+again meanwhile waits once. Each outage is audited once per session by kind
+only (`conversation_push.check_failed`, `conversation_push.delivery_failed`).
+No wait runs while nothing is undecided. A person's
 panel thread (`"projectId": null` in the contract) is never sent: no paired
 client may read one. Managed hosts and channel-scoped stand-ins hear none.
 
