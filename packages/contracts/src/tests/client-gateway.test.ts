@@ -13,6 +13,7 @@ import {
   type ClientGatewayActionCommand,
   type ClientGatewayClientHello,
   type ClientGatewayClientMessage,
+  type ClientGatewayConversationChanged,
   type ClientGatewayHostLease,
   type ClientGatewayManagedHost,
   type ClientGatewayServerMessage,
@@ -129,5 +130,17 @@ describe("project focus is additive", () => {
       refused: "project_focus.refused",
       unavailable: "project_focus.unavailable"
     });
+  });
+});
+
+describe("conversation push is additive", () => {
+  const envelope = { id: "m1", protocolVersion: "0.1", timestamp: 1 } as const;
+
+  it("says, unprompted, which chat changed and in which project, or null for a panel thread, and nothing it says", () => {
+    const changed: ClientGatewayServerMessage = { ...envelope, type: "server.conversation_changed", payload: { conversationId: "conversation.1", projectId: "project.1" } };
+    const panel: ClientGatewayServerMessage = { ...envelope, type: "server.conversation_changed", payload: { conversationId: "conversation.2", projectId: null } };
+    expect([changed.type, panel.type]).toEqual(["server.conversation_changed", "server.conversation_changed"]);
+    expectTypeOf<Extract<ClientGatewayServerMessage, { type: "server.conversation_changed" }>["payload"]>().toEqualTypeOf<ClientGatewayConversationChanged>();
+    expectTypeOf<ClientGatewayConversationChanged>().toEqualTypeOf<{ conversationId: string; projectId: string | null }>();
   });
 });

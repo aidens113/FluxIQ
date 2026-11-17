@@ -11,7 +11,7 @@ import { AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX } from "../../runtime/co
 import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioAnthropicPanelCommandModel, automationStudioLlmModelProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver } from "../../framework/automation-service/public/index.ts";
 import { registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index.ts";
-import { installPairedProjectFocus, relayOwnProjectActivity } from "../automation-studio/api/project-focus/index.ts";
+import { installPairedProjectFocus, relayOwnProjectActivity, relayProjectConversationChanges } from "../automation-studio/api/project-focus/index.ts";
 import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
@@ -364,6 +364,13 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // this instance's own (`server/program-route/`, `identityAuthority`; the web host passes that same identity here).
   // Installed again at each change of what it decides from; those listeners go with the instance (`detach`).
   const stopProjectFocus = installPairedProjectFocus({ registry: api, service: automationStudio, identity: options.secretKeyIdentityAuthority ?? (async () => identityAccess), clientGateway });
+  // Each committed change of one of this instance's project chats reaches its gateway by id and project only, which tells
+  // the paired clients whose person may read that chat (`server.conversation_changed`), so their chats stop re-reading on
+  // a timer. The signals are this runtime's own, so another tenant's never arrive; removed by `detach`.
+  const stopConversationPush = relayProjectConversationChanges({
+    signals: automationStudio.conversations.signals,
+    publish: (change) => { clientGateway.conversationPush.publish(change); }
+  });
   // The panel-wide assistant answers with the key chosen in Settings (by default
   // the first key entered), released per call to the signed-in person, and
   // spends within the per-message allowance set beside it. On the e2e fixture
@@ -416,6 +423,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     detach: () => {
       stopActivity();
       stopProjectFocus();
+      stopConversationPush();
     },
     activity: () => ({
       openProjectDatabases: AutomationStudioGatewayTraceServicePools.of(automationStudio)?.stats().openProjects ?? 0,

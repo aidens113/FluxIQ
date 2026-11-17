@@ -1072,6 +1072,40 @@ also tells the chat when a thread or a project's live activity changed
   again when the tab is shown, the network returns, or a reader refreshes. The
   pairing countdown's one-second tick is local and reads nothing.
 
+## How a paired client hears its chats change
+
+A paired client's chat learns that a thread changed by push, so it no longer
+re-reads its threads every few seconds (t921). The panel's own chat hears the
+same writes through the panel change stream; a paired client hears them on its
+gateway socket as `server.conversation_changed`
+(`ClientGatewayConversationChanged`: the thread's id and project, no content).
+
+- **Source.** Each runtime relays its own thread signals
+  (`AutomationStudioConversations.signals`, fired after each committed write)
+  to its gateway's `conversationPush.publish` (`api/project-focus/conversation-relay.ts`, wired in
+  `programs/_shared/runtime.ts` and removed by `detach`). Signals are per
+  runtime, so another tenant's chats never reach this gateway. A person's panel
+  thread is dropped here: the panel assistant's endpoints refuse the
+  paired-client channel, so no paired client may read one.
+- **Decision.** `ClientGatewayService.conversationPush` takes the conversation
+  read authority, which `installPairedProjectFocus` installs beside the focus
+  authority from the same change watch (`api/project-focus/authority.ts`,
+  `paired-read.ts`). It decides a project's chats as `get-conversation` does
+  for the approving person on the `paired-client` channel: its registered
+  action on `{ kind: "project" }`, after the session-domain check, without an
+  audit row (`decideUnrecorded`).
+- **Delivery.** `service/project-focus/conversation-delivery.ts` sends to every
+  ready person-paired session whose person may read the project, focused there
+  or not, since a paired client reads any project of its domain and the
+  extension's thread list spans every project. Each answer is reused per
+  session and project (`access-decisions.ts`) until the authority is installed
+  again at an IAM store write, an identity change, a registration or a project
+  removal; one asked while access changed is asked again, and one made for
+  whoever the session spoke for before is not reused. Nothing is sent without
+  an authority or on an answer that could not be made. The message skips the
+  outbound queue, is untraced like `server.activity`, and is not replayed: a
+  client reads its chats again on `server.session_ready`.
+
 ## Client half
 
 `@fluxiq/client-gateway-websocket` holds everything a client needs to keep its

@@ -374,6 +374,43 @@ cleared choice, and shows `message`. When Core cannot decide (its IAM policies
 are unavailable) it sends nothing and moves nothing: an outage never ends
 access.
 
+#### Chats that changed
+
+A session a person paired is told, unprompted, when a chat that person may read
+changed (a turn written, a reply finished, an ask raised, answered or expired,
+a thread opened, renamed or deleted), so its chat reads the thread again on
+the push instead of on a timer:
+
+```json
+{ "type": "server.conversation_changed", "payload": { "conversationId": "conversation-id", "projectId": "project-id" } }
+```
+
+It names the chat and its project and carries nothing that was said: the
+client reads the chat through its existing reads (`list-conversations`,
+`get-conversation`). It goes to every ready person-paired session whose person
+may read the chat, whichever project the session is focused on, because a
+paired client reads any project of its bound domain. A project's chat is
+decided as `get-conversation` decides it for that person on the
+`paired-client` channel: the person read and narrowed as for a focus, the
+project in the session's domain, and the registry's IAM allowing
+`get-conversation`'s action on that project
+(`programs/automation-studio/api/project-focus/authority.ts`). The answer is
+asked once per session and project and reused until access changes, at the
+same changes that void the activity answers above; an answer that could not be
+made sends nothing (`conversation_push.check_failed`, kind only). A person's
+panel thread (`"projectId": null` in the contract) is never sent: no paired
+client may read one. Managed hosts and channel-scoped stand-ins hear none.
+
+Only an instance's own chats reach its gateway: each runtime hands it the
+committed changes of its own threads (`AutomationStudioConversations.signals`,
+one per runtime, so one per tenant on a hosted process). The message skips the
+session's outbound queue, is dropped on a closed socket, is not recorded in a
+trace, and is never replayed after a reconnect: read the chats again once the
+session is ready. The signals are in-process, so a write made by another
+process serving the same workspace is not announced. A client that does not
+know the type ignores it (Core's websocket client and older extension builds
+both do), so it is sent without a capability.
+
 A paired client's program call binds its project once, from its first
 authentication (the body's `projectId`, or the session's project then) and
 domain-gates it. On a guarded (hosted) server the caller is authenticated
@@ -405,6 +442,7 @@ FluxIQ may send:
 - `server.activity` (to a session that advertised `fluxiq.activity`)
 - `server.project_focused` (the answer to `client.focus_project`)
 - `server.project_access_ended` (the person lost the session's project; see Project Focus)
+- `server.conversation_changed` (a chat the session's person may read changed; see Project Focus)
 - `server.error`
 
 ## Typed WebSocket Client Package

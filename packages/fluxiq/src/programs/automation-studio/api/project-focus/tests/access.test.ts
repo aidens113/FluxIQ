@@ -107,7 +107,7 @@ describe("the paired project authority, on the person's identity and access as t
     const live = await start({ iam: { profile: "service", source: policies.source } });
     await live.identityAccess.upsertUser({ id: ALICE.userId, username: "alice", displayName: "Alice", roleId: "viewer" });
     let authority: ClientGatewayProjectFocusAuthority | undefined;
-    installPairedProjectFocus({ registry: live.api, service: live.automationStudio, identity: async () => live.identityAccess, clientGateway: { projectFocus: { setAuthority: (installed) => { authority = installed; } } } });
+    installPairedProjectFocus({ registry: live.api, service: live.automationStudio, identity: async () => live.identityAccess, clientGateway: { projectFocus: { setAuthority: (installed) => { authority = installed; } }, conversationPush: { setAuthority: () => undefined } } });
     const own = await made(live, "Own");
     const second = await made(live, "Second");
     const session = { sessionId: "gateway.session", operatorUserId: ALICE.userId } as ClientGatewaySession;
@@ -135,7 +135,7 @@ describe("the paired project authority, on the person's identity and access as t
     const live = await start({ iam: { profile: "service", source: changingPolicies().source } });
     await live.identityAccess.upsertUser({ id: ALICE.userId, username: "alice", displayName: "Alice", roleId: "viewer" });
     let authority: ClientGatewayProjectFocusAuthority | undefined;
-    installPairedProjectFocus({ registry: live.api, service: live.automationStudio, identity: async () => live.identityAccess, clientGateway: { projectFocus: { setAuthority: (installed) => { authority = installed; } } } });
+    installPairedProjectFocus({ registry: live.api, service: live.automationStudio, identity: async () => live.identityAccess, clientGateway: { projectFocus: { setAuthority: (installed) => { authority = installed; } }, conversationPush: { setAuthority: () => undefined } } });
     const gone = await made(live, "Gone");
     const session = { sessionId: "gateway.session", operatorUserId: ALICE.userId } as ClientGatewaySession;
     expect(await authority!({ session, projectId: gone, domainId: DOMAIN })).toBe(true);

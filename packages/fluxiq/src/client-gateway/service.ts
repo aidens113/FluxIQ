@@ -24,6 +24,7 @@ import {
   ClientGatewayAuditLog,
   ClientGatewayChangeFeed,
   ClientGatewayCommands,
+  ClientGatewayConversationChangeDelivery,
   ClientGatewayEventBus,
   ClientGatewayHostEnrolment,
   ClientGatewayHostEnrolmentTickets,
@@ -72,6 +73,8 @@ export type {
   ClientGatewayPairingCapacityScope,
   ClientGatewayProjectFocusAuthority,
   ClientGatewayProjectFocusPort,
+  ClientGatewayConversationReadAuthority,
+  ClientGatewayConversationPushPort,
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
@@ -85,7 +88,7 @@ export {
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayChangesPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayChangesPort, ClientGatewayConversationPushPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -112,6 +115,15 @@ export class ClientGatewayService {
   private readonly activity: ClientGatewayActivityPublisher;
   /** Where the layer owning identity and IAM installs what decides `client.focus_project` (`service/project-focus/`); unset, a focus is refused as unavailable. */
   readonly projectFocus: ClientGatewayProjectFocusPort;
+  /**
+   * Telling paired clients which chats changed (`server.conversation_changed`,
+   * `service/project-focus/conversation-delivery.ts`): the layer owning
+   * identity and IAM installs what decides which chats a person may read
+   * (`setAuthority`; unset, none is told), and hands it each chat's change
+   * (`publish`). The message skips the outbound queue and is dropped on a
+   * closed socket.
+   */
+  readonly conversationPush: ClientGatewayConversationPushPort;
   /**
    * Pairing and client changes, signalled as they happen (`service/change-feed/`):
    * a change names only its kind and a version, never a code, a credential or
@@ -177,6 +189,8 @@ export class ClientGatewayService {
     this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, projectFocus, audit, trace, facade });
     // Activity reaches a person-paired session only while its person may read the project (project-focus/activity-delivery.ts).
     this.activity = new ClientGatewayActivityPublisher(sessions, transport, projectFocus.activity);
+    // A chat's change reaches a person-paired session only while its person may read that chat (project-focus/conversation-delivery.ts).
+    this.conversationPush = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit });
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 
