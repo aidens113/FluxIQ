@@ -84,8 +84,11 @@ function framework(method: "GET" | "POST", path: string, action: string, permiss
 }
 
 export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.freeze([
+  { path: "/api/connect/authorize", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "GET", action: "iam:ListApiKeys", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "POST", action: "iam:EnrollApiKey", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "DELETE", action: "iam:RevokeApiKey", callers: { panel: "none" }, resource: selfUser },
   { path: "/api/client-gateway/approve-pairing", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "runtime.control" }, resource: selfUser },
-  { path: "/api/client-gateway/forget-pairing", method: "POST", action: "gateway:ForgetPairing", callers: { "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/first-project", method: "POST", action: "gateway:CreateFirstProject", callers: { "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/dismiss-pairing", method: "POST", action: "gateway:DismissPairing", callers: { panel: "runtime.control" }, resource: workspace },
   { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control" }, resource: studioContext },

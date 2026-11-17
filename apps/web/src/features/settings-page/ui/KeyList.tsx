@@ -43,7 +43,7 @@ export function KeyList(props: {
                 <span>Offer to the workspace</span>
               </label>
             ) : !row.heldByYou && row.offered ? <span className="settings-key-offer">Offered to the workspace</span> : null}
-            <button type="button" disabled={props.busy} onClick={() => props.onRemove(row.id)} aria-label={`Remove ${row.name}`}>Remove</button>
+            <button type="button" className="button" disabled={props.busy} onClick={() => props.onRemove(row.id)} aria-label={`Remove ${row.name}`}>Remove</button>
           </li>
         ))}
       </ul>

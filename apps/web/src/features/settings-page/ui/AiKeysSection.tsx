@@ -84,7 +84,7 @@ function WorkspaceKeyLine(props: { data: SettingsData; rows: readonly KeyRow[]; 
     return (
       <p className="settings-workspace-key">
         No key is chosen to pay for other people&rsquo;s messages yet.{" "}
-        {choices.assistantKeyId === null ? <button type="button" disabled={props.busy} onClick={() => props.onChoose(usedId)}>Choose {name} as the workspace&rsquo;s key</button> : null}
+        {choices.assistantKeyId === null ? <button type="button" className="button" disabled={props.busy} onClick={() => props.onChoose(usedId)}>Choose {name} as the workspace&rsquo;s key</button> : null}
       </p>
     );
   }

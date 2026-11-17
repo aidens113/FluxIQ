@@ -1,18 +1,12 @@
-import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
-import { FLUXIQ_SESSION_COOKIE } from "../../../../../../../../lib/auth";
-import { getFluxIQ } from "../../../../../../../../lib/fluxiq";
-import { appRouteIamContract, authorizeAppRoute, panelRouteActor, routeParamId } from "../../../../../../../../lib/app-route-iam";
+import { appRouteIamContract, routeParamId } from "../../../../../../../../lib/app-route-iam";
 import { programDomainScope } from "../../../../../../../../lib/program-route";
+import { withWorkspaceRouteStream, type WorkspaceStreamRefusal } from "../../../../../../../../lib/workspaces/routes";
 
 // Streams one run dataset as CSV or JSON, for an export past the inline caps.
 //
-// It authenticates like the state-assets GET route — session cookie, then
-// `programs.read`, no bearer token — and then goes further: dataset rows are
-// stored raw (CD16), so the project's domain access is asserted before a single
-// row is read, and a mismatch answers 404 rather than disclosing that the
-// project exists. The body is never cached: a `replace` write changes a
-// dataset's content under the same URL.
+// One proved panel workspace owns the export through EOF/cancel/error/abort.
+// Dataset rows are raw (CD16): domain access is checked around each lazy read,
+// and a mismatch reveals neither project existence nor rows. Never cache it.
 
 type RouteParams = {
   params: Promise<{
@@ -34,91 +28,61 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: RouteParams) {
   const { projectId, runId, datasetId } = await context.params;
-  const fluxiq = getFluxIQ();
-
-  const sessionId = await readSessionId();
-  if (!sessionId) return authenticationRequired();
-  const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
-  if (!auth) return authenticationRequired();
-  // Decided on the dataset under its project, before the ids are validated, as the permission was.
-  const actor = panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role });
-  const refusal = await authorizeAppRoute(fluxiq.programs.api, ROUTE, "panel", actor, { projectId: routeParamId(projectId), datasetId: routeParamId(datasetId) });
-  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
-
-  const decodedProjectId = decodeURIComponent(projectId);
-  const decodedRunId = decodeURIComponent(runId);
-  const decodedDatasetId = decodeURIComponent(datasetId);
-  if (!ID_PATTERN.test(decodedProjectId) || !ID_PATTERN.test(decodedRunId) || !ID_PATTERN.test(decodedDatasetId)) {
-    return NextResponse.json({ ok: false, error: "Invalid run dataset identifier." }, { status: 400 });
-  }
-  const format = new URL(request.url).searchParams.get("format") ?? "csv";
-  if (!EXPORT_FORMATS.has(format)) {
-    return NextResponse.json({ ok: false, error: "Run dataset export format must be csv or json." }, { status: 400 });
-  }
-
-  const automationStudio = fluxiq.programs.automationStudio;
-  try {
-    await automationStudio.assertProjectDomainAccess(decodedProjectId, programDomainScope(request.url).domainId);
-  } catch {
-    return runDatasetNotFound();
-  }
-
-  const stream = await automationStudio.runDatasets.streamRunDataset({
-    projectId: decodedProjectId,
-    runId: decodedRunId,
-    datasetId: decodedDatasetId,
-    format: format as "csv" | "json",
-    actorId: auth.user.id
-  });
-  if (!stream) return runDatasetNotFound();
-
-  // The collaborator's stream is single-use and opens nothing until the first
-  // pull. `cancel` runs when the client goes away: without the `return()` the
-  // store lease and the export's audit row would both be lost.
-  const iterator = stream[Symbol.asyncIterator]();
-  const encoder = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
+  return withWorkspaceRouteStream(request, ROUTE, { projectId: routeParamId(projectId), datasetId: routeParamId(datasetId) }, async (selected) => {
+    let decodedProjectId: string;
+    let decodedRunId: string;
+    let decodedDatasetId: string;
+    try {
+      decodedProjectId = decodeURIComponent(projectId);
+      decodedRunId = decodeURIComponent(runId);
+      decodedDatasetId = decodeURIComponent(datasetId);
+    } catch {
+      return { ok: false, status: 400, error: "Invalid run dataset identifier." };
+    }
+    if (!ID_PATTERN.test(decodedProjectId) || !ID_PATTERN.test(decodedRunId) || !ID_PATTERN.test(decodedDatasetId)) {
+      return { ok: false, status: 400, error: "Invalid run dataset identifier." };
+    }
+    const format = new URL(request.url).searchParams.get("format") ?? "csv";
+    if (!EXPORT_FORMATS.has(format)) return { ok: false, status: 400, error: "Run dataset export format must be csv or json." };
+    const domainId = programDomainScope(request.url).domainId;
+    const automationStudio = selected.fluxiq.programs.automationStudio;
+    const revalidateDomain = async (): Promise<WorkspaceStreamRefusal | null> => {
       try {
-        const step = await iterator.next();
-        if (step.done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(encoder.encode(step.value));
-      } catch (error) {
-        controller.error(error);
+        await automationStudio.assertProjectDomainAccess(decodedProjectId, domainId);
+        return null;
+      } catch {
+        return runDatasetNotFound();
       }
-    },
-    async cancel() {
-      await iterator.return?.();
-    }
+    };
+    const domainRefusal = await revalidateDomain();
+    const current = await selected.revalidate();
+    if (!current.ok) return current;
+    if (domainRefusal) return domainRefusal;
+    const stream = await automationStudio.runDatasets.streamRunDataset({
+      projectId: decodedProjectId, runId: decodedRunId, datasetId: decodedDatasetId,
+      format: format as "csv" | "json", actorId: current.caller.actor.userId
+    });
+    if (!stream) return runDatasetNotFound();
+    // Return immediately: the owner adopts this iterator before the next
+    // authorization await and retires it even if response handoff fails.
+    return {
+      ok: true,
+      iterator: stream[Symbol.asyncIterator](),
+      revalidateDomain,
+      headers: {
+        "Content-Type": stream.contentType,
+        "Content-Disposition": `attachment; filename="${attachmentFileName(stream.fileName)}"`,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff"
+      }
+    };
   });
-
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Content-Type": stream.contentType,
-      "Content-Disposition": `attachment; filename="${attachmentFileName(stream.fileName)}"`,
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff"
-    }
-  });
-}
-
-async function readSessionId(): Promise<string | undefined> {
-  const cookieStore = await cookies();
-  return cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
-}
-
-function authenticationRequired() {
-  return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
 }
 
 // A domain mismatch and an unknown dataset answer alike, so neither confirms
 // that a project or dataset outside the caller's domain exists.
-function runDatasetNotFound() {
-  return NextResponse.json({ ok: false, error: "Run dataset was not found or is not available." }, { status: 404 });
+function runDatasetNotFound(): WorkspaceStreamRefusal {
+  return { ok: false, status: 404, error: "Run dataset was not found or is not available." };
 }
 
 // The collaborator already sanitizes its file name; this repeats the reduction

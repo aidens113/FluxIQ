@@ -1,3 +1,4 @@
+import { restoreLoginKeys } from "../../../../server/connect";
 import path from "node:path";
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
@@ -105,15 +106,15 @@ export async function POST(request: Request) {
       ttlMs: DEFAULT_SESSION_TTL_MS,
     });
     try {
-      await fluxiq.programs.secretKeys.unlockSession({
+      await restoreLoginKeys(fluxiq, {
         sessionId: result.session.id,
         userId: result.user.id,
         authorizationPassword: payload.password,
         expiresAtMs: result.session.expiresAtMs,
       });
-    } catch (error) {
-      await fluxiq.programs.identityAccess.revokeSession(result.session.id);
-      throw error;
+    } catch {
+      // Authentication succeeded. A saved-key recovery problem is reported by key availability, not as a wrong password.
+      console.warn("Saved model keys could not be migrated during login; inspect key availability and host protection.");
     }
     // Only the username's count clears: a successful login must not reset the
     // address or panel bound, or one valid account would reopen a spray between rounds.

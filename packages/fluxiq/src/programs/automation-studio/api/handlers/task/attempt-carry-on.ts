@@ -9,9 +9,9 @@
 // caught here, so it can never be an unhandled rejection. A refusal reaches the person as Core's own
 // sentence.
 //
-// **Whose session.** A paired client's press runs under the person's unlocked session, as every
-// command the chat runs does (`runtime/conversations/commands/caller.ts`): this changes whose key
-// pays, never what may be done. With nothing unlocked the paired session is kept, as it is there.
+// **Whose session.** A paired client's press runs under its own session, as every
+// command the chat runs does (`runtime/conversations/commands/caller.ts`): each model call is
+// authorized for that authenticated principal, and nothing is substituted.
 
 import { endpointResource } from "../../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type CarryOnTaskAttemptRequest } from "../../../../../api-contracts/automation.ts";

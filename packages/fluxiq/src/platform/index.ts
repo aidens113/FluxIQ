@@ -5,3 +5,8 @@ export * from "./store/index.ts";
 export * from "./provisioning/index.ts";
 export * from "./profile/index.ts";
 export * from "./panel/index.ts";
+export * from "./keys/index.ts";
+export * from "./commerce/index.ts";
+export * from "./browser-trust/index.ts";
+export * from "./connect/index.ts";
+export * from "./apps/index.ts";

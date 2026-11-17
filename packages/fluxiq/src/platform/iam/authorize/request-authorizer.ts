@@ -54,11 +54,11 @@ export class IamRequestAuthorizer {
   }
 
   private evaluate(action: string, resources: readonly IamResource[]): IamDecision {
-    if (this.compiled === null) return denyIamRequest(this.principal, action, resources);
+    if (this.compiled === null) return { ...denyIamRequest(this.principal, action, resources), failure: "policy_unavailable" };
     try {
       return evaluateIamRequest(this.compiled, this.principal, action, resources, this.context);
     } catch {
-      return denyIamRequest(this.principal, action, resources);
+      return { ...denyIamRequest(this.principal, action, resources), failure: "policy_unavailable" };
     }
   }
 }
@@ -72,6 +72,7 @@ function listDecision(action: string, listScope: IamResource, items: readonly Ia
   const citing = items.find((item) => item.decision === "deny") ?? items[0]!;
   const reason = citing.resources[0]?.reason ?? (citing.decision === "allow" ? "allowed" : "implicit-deny");
   return {
+    ...(citing.failure === undefined ? {} : { failure: citing.failure }),
     principal: citing.principal,
     action,
     decision: citing.decision,

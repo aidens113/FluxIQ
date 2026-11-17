@@ -166,7 +166,7 @@ function clearPageHost(): AutomationStudioHostRuntimeBoundary {
 async function flow(found: World, nodes: AutomationStudioFlowNode[], edges: AutomationStudioFlowEdge[]) {
   const { service } = found;
   const base = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
   const project = await service.createProject({ name: "In-run repair proofs", domainId: "example" });
   const created = await service.createFlow({ projectId: project.id, flowId: "flow.in-run-repair-proofs", name: "In-run repair proofs" });
   const trainingModeSettings = { ...(base.trainingModeSettings as JsonObject), resultCheck: { schedule: SCHEDULE, authorization } };

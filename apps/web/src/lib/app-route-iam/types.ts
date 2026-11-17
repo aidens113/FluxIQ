@@ -18,7 +18,7 @@ export type AppRoutePermissionName = AuthorizeInput["permission"];
 /** The resources one call acts on, as refs the registry turns into FRNs. */
 export type AppRouteResourceRefs = NonNullable<AuthorizeInput["resources"]>;
 
-export type AppRouteMethod = "GET" | "POST" | "PUT";
+export type AppRouteMethod = "GET" | "POST" | "PUT" | "DELETE";
 
 /**
  * How the call arrived: the web panel's login cookie, or a paired client's

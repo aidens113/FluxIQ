@@ -10,17 +10,22 @@ vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({ get: vi.fn(() => ({ value: "authenticated-session" })) })),
 }));
 
-vi.mock("../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
+vi.mock("../../../../../../lib/fluxiq", () => {
+  const getFluxIQ = () => ({
     programs: {
       api: { call, endpoints: vi.fn(() => []) },
       identityAccess: { validateSession, snapshot: vi.fn() },
       clientGateway: { authorizeToken: vi.fn() },
       automationStudio: { assertProjectDomainAccess: vi.fn() },
     },
-  }),
-  getFluxIQWebRuntimeStatus: vi.fn(),
-}));
+  });
+  return {
+    getFluxIQ,
+    getFluxIQWorkspaces: () => ({ tenancy: "single", primaryWorkspaceId: "workspace-main", acquire: async () => ({ fluxiq: getFluxIQ(), release: vi.fn() }) }),
+    getFluxIQWebRuntimeStatus: vi.fn(),
+    isCurrentFluxIQPrimary: () => true,
+  };
+});
 
 import { POST } from "../route";
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION } from "../schema/index.ts";
+import { automationStudioSchemaMigrationOrder } from "../../migration-order/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";
 import { AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION } from "../accepted-state/index.ts";
@@ -145,12 +146,14 @@ describe("AutomationStudioProjectAdministration", () => {
   });
 });
 
-// Each of these stores runs the administration list with its own migration
-// appended, and the runner refuses a list whose IDs do not ascend. An
-// administration migration whose ID sorts after one of these breaks that store
-// on open (t454's 0025_recording_stream_identity_index did this to candidate
-// verification), so the ordering is pinned here by name, not discovered later
-// as an opaque "unique, ascending IDs" failure in an unrelated store's tests.
+// Each of these stores composes the administration list with its own migration
+// in ID order (`automationStudioSchemaMigrationOrder`, t909), so an administration
+// migration may sort after a store's own: 0037_dataset_snapshots sorts after all
+// four. What each store still needs is an ID no administration migration uses
+// (the runner refuses a duplicate), and an existing database whose administration
+// ledger already reached the newer head must still take the store's older
+// migration on open. Both are pinned here by name, not discovered later as an
+// opaque "unique, ascending IDs" failure in an unrelated store's tests.
 const EXTENSIONS = {
   "accepted-state": AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION,
   "authority-guard": AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION,
@@ -158,12 +161,27 @@ const EXTENSIONS = {
   "command-ledger": AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION
 };
 
-describe("migrations appended to the administration ledger", () => {
+describe("migrations composed with the administration ledger", () => {
   const ids = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id);
-  const last = [...ids].sort().at(-1) ?? "";
 
-  it.each(Object.entries(EXTENSIONS))("%s's migration sorts after every administration migration", (_store, migration) => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-administration-test-"));
+  });
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it.each(Object.entries(EXTENSIONS))("%s's migration has an ID of its own and applies to a database already at the administration head", async (store, migration) => {
     expect(ids).not.toContain(migration.id);
-    expect(migration.id > last, `${migration.id} must sort after ${last}`).toBe(true);
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const lease = await pool.acquire(`project.${store}`);
+    try {
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS }).migrate();
+      const composed = new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [migration]) });
+      await expect(composed.migrate()).resolves.toMatchObject({ applied: [migration.id], status: "ready" });
+      const ledger = await lease.database.all<{ migration_id: string }>("select migration_id from automation_schema_migrations order by migration_id");
+      expect(ledger.map((row) => row.migration_id)).toEqual([...ids, migration.id].sort());
+    } finally {
+      await lease.release();
+      await pool.closeAll();
+    }
   });
 });

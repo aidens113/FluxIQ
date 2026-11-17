@@ -5,3 +5,7 @@ export { secretKeyPairedHolderId, secretKeyPanelHolderId, secretKeySessionDigest
 export { HeldKeys } from "./runtime/held-keys.ts";
 export * from "./runtime/service.ts";
 export * from "./types.ts";
+export { SecretKeyAccess, SecretKeyAccessUnavailableError, SecretKeyDataKeys, secretKeySealDigest } from "./runtime/access/index.ts";
+export type { SecretKeyUseAuthority, SecretKeyUseAuthorization, SecretKeyUsePrincipal } from "./runtime/access/index.ts";
+export * from "../../platform/custody/protection/index.ts";
+export type { SecretKeyAuthenticatedCredentialHolder } from "./runtime/unlocks/index.ts";

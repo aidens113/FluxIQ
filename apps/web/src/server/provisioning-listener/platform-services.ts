@@ -3,9 +3,13 @@ import path from "node:path";
 import { SQLiteRepository } from "fluxiq/database-manager";
 import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type IamAuditQuery, type IamAuditRecord, type PlatformServices } from "fluxiq/platform";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { getFluxIQAfterReload } from "../../lib/fluxiq";
+import type { FluxIQ } from "fluxiq";
+import { getFluxIQAfterReload, getFluxIQWorkspaces } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
+import { closeKeySessionServices } from "../key-sessions";
+import { closeBrowserTrustRepository } from "../browser-trust";
+import { closeConnectServices } from "../connect";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -33,6 +37,17 @@ export function getPlatformServices(): Promise<PlatformServices> {
   return platformComposition().then((composition) => composition.services);
 }
 
+/** Only account read methods from the existing composition for this exact held primary. */
+export async function platformReadStoreFor(primary: FluxIQ): Promise<Pick<PlatformServices["store"], "getAccount" | "getMembership" | "getWorkspace" | "listMembershipsOfWorkspace">> {
+  const store = (await platformCompositionFor(primary)).services.store;
+  return Object.freeze({
+    getAccount: (userId: string) => store.getAccount(userId),
+    getMembership: (workspaceId: string, userId: string) => store.getMembership(workspaceId, userId),
+    getWorkspace: (workspaceId: string) => store.getWorkspace(workspaceId),
+    listMembershipsOfWorkspace: (workspaceId: string) => store.listMembershipsOfWorkspace(workspaceId)
+  });
+}
+
 /** The buffered IAM decision audit the platform services write to; the workspace manager's registries record into it too. */
 export async function getPlatformIamAuditSink(): Promise<BufferedIamAuditSink> {
   const fluxiq = await getFluxIQAfterReload({ allowDuringShutdown: true });
@@ -56,11 +71,32 @@ export async function readPlatformIamAudit(query: IamAuditQuery): Promise<IamAud
   return audit.store.read(query);
 }
 
+/**
+ * A read port for one already-held primary identity/runtime. It captures the
+ * existing root audit owner once; batches never select a replacement primary.
+ * The caller owns the primary lease and current-runtime checks around reads.
+ */
+export async function platformIamAuditReaderFor(primary: FluxIQ): Promise<{ read(query: IamAuditQuery): Promise<IamAuditRecord[]> }> {
+  const fluxiqDir = primary.paths.fluxiq;
+  const platformDir = path.join(fluxiqDir, "platform");
+  mkdirSync(platformDir, { recursive: true });
+  const audit = await platformAudit(fluxiqDir, platformDir);
+  return Object.freeze({
+    read: async (query: IamAuditQuery) => {
+      await audit.sink.flush().catch(/* best-effort: the shared sink retains failed rows for its next flush */ () => undefined);
+      return audit.store.read(query);
+    }
+  });
+}
+
 /** Closes an already-open root audit after all workspaces have drained. Opens nothing at shutdown. */
 export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<void> {
   const composition = compositions.get(fluxiq);
   try {
+    const closed = await Promise.allSettled([closeKeySessionServices(fluxiq.paths.fluxiq), closeBrowserTrustRepository(fluxiq.paths.fluxiq), closeConnectServices(fluxiq.paths.fluxiq)]);
+    const failures = closed.filter((outcome) => outcome.status === "rejected");
     if (composition) await composition;
+    if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Platform credential authorities could not all close cleanly.");
   } finally {
     const key = path.resolve(fluxiq.paths.fluxiq);
     const pending = audits.get(key);
@@ -79,6 +115,10 @@ export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof ge
 
 async function platformComposition(): Promise<PlatformComposition> {
   const fluxiq = await getFluxIQAfterReload();
+  return platformCompositionFor(fluxiq);
+}
+
+function platformCompositionFor(fluxiq: FluxIQ): Promise<PlatformComposition> {
   const existing = compositions.get(fluxiq);
   if (existing !== undefined) return existing;
   const created = composePlatformServices(fluxiq);
@@ -100,7 +140,7 @@ async function composePlatformServices(fluxiq: Awaited<ReturnType<typeof getFlux
     email: resolveEmailSender(process.env.FLUXIQ_EMAIL_SENDER, path.join(platformDir, "outbox")),
     auditSink,
     publicOrigin: resolveFluxIQDeploymentSettings(process.env).publicOrigin,
-    tenancy: { mode: "single", workspaceId: primaryWorkspaceId() }
+    tenancy: getFluxIQWorkspaces().tenancy === "multi" ? { mode: "multi" } : { mode: "single", workspaceId: primaryWorkspaceId() }
   });
   return { services, auditSink };
 }

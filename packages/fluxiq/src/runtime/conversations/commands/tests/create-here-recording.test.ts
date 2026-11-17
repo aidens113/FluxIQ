@@ -29,7 +29,7 @@ const HOST: AutomationStudioConversationCommandContext["host"] = {
 };
 
 function contextFor(port: AutomationStudioConversationCommandContext["port"], extra: Partial<AutomationStudioConversationCommandContext> = {}): AutomationStudioConversationCommandContext {
-  return { port, host: HOST, projectId: PROJECT, conversationId: "conversation.1", sessionId: "session.person", keyLocked: false, paired: false, startLocation: "https://shop.example/kettles", ...extra };
+  return { port, host: HOST, projectId: PROJECT, conversationId: "conversation.1", sessionId: "session.person", paired: false, startLocation: "https://shop.example/kettles", ...extra };
 }
 
 const recording = (over: Record<string, unknown> = {}) => ({ ok: true, payload: { recording: { recordingId: "recording.1", description: "Search for a kettle and read its price.", endedAt: 10, metadata: { projectId: PROJECT }, ...over } } });

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { EncryptedSecretValueRecord, EncryptedSecretValueRecordV2, SecretKeyRecord } from "../types.ts";
+import type { EncryptedSecretValueRecord, EncryptedSecretValueRecordV2, SecretKeyHostCustody, SecretKeyRecord } from "../types.ts";
+import type { SecretKeyDataKeys } from "./access/index.ts";
 import type { SecretKeyProvedKeys } from "./unlocks/index.ts";
 import type { HeldKeys } from "./held-keys.ts";
 import type { SecretKeyStore } from "./key-store.ts";
@@ -31,6 +32,7 @@ type PreparedSeal = {
   opened: EncryptedSecretValueRecord;
   /** The value re-sealed under the next password, written beside `opened`. */
   pending: EncryptedSecretValueRecordV2;
+  protection?: SecretKeyHostCustody | undefined;
   key: Buffer;
 };
 
@@ -71,9 +73,11 @@ export class CredentialChanges {
   private readonly heldKeys: HeldKeys;
   private readonly upgrades: SealUpgrades;
   private readonly onCommitted: ((userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined) => Promise<void>) | undefined;
+  private readonly dataKeys: SecretKeyDataKeys | undefined;
 
-  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; upgrades: SealUpgrades; onCommitted?: (userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined) => Promise<void> }) {
+  constructor(options: { store: SecretKeyStore; sealer: SecretValueSealer; heldKeys: HeldKeys; upgrades: SealUpgrades; dataKeys?: SecretKeyDataKeys; onCommitted?: (userId: string, keys: SecretKeyProvedKeys, actorSessionId: string | undefined) => Promise<void> }) {
     this.onCommitted = options.onCommitted;
+    this.dataKeys = options.dataKeys;
     this.store = options.store;
     this.sealer = options.sealer;
     this.heldKeys = options.heldKeys;
@@ -127,7 +131,7 @@ export class CredentialChanges {
         committed.push(recordId);
         proved.set(recordId, { keyUpdatedAtMs: current.updatedAtMs, decryptionKey: Buffer.from(key) });
       } else if (current?.pendingSealed === pending && this.upgrades.descendsFrom(current.sealed, opened)) {
-        this.store.set({ ...current, sealed: pending, pendingSealed: undefined });
+        this.store.set({ ...current, sealed: pending, hostProtection: current.pendingHostProtection, pendingSealed: undefined, pendingHostProtection: undefined });
         this.heldKeys.replaceKey(recordId, key, change.userId);
         committed.push(recordId);
         writes.push(recordId);
@@ -178,10 +182,10 @@ export class CredentialChanges {
     const pending = record.pendingSealed;
     if (!pending) return Promise.resolve();
     if (opened === pending) {
-      this.store.set({ ...record, sealed: pending, pendingSealed: undefined });
+      this.store.set({ ...record, sealed: pending, hostProtection: record.pendingHostProtection, pendingSealed: undefined, pendingHostProtection: undefined });
       this.heldKeys.revokeKey(record.id);
     } else if (!this.inFlight.has(pending)) {
-      this.store.set({ ...record, pendingSealed: undefined });
+      this.store.set({ ...record, pendingSealed: undefined, pendingHostProtection: undefined });
     } else {
       return Promise.resolve();
     }
@@ -194,7 +198,14 @@ export class CredentialChanges {
     opened.key.fill(0);
     try {
       const next = await this.sealer.seal(opened.secret, input.nextPassword, input.userId);
-      return { recordId: record.id, opened: record.sealed, pending: next.sealed, key: next.key };
+      try {
+        const candidate = { ...record, sealed: next.sealed, hostProtection: undefined };
+        const protectedRecord = this.dataKeys ? await this.dataKeys.protect(candidate, next.key, input.userId) : candidate;
+        return { recordId: record.id, opened: record.sealed, pending: next.sealed, protection: protectedRecord.hostProtection, key: next.key };
+      } catch (error) {
+        next.key.fill(0);
+        throw error;
+      }
     } finally {
       opened.secret.value = "";
     }
@@ -209,7 +220,7 @@ export class CredentialChanges {
         seal.key.fill(0);
         continue;
       }
-      this.store.set({ ...current, pendingSealed: seal.pending });
+      this.store.set({ ...current, pendingSealed: seal.pending, pendingHostProtection: seal.protection });
       this.inFlight.add(seal.pending);
       placed.push(seal);
     }
@@ -228,7 +239,7 @@ export class CredentialChanges {
       seal.key.fill(0);
       const current = this.store.get(seal.recordId);
       if (current?.pendingSealed !== seal.pending) continue;
-      this.store.set({ ...current, pendingSealed: undefined });
+      this.store.set({ ...current, pendingSealed: undefined, pendingHostProtection: undefined });
       changed.push(seal.recordId);
     }
     await Promise.allSettled(changed.map((recordId) => this.store.persist(recordId)));

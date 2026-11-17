@@ -12,7 +12,7 @@
 // standing authorization could come to pay for a diagnosis, an exploration or
 // a patch.
 
-import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioResultCheckRedemption } from "./contracts.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES, AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioResultCheckRedemption } from "./contracts.ts";
 
 export function redeemAutomationStudioResultCheckAuthorization(input: {
   authorization: AutomationStudioResultCheckAuthorization | undefined;
@@ -29,7 +29,12 @@ export function redeemAutomationStudioResultCheckAuthorization(input: {
   if (input.taskKind !== AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND || authorization.taskKind !== AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND) {
     return refusal(AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.scope, "A standing result-check authorization pays for judging a finished run's result and for nothing else.");
   }
-  if (!authorization.keyId.trim() || !authorization.unlockSessionId.trim() || !positive(authorization.maxTotalCostUsd) || !positive(authorization.maxCostUsdPerCall)) {
+  // A record from before per-use authority names a key unlock, not a grantor.
+  // Nothing can re-authorize it as the person, so it asks for a fresh grant.
+  if (authorization.grantedThrough.kind === "legacy_unlock") {
+    return refusal(AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.renew, AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON);
+  }
+  if (!authorization.keyId.trim() || !authorization.authorizationId.trim() || !authorization.authorizedByUserId.trim() || !positive(authorization.maxTotalCostUsd) || !positive(authorization.maxCostUsdPerCall)) {
     return refusal(AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES.invalid, "The stored result-check authorization names no usable key or spending limit, so it was not redeemed.");
   }
   if (!Number.isFinite(authorization.expiresAtMs) || authorization.expiresAtMs <= input.nowMs) {
@@ -46,7 +51,7 @@ export function redeemAutomationStudioResultCheckAuthorization(input: {
   return {
     redeemed: true,
     keyId: authorization.keyId,
-    unlockSessionId: authorization.unlockSessionId,
+    authorizationId: authorization.authorizationId,
     authorizedByUserId: authorization.authorizedByUserId,
     maxEstimatedCostUsd: Math.min(authorization.maxCostUsdPerCall, remainingCostUsd),
     remainingCostUsd

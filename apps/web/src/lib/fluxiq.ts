@@ -1,5 +1,8 @@
 import { gatewayServerRuntime } from "../server/gateway-runtime";
+import { getBrowserTrustRepository } from "../server/browser-trust";
+import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority, createWorkspaceSessionMetadata } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
+import type { HeldKeys } from "fluxiq/secret-keys";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -12,7 +15,7 @@ import { evaluateReadiness, type Readiness } from "../server/readiness";
 import { attachGatewayAuditPersistence } from "../server/security-audit";
 import { announceOwnerClaim } from "../server/startup";
 import type { ProvisioningListenerHandle } from "../server/provisioning-listener";
-import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
+import { createWorkspacePresentations, WorkspacePresentationError, type WorkspacePresentations, type WorkspacePresentationCaller } from "./workspaces/presentation";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
 import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, WorkspaceDecisionAudit, workspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
 
@@ -45,7 +48,7 @@ type FluxIQWebGlobal = typeof globalThis & {
     auditedInstance?: FluxIQ | null;
     auditDetach?: (() => void) | null;
     runtimeId: string;
-    automationStudioContexts: Record<string, AutomationStudioWebContext>;
+    presentations: WorkspacePresentations;
     initializationPromise?: Promise<void> | null;
     reloadPromise?: Promise<FluxIQ> | null;
     closePromise?: Promise<void> | null;
@@ -131,38 +134,40 @@ export function getFluxIQWebReadiness(): Readiness {
 export function getFluxIQWebRuntimeStatus(operatorUserId?: string) {
   const state = getWebRuntimeState();
   const instance = primaryOf(state);
+  if (state.workspaces.tenancy !== "single") throw new WorkspacePresentationError("caller_required");
+  const owner = state.presentations.forInstance(state.workspaces.primaryWorkspaceId, instance);
+  if (!owner) throw new WorkspacePresentationError("stale_runtime");
+  return operatorUserId ? owner.forCaller({ userId: operatorUserId }).present(presentationHostFacts(state)) : owner.operatorStatus(presentationHostFacts(state));
+}
+
+/** Requires a route's held, authorized workspace and caller; never selects a default workspace. */
+export function getWorkspaceWebPresentation(workspaceId: string, instance: FluxIQ, caller: WorkspacePresentationCaller) {
+  const state = getWebRuntimeState();
+  const owner = state.presentations.forInstance(workspaceId, instance);
+  if (!owner) throw new WorkspacePresentationError("stale_runtime");
+  const selected = owner.forCaller(caller);
+  return Object.freeze({
+    context: selected.context,
+    beginContextWrite: selected.beginContextWrite,
+    present: () => selected.present(presentationHostFacts(state))
+  });
+}
+
+function presentationHostFacts(state: WebRuntimeState) {
   const settings = resolveFluxIQDeploymentSettings(process.env);
-  const context = operatorUserId ? resolveAutomationStudioContext(state.automationStudioContexts, operatorUserId) : undefined;
-  const nativeRuntime = instance.programs.automationStudio.nativeRuntimeSummary(instance.activeDomainId);
-  const { llmEvidenceRuntime } = instance.programs.automationStudio.getFlowBootstrapGenerationRuntimeReadiness();
-  const reusableLlmContext = instance.programs.automationStudio.reusableLlmContextStatus();
   return {
-    runtimeId: state.runtimeId,
-    // Host paths are not shown to a hosted service's callers.
-    ...(settings.profile === "service" ? {} : { hostRoot: instance.paths.root, fluxiqDir: instance.paths.fluxiq }),
     hostModulePath: state.hostModulePath,
-    hostModuleLoaded: Boolean(state.hostModulePath),
     clientGatewayPublicUrl: settings.gateway.publicUrl,
     clientGatewayStarted: Boolean(state.clientGatewayServer),
     clientGatewayListening: state.clientGatewayServer?.status.listening ?? false,
-    clientGatewayError: state.clientGatewayServer?.status.error ?? null,
-    automationStudio: {
-      activeProjectId: context?.activeProjectId ?? null,
-      activeFlowId: context?.activeFlowId ?? null,
-      updatedAt: context?.updatedAt ?? 0,
-      contextCount: Object.keys(state.automationStudioContexts).length,
-      nativeImporterRuntimeBound: nativeRuntime.bound,
-      nativeNodeDefinitionCount: nativeRuntime.definitionCount,
-      recordingMapperCount: nativeRuntime.recordingMapperCount,
-      llmEvidenceRuntime,
-      reusableLlmContext
-    }
+    clientGatewayError: state.clientGatewayServer?.status.error ?? null
   };
 }
 
-export function setAutomationStudioWebContext(input: { operatorUserId: string; clientId?: string; activeProjectId: string | null; activeFlowId?: string | null }): void {
-  const state = getWebRuntimeState();
-  setAutomationStudioContext(state.automationStudioContexts, input);
+/** Read guards must fail immediately during primary replacement, never wait while holding a lease. */
+export function isCurrentFluxIQPrimary(instance: FluxIQ): boolean {
+  const state = (globalThis as FluxIQWebGlobal).__fluxiqWebRuntime;
+  return Boolean(state && !state.reloadPromise && !state.closePromise && state.workspaces.get(state.workspaces.primaryWorkspaceId)?.fluxiq === instance);
 }
 
 /** Replaces the primary instance with a new one built from the current host module; tenant workspaces are left as they are. */
@@ -183,6 +188,7 @@ async function reloadPrimary(state: WebRuntimeState): Promise<FluxIQ> {
   if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
   const gateway = state.clientGatewayServer;
   state.clientGatewayServer = null;
+  state.presentations.invalidate(state.workspaces.primaryWorkspaceId, primaryOf(state));
   try {
     if (gateway) await gateway.close();
   } finally {
@@ -194,7 +200,6 @@ async function reloadPrimary(state: WebRuntimeState): Promise<FluxIQ> {
   state.initializationPromise = null;
   await initializeFluxIQWebRuntimeState(state);
   if (state.closePromise) throw new Error("workspaces.closed: the web server is shutting down");
-  state.automationStudioContexts = {};
   startSharedRuntimeServices(state);
   return primaryOf(state);
 }
@@ -217,6 +222,7 @@ export async function closeFluxIQWebRuntime(): Promise<void> {
   if (!state) return;
   state.closePromise ??= (async () => {
     state.initialized = false;
+    state.presentations.close();
     const errors: unknown[] = [];
     try {
       await state.reloadPromise;
@@ -271,30 +277,8 @@ export async function closeFluxIQWebRuntime(): Promise<void> {
 function getWebRuntimeState(): WebRuntimeState {
   const globalState = globalThis as FluxIQWebGlobal;
   globalState.__fluxiqWebRuntime ??= createWebRuntimeState();
-  globalState.__fluxiqWebRuntime.automationStudioContexts ??= {};
-  const primary = primaryOf(globalState.__fluxiqWebRuntime);
+  primaryOf(globalState.__fluxiqWebRuntime);
   registerFluxIQWebShutdownHooks(globalState.__fluxiqWebRuntime);
-  primary.programs.automationStudioClientGateway.setClientRecordingContextProvider(({ session, request }) => {
-    const contexts = globalState.__fluxiqWebRuntime?.automationStudioContexts ?? {};
-    const resolved = resolveClientRecordingProject(contexts, {
-      ...(session.operatorUserId ? { operatorUserId: session.operatorUserId } : {}),
-      clientId: session.clientId,
-      ...(request.projectId !== undefined ? { requestedProjectId: request.projectId } : {})
-    });
-    if (resolved.ok) return resolved;
-    return {
-      ok: false,
-      message: resolved.code === "recording.project_context_mismatch"
-        ? "Recording cannot start because the requested project does not match the approving operator's active project."
-        : "Recording cannot start because Automation Studio does not have an open project.",
-      code: resolved.code,
-      metadata: {
-        ...(request.projectId ? { requestedProjectId: request.projectId } : {}),
-        activeProjectId: resolved.activeProjectId,
-        contextUpdatedAt: resolved.contextUpdatedAt
-      }
-    };
-  });
   return globalState.__fluxiqWebRuntime;
 }
 
@@ -308,7 +292,11 @@ function getWebRuntimeState(): WebRuntimeState {
  * an account holder's role and sign-in to provisioning.
  */
 function createWebRuntimeState(): WebRuntimeState {
-  const tenancy = workspaceTenancyOfProfile(resolveFluxIQProfile(process.env));
+  const profile = resolveFluxIQProfile(process.env);
+  const tenancy = workspaceTenancyOfProfile(profile);
+  const presentations = createWorkspacePresentations();
+  const runtimeId = `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`;
+  let generation = 0;
   const primaryId = primaryWorkspaceId();
   const platform = () => import("../server/provisioning-listener");
   const iamAudit = new DeferredIamAuditSink(async () => (await platform()).getPlatformIamAuditSink(), {
@@ -322,18 +310,37 @@ function createWebRuntimeState(): WebRuntimeState {
   const accountAuthority: IdentityAuthorityOwner = { holdsAuthorityOf: async (userId) => (await platform()).platformAuthorityOwner.holdsAuthorityOf(userId) };
   // Before an instance serves anything: its reads are known to the audit, and
   // its Identity Access refuses to change an account holder's role or sign-in.
-  const opened = (fluxiq: FluxIQ): FluxIQ => {
+  const opened = (workspaceId: string, fluxiq: FluxIQ): FluxIQ => {
     decisions.learn(fluxiq.programs.api);
     fluxiq.programs.identityAccess.authority.holdElsewhere(accountAuthority);
+    const owner = presentations.bind({ workspaceId, instance: fluxiq, profile, runtimeId: `${runtimeId}.${++generation}`, isCurrent: () => !state.closePromise && workspaces.get(workspaceId)?.fluxiq === fluxiq });
+    fluxiq.programs.automationStudioClientGateway.setClientRecordingContextProvider(owner.recordingContextProvider);
     return fluxiq;
   };
-  const createPrimary = () => opened(createFluxIQWebInstance(iamOf(primaryId)));
+  const createPrimary = () => opened(primaryId, createFluxIQWebInstance({
+    ...iamOf(primaryId),
+    ...(tenancy === "multi" ? { clientGatewayTrustedClientStore: (paths: FluxIQ["paths"]) => getBrowserTrustRepository(paths.fluxiq).scopedStore(primaryId) } : {})
+  }));
+  const tenantOptions = ({ workspaceId, heldKeys, primary }: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ }) => ({
+    workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
+    clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
+    clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
+    clientGatewaySessionMetadata: createWorkspaceSessionMetadata(workspaceId),
+    secretKeyPrincipalAuthority: workspaceKeyPrincipalAuthority(workspaceId),
+    secretKeyIdentityAuthority: async () => (await getFluxIQAfterReload()).programs.identityAccess,
+    instantiate: createTenantFluxIQInstance
+  });
   const workspaces = new FluxIQWorkspaceManager({
     tenancy,
     primaryWorkspaceId: primaryId,
     createPrimary,
+    onRetire: ({ workspaceId, fluxiq }) => { presentations.invalidate(workspaceId, fluxiq); },
     ...(tenancy === "multi" ? {
-      createTenant: ({ workspaceId, heldKeys, primary }) => createTenantFluxIQ({ workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId), instantiate: async (options) => opened(await createTenantFluxIQInstance(options)) }),
+      createTenant: async input => opened(input.workspaceId, await createTenantFluxIQ(tenantOptions(input))),
+      openExistingTenant: async input => {
+        const instance = await createTenantFluxIQ({ ...tenantOptions(input), existingOnly: true, beforeOpen: input.beforeOpen });
+        return instance ? opened(input.workspaceId, instance) : null;
+      },
       removeTenantRoot: async ({ workspaceId, primary }) => {
         await removeFluxIQWorkspaceRoot(fluxiqLayoutV3Paths(primary.paths.root), workspaceId);
       }
@@ -341,21 +348,25 @@ function createWebRuntimeState(): WebRuntimeState {
     ...workspaceManagerLimits(process.env),
     warn: (message, fields) => webLogger().warn(message, fields)
   });
-  return {
+  const state: WebRuntimeState = {
     workspaces,
     createPrimary,
     iamAudit,
     hostModulePath: resolveFluxIQHostModulePath(),
     clientGatewayServer: null,
-    runtimeId: `web.${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`,
-    automationStudioContexts: {}
+    runtimeId,
+    presentations
   };
+  return state;
 }
 
-export function createFluxIQWebInstance(options: Pick<FluxIQOptions, "iam"> = {}): FluxIQ {
+export function createFluxIQWebInstance(options: Pick<FluxIQOptions, "iam" | "clientGatewayTrustedClientStore"> = {}): FluxIQ {
   const modelProvidersEnabled = resolveFluxIQModelProvidersEnabled();
   const rootDir = resolveFluxIQWebHostRoot(process.cwd());
-  const extra = options.iam ? { iam: options.iam } : {};
+  const extra = {
+    ...(options.iam ? { iam: options.iam } : {}),
+    ...(options.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: options.clientGatewayTrustedClientStore } : {})
+  };
   const host = (globalThis as FluxIQWebGlobal).__fluxiqWebHostModule;
   const hostPath = resolveFluxIQHostModulePath();
   if (hostPath && !explicitFluxIQDomainId() && (host?.path !== hostPath || host.domain?.rootDir !== rootDir)) {
@@ -545,6 +556,9 @@ function startSharedClientGateway(state: WebRuntimeState, settings: FluxIQDeploy
     profile: settings.profile,
     trustProxy: settings.trustProxy,
     limits: gateway.limits,
+    ...(settings.profile === "service" ? {
+      resolveGateway: async (input) => (await import("../server/browser-trust")).resolveServiceClientGatewayRoute(input)
+    } : {}),
     ...(gateway.allowedOrigins ? { allowedOrigins: gateway.allowedOrigins } : {})
   });
   logger.info(`[FluxIQ] Client gateway WebSocket bound to shared runtime ${state.runtimeId} at ${state.clientGatewayServer.publicUrl}`);

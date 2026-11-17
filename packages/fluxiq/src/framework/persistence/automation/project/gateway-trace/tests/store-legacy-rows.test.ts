@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayTraceEvent } from "../../../../../../client-gateway/trace/index.ts";
 import { correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
+import { automationStudioSchemaMigrationOrder } from "../../../migration-order/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
@@ -50,7 +51,7 @@ async function writeLegacyTrace(events: readonly ClientGatewayTraceEvent[], mani
   const lease = await pool.acquire(PROJECT);
   const content = await AutomationStudioProjectContentStore.open({ pool, projectId: PROJECT });
   try {
-    const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION];
+    const migrations = automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION]);
     await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
     await lease.database.run(
       `insert into client_gateway_traces (trace_id, episode_id, activity, origin_kind, started_at, closed_at, claimed_completeness, manifest_json)

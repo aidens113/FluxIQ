@@ -3,6 +3,7 @@ export * from "./creation.ts";
 export * from "./category-order.ts";
 export * from "./database-hold.ts";
 export * from "./database-idle-close.ts";
+export * from "./domain-match.ts";
 export * from "./files-removal.ts";
 export * from "./store.ts";
 export * from "./task-graph-embedding.ts";

@@ -18,12 +18,11 @@ import { automationStudioConversationParkingPort, type AutomationStudioParkingPo
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAsk } from "./ask.ts";
 import { AutomationStudioProjectConversationStore } from "./store.ts";
 import { currentAutomationStudioConversation } from "./context/index.ts";
+import { automationStudioConversationTitleFromMessage } from "./title-from-message.ts";
 import {
   automationStudioConversationCommandWork,
   automationStudioConversationEffectiveCaller,
   type AutomationStudioConversationEffectiveCaller,
-  type AutomationStudioConversationKeyUnlockCheck,
-  type AutomationStudioConversationUnlockedSessionResolver
 } from "./commands/index.ts";
 import type { AutomationStudioConversation, AutomationStudioConversationStatus, AutomationStudioConversationSubject, AutomationStudioConversationThread } from "./thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationTurn } from "./turn.ts";
@@ -170,15 +169,6 @@ export class AutomationStudioConversations {
    */
   private domainInstructions: () => string | undefined = () => undefined;
 
-  /**
-   * Finds a person's live unlocked session, so a paired client's chat can use
-   * their key (`commands/caller.ts`). Null leaves a paired caller on its own
-   * session, where the key is locked.
-   */
-  private unlockedSession: AutomationStudioConversationUnlockedSessionResolver | null = null;
-  private keyUnlockCheck: AutomationStudioConversationKeyUnlockCheck | null = null;
-  private keyStepToldTo: ((userId: string) => void) | null = null;
-
   constructor(
     private readonly pool: AutomationStudioProjectDatabasePool | undefined,
     private readonly resolveAttachment?: AutomationStudioConversationAttachmentResolver
@@ -321,8 +311,8 @@ export class AutomationStudioConversations {
   /** A turn the person writes, through the API. */
   appendTurn(input: AutomationStudioConversationPersonTurnRequest): Promise<AutomationStudioConversationTurn> {
     const turnId = `turn.${randomUUID()}`;
-    return this.withStore(input.projectId, (store) =>
-      store.appendTurn({
+    return this.withStore(input.projectId, async (store) => {
+      const turn = await store.appendTurn({
         mutationId: `conversation.turn:${turnId}`,
         conversationId: input.conversationId,
         turnId,
@@ -330,26 +320,28 @@ export class AutomationStudioConversations {
         text: input.text,
         actorId: input.actorId ?? null,
         attachment: input.attachment ?? null
-      })
-    );
+      });
+      await this.nameFromFirstMessage(store, input.conversationId, input.text);
+      return turn;
+    });
   }
 
-  /** Connects the lookup of a person's unlocked session, for paired callers, and whether their key needs unlocking. Null disconnects it. */
-  bindUnlockedSessionResolver(resolver: AutomationStudioConversationUnlockedSessionResolver | null, keyUnlockCheck: AutomationStudioConversationKeyUnlockCheck | null = null, keyStepTold: ((userId: string) => void) | null = null): this {
-    this.unlockedSession = resolver;
-    this.keyUnlockCheck = keyUnlockCheck;
-    this.keyStepToldTo = keyStepTold;
-    return this;
+  /** A thread nobody named takes its first message as its name, so threads of one project are told apart. Never fails the message. */
+  private async nameFromFirstMessage(store: AutomationStudioProjectConversationStore, conversationId: string, text: string): Promise<void> {
+    const title = automationStudioConversationTitleFromMessage(text);
+    if (!title) return;
+    try {
+      const thread = await store.getConversation({ conversationId, limit: 1 });
+      if (!thread || thread.conversation.title) return;
+      await store.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId, title });
+    } catch {
+      /* best-effort: the name is a convenience and the message is already saved */
+    }
   }
 
-  /** The person read why their key needs their password once: it is not said a second time. */
-  noteKeySetupStepTold(userId: string): void {
-    this.keyStepToldTo?.(userId);
-  }
-
-  /** The session a request's model calls and commands run under: the actor's own, or a paired client's person's unlocked one. */
+  /** The session a request's model calls and commands run under: the actor's own, the request's own. */
   callerFor(actor: { userId: string; sessionId: string }): AutomationStudioConversationEffectiveCaller {
-    return automationStudioConversationEffectiveCaller(actor, this.unlockedSession, this.keyUnlockCheck);
+    return automationStudioConversationEffectiveCaller(actor);
   }
 
   /** The thread's asks still waiting for an answer, oldest first, from its most recent turns. */

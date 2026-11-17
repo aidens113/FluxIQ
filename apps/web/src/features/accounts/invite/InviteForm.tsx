@@ -55,9 +55,9 @@ export function InviteForm(props: { roles: AssignableRole[]; onInvite: (invite: 
 
   return (
     <form className="accounts-invite-form" aria-label="Invite someone" onSubmit={review}>
-      <label className="accounts-field">Email<input autoComplete="off" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-      <label className="accounts-field">Name<input autoComplete="off" type="text" maxLength={100} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-      <label className="accounts-field">Role
+      <label className="field"><span className="field-label">Email</span><input autoComplete="off" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Name</span><input autoComplete="off" type="text" maxLength={100} value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Role</span>
         <select value={role} onChange={(event) => setRole(event.target.value as AssignableRole)}>
           {props.roles.map((candidate) => <option key={candidate} value={candidate}>{ACCOUNT_ROLES[candidate].label}</option>)}
         </select>
@@ -65,7 +65,7 @@ export function InviteForm(props: { roles: AssignableRole[]; onInvite: (invite: 
       <p className="accounts-muted">{ACCOUNT_ROLES[role].summary}</p>
       {problem ? <p className="accounts-problem" role="alert">{problem}</p> : null}
       {sent ? <p className="accounts-sent" role="status">{sent}</p> : null}
-      <span className="accounts-buttons"><button type="submit" className="accounts-button accounts-primary">Invite</button></span>
+      <span className="accounts-buttons"><button type="submit" className="button primary">Invite</button></span>
     </form>
   );
 }

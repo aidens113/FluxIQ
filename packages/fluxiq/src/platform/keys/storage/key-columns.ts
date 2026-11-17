@@ -1,0 +1,1 @@
+export const KEY_COLUMNS = "key_id as keyId, public_key as publicKey, user_id as userId, workspace_id as workspaceId, created_at_ms as createdAtMs, revoked_at_ms as revokedAtMs, last_used_at_ms as lastUsedAtMs";

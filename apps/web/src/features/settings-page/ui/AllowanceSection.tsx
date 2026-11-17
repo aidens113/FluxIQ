@@ -35,9 +35,9 @@ export function AllowanceSection(props: { data: SettingsData }) {
         event.preventDefault();
         void save();
       }}>
-        <label>Allowance in dollars<input inputMode="decimal" value={shown} placeholder={allowanceWords(allowance.defaultUsd)} onChange={(event) => setText(event.target.value)} /></label>
-        <button type="submit">Save</button>
-        <button type="button" onClick={() => void resetToUsual()}>Use the usual amount</button>
+        <label className="field"><span className="field-label">Allowance in dollars</span><input inputMode="decimal" value={shown} placeholder={allowanceWords(allowance.defaultUsd)} onChange={(event) => setText(event.target.value)} /></label>
+        <button type="submit" className="button primary">Save</button>
+        <button type="button" className="button" onClick={() => void resetToUsual()}>Use the usual amount</button>
       </form>
       <p role="status">{status}</p>
     </section>

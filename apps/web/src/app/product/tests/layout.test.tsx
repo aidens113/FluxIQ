@@ -13,8 +13,8 @@ import { FULL_PRODUCT, registerProduct, resetPanelProductState } from "./support
 afterEach(resetPanelProductState);
 
 describe("the root layout", () => {
-  it("keeps the stock title, description and bare <html> without a product", async () => {
-    expect(await generateMetadata()).toEqual({ title: "FluxIQ", description: "Domain-neutral automation framework control panel" });
+  it("keeps the stock title, description, mark icon and bare <html> without a product", async () => {
+    expect(await generateMetadata()).toEqual({ title: "FluxIQ", description: "Domain-neutral automation framework control panel", icons: { icon: "/fluxiq-mark.svg" } });
     const html = renderToStaticMarkup(await RootLayout({ children: <main>Page</main> }));
     expect(html).toContain("<html lang=\"en\"><head></head><body>");
     expect(html).not.toContain("style=");

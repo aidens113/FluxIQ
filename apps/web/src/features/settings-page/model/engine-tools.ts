@@ -17,7 +17,7 @@ export const SETTINGS_TOOLS: readonly EngineTool[] = Object.freeze([
 
 /** The two engine tools that are Security's: every stored key, and the person's own sign-in. */
 export const SECURITY_TOOLS: readonly EngineTool[] = Object.freeze([
-  { id: "secret-keys", name: "Keys", explanation: "Every stored key, including ones that are not for AI: add, replace, remove, scope, lock and unlock.", href: "/security/keys" },
+  { id: "secret-keys", name: "Keys", explanation: "Every stored key, including ones that are not for AI: add, replace, remove and scope.", href: "/security/keys" },
   { id: "identity-access", name: "Your sign-in", explanation: "Password, PIN, two-factor, sessions and the credential vault.", href: "/security/sign-in" }
 ]);
 

@@ -49,13 +49,13 @@ export function ProofForm(props: { question: string; confirmLabel: string; dange
   return (
     <form className="accounts-proof" aria-label={props.question} onSubmit={(event) => void confirm(event)}>
       <p className="accounts-question">{props.question}</p>
-      <label className="accounts-field">Your password<input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-      <label className="accounts-field">Your PIN, if you set one<input autoComplete="off" inputMode="numeric" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>
-      <label className="accounts-field">Authenticator code, if you use one<input autoComplete="one-time-code" inputMode="numeric" type="text" value={totp} onChange={(event) => setTotp(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Your password</span><input autoComplete="current-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Your PIN, if you set one</span><input autoComplete="off" inputMode="numeric" type="password" value={pin} onChange={(event) => setPin(event.target.value)} /></label>
+      <label className="field"><span className="field-label">Authenticator code, if you use one</span><input autoComplete="one-time-code" inputMode="numeric" type="text" value={totp} onChange={(event) => setTotp(event.target.value)} /></label>
       {problem ? <p className="accounts-problem" role="alert">{problem}</p> : null}
       <span className="accounts-buttons">
-        <button type="submit" className={props.danger ? "accounts-button accounts-danger" : "accounts-button accounts-primary"} disabled={busy}>{busy ? "Working…" : props.confirmLabel}</button>
-        <button type="button" className="accounts-button" disabled={busy} onClick={props.onCancel}>Cancel</button>
+        <button type="submit" className={props.danger ? "button danger" : "button primary"} disabled={busy}>{busy ? "Working…" : props.confirmLabel}</button>
+        <button type="button" className="button" disabled={busy} onClick={props.onCancel}>Cancel</button>
       </span>
     </form>
   );

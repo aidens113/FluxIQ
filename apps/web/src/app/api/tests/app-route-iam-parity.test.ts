@@ -5,19 +5,22 @@
 // the IAM table, so a table entry that drifts from today fails here.
 
 import { GlobalProgramApiRegistry } from "fluxiq";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IAM_USER_ACCESS } from "fluxiq/platform";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", async () => (await import("./app-route-fixture")).nextHeadersMock());
 vi.mock("../../../lib/fluxiq", async () => (await import("./app-route-fixture")).fluxiqModuleMock());
 vi.mock("../../../server/provisioning-listener", async () => (await import("./app-route-fixture")).provisioningListenerMock());
 vi.mock("../security/server/platform-audit-reader", async () => (await import("./app-route-fixture")).platformAuditReaderMock());
+vi.mock("../../../server/key-sessions/service", async () => (await import("./app-route-fixture")).keySessionServiceMock());
+vi.mock("../../../server/connect/service", async () => (await import("./app-route-fixture")).connectServiceMock());
 
 import { APP_ROUTE_IAM_CONTRACTS } from "../../../lib/app-route-iam";
 import { POST as callProgram } from "../programs/[programId]/[endpoint]/route";
 import { APP_ROUTE_CALLS } from "./app-route-calls";
 import { fixture, outcome, routeRequest, type RouteCaller } from "./app-route-fixture";
 
-type Expected = "allowed" | "unauthenticated" | `forbidden: ${string}`;
+type Expected = "allowed" | "unauthenticated" | "unavailable" | `forbidden: ${string}`;
 type Row = readonly [admin: Expected, viewer: Expected, pairedByAdmin: Expected, pairedByViewer: Expected];
 
 const CALLERS: readonly RouteCaller[] = [
@@ -28,32 +31,37 @@ const CALLERS: readonly RouteCaller[] = [
 ];
 
 const COOKIE_ONLY_READ: Row = ["allowed", "allowed", "unauthenticated", "unauthenticated"];
+const SELECTED_PANEL_READ: Row = ["allowed", "allowed", "forbidden: This endpoint is not available to a paired client.", "forbidden: This endpoint is not available to a paired client."];
 const needs = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, "unauthenticated", "unauthenticated"];
+const selectedNeeds = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, SELECTED_PANEL_READ[2], SELECTED_PANEL_READ[3]];
 
 // Today's checks, route by route: the permission each read, and whether it took a token.
 const TODAY: Readonly<Record<string, Row>> = {
+  "POST /api/connect/authorize": ["unavailable", "unavailable", "unavailable", "unavailable"],
+  "GET /api/keys": COOKIE_ONLY_READ,
+  "POST /api/keys": COOKIE_ONLY_READ,
+  "DELETE /api/keys": COOKIE_ONLY_READ,
   "POST /api/client-gateway/approve-pairing": needs("runtime.control"),
   "POST /api/client-gateway/dismiss-pairing": needs("runtime.control"),
-  "POST /api/client-gateway/automation-studio-context": needs("runtime.control"),
+  "POST /api/client-gateway/automation-studio-context": selectedNeeds("runtime.control"),
   // A credential is the whole of the proof, and it can only end its own trust.
-  "POST /api/client-gateway/forget-pairing": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
   "POST /api/client-gateway/first-project": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
-  "PUT /api/client-gateway/trace-artifacts/[sha256]": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
+  "PUT /api/client-gateway/trace-artifacts/[sha256]": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
   "GET /api/framework/setup": COOKIE_ONLY_READ,
   "POST /api/framework/setup (setup)": needs("programs.write"),
   "POST /api/framework/setup (migrate)": needs("programs.write"),
   "POST /api/framework/setup (rollback-migration)": needs("programs.write"),
-  "GET /api/framework/io": COOKIE_ONLY_READ,
-  "POST /api/framework/io/validate": COOKIE_ONLY_READ,
-  "GET /api/programs": COOKIE_ONLY_READ,
-  "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": COOKIE_ONLY_READ,
-  "GET /api/programs/automation-studio/state-assets/[projectId]/[sha256]": COOKIE_ONLY_READ,
+  "GET /api/framework/io": SELECTED_PANEL_READ,
+  "POST /api/framework/io/validate": SELECTED_PANEL_READ,
+  "GET /api/programs": SELECTED_PANEL_READ,
+  "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": SELECTED_PANEL_READ,
+  "GET /api/programs/automation-studio/state-assets/[projectId]/[sha256]": SELECTED_PANEL_READ,
   "PUT /api/programs/automation-studio/state-assets/[projectId]/[sha256]": ["allowed", "forbidden: Permission required: programs.write", "allowed", "allowed"],
   "GET /api/recordings": ["allowed", "allowed", "allowed", "allowed"],
   // People and the activity log: only someone who manages people, and only by cookie.
-  "GET /api/accounts/members": needs("identity.manage"),
+  "GET /api/accounts/members": selectedNeeds("identity.manage"),
   "POST /api/accounts/invite": needs("identity.manage"),
   "POST /api/accounts/member (set-role)": needs("identity.manage"),
   "POST /api/accounts/member (turn-off)": needs("identity.manage"),
@@ -61,7 +69,7 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/accounts/member (remove)": needs("identity.manage"),
   "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
   "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
-  "GET /api/security/audit": needs("identity.manage")
+  "GET /api/security/audit": selectedNeeds("identity.manage")
 };
 
 const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);
@@ -77,7 +85,12 @@ async function observed(response: Response): Promise<Expected> {
 
 beforeEach(() => {
   fixture.registry = new GlobalProgramApiRegistry();
+  fixture.tenancy = "single";
+  vi.stubEnv("FLUXIQ_PROFILE", "local");
+  vi.stubEnv("FLUXIQ_PUBLIC_ORIGIN", "https://app.example.test");
+  vi.stubEnv("FLUXIQ_INSTANCE_ID", "synthetic-matrix-instance");
 });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("app route IAM parity on the local profile", () => {
   it("has a call and today's expectation for every route in the IAM table, and nothing else", () => {
@@ -107,12 +120,40 @@ describe("app route IAM parity on the local profile", () => {
 
   it("decides a self-hosted registry exactly as a local one", async () => {
     fixture.registry = new GlobalProgramApiRegistry({ iam: { profile: "self-hosted" } });
+    vi.stubEnv("FLUXIQ_PROFILE", "self-hosted");
     for (const contract of APP_ROUTE_IAM_CONTRACTS) {
       const name = key(contract);
       const seen: Expected[] = [];
       for (const caller of CALLERS) seen.push(await observed(await APP_ROUTE_CALLS[name]!(caller, { projectId: "project-1" })));
       expect([name, ...seen]).toEqual([name, ...TODAY[name]!]);
     }
+  });
+});
+
+describe("new self-service route rows on service", () => {
+  const routes = ["POST /api/connect/authorize", "GET /api/keys", "POST /api/keys", "DELETE /api/keys"];
+  function service(allow: boolean) {
+    fixture.tenancy = "multi";
+    vi.stubEnv("FLUXIQ_PROFILE", "service");
+    fixture.registry = new GlobalProgramApiRegistry({ iam: { profile: "service", workspaceId: "workspace-main", source: {
+      resolvePolicySet: async () => ({ identity: allow ? [IAM_USER_ACCESS] : [], guardrails: [], sessions: [], boundary: null }),
+      getRole: async () => null
+    } } });
+  }
+
+  it.each(routes)("%s runs its real cookie/tenant IAM authority and refuses a bearer-only caller", async name => {
+    service(true);
+    const response = await APP_ROUTE_CALLS[name]!({ kind: "cookie", person: "alice" }, { projectId: "a-project" });
+    expect(response.status).toBe(name === "POST /api/connect/authorize" ? 303 : name === "POST /api/keys" ? 201 : 200);
+    const unsupported = await APP_ROUTE_CALLS[name]!({ kind: "token", person: "alice" }, { projectId: "a-project" });
+    expect(unsupported.status).toBe(401);
+  });
+
+  it.each(routes)("%s preserves an actual tenant IAM deny", async name => {
+    service(false);
+    const response = await APP_ROUTE_CALLS[name]!({ kind: "cookie", person: "alice" }, { projectId: "a-project" });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: name === "POST /api/connect/authorize" ? "invalid_grant" : "key.forbidden" });
   });
 });
 

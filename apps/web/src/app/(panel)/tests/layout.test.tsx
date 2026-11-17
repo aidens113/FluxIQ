@@ -25,7 +25,7 @@ it("hands the shell the screens the deployment's preset shows", async () => {
   process.env.FLUXIQ_PANEL_PRESET = "task-automation";
   try {
     const element = await PanelLayout({ children: <p>The page</p> });
-    expect(element.props.pages).toEqual(["home", "flows", "runs", "security", "settings"]);
+    expect(element.props.pages).toEqual(["home", "projects", "flows", "runs", "chats", "security", "settings"]);
   } finally {
     delete process.env.FLUXIQ_PANEL_PRESET;
   }

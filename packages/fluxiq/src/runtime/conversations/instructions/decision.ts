@@ -70,6 +70,8 @@ export type AutomationStudioConversationInterpretation = {
   source: AutomationStudioConversationDecisionSource;
   /** Plain English, for the thread: why the model could not decide. Null when it did. */
   modelProblem: string | null;
+  /** True when the model could not be used for want of a key (or one panel sign-in): the reply is the setup message alone. */
+  keySetup?: true;
   /** Model calls made, including retries. Zero when no model is connected. */
   attempts: number;
   /**

@@ -23,6 +23,6 @@ export type AutomationStudioLlmProviderResolverInput = {
   providerId?: string;
   modelId?: string;
   metadata?: JsonObject;
-  /** The person the call is made for, whose unlocked key pays. Absent for a run nobody is watching. */
+  /** The person the call is made for, whose configured key pays. Absent for a run nobody is watching. */
   caller?: AutomationStudioLlmModelCaller;
 };

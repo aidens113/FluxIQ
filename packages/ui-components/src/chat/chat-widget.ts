@@ -78,7 +78,7 @@ import { createRecordingAttachment } from "./attachment/index.ts";
 import { createComposer, createConversationController, createReadNotice, type ConversationController } from "./conversation/index.ts";
 import { createAnswerReader, type AnswerHost, type AnswerReader } from "./answer/index.ts";
 import { askOffersStop, attemptEnded, createWorkHeaderView, meterOfOutcomes, savedOfOutcomes, type WorkMeter } from "./work-header/index.ts";
-import { createActivityFeed, threadRefreshWanted } from "./feed/index.ts";
+import { createActivityFeed, createInjectedFeed, threadRefreshWanted, type ChatFeedView } from "./feed/index.ts";
 import { sameTarget } from "./same-target.ts";
 import { sameThread } from "./same-thread.ts";
 import { createHoldControl, createStopControl } from "./controls/index.ts";
@@ -86,7 +86,7 @@ import { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
 import type { ChatHostStatus, ChatOpenControl, ChatRunPort, ChatTransport } from "./ports/index.ts";
 import { readBeatMs } from "./read-beat.ts";
 import { createChatThreads, type ChatThreads } from "./threads/index.ts";
-import { modelReadinessLockReason, readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
+import { readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
 import { activityForTarget, buildChatStream, CHAT_STEP_MESSAGE_LIMIT, createTurnClock, followedRunTarget, threadKey, type QuestionTarget } from "./stream/index.ts";
 import type { ChatTarget } from "./target.ts";
 import { CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
@@ -142,6 +142,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
         ...(deleteThread === undefined ? {} : { deleteThread: (request) => owner.transport.conversation.deleteThread!(request) })
       },
       focusComposer: () => composer.focus(),
+      bar: options.chatBar !== false,
       projectId: () => latestStatus?.projectId,
       projectName: () => latestStatus?.projectName,
       target: () => shownTarget,
@@ -212,7 +213,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   // and come back. Turning to the composer is when the line matters, so the
   // keys are read again then, not only on the next poll (round 5: a build
   // began under "FluxIQ needs a model key" and then ran with one).
-  const recheckReadiness = (): void => { if ((readiness === "missing" || modelReadinessLockReason(readiness) !== null) && readinessAsk !== null && readinessReading === null) askReadiness(); };
+  const recheckReadiness = (): void => { if ((readiness === "missing" || readiness.startsWith("unavailable:")) && readinessAsk !== null && readinessReading === null) askReadiness(); };
   composer.element.addEventListener("focusin", recheckReadiness);
   composer.element.addEventListener("input", recheckReadiness);
   const main = createElement("div", { className: "chat-main" }, [scroller, jump]);
@@ -303,12 +304,13 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       if (captured === owner && captured.current()) renderAll();
     });
   }
-  function makeFeed(captured: ChatOwner) {
-    return createActivityFeed({ activity: captured.transport.activity }, () => {
+  function makeFeed(captured: ChatOwner): ChatFeedView {
+    const changed = (): void => {
       if (captured === owner && captured.current()) {
         onFeedChange();
       }
-    });
+    };
+    return options.activity === undefined ? createActivityFeed({ activity: captured.transport.activity }, changed) : createInjectedFeed(options.activity, changed);
   }
   function refreshControls(renewBack = false): void {
     const scope = {};
@@ -385,8 +387,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // line: R4a's start card said no key was set while the build ran with
       // one (`run-mv2nlh9l-52e476da`, moment 1). Asked again only while the
       // empty latest chat is on screen and still says the key is missing.
-      // A key that was fine can lock while the chat is open (a sign-out elsewhere): the step must show without reopening, so that is read too, less often.
-      if (readinessAsk !== null && (readiness === "missing" || modelReadinessLockReason(readiness) !== null || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
+      // Saved-key availability can change while the chat is open, so refresh a ready read less often too.
+      if (readinessAsk !== null && (readiness === "missing" || readiness.startsWith("unavailable:") || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
     }, readBeatMs(background, owner.transport.changes !== undefined));
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {
@@ -401,6 +403,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     feed = makeFeed(owner);
     // With a thread list the latest chat is the host's project, so a first message has somewhere to open a thread.
     shownTarget = threads !== undefined && latestStatus?.projectId !== undefined ? { kind: "latest", projectId: latestStatus.projectId } : { kind: "latest" };
+    // The new controller reads and writes the project on screen, not whichever one the transport finds.
+    if (shownTarget.projectId !== undefined) controller.setTarget(shownTarget);
     threads?.reset();
     answerIn = null;
     questionKey = "";
@@ -469,6 +473,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     }, THREAD_REFRESH_DEBOUNCE_MS);
   }
 
+  let wasSending = false;
   function renderAll(): void {
     const raw = feed.snapshot().state.current;
     const paced = feed.snapshot().state.display;
@@ -480,6 +485,9 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     hold.update(live);
     if (followed !== null && followRunNow()) return;
     let state = controller.state();
+    // Core names an unnamed thread from its first message while it stores it, so the list is read as soon as a send ends, not on the next beat.
+    if (wasSending && !state.sending && active) void threads?.read();
+    wasSending = state.sending;
     if (state.fallbackReason === "unsupported") unsupported = true;
     if (unsupported) state = { ...state, mode: connected ? "fallback" : "offline", fallbackReason: "unsupported" };
     const activity = activityForTarget(feed.snapshot().state, shownTarget, state.conversationId);
@@ -627,13 +635,18 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   return {
     element,
     render(status) {
+      const movedProject = latestStatus !== undefined && latestStatus.projectId !== status.projectId;
       latestStatus = status;
       const next = status.connected;
       const changed = next !== connected;
       connected = next;
       const observation = owners.observe(status);
+      // The host's project moved under the same owner key: the thread list and the open chat follow it.
+      const followed = movedProject && !observation.changed;
       if (observation.changed) {
         resetOwner(owners.capture(), observation.initial);
+      } else if (followed) {
+        resetOwner(owners.rotate(), false);
       } else {
         composer.setOwner(draftOwners.capture(owner, draftProject(), latestStatus?.projectId));
       }
@@ -644,7 +657,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       keyOpener?.observe(status);
       controller.setConnected(next && actionsAllowed() && !unsupported);
       if (changed) renderAll();
-      if (observation.changed || changed) startReads();
+      if (observation.changed || followed || changed) startReads();
     },
     setActive(next) {
       const first = !activationObserved;

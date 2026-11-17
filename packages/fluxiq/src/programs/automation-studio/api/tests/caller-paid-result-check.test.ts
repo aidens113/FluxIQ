@@ -168,7 +168,7 @@ async function harness(options: { clean?: boolean; schedule?: JsonObject; standi
   services.add(service);
 
   const base = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
   const project = await service.createProject({ name: "Caller-paid result check", domainId: "example" });
   const created = await service.createFlow({ projectId: project.id, flowId: "flow.caller-paid-check", name: "Caller-paid check Flow" });
   await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });
@@ -290,7 +290,7 @@ async function runFromChat(found: Harness, options: { paired: boolean } = { pair
   const host = { async appendAutomationTurn(): Promise<never> { throw new Error("Run it writes no turn of its own"); }, async pendingAsks() { return []; }, async getAsk() { return null; } };
   return await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run({
     port: automationStudioConversationCommandPort({ registry, actor: asPerson, scope: { domainId: "example" } }),
-    host, projectId: found.projectId, conversationId: "conversation.chat", sessionId: asPerson.sessionId, keyLocked: false, paired: options.paired, startLocation: null
+    host, projectId: found.projectId, conversationId: "conversation.chat", sessionId: asPerson.sessionId, paired: options.paired, startLocation: null
   }, { flowId: found.flowId });
 }
 

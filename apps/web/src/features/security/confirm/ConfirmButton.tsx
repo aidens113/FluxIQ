@@ -33,7 +33,7 @@ export function ConfirmButton(props: { label: string; question: string; confirmL
   if (phase === "idle") {
     return (
       <span className="security-action">
-        <button type="button" className="security-button" onClick={ask}>{props.label}</button>
+        <button type="button" className="button" onClick={ask}>{props.label}</button>
         {problem ? <span className="security-error" role="alert">{problem}</span> : null}
       </span>
     );
@@ -41,8 +41,8 @@ export function ConfirmButton(props: { label: string; question: string; confirmL
   return (
     <span className="security-action" role="group" aria-label={props.question}>
       <span>{props.question}</span>
-      <button type="button" className="security-button security-danger" disabled={phase === "working"} onClick={() => void confirm()}>{props.confirmLabel}</button>
-      <button type="button" className="security-button" disabled={phase === "working"} onClick={() => setPhase("idle")}>Cancel</button>
+      <button type="button" className="button danger" disabled={phase === "working"} onClick={() => void confirm()}>{props.confirmLabel}</button>
+      <button type="button" className="button" disabled={phase === "working"} onClick={() => setPhase("idle")}>Cancel</button>
     </span>
   );
 }

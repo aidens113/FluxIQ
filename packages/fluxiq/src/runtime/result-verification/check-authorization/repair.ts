@@ -20,7 +20,7 @@
 // granted and raises a request for the person. Paying for the model and
 // allowing the act are different permissions and this is only the first.
 
-import type { AutomationStudioResultCheckAuthorization } from "./contracts.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON, type AutomationStudioResultCheckAuthorization } from "./contracts.ts";
 
 /**
  * The task kinds an unattended repair may be redeemed for, and the only ones.
@@ -47,7 +47,9 @@ export const AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES = Object.freeze({
   /** The authorization has lapsed and the person must renew it. */
   expired: "core.repair.authorization_expired",
   /** The cost ceiling the person set has been reached, counting what checking has spent too. */
-  exhausted: "core.repair.authorization_exhausted"
+  exhausted: "core.repair.authorization_exhausted",
+  /** Stored before per-use authority: it names a key unlock rather than a grantor, so the person turns it on again. */
+  renew: "core.repair.authorization_renew"
 });
 
 /** What redeeming the repair clause produced: a bounded provider request, or the stated reason there is none. */
@@ -55,8 +57,8 @@ export type AutomationStudioUnattendedRepairRedemption =
   | {
     redeemed: true;
     keyId: string;
-    /** The key unlock to draw the credential from, and the user it must belong to. Checked together by the host. */
-    unlockSessionId: string;
+    /** The grant each use is authorized under. Checked again by the key's authority at use. */
+    authorizationId: string;
     authorizedByUserId: string;
     /** The kinds this redemption covers. Returned so the caller can hold the provider to them, never supplied. */
     taskKinds: readonly string[];
@@ -86,7 +88,10 @@ export function redeemAutomationStudioUnattendedRepairAuthorization(input: {
   if (!repair || repair.enabled !== true) {
     return refusal(AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES.disabled, "This Flow's standing authorization pays for judging its results and not for repairing it, so no model was available to repair it.");
   }
-  if (!authorization.keyId.trim() || !authorization.unlockSessionId.trim() || !positive(authorization.maxTotalCostUsd) || !positive(repair.maxCostUsdPerRun)) {
+  if (authorization.grantedThrough.kind === "legacy_unlock") {
+    return refusal(AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES.renew, AUTOMATION_STUDIO_RESULT_CHECK_RENEW_REASON);
+  }
+  if (!authorization.keyId.trim() || !authorization.authorizationId.trim() || !authorization.authorizedByUserId.trim() || !positive(authorization.maxTotalCostUsd) || !positive(repair.maxCostUsdPerRun)) {
     return refusal(AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES.invalid, "The stored repair authorization names no usable key or spending limit, so it was not redeemed.");
   }
   // The same expiry as the check's, read the same way. A person renewing an
@@ -106,7 +111,7 @@ export function redeemAutomationStudioUnattendedRepairAuthorization(input: {
   return {
     redeemed: true,
     keyId: authorization.keyId,
-    unlockSessionId: authorization.unlockSessionId,
+    authorizationId: authorization.authorizationId,
     authorizedByUserId: authorization.authorizedByUserId,
     taskKinds: AUTOMATION_STUDIO_UNATTENDED_REPAIR_TASK_KINDS,
     maxEstimatedCostUsdPerRun: Math.min(repair.maxCostUsdPerRun, remainingCostUsd),

@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import { FLUXNODE_MODEL_ID_PATTERN } from "./model-id-pattern.ts";
-import { humannessSchema } from "../../humanness/index.ts";
+import { humannessSchema } from "../../humanness/schema/index.ts";
 
 /** The standing floor of retries per step: the first attempt plus 3. A caller may raise it, never lower it. */
 export const FLUXNODE_MIN_RETRIES = 3;

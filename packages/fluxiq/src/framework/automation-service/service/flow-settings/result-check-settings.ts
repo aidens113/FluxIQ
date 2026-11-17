@@ -13,7 +13,7 @@
 // not and never defaults.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioUnattendedRepairClause } from "../../../../runtime/result-verification/check-authorization/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, type AutomationStudioResultCheckAuthorization, type AutomationStudioResultCheckGrant, type AutomationStudioUnattendedRepairClause } from "../../../../runtime/result-verification/check-authorization/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS,
   automationStudioResultCheckShapeValue,
@@ -51,21 +51,64 @@ export function resultCheckConfigurationFromMetadata(settings: JsonObject): Auto
  * storage at all: it is set to the only value it may have, so a settings
  * document edited by hand to say `runtime_patch` reads back as a verification
  * authorization and is refused by `redeem.ts` on scope anyway.
+ *
+ * A record written before per-use authority carries `unlockSessionId` and no
+ * `grantedThrough`. It reads back as `legacy_unlock`, which both redemptions
+ * refuse with a plain request to turn checking on again: such a record could be
+ * written by anyone who could edit the Flow until 2026-11-04, and the unlock it
+ * names is not an identity a later use can be authorized as, so nothing proves
+ * it was the named person's own grant.
  */
 export function automationStudioResultCheckAuthorizationFromMetadata(value: unknown): AutomationStudioResultCheckAuthorization | undefined {
   const stored = jsonObjectFromUnknown(value);
   if (!stored) return undefined;
   const keyId = stringSetting(stored.keyId, "");
   const authorizedByUserId = stringSetting(stored.authorizedByUserId, "");
-  const unlockSessionId = stringSetting(stored.unlockSessionId, "");
   const maxTotalCostUsd = finiteNumber(stored.maxTotalCostUsd);
   const maxCostUsdPerCall = finiteNumber(stored.maxCostUsdPerCall);
   const grantedAtMs = finiteNumber(stored.grantedAtMs);
   const expiresAtMs = finiteNumber(stored.expiresAtMs);
-  if (!keyId || !authorizedByUserId || !unlockSessionId) return undefined;
+  const grantedThrough = grantOf(stored);
+  const authorizationId = grantedThrough?.kind === "legacy_unlock" ? stringSetting(stored.authorizationId, "legacy") : stringSetting(stored.authorizationId, "");
+  if (!keyId || !authorizedByUserId || !grantedThrough || !authorizationId) return undefined;
   if (maxTotalCostUsd === undefined || maxCostUsdPerCall === undefined || grantedAtMs === undefined || expiresAtMs === undefined) return undefined;
   const repair = repairClause(stored.repair);
-  return { taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, authorizedByUserId, unlockSessionId, keyId, maxTotalCostUsd, maxCostUsdPerCall, grantedAtMs, expiresAtMs, ...(repair ? { repair } : {}) };
+  return { taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND, authorizationId, authorizedByUserId, grantedThrough, keyId, maxTotalCostUsd, maxCostUsdPerCall, grantedAtMs, expiresAtMs, ...(repair ? { repair } : {}) };
+}
+
+/**
+ * What a `standing` key-use principal is bound to, or `null` when no live
+ * grant matches it. The key's per-use authority asks this at every use: the
+ * Flow's stored grant must carry this `authorizationId`, belong to this
+ * person, be a current grant (never `legacy_unlock`), be unexpired, and cover
+ * the purpose -- a repair only where the repair clause is switched on. A
+ * withdrawn or replaced grant therefore authorizes nothing, whatever a caller
+ * put in the principal.
+ */
+export function automationStudioStandingResultCheckGrant(
+  flowMetadata: unknown,
+  principal: { userId: string; authorizationId: string; purpose: string },
+  nowMs: number
+): { grantedThrough: Exclude<AutomationStudioResultCheckGrant, { kind: "legacy_unlock" }>; keyId: string; expiresAtMs: number } | null {
+  const training = jsonObjectFromUnknown(jsonObjectFromUnknown(flowMetadata)?.trainingModeSettings);
+  const authorization = automationStudioResultCheckAuthorizationFromMetadata(jsonObjectFromUnknown(training?.resultCheck)?.authorization);
+  if (!authorization || authorization.grantedThrough.kind === "legacy_unlock") return null;
+  if (authorization.authorizationId !== principal.authorizationId || authorization.authorizedByUserId !== principal.userId) return null;
+  if (!(authorization.expiresAtMs > nowMs)) return null;
+  if (principal.purpose !== "loop_verification" && !(principal.purpose === "repair" && authorization.repair?.enabled === true)) return null;
+  return { grantedThrough: authorization.grantedThrough, keyId: authorization.keyId, expiresAtMs: authorization.expiresAtMs };
+}
+
+/** How the stored grant was given: the person, a paired client, or the pre-2026-11-16 unlock record. */
+function grantOf(stored: JsonObject): AutomationStudioResultCheckGrant | undefined {
+  const through = jsonObjectFromUnknown(stored.grantedThrough);
+  if (through?.kind === "person") return { kind: "person" };
+  if (through?.kind === "client") {
+    const trustedClientId = stringSetting(through.trustedClientId, "");
+    return trustedClientId ? { kind: "client", trustedClientId } : undefined;
+  }
+  if (stored.grantedThrough === undefined && stringSetting(stored.unlockSessionId, "")) return { kind: "legacy_unlock" };
+  return undefined;
 }
 
 /**

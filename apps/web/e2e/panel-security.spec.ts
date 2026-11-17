@@ -50,7 +50,7 @@ test("the Keys list shows each key's name and state and never a value", async ({
   const keys = section(page, "Keys").getByRole("list", { name: "Keys" });
   await expect(keys).toBeVisible();
   for (const name of fixture.modelKeyNames) await expect(keys.getByRole("listitem").filter({ hasText: name })).toHaveCount(1);
-  await expect(keys.getByRole("listitem").first()).toContainText(/Locked|Unlocked|Turned off|Lock state not known/);
+  await expect(keys.getByRole("listitem").first()).toContainText(/Available|Turned off|Availability not known|Sign in to the panel once|Host key protection unavailable|Saved key could not be read|FluxIQ update required/);
   await expectNoKeyValue(page);
 });
 

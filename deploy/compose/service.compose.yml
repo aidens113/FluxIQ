@@ -3,7 +3,7 @@
 # listener, with Caddy terminating TLS.
 #
 #   cp deploy/env/service.env.example deploy/env/service.env   # then edit it
-#   # write deploy/secrets/provisioning-token and deploy/secrets/setup-code
+#   # write provisioning-token, setup-code and versioned secret-keyring in deploy/secrets
 #   docker compose -f deploy/compose/service.compose.yml up -d --build
 #
 # Two networks:
@@ -39,9 +39,11 @@ services:
       FLUXIQ_PROVISIONING_ALLOWED_CIDRS: ${FLUXIQ_PROVISIONING_SUBNET:-172.31.250.0/24}
       FLUXIQ_PROVISIONING_TOKEN_FILE: /run/secrets/provisioning_token
       FLUXIQ_SETUP_CODE_FILE: /run/secrets/setup_code
+      FLUXIQ_SECRET_KEYS_KEYRING_FILE: /run/secrets/secret_keyring
     secrets:
       - provisioning_token
       - setup_code
+      - secret_keyring
     volumes:
       - fluxiq-data:/data
     read_only: true
@@ -99,6 +101,8 @@ secrets:
   # characters. The server stops reading it once the owner is claimed.
   setup_code:
     file: ${FLUXIQ_SECRETS_DIR:-../secrets}/setup-code
+  secret_keyring:
+    file: ${FLUXIQ_SECRETS_DIR:-../secrets}/secret-keyring
 
 volumes:
   fluxiq-data: {}

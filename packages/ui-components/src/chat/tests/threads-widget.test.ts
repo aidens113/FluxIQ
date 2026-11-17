@@ -399,7 +399,7 @@ test("without a history option the window is as it was, with no control", async 
 
 test("the heading is a title in words with one thread and no host title bar, never an id", async () => {
   const core = threadsCore([thread("conv-secret-id-1", { subjectKind: "project", title: null })]);
-  await mounted(core.transport(), { threads: hear().threads }, { projectName: "Company website" }, async (_chat, root) => {
+  await mounted(core.transport(), { threads: hear().threads, chatBar: false }, { projectName: "Company website" }, async (_chat, root) => {
     await settle();
     const title = root.byClass("chat-thread-title")[0]!;
     assert.equal(title.hidden, false);
@@ -510,7 +510,7 @@ test("New chat asks Core for a fresh thread about the host's project, opens it, 
     assert.equal(nav.hidden, true, "the new chat takes the drawer's place");
     assert.equal(toggle.getAttribute("aria-expanded"), "false");
     assert.ok(core.calls.listAll.length > lists, "the list is read again");
-    assert.deepEqual(rowNames(root), ["Bravo", "This project", "Charlie", "Alpha"]);
+    assert.deepEqual(rowNames(root), ["Bravo", "New chat", "Charlie", "Alpha"]);
     assert.equal(row(root, "conv-new-4").getAttribute("data-selected"), "true");
   });
   const panel = threadsCore([]);
@@ -643,5 +643,30 @@ test("the drawer closes on Escape and on a pick; a column keeps the list beside 
     press(root, "A", "chat-thread-open");
     nav.dispatch("keydown", { key: "Escape", preventDefault: () => undefined });
     assert.equal(nav.hidden, false, "a column never closes");
+  });
+});
+
+test("a new chat's title shows in the list and the chat bar right after its first message, without reopening", async () => {
+  const core = threadsCore([]);
+  const send0 = core.transport({ actions: true });
+  const original = send0.conversation.send;
+  send0.conversation.send = async (message) => {
+    const result = await original(message);
+    const made = core.threads.find((candidate) => candidate.title === undefined && candidate.turns.length > 0);
+    if (made !== undefined) made.title = "Find the cheapest flight";
+    return result;
+  };
+  const { heard, threads } = hear({ onTitle: (title) => heard.titles.push(title) });
+  await mounted(send0, { threads }, { projectId: "project-1" }, async (chat, root) => {
+    await settle();
+    root.byClass("chat-thread-create")[0]?.dispatch("click");
+    await settle();
+    send(root, "Find the cheapest flight to Oslo");
+    await settle();
+    await settle();
+    assert.ok(core.calls.listAll.length >= 2);
+    assert.ok(rowNames(root).includes("Find the cheapest flight"), `list names: ${rowNames(root).join("|")}`);
+    assert.equal(heard.titles.at(-1), "Find the cheapest flight");
+    assert.equal(openThread(chat) !== undefined, true);
   });
 });

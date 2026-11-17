@@ -1,0 +1,3 @@
+.connect-login { min-height: 100vh; display: grid; align-content: center; justify-items: center; gap: var(--space-lg); padding: var(--space-xl); }
+.connect-login > .auth-page { min-height: auto; padding: 0; }
+.connect-login > p { margin: 0; text-align: center; }

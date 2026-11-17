@@ -16,17 +16,22 @@ vi.mock("next/headers", () => ({
   })),
 }));
 
-vi.mock("../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
+vi.mock("../../../../../../lib/fluxiq", () => {
+  const getFluxIQ = () => ({
     programs: {
       api: { call, endpoints },
       identityAccess: { validateSession, snapshot },
       clientGateway: { authorizeToken },
       automationStudio: { assertProjectDomainAccess },
     },
-  }),
-  getFluxIQWebRuntimeStatus: vi.fn(),
-}));
+  });
+  return {
+    getFluxIQ,
+    getFluxIQWorkspaces: () => ({ tenancy: "single", primaryWorkspaceId: "workspace-main", acquire: async () => ({ fluxiq: getFluxIQ(), release: vi.fn() }) }),
+    getFluxIQWebRuntimeStatus: vi.fn(),
+    isCurrentFluxIQPrimary: () => true,
+  };
+});
 
 import { GET, POST } from "../route";
 
@@ -72,6 +77,8 @@ const ALLOWLISTED = [
   "get-project-part",
   "save-project-part",
   "run-project-part",
+  "projects",
+  "create-project",
 ];
 
 const CLASSIFICATIONS: Record<string, string> = {
@@ -114,10 +121,16 @@ const CLASSIFICATIONS: Record<string, string> = {
   "get-project-part": "read",
   "save-project-part": "authoring",
   "run-project-part": "authoring",
+  // As handlers/projects.ts registers them: listing reads, creating authors.
+  "projects": "read",
+  "create-project": "authoring",
 };
 
 /** A run by token with no mode is pinned to no LLM intervention; every other body passes as sent. */
 function forwardedPayload(endpoint: string, body: Record<string, unknown>) {
+  // A paired client lists projects with no input, and creates one from its name alone.
+  if (endpoint === "projects") return {};
+  if (endpoint === "create-project") return { name: body.name };
   return endpoint === "run-runtime-session" ? { ...body, adaptiveMode: "no_llm_intervention" } : body;
 }
 
@@ -224,7 +237,7 @@ describe("a paired client's bearer token", () => {
 
   it.each(ALLOWLISTED)("reaches %s as the person who approved the pairing, in the session's own domain", async (endpoint) => {
     // A carry-on names an attempt and an amount, and never a Flow (its narrowing refuses one).
-    const body: Record<string, unknown> = endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
+    const body: Record<string, unknown> = endpoint === "projects" ? {} : endpoint === "create-project" ? { name: "Loans" } : endpoint === "run-project-part" ? { projectId: "project-1", partId: "part-1" } : endpoint === "carry-on-task-attempt" ? { projectId: "project-1", attemptId: "attempt-1", addUsd: 0 } : endpoint === "rename-conversation" ? { projectId: "project-1", conversationId: "conv-1", title: "Loans" } : endpoint === "delete-conversation" ? { projectId: "project-1", conversationId: "conv-1" } : endpoint === "rename-task" ? { projectId: "project-1", taskId: "task-1", title: "Loans" } : endpoint === "update-task-settings" ? { projectId: "project-1", taskId: "task-1", humanness: 40 } : endpoint === "update-flow-settings" ? { projectId: "project-1", flowId: "flow-1", flow: { metadata: { humanness: 40 } } } : endpoint === "remove-task" || endpoint === "run-task-again" ? { projectId: "project-1", taskId: "task-1" } : { projectId: "project-1", flowId: "flow-1" };
     const flowDetail = endpoint === "get-flow-metadata-detail" || endpoint === "update-flow-settings";
     if (flowDetail) {
       // Real detail is richer than a paired client may read. The positive
@@ -238,6 +251,17 @@ describe("a paired client's bearer token", () => {
           metadata: { humanness: 40, llmExecutionSettings: { model: "fixture-model" }, checkAuthorization: "fixture-only-authorization" }
         }
       } });
+    }
+    // Core's project answers carry owners and descriptions; a paired client is
+    // answered only each project's id, name and update time.
+    if (endpoint === "projects") {
+      call.mockResolvedValue({ ok: true, requestContext: { personUserId: "fixture-person" }, payload: {
+        projects: [{ id: "project-1", name: "Loans", description: "Fixture description", owners: ["user:owner"], updatedAt: 5 }],
+        categories: [{ id: "category-1", name: "Fixture category" }]
+      } });
+    }
+    if (endpoint === "create-project") {
+      call.mockResolvedValue({ ok: true, payload: { project: { id: "project-2", name: "Loans", owners: ["user:owner"], categoryId: "category-1", updatedAt: 6 } } });
     }
     const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
 
@@ -258,7 +282,11 @@ describe("a paired client's bearer token", () => {
     });
     expect(await response.json()).toEqual({ ok: true, payload: flowDetail
       ? { flow: { flowId: "flow-1", metadata: { humanness: 40 } } }
-      : { conversation: { id: "c1" } } });
+      : endpoint === "projects"
+        ? { projects: [{ id: "project-1", name: "Loans", updatedAt: 5 }] }
+        : endpoint === "create-project"
+          ? { project: { id: "project-2", name: "Loans", updatedAt: 6 } }
+          : { conversation: { id: "c1" } } });
   });
 
   it("mirrors Core's paired-client allowlist for Automation Studio exactly", () => {

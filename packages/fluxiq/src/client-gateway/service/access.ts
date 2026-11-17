@@ -51,10 +51,15 @@ export class ClientGatewayAccess {
 
   /** Ends the trust this credential speaks for: a browser forgetting its pairing while it had no socket. False when it speaks for none. */
   async forgetByCredential(token: string): Promise<boolean> {
-    await this.lifecycle.refuseReuse(token);
-    const client = this.trustedClients.resolveByToken(token);
-    if (!client || !this.trustedClients.isActive(client)) return false;
-    return this.revokeTrustedClient(client.trustedClientId, "forgotten by its person");
+    await this.facade.ready();
+    const credential = await this.trustedClients.resolveForgetCredential(token);
+    if (!credential) return false;
+    if (credential.status === "obsolete") {
+      this.audit.record("credential.reuse_detected", "A retired credential was presented, so this client's trust was revoked.", { trustedClientId: credential.trustedClientId, clientId: credential.clientId });
+      await this.facade.revokeTrustedClient(credential.trustedClientId, "credential reuse detected");
+      return false;
+    }
+    return this.revokeTrustedClient(credential.trustedClientId, "forgotten by its person");
   }
 
   /**
@@ -102,16 +107,17 @@ export class ClientGatewayAccess {
 
   async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
     await this.facade.ready();
-    const trustedClient = this.trustedClients.get(trustedClientId);
-    if (!trustedClient || trustedClient.revokedAt) return false;
-    await this.trustedClients.revoke(trustedClient, reason);
+    const decision = await this.trustedClients.revokeById(trustedClientId, reason);
+    if (!decision) return false;
+    const { trustedClient, changed } = decision;
+    if (changed) this.audit.record("trust.revoked", "Trusted client access revoked.", { trustedClientId, clientId: trustedClient.clientId, reason });
+    // Cleanup may have failed after a prior durable revoke. Repetition still retries it, outside the registry queue.
     await this.custody.forgotten(trustedClientId);
     for (const session of this.sessions.listReadyByTrustedClient(trustedClientId)) {
       this.trace.lifecycle({ sessionId: session.sessionId, clientId: session.clientId }, "trust.revoked", { trustedClientId, reason });
       await this.transport.send(session.sessionId, this.transport.message("server.disconnect", { reason: "Client trust was revoked." }, session));
       this.facade.disconnect(session.sessionId, "client trust revoked");
     }
-    this.audit.record("trust.revoked", "Trusted client access revoked.", { trustedClientId, clientId: trustedClient.clientId, reason });
-    return true;
+    return changed;
   }
 }

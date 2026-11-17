@@ -33,6 +33,7 @@ const OPCODE = { continuation: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 1
 export class NativeWebSocketConnection implements ClientGatewaySocket {
   private buffer: Buffer = Buffer.alloc(0);
   private closed = false;
+  private notifiedClosed = false;
   private fragmentOpcode: number | null = null;
   private fragments: Buffer[] = [];
   private fragmentBytes = 0;
@@ -43,7 +44,10 @@ export class NativeWebSocketConnection implements ClientGatewaySocket {
     // otherwise keep the upgraded socket, its session and the listener's close waiting forever.
     options.socket.on("end", () => options.socket.destroy());
     options.socket.on("close", () => this.markClosed());
-    options.socket.on("error", () => this.markClosed());
+    options.socket.on("error", () => {
+      this.markClosed();
+      options.socket.destroy();
+    });
   }
 
   /** Whether the connection still takes frames in and sends them out. */
@@ -74,10 +78,7 @@ export class NativeWebSocketConnection implements ClientGatewaySocket {
   }
 
   close(code = 1000, reason = ""): void {
-    if (this.closed) return;
-    this.writeFrame(OPCODE.close, closePayload(code, reason));
-    this.closed = true;
-    this.options.socket.end();
+    this.terminate(code, reason);
   }
 
   /** Closes with `code` and destroys the socket once the close frame is flushed; nothing more is read from it. */
@@ -87,6 +88,8 @@ export class NativeWebSocketConnection implements ClientGatewaySocket {
     this.closed = true;
     this.buffer = Buffer.alloc(0);
     this.fragments = [];
+    this.fragmentBytes = 0;
+    this.markClosed();
     const { socket } = this.options;
     const timer = setTimeout(() => socket.destroy(), TERMINATE_FLUSH_MS);
     timer.unref();
@@ -144,9 +147,14 @@ export class NativeWebSocketConnection implements ClientGatewaySocket {
     this.options.socket.write(encodeWebSocketFrame(opcode, payload));
   }
 
-  // Both a socket's `close` and its `error` end the connection; `onClose` hears each, and its owner keeps the first.
+  // Logical close aborts admission immediately; later socket error/close events never notify twice.
   private markClosed(): void {
     this.closed = true;
+    this.buffer = Buffer.alloc(0);
+    this.fragments = [];
+    this.fragmentBytes = 0;
+    if (this.notifiedClosed) return;
+    this.notifiedClosed = true;
     this.options.onClose();
   }
 }

@@ -1,133 +1,151 @@
-// The trace artifact upload (traces and offline trials, P2; D13): a paired
-// client's bearer token, bound to its own gateway session; HTML, CSS, images
-// and fonts only; 20 MB by header and by body; the digest verified by the
-// gateway's trace intake; the answer says how many traces took it.
-
-import { createHash } from "node:crypto";
+import "./mocks";
 import { fileURLToPath } from "node:url";
 import { CLIENT_GATEWAY_TRACE_ARTIFACT_PATH } from "fluxiq/client-gateway";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const authorizeToken = vi.fn();
-const receiveTraceArtifact = vi.fn();
-
-const snapshot = vi.fn();
-
-// A real registry on the local profile decides the route, as live; the token acts as the person who approved it.
-vi.mock("../../../../../../lib/fluxiq", async () => {
-  const { GlobalProgramApiRegistry } = await import("fluxiq");
-  const api = new GlobalProgramApiRegistry();
-  return { getFluxIQ: () => ({ programs: { api, identityAccess: { snapshot }, clientGateway: { authorizeToken, receiveTraceArtifact } } }) };
-});
-
+import { drainState } from "fluxiq/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registry, runtime } from "../../../../../../lib/workspaces/routes/tests/route-runtime";
 import { PUT } from "../route";
+import { BODY, SHA, closeTraceRuntime, resetTraceRuntime, traceRuntime, uploadRequest } from "./trace-runtime";
 
-const TOKEN = "pairing-token-secret-value";
-const BODY = new TextEncoder().encode("<!doctype html><p>snapshot</p>");
-const SHA = createHash("sha256").update(BODY).digest("hex");
+beforeEach(resetTraceRuntime);
+afterEach(closeTraceRuntime);
+const upload = (options: Parameters<typeof uploadRequest>[0] = {}) => PUT(uploadRequest(options), { params: Promise.resolve({ sha256: options.sha256 ?? SHA }) });
 
-function upload(input: { sha256?: string; token?: string | null; mediaType?: string; body?: Uint8Array<ArrayBuffer>; contentLength?: string; query?: string } = {}) {
-  const sha256 = input.sha256 ?? SHA;
-  const body = input.body ?? BODY;
-  const token = input.token === undefined ? TOKEN : input.token;
-  return PUT(
-    new Request(`http://127.0.0.1${CLIENT_GATEWAY_TRACE_ARTIFACT_PATH}/${sha256}${input.query ?? ""}`, {
-      method: "PUT",
-      headers: {
-        "content-type": input.mediaType ?? "text/html; charset=utf-8",
-        "content-length": input.contentLength ?? String(body.byteLength),
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body,
-    }),
-    { params: Promise.resolve({ sha256 }) },
-  );
-}
-
-beforeEach(() => {
-  authorizeToken.mockReset();
-  receiveTraceArtifact.mockReset();
-  snapshot.mockReset();
-  snapshot.mockResolvedValue({ users: [{ id: "user:owner", roleId: "role:viewer", enabled: true }], roles: [{ id: "role:viewer", permissions: ["programs.read"] }] });
-  authorizeToken.mockResolvedValue({ sessionId: "gateway-session-1", clientId: "client-1", trustedClientId: "trusted-1", operatorUserId: "user:owner", metadata: { domainId: "web-automation" } });
-  receiveTraceArtifact.mockImplementation((_sessionId: string, artifact: { sha256: string; bytes: Uint8Array }) =>
-    createHash("sha256").update(artifact.bytes).digest("hex") === artifact.sha256 ? { status: "accepted", traces: 2 } : { status: "refused", reason: "digest_mismatch" },
-  );
-});
-
-describe("the trace artifact route", () => {
-  it("lives at the path the wire contract names", () => {
-    const routeDirectory = fileURLToPath(new URL("..", import.meta.url)).replace(/\\/g, "/");
-    expect(routeDirectory).toMatch(new RegExp(`/app${CLIENT_GATEWAY_TRACE_ARTIFACT_PATH}/\\[sha256\\]/$`));
+describe("held tenant trace artifact upload", () => {
+  it("lives at the public wire contract's path", () => {
+    expect(fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").endsWith(`${CLIENT_GATEWAY_TRACE_ARTIFACT_PATH}/[sha256]/`)).toBe(true);
   });
 
-  it("hands the artifact to the trace intake for the client's own session, and answers how many traces took it", async () => {
-    const response = await upload();
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, payload: { sha256: SHA, traces: 2 } });
-    expect(authorizeToken).toHaveBeenCalledWith(TOKEN);
-    expect(receiveTraceArtifact).toHaveBeenCalledWith("gateway-session-1", { sha256: SHA, mediaType: "text/html", bytes: BODY });
+  it("passes colliding ids and exact bytes only to the proved tenant gateway", async () => {
+    const a = await upload();
+    const b = await upload({ token: "trace-b", query: "?domainId=domain-b&sessionId=forged&workspaceId=tenant-a" });
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(await a.json()).toEqual({ ok: true, payload: { sha256: SHA, traces: 0 } });
+    expect(await b.json()).toEqual({ ok: true, payload: { sha256: SHA, traces: 0 } });
+    for (const tenant of ["a", "b"] as const) expect(traceRuntime.intakes.get(tenant)).toHaveBeenCalledWith("same-session", { sha256: SHA, mediaType: "text/html", bytes: BODY });
+    expect(traceRuntime.intakes.get("primary")).not.toHaveBeenCalled();
+    expect(runtime.resolveBrowser.mock.calls).toEqual([["trace-a"], ["trace-b"]]);
+    expect(runtime.manager.acquire).not.toHaveBeenCalled();
+    expect(runtime.releases.a).toHaveBeenCalledOnce();
+    expect(runtime.releases.b).toHaveBeenCalledOnce();
+    expect(a.headers.get("cache-control")).toBe("private, no-store");
   });
 
-  it("answers zero traces as success: the session is simply not traced", async () => {
-    receiveTraceArtifact.mockReturnValue({ status: "accepted", traces: 0 });
-    const response = await upload({ mediaType: "font/woff2" });
+  it("freezes only the proved browser IAM resource, ignoring body/query authority claims", async () => {
+    const authorize = vi.spyOn(runtime.tenantA.programs.api, "authorize");
+    expect((await upload({ query: "?domainId=domain-a&trustedClientId=foreign&operatorUserId=person-b" })).status).toBe(200);
+    expect(authorize.mock.calls.length).toBeGreaterThan(0);
+    for (const [input] of authorize.mock.calls) {
+      expect(input.action).toBe("gateway:PutTraceArtifact");
+      expect(input.resources).toEqual({ kind: "client", clientId: "same-trust" });
+    }
+  });
 
+  it("keeps upper-case digest normalization and zero-open-traces success", async () => {
+    const response = await upload({ sha256: SHA.toUpperCase() });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, payload: { sha256: SHA, traces: 0 } });
+    expect(traceRuntime.intakes.get("a")).toHaveBeenCalledWith("same-session", expect.objectContaining({ sha256: SHA }));
   });
 
-  it("takes a digest written in upper case as its lower-case form", async () => {
-    expect((await upload({ sha256: SHA.toUpperCase() })).status).toBe(200);
-    expect(receiveTraceArtifact).toHaveBeenCalledWith("gateway-session-1", expect.objectContaining({ sha256: SHA }));
-  });
-});
-
-describe("the trace artifact route refuses", () => {
-  it("an upload with no bearer token, or one the gateway does not know, before reading anything", async () => {
-    expect((await upload({ token: null })).status).toBe(401);
-    expect(authorizeToken).not.toHaveBeenCalled();
-    authorizeToken.mockResolvedValue(null);
-    const response = await upload({ token: "unknown-token" });
-    expect(response.status).toBe(401);
-    expect(JSON.stringify(await response.json())).not.toContain("unknown-token");
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
+  it.each(["text/css", "image/png", "font/woff2"])("preserves accepted %s media", async mediaType => {
+    expect((await upload({ mediaType })).status).toBe(200);
+    expect(traceRuntime.intakes.get("a")).toHaveBeenCalledWith("same-session", expect.objectContaining({ mediaType }));
   });
 
-  it("a client reaching for a domain other than the one its pairing bound", async () => {
-    expect((await upload({ query: "?domainId=desktop-automation" })).status).toBe(403);
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
-  });
-
-  it("a digest that is not 64 hex characters", async () => {
-    expect((await upload({ sha256: "not-a-digest" })).status).toBe(400);
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
-  });
-
-  it("a media type outside HTML, CSS, images and fonts", async () => {
-    for (const mediaType of ["application/javascript", "text/plain", "application/octet-stream", "image", "fontish/woff", ""]) {
-      expect((await upload({ mediaType })).status).toBe(415);
+  it("refuses absent or unknown bearer proof before reading the body", async () => {
+    for (const token of [null, "unknown"]) {
+      const request = uploadRequest({ token });
+      const read = vi.spyOn(request, "arrayBuffer");
+      expect((await PUT(request, { params: Promise.resolve({ sha256: SHA }) })).status).toBe(401);
+      expect(read).not.toHaveBeenCalled();
     }
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
+    expect(runtime.releases.a).not.toHaveBeenCalled();
   });
 
-  it("an upload over 20 MB, by its declared length or by its body", async () => {
-    expect((await upload({ contentLength: String(20 * 1024 * 1024 + 1) })).status).toBe(413);
-    const oversized = new Uint8Array(20 * 1024 * 1024 + 1);
-    expect((await upload({ body: oversized, contentLength: "1", sha256: createHash("sha256").update(oversized).digest("hex"), mediaType: "image/png" })).status).toBe(413);
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
+  it("refuses the panel channel before proof lookup rather than falling back to bearer", async () => {
+    for (const cookie of [runtime.sessions.a, "invalid-cookie"]) expect((await upload({ cookie })).status).toBe(403);
+    expect(runtime.resolveBrowser).not.toHaveBeenCalled();
+    expect(runtime.manager.acquire).not.toHaveBeenCalled();
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
   });
 
-  it("an empty body", async () => {
+  it("refuses a foreign domain and managed sessions before intake", async () => {
+    expect((await upload({ query: "?domainId=domain-b" })).status).toBe(403);
+    traceRuntime.sessions.get("a")!.managedHostId = "managed-elsewhere";
+    expect((await upload()).status).toBe(401);
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
+    expect(runtime.releases.a).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves Core's digest, media, empty and size refusals without intake", async () => {
+    expect((await upload({ sha256: "invalid" })).status).toBe(400);
+    for (const mediaType of ["application/javascript", "text/plain", "application/octet-stream", "image", "fontish/woff", ""]) expect((await upload({ mediaType })).status).toBe(415);
     expect((await upload({ body: new Uint8Array(0) })).status).toBe(400);
-    expect(receiveTraceArtifact).not.toHaveBeenCalled();
+    expect((await upload({ contentLength: String(20 * 1024 * 1024 + 1) })).status).toBe(413);
+    expect((await upload({ body: new Uint8Array(20 * 1024 * 1024 + 1), contentLength: "1" })).status).toBe(413);
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
   });
 
-  it("bytes that do not hash to the digest in the path", async () => {
+  it("delegates digest mismatch to the real Core gateway intake", async () => {
     const response = await upload({ sha256: "c".repeat(64) });
-
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ ok: false, error: "Trace artifact digest does not match its bytes." });
+    expect(traceRuntime.intakes.get("a")).toHaveBeenCalledOnce();
+    expect(runtime.releases.a).toHaveBeenCalledOnce();
+  });
+
+  it("handles malformed and rejected params safely while holding/releasing one lease", async () => {
+    const params = { sha256: SHA };
+    Object.assign(params, { sha256: 123 });
+    expect((await PUT(uploadRequest(), { params: Promise.resolve(params) })).status).toBe(400);
+    const rejected = { get params(): Promise<{ sha256: string }> { return Promise.reject(new Error("private params path")); } };
+    const response = await PUT(uploadRequest(), rejected);
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain("private params");
+    expect(runtime.releases.a).toHaveBeenCalledTimes(2);
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
+  });
+
+  it.each(["body", "intake"])("sanitizes %s exceptions and releases after work settles", async source => {
+    const request = uploadRequest();
+    if (source === "body") vi.spyOn(request, "arrayBuffer").mockRejectedValueOnce(new Error("private body credential-value"));
+    else traceRuntime.intakes.get("a")!.mockImplementationOnce(() => { throw new Error("private intake credential-value"); });
+    const response = await PUT(request, { params: Promise.resolve({ sha256: SHA }) });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ ok: false, error: "Trace artifact upload could not be completed." });
+    expect(runtime.releases.a).toHaveBeenCalledOnce();
+  });
+
+  it("keeps tenant IAM denial/outage distinct without touching data", async () => {
+    runtime.policies.set("tenant-a", "none");
+    expect((await upload()).status).toBe(403);
+    runtime.policyError = true;
+    const response = await upload();
+    expect(response.status).toBe(503);
+    expect(await response.text()).not.toContain("private policy");
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
+    expect(runtime.releases.a).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows authorized in-flight completion while draining", async () => {
+    drainState.markDraining();
+    expect((await upload()).status).toBe(200);
+    expect(traceRuntime.intakes.get("a")).toHaveBeenCalledOnce();
+  });
+
+  it.each(["local", "self-hosted"] as const)("preserves %s single-root paired uploads", async profile => {
+    runtime.manager.tenancy = "single";
+    runtime.primary.programs.api = registry("workspace-main", profile);
+    const response = await upload({ token: "trace-primary" });
+    expect(response.status).toBe(200);
+    expect(traceRuntime.intakes.get("primary")).toHaveBeenCalledOnce();
+    expect(traceRuntime.intakes.get("a")).not.toHaveBeenCalled();
+    expect(runtime.resolveBrowser).not.toHaveBeenCalled();
+    expect(runtime.manager.acquire).toHaveBeenCalledOnce();
+    expect(runtime.manager.acquire).toHaveBeenCalledWith("workspace-main");
+    expect(runtime.releases.primary).toHaveBeenCalledOnce();
   });
 });

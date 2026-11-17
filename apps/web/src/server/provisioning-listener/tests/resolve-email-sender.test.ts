@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,6 +14,21 @@ function tempDir(): string {
 const welcome = { template: "welcome", to: "a@example.test", variables: { displayName: "Ada", welcomeUrl: "https://app.example.test/welcome#token=t", expiresInHours: "24" } } as const;
 
 describe("resolveEmailSender", () => {
+  it("configures production delivery only when explicitly selected and complete", () => {
+    expect(resolveEmailSender("resend", "/unused", "/", { FLUXIQ_EMAIL_API_KEY: "test-key", FLUXIQ_EMAIL_FROM: "mail@example.test" }).kind).toBe("resend");
+    expect(() => resolveEmailSender("resend", "/unused", "/", {})).toThrow("API key");
+    expect(() => resolveEmailSender("resend", "/unused", "/", { FLUXIQ_EMAIL_API_KEY: "test-key" })).toThrow("sender address");
+    expect(resolveEmailSender(undefined, "/unused", "/", { FLUXIQ_EMAIL_API_KEY: "test-key", FLUXIQ_EMAIL_FROM: "mail@example.test" }).kind).toBe("file");
+  });
+
+  it("reads a mounted key relative to cwd and refuses ambiguous or unreadable sources", () => {
+    const dir = tempDir();
+    writeFileSync(path.join(dir, "mail-key"), "test-key\n");
+    const env = { FLUXIQ_EMAIL_API_KEY_FILE: "mail-key", FLUXIQ_EMAIL_FROM: "mail@example.test" };
+    expect(resolveEmailSender("resend", "/unused", dir, env).kind).toBe("resend");
+    expect(() => resolveEmailSender("resend", "/unused", dir, { ...env, FLUXIQ_EMAIL_API_KEY: "other-key" })).toThrow("only one");
+    expect(() => resolveEmailSender("resend", "/unused", dir, { ...env, FLUXIQ_EMAIL_API_KEY_FILE: "missing" })).toThrow("could not be read");
+  });
   it("answers the none sender for none", () => expect(resolveEmailSender("none", "/unused").kind).toBe("none"));
 
   it.each([undefined, "", "file"])("writes to the default directory for %j", async (value) => {

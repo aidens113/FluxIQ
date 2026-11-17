@@ -315,3 +315,27 @@ describe("the answer a model writes, read forgivingly", () => {
     expect(read('{"do": ')).toBeNull();
   });
 });
+
+describe("a message when the model key is missing", () => {
+  const keyless = (message: string): AutomationStudioConversationModel => ({ name: "keyless", decide: async () => { throw Object.assign(new Error(message), { code: "llm.provider_secret_unavailable" }); } });
+
+  it("gets exactly the setup reply, with no unrelated example", async () => {
+    const result = await interpret(keyless("There is no enabled DeepSeek key of yours in Secret Keys."), "make me a thing that is unrelated to anything");
+    expect(result.decision).toEqual({ kind: "reply", text: "No model key is set up yet, so add one in Settings, under AI keys." });
+    expect(result.keySetup).toBe(true);
+  });
+
+  it("still runs a saved Flow it is confidently asked for, since running one needs no model", async () => {
+    const result = await interpret(keyless("There is no enabled DeepSeek key of yours in Secret Keys."), "run my kettle flow");
+    expect(result).toMatchObject({
+      source: "closest_match",
+      decision: { kind: "invoke", invocation: { capabilityId: "run.execute", arguments: { flowId: "flow.kettle-1" } } }
+    });
+    expect(result.keySetup).toBeUndefined();
+  });
+
+  it("keeps its own words for a saved key that needs one sign-in", async () => {
+    const result = await interpret(keyless("This saved key requires recovery from its original encryption material."), "hello there");
+    expect(result.decision).toMatchObject({ kind: "reply", text: expect.stringContaining("needs one sign-in to the panel to upgrade it") });
+  });
+});

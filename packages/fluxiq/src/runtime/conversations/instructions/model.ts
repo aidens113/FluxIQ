@@ -31,8 +31,8 @@ export type AutomationStudioConversationModelRequest = {
 /**
  * Who sent the message: the person's user and the session they sent it from.
  * A model whose key is the person's own releases it against this -- Secret
- * Keys hands a key out only to the live, unlocked session of the user who
- * unlocked it -- so the caller travels with every attempt rather than being
+ * Keys hands a key out only for the authenticated principal of the user it
+ * belongs to -- so the caller travels with every attempt rather than being
  * assumed.
  */
 export type AutomationStudioConversationCaller = {

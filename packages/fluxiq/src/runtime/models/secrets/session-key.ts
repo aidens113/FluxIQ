@@ -1,52 +1,35 @@
 import { automationStudioLlmProviderLabel, type AutomationStudioLlmProviderId } from "../catalog/index.ts";
-import { AutomationStudioSecretsLockedError } from "./locked-error.ts";
 
 /** One key as Secret Keys lists it: metadata only, never a value. */
 export type AutomationStudioSessionKeySummary = { id: string; kind: string; provider?: string | undefined; enabled: boolean; updatedAtMs: number; createdBy?: string | undefined; metadata?: { model?: unknown } | undefined };
 
 /** The Secret Keys operations releasing a person's key needs. */
 export type AutomationStudioSessionKeyPorts = {
+  /** Current authenticated principal authorizes use; the host's protection key opens the stored key, so no held session is needed. Required: ports without it are refused. */
+  createUseAuthorization(input: { id: string; userId: string; sessionId: string; ttlMs: number; workspaceAssistant?: true }): Promise<{ authorizationId: string; keyId: string; keyUpdatedAtMs: number }>;
   /** Every key, most recently changed first, as Secret Keys lists them. */
   snapshot(): Promise<{ keys: AutomationStudioSessionKeySummary[] }>;
-  createSessionRevealAuthorization(input: { id: string; sessionId: string; userId: string; ttlMs: number }): Promise<{ authorizationId: string; keyId: string; keyUpdatedAtMs: number }>;
   revealKeyWithAuthorization(input: { authorizationId: string; id: string }): Promise<{ value: string }>;
   revokeRevealAuthorization(authorizationId: string): void;
-  /**
-   * The person's own live unlock in this workspace that holds a key, or null
-   * (Secret Keys' `unlockedSessionFor`). Present, a call whose named session
-   * cannot release the key falls back to it; never another user's session.
-   */
-  unlockedSessionFor?(userId: string): string | null;
-  /**
-   * In place of `unlockedSessionFor`, when the host decides by caller: a paired
-   * browser's unlock is its own and it falls back to nothing, so a lock on it holds
-   * while the person is signed in elsewhere.
-   */
-  fallbackUnlockFor?(userId: string, callerSessionId: string | null): string | null;
-  /** Whether this person's own unlock holds this key now. No key material. Present with `whenUnlockChanges`, a locked key waits rather than failing (`./locked-wait.ts`). */
-  sessionHoldsKey?(input: { sessionId: string; userId: string; id: string }): Promise<boolean>;
-  /** Resolves when something this person holds changes, or when `signal` aborts. */
-  whenUnlockChanges?(userId: string, signal?: AbortSignal): Promise<void>;
   /** `secrets:UseKey` for this person on this key. Absent allows. */
   authorizeUseKey?(userId: string, keyId: string): Promise<boolean>;
 };
 
-/** What a call adds to the caller: the Flow's own key, and the host the locked sentence names. */
+/** What a call adds to the caller: the Flow's own key and the workspace payer. */
 export type AutomationStudioSessionKeyOptions = {
   /** The Flow's `llmSecretKeyId`, when set: that key and no other. */
   flowKeyId?: string | undefined;
-  /** Where the person signs in, for the `secrets.locked` sentence ("app.getfluxiq.com"). */
-  instanceHost?: string | undefined;
+  /** Host-selected workspace payer; use authority must independently verify the owner offer and workspace choice. */
+  keyOwnerUserId?: string | undefined;
 };
 
 /** How long a one-use reveal may wait before it is claimed. It is claimed on the next line. */
 const REVEAL_TTL_MS = 10_000;
 
 /**
- * The key this call may use, released to the caller's own unlock. Throws, in
- * words a person can act on, when there is no such key or `secrets:UseKey`
- * refuses it, and `AutomationStudioSecretsLockedError` when no live unlock of
- * the caller holds it.
+ * The key this call may use, released to the caller's own authenticated
+ * principal. Throws, in words a person can act on, when there is no such key,
+ * `secrets:UseKey` refuses it, or the saved key needs recovery.
  */
 export async function releaseAutomationStudioSessionProviderKey(
   ports: AutomationStudioSessionKeyPorts,
@@ -55,9 +38,8 @@ export async function releaseAutomationStudioSessionProviderKey(
 ): Promise<string> {
   const { keys } = await ports.snapshot();
   const label = automationStudioLlmProviderLabel(options.provider);
-  const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
+  const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, options.keyOwnerUserId ?? caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
   if (!candidates.length) throw new Error(`There is no enabled ${label} key of yours in Secret Keys.`);
-  const sessions = callerSessions(ports, caller);
   let denied = 0;
   let refusal: unknown;
   for (const key of candidates) {
@@ -65,61 +47,24 @@ export async function releaseAutomationStudioSessionProviderKey(
       denied += 1;
       continue;
     }
-    for (const sessionId of sessions) {
-      let authorization: { authorizationId: string; keyId: string; keyUpdatedAtMs: number };
-      // Any refusal here means this unlock cannot open this key (absent, expired, another user's, or not holding it); the next one is tried.
-      try {
-        authorization = await ports.createSessionRevealAuthorization({ id: key.id, sessionId, userId: caller.userId, ttlMs: REVEAL_TTL_MS });
-      } catch (error) {
-        refusal = error;
-        continue;
-      }
-      if (authorization.keyId !== key.id || authorization.keyUpdatedAtMs !== key.updatedAtMs) {
-        ports.revokeRevealAuthorization(authorization.authorizationId);
-        throw new Error(`The ${label} key changed while it was being released.`);
-      }
-      return (await ports.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id })).value;
+    if (!caller.sessionId) throw new Error("A current authenticated principal is required to use a model key.");
+    let authorization: { authorizationId: string; keyId: string; keyUpdatedAtMs: number };
+    try {
+      authorization = await ports.createUseAuthorization({ id: key.id, userId: caller.userId, sessionId: caller.sessionId, ttlMs: REVEAL_TTL_MS, ...(options.keyOwnerUserId ? { workspaceAssistant: true as const } : {}) });
+    } catch (error) {
+      const code = error instanceof Error ? (error as Error & { code?: unknown }).code : undefined;
+      if (options.flowKeyId || !["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid"].includes(String(code))) throw error;
+      refusal = error;
+      continue;
     }
+    if (authorization.keyId !== key.id || authorization.keyUpdatedAtMs !== key.updatedAtMs) {
+      ports.revokeRevealAuthorization(authorization.authorizationId);
+      throw new Error(`The ${label} key changed while it was being released.`);
+    }
+    return (await ports.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id })).value;
   }
   if (denied === candidates.length) throw new Error("Your permissions do not allow your model key to be used here (secrets:UseKey).");
-  throw new AutomationStudioSecretsLockedError({ instanceHost: options.instanceHost, cause: refusal });
-}
-
-/**
- * True when this call would meet `secrets.locked`: there is a key it may use, and
- * no unlock it may use holds it. False when releasing it would succeed, and when
- * the refusal would be something else (no such key, `secrets:UseKey`), which the
- * release says in its own words. A selection that throws is not a lock.
- */
-export async function automationStudioSessionKeyLocked(
-  ports: AutomationStudioSessionKeyPorts,
-  caller: { userId: string; sessionId: string | null },
-  options: AutomationStudioSessionKeyOptions & { provider: AutomationStudioLlmProviderId; model?: string }
-): Promise<boolean> {
-  if (!ports.sessionHoldsKey) return false;
-  let candidates: AutomationStudioSessionKeySummary[];
-  try {
-    const { keys } = await ports.snapshot();
-    candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
-  } catch {
-    return false;
-  }
-  const sessions = callerSessions(ports, caller);
-  let usable = false;
-  for (const key of candidates) {
-    if (ports.authorizeUseKey && !(await ports.authorizeUseKey(caller.userId, key.id))) continue;
-    usable = true;
-    for (const sessionId of sessions) {
-      if (await ports.sessionHoldsKey({ sessionId, userId: caller.userId, id: key.id })) return false;
-    }
-  }
-  return usable;
-}
-
-/** The unlocks this call may use: the one it names, then whatever the host lets it fall back to. */
-function callerSessions(ports: AutomationStudioSessionKeyPorts, caller: { userId: string; sessionId: string | null }): string[] {
-  const fallback = (ports.fallbackUnlockFor ? ports.fallbackUnlockFor(caller.userId, caller.sessionId) : ports.unlockedSessionFor?.(caller.userId)) ?? null;
-  return [...new Set([caller.sessionId, fallback].filter((sessionId): sessionId is string => Boolean(sessionId)))];
+  throw refusal ?? new Error("No configured model key is available for this request.");
 }
 
 export function automationStudioSessionKeyProvider(key: AutomationStudioSessionKeySummary): AutomationStudioLlmProviderId | undefined {
@@ -132,7 +77,7 @@ function isProviderLlmKey(key: AutomationStudioSessionKeySummary, provider: Auto
   return automationStudioSessionKeyProvider(key) === provider && (!model || !key.metadata?.model || key.metadata.model === model);
 }
 
-/** The caller's own enabled DeepSeek keys, newest first, then legacy keys nobody is stamped on: only their unlock decides whether those open. */
+/** The caller's own enabled DeepSeek keys, newest first, then legacy keys nobody is stamped on. */
 function callerKeys(keys: readonly AutomationStudioSessionKeySummary[], userId: string, provider: AutomationStudioLlmProviderId, model?: string): AutomationStudioSessionKeySummary[] {
   const usable = keys.filter((key) => key.enabled && isProviderLlmKey(key, provider, model));
   return [...usable.filter((key) => key.createdBy === userId), ...usable.filter((key) => !key.createdBy)];

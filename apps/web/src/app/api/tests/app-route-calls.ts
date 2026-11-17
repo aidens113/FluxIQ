@@ -6,10 +6,13 @@
 import { POST as inviteMember } from "../accounts/invite/route";
 import { POST as changeMember } from "../accounts/member/route";
 import { GET as listMembers } from "../accounts/members/route";
+import { createHmac } from "node:crypto";
+import { connectRequestParams } from "../../../features/connect/model";
+import { POST as connectAuthorize } from "../connect/authorize";
+import { GET as listKeys, POST as enrollKey, DELETE as revokeKey } from "../keys/route";
 import { POST as approvePairing } from "../client-gateway/approve-pairing/route";
 import { POST as setStudioContext } from "../client-gateway/automation-studio-context/route";
 import { POST as dismissPairing } from "../client-gateway/dismiss-pairing/route";
-import { POST as forgetPairing } from "../client-gateway/forget-pairing/route";
 import { POST as firstProject } from "../client-gateway/first-project/route";
 import { GET as gatewaySnapshot } from "../client-gateway/snapshot/route";
 import { PUT as putTraceArtifact } from "../client-gateway/trace-artifacts/[sha256]/route";
@@ -21,7 +24,7 @@ import { GET as readStateAsset, PUT as writeStateAsset } from "../programs/autom
 import { GET as programDirectory } from "../programs/route";
 import { GET as listRecordings } from "../recordings/route";
 import { GET as readAudit } from "../security/audit/route";
-import { FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
+import { fixture, FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
 
 /** The project-scoped calls name this project; `a-` projects are alice's, `b-` bob's. */
 export type RouteProject = { projectId: string };
@@ -33,18 +36,37 @@ const HTML = new TextEncoder().encode("<!doctype html><p>snapshot</p>");
 /** A dummy password: the fixture accepts any re-proof. */
 const PROOF = { password: "a dummy password" };
 
+function authorizeConnection(caller: RouteCaller): Promise<Response> {
+  const origin = "https://app.example.test";
+  const request = { client_id: "fluxiq-browser-extension" as const, redirect_uri: `${origin}/connect/done`, code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", code_challenge_method: "S256" as const, state: "fixture-state-0123456789", client_install_id: "fixture-install", client_label: "Fixture browser" };
+  const form = connectRequestParams(request);
+  const base = routeRequest(caller, "/api/connect/authorize", { method: "POST" });
+  const evidence = createHmac("sha256", fixture.cookie ?? "no-session").update(`fluxiq-connect-consent-v1\0${form.toString()}`).digest("hex");
+  form.set("decision", "approve");
+  form.set("consent_evidence", evidence);
+  const headers = new Headers(base.headers);
+  fixture.cookieName = "__Host-fluxiq_session";
+  if (fixture.cookie) headers.set("cookie", `${fixture.cookieName}=${fixture.cookie}`);
+  headers.set("origin", origin);
+  headers.set("content-type", "application/x-www-form-urlencoded");
+  return connectAuthorize(new Request(`${origin}/api/connect/authorize`, { method: "POST", headers, body: form }));
+}
+
 function memberChange(action: string): RouteCall {
   return (caller) => changeMember(routeRequest(caller, "/api/accounts/member", { method: "POST", json: { action, userId: INVITEE.id, role: "read-only", proof: PROOF } }));
 }
 
 /** Keyed `METHOD path` (and ` (variant)`), as the IAM table names the route. */
 export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
+  "POST /api/connect/authorize": caller => authorizeConnection(caller),
+  "GET /api/keys": caller => listKeys(routeRequest(caller, "/api/keys")),
+  "POST /api/keys": caller => enrollKey(routeRequest(caller, "/api/keys", { method: "POST", json: { publicKey: "synthetic-public-key" } })),
+  "DELETE /api/keys": caller => revokeKey(routeRequest(caller, "/api/keys", { method: "DELETE", json: { keyId: "fixture-key" } })),
   "POST /api/client-gateway/approve-pairing": (caller) => approvePairing(routeRequest(caller, "/api/client-gateway/approve-pairing", { method: "POST", json: { pairingCode: "123456" } })),
   "POST /api/client-gateway/dismiss-pairing": (caller) => dismissPairing(routeRequest(caller, "/api/client-gateway/dismiss-pairing", { method: "POST", json: { pairingCode: "123456" } })),
   "POST /api/client-gateway/automation-studio-context": (caller, target) =>
     setStudioContext(routeRequest(caller, "/api/client-gateway/automation-studio-context", { method: "POST", json: { activeProjectId: target.projectId, activeFlowId: `${target.projectId}-flow` } })),
   "POST /api/client-gateway/first-project": (caller) => firstProject(routeRequest(caller, "/api/client-gateway/first-project", { method: "POST" })),
-  "POST /api/client-gateway/forget-pairing": (caller) => forgetPairing(routeRequest(caller, "/api/client-gateway/forget-pairing", { method: "POST" })),
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),
@@ -70,11 +92,7 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
       params: Promise.resolve({ projectId: target.projectId, sha256: FIXTURE_SHA })
     }),
   "GET /api/recordings": (caller) => listRecordings(routeRequest(caller, "/api/recordings")),
-  // Takes no request either: the cookie is all it reads.
-  "GET /api/accounts/members": (caller) => {
-    routeRequest(caller, "/api/accounts/members");
-    return listMembers();
-  },
+  "GET /api/accounts/members": (caller) => listMembers(routeRequest(caller, "/api/accounts/members")),
   "POST /api/accounts/invite": (caller) =>
     inviteMember(routeRequest(caller, "/api/accounts/invite", { method: "POST", json: { email: "new@example.test", displayName: "New", role: "read-only", proof: PROOF } })),
   "POST /api/accounts/member (set-role)": memberChange("set-role"),

@@ -9,9 +9,6 @@
 //   key, once the owner chose it and offered it, released server-side to the
 //   owner's live unlock for that call only: nothing the member receives or
 //   reads back carries the value;
-// - with the owner's key locked, the member's message ends with the typed
-//   `secrets.locked` error worded for the workspace's key, the owner's own
-//   with their own words, and no call reaches the provider;
 // - no key is shared automatically: another person's key pays only when it is
 //   both chosen for the workspace and offered by its holder; chosen alone,
 //   offered alone, or an offer withdrawn, and the sender is told in plain
@@ -25,7 +22,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { isSecretsLockedError, secretsLockedMessage, workspaceKeyLockedMessage } from "@fluxiq/contracts/platform";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IamPolicy, IamPolicySource } from "../../../../../platform/iam/index.ts";
 import { IAM_OWNER_FULL_ACCESS, IAM_READ_ONLY_ACCESS, IAM_USER_ACCESS } from "../../../../../platform/iam/predefined/index.ts";
@@ -97,13 +93,17 @@ async function workspace(profile: "service" | "local" = "service") {
   // The ports as the host binds them for a panel caller (`programs/_shared/runtime.ts`, `sessionKeyPorts` and `callerUnlock`).
   const keyPorts: AutomationStudioSessionKeyPorts = {
     snapshot: () => secretKeys.snapshot(),
-    createSessionRevealAuthorization: (input) => secretKeys.createSessionRevealAuthorization(input),
+    // Test adapter over a held session: a lent key opens on the holder's live unlock, anything else on the caller's own.
+    createUseAuthorization: async (input) => {
+      const holder = input.workspaceAssistant ? (await secretKeys.snapshot()).keys.find((key) => key.id === input.id)?.createdBy : undefined;
+      const sessionId = holder ? secretKeys.unlockedSessionFor(holder) ?? input.sessionId : input.sessionId;
+      return secretKeys.createSessionRevealAuthorization({ id: input.id, sessionId, userId: holder ?? input.userId, ttlMs: input.ttlMs });
+    },
     revealKeyWithAuthorization: (input) => secretKeys.revealKeyWithAuthorization(input),
-    revokeRevealAuthorization: (authorizationId) => secretKeys.revokeRevealAuthorization(authorizationId),
-    fallbackUnlockFor: (userId, sessionId) => (secretKeys.credentialUnlocks.mayFallBack(userId, sessionId ?? undefined) ? secretKeys.unlockedSessionFor(userId) : null)
+    revokeRevealAuthorization: (authorizationId) => secretKeys.revokeRevealAuthorization(authorizationId)
   };
   const provider = fakeProvider();
-  const source = panelAssistantKeyModelSource({ resolveAssistant: () => secretKeys.modelKeys.resolveAssistant(), keyPorts, instanceHost: HOST, fetchImpl: provider.fetchImpl });
+  const source = panelAssistantKeyModelSource({ resolveAssistant: () => secretKeys.modelKeys.resolveAssistant(), keyPorts, fetchImpl: provider.fetchImpl });
   panelAssistantOf(registry)!.bindModelSource(source);
   const call = (programId: string, endpoint: string, caller: ProgramApiActor, payload: Record<string, unknown> = {}) =>
     registry.call({ programId, endpoint, scope: { domainId: "domain.one" }, actor: caller, payload }) as Promise<ProgramApiResponse<any>>;
@@ -160,32 +160,6 @@ describe("the dock on the workspace's assistant key (service)", () => {
     expect(provider.credentials).toEqual([`Bearer ${TEAM_VALUE}`, `Bearer ${TEAM_VALUE}`]);
     // What the member is answered and reads back never carries it.
     expect(JSON.stringify([byMember.sent, byMember.read])).not.toContain(TEAM_VALUE);
-  });
-
-  it("with the owner's key locked, a member is told the workspace's key is locked and its owner must unlock it, the owner their own words, and no provider is reached", async () => {
-    const { secretKeys, send, unlock, provider, source, share } = await workspace();
-    await share();
-    await unlock(owner, OWNER_PASSWORD);
-    // The owner signs out: their only unlock goes.
-    expect(secretKeys.revokeSessionUnlock(owner.sessionId, { userId: owner.userId, administrator: false })).toBe(true);
-
-    const byMember = await send(member, "hello from a member");
-    expect(byMember.sent).toMatchObject({ ok: true });
-    expect(byMember.texts[1]).toContain(workspaceKeyLockedMessage(HOST));
-    expect(byMember.texts[1]).not.toContain(secretsLockedMessage(HOST));
-    // The holder still sees their own wording.
-    const byOwner = await send(owner, "hello from the owner");
-    expect(byOwner.texts[1]).toContain(secretsLockedMessage(HOST));
-    expect(provider.fetchImpl).not.toHaveBeenCalled();
-
-    // The model the dock was given throws the contract's typed error itself, not a generic provider failure.
-    const choice = await source({ userId: member.userId, sessionId: member.sessionId });
-    expect(choice.ok).toBe(true);
-    if (!choice.ok) return;
-    const failure = await choice.model.decide({ instructions: "x", transcript: [{ author: "person", text: "hi" }] }, { signal: new AbortController().signal, caller: { userId: member.userId, sessionId: member.sessionId } }).catch((error: unknown) => error);
-    expect(isSecretsLockedError(failure)).toBe(true);
-    expect((failure as Error).message).toBe(workspaceKeyLockedMessage(HOST));
-    expect(provider.fetchImpl).not.toHaveBeenCalled();
   });
 
   it("shares no key automatically: the owner's first key answers the owner, and a member is told who can choose one", async () => {

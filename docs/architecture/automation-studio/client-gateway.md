@@ -471,6 +471,28 @@ else: the actor comes from the session alone, an `authSessionId` the caller
 names is removed, and a review may not name a `reviewerId`. A token's reach is
 its approver's, in its bound domain, never another person's.
 
+**One person, one set of projects (t915).** The web panel's pages name no
+domain (no `?domainId=`), while a pairing binds the instance's domain
+(`FluxIQ.activeDomainId`). Two rules make them one view:
+
+- A signed-in person's Automation Studio call that names no domain works in
+  the instance's (`server/program-route/person-domain-scope.ts`), so a project,
+  category or recording the panel creates is the domain's, as one the extension
+  creates is, and its Flows can use the domain's nodes. Other programs keep the
+  URL's scope, since they key their own stores by it.
+- On an instance that serves a domain, the project list and the domain gate
+  treat "no domain" and that domain as one view
+  (`framework/automation-service/service/projects/domain-match.ts`,
+  `projectDomainMatches`): the instance's global projects, including every one
+  the panel made before t915, are listed and reachable beside the domain's, and
+  a route that names no domain reaches the domain's projects. A global project
+  stays global (its Flows keep the global scope).
+
+Before this, "no domain" was a partition of its own and each client saw only
+what it had made. Another named domain stays its own surface, IAM still
+decides each project per person, and a hosted tenant's projects live in its
+own instance's store. On an instance that serves no domain nothing changed.
+
 The allowlist lives in `packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`, and four rules
 bound it:
 
@@ -529,10 +551,9 @@ refusal is 403 with a sentence naming the field, never its value:
 - The one exception is the extension's Automations Run (t267). A run may carry
   `runIntent: "explore_and_adapt"`, and no other intent. It may then carry no
   `adaptiveMode`, and it runs under the Flow's own mode, so a saved Flow whose
-  page changed can be repaired. The run handler maps the paired actor to the
-  person's unlocked session (`runtime/conversations/commands/caller.ts`), so
-  their key pays. With no unlocked session the run gets no model at all. A
-  lasting consequence is still asked of the person act by act.
+  page changed can be repaired. The run retains the paired actor and resolves
+  its authenticated trusted client for each model use. Its person's configured
+  key pays subject to current IAM; no live panel unlock is required.
 - Without that intent, a paired token never asks the model into a run. One LLM
   call remains possible: a Flow's standing result check, which the person
   authorized on that Flow in the web panel, runs on a token run as on any other.
@@ -542,7 +563,8 @@ refusal is 403 with a sentence naming the field, never its value:
   `policyOverride`, `reviewerId` or `destination`.
 
 And a token call's answer is projected (`projectPairedClientResponse`): Secret
-Keys' `snapshot` answers `{ keys: [{ kind, provider, enabled }] }`, with no key
+Keys' `snapshot` answers kind/provider/enabled, safe availability and ownership
+metadata, with no unlock ticket or key
 name, id, description, metadata or value.
 
 `remove-recording-entry` (`runtime.control`, `authoring`) takes
@@ -661,9 +683,8 @@ same capabilities. The ids are:
   that automation.
 - **"Run it" is the Automations Run** (`runtime/conversations/commands/run-flow.ts`).
   It asks for `runIntent: "explore_and_adapt"`, so a broken step can be
-  repaired. The command's port calls as the person's unlocked session, so the
-  run endpoint cannot see the pairing. Every chat, paired or not, therefore
-  asks for `resultCheckCallerPays: "repair_checks"` itself. The endpoint
+  repaired. The command retains the authenticated caller and paired permissions.
+  Every chat, paired or not, asks for `resultCheckCallerPays: "repair_checks"` itself. The endpoint
   accepts that one value and refuses any other. The person's key pays only for
   the result checks that judge a repair, as with the extension's Run button
   (MVP item 23), so a run whose steps all succeed makes no model call on it. A
@@ -677,18 +698,16 @@ same capabilities. The ids are:
   said apart, from the endpoint's closed `reauthored` (`applied` once a whole
   re-run with it was judged to answer, `not_applied` otherwise), since a
   re-author is no Flow adaptation.
-- **A paired client spends its person's key.** A `client-gateway:` caller is
-  mapped to that browser's own unlock, which starts locked until the person's
-  password names it and then lasts as long as its credential
-  (`docs/architecture/platform.md`, Model keys; `credentialCustody`). That
-  mapping applies to the chat model and to every registry call a command makes.
-  Permissions stay the paired set. With no unlock, a command that needs the
-  model shows a setup step instead of starting, and a task already running
-  waits for the person. `client.forget_pairing` ends the browser's trust from
-  the browser, when the person presses Forget.
-  - This deliberately changes the rule above that a token never reaches the
-    model. The product direction is that the extension's chat builds and runs
-    automations (2026-09-30, t198).
+- **A paired client spends its person's key within current authority.** A
+  `client-gateway:` caller resolves to that actual ready trusted client. Approval
+  is sufficient: no second password, default key lock, unlock ticket or panel
+  session fallback. Configured keys remain usable after ordinary panel logout,
+  reconnect and restart, including keys configured after approval. Missing model
+  configuration and unavailable legacy ciphertext have distinct setup/recovery
+  messages. Explicit client revocation and current account/IAM checks still deny
+  use. `client.forget_pairing` ends the browser's trust when the person presses
+  Forget. See [Model keys](../platform.md#model-keys) for durable protection and
+  per-use authority.
 
 ## Per-step activity and resolved asks
 

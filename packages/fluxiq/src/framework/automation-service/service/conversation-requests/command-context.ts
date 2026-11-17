@@ -3,8 +3,8 @@ import type { AutomationStudioConversationRequest, AutomationStudioConversationR
 
 /**
  * What a conversation command runs with, for this request: the registry,
- * called as this request's actor in its scope, under the session a paired
- * client's person has unlocked (`commands/caller.ts`), and the page on screen
+ * called as this request's actor in its scope, under the request's own session
+ * (`commands/caller.ts`), and the page on screen
  * as a build's start. Null without an actor, which the registry never lets
  * through, so there is always someone the work is done as.
  */
@@ -22,11 +22,7 @@ export function commandContext(
     projectId: target.projectId,
     conversationId: target.conversationId,
     sessionId: caller.sessionId,
-    keyLocked: caller.keyLocked,
-    keyNeedsUnlock: caller.keyNeedsUnlock,
-    keyLockReason: caller.keyLockReason,
-    noteKeySetupStepTold: () => conversations.noteKeySetupStepTold(caller.userId),
-    // The calls above run as the unlocked session, so a run the command starts says itself that a paired client asked (`commands/run-flow.ts`).
+    // The calls above run as the request's own session, so a run the command starts says itself that a paired client asked (`commands/run-flow.ts`).
     paired: caller.paired,
     startLocation: target.startLocation,
     // The recording attached to the message that asked, from its `onScreen` alone (`commands/create-here.ts`).

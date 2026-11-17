@@ -30,16 +30,16 @@ export function AddKeyForm(props: { onAdd(form: NewKeyForm): Promise<string> }) 
     <form className="settings-add-key" onSubmit={onSubmit}>
       <h3>Add a key</h3>
       <p>Paste the key from your AI provider. It is stored sealed under your password and shown to nobody afterwards, including you. The first key you add becomes your default.</p>
-      <label>Name<input value={form.name} onChange={(event) => set({ name: event.target.value })} autoComplete="off" /></label>
-      <label>Provider
+      <label className="field"><span className="field-label">Name</span><input value={form.name} onChange={(event) => set({ name: event.target.value })} autoComplete="off" /></label>
+      <label className="field"><span className="field-label">Provider</span>
         <select value={form.provider} onChange={(event) => set({ provider: event.target.value })}>
           {NEW_KEY_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider === "Anthropic" ? "Anthropic (Claude)" : provider}</option>)}
         </select>
       </label>
-      <label>Key<input type="password" value={form.value} onChange={(event) => set({ value: event.target.value })} autoComplete="off" /></label>
-      <label>Your password<input type="password" value={form.password} onChange={(event) => set({ password: event.target.value })} autoComplete="current-password" /></label>
-      {/\bPIN\b/i.test(error) ? <label>Your PIN<input inputMode="numeric" value={form.pin} onChange={(event) => set({ pin: event.target.value.replace(/\D/g, "") })} autoComplete="off" /></label> : null}
-      <button type="submit" disabled={!canSaveNewKey(form) || pending}>{pending ? "Saving..." : "Save key"}</button>
+      <label className="field"><span className="field-label">Key</span><input type="password" value={form.value} onChange={(event) => set({ value: event.target.value })} autoComplete="off" /></label>
+      <label className="field"><span className="field-label">Your password</span><input type="password" value={form.password} onChange={(event) => set({ password: event.target.value })} autoComplete="current-password" /></label>
+      {/\bPIN\b/i.test(error) ? <label className="field"><span className="field-label">Your PIN</span><input inputMode="numeric" value={form.pin} onChange={(event) => set({ pin: event.target.value.replace(/\D/g, "") })} autoComplete="off" /></label> : null}
+      <button type="submit" className="button primary" disabled={!canSaveNewKey(form) || pending}>{pending ? "Saving..." : "Save key"}</button>
       {error ? <p role="alert">{error}</p> : null}
     </form>
   );

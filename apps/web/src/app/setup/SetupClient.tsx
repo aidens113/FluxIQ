@@ -9,7 +9,7 @@ type Field = "code" | "username" | "displayName" | "password" | "confirmation";
 const EMPTY: Record<Field, string> = { code: "", username: "", displayName: "", password: "", confirmation: "" };
 
 /** The owner claim form: the setup code, the owner's email and name, and a password. Nothing typed is stored; it is posted once. */
-export function SetupClient() {
+export function SetupClient({ service = false }: { service?: boolean } = {}) {
   const [values, setValues] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -36,12 +36,14 @@ export function SetupClient() {
       return;
     }
     setInvalid(answer.fields);
-    setMessage(setupMessage(answer.code, answer.retryAfterMs));
+    setMessage(setupMessage(answer.code, answer.retryAfterMs, service));
     setBusy(false);
   }
 
   return <>
-    <p>Enter the setup code from the file named in the server&apos;s start-up log, then create the owner account. The owner administers this server, and the default admin account stops working.</p>
+    <p>{service
+      ? "Enter the setup code from the file named in the server's start-up log, then create your administrator account and personal workspace. The default admin account stops working."
+      : "Enter the setup code from the file named in the server's start-up log, then create the owner account. The owner administers this server, and the default admin account stops working."}</p>
     <form className="account-link-form" onSubmit={(event) => void submit(event)}>
       {field("code", "Setup code", "password", "off")}
       {field("username", "Email address (your username)", "email", "username")}
@@ -50,7 +52,7 @@ export function SetupClient() {
       {field("confirmation", "Confirm password", "password", "new-password")}
       <p className="account-link-hint">At least 12 characters.</p>
       {message !== null ? <p className="account-link-message" role="alert">{message}</p> : null}
-      <button disabled={busy} type="submit">{busy ? "Setting up..." : "Create owner and sign in"}</button>
+      <button disabled={busy} type="submit">{busy ? "Setting up..." : service ? "Create account and sign in" : "Create owner and sign in"}</button>
     </form>
   </>;
 }

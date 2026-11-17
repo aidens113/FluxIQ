@@ -32,10 +32,12 @@ export function createContextLine(back: () => void): ContextLine {
   return {
     element,
     update(target) {
-      // A chosen thread is named by the thread header, not here.
-      const hidden = (target.kind === "latest" && target.projectId === undefined) || target.kind === "thread";
+      // A chosen thread is named by the thread header, and the latest chat by
+      // the chat bar (its project by the host's project switcher), so the line
+      // shows only for an automation's or a question's chat.
+      const hidden = target.kind === "latest" || target.kind === "thread";
       if (element.hidden !== hidden) element.hidden = hidden;
-      const text = target.kind === "automation" ? target.name.trim() || "This automation" : target.kind === "question" ? target.title : target.projectId !== undefined ? "Project chat" : "";
+      const text = target.kind === "automation" ? target.name.trim() || "This automation" : target.kind === "question" ? target.title : "";
       if (name.textContent !== text) name.textContent = text;
       if (name.getAttribute("title") !== text) name.setAttribute("title", text);
       const automation = target.kind === "automation";

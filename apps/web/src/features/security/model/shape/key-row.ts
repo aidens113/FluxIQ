@@ -1,4 +1,5 @@
 import { asRecord, numberOf, textOf } from "../../../home/model";
+import { readModelKeyAvailability } from "fluxiq/ui";
 import type { KeyRow } from "../types";
 
 /** Picks only the fields the screen shows, so a key's value can never reach it. */
@@ -6,7 +7,8 @@ export function shapeKeyRow(raw: unknown): KeyRow | undefined {
   const record = asRecord(raw);
   const id = textOf(record?.id);
   if (!record || !id) return undefined;
-  const lock = record.unlocked === true ? "unlocked" : record.unlocked === false ? "locked" : "unknown";
+  const availability: KeyRow["availability"] = readModelKeyAvailability(record.availability)
+    ?? (record.availability === undefined && record.unlocked === false ? { state: "unavailable", code: "upgrade_required" } : { state: "unknown" });
   return {
     id,
     name: textOf(record.name) ?? id,
@@ -14,6 +16,6 @@ export function shapeKeyRow(raw: unknown): KeyRow | undefined {
     addedAt: numberOf(record.createdAtMs),
     lastRevealedAt: numberOf(record.lastRevealedAtMs),
     enabled: record.enabled !== false,
-    lock
+    availability
   };
 }

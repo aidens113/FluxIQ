@@ -167,7 +167,9 @@ test("an interrupted task offers Carry on, once while it works; the budget-out t
   });
 });
 
-test("Run again carries the answer turn's note; waiting for a locked model key says so and offers no failure", async () => {
+// An attempt stored as waiting for a "locked" model key predates authenticated per-use key access
+// (connected clients have model access, no unlock); it reads as model access having been unavailable.
+test("Run again carries the answer turn's note; an older locked-key wait reads as model access unavailable and offers no failure", async () => {
   await withFakeDocument(async () => {
     const { screen, port, root } = mount();
     screen.setActive(true);
@@ -179,7 +181,7 @@ test("Run again carries the answer turn's note; waiting for a locked model key s
     screen.back();
     await flush();
     await press(keyed(root, "row:task-news-summary"));
-    assert.equal(root.byClass("tasks-wait")[0]!.getAttribute("aria-label"), "Waiting for your model key");
+    assert.equal(root.byClass("tasks-wait")[0]!.getAttribute("aria-label"), "Model access was unavailable");
     assert.equal(keyed(root, "carry-on"), undefined);
     assert.doesNotMatch(root.textContent, /\bfailed\b/iu);
   });

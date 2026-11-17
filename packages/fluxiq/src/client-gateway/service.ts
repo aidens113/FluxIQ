@@ -15,6 +15,8 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import { ClientGatewaySessionMetadataResolver } from "./service/session-metadata/index.ts";
+export type { ClientGatewaySessionMetadata, ClientGatewaySessionMetadataProvider } from "./service/session-metadata/index.ts";
 import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
 import {
   ClientGatewayAccess,
@@ -28,12 +30,14 @@ import {
   ClientGatewayLifecycle,
   ClientGatewayPairingFlow,
   ClientGatewayPairingRegistry,
+  ClientGatewayProjectFocus,
   ClientGatewaySessionRegistry,
   ClientGatewayTraceTap,
   ClientGatewayTransport,
   ClientGatewayCredentialCustodian,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayTrustGrant,
+  ClientGatewayTrustIssuer,
   ClientGatewayViews,
   resolveClientGatewayConfig,
   withoutClientGatewayAddresses
@@ -55,9 +59,14 @@ export type {
   ClientGatewayTraceArtifactIntake,
   ClientGatewayTraceArtifactUpload,
   ClientGatewayTrustedClientStore,
+  ClientGatewayApprovedTrustInput,
+  ClientGatewayIssuedTrust,
+  ClientGatewayTrustAuthority,
   ClientGatewayPeer,
   ClientGatewayPairingLimits,
   ClientGatewayPairingCapacityScope,
+  ClientGatewayProjectFocusAuthority,
+  ClientGatewayProjectFocusPort,
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
@@ -66,10 +75,11 @@ export {
   CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
   CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES,
   ClientGatewayPairingCapacityError,
+  ClientGatewayTrustIssuanceError,
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -94,6 +104,8 @@ export class ClientGatewayService {
   private readonly commands: ClientGatewayCommands;
   private readonly audit: ClientGatewayAuditLog;
   private readonly activity: ClientGatewayActivityPublisher;
+  /** Where the layer owning identity and IAM installs what decides `client.focus_project` (`service/project-focus/`); unset, a focus is refused as unavailable. */
+  readonly projectFocus: ClientGatewayProjectFocusPort;
   private readonly trace: ClientGatewayTraceTap;
   private readonly pairings: ClientGatewayPairingRegistry;
   /**
@@ -102,6 +114,8 @@ export class ClientGatewayService {
    * reaches it, so neither a page nor a program can mint a ticket.
    */
   readonly managedHosts: ClientGatewayManagedHosts;
+  /** Server-authorized client consent before a socket exists; never accepts authority from a client message. */
+  readonly trust: ClientGatewayTrustIssuer;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
@@ -123,11 +137,13 @@ export class ClientGatewayService {
       revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
+    const sessionMetadata = new ClientGatewaySessionMetadataResolver({ sessions, trustedClients, transport, audit, facade, provider: options.sessionMetadata });
+    this.trust = new ClientGatewayTrustIssuer({ config, trustedClients, authority: options.trustAuthority, sessions, transport, audit, trace, facade, custody });
     // Pairing and enrolment grant trust through this one path.
-    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody });
+    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody, sessionMetadata });
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody, sessionMetadata });
     const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
@@ -141,7 +157,9 @@ export class ClientGatewayService {
     this.commands = commands;
     this.trace = trace;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade, custody });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, trace, facade });
+    const projectFocus = new ClientGatewayProjectFocus({ sessions, transport, audit, authority: options.projectFocusAuthority });
+    this.projectFocus = projectFocus;
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, projectFocus, audit, trace, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }

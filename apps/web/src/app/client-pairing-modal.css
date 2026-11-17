@@ -1,0 +1,8 @@
+/* The pairing request the panel raises on any page: the client, its code, and what approving does, one labelled line each. */
+.client-pairing-request { display: grid; gap: 12px; min-width: min(360px, 78vw); }
+.client-pairing-request-head { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.client-pairing-request-lines { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+.client-pairing-request-lines dt { color: var(--muted); font-size: 13px; }
+.client-pairing-request-lines dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.client-pairing-request-code { display: inline-block; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface-muted, var(--surface)); padding: 6px 12px; font-size: 20px; font-weight: 700; letter-spacing: 0.08em; }
+.client-pairing-request-effect { margin: 0; color: var(--muted); }

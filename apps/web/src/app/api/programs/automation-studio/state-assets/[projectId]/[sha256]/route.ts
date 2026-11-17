@@ -1,11 +1,7 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { FLUXIQ_SESSION_COOKIE } from "../../../../../../../lib/auth";
-import { getFluxIQ } from "../../../../../../../lib/fluxiq";
-import { pairedClientProjectDomainRefusal } from "../../../../../../../lib/paired-client-project-domain";
-import { appRouteIamContract, authorizeAppRoute, pairedClientRouteActor, panelRouteActor, routeParamId } from "../../../../../../../lib/app-route-iam";
-import { pairedClientDomainScope } from "../../../../../../../lib/program-route";
-import { uploadStateAsset } from "fluxiq/server";
+import { pairedClientProjectDomainRefusal, uploadStateAsset } from "fluxiq/server";
+import { appRouteIamContract, routeParamId } from "../../../../../../../lib/app-route-iam";
+import { workspaceRouteContext, type WorkspaceRouteContext, type WorkspaceRouteRefusal } from "../../../../../../../lib/workspaces";
 
 type RouteParams = {
   params: Promise<{
@@ -16,87 +12,88 @@ type RouteParams = {
 
 const READ_ROUTE = appRouteIamContract("GET", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
 const WRITE_ROUTE = appRouteIamContract("PUT", "/api/programs/automation-studio/state-assets/[projectId]/[sha256]");
+type AssetRefusal = WorkspaceRouteRefusal & { readonly errorCode?: string };
 
-
-export async function GET(_request: Request, context: RouteParams) {
+export async function GET(request: Request, context: RouteParams) {
   const { projectId, sha256 } = await context.params;
-  const fluxiq = getFluxIQ();
-  const sessionId = await readSessionId();
-  if (!sessionId) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
-  const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
-  if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
-  const refusal = await authorizeAppRoute(fluxiq.programs.api, READ_ROUTE, "panel", panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role }), { projectId: routeParamId(projectId) });
-  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
-  if (!/^[a-f0-9]{64}$/i.test(sha256)) return NextResponse.json({ ok: false, error: "Invalid object digest" }, { status: 400 });
+  const target = routeParamId(projectId);
+  const selected = await workspaceRouteContext(request, READ_ROUTE, { projectId: target });
+  if (!selected.ok) return refusalResponse(selected);
+  const owner = selected.context;
   try {
-    const asset = await fluxiq.programs.automationStudio.readProjectObjectAsset(decodeURIComponent(projectId), sha256.toLowerCase());
-    const body = new ArrayBuffer(asset.content.byteLength);
-    new Uint8Array(body).set(asset.content);
-    return new Response(body, {
-      status: 200,
-      headers: {
-        "Content-Type": asset.mediaType,
-        "Content-Length": String(asset.size),
-        "Cache-Control": "private, immutable, max-age=31536000",
-        "X-FluxIQ-Object-SHA256": asset.sha256
-      }
-    });
-  } catch {
-    return NextResponse.json({ ok: false, error: "State asset was not found or is not available." }, { status: 404 });
+    if (!/^[a-f0-9]{64}$/i.test(sha256)) return NextResponse.json({ ok: false, error: "Invalid object digest" }, { status: 400, headers: { "cache-control": "private, no-store" } });
+    const response = await readAssetResponse(owner, target, sha256.toLowerCase());
+    const current = await owner.revalidate();
+    return current.ok ? response : refusalResponse(current);
+  } finally {
+    owner.release();
   }
 }
 
 export async function PUT(request: Request, context: RouteParams) {
   const { projectId, sha256 } = await context.params;
-  const decodedProjectId = decodeURIComponent(projectId);
-  const fluxiq = getFluxIQ();
-  const uploadAuth = await authorizeStateAssetUpload(request, fluxiq, decodedProjectId);
-  if (!uploadAuth.ok) return NextResponse.json({ ok: false, error: uploadAuth.error, ...(uploadAuth.errorCode ? { errorCode: uploadAuth.errorCode } : {}) }, { status: uploadAuth.status });
-  const result = await uploadStateAsset({ fluxiq, request, projectId: decodedProjectId, sha256, ...uploadAuth,
-    stillAuthorized: async () => (await authorizeStateAssetUpload(request, fluxiq, decodedProjectId)).ok });
-  return new Response(result.body, { status: result.status, headers: result.headers });
-}
-
-async function readSessionId(): Promise<string | undefined> {
-  const cookieStore = await cookies();
-  return cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
-}
-
-async function authorizeStateAssetUpload(
-  request: Request,
-  fluxiq: ReturnType<typeof getFluxIQ>,
-  projectId: string
-): Promise<{ ok: true; recordingId?: string; clientSessionId?: string } | { ok: false; status: number; error: string; errorCode?: string }> {
-  const bearerToken = readBearerToken(request.headers.get("authorization"));
-  if (bearerToken) {
-    const clientSession = await fluxiq.programs.clientGateway.authorizeToken(bearerToken);
-    if (!clientSession) return { ok: false, status: 401, error: "Authentication required" };
-    if (clientSession.projectId != null && clientSession.projectId !== projectId) {
-      return { ok: false, status: 403, error: "Client is not authorized for this Automation Studio project." };
+  const target = routeParamId(projectId);
+  const selected = await workspaceRouteContext(request, WRITE_ROUTE, { projectId: target });
+  if (!selected.ok) return refusalResponse(selected);
+  const owner = selected.context;
+  try {
+    const initial = await uploadRefusal(owner, target);
+    if (initial) return refusalResponse(initial);
+    const binding = owner.binding;
+    const gate: { refusal: AssetRefusal | null } = { refusal: null };
+    const result = await uploadStateAsset({ fluxiq: owner.fluxiq, request, projectId: target, sha256,
+      ...(binding.channel === "paired-client" ? { clientSessionId: binding.sessionId, ...(binding.recordingId ? { recordingId: binding.recordingId } : {}) } : {}),
+      stillAuthorized: async () => {
+        gate.refusal = await uploadRefusal(owner, target);
+        return gate.refusal === null;
+      }
+    });
+    // Keep Core's stale-upload 403, while preserving a specific domain refusal
+    // or an unavailable authority instead of disguising either as a generic deny.
+    if (gate.refusal) {
+      if (gate.refusal.status === 503 || gate.refusal.errorCode) return refusalResponse(gate.refusal);
+      return new Response(result.body, { status: result.status, headers: result.headers });
     }
-    // The project must also be in the domain the pairing bound (t379), as on the program route.
-    const scope = pairedClientDomainScope(request.url, clientSession);
-    if (!scope) return { ok: false, status: 403, error: "A paired client may only reach its own domain." };
-    const refusal = await pairedClientProjectDomainRefusal(fluxiq.programs.automationStudio, projectId, scope.domainId);
-    if (refusal) return { ok: false, status: 403, error: refusal.error, errorCode: refusal.errorCode };
-    const actor = await pairedClientRouteActor(fluxiq.programs.identityAccess, clientSession);
-    if (!actor) return { ok: false, status: 401, error: "Authentication required" };
-    const denied = await authorizeAppRoute(fluxiq.programs.api, WRITE_ROUTE, "paired-client", actor, { projectId });
-    if (denied) return { ok: false, ...denied };
-    return { ok: true, clientSessionId: clientSession.sessionId, ...(clientSession.activeRecordingId ? { recordingId: clientSession.activeRecordingId } : {}) };
+    const current = await uploadRefusal(owner, target);
+    if (current) return refusalResponse(current);
+    return new Response(result.body, { status: result.status, headers: result.headers });
+  } catch {
+    return NextResponse.json({ ok: false, error: "State asset upload could not be completed." }, { status: 500 });
+  } finally {
+    owner.release();
   }
-
-  const sessionId = await readSessionId();
-  if (!sessionId) return { ok: false, status: 401, error: "Authentication required" };
-  const auth = await fluxiq.programs.identityAccess.validateSession(sessionId);
-  if (!auth) return { ok: false, status: 401, error: "Authentication required" };
-  const denied = await authorizeAppRoute(fluxiq.programs.api, WRITE_ROUTE, "panel", panelRouteActor({ session: { id: sessionId }, user: auth.user, role: auth.role }), { projectId });
-  if (denied) return { ok: false, ...denied };
-  return { ok: true };
 }
 
-function readBearerToken(header: string | null): string | null {
-  if (!header) return null;
-  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
-  return match?.[1]?.trim() || null;
+async function uploadRefusal(owner: WorkspaceRouteContext, projectId: string): Promise<AssetRefusal | null> {
+  const current = await owner.revalidate();
+  if (!current.ok) return current;
+  const binding = current.caller.binding;
+  if (binding.channel === "paired-client") {
+    if (binding.projectId !== null && binding.projectId !== projectId) return { ok: false, status: 403, error: "Client is not authorized for this Automation Studio project." };
+    const domain = await pairedClientProjectDomainRefusal(owner.fluxiq.programs.automationStudio, projectId, binding.domainId);
+    if (domain) return { ...domain, status: 403 };
+    const after = await owner.revalidate();
+    if (!after.ok) return after;
+  }
+  return null;
+}
+
+async function readAssetResponse(owner: WorkspaceRouteContext, projectId: string, sha256: string): Promise<Response> {
+  try {
+    const asset = await owner.fluxiq.programs.automationStudio.readProjectObjectAsset(projectId, sha256);
+    const body = new ArrayBuffer(asset.content.byteLength);
+    new Uint8Array(body).set(asset.content);
+    return new Response(body, { status: 200, headers: {
+      "Content-Type": asset.mediaType,
+      "Content-Length": String(asset.size),
+      "Cache-Control": "private, no-store",
+      "X-FluxIQ-Object-SHA256": asset.sha256
+    } });
+  } catch {
+    return NextResponse.json({ ok: false, error: "State asset was not found or is not available." }, { status: 404, headers: { "cache-control": "private, no-store" } });
+  }
+}
+
+function refusalResponse(refusal: AssetRefusal) {
+  return NextResponse.json({ ok: false, error: refusal.error, ...(refusal.errorCode ? { errorCode: refusal.errorCode } : {}) }, { status: refusal.status, headers: { "cache-control": "private, no-store" } });
 }

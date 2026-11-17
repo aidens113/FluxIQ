@@ -1,7 +1,7 @@
 .home { display: grid; gap: 16px; min-width: 0; }
 .home h1 { margin: 0; }
 .home-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); min-width: 0; }
-.home-section { min-width: 0; padding: 16px; border: 1px solid var(--divider); border-radius: 10px; }
+.home-section { min-width: 0; padding: 16px; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); }
 .home-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .home-section h2 { margin: 0; font-size: 1.05rem; }
 .home-note { margin: 0; color: var(--muted, inherit); opacity: 0.85; }
@@ -11,9 +11,9 @@
 .home-fact[data-tone="ok"] .home-dot { background: var(--success); opacity: 1; }
 .home-fact[data-tone="warn"] .home-dot { background: var(--warning); opacity: 1; }
 .home-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.home-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; min-width: 0; }
+.home-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; min-width: 0; }
 .home-row-main { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
-.home-row-side { display: flex; flex-direction: column; align-items: flex-end; text-align: right; min-width: 0; }
+.home-row-side { display: flex; flex-direction: column; align-items: flex-end; text-align: right; min-width: 0; white-space: nowrap; }
 .home-muted { opacity: 0.75; font-size: 0.9rem; }
 .home-link { color: inherit; text-decoration: underline; min-height: 24px; }
 .home-state { font-weight: 600; }
@@ -22,5 +22,7 @@
 .home-state[data-tone="warn"] { color: var(--warning); }
 @media (max-width: 720px) {
   .home-section { padding: 12px; }
-  .home-row-side { align-items: flex-start; text-align: left; }
+  .home-row { grid-template-columns: minmax(0, 1fr); }
+  .home-row-side { align-items: flex-start; text-align: left; white-space: normal; }
 }
+.home-retry { font: inherit; color: inherit; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }

@@ -6,7 +6,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createGlobalProgramRuntime } from "../../index.ts";
 
 type Runtime = ReturnType<typeof createGlobalProgramRuntime>;
@@ -17,6 +17,12 @@ const USER_TWO_PASSWORD = "dummy-password-user-two";
 const USER_TWO_RESET = "dummy-password-user-two-reset";
 const SECRET_VALUE = "dummy-provider-secret-value";
 const NOT_OPENED = "Secret key could not be opened";
+
+beforeEach(() => {
+  vi.stubEnv("FLUXIQ_PROFILE", "local");
+  vi.stubEnv("FLUXIQ_SECRET_KEYS_KEYRING_FILE", "");
+});
+afterEach(() => vi.unstubAllEnvs());
 
 describe("global runtime credential-change wiring", () => {
   it("re-seals a user's Secret Keys when that user changes their own password, so they reveal with the new password and not the old", async () => {
@@ -42,7 +48,10 @@ describe("global runtime credential-change wiring", () => {
       // A restart over the same databases reads the committed seal, not only the one held in memory.
       await closeAll(open);
       const restarted = track(open, createGlobalProgramRuntime(testPaths(root)));
-      await expect(restarted.identityAccess.authenticate({ username: "admin", password: NEXT_PASSWORD })).resolves.toMatchObject({ user: { id: login.user.id } });
+      const fresh = await restarted.identityAccess.authenticate({ username: "admin", password: NEXT_PASSWORD });
+      expect(fresh.user.id).toBe(login.user.id);
+      const use = await restarted.secretKeys.access.createUseAuthorization({ id: key.id, principal: { kind: "session", userId: fresh.user.id, sessionId: fresh.session.id } });
+      await expect(restarted.secretKeys.revealKeyWithAuthorization({ id: key.id, authorizationId: use.authorizationId })).resolves.toMatchObject({ value: SECRET_VALUE });
       await expect(restarted.secretKeys.revealKey({ id: key.id, authorizationPassword: NEXT_PASSWORD })).resolves.toMatchObject({ value: SECRET_VALUE });
       await expect(restarted.secretKeys.revealKey({ id: key.id, authorizationPassword: BOOTSTRAP_PASSWORD })).rejects.toThrow(NOT_OPENED);
     } finally {
@@ -87,6 +96,7 @@ function track(open: Runtime[], runtime: Runtime): Runtime {
 
 async function closeAll(open: Runtime[]): Promise<void> {
   for (const runtime of open.splice(0)) {
+    runtime.detach();
     await runtime.automationStudio.close();
     runtime.secretKeys.close();
   }

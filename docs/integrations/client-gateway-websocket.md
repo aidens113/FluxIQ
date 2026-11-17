@@ -269,7 +269,45 @@ After `server.session_ready`, clients may send:
 - `client.snapshot`
 - `client.recording_event`
 - `client.action_result`
+- `client.focus_project`
 - `client.error`
+
+### Project Focus
+
+A session's project decides which `server.activity` reaches it: Core pushes a
+build's or run's activity to the ready sessions that advertised
+`fluxiq.activity` and are bound to that project or to none. Pairing binds the
+pairing's project, and a reconnect binds none. A client that lets the person
+choose a project sends the choice, so the activity of the project the person is
+working in reaches it as it happens:
+
+```json
+{ "type": "client.focus_project", "payload": { "projectId": "project-id" } }
+```
+
+Core accepts it only from a ready session a person paired (never a managed
+host's or a channel-scoped stand-in), and only for a project the approving
+person may read in the domain the session declared at `client.hello`. It is
+decided as the person's own paired program calls are (`programs/automation-studio/api/project-focus/`):
+the project's domain must be the session's, and the registry's `projects` call
+as that person, narrowed to `programs.read` on the `paired-client` channel, must
+list it under IAM. Another tenant's project is unknown to the instance and is
+refused the same way. `"projectId": null` returns the session to the project it
+was bound to when it became ready.
+
+Core answers `server.project_focused` with `{ "projectId": ... }`, or
+`server.error` with one of `CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES` and the
+session's project unchanged: `project_focus.invalid`, `project_focus.not_paired`,
+`project_focus.refused` (the person may not read it there, or it does not exist)
+and `project_focus.unavailable` (Core could not decide). Both carry the
+request's `id` as `correlationId`. A refusal is about the project, not the
+connection: the session stays ready. Only the latest request a session sent is
+applied and answered. The new project is also the one a token call naming no
+project reaches, and the one a recording started without one is created in.
+
+Send it only over a ready session, never from an offline queue, and again after
+every `server.session_ready` while a choice is held, since each new session
+starts at its pairing's project. An older Core ignores the message.
 
 Clients may stream `client.snapshot` state frames at screenshot cadence when a
 recording is active. FluxIQ batches those recording appends internally and
@@ -292,6 +330,8 @@ FluxIQ may send:
 - `server.set_active_tab`
 - `server.ping`
 - `server.disconnect`
+- `server.activity` (to a session that advertised `fluxiq.activity`)
+- `server.project_focused` (the answer to `client.focus_project`)
 - `server.error`
 
 ## Typed WebSocket Client Package

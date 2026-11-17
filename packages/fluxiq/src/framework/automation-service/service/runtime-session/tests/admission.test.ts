@@ -61,6 +61,16 @@ describe("admitting a run", () => {
       await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).rejects.toThrow("Only one adaptive runtime run");
     });
   });
+
+  it("reads the project's sessions under a current strict lease when the caller says its own lease admits nothing", async () => {
+    const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 1,
+      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }));
+    const access = { ...ports(async () => [session("run.active", "running", true)]), ownLeaseAdmits: false };
+    await scope.run({ role: "part-run", briefId: "part" }, async () => {
+      await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).rejects.toThrow("Only one adaptive runtime run");
+    });
+    expect(access.startRuntimeSession).not.toHaveBeenCalled();
+  });
   it("starts a run that is not adaptive, or has no project, without reading the sessions", async () => {
     const access = ports(async () => { throw new Error("not read"); });
 

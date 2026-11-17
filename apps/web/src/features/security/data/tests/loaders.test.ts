@@ -23,14 +23,14 @@ afterEach(() => vi.unstubAllGlobals());
 describe("loadKeyRows", () => {
   it("shapes the keys and carries no value", async () => {
     const answer = { ok: true, payload: { keys: [
-      { id: "k1", name: "Work", provider: "Anthropic", kind: "llm", enabled: true, unlocked: false, createdAtMs: 5, lastRevealedAtMs: 9, value: "sk-SECRET", sealed: { ciphertext: "SECRET" } },
-      { id: "k2", name: "Home", kind: "llm", enabled: true, unlocked: true, createdAtMs: 6 },
+      { id: "k1", name: "Work", provider: "Anthropic", kind: "llm", enabled: true, availability: { state: "unavailable", code: "legacy_recovery_required", private: "SECRET" }, createdAtMs: 5, lastRevealedAtMs: 9, value: "sk-SECRET", sealed: { ciphertext: "SECRET" } },
+      { id: "k2", name: "Home", kind: "llm", enabled: true, availability: { state: "available" }, createdAtMs: 6 },
       { name: "no id" }
     ] } };
     const result = await loadKeyRows(transport(answer), signal);
     expect(result).toEqual({ state: "ready", data: [
-      { id: "k1", name: "Work", provider: "Anthropic", addedAt: 5, lastRevealedAt: 9, enabled: true, lock: "locked" },
-      { id: "k2", name: "Home", provider: "llm", addedAt: 6, lastRevealedAt: undefined, enabled: true, lock: "unlocked" }
+      { id: "k1", name: "Work", provider: "Anthropic", addedAt: 5, lastRevealedAt: 9, enabled: true, availability: { state: "unavailable", code: "legacy_recovery_required" } },
+      { id: "k2", name: "Home", provider: "llm", addedAt: 6, lastRevealedAt: undefined, enabled: true, availability: { state: "available" } }
     ] });
     expect(JSON.stringify(result)).not.toContain("SECRET");
   });

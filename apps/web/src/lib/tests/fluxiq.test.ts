@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, getFluxIQWebReadiness, getFluxIQWebRuntimeStatus, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
+import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, getFluxIQWorkspaces, getWorkspaceWebPresentation, getFluxIQWebReadiness, getFluxIQWebRuntimeStatus, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
 
 // The owner-claim module is built beside this one; the runtime only needs its answer.
 const ownerClaim = vi.hoisted(() => ({ prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })) }));
@@ -561,9 +561,14 @@ describe("FluxIQ hosted runtime wiring", () => {
       const { root } = await hostedEnv(profile, { FLUXIQ_PROVISIONING_LISTEN: "", FLUXIQ_PROVISIONING_TOKEN_FILE: "" });
       try {
         await initializeFluxIQWebRuntime();
-        const status = getFluxIQWebRuntimeStatus() as Record<string, unknown>;
+        if (profile === "service") expect(() => getFluxIQWebRuntimeStatus()).toThrow();
+        const manager = getFluxIQWorkspaces();
+        const status = (profile === "service"
+          ? getWorkspaceWebPresentation(manager.primaryWorkspaceId, manager.primary().fluxiq, { userId: "operator-fixture" }).present()
+          : getFluxIQWebRuntimeStatus()) as unknown as Record<string, unknown>;
         expect("hostRoot" in status).toBe(hostPaths);
         expect("fluxiqDir" in status).toBe(hostPaths);
+        expect("hostModulePath" in status).toBe(hostPaths);
         expect(status.clientGatewayPublicUrl).toBe(profile === "service" ? "wss://panel.example.test/client" : "ws://127.0.0.1:4777/client");
       } finally {
         await cleanup(root);

@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Why a token request failed, in the OAuth error body shape
  * `{ error, error_description? }` with HTTP 400 (401 for `invalid_client`,
- * 429 for `rate_limited`):
+ * 429 for `rate_limited`, 503 for `temporarily_unavailable`):
  *
  * - `invalid_request`: a field is missing or ill-formed;
  * - `invalid_client`: `client_id` is not the connect client;
@@ -14,6 +14,7 @@ import { z } from "zod";
  * - `client_limit_reached`: the account already has the most connected clients;
  * - `account_disabled`: the account cannot sign in;
  * - `rate_limited`: too many requests from this source.
+ * - `temporarily_unavailable`: the authority or credential delivery could not complete; never claims an invalid credential or successful revocation.
  *
  * `error_description` is for a person and never holds the code or verifier.
  */
@@ -25,7 +26,8 @@ export const CONNECT_TOKEN_ERROR_CODES = Object.freeze([
   "email_unverified",
   "client_limit_reached",
   "account_disabled",
-  "rate_limited"
+  "rate_limited",
+  "temporarily_unavailable"
 ] as const);
 
 export type ConnectTokenErrorCode = (typeof CONNECT_TOKEN_ERROR_CODES)[number];

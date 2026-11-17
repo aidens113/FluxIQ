@@ -2,8 +2,8 @@
 // it had none.
 //
 // The gap this closes was measured rather than reasoned about. The host's
-// `llmProviderResolver` pays with the caller's own key, released only to their
-// live unlocked session, and resolves nothing without a caller, so an
+// `llmProviderResolver` pays with the caller's own key, authorized as that
+// caller, and resolves nothing without a caller, so an
 // unattended failed run resolved no model at all: on 2026-09-23 such a run
 // recorded `llmGate.providerConfigured: false`
 // and `llm.provider_missing`, with no diagnosis, no patch, no retry and no
@@ -70,8 +70,9 @@ export async function resolveAutomationStudioUnattendedRepairAuthority(input: {
     projectId: context.projectId,
     flowId: context.flowId,
     keyId: redemption.keyId,
-    unlockSessionId: redemption.unlockSessionId,
+    authorizationId: redemption.authorizationId,
     authorizedByUserId: redemption.authorizedByUserId,
+    purpose: "repair",
     maxEstimatedCostUsd: redemption.maxEstimatedCostUsdPerRun
   });
   if (!resolved) return { redemption };

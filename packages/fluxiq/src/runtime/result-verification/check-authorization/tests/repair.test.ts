@@ -19,8 +19,9 @@ function authorization(overrides: Overrides = {}): AutomationStudioResultCheckAu
   const { repair, ...rest }: Overrides = { repair: { enabled: true, maxCostUsdPerRun: 0.25 }, ...overrides };
   return {
     taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND,
+    authorizationId: "result-check:1",
     authorizedByUserId: "user.aiden",
-    unlockSessionId: "session.unlock.1",
+    grantedThrough: { kind: "person" },
     keyId: "key.deepseek",
     maxTotalCostUsd: 1,
     maxCostUsdPerCall: 0.05,
@@ -38,7 +39,7 @@ describe("redeeming a standing authorization for an unattended repair", () => {
     expect(redemption).toEqual({
       redeemed: true,
       keyId: "key.deepseek",
-      unlockSessionId: "session.unlock.1",
+      authorizationId: "result-check:1",
       authorizedByUserId: "user.aiden",
       taskKinds: ["runtime_diagnosis", "evidence_tool_decision", "runtime_patch"],
       maxEstimatedCostUsdPerRun: 0.25,
@@ -74,7 +75,7 @@ describe("redeeming a standing authorization for an unattended repair", () => {
   it("refuses an unusable record rather than reading past it", () => {
     for (const broken of [
       authorization({ keyId: " " }),
-      authorization({ unlockSessionId: "" }),
+      authorization({ authorizationId: "" }),
       authorization({ maxTotalCostUsd: 0 }),
       authorization({ repair: { enabled: true, maxCostUsdPerRun: 0 } })
     ]) {
@@ -110,5 +111,10 @@ describe("redeeming a standing authorization for an unattended repair", () => {
   it("treats an unreadable spend as nothing spent rather than as no limit", () => {
     const redemption = redeemAutomationStudioUnattendedRepairAuthorization({ authorization: authorization(), nowMs: NOW, spentUsd: Number.NaN });
     expect(redemption).toMatchObject({ redeemed: true, remainingCostUsd: 1 });
+  });
+
+  it("asks for a fresh grant for a record stored under the old key unlock", () => {
+    const redemption = redeemAutomationStudioUnattendedRepairAuthorization({ authorization: authorization({ grantedThrough: { kind: "legacy_unlock" } }), nowMs: NOW, spentUsd: 0 });
+    expect(redemption).toMatchObject({ redeemed: false, code: AUTOMATION_STUDIO_UNATTENDED_REPAIR_CODES.renew });
   });
 });

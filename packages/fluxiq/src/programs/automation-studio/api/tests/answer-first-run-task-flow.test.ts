@@ -65,7 +65,7 @@ async function afterFirstAttempt(onScreen: string | null) {
   };
   const context: AutomationStudioConversationCommandContext = {
     port: automationStudioConversationCommandPort({ registry, actor: ACTOR, scope: {} }),
-    host, projectId: project.id, conversationId: "conversation.1", sessionId: ACTOR.sessionId, keyLocked: false, paired: true, startLocation: onScreen
+    host, projectId: project.id, conversationId: "conversation.1", sessionId: ACTOR.sessionId, paired: true, startLocation: onScreen
   };
   const read = (endpoint: string, payload: Record<string, unknown>) => registry.call({ programId: "automation-studio", endpoint, scope: {}, actor: ACTOR, payload }) as Promise<{ ok: boolean; payload?: any; error?: string }>;
   return { service, project, flow, asked, turns, context, read };

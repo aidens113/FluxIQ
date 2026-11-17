@@ -29,7 +29,6 @@ const NAME_MAX = 80;
 
 export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConversationCommand = {
   background: true,
-  needsModelKey: true,
   capability: {
     id: "flow.createHere",
     title: TITLE,
@@ -55,7 +54,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     ? `I'll make you a new automation for this, working out its steps by trying them on ${place} and then test-running the whole Flow once from the start. I'll say here when it is ready, or why it is not.`
     : `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
+    const progress = automationStudioConversationCommandProgress(TITLE);
     const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability, args, "instruction");
     if (!said) return progress.failed("I was not told what the automation should do");
     const instruction = said.text;

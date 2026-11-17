@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useProgramTransport } from "../automation-studio/data/use-program-transport";
-import { PublishPanelPage } from "../panel-shell";
-import { loadClients, loadEngine, loadRuns, loadThreads, useResource } from "./data";
+import { PublishPanelPage, useEngineReading, usePanelContext, type EngineStatus } from "../panel-shell";
+import { loadAllRuns, loadClients, loadRuns, loadThreads, useResource, type Resource } from "./data";
 import { HomeConnected, HomeEngine, HomeNeedsYou, HomeRecentRuns, HomeToday } from "./sections";
 import "./home.css";
 
@@ -11,8 +11,18 @@ import "./home.css";
 export function HomePage() {
   const studio = useProgramTransport("automation-studio");
   const runtime = useProgramTransport("runtime");
-  const engine = useResource(loadEngine);
-  const runs = useResource(useCallback((signal: AbortSignal) => loadRuns(studio, signal), [studio]));
+  const { context } = usePanelContext();
+  const projectId = context.projectId;
+  const reading = useEngineReading();
+  const engine = useMemo<Resource<EngineStatus>>(
+    () => (reading.loaded ? { state: "ready", data: reading.status } : { state: "loading" }),
+    [reading]
+  );
+  // The project in view, or every project the person may read: Core answers that in two requests, with no project list asked first.
+  const runs = useResource(
+    useCallback((signal: AbortSignal) => (projectId ? loadRuns(studio, [projectId], signal) : loadAllRuns(studio, signal)), [studio, projectId]),
+    { key: projectId ?? "all" }
+  );
   const threads = useResource(useCallback((signal: AbortSignal) => loadThreads(studio, signal), [studio]));
   const clients = useResource(useCallback((signal: AbortSignal) => loadClients(runtime, signal), [runtime]));
   const now = Date.now();

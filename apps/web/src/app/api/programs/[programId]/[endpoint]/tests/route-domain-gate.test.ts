@@ -21,17 +21,22 @@ vi.mock("next/headers", () => ({
   })),
 }));
 
-vi.mock("../../../../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({
+vi.mock("../../../../../../lib/fluxiq", () => {
+  const getFluxIQ = () => ({
     programs: {
       api: { call, endpoints },
       identityAccess: { validateSession, snapshot },
       clientGateway: { authorizeToken },
       automationStudio: { assertProjectDomainAccess },
     },
-  }),
-  getFluxIQWebRuntimeStatus: vi.fn(),
-}));
+  });
+  return {
+    getFluxIQ,
+    getFluxIQWorkspaces: () => ({ tenancy: "single", primaryWorkspaceId: "workspace-main", acquire: async () => ({ fluxiq: getFluxIQ(), release: vi.fn() }) }),
+    getFluxIQWebRuntimeStatus: vi.fn(),
+    isCurrentFluxIQPrimary: () => true,
+  };
+});
 
 import { GET, POST } from "../route";
 

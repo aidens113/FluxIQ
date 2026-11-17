@@ -19,6 +19,8 @@
 // `parts.unavailable`, as there: nothing can say the page is free, and nothing says another run
 // has it either. The person reads that it could not be checked, the store's own message goes to
 // the log, and the listing is read before the gate, whose every remaining refusal does mean a run.
+// The gate is asked with `ownLeaseAdmits: false`: a lease held here (the part's own, or the
+// build's) lets a new run start on its own resource, but cannot see a run that holds none.
 //
 // The session itself is written later, once the guard has passed, since a refused part leaves
 // none. What stops two parts passing together in between is the lease.
@@ -92,6 +94,7 @@ async function sessionsRefusal(ports: AutomationStudioProjectPartDrivingPorts, p
   try {
     await admitAutomationStudioRuntimeSession({
       admissions: ports.admissions,
+      ownLeaseAdmits: false,
       listRuntimeSessions: async () => listed.filter((session) => caller === "person" || !underABuildsLease(session)).map(countsAsAdmitted),
       startRuntimeSession: async () => NOTHING_STARTED
     }, projectId, true);

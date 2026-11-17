@@ -60,7 +60,8 @@ import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCom
 const OPEN_ID = "domain.example.open";
 const SEARCH_ID = "domain.example.search";
 const PAGE = "https://shop.example.test/products";
-const UNLOCKED_SESSION = "identity.session.unlocked";
+/** The paired client's own session: model calls run under it, with nothing substituted. */
+const UNLOCKED_SESSION = "client-gateway:gw-test";
 /** What a token may hold (`PAIRED_CLIENT_PERMISSIONS`). */
 const PAIRED: ProgramApiActor = {
   sessionId: "client-gateway:gw-test",
@@ -198,7 +199,6 @@ async function createWorld(options: { unlocked: string | null }) {
     llmEvidenceRuntime: binding
   });
   service.bindNativeNodeRuntime(nativeRuntime());
-  service.conversations.bindUnlockedSessionResolver((userId) => (userId === PAIRED.userId ? options.unlocked : null), ({ sessionId }) => (options.unlocked === null || sessionId !== options.unlocked ? "unknown" : null));
   let chatAnswer: unknown = { reply: "Nothing to do." };
   service.conversations.bindModel({ name: "scripted", decide: async () => chatAnswer });
   const registry = new GlobalProgramApiRegistry();
@@ -393,7 +393,7 @@ describe("the extension's chat, end to end in Core", () => {
   it("does not apply an explored creation while its adaptation carries a permission request", async () => {
     const calls: string[] = [];
     const result = await AUTOMATION_STUDIO_CONVERSATION_EXPLORE.run({
-      projectId: "project.example", conversationId: "conversation.example", sessionId: UNLOCKED_SESSION, keyLocked: false, paired: true, startLocation: null,
+      projectId: "project.example", conversationId: "conversation.example", sessionId: UNLOCKED_SESSION, paired: true, startLocation: null,
       host: {
         async appendAutomationTurn() { throw new Error("Explore must return its pending-permission outcome without writing a turn itself"); },
         async pendingAsks() { return []; },
@@ -499,20 +499,6 @@ describe("the extension's chat, end to end in Core", () => {
     const ask = await world.service.conversations.getAsk({ projectId: world.project.id, askId: "ask.robot-check.1" });
     expect(ask?.status).not.toBe("pending");
     expect(ask?.answer?.kind).toBe("grant");
-  });
-
-  it("a locked key is a setup step before the task: nothing starts, nothing is spent, and it says the one thing to do", async () => {
-    world = await createWorld({ unlocked: null });
-    world.scriptBuild(SEARCH_THEN_COMPLETE);
-
-    const response = await world.say("Find the kettles on this page", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
-    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "done" });
-    await automationStudioConversationCommandWork.idle();
-    const said = JSON.stringify((await world.thread()).turns);
-    expect(said).toMatch(/model key is locked/u);
-    // How to unlock it: one step, in FluxIQ.
-    expect(said).toMatch(/enter your password once/u);
-    expect(said).toMatch(/Nothing has started and nothing was spent/u);
   });
 
   describe("with a recording attached to the message, in project authoring mode", () => {

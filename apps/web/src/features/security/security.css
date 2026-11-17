@@ -17,3 +17,19 @@
 .security-danger { color: var(--danger); }
 .security-back { justify-self: start; }
 .security > .program-technical-button { justify-self: start; }
+
+/* Security pages: the same stacking and table rules as the engine tools. */
+.security { container-type: inline-size; container-name: security; }
+.security-action .button { min-height: var(--control-height-default, 36px); }
+.security .status-badge-pill svg { flex: 0 0 12px; width: 12px; height: 12px; min-width: 12px; }
+.security .table-wrap, .security .background-run-table-wrap { max-width: 100%; overflow-x: auto; }
+@container security (max-width: 1100px) {
+  .security .identity-users-layout,
+  .security .secret-keys-list-detail { grid-template-columns: minmax(0, 1fr); }
+}
+@container security (max-width: 600px) {
+  .security .data-table, .security .background-run-table { min-width: 0; }
+  .security .data-table :is(th, td), .security .background-run-table :is(th, td) { white-space: normal; overflow-wrap: anywhere; }
+  .security .status-badge-pill { padding: 2px 6px; }
+}
+.security .identity-access-workspace > :is(button, .button), .security .secret-keys-workspace > :is(button, .button) { justify-self: start; }

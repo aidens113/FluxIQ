@@ -2,7 +2,8 @@
 
 import { QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Field, InlineNotice, Modal } from "../features/programs/shared-ui";
+import { Button, InlineNotice, Modal } from "../features/programs/shared-ui";
+import "./client-pairing-modal.css";
 
 export type ClientPairingRequest = {
   pairingCode: string;
@@ -97,14 +98,12 @@ function closedApprovalNotice(message: string): PairingNotice {
   return { title: "Nothing was paired", message, tone: "error" };
 }
 
-export function GlobalClientGatewayPairing({ asksTotp = false }: { asksTotp?: boolean }) {
+export function GlobalClientGatewayPairing() {
   const [snapshot, setSnapshot] = useState<ClientGatewaySnapshot>({});
   const [dismissedCodes, setDismissedCodes] = useState<string[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState("");
-  const [unlockPassword, setUnlockPassword] = useState("");
-  const [unlockTotp, setUnlockTotp] = useState("");
   // Outlives the request it is about: the request leaves the list at the next
   // poll, and the person must still learn that nothing was paired.
   const [closedNotice, setClosedNotice] = useState<PairingNotice | null>(null);
@@ -197,7 +196,7 @@ export function GlobalClientGatewayPairing({ asksTotp = false }: { asksTotp?: bo
       const response = await fetch(`/api/client-gateway/${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pairingCode, ...(action === "approve" && unlockPassword ? { password: unlockPassword, ...(unlockTotp ? { totp: unlockTotp } : {}) } : {}) })
+        body: JSON.stringify({ pairingCode })
       });
       if (!response.ok) {
         const result = await response.json().catch(() => undefined) as { error?: string; code?: string } | undefined;
@@ -210,8 +209,6 @@ export function GlobalClientGatewayPairing({ asksTotp = false }: { asksTotp?: bo
         setActionError(result?.error ?? `The pairing request could not be ${action === "approve" ? "approved" : "rejected"}.`);
         return;
       }
-      setUnlockPassword("");
-      setUnlockTotp("");
       removePairing(pairingCode);
     } catch {
       setActionError("The client gateway could not be reached. The request remains pending.");
@@ -232,22 +229,20 @@ export function GlobalClientGatewayPairing({ asksTotp = false }: { asksTotp?: bo
       {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
-      <div className="automation-client-pairing-modal">
-        <QrCode aria-hidden size={20} />
-        <strong>{pendingPairing.requestedByClientName ?? pendingSession?.name ?? "Extension client"}</strong>
-        <span>Approve only when this reference matches the requesting client.</span>
-        <code>{pendingPairing.referenceCode ?? pendingPairing.pairingCode}</code>
-        <small>{pendingSession?.clientId ?? pendingPairing.requestedByClientId ?? snapshot.webRuntime?.clientGatewayPublicUrl ?? "Waiting client"} | {pairingExpiryLabel(pendingPairing.expiresAt, nowMs)}</small>
+      <div className="client-pairing-request">
+        <div className="client-pairing-request-head"><QrCode aria-hidden size={20} /><span>A browser is asking to connect</span></div>
+        <dl className="client-pairing-request-lines">
+          <dt>Client</dt>
+          <dd><strong>{pendingPairing.requestedByClientName ?? pendingSession?.name ?? "Extension client"}</strong></dd>
+          <dt>Client id</dt>
+          <dd>{pendingSession?.clientId ?? pendingPairing.requestedByClientId ?? snapshot.webRuntime?.clientGatewayPublicUrl ?? "Waiting client"}</dd>
+          <dt>Code</dt>
+          <dd><code className="client-pairing-request-code">{pendingPairing.referenceCode ?? pendingPairing.pairingCode}</code></dd>
+          <dt>Time left</dt>
+          <dd>{pairingExpiryLabel(pendingPairing.expiresAt, nowMs)}</dd>
+        </dl>
+        <p className="client-pairing-request-effect">Approve only when this code matches the one the client shows. Approving lets that browser use this workspace; rejecting leaves it unpaired.</p>
       </div>
-      <small>Enter your password once and this browser can use your model key from now on. Or leave it empty and do this later.</small>
-      <Field label="Your password (optional)">
-        <input autoComplete="current-password" disabled={Boolean(busyAction)} onChange={(event) => setUnlockPassword(event.target.value)} type="password" value={unlockPassword} />
-      </Field>
-      {asksTotp && unlockPassword ? (
-        <Field label="Your 2FA code">
-          <input autoComplete="one-time-code" disabled={Boolean(busyAction)} inputMode="numeric" onChange={(event) => setUnlockTotp(event.target.value)} value={unlockTotp} />
-        </Field>
-      ) : null}
       <div className="modal-actions">
         <Button busy={busyAction === "reject"} disabled={busyAction === "approve"} onClick={() => void resolvePairing("reject")}>Reject</Button>
         <Button busy={busyAction === "approve"} data-modal-submit disabled={busyAction === "reject"} onClick={() => void resolvePairing("approve")} variant="primary">Confirm pairing</Button>

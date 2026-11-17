@@ -1,0 +1,69 @@
+/* The project switcher (`project-switcher/`), imported by chat.css so a host still imports chat.css
+   alone. It sits in the host's own header, not inside `.chat-panel`, so every rule is under
+   `.project-switcher`. Colours come from theme/tokens.css only. */
+:where(.project-switcher), :where(.project-switcher) *, :where(.project-switcher) *::before, :where(.project-switcher) *::after { box-sizing: border-box; }
+:where(.project-switcher) button, :where(.project-switcher) input { font: inherit; }
+:where(.project-switcher) button { cursor: pointer; }
+:where(.project-switcher) button:disabled { cursor: default; opacity: .62; }
+:where(.project-switcher) p, :where(.project-switcher) ul { margin: 0; }
+
+.project-switcher { position: relative; display: inline-block; min-width: 0; max-width: 100%; }
+.project-switcher-button {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; min-height: 32px;
+  border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--text); padding: 4px 10px; font-size: 13px; font-weight: 650;
+}
+.project-switcher-button:hover { background: var(--hover); }
+.project-switcher-button[aria-expanded="true"] { border-color: var(--accent-edge); background: var(--accent-wash); }
+.project-switcher-button svg { flex: 0 0 auto; color: var(--muted); }
+.project-switcher-button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.project-switcher-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.project-switcher-sheet {
+  position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; display: flex; flex-direction: column;
+  width: min(320px, calc(100vw - 32px)); max-height: min(420px, 70vh); border: 1px solid var(--divider); border-radius: 12px;
+  background: var(--surface-raised); box-shadow: var(--shadow); color: var(--text);
+}
+.project-switcher-sheet[hidden] { display: none; }
+.project-switcher-tools { flex: 0 0 auto; padding: 10px 10px 6px; }
+.project-switcher-search, .project-switcher-name-input {
+  width: 100%; min-width: 0; min-height: 32px; border: 1px solid var(--divider); border-radius: 8px;
+  background: var(--surface); color: var(--text); padding: 4px 10px; font-size: 13px;
+}
+.project-switcher-search::placeholder, .project-switcher-name-input::placeholder { color: var(--text-dim); }
+.project-switcher-notice {
+  margin: 0 10px 6px; border-left: 3px solid var(--danger); border-radius: 4px; background: var(--danger-soft);
+  color: var(--danger-text); padding: 6px 10px; font-size: 12.5px; line-height: 1.45;
+}
+.project-switcher-rows { flex: 1 1 auto; min-height: 0; margin: 0; padding: 0 6px; overflow-y: auto; overscroll-behavior: contain; list-style: none; }
+.project-switcher-row {
+  position: relative; display: block; width: 100%; overflow: hidden; border: 0; border-radius: 8px; background: none;
+  color: var(--text); padding: 8px 10px; font-size: 13.5px; font-weight: 600; text-align: left; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-switcher-row:hover:not(:disabled) { background: var(--hover); }
+.project-switcher-row[aria-current="true"] { background: var(--accent-row); }
+.project-switcher-row[aria-current="true"]::before { content: ""; position: absolute; top: 8px; bottom: 8px; left: 0; width: 2px; border-radius: 2px; background: var(--accent); }
+.project-switcher-none { padding: 8px 16px; color: var(--muted); font-size: 13px; }
+.project-switcher-retry {
+  align-self: flex-start; margin: 0 16px 8px; border: 1px solid var(--divider); border-radius: 999px; background: none;
+  color: var(--muted); padding: 4px 12px; font-size: 12.5px;
+}
+.project-switcher-retry:hover { background: var(--hover); color: var(--text); }
+.project-switcher-retry[hidden], .project-switcher-none[hidden], .project-switcher-notice[hidden] { display: none; }
+.project-switcher-actions { display: flex; flex: 0 0 auto; flex-direction: column; gap: 2px; border-top: 1px solid var(--divider); padding: 6px; }
+.project-switcher-new, .project-switcher-all {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 34px; border: 0; border-radius: 8px; background: none;
+  color: var(--text-soft); padding: 6px 10px; font-size: 13px; font-weight: 600; text-align: left;
+}
+.project-switcher-new:hover:not(:disabled), .project-switcher-all:hover { background: var(--hover); color: var(--text); }
+.project-switcher-new svg, .project-switcher-all svg { flex: 0 0 auto; color: var(--muted); }
+.project-switcher-new[hidden], .project-switcher-all[hidden], .project-switcher-naming[hidden] { display: none; }
+.project-switcher-naming { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px; }
+.project-switcher-name-input { flex: 1 1 100%; }
+.project-switcher-create {
+  min-height: 30px; border: 1px solid var(--accent-edge); border-radius: 8px; background: var(--accent); color: var(--accent-ink);
+  padding: 4px 12px; font-size: 13px; font-weight: 650;
+}
+.project-switcher-create:hover:not(:disabled) { background: var(--accent-hover); }
+.project-switcher-cancel { min-height: 30px; border: 0; border-radius: 8px; background: none; color: var(--muted); padding: 4px 10px; font-size: 13px; font-weight: 600; }
+.project-switcher-cancel:hover { background: var(--hover); color: var(--text); }
+.project-switcher button:focus-visible, .project-switcher input:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: -2px; }
