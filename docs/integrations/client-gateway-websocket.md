@@ -587,10 +587,13 @@ to the Studio tab republishes on focus.
 The global web shell uses these authenticated endpoints:
 
 - `GET /api/client-gateway/snapshot`
-- `GET /api/client-gateway/changes` (Server-Sent Events, authorized as the
-  snapshot: one `change` event, `{ "version": n }` numbered from 1 per stream,
-  each time this caller's own filtered view of pairings and clients changed;
-  never a kind, a code, a token or which client it was)
+- `GET /api/panel/changes`, the panel's one change stream (Server-Sent
+  Events; t920, which replaced t916's `GET /api/client-gateway/changes`). Its
+  `gateway` event, `{ "version": n }`, is sent each time this caller's own
+  filtered view of pairings and clients changed, only to a caller the snapshot
+  route would serve, and never carries a kind, a code, a token or which client
+  it was. The same stream carries the panel's `conversation` and `activity`
+  events ([client gateway architecture](../architecture/automation-studio/client-gateway.md#how-the-panel-hears-pairing-and-client-changes)).
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
@@ -636,8 +639,8 @@ request at a time. Multiple pending requests remain queued and advance only
 after the current server action succeeds. Approve and reject are not optimistic:
 a network or server failure keeps the request visible with its error.
 
-The panel reads the snapshot when the stream at `GET /api/client-gateway/changes`
-opens or reopens and once per change it signals; it reads on no timer. A visible
+The panel reads the snapshot when its change stream (`GET /api/panel/changes`)
+opens or reopens and once per `gateway` change it signals; it reads on no timer. A visible
 pending request shows a live expiration countdown from a local one-second tick
 that reads nothing. While the stream is down the prompt says so. Dismissed codes
 are locally bounded to prevent an already rejected snapshot from flashing back

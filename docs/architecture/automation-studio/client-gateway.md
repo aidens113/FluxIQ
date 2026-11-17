@@ -351,8 +351,8 @@ Automation Studio exposes framework API endpoints for the editor:
 The web shell exposes global client-gateway endpoints:
 
 - `GET /api/client-gateway/snapshot`
-- `GET /api/client-gateway/changes` (Server-Sent Events; see "How the panel
-  hears pairing and client changes" below)
+- `GET /api/panel/changes`, the panel's one change stream (Server-Sent
+  Events; see "How the panel hears pairing and client changes" below)
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
@@ -1013,6 +1013,9 @@ approval from the web panel.
 
 The panel learns of pairing and client changes by push and reads the snapshot
 only when something changed; nothing in it reads the snapshot on a timer (t916).
+Since t920 the push is one topic of the panel's single change stream, which
+also tells the chat when a thread or a project's live activity changed
+([workspace architecture](./workspace.md#how-the-chat-hears-a-turn)).
 
 - **Core.** `ClientGatewayService.changes` (`service/change-feed/`) signals a
   change as `{ kind, version }`: `pairing.requested`, `pairing.expired`,
@@ -1027,13 +1030,18 @@ only when something changed; nothing in it reads the snapshot on a timer (t916).
   (an approval readies its session in the same turn), and a session under a
   channel scope is never signalled. `version` counts signals since the gateway
   started.
-- **Route.** `GET /api/client-gateway/changes` streams Server-Sent Events
-  (`event: change`, `data: {"version"}`), on Node, dynamic,
+- **Route.** `GET /api/panel/changes` (`apps/web/src/app/api/panel/changes/`)
+  streams Server-Sent Events, on Node, dynamic,
   `cache-control: private, no-store, no-transform` and `x-accel-buffering: no`,
-  with a comment line after 25 s of silence. It is decided by the same IAM row
-  as the snapshot (`gateway:Snapshot`, panel and paired-client callers) through
-  `withWorkspaceRouteStream`, which re-checks the caller's authority around
-  every chunk.
+  with a comment line after 25 s of silence. Its gateway topic sends
+  `event: gateway`, `data: {"version"}`. The topic is included only for a
+  caller the snapshot route would serve (`gateway:Snapshot`, panel and
+  paired-client callers, decided when the stream opens), and that decision is
+  taken again before every look at the caller's view, so a caller who lost it
+  hears nothing more: the stream fails and the browser reopens it without the
+  topic. The stream as a whole is decided by its own IAM row and re-checked
+  around every chunk by `withWorkspaceRouteStream` (see the workspace
+  architecture). A paired client is served this topic alone.
 - **Only the caller's own changes.** The gateway signal is workspace-wide, but
   an event goes to a caller only when that caller's own view changed. Both the
   snapshot route and the stream resolve the view with `callerGatewayView`
@@ -1052,11 +1060,13 @@ only when something changed; nothing in it reads the snapshot on a timer (t916).
   reader is not waiting are sent as one event. An event never carries a pairing
   code, a credential or a client or session identity: the browser reads the
   snapshot.
-- **Browser.** `features/client-gateway-changes/` holds the page's one
-  subscription, shared by the global pairing prompt, Settings > Connect and the
-  Studio clients view. It opens one `EventSource`, reads the snapshot each time
-  the stream opens or re-opens (so a change made while it was down is not
-  missed) and once per signal, never overlapping reads and never losing one.
+- **Browser.** `features/panel-changes/` holds the page's one `EventSource`
+  (`sharedPanelChanges()`), shared by every reader on the page.
+  `features/client-gateway-changes/` is the gateway's reader on it, shared by
+  the global pairing prompt, Settings > Connect and the Studio clients view. It
+  reads the snapshot each time the stream opens or re-opens (so a change made
+  while it was down is not missed) and once per `gateway` event, never
+  overlapping reads and never losing one.
   While the stream is down readers show that (`reconnecting`, or `closed` when
   the browser gave up) instead of reading on an interval; a closed stream opens
   again when the tab is shown, the network returns, or a reader refreshes. The

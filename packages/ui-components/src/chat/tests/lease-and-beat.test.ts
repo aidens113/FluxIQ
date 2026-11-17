@@ -45,9 +45,19 @@ test("an answer keeps the turn it was about when it passes the lease", async () 
   assert.deepEqual(core.calls.answer, [answer]);
 });
 
-test("the poll reads every 4 s alone, 10 s beside a change feed, and 5 s in the background", () => {
-  assert.equal(readBeatMs(false, false), 4000);
-  assert.equal(readBeatMs(false, true), 10000);
-  assert.equal(readBeatMs(true, false), 5000);
-  assert.equal(readBeatMs(true, true), 5000);
+test("the poll reads every 4 s alone, 10 s beside a change feed, 5 s in the background, and not at all beside a complete feed", () => {
+  const feed = { subscribe: () => () => undefined };
+  const complete = { subscribe: () => () => undefined, complete: true };
+  assert.equal(readBeatMs(false, undefined), 4000);
+  assert.equal(readBeatMs(false, feed), 10000);
+  assert.equal(readBeatMs(true, undefined), 5000);
+  assert.equal(readBeatMs(true, feed), 5000);
+  assert.equal(readBeatMs(false, { ...feed, complete: false }), 10000);
+  assert.equal(readBeatMs(false, complete), null);
+  assert.equal(readBeatMs(true, complete), null);
+});
+
+test("a complete change feed stays complete through the lease, and a plain one stays plain", () => {
+  assert.equal(leaseTransport(threadsCore([]).transport({ changes: true, complete: true }), () => true).changes?.complete, true);
+  assert.equal(leaseTransport(threadsCore([]).transport({ changes: true }), () => true).changes?.complete, undefined);
 });

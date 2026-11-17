@@ -62,7 +62,8 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerTaskKnownFlowEndpoint(dependencies);
   // The conversation endpoints take their own dependency record: the registry, the narrow service surface they use, and what checks an answer's PIN.
   registerAutomationStudioConversationEndpoints({ registry, service, identityAccess, runLinks: automationStudioConversationRunLinks(service) });
-  registerAutomationStudioActivityEndpoints({ registry });
+  // Read on each call, never at registration: only this instance's own projects' activity is answered.
+  registerAutomationStudioActivityEndpoints({ registry, holds: (projectId) => service.projects.held.holds(projectId) });
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);
   registerRuntimeExecutionEndpoints(dependencies);

@@ -3,6 +3,7 @@
 // drops that activity rather than guessing.
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { describe, expect, it } from "vitest";
+import { AutomationStudioHeldProjects } from "../../../../../framework/automation-service/service/projects/index.ts";
 import { relayOwnProjectActivity } from "../index.ts";
 
 /** A hub, a catalogue and a removal feed the test drives, and what reached the gateway. */
@@ -22,18 +23,20 @@ function relayParts(listed: Set<string>) {
         };
       }
     },
-    holds: async (projectId) => {
-      reads.push(projectId);
-      await new Promise<void>((resolve) => pending.push(resolve));
-      if (failing) throw new Error("catalogue unreadable");
-      return listed.has(projectId);
-    },
-    removals: {
-      subscribe: (listener) => {
-        removalListeners.push(listener);
-        return () => undefined;
+    projects: new AutomationStudioHeldProjects({
+      lists: async (projectId) => {
+        reads.push(projectId);
+        await new Promise<void>((resolve) => pending.push(resolve));
+        if (failing) throw new Error("catalogue unreadable");
+        return listed.has(projectId);
+      },
+      removals: {
+        subscribe: (listener) => {
+          removalListeners.push(listener);
+          return () => undefined;
+        }
       }
-    },
+    }),
     publish: (activity) => published.push(`${activity.subject.projectId}#${activity.sequence}`)
   });
   return {

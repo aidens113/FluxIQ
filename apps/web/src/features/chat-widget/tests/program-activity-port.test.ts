@@ -1,7 +1,29 @@
 import type { ChatActivityState } from "@fluxiq/ui-components";
 import { describe, expect, it } from "vitest";
+import type { PanelChangeListener, PanelChangesPort } from "../../panel-changes";
 import { createProgramActivityPort, type ActivityTimers } from "../activity";
-import { fakeProgramApi } from "./fake-program-api";
+import { fakeProgramApi, type Answer } from "./fake-program-api";
+
+/** The page's change stream, driven by the test: `opened` and `activity` reach every reader. */
+function fakeChanges() {
+  const readers = new Set<PanelChangeListener>();
+  const changes: PanelChangesPort = {
+    subscribe: (listener) => {
+      readers.add(listener);
+      return () => {
+        readers.delete(listener);
+      };
+    },
+    status: () => "live",
+    reopen: () => undefined
+  };
+  return {
+    changes,
+    readers,
+    opened: () => { for (const reader of [...readers]) reader.opened?.(); },
+    activity: (projectId: string) => { for (const reader of [...readers]) reader.activity?.(projectId); }
+  };
+}
 
 /** Timers the test moves: nothing runs until `advance`. */
 function manualTimers() {
@@ -90,48 +112,97 @@ describe("the activity port", () => {
     expect(none.calls).toEqual([]);
   });
 
-  it("polls while someone listens, tells each state, and stops when the last one leaves", async () => {
+  it("reads when someone listens, again when the stream names its project or re-opens, never on a timer, and stops with the last listener", async () => {
     const api = fakeProgramApi({ "get-activity": { ok: true, payload: { current: event(1, { final: true }), recent: [event(1, { final: true })] } } });
     const clock = manualTimers();
-    const port = createProgramActivityPort(api, { projectId: () => "p1", timers: clock.timers });
+    const stream = fakeChanges();
+    const port = createProgramActivityPort(api, { projectId: () => "p1", timers: clock.timers, changes: stream.changes });
     const first: ChatActivityState[] = [];
     const second: ChatActivityState[] = [];
     const leaveFirst = port.subscribe((next) => first.push(state(next)));
     await settle();
     expect(api.sentTo("get-activity")).toHaveLength(1);
     expect(first.at(-1)?.live).toBe(true);
+    expect(stream.readers.size).toBe(1);
+
+    // Nothing reads on its own, however long it waits.
+    clock.advance(60_000);
+    await settle();
+    expect(api.sentTo("get-activity")).toHaveLength(1);
 
     const leaveSecond = port.subscribe((next) => second.push(state(next)));
-    clock.advance(1_700);
+    stream.activity("p2");
+    await settle();
+    expect(api.sentTo("get-activity")).toHaveLength(1);
+    stream.activity("p1");
     await settle();
     expect(api.sentTo("get-activity")).toHaveLength(2);
     expect(second.length).toBeGreaterThan(0);
+    stream.opened();
+    await settle();
+    expect(api.sentTo("get-activity")).toHaveLength(3);
 
     leaveFirst();
-    clock.advance(20_000);
-    await settle();
-    expect(api.sentTo("get-activity").length).toBeGreaterThan(2);
-
     leaveSecond();
-    const reads = api.sentTo("get-activity").length;
-    expect(clock.pending()).toBe(0);
-    clock.advance(60_000);
+    expect(stream.readers.size).toBe(0);
+    stream.activity("p1");
     await settle();
-    expect(api.sentTo("get-activity")).toHaveLength(reads);
+    expect(api.sentTo("get-activity")).toHaveLength(3);
+  });
+
+  it("serves reasons to read that arrive during a read with one more read, never two at once", async () => {
+    let answer: (() => void) | undefined;
+    // An answer that waits for the test, so a read is still under way while more reasons arrive.
+    const slow = () => new Promise((resolve) => { answer = () => resolve({ ok: true, payload: { current: event(1), recent: [event(1)] } }); });
+    const api = fakeProgramApi({ "get-activity": slow as unknown as Answer });
+    const stream = fakeChanges();
+    const port = createProgramActivityPort(api, { projectId: () => "p1", timers: manualTimers().timers, changes: stream.changes });
+    const leave = port.subscribe(() => undefined);
+    await settle();
+    stream.activity("p1");
+    stream.activity("p1");
+    stream.opened();
+    expect(api.sentTo("get-activity")).toHaveLength(1);
+    answer!();
+    await settle();
+    expect(api.sentTo("get-activity")).toHaveLength(2);
+    answer!();
+    await settle();
+    expect(api.sentTo("get-activity")).toHaveLength(2);
+    leave();
   });
 
   it("keeps the last state but says the stream is not reaching the chat when a read fails", async () => {
     const api = fakeProgramApi({ "get-activity": { ok: true, payload: { current: event(1), recent: [event(1)] } } });
-    const clock = manualTimers();
-    const port = createProgramActivityPort(api, { projectId: () => "p1", timers: clock.timers });
+    const stream = fakeChanges();
+    const port = createProgramActivityPort(api, { projectId: () => "p1", timers: manualTimers().timers, changes: stream.changes });
     const heard: ChatActivityState[] = [];
     const leave = port.subscribe((next) => heard.push(state(next)));
     await settle();
     api.answer("get-activity", { ok: false, status: 0, code: "request_failed" });
-    clock.advance(1_000);
+    stream.activity("p1");
     await settle();
     expect(heard.at(-1)).toMatchObject({ live: false, overlay: "hidden" });
     expect(heard.at(-1)?.current?.sequence).toBe(1);
+    leave();
+  });
+
+  it("reads the new project's activity as soon as the chat moves to it, and not again for the same one", async () => {
+    let project = "p1";
+    const api = fakeProgramApi({ "get-activity": (payload) => ({ ok: true, payload: { current: event(5, { subject: { kind: "run", id: "r9", projectId: String(payload?.projectId) } }), recent: [] } }) });
+    const stream = fakeChanges();
+    const port = createProgramActivityPort(api, { projectId: () => project, timers: manualTimers().timers, changes: stream.changes });
+    const heard: ChatActivityState[] = [];
+    const leave = port.subscribe((next) => heard.push(state(next)));
+    await settle();
+    port.followProject();
+    await settle();
+    expect(api.sentTo("get-activity")).toEqual([{ projectId: "p1" }]);
+    project = "p2";
+    port.followProject();
+    await settle();
+    expect(api.sentTo("get-activity")).toEqual([{ projectId: "p1" }, { projectId: "p2" }]);
+    expect(heard.at(-1)?.current?.subject.projectId).toBe("p2");
     leave();
   });
 

@@ -48,7 +48,6 @@ const TODAY: Readonly<Record<string, Row>> = {
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
   "POST /api/client-gateway/first-project": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
-  "GET /api/client-gateway/changes": ["allowed", "allowed", "allowed", "allowed"],
   "PUT /api/client-gateway/trace-artifacts/[sha256]": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
   "GET /api/framework/setup": COOKIE_ONLY_READ,
   "POST /api/framework/setup (setup)": needs("programs.write"),
@@ -56,6 +55,8 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/framework/setup (rollback-migration)": needs("programs.write"),
   "GET /api/framework/io": SELECTED_PANEL_READ,
   "POST /api/framework/io/validate": SELECTED_PANEL_READ,
+  // New in t920, not a check that existed before: a panel caller with programs.read, and a paired client as the snapshot serves it.
+  "GET /api/panel/changes": ["allowed", "allowed", "allowed", "allowed"],
   "GET /api/programs": SELECTED_PANEL_READ,
   "GET /api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]": SELECTED_PANEL_READ,
   "GET /api/programs/automation-studio/state-assets/[projectId]/[sha256]": SELECTED_PANEL_READ,

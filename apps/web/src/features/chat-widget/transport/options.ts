@@ -1,6 +1,7 @@
 import type { ConversationOnScreen } from "../../automation-studio/conversation";
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
 import type { PanelConversationOptions } from "./panel-conversation-port";
+import type { PanelChangesPort } from "../../panel-changes";
 import type { ActivityTimers } from "../activity";
 
 /** What `createProgramChatTransport` needs besides the Studio's own transport. */
@@ -19,8 +20,10 @@ export type ProgramChatTransportOptions = {
   secretKeys?: ProgramCommandTransport;
   /** What the panel has open, asked at each send and each confirmed run so "run it" means the Flow on screen. */
   onScreen?(): ConversationOnScreen;
-  /** The clock and timers the activity poll runs on; the browser's own when absent. */
+  /** The clock and timers the activity's paced status runs on; the browser's own when absent. */
   activityTimers?: ActivityTimers;
+  /** The page's change stream, which says when a thread or the activity is worth reading again; the shared one when absent. */
+  changes?: PanelChangesPort;
   /** Present: this chat is the panel-wide thread, and its conversation goes to the panel assistant's endpoints. */
   panel?: PanelConversationOptions;
 };

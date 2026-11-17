@@ -12,9 +12,16 @@
 // (D4 in the live-activity plan), the same structure a run detail shows, and
 // it is not stored at all -- the hub holds the last few events in memory.
 //
+// The hub is process-wide, and on a hosted platform one process runs a
+// runtime per tenant, so the endpoint answers only for a project this instance
+// holds (its own catalogue lists it, `AutomationStudioHeldProjects`). Any other
+// id -- another tenant's project, or none at all -- gets exactly the answer an
+// unknown project gets, an empty snapshot, so the two cannot be told apart.
+// That is a tenant check, not a domain assertion: the rule above stands.
+//
 // Registered against its own dependency record, like the conversation
 // endpoints, so a test can hand it a hub without a service. The process's hub
-// is the default.
+// is the default; `holds` has no default, so no registration can forget it.
 
 import { endpointResource } from "../../../_shared/iam/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ActivityReadRequest } from "../../../../api-contracts/automation.ts";
@@ -24,9 +31,16 @@ import { getActivityInput } from "@fluxiq/contracts/program-api-inputs";
 
 export type AutomationStudioActivityApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
+  /** Whether this instance holds `projectId` (`AutomationStudioProjectStore.held`); rejects only when its catalogue could not be read. */
+  readonly holds: (projectId: string) => Promise<boolean>;
   /** The hub to read. Absent means the one every emission in this process publishes to. */
   readonly activity?: { snapshot(projectId: string): AutomationStudioActivitySnapshot };
 };
+
+/** What the hub answers for a project that has done nothing, and so what a project this instance does not hold is answered. */
+function nothingYet(): AutomationStudioActivitySnapshot {
+  return { current: null, recent: [] };
+}
 
 export function registerAutomationStudioActivityEndpoints(dependencies: AutomationStudioActivityApiDependencies): void {
   const { registry } = dependencies;
@@ -44,6 +58,7 @@ export function registerAutomationStudioActivityEndpoints(dependencies: Automati
       const payload: Partial<ActivityReadRequest> = request.payload && typeof request.payload === "object" ? request.payload as Partial<ActivityReadRequest> : {};
       const projectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";
       if (!projectId) throw new Error("Reading live activity needs a project ID.");
+      if (!await dependencies.holds(projectId)) return { ok: true, payload: nothingYet() };
       return { ok: true, payload: activity.snapshot(projectId) };
     }
   });

@@ -670,3 +670,42 @@ test("a new chat's title shows in the list and the chat bar right after its firs
     assert.equal(openThread(chat) !== undefined, true);
   });
 });
+
+test("beside a complete change feed the chat runs no poll: it reads when told and at no other time", async () => {
+  vi.useFakeTimers();
+  const intervals = vi.spyOn(globalThis, "setInterval");
+  try {
+    const core = threadsCore(threeThreads());
+    await mounted(core.transport({ changes: true, complete: true }), { threads: hear().threads }, {}, async () => {
+      await tick(0);
+      const listed = core.calls.listAll.length;
+      assert.equal(intervals.mock.calls.length, 0);
+      // Ten minutes of quiet read nothing.
+      await tick(10 * 60_000);
+      assert.equal(core.calls.listAll.length, listed);
+      // A change the feed tells of is read.
+      core.emit({ conversationId: "A" });
+      await tick(300);
+      assert.ok(core.calls.listAll.length > listed);
+      assert.equal(intervals.mock.calls.length, 0);
+    });
+  } finally {
+    intervals.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+test("beside a plain change feed the chat keeps its slow beat, so a client without push still hears a run", async () => {
+  vi.useFakeTimers();
+  try {
+    const core = threadsCore(threeThreads());
+    await mounted(core.transport({ changes: true }), { threads: hear().threads }, {}, async () => {
+      await tick(0);
+      const listed = core.calls.listAll.length;
+      await tick(10_000);
+      assert.ok(core.calls.listAll.length > listed);
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});

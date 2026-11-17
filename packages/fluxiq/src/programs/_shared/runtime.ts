@@ -219,8 +219,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   // runs one runtime per tenant), and the subscription is removed by `detach` when the instance closes (t808).
   const stopActivity = relayOwnProjectActivity({
     hub: automationStudioActivityHub,
-    holds: async (projectId) => (await automationStudio.projects.readProjectIndex()).projects.some((project) => project.id === projectId),
-    removals: automationStudio.projects.removals,
+    projects: automationStudio.projects.held,
     publish: (activity) => { clientGateway.publishActivity(activity, { projectId: activity.subject.projectId }); }
   });
   const backgroundTasksRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: "background.tasks", layoutVersion: storageLayoutVersion }) : undefined;

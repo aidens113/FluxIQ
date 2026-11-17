@@ -117,22 +117,26 @@ class FakeEventSource {
   readyState = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  private readonly changeListeners: Array<() => void> = [];
+  private readonly gatewayListeners: Array<(event: { data: string }) => void> = [];
+  private sent = 0;
   constructor(readonly url: string) {
     FakeEventSource.last = this;
   }
-  addEventListener(_type: string, listener: () => void) {
-    this.changeListeners.push(listener);
+  addEventListener(type: string, listener: (event: { data: string }) => void) {
+    if (type === "gateway") this.gatewayListeners.push(listener);
   }
   close() {
     this.readyState = 2;
   }
   open() {
     this.readyState = 1;
+    this.sent = 0;
     this.onopen?.();
   }
+  /** The page's change stream naming a gateway change, numbered as the server numbers its events. */
   change() {
-    for (const listener of this.changeListeners) listener();
+    this.sent += 1;
+    for (const listener of this.gatewayListeners) listener({ data: JSON.stringify({ version: this.sent }) });
   }
   giveUp() {
     this.readyState = 2;
@@ -146,7 +150,7 @@ describe("ConnectClientSection live updates", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const renderer = await render();
     const stream = FakeEventSource.last!;
-    expect(stream.url).toBe("/api/client-gateway/changes");
+    expect(stream.url).toBe("/api/panel/changes");
     await act(async () => {
       stream.open();
       await settle(20);

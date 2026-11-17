@@ -50,7 +50,8 @@ export type ThreadsCore = {
   listAllFails: ChatResult<unknown> | undefined;
   /** When set, Delete answers this instead of deleting. */
   deleteFails: ChatResult<{ deleted?: boolean }> | undefined;
-  transport(options?: { changes?: boolean; listAll?: boolean; actions?: boolean }): ChatTransport;
+  /** `complete` marks the change feed complete (`ChatChangesPort.complete`): the chat then runs no poll. */
+  transport(options?: { changes?: boolean; complete?: boolean; listAll?: boolean; actions?: boolean }): ChatTransport;
 };
 
 /** A thread with `count` turns of words "turn 1", "turn 2", .... */
@@ -163,7 +164,8 @@ export function threadsCore(threads: CoreThread[]): ThreadsCore {
               subscribe: (listener: (change: { conversationId?: string }) => void) => {
                 listeners.add(listener);
                 return () => listeners.delete(listener);
-              }
+              },
+              ...(options.complete === true ? { complete: true } : {})
             }
           }
           : {})

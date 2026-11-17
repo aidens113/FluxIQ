@@ -272,6 +272,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   let questionKey = "";
   let answersKey = "";
   let timer: ReturnType<typeof setInterval> | undefined;
+  // Reads are started (the change feed heard, the first reads made), with or without a poll.
+  let reading = false;
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let unhear: (() => void) | undefined;
   // The run the shell followed to this chat, until a thread showing it is on screen (`followRun`).
@@ -359,7 +361,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     column.replaceChildren(...columnParts());
   }
   function startReads(): void {
-    if (!active || timer !== undefined) return;
+    if (!active || reading) return;
     if (!feedUnsupported && !background) {
       feed.start();
       void feed.read();
@@ -368,7 +370,15 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     void controller.refresh();
     void reader.read();
     void threads?.read();
-    unhear = owner.transport.changes?.subscribe(scheduleThreadRefresh);
+    reading = true;
+    unhear = owner.transport.changes?.subscribe(() => {
+      scheduleThreadRefresh();
+      // With no poll, a change is when a "missing" key line is asked about again, besides the composer.
+      if (owner.transport.changes?.complete === true) recheckReadiness();
+    });
+    // A complete change feed tells of every change and of every moment one may have been missed: no poll.
+    const beatMs = readBeatMs(background, owner.transport.changes);
+    if (beatMs === null) return;
     const captured = owner;
     const destination = controller;
     const currentFeed = feed;
@@ -389,7 +399,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       // empty latest chat is on screen and still says the key is missing.
       // Saved-key availability can change while the chat is open, so refresh a ready read less often too.
       if (readinessAsk !== null && (readiness === "missing" || readiness.startsWith("unavailable:") || Date.now() - readinessAskedAtMs >= READY_RECHECK_MS)) askReadiness();
-    }, readBeatMs(background, owner.transport.changes !== undefined));
+    }, beatMs);
   }
   function resetOwner(next: ChatOwner, initial: boolean): void {
     stopTimer();
@@ -619,6 +629,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
   function stopTimer(): void {
     if (timer !== undefined) clearInterval(timer);
     timer = undefined;
+    reading = false;
     if (debounce !== undefined) clearTimeout(debounce);
     debounce = undefined;
     unhear?.();

@@ -48,6 +48,7 @@ import {
 import { automationStudioConversationWholeThread } from "./whole-thread.ts";
 import { automationStudioConversationPersonWords } from "./person-words.ts";
 import { AutomationStudioConversationRefusal } from "./refusal.ts";
+import { AutomationStudioConversationSignalHub } from "./signals/index.ts";
 
 const STORAGE_UNAVAILABLE = "Conversations require project storage.";
 /** How far back a thread is searched for asks still waiting. */
@@ -144,6 +145,15 @@ export type AutomationStudioConversationWriterRequest = {
 export class AutomationStudioConversations {
   /** False without a project database pool. Every method then throws, because there is nowhere for a thread to live. */
   readonly available: boolean;
+
+  /**
+   * Where a reader hears that one of a project's threads changed, once each
+   * write here has committed: a turn (a person's or Core's), an ask answered
+   * or expired, a thread opened, renamed or deleted. The panel's change stream
+   * listens here so a turn a run writes reaches the person by push. In-process
+   * only (`./signals/hub.ts`).
+   */
+  readonly signals = new AutomationStudioConversationSignalHub();
 
   /**
    * Who to wake when an ask is settled in this process. A run waiting on a
@@ -260,20 +270,20 @@ export class AutomationStudioConversations {
         if (open) return open;
       }
       const conversationId = input.conversationId ?? `conversation.${randomUUID()}`;
-      return store.openConversation({
+      return this.signalled(input.projectId, await store.openConversation({
         mutationId: `conversation.open:${conversationId}`,
         conversationId,
         subjectKind: input.subject.kind,
         subjectId: input.subject.id,
         title: input.title
-      });
+      }));
     });
   }
 
   /** Gives a thread a person's own name. Refused by code when the project holds no such thread (`./refusal.ts`). */
   renameConversation(input: AutomationStudioConversationRenameRequest): Promise<AutomationStudioConversation> {
-    return this.withStore(input.projectId, (store) =>
-      store.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title })
+    return this.withStore(input.projectId, async (store) =>
+      this.signalled(input.projectId, await store.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title }))
     );
   }
 
@@ -288,14 +298,14 @@ export class AutomationStudioConversations {
    */
   deleteConversation(input: AutomationStudioConversationDeleteRequest): Promise<{ deleted: true; conversationId: string }> {
     if (automationStudioConversationCommandWork.busy(input)) return Promise.reject(new AutomationStudioConversationRefusal("conversation_run_active"));
-    return this.withStore(input.projectId, (store) => store.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId }));
+    return this.withStore(input.projectId, async (store) => this.signalled(input.projectId, await store.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId })));
   }
 
   /** A turn Core itself writes: what a run, a build or a node says, and the ask it raises. */
   appendAutomationTurn(input: AutomationStudioConversationAutomationTurnRequest): Promise<AutomationStudioConversationTurn> {
     const turnId = `turn.${randomUUID()}`;
-    return this.withStore(input.projectId, (store) =>
-      store.appendTurn({
+    return this.withStore(input.projectId, async (store) =>
+      this.signalled(input.projectId, await store.appendTurn({
         mutationId: `conversation.turn:${turnId}`,
         conversationId: input.conversationId,
         turnId,
@@ -304,7 +314,7 @@ export class AutomationStudioConversations {
         ask: input.ask,
         attachment: input.attachment,
         ...(input.decision === undefined ? {} : { decision: input.decision })
-      })
+      }))
     );
   }
 
@@ -322,7 +332,8 @@ export class AutomationStudioConversations {
         attachment: input.attachment ?? null
       });
       await this.nameFromFirstMessage(store, input.conversationId, input.text);
-      return turn;
+      // One signal for the turn and the name it may have given the thread.
+      return this.signalled(input.projectId, turn);
     });
   }
 
@@ -484,7 +495,7 @@ export class AutomationStudioConversations {
 
   /** Settles one ask. An ask is answered once; a second, different answer is refused. */
   answerAsk(input: AutomationStudioConversationAnswerRequest): Promise<AutomationStudioConversationAsk> {
-    return this.settling(this.withStore(input.projectId, (store) =>
+    return this.settling(input.projectId, this.withStore(input.projectId, (store) =>
       store.answerAsk({
         mutationId: input.mutationId ?? answerMutationId(input),
         askId: input.askId,
@@ -501,7 +512,7 @@ export class AutomationStudioConversations {
    * the race to a real answer is the outcome that should win.
    */
   expireAsk(input: { projectId: string; askId: string }): Promise<AutomationStudioConversationAsk> {
-    return this.settling(this.withStore(input.projectId, (store) => store.expireAsk({ mutationId: `conversation.expire:${input.askId}`, askId: input.askId })));
+    return this.settling(input.projectId, this.withStore(input.projectId, (store) => store.expireAsk({ mutationId: `conversation.expire:${input.askId}`, askId: input.askId })));
   }
 
   /** Tells the caller the moment an ask is settled in this process. Returns the way to stop listening. */
@@ -543,10 +554,22 @@ export class AutomationStudioConversations {
   }
 
   /** Wakes whoever is waiting on an ask once it is no longer pending, and answers with the ask either way. */
-  private async settling(write: Promise<AutomationStudioConversationAsk>): Promise<AutomationStudioConversationAsk> {
+  private async settling(projectId: string, write: Promise<AutomationStudioConversationAsk>): Promise<AutomationStudioConversationAsk> {
     const ask = await write;
+    this.signalled(projectId, ask);
     if (ask.status !== "pending") for (const listener of [...(this.askSettledListeners.get(ask.askId) ?? [])]) listener();
     return ask;
+  }
+
+  /**
+   * Signals that `written`'s thread changed and hands it back. Called inside
+   * `withStore` once the store's transaction has committed, so a reader that
+   * reads the thread at once reads what was written. A failed write never
+   * gets here and signals nothing.
+   */
+  private signalled<TWritten extends { conversationId: string }>(projectId: string, written: TWritten): TWritten {
+    this.signals.signal({ kind: "project", projectId }, written.conversationId);
+    return written;
   }
 
   private async withStore<TResult>(projectId: string, operation: (store: AutomationStudioProjectConversationStore) => Promise<TResult>): Promise<TResult> {
