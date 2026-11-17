@@ -936,7 +936,7 @@
       "packages/fluxiq/src/flows/authoring/model/action-element-target.ts": 4,
       "packages/fluxiq/src/framework/automation-service/testing/scale-certification.ts": 3,
       "packages/contracts/src/automation.ts": 1,
-      "packages/contracts/src/client-gateway.ts": 1,
+      "packages/contracts/src/client-gateway/message/server-message.ts": 1,
       "packages/fluxiq/src/flows/authoring/model/actions.ts": 1
     },
     "working-docs": {
