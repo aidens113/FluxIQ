@@ -13,7 +13,7 @@
 import type { ChatConversationPort, ChatOnScreen, ChatTransport } from "@fluxiq/ui-components";
 import type { ConversationOnScreen } from "../../automation-studio/conversation";
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
-import { createProgramActivityPort } from "../activity";
+import { createProgramActivityPort, type ProgramActivityPort } from "../activity";
 import { createChangesPort } from "./changes-port";
 import { createComposedConversationPort } from "./composed-conversation-port";
 import { createConversationPort } from "./conversation-port";
@@ -23,11 +23,14 @@ import type { ProgramChatTransportOptions } from "./options";
 import { createRecordingsPort } from "./recordings-port";
 import { createRunPort } from "./run-port";
 
-export function createProgramChatTransport(api: ProgramCommandTransport, options: ProgramChatTransportOptions): ChatTransport {
+/** The chat's transport, whose activity port its host tells when the chat moves to another project (`followProject`). */
+export type ProgramChatTransport = ChatTransport & { readonly activity: ProgramActivityPort };
+
+export function createProgramChatTransport(api: ProgramCommandTransport, options: ProgramChatTransportOptions): ProgramChatTransport {
   return {
     conversation: conversationFor(api, options),
     changes: createChangesPort(options),
-    activity: createProgramActivityPort(api, { projectId: options.projectId, ...(options.activityTimers ? { timers: options.activityTimers } : {}) }),
+    activity: createProgramActivityPort(api, { projectId: options.projectId, ...(options.activityTimers ? { timers: options.activityTimers } : {}), ...(options.changes ? { changes: options.changes } : {}) }),
     runs: createRunPort(api, options),
     recordings: createRecordingsPort(api, options),
     ...(options.secretKeys ? { models: createModelsPort(options.secretKeys) } : {})

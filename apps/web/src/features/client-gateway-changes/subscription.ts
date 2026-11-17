@@ -1,9 +1,5 @@
-import type { GatewayChangeSources, GatewayChangeState, GatewayChangeStream, GatewaySnapshotRead } from "./types";
-
-const GATEWAY_CHANGES_URL = "/api/client-gateway/changes";
-
-/** `EventSource.CLOSED`: the browser will not re-open this stream by itself. */
-const CLOSED = 2;
+import type { PanelChangeStatus } from "../panel-changes";
+import type { GatewayChangeSources, GatewayChangeState, GatewaySnapshotRead } from "./types";
 
 const INITIAL: GatewayChangeState = Object.freeze({ status: "connecting", snapshot: undefined, readFailed: false, refused: false, revision: 0 });
 
@@ -12,15 +8,16 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * The panel's one subscription to client gateway changes, shared by every
- * reader on the page: one `GET /api/client-gateway/changes` stream and one
- * snapshot read per reason to read, however many readers there are.
+ * The panel's subscription to client gateway changes, shared by every reader
+ * on the page: it listens on the page's one change stream
+ * (`features/panel-changes`, `GET /api/panel/changes`) and does one snapshot
+ * read per reason to read, however many readers there are.
  *
  * It reads the snapshot each time the stream opens -- the first time and on
  * every re-open, so a change made while the stream was down is never missed
- * -- and once per change the stream signals. A reason to read that arrives
- * while a read is under way waits for it and is served by one more read, so
- * reads never overlap and none is lost.
+ * -- and once per `gateway` change the stream names. A reason to read that
+ * arrives while a read is under way waits for it and is served by one more
+ * read, so reads never overlap and none is lost.
  *
  * Nothing here runs on a timer. While the stream is down the state says so,
  * and readers show that rather than reading on an interval: a stream the
@@ -29,15 +26,14 @@ function record(value: unknown): Record<string, unknown> | undefined {
  * reader calls `refresh`. If the stream fails before any snapshot was read,
  * the snapshot is read once so the page can show what is there.
  *
- * The stream opens with the first reader and closes with the last; the state
- * starts again from nothing after that.
+ * It listens with the first reader and stops with the last; the state starts
+ * again from nothing after that.
  */
 export class GatewayChangeSubscription {
   private readonly sources: GatewayChangeSources;
   private readonly listeners = new Set<() => void>();
   private state: GatewayChangeState = INITIAL;
-  private stream: GatewayChangeStream | undefined;
-  private stopWake: (() => void) | undefined;
+  private stopChanges: (() => void) | undefined;
   // Bumped on every start and stop, so work begun under an earlier start is dropped.
   private generation = 0;
   // The generation a read loop is running for, and whether a reason to read arrived during it.
@@ -48,7 +44,7 @@ export class GatewayChangeSubscription {
     this.sources = sources;
   }
 
-  /** Adds a reader; the first one opens the stream. Returns its unsubscribe; the last one closes the stream. */
+  /** Adds a reader; the first one starts listening. Returns its unsubscribe; the last one stops. */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     if (this.listeners.size === 1) this.start();
@@ -66,62 +62,37 @@ export class GatewayChangeSubscription {
   /** Reads the snapshot now, and opens the stream again if the browser gave up on it. */
   refresh = (): void => {
     if (this.listeners.size === 0) return;
-    if (this.stream === undefined || this.stream.readyState === CLOSED) this.open();
+    this.sources.changes.reopen();
     this.requestRead();
   };
 
   private start(): void {
     this.generation += 1;
-    this.open();
-    this.stopWake = this.sources.onWake(() => {
-      if (this.stream === undefined || this.stream.readyState === CLOSED) this.open();
+    this.stopChanges = this.sources.changes.subscribe({
+      status: (status) => this.statusChanged(status),
+      opened: () => this.reasonToRead(),
+      gateway: () => this.reasonToRead()
     });
   }
 
   private stop(): void {
     this.generation += 1;
-    this.stopWake?.();
-    this.stopWake = undefined;
-    this.closeStream();
+    const stop = this.stopChanges;
+    this.stopChanges = undefined;
+    stop?.();
     this.reading = undefined;
     this.readAgain = false;
     this.state = INITIAL;
   }
 
-  private open(): void {
-    this.closeStream();
-    const stream = this.sources.openStream(GATEWAY_CHANGES_URL);
-    if (stream === undefined) {
-      this.update({ status: "closed" });
-      this.readIfNeverRead();
-      return;
-    }
-    this.stream = stream;
-    this.update({ status: "connecting" });
-    stream.onopen = () => {
-      if (this.stream !== stream) return;
-      this.update({ status: "live", revision: this.state.revision + 1 });
-      this.requestRead();
-    };
-    stream.addEventListener("change", () => {
-      if (this.stream !== stream) return;
-      this.update({ revision: this.state.revision + 1 });
-      this.requestRead();
-    });
-    stream.onerror = () => {
-      if (this.stream !== stream) return;
-      this.update({ status: stream.readyState === CLOSED ? "closed" : "reconnecting" });
-      this.readIfNeverRead();
-    };
+  private statusChanged(status: PanelChangeStatus): void {
+    this.update({ status });
+    if (status === "reconnecting" || status === "closed") this.readIfNeverRead();
   }
 
-  private closeStream(): void {
-    const stream = this.stream;
-    this.stream = undefined;
-    if (!stream) return;
-    stream.onopen = null;
-    stream.onerror = null;
-    stream.close();
+  private reasonToRead(): void {
+    this.update({ revision: this.state.revision + 1 });
+    this.requestRead();
   }
 
   /** One read so a page whose stream never opened still shows what there is; never more than one. */

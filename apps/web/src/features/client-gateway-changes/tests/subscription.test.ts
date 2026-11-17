@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PanelChangeConnection, type PanelChangeEventStream, type PanelChangeEventType } from "../../panel-changes";
 import { GatewayChangeSubscription } from "../subscription";
-import type { GatewayChangeSources, GatewayChangeStream } from "../types";
+import type { GatewayChangeSources } from "../types";
 
-class FakeStream implements GatewayChangeStream {
+class FakeStream implements PanelChangeEventStream {
   readyState = 0;
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   closed = false;
-  private readonly changeListeners: Array<() => void> = [];
+  private sent = 0;
+  private readonly listeners: Array<{ type: PanelChangeEventType; listener: (event: { data?: unknown }) => void }> = [];
   constructor(readonly url: string) {}
-  addEventListener(_type: "change", listener: () => void): void {
-    this.changeListeners.push(listener);
+  addEventListener(type: PanelChangeEventType, listener: (event: { data?: unknown }) => void): void {
+    this.listeners.push({ type, listener });
   }
   close(): void {
     this.closed = true;
@@ -18,10 +20,14 @@ class FakeStream implements GatewayChangeStream {
   }
   open(): void {
     this.readyState = 1;
+    this.sent = 0;
     this.onopen?.(new Event("open"));
   }
+  /** The server's `gateway` event, numbered as the stream numbers its events. */
   change(): void {
-    for (const listener of this.changeListeners) listener();
+    this.sent += 1;
+    const data = JSON.stringify({ version: this.sent });
+    for (const entry of this.listeners) if (entry.type === "gateway") entry.listener({ data });
   }
   /** The connection dropped: the browser re-opens it by itself (`CONNECTING`), or gave up (`CLOSED`). */
   drop(gaveUp = false): void {
@@ -34,20 +40,23 @@ function harness(options: { eventSource?: boolean } = {}) {
   const streams: FakeStream[] = [];
   const reads: Array<{ resolve: (result: { ok: boolean; status: number; body: unknown }) => void }> = [];
   let wake: (() => void) | undefined;
-  const sources: GatewayChangeSources = {
+  const changes = new PanelChangeConnection({
     openStream: (url) => {
       if (options.eventSource === false) return undefined;
       const stream = new FakeStream(url);
       streams.push(stream);
       return stream;
     },
-    readSnapshot: () => new Promise((resolve) => reads.push({ resolve })),
     onWake: (listener) => {
       wake = listener;
       return () => {
         wake = undefined;
       };
     }
+  });
+  const sources: GatewayChangeSources = {
+    changes,
+    readSnapshot: () => new Promise((resolve) => reads.push({ resolve }))
   };
   const subscription = new GatewayChangeSubscription(sources);
   const answer = async (index: number, payload: Record<string, unknown> | null, status = 200) => {
@@ -65,7 +74,7 @@ describe("GatewayChangeSubscription", () => {
     const leaveA = subscription.subscribe(() => undefined);
     const leaveB = subscription.subscribe(() => undefined);
     expect(streams).toHaveLength(1);
-    expect(streams[0]!.url).toBe("/api/client-gateway/changes");
+    expect(streams[0]!.url).toBe("/api/panel/changes");
     leaveA();
     expect(streams[0]!.closed).toBe(false);
     leaveB();

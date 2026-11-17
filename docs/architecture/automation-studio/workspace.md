@@ -838,6 +838,73 @@ Two clients mount it today:
 
 The widget is not part of `fluxiq`, and `fluxiq` does not import it.
 
+### How the chat hears a turn
+
+A turn a run writes, a reply finishing, an ask answered elsewhere and the live
+activity of the work behind them reach Core's panel by push (t920). Nothing in
+the panel's transport reads a thread or the activity on a timer; the adaptive
+1-10 s poll that stood in for a push channel
+(`features/automation-studio/conversation/thread/poller.ts`) is gone.
+
+- **Core signals.** `AutomationStudioConversations.signals`
+  (`runtime/conversations/signals/`) signals `{ scope, conversationId, version }`
+  once each write to a thread has committed: a turn (a person's or Core's), an
+  ask answered or expired, a thread opened, renamed or deleted. `scope` is
+  `{ kind: "project", projectId }`, or `{ kind: "panel", userId }` for a
+  person's panel thread, which `PanelAssistantThreads` signals through the same
+  hub. A read, or a write the store refused, signals nothing. Live activity is
+  the activity hub's own subscription (`runtime/activity/hub.ts`).
+- **The stream.** `GET /api/panel/changes` is the page's one push connection.
+  It carries three topics: `gateway` (read the gateway snapshot again; see the
+  client gateway architecture), `conversation` (`{ conversationId, version }`:
+  read that thread again) and `activity` (`{ projectId, version }`: read that
+  project's live activity again). `version` is a per-stream sequence from 1
+  with no gaps, never Core's own count. An event carries no content, only an id
+  the caller may already read; the browser reads through the existing
+  IAM-checked endpoints. Repeats are coalesced until sent.
+- **Who hears what.** The stream is decided as a watch over what the caller
+  may read: `studio:ListConversations` on the workspace, the filtered list a
+  person holds, with `programs.read` of a panel caller
+  (`APP_ROUTE_IAM_CONTRACTS`), re-checked around every chunk. Each change is
+  then decided as the read it prompts (`caller-reads.ts`): a project's thread by
+  `studio:GetConversation` on the project and the project in the caller's
+  domain scope, as `get-conversation` decides it; a panel thread only for the
+  person whose thread it is, and `studio:GetPanelThread` on their own user; a
+  project's activity by `studio:GetActivity` on the project. Decisions are
+  unrecorded, reused per project, and forgotten when IAM says a decision may
+  have changed. A decision that cannot be made fails the stream rather than
+  drop the change. Each workspace's stream hears only that workspace's Core, so
+  another tenant's thread never reaches it. A paired client is told of no
+  thread or activity: those reach it over the gateway socket. A hosted user
+  who may not read the gateway snapshot still holds the stream, without its
+  gateway topic, which is why the topics share one stream instead of riding on
+  the snapshot's route.
+- **Browser.** `features/panel-changes/` opens one `EventSource` per page,
+  shared by the gateway reader, the chat's change feed
+  (`chat-widget/transport/changes-port.ts`) and its activity port
+  (`chat-widget/activity/activity-port.ts`). Each reader reads once when the
+  stream opens, again whenever it re-opens or a number is skipped (a change may
+  have been missed), and once per change it names. There is no timer fallback:
+  while the stream is down readers show that, and a closed stream opens again
+  when the tab is shown, the network returns, or a reader asks. The activity
+  port also reads when the chat moves to a thread of another project
+  (`followProject`).
+- **In-process only.** Signals do not leave the process. A hosted deployment
+  that serves one workspace from several processes needs a shared signal
+  (hosted follow-up 7); until then a turn written by another process reaches
+  a panel only when its stream next reopens.
+- **No poll in the widget either.** The panel's change feed says it is
+  complete (`ChatChangesPort.complete`: it tells of every change, whoever made
+  it, and once whenever its channel opens again or may have missed one), so
+  the chat widget runs no read interval beside it (`chat/read-beat.ts`
+  answers no beat). It reads when told, and asks about a "missing" model key
+  again on each change and when the person turns to the composer. A client
+  whose feed is not complete keeps the widget's beat: 4 s alone, a 10 s
+  ceiling beside a feed, 5 s for the thread list in the background. The web
+  extension's feed is one of those: it pushes only what `server.activity`
+  names and tells nothing when its socket reconnects, so it keeps the 10 s
+  beat.
+
 ### The assistant dock's threads
 
 The dock talks in panel threads: the panel assistant's own chats, one database per person outside every project (`runtime/conversations/assistant/store/`). Its endpoints are `automation-studio/<name>` (`programs/automation-studio/api/panel-assistant/`). Each declares `endpointResource.selfUser()`, except the two allowance endpoints, which change one value for the whole workspace and so declare `endpointResource.workspace()`, as the assistant's model setting does. Each takes the user from the signed-in actor and never from the payload, refuses a paired client (the extension keeps its own threads), and is hidden from the assistant's tools:
@@ -857,7 +924,7 @@ The dock talks in panel threads: the panel assistant's own chats, one database p
 - **Attachments** follow `get-conversation-attachment`'s contract: null for a turn the person's threads do not hold or a turn that shows nothing, and a thrown refusal, never an empty payload, for a kind that cannot be served. A `panel.client-action` turn answers the navigation its reference holds. A kind that refers to a project's record, such as `flow-graph-diff`, is stored with the project it was made in (`{"projectId","ref"}`, `runtime/conversations/assistant/attachments/project-ref.ts`; the assistant refuses to post one without a project) and is read in that project, whatever project the request names. A reference stored before that, without a project, is read in the project `projectId` names, and refused without one or with the thread's own `panel`. Either way it uses the same resolver and limits as a project thread's, the project is decided by IAM through the registry as a call of `studio:GetPanelThreadAttachment` naming it, and its domain scope is asserted before anything in it is read.
 - **Rename and delete** are `programs.write` and `authoring`, with no PIN, as `rename-conversation` and `delete-conversation` are. They use the same codes. A rename trims the title and checks it before the thread: `conversation_title_required`, or `conversation_title_too_long` over 200. A thread the person does not have is `conversation_not_found`. Because the only database looked in is the caller's own, another person's thread answers exactly as a missing id. A delete removes the thread, its turns, its asks, the mutation records that carried them, and the calls its cards waited on, in one transaction. The waiting calls go through the panel database's `9004` trigger. The delete is refused with `conversation_run_active` while a message's or an answered card's work still uses the thread (`runtime/conversations/assistant/thread-use.ts`). That in-process work is the whole of a panel thread's link to work: its cards never park a run, and runs or builds a tool starts write into their own project's threads.
 - None of these is on the paired-client allowlist.
-- Under the `service` IAM profile, `FluxIQUserAccess` grants none of these actions: they evaluate on the caller's `iam` user resource, which neither its `OwnData` nor its `SelfService` statement covers. A person needs a policy granting them on `user/${fluxiq:PrincipalId}`.
+- Under the `service` IAM profile, `FluxIQUserAccess` grants the person's own thread endpoints (list, read, read an attachment, open, rename, delete, send and answer) through its `OwnPanelAssistant` statement (`OWN_PANEL_ASSISTANT` in `platform/iam/predefined/user-access.ts`): on their own `user/${fluxiq:PrincipalId}`, and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential never reaches them that way. It does not grant `set-panel-assistant-allowance`, which changes one value for the whole workspace; reading the allowance is granted on the workspace by `IAM_USER_WORKSPACE_SETTING_READS`.
 
 ## Change Checklist
 

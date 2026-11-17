@@ -15,10 +15,10 @@ import { registerAutomationStudioApi } from "../index.ts";
 
 const readActor = { ...cacheActor("user.reader"), permissions: ["programs.read" as const] };
 
-function activityApi() {
+function activityApi(held: ReadonlySet<string> = new Set(["project.one", "project.other", "project.quiet"])) {
   const hub = new AutomationStudioActivityHub(() => new Date("2026-09-29T10:00:00.000Z"));
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioActivityEndpoints({ registry, activity: hub });
+  registerAutomationStudioActivityEndpoints({ registry, activity: hub, holds: async (projectId) => held.has(projectId) });
   const call = (payload: unknown) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getActivity, scope: { domainId: null }, actor: readActor, payload });
   return { hub, registry, call };
 }
@@ -76,13 +76,36 @@ describe("Automation Studio activity API", () => {
     }
   });
 
-  it("is registered with the rest of the API, reading the process's own hub without touching the service", async () => {
-    const service = vi.fn();
+  it("answers a project this instance does not hold exactly as an unknown one, though the process's hub has its activity", async () => {
+    // One process, two tenants' runtimes, one hub: project.elsewhere is another instance's.
+    const { hub, call } = activityApi(new Set(["project.one"]));
+    publishRun(hub, "project.elsewhere", "Another tenant's authored step");
+    const elsewhere = await call({ projectId: "project.elsewhere" });
+    const unknown = await call({ projectId: "project.nobody" });
+    expect(elsewhere).toEqual({ ok: true, payload: { current: null, recent: [] } });
+    expect(elsewhere).toEqual(unknown);
+    expect(JSON.stringify(elsewhere)).not.toContain("Another tenant");
+  });
+
+  it("fails, rather than answering, when this instance's catalogue cannot be read", async () => {
+    const hub = new AutomationStudioActivityHub();
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, new Proxy({}, { get: () => service }) as unknown as AutomationStudioService);
+    registerAutomationStudioActivityEndpoints({ registry, activity: hub, holds: async () => { throw new Error("catalogue unreadable"); } });
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getActivity, scope: { domainId: null }, actor: readActor, payload: { projectId: "project.one" } });
+    expect(response).toMatchObject({ ok: false });
+  });
+
+  it("is registered with the rest of the API without touching the service, and asks only the catalogue's holdings when called", async () => {
+    const touched = vi.fn();
+    const holds = vi.fn(async () => false);
+    const registry = new GlobalProgramApiRegistry();
+    const service = new Proxy({}, { get: (_target, name) => (name === "projects" ? { held: { holds } } : touched) });
+    registerAutomationStudioApi(registry, service as unknown as AutomationStudioService);
     expect(registry.endpoints()).toContainEqual(expect.objectContaining({ programId: "automation-studio", endpoint: "get-activity", permission: "programs.read", classification: "read" }));
+    expect(holds).not.toHaveBeenCalled();
     const response = await registry.call({ programId: "automation-studio", endpoint: "get-activity", scope: { domainId: null }, actor: readActor, payload: { projectId: "project.never-used-by-any-test" } });
     expect(response).toEqual({ ok: true, payload: { current: null, recent: [] } });
-    expect(service).not.toHaveBeenCalled();
+    expect(holds).toHaveBeenCalledWith("project.never-used-by-any-test");
+    expect(touched).not.toHaveBeenCalled();
   });
 });

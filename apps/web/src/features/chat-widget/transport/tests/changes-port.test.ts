@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import { commitAutomationStudioMutation } from "../../../automation-studio/stores";
+import type { PanelChangeListener, PanelChangesPort } from "../../../panel-changes";
 import { createChangesPort } from "../changes-port";
 
 function hearing(project: string | undefined) {
@@ -45,5 +46,32 @@ describe("the change feed", () => {
     stop();
     commitAutomationStudioMutation({ kind: "conversation.changed", projectId: "p2", conversationId: "after" });
     expect(heard).toEqual([{ conversationId: "new" }]);
+  });
+});
+
+describe("the change feed, from the page's change stream", () => {
+  it("names the thread a run or anyone else changed, reads once when the stream opens again, and stops listening when told", () => {
+    const readers = new Set<PanelChangeListener>();
+    const changes: PanelChangesPort = {
+      subscribe: (listener) => {
+        readers.add(listener);
+        return () => {
+          readers.delete(listener);
+        };
+      },
+      status: () => "live",
+      reopen: () => undefined
+    };
+    const heard: unknown[] = [];
+    const stop = createChangesPort({ projectId: () => "p1", changes }).subscribe((change) => heard.push(change));
+    for (const reader of [...readers]) reader.conversation?.("conv-from-a-run");
+    for (const reader of [...readers]) reader.opened?.();
+    stop();
+    expect(readers.size).toBe(0);
+    expect(heard).toEqual([{ conversationId: "conv-from-a-run" }, {}]);
+  });
+
+  it("says it is complete, so the chat widget runs no poll beside it", () => {
+    expect(createChangesPort({ projectId: () => "p1" }).complete).toBe(true);
   });
 });

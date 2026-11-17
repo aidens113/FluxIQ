@@ -1,6 +1,7 @@
 import type { ClientGatewayChangeListener, ClientGatewayChangesPort } from "fluxiq/client-gateway";
 import { describe, expect, it } from "vitest";
-import { ChangeEventStream } from "../change-event-stream";
+import { PanelChangeStream } from "../panel-change-stream";
+import { gatewayChangeTopic, type PanelChangeSink, type PanelChangeTopic } from "../topics";
 
 function port() {
   const listeners = new Set<ClientGatewayChangeListener>();
@@ -57,11 +58,11 @@ function manualTimers() {
   };
 }
 
-describe("ChangeEventStream", () => {
+describe("PanelChangeStream with the gateway topic", () => {
   it("opens at once, then sends an event only when the caller's own view changed, numbered from 1", async () => {
     const { changes, signal } = port();
     const { state, view } = viewOf({ clients: ["mine"] });
-    const stream = new ChangeEventStream(changes, view, { timers: manualTimers().timers });
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view)], { timers: manualTimers().timers });
     expect(await stream.next()).toEqual({ done: false, value: ": open\n\n" });
     await looked(state, 1);
 
@@ -71,13 +72,13 @@ describe("ChangeEventStream", () => {
     const pending = stream.next();
     state.value = { clients: ["mine", "added"] };
     signal();
-    expect(await pending).toEqual({ done: false, value: 'event: change\ndata: {"version":1}\n\n' });
+    expect(await pending).toEqual({ done: false, value: 'event: gateway\ndata: {"version":1}\n\n' });
   });
 
   it("carries the stream's own sequence, never the gateway's version or the change's kind", async () => {
     const { changes, signal } = port();
     const { state, view } = viewOf(0);
-    const stream = new ChangeEventStream(changes, view, { timers: manualTimers().timers });
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view)], { timers: manualTimers().timers });
     await stream.next();
     await looked(state, 1);
     const values: string[] = [];
@@ -87,14 +88,14 @@ describe("ChangeEventStream", () => {
       signal();
       values.push((await pending).value as string);
     }
-    expect(values).toEqual([1, 2, 3].map((version) => `event: change\ndata: {"version":${version}}\n\n`));
+    expect(values).toEqual([1, 2, 3].map((version) => `event: gateway\ndata: {"version":${version}}\n\n`));
     expect(values.join("")).not.toMatch(/41|client\.connected|kind/u);
   });
 
   it("keeps one event for changes found while no chunk was asked for, without a gap in the sequence", async () => {
     const { changes, signal } = port();
     const { state, view } = viewOf(0);
-    const stream = new ChangeEventStream(changes, view, { timers: manualTimers().timers });
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view)], { timers: manualTimers().timers });
     await stream.next();
     await looked(state, 1);
     state.value = 1;
@@ -103,11 +104,11 @@ describe("ChangeEventStream", () => {
     state.value = 2;
     signal();
     await looked(state, 3);
-    expect((await stream.next()).value).toBe('event: change\ndata: {"version":1}\n\n');
+    expect((await stream.next()).value).toBe('event: gateway\ndata: {"version":1}\n\n');
     const pending = stream.next();
     state.value = 3;
     signal();
-    expect((await pending).value).toBe('event: change\ndata: {"version":2}\n\n');
+    expect((await pending).value).toBe('event: gateway\ndata: {"version":2}\n\n');
   });
 
   it("compares a change heard while the first view is still being read against that view", async () => {
@@ -115,25 +116,25 @@ describe("ChangeEventStream", () => {
     let release: () => void = () => undefined;
     let value = 0;
     let reads = 0;
-    const stream = new ChangeEventStream(changes, async () => {
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, async () => {
       reads += 1;
       const seen = value;
       if (reads === 1) await new Promise<void>((resolve) => { release = resolve; });
       return seen;
-    }, { timers: manualTimers().timers });
+    })], { timers: manualTimers().timers });
     await stream.next();
     value = 1;
     signal();
     release();
     const pending = stream.next();
-    expect((await pending).value).toBe('event: change\ndata: {"version":1}\n\n');
+    expect((await pending).value).toBe('event: gateway\ndata: {"version":1}\n\n');
   });
 
   it("sends a keep-alive comment when nothing changed for the keep-alive time", async () => {
     const { changes } = port();
     const { state, view } = viewOf(0);
     const clock = manualTimers();
-    const stream = new ChangeEventStream(changes, view, { timers: clock.timers, keepAliveMs: 10 });
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view)], { timers: clock.timers, keepAliveMs: 10 });
     await stream.next();
     await looked(state, 1);
     const pending = stream.next();
@@ -145,10 +146,10 @@ describe("ChangeEventStream", () => {
   it("fails the stream when the caller's view can no longer be read", async () => {
     const { changes, signal, listeners } = port();
     let refuse = false;
-    const stream = new ChangeEventStream(changes, async () => {
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, async () => {
       if (refuse) throw new Error("authority lost");
       return 0;
-    }, { timers: manualTimers().timers });
+    })], { timers: manualTimers().timers });
     await stream.next();
     const pending = stream.next();
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -162,7 +163,7 @@ describe("ChangeEventStream", () => {
     const { changes, listeners, signal } = port();
     const { state, view } = viewOf(0);
     const clock = manualTimers();
-    const stream = new ChangeEventStream(changes, view, { timers: clock.timers });
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view)], { timers: clock.timers });
     await stream.next();
     await looked(state, 1);
     const pending = stream.next();
@@ -173,5 +174,76 @@ describe("ChangeEventStream", () => {
     state.value = 9;
     signal();
     expect(await stream.next()).toEqual({ done: true, value: undefined });
+  });
+});
+
+/** A topic a test drives by hand: `sink` is set once the stream starts it, `stopped` once the stream stops it. */
+function manualTopic() {
+  const topic = { sink: undefined as PanelChangeSink | undefined, stopped: false };
+  const start: PanelChangeTopic = {
+    start(sink) {
+      topic.sink = sink;
+      return () => {
+        topic.stopped = true;
+      };
+    }
+  };
+  return { topic, start };
+}
+
+describe("PanelChangeStream with several topics", () => {
+  it("names the thread or the project to read again, numbers every event in one sequence, and coalesces repeats until sent", async () => {
+    const threads = manualTopic();
+    const activity = manualTopic();
+    const stream = new PanelChangeStream([threads.start, activity.start], { timers: manualTimers().timers });
+    await stream.next();
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.one" });
+    activity.topic.sink!.changed({ topic: "activity", projectId: "project.a" });
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.one" });
+    activity.topic.sink!.changed({ topic: "activity", projectId: "project.a" });
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.two" });
+    expect((await stream.next()).value).toBe('event: conversation\ndata: {"conversationId":"conversation.one","version":1}\n\n');
+    expect((await stream.next()).value).toBe('event: activity\ndata: {"projectId":"project.a","version":2}\n\n');
+    expect((await stream.next()).value).toBe('event: conversation\ndata: {"conversationId":"conversation.two","version":3}\n\n');
+    const pending = stream.next();
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.one" });
+    expect((await pending).value).toBe('event: conversation\ndata: {"conversationId":"conversation.one","version":4}\n\n');
+  });
+
+  it("fails, and stops every topic, when one topic fails", async () => {
+    const threads = manualTopic();
+    const activity = manualTopic();
+    const stream = new PanelChangeStream([threads.start, activity.start], { timers: manualTimers().timers });
+    await stream.next();
+    const pending = stream.next();
+    activity.topic.sink!.fail(new Error("authority could not be decided"));
+    await expect(pending).rejects.toThrow("authority could not be decided");
+    expect([threads.topic.stopped, activity.topic.stopped]).toEqual([true, true]);
+    threads.topic.sink!.changed({ topic: "conversation", conversationId: "conversation.one" });
+    await expect(stream.next()).rejects.toThrow("authority could not be decided");
+  });
+
+  it("stops a topic that failed while starting, and starts no more", () => {
+    const later = manualTopic();
+    let stoppedFailing = false;
+    const failing: PanelChangeTopic = {
+      start(sink) {
+        sink.fail(new Error("refused at once"));
+        return () => {
+          stoppedFailing = true;
+        };
+      }
+    };
+    void new PanelChangeStream([failing, later.start], { timers: manualTimers().timers });
+    expect(stoppedFailing).toBe(true);
+    expect(later.topic.sink).toBeUndefined();
+  });
+
+  it("stops every topic as soon as it is returned", async () => {
+    const threads = manualTopic();
+    const stream = new PanelChangeStream([threads.start], { timers: manualTimers().timers });
+    await stream.next();
+    await stream.return();
+    expect(threads.topic.stopped).toBe(true);
   });
 });

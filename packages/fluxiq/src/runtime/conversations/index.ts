@@ -13,6 +13,7 @@ export * from "./rows.ts";
 export * from "./refusal.ts";
 export * from "./inputs.ts";
 export * from "./store.ts";
+export * from "./signals/index.ts";
 export * from "./writer.ts";
 export * from "./whole-thread.ts";
 export * from "./person-words.ts";

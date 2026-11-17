@@ -93,6 +93,7 @@ const fluxiq = {
       receiveTraceArtifact: () => ({ status: "accepted", traces: 1 })
     },
     automationStudio: {
+      conversations: { signals: { subscribe: () => () => undefined, version: () => 0 } },
       listRecordingSummaries: async () => ({ items: [], page: 1, pageSize: 10, total: 0 }),
       assertProjectDomainAccess: async () => undefined,
       getFlow: async (projectId: string, flowId: string) => ({ projectId, flowId }),

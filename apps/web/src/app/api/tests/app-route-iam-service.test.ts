@@ -111,9 +111,16 @@ describe("app routes on the service profile", () => {
   }
 
   it("refuses a user a list across the workspace, which would show other users' items", async () => {
-    for (const name of ["GET /api/recordings", "GET /api/client-gateway/snapshot", "GET /api/client-gateway/changes"]) {
+    for (const name of ["GET /api/recordings", "GET /api/client-gateway/snapshot"]) {
       await expect(call(name, { kind: "cookie", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
       await expect(call(name, { kind: "token", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
     }
+  });
+
+  it("gives a user the panel's change stream, which names only what they may read, and a paired client only what the snapshot would", async () => {
+    // The stream is a filtered watch (each event decided as the read it prompts), so a hosted user holds it by cookie;
+    // a bearer is served only the gateway, which the snapshot refuses a user, so it has nothing to hear.
+    await expect(call("GET /api/panel/changes", { kind: "cookie", person: "bob" })).resolves.toEqual({ outcome: "allowed" });
+    await expect(call("GET /api/panel/changes", { kind: "token", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
   });
 });
