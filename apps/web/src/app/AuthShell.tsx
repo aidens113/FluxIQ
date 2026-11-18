@@ -1,6 +1,6 @@
 "use client";
 
-import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { Blocks, CheckCircle2, Eye, EyeOff, KeyRound, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
@@ -279,7 +279,9 @@ export function LoginPanel() {
           </form>
         )}
         <LoginProductLinks signUp={!setupPending} />
-        {setupPending ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div> : null}
+        {setupPending
+          ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div>
+          : <div className="auth-setup-assurance"><KeyRound aria-hidden size={14} /><span>Setting up FluxIQ for the first time? Open the setup link it printed when it started.</span></div>}
       </section>
     </main>
   );
