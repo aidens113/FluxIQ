@@ -256,9 +256,31 @@ Always replace the locally saved token with `payload.token`, including after a
 successful reconnect. FluxIQ consumes and rotates the credential on every
 reconnect, so the previous value stops working. Disconnecting ends the socket
 session but does not remove client trust. Trust survives a FluxIQ restart,
-expires after 30 days by default, and can be revoked from Automation Studio's
-Client Gateway view. Expired, revoked, mismatched, and unknown credentials all
-return to the same approval flow.
+expires after 30 days by default, and can be revoked in the panel under
+Security > Devices and apps. A client that relaunches resumes with its saved credential:
+no new approval is asked for.
+
+When a credential ends, the gateway says how:
+
+- **Revoked** by a person or by FluxIQ: the client receives `server.revoked`
+  (`{ reason, message }`, with `reason` one of `ClientGatewayRevocationReason`),
+  then `server.disconnect`, and the socket closes. That happens at once on a
+  live socket, and again on any later `client.hello` that carries the revoked
+  credential. No approval is offered. The client should discard the credential,
+  stop reconnecting, show that it was revoked, and ask to pair again only when
+  its person connects (a hello without a token). A reason the client does not
+  know reads as revoked all the same. A client that ignores `server.revoked`
+  still stops on `server.disconnect`.
+- **Expired or refused**: the client gets `server.pairing_required` as usual,
+  with `credential: "expired"` (its credential ran out unused) or `"refused"`
+  (unknown, another client's, approved for another domain, presented again
+  after it was replaced, or of a trust the client ended itself). The credential
+  will not work again, so discard it. The request on that socket is a normal
+  approval request.
+
+A trust the client ended itself (`client.forget_pairing`, the hosted credential
+teardown) is not answered with `server.revoked`: the socket gets only
+`server.disconnect`.
 
 ## Client Messages After Approval
 
@@ -446,6 +468,7 @@ FluxIQ may send:
 - `server.set_active_tab`
 - `server.ping`
 - `server.disconnect`
+- `server.revoked` (the client's trust was revoked; see how a credential ends, above)
 - `server.activity` (to a session that advertised `fluxiq.activity`)
 - `server.project_focused` (the answer to `client.focus_project`)
 - `server.project_access_ended` (the person lost the session's project; see Project Focus)

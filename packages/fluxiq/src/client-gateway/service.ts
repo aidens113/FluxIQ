@@ -15,6 +15,7 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
 import { ClientGatewaySessionMetadataResolver } from "./service/session-metadata/index.ts";
 export type { ClientGatewaySessionMetadata, ClientGatewaySessionMetadataProvider } from "./service/session-metadata/index.ts";
 import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
@@ -160,7 +161,7 @@ export class ClientGatewayService {
     const facade: ClientGatewayFacadePorts = {
       ready: () => this.ready(),
       disconnect: (sessionId, reason) => this.disconnect(sessionId, reason),
-      revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
+      revokeTrustedClient: (trustedClientId, reason, revokedFor) => this.revokeTrustedClient(trustedClientId, reason, revokedFor)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
     const sessionMetadata = new ClientGatewaySessionMetadataResolver({ sessions, trustedClients, transport, audit, facade, provider: options.sessionMetadata });
@@ -233,8 +234,9 @@ export class ClientGatewayService {
     return this.pairingFlow.approve(pairingCode, input);
   }
 
-  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
-    return this.access.revokeTrustedClient(trustedClientId, reason);
+  /** Ends a client's trust; `revokedFor` is what the client is told (`ClientGatewayAccess.revokeTrustedClient`), omitted to follow the reason. */
+  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator", revokedFor?: ClientGatewayRevocationReason | null): Promise<boolean> {
+    return revokedFor === undefined ? this.access.revokeTrustedClient(trustedClientId, reason) : this.access.revokeTrustedClient(trustedClientId, reason, revokedFor);
   }
 
   /** Whether this is an active trusted client acting for this person: what a stored holder must be before anything is boxed to it. */

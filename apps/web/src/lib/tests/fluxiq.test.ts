@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, getFluxIQWorkspaces, getWorkspaceWebPresentation, getFluxIQWebReadiness, getFluxIQWebRuntimeStatus, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
 
 // The owner-claim module is built beside this one; the runtime only needs its answer.
-const ownerClaim = vi.hoisted(() => ({ prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })) }));
-vi.mock("../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare }));
+const ownerClaim = vi.hoisted(() => ({
+  prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })),
+  prepareLocal: vi.fn(async (_input: unknown) => ({ state: "claimed", link: null, revokedSessions: 0 }))
+}));
+vi.mock("../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare, prepareLocalFirstRun: ownerClaim.prepareLocal }));
 
 // Closing the runtime imports this lazily. In a run of this file alone, that is Vite's first
 // transform of the module and all it imports, 3.7-5.1 s of waiting that fell inside whichever test
@@ -347,7 +350,7 @@ describe("web model-provider construction admission", () => {
       paths: { root, fluxiq: path.join(root, ".fluxiq") },
       activeDomainId: options?.domainId, domains: { summaries: () => [{ id: "admission.example" }] },
       registerDomain() { return this; }, inspectStorage: () => ({ layout: "v2" }), close: vi.fn(async () => {}),
-      programs: { automationStudioClientGateway: { setClientRecordingContextProvider: vi.fn() }, api: { endpoints: () => [] }, identityAccess: { authority: { holdElsewhere: vi.fn() } } }
+      programs: { automationStudioClientGateway: { setClientRecordingContextProvider: vi.fn() }, api: { endpoints: () => [] }, identityAccess: { authority: { holdElsewhere: vi.fn() }, firstRun: { startUnclaimed: vi.fn() } } }
     }) as unknown as FluxIQ);
     try {
       await initializeFluxIQWebRuntime();
@@ -401,6 +404,7 @@ describe("FluxIQ hosted runtime wiring", () => {
     for (const [key, value] of Object.entries(extra)) process.env[key] = value;
     delete globalState.__fluxiqWebRuntime;
     ownerClaim.prepare.mockClear();
+    ownerClaim.prepareLocal.mockClear();
     return { root, listen };
   }
 
@@ -459,12 +463,16 @@ describe("FluxIQ hosted runtime wiring", () => {
     try {
       await initializeFluxIQWebRuntime();
       expect(ownerClaim.prepare).not.toHaveBeenCalled();
+      // The local profile runs its own first-run step instead, against the primary's identity, with the panel's origin.
+      expect(ownerClaim.prepareLocal).toHaveBeenCalledTimes(1);
+      expect(ownerClaim.prepareLocal.mock.calls[0]![0]).toMatchObject({ identity: getFluxIQ().programs.identityAccess, origin: "https://panel.example.test" });
     } finally {
       await cleanup(local.root);
     }
     const hosted = await hostedEnv("self-hosted");
     try {
       await initializeFluxIQWebRuntime();
+      expect(ownerClaim.prepareLocal).not.toHaveBeenCalled();
       expect(ownerClaim.prepare).toHaveBeenCalledTimes(1);
       expect(ownerClaim.prepare.mock.calls[0]![0]).toMatchObject({ settings: { profile: "self-hosted" }, fluxiqDir: path.join(hosted.root, ".fluxiq") });
       const lines = info.mock.calls.map((call) => String(call[0]));
@@ -472,6 +480,32 @@ describe("FluxIQ hosted runtime wiring", () => {
     } finally {
       info.mockRestore();
       await cleanup(hosted.root);
+    }
+  });
+
+  // Two real instances, each opening its stores and deriving a password key: well over the default 5 s on a loaded machine.
+  it("starts a new local install with no account, and leaves an existing install's temporary admin for the first-run step", { timeout: 60_000 }, async () => {
+    const fresh = await hostedEnv("local");
+    try {
+      await initializeFluxIQWebRuntime();
+      const identity = getFluxIQ().programs.identityAccess;
+      expect(await identity.firstRun.state()).toBe("unclaimed");
+      expect((await identity.snapshot()).users).toEqual([]);
+      await expect(identity.authenticate({ username: "admin", password: "admin" })).rejects.toThrow();
+    } finally {
+      await cleanup(fresh.root);
+    }
+    const existing = await hostedEnv("local");
+    try {
+      // An install made before: its store already holds the default admin on the temporary password.
+      const before = FluxIQ.create({ rootDir: existing.root, loadEnv: false, modelProvidersEnabled: false });
+      await before.setup();
+      await before.programs.identityAccess.snapshot();
+      await before.close();
+      await initializeFluxIQWebRuntime();
+      expect(await getFluxIQ().programs.identityAccess.firstRun.state()).toBe("temporary-admin");
+    } finally {
+      await cleanup(existing.root);
     }
   });
 

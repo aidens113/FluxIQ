@@ -1,4 +1,5 @@
-import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewaySession, ClientGatewaySocket, ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewayPairingCredentialRefusal, ClientGatewaySession, ClientGatewaySocket, ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayCredentialCustodian, ClientGatewayCredentialHolder } from "./credential-custody.ts";
 import { ClientGatewayPairingCapacityError, clientGatewayPeerAuditFields, type ClientGatewayPeer } from "./security/index.ts";
@@ -14,6 +15,7 @@ import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
 import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 import { ClientGatewaySessionMetadataUnavailableError, type ClientGatewaySessionMetadataResolver } from "./session-metadata/index.ts";
+import { clientGatewayRevokedNotice } from "./revocation/index.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
@@ -41,6 +43,13 @@ export function clientGatewayCredentialHolder(client: { trustedClientId: string;
 
 /** The reason an older session of a reconnecting client is closed for. */
 const SESSION_REPLACED = "replaced by newer session";
+
+/** What `server.pairing_required` says, by why the hello's credential was not accepted, or without one. */
+const PAIRING_REASONS: Readonly<Record<ClientGatewayPairingCredentialRefusal | "none", string>> = {
+  none: "Approve this client in FluxIQ before sending data.",
+  expired: "This client's approval expired. Approve it again in FluxIQ before sending data.",
+  refused: "FluxIQ did not accept this client's saved approval. Approve it again in FluxIQ before sending data."
+};
 
 /**
  * Connect, hello, and disconnect. These three are one collaborator because
@@ -156,8 +165,20 @@ export class ClientGatewayLifecycle {
       await this.enrolment.enrol(session, hello.enrolmentTicket);
       return;
     }
-    if (hello.token && await this.resumeTrustedSession(session, hello.token)) return;
-    if (this.sessions.get(sessionId) !== session || session.disconnectedAt !== undefined) return;
+    let refused: ClientGatewayPairingCredentialRefusal | undefined;
+    if (hello.token) {
+      if (await this.resumeTrustedSession(session, hello.token)) return;
+      if (this.sessions.get(sessionId) !== session || session.disconnectedAt !== undefined) return;
+      const ending = await this.trustedClients.credentialEnding(hello.token);
+      if (this.sessions.get(sessionId) !== session || session.disconnectedAt !== undefined) return;
+      // Revoked by a person or by Core: told so and closed, never offered pairing, so the client raises no request by itself.
+      // A reused credential pairs again instead: the hello may be the real client's, and a person decides.
+      if (ending?.revokedFor !== undefined && ending.revokedFor !== "credential_reused") {
+        await this.refuseRevoked(session, ending.revokedFor);
+        return;
+      }
+      refused = ending?.expired === true ? "expired" : "refused";
+    }
     session.status = "pairing_required";
     let pairing: ClientGatewayPairingChallenge;
     try {
@@ -169,8 +190,24 @@ export class ClientGatewayLifecycle {
     }
     await this.transport.send(sessionId, this.transport.message("server.pairing_required", {
       referenceCode: pairing.referenceCode ?? pairing.pairingCode,
-      reason: "Approve this client in FluxIQ before sending data."
+      reason: PAIRING_REASONS[refused ?? "none"],
+      ...(refused !== undefined ? { credential: refused } : {})
     }, session));
+  }
+
+  /**
+   * A hello carried the credential of a trust a person or Core revoked
+   * (`ClientGatewayTrustedClient.revokedFor`): the client is told so
+   * (`server.revoked`) and closed, as its live sockets were when it was
+   * revoked, and no pairing is offered: it pairs again when its person asks.
+   * `server.disconnect` follows for a client that predates `server.revoked`,
+   * so it stops reconnecting rather than retrying the dead credential.
+   */
+  private async refuseRevoked(session: InternalSession, reason: ClientGatewayRevocationReason): Promise<void> {
+    this.audit.record("session.credential_revoked", "A client connected with a revoked credential; it was told and closed instead of offered pairing.", { sessionId: session.sessionId, clientId: session.clientId, reason });
+    await this.transport.send(session.sessionId, this.transport.message("server.revoked", clientGatewayRevokedNotice(reason), session));
+    await this.transport.send(session.sessionId, this.transport.message("server.disconnect", { reason: "Client trust was revoked." }, session));
+    this.facade.disconnect(session.sessionId, "client trust revoked");
   }
 
   /**
@@ -283,7 +320,7 @@ export class ClientGatewayLifecycle {
     const reused = this.trustedClients.reuseOf(token, options);
     if (!reused) return;
     this.audit.record("credential.reuse_detected", "A retired credential was presented, so this client's trust was revoked.", { trustedClientId: reused.trustedClientId, clientId: reused.clientId });
-    await this.facade.revokeTrustedClient(reused.trustedClientId, "credential reuse detected");
+    await this.facade.revokeTrustedClient(reused.trustedClientId, "credential reuse detected", "credential_reused");
   }
 
   /** The trust ended while this reconnect was in flight: what custody keeps goes, and the session asks to pair. */

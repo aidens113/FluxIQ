@@ -1,10 +1,11 @@
 "use client";
 
-import { Blocks, CheckCircle2, Eye, EyeOff, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { Blocks, CheckCircle2, Eye, EyeOff, KeyRound, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
+import { CREDENTIAL_SETUP_PENDING_COOKIE, replacementPasswordError } from "./api/auth/credential-setup-rules";
 import { localAuthDestination } from "./auth-navigation";
 import { BrandMark, LoginProductLinks, usePanelBranding } from "./product/client";
 
@@ -68,6 +69,9 @@ type LoginPayload = {
   requiresCredentialSetup?: boolean;
 };
 
+/** Codes from `/api/auth/credential-setup` that end setup in this browser: the person signs in again. */
+const SETUP_ENDED = new Set(["setup_expired", "already_replaced"]);
+
 export function LoginPanel() {
   const branding = usePanelBranding();
   const [username, setUsername] = useState("");
@@ -78,7 +82,8 @@ export function LoginPanel() {
   const [capsLock, setCapsLock] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rateLimitSeconds, setRateLimitSeconds] = useState(0);
-  const [setupUserId, setSetupUserId] = useState("");
+  // The temporary credential was proved and not yet replaced: only the setup form, or signing out, is offered.
+  const [setupPending, setSetupPending] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [feedback, setFeedback] = useState<{ tone: AlertTone; title: string; message: string } | null>(null);
@@ -89,6 +94,11 @@ export function LoginPanel() {
   useEffect(() => {
     mounted.current = true;
     destination.current = { scope: currentLoginScope(), path: localAuthDestination(window.location.pathname + window.location.search + window.location.hash, window.location.origin) };
+    // A reload, or another page, during first setup returns here: stay on the setup form.
+    if (credentialSetupPending()) {
+      setSetupPending(true);
+      setFeedback(REPLACE_TEMPORARY);
+    }
     return () => { mounted.current = false; generation.current += 1; };
   }, []);
   function beginRequest() {
@@ -141,9 +151,10 @@ export function LoginPanel() {
       } | undefined;
       if (!isCurrent()) return;
       if (response.ok) {
-        if (body?.payload?.requiresCredentialSetup && body.payload.user?.id) {
-          setSetupUserId(body.payload.user.id);
-          setFeedback({ tone: "warning", title: "Replace the temporary password", message: "Choose a new password before opening FluxIQ." });
+        if (body?.payload?.requiresCredentialSetup) {
+          setSetupPending(true);
+          setPassword("");
+          setFeedback(REPLACE_TEMPORARY);
           return;
         }
         window.location.href = request.path;
@@ -182,13 +193,18 @@ export function LoginPanel() {
     setBusy(true);
     setFeedback(null);
     try {
-      const response = await fetch("/api/programs/identity-access/set-password", {
+      const response = await fetch("/api/auth/credential-setup", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId: setupUserId, value: newPassword, authorizationPassword: password })
+        body: JSON.stringify({ password: newPassword, confirmation: confirmPassword })
       });
-      const result = await response.json().catch(() => undefined) as { ok?: boolean; error?: string } | undefined;
+      const result = await response.json().catch(() => undefined) as { ok?: boolean; code?: string; error?: string } | undefined;
       if (!isCurrent()) return;
+      if (result?.code && SETUP_ENDED.has(result.code)) {
+        endSetup();
+        setFeedback({ tone: "warning", title: "Sign in again", message: result.error ?? "Sign in to continue." });
+        return;
+      }
       if (!response.ok || !result?.ok) {
         setFeedback({ tone: "error", title: "Password could not be replaced", message: result?.error ?? "Keep this page open and try again." });
         return;
@@ -203,16 +219,38 @@ export function LoginPanel() {
     }
   }
 
+  function endSetup() {
+    setSetupPending(false);
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  async function leaveSetup() {
+    const request = beginRequest();
+    if (!request) return;
+    setBusy(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      if (!request.isCurrent()) return;
+      endSetup();
+      setFeedback(null);
+    } catch {
+      if (request.isCurrent()) setFeedback({ tone: "error", title: "Sign-out failed", message: "FluxIQ could not be reached. Try again." });
+    } finally {
+      request.finish();
+    }
+  }
+
   const passwordError = setupPasswordError(newPassword, confirmPassword);
   return (
     <main className="auth-page">
       <section aria-labelledby="auth-title" className="auth-card auth-panel-v1">
         <div className="brand-lockup">
           <BrandMark icon={<ShieldCheck size={17} aria-hidden />} />
-          <span><strong id="auth-title">{branding.signInTitle ?? branding.name}</strong><small>{setupUserId ? "Secure first setup" : branding.signInMessage ?? "Sign in to continue"}</small></span>
+          <span><strong id="auth-title">{branding.signInTitle ?? branding.name}</strong><small>{setupPending ? "Secure first setup" : branding.signInMessage ?? "Sign in to continue"}</small></span>
         </div>
         {feedback ? <InlineNotice message={feedback.message} title={feedback.title} tone={feedback.tone} /> : null}
-        {setupUserId ? (
+        {setupPending ? (
           <form className="auth-form" onSubmit={completeSetup}>
             <Field hint="Use at least 12 characters and do not reuse the temporary password." label="New password" required>
               <input autoComplete="new-password" data-autofocus onChange={(event) => setNewPassword(event.target.value)} type="password" value={newPassword} />
@@ -221,6 +259,7 @@ export function LoginPanel() {
               <input autoComplete="new-password" onChange={(event) => setConfirmPassword(event.target.value)} type="password" value={confirmPassword} />
             </Field>
             <Button busy={busy} disabled={Boolean(passwordError)} type="submit" variant="primary">Finish setup</Button>
+            <Button disabled={busy} onClick={() => void leaveSetup()} type="button" variant="ghost"><LogOut aria-hidden size={14} /> Sign out</Button>
           </form>
         ) : (
           <form className="auth-form" onSubmit={login}>
@@ -239,18 +278,26 @@ export function LoginPanel() {
             </Button>
           </form>
         )}
-        <LoginProductLinks signUp={!setupUserId} />
-        {setupUserId ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div> : null}
+        <LoginProductLinks signUp={!setupPending} />
+        {setupPending
+          ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div>
+          : <div className="auth-setup-assurance"><KeyRound aria-hidden size={14} /><span>Setting up FluxIQ for the first time? Open the setup link it printed when it started.</span></div>}
       </section>
     </main>
   );
 }
 
+const REPLACE_TEMPORARY = { tone: "warning" as const, title: "Replace the temporary password", message: "Choose your own password to open FluxIQ. Nothing else opens until you do." };
+
+/** The replacement password's rule; the setup route applies the same one. */
 export function setupPasswordError(password: string, confirmation: string): string {
-  if (password.length < 12) return "Use at least 12 characters.";
-  if (password.toLowerCase() === "admin") return "Choose a password other than the temporary password.";
-  if (password !== confirmation) return "Passwords do not match.";
-  return "";
+  return replacementPasswordError(password, confirmation);
+}
+
+/** Whether this browser is in first setup: the server sets the marker beside its HttpOnly setup cookie. The marker grants nothing. */
+function credentialSetupPending(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.cookie.split(";").some((part) => part.trim() === `${CREDENTIAL_SETUP_PENDING_COOKIE}=1`);
 }
 
 function digits(value: string, maxLength: number): string {

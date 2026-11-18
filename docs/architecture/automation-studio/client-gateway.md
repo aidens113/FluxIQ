@@ -313,7 +313,8 @@ server.session_ready
 
 Paired clients can then send generic state updates, snapshots, recording events, action
 results, and errors. FluxIQ can send start/stop recording, capture snapshot,
-set active tab, ping, disconnect, and execute action commands. Every message is
+set active tab, ping, disconnect, revoked (see "Revocation, refused credentials
+and relaunch" below), and execute action commands. Every message is
 versioned JSON with an ID and timestamp; action commands include a command ID
 so results can be correlated.
 
@@ -973,7 +974,7 @@ the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
 then receives `server.session_ready` with its client credential. Raw
 credentials are never included in session snapshots. The Client Gateway view
-lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. The view reads only while it is active, when it becomes active and on each gateway change signal, and rejects stale responses; it reads on no timer. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
+lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The revoked client is told at once and does not ask to pair again by itself (see "Revocation, refused credentials and relaunch"). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. The view reads only while it is active, when it becomes active and on each gateway change signal, and rejects stale responses; it reads on no timer. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
 
 Extension/client connection flow:
 
@@ -1008,6 +1009,64 @@ pnpm --filter @fluxiq/web mock:client
 
 The mock client will print the reference code it receives and then wait for
 approval from the web panel.
+
+## Revocation, refused credentials and relaunch
+
+A client's saved credential has three ways to end, and the gateway says which,
+so a client never raises a pairing request a person did not ask for (t929).
+
+- **Revoked.** `revokeTrustedClient(trustedClientId, reason, revokedFor)`
+  (`service/access.ts`) ends the trust and records `revokedFor` on it
+  (`ClientGatewayTrustedClient.revokedFor`, a `ClientGatewayRevocationReason`).
+  It is what the client is told.
+  - Each live socket of that trust is sent `server.revoked { reason, message }`,
+    then `server.disconnect`, then closed. The `server.disconnect` is for a
+    client that predates `server.revoked`: without it, such a client sees only
+    the close and reconnects about once a second, because a socket that opens
+    resets its backoff.
+  - A later `client.hello` carrying the revoked credential gets the same two
+    messages and the close, from `handleHello` (`service/lifecycle.ts`,
+    `credentialEnding` in `service/revocation/`). It is audited as
+    `session.credential_revoked`, and no pairing is offered. That covers a
+    browser that was offline when it was revoked, and a revoke that lands while
+    a reconnect is in flight. The client pairs again only when its person asks.
+  - When the caller gives no `revokedFor`, it follows the reason text
+    (`service/revocation/revoked-for.ts`): one of the protocol's reasons passes
+    through, and anything else is `revoked_by_user`. Silence is explicit: a
+    revocation the client is not told about passes `revokedFor: null`. Those
+    revocations are the person's own Forget (`client.forget_pairing`, and
+    `forgetByCredential`), the hosted credential teardown, re-approval of the
+    same client, credential-delivery cleanup, and managed hosts (the engine
+    enrols them again). The live socket of such a trust gets only
+    `server.disconnect`, and a later hello with its credential pairs again.
+- **Reused.** A credential older than the one before (see "Reuse is detected"
+  in `trusted-clients.ts`) revokes its trust with `revokedFor:
+  "credential_reused"`. The live holder is told so. The hello that presented
+  it is offered pairing (`credential: "refused"`), because it may be the real
+  client returning, and a person decides.
+- **Expired or refused.** The client is still asked to pair, and
+  `server.pairing_required` says why: `credential: "expired"` for this client's
+  own credential whose life ran out, and `credential: "refused"` for one the
+  gateway does not accept (unknown, another client's, another domain, or a
+  trust that ended without the client being told). A hello with no credential
+  gets no `credential` field. The `reason` sentence says the same in words.
+
+A relaunched client resumes: its saved credential is current (or the one
+before, within the lost-reply window), so `resumeTrustedSession` rotates it and
+answers `server.session_ready`. It is audited as `session.reconnected`, and no
+pairing is created. Verified live with a headed browser relaunched on the same
+profile (t929).
+
+**Protocol version.** `server.revoked` and `pairing_required.credential` are
+gateway 0.2 vocabulary (`CLIENT_GATEWAY_PROTOCOL_VERSIONS`), additive over 0.1
+within the same major version: a 0.1 peer ignores both. The stamped
+`CLIENT_GATEWAY_PROTOCOL_VERSION` stays `0.1`. It is also the version every
+recorded trace is read under: offline trials refuse a trace recorded under any
+other value (`framework/automation-service/service/offline-trial/reader-contracts.ts`),
+so raising it would refuse every recording made so far. Raising it first needs
+that reader to accept any minor version of the same major. Old clients need no
+capability check, because the trailing `server.disconnect` keeps them from
+looping.
 
 ## How the panel hears pairing and client changes
 
