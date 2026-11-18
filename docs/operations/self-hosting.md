@@ -198,9 +198,12 @@ other third parties needs a commercial licence
 ([COMMERCIAL-LICENSING.md](../../COMMERCIAL-LICENSING.md),
 [Licensing](../legal/licensing.md)).
 
-First-time service setup creates an administrator in a new personal
-workspace and retires the default admin login. It grants no primary-workspace
-or platform-wide authority. Operator provisioning remains on the private
+A new install has no login at all until its owner is claimed: the web panel
+starts every identity store empty, tenant workspaces included, and the one-time
+setup code is the only way in. First-time service setup creates an
+administrator in a new personal workspace. An install created before this
+still holds the old `admin`/`admin` login until setup retires it. Setup grants
+no primary-workspace or platform-wide authority. Operator provisioning remains on the private
 listener below. Self-hosted setup retains its single-workspace owner policy.
 
 ## The Provisioning Listener
@@ -242,7 +245,9 @@ network and has no route to the listener.
 remove the old line and restart again.
 
 **From the command line.** The operator command runs the same operations
-through the listener from inside the container:
+through the listener from inside the container. Without the listener variables
+it would open the data itself, which is refused while the server runs ("One
+Server Per Data Volume" below):
 
 ```sh
 docker compose -f deploy/compose/service.compose.yml exec fluxiq \
@@ -379,6 +384,79 @@ query strings.
 On `docker compose stop` or a deploy, Core receives SIGTERM, reports not
 ready, drains the gateway's connections for up to `FLUXIQ_DRAIN_SECONDS`, and
 exits. The compose files allow 45 seconds before Docker kills it.
+
+## One Server Per Data Volume
+
+Only one process serves a data root at a time: the web panel, `fluxiq dev`, or
+the `accounts` command in offline mode while it runs. Each keeps a live view of
+the data in memory (chats, permissions, paired clients), so a second process
+writing the same volume would leave the first serving stale state. Scaling the
+`fluxiq` service beyond one replica on one volume is therefore refused, not
+supported.
+
+**The claim.** Before it opens any storage, the server creates
+`/data/.fluxiq.owner` (beside `.fluxiq`, never inside it). The file records an
+opaque token, which server holds the root, its process id and start time, its
+host and when it started. While it serves, the server touches the file every 5
+seconds. On a clean stop (`docker compose stop`, a deploy) it removes the file.
+
+**A second server is refused.** It exits with code 1 and a message naming the
+holder, for example:
+
+```text
+Cannot start the web panel: the FluxIQ data at /data is already being served by fluxiq dev (process 41 on 3f2c9a1b7d10, since 2026-11-18T09:41:59.909Z).
+Only one process may serve a data root at a time, because each keeps its own live view of the data and would not see the other's changes.
+Stop that process first, or give this one a different data directory.
+```
+
+A refused panel stops; it never keeps listening half-started. The same holds
+for any other startup failure, which is printed as `The FluxIQ web panel could
+not start: <reason>` followed by its details.
+
+**A crashed server's claim is taken back.** A server that was killed (or whose
+container crashed) leaves the file behind. The next server reclaims it on its
+own:
+
+- On the same host, it checks the recorded process: if that process is gone, or
+  its id now belongs to a process started later, the claim is taken over at
+  once.
+- From another host or container (a container recreated after a crash has a new
+  hostname and no machine id), or when the process cannot be checked, the new
+  server watches the file for 20 seconds. If nobody touched it, the claim was
+  abandoned and is taken over; if it is still being renewed, the holder is alive
+  and the new server is refused ("It kept renewing its claim while this process
+  watched..."). Only a change of the file's time is observed, so clocks that
+  disagree between hosts do not matter.
+
+So an upgrade, a restart and a crash followed by `docker compose up` all start
+without anyone deleting a file; at worst the new container waits 20 seconds.
+The same applies to a restored backup that happened to contain a stale claim.
+
+**A frozen holder steps down.** If a server is paused for longer than 20 seconds
+(a suspended VM, a debugger) and another server takes the root in that time, the
+first one finds its token gone at its next renewal and exits:
+
+```text
+FluxIQ stopped the web panel: another process has taken over the FluxIQ data at /data.
+This process stopped renewing its claim for longer than 20 seconds (it was paused or frozen), so the claim counted as abandoned.
+It exits so that only one process serves the data.
+```
+
+**Offline accounts.** `accounts` without the provisioning listener opens the
+data itself, so it holds the claim for the length of its command. While a server
+serves the volume it is refused and says how to use the live server instead:
+
+```text
+Offline mode refused: the FluxIQ data at /data is being served by the web panel (process 1 on 3f2c9a1b7d10, since 2026-11-18T08:24:37.268Z).
+An offline change would not reach that server, which keeps acting on the accounts and permissions it last read.
+Run the command against the live server instead: leave out --offline and set FLUXIQ_PROVISIONING_LISTEN (host:port) and FLUXIQ_PROVISIONING_TOKEN_FILE to that server's private provisioning listener.
+If the server has no provisioning listener (`fluxiq dev` has none), stop it and run the command again.
+```
+
+On the self-hosted profile, which has no listener, stop `fluxiq` first, run
+the command in a one-off container (`docker compose run --rm fluxiq node
+/opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts ...`),
+then start `fluxiq` again.
 
 ## Backups
 

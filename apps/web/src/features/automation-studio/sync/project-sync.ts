@@ -23,6 +23,8 @@ export type AutomationStudioProjectChangePage = {
   cursor: number;
   hasMore: boolean;
   fallback?: boolean;
+  /** Changes after the requested cursor were pruned: reload the project's views, then follow from `cursor`. */
+  resync?: boolean;
 };
 
 export type AutomationStudioScopedInvalidation = {
@@ -60,6 +62,8 @@ export type AutomationStudioProjectSyncClientOptions = {
   fetchPage: AutomationStudioFetchChangePage;
   onPage?: (page: AutomationStudioProjectChangePage) => void;
   onInvalidations?: (invalidations: AutomationStudioScopedInvalidation[]) => void;
+  /** The feed could not say what changed (the reader was behind retention): reload everything shown for the project. */
+  onResync?: () => void;
   onStatus?: (status: AutomationStudioProjectSyncStatus) => void;
   initialCursor?: number;
   pageSize?: number;
@@ -237,6 +241,7 @@ export class AutomationStudioProjectSyncClient {
       if (this.stopped || this.controller.signal.aborted) return;
       this.cursor = Math.max(this.cursor, Math.trunc(page.cursor));
       this.options.onPage?.(page);
+      if (page.resync) this.options.onResync?.();
       const invalidations = automationStudioInvalidationsFromChangePage(this.options.projectId, page);
       if (invalidations.length) this.options.onInvalidations?.(invalidations);
       this.emit({ state: "connected" });
