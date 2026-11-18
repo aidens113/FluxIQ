@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { claimOwner, ownerClaimPaths, prepareOwnerClaim, readOwnerClaimMarker } from "../index";
+import { claimOwner, isOwnerClaimOpen, ownerClaimPaths, prepareOwnerClaim, readOwnerClaimMarker } from "../index";
 import { createOwnerClaimInstance, type OwnerClaimInstance } from "./owner-claim-instance";
 
 // Every password here is a dummy value.
@@ -10,20 +10,52 @@ const FORM = { username: "Owner@Example.test", displayName: "The Owner", passwor
 let instance: OwnerClaimInstance;
 let lines: string[];
 
-beforeEach(async () => {
-  instance = await createOwnerClaimInstance();
-  lines = [];
-});
-
-afterEach(async () => {
-  await instance.close();
-});
-
 function deps() {
   return { settings: instance.settings(), fluxiqDir: instance.fluxiqDir, provisioning: instance.services.provisioning, identityAccess: instance.fluxiq.programs.identityAccess, log: (line: string) => lines.push(line) };
 }
 
-describe("claimOwner", () => {
+describe("claimOwner on a fresh root, whose identity store starts with no account", () => {
+  for (const profile of ["self-hosted", "service"] as const) {
+    it(`${profile}: issues the setup code, lets nobody sign in before the claim, and the first claim creates the owner`, { timeout: 60_000 }, async () => {
+      instance = await createOwnerClaimInstance({ profile, start: "fresh" });
+      lines = [];
+      try {
+        const identity = instance.fluxiq.programs.identityAccess;
+        expect(await identity.firstRun.state()).toBe("unclaimed");
+        expect((await identity.snapshot()).users).toEqual([]);
+        await expect(identity.authenticate({ username: "admin", password: "admin" })).rejects.toThrow();
+        const prepared = await prepareOwnerClaim({ settings: instance.settings(), fluxiqDir: instance.fluxiqDir });
+        expect(prepared).toEqual({ claimed: false, codeFile: ownerClaimPaths(instance.fluxiqDir).generatedCode });
+        expect((await readFile(ownerClaimPaths(instance.fluxiqDir).generatedCode, "utf8")).trim()).toMatch(/^[0-9a-f]{40}$/u);
+        expect(await isOwnerClaimOpen(instance.settings(), instance.fluxiqDir)).toBe(true);
+
+        const outcome = await claimOwner(FORM, deps());
+        expect(outcome).toMatchObject({ ok: true, defaultAdmin: "absent" });
+        if (!outcome.ok) throw new Error("unreachable");
+        expect((await identity.snapshot()).users.map((user) => user.id)).toEqual([outcome.userId]);
+        expect((await identity.authenticate({ username: "owner@example.test", password: PASSWORD })).user.id).toBe(outcome.userId);
+        await expect(identity.authenticate({ username: "admin", password: "admin" })).rejects.toThrow();
+        expect(await readOwnerClaimMarker(instance.fluxiqDir)).toMatchObject({ schemaVersion: 1, ownerUserId: outcome.userId });
+        expect(await isOwnerClaimOpen(instance.settings(), instance.fluxiqDir)).toBe(false);
+        expect(await claimOwner({ ...FORM, username: "second@example.test" }, deps())).toEqual({ ok: false, code: "already_claimed" });
+        expect(lines.some((line) => line.includes("the default admin account was not present"))).toBe(true);
+      } finally {
+        await instance.close();
+      }
+    });
+  }
+});
+
+describe("claimOwner on a root made before, whose store still holds the default admin/admin", () => {
+  beforeEach(async () => {
+    instance = await createOwnerClaimInstance({ start: "old-root" });
+    lines = [];
+  });
+
+  afterEach(async () => {
+    await instance.close();
+  });
+
   it("creates the owner with FluxIQOwnerFullAccess in the single workspace, deletes the untouched admin, writes the marker", { timeout: 60_000 }, async () => {
     await prepareOwnerClaim({ settings: instance.settings(), fluxiqDir: instance.fluxiqDir });
     const outcome = await claimOwner(FORM, deps());

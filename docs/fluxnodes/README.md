@@ -63,10 +63,21 @@ exploring calls a model.
 - **Where the key lives.** The engine reads no model key from an environment variable or a file, and
   `fluxiq dev` has no flag for one. A model key is an entry of kind `llm` in the engine's Secret
   Keys, stored in its data directory, for the provider Anthropic (Claude) or DeepSeek. Add it in the
-  FluxIQ web panel's Secret Keys settings, against the same data directory `fluxiq dev` serves. The
-  key is sealed in the data directory under a per-key data key, which the host's own protection key
-  wraps. A connected client uses the configured key straight away: there is no unlock step, and
-  revoking the client or removing its access (IAM) is what stops it.
+  FluxIQ web panel's Secret Keys settings, with the panel serving that data directory
+  (`FLUXIQ_ROOT=<data directory>`, by default `~/.fluxiq/data`) while `fluxiq dev` is stopped; then
+  stop the panel and start `fluxiq dev` again. The key is sealed in the data directory under a
+  per-key data key, which the host's own protection key wraps. A connected client uses the
+  configured key straight away: there is no unlock step, and revoking the client or removing its
+  access (IAM) is what stops it.
+- **One server per data directory.** Only one process serves a data directory at a time: the web
+  panel, `fluxiq dev`, or offline `fluxiq accounts` while its command runs. Each keeps a live view of
+  the data in memory, so a second process writing the same directory would leave the first serving
+  stale chats, permissions and pairings. A second server started on a directory in use refuses with
+  a message naming the one that holds it; give it its own `--data-dir`, or stop the first. The claim
+  is the file `.fluxiq.owner` in the data directory, which the server renews every few seconds. A
+  server that exits removes it. One that crashed or was killed leaves it behind for the next
+  server, which takes it over once it has checked that the recorded process is gone, or, for a
+  server in another container or on another machine, that nobody renewed the claim for 20 seconds.
 - **Which model.** `FLUXIQ_LLM_DEFAULT_MODEL` names the default model, for either provider, in the
   environment of `fluxiq dev`. It is a model name, never a key. Without it the engine uses its own
   default model. A FluxNode can name another with its `model` option.

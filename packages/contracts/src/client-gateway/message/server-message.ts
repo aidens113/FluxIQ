@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../core.js";
 import type { ClientGatewayActionCommand } from "../action/index.ts";
 import type { ClientGatewayActivity } from "../activity/index.ts";
+import type { ClientGatewayModelAccessChanged } from "../model-access/index.ts";
 import type { ClientGatewayConversationChanged, ClientGatewayProjectAccessEnded, ClientGatewayProjectFocused } from "../project-focus/index.ts";
 import type { ClientGatewayEnvelope } from "../protocol/index.ts";
 import type { ClientGatewayReconcileRequest } from "../reconcile/index.ts";
@@ -23,4 +24,5 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.project_focused", ClientGatewayProjectFocused>
   | ClientGatewayEnvelope<"server.project_access_ended", ClientGatewayProjectAccessEnded>
   | ClientGatewayEnvelope<"server.conversation_changed", ClientGatewayConversationChanged>
+  | ClientGatewayEnvelope<"server.model_access_changed", ClientGatewayModelAccessChanged>
   | ClientGatewayEnvelope<"server.error", { message: string; code?: string; metadata?: JsonObject }>;

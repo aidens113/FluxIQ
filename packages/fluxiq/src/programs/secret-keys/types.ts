@@ -42,7 +42,7 @@ export type SecretKeyRecord = SecretKeySummary & {
 export type SecretKeyHostCustody = { ownerUserId: string; sealDigest: string; sealed: SecretKeyProtectedDataKey };
 
 /**
- * A version 1 seal: scrypt at Node's default cost (N=2^14), recording no
+ * A version 1 seal (under a password, before t928): scrypt at Node's default cost (N=2^14), recording no
  * parameters, with the base64url salt text itself as the scrypt salt. Still
  * read; never written. It is re-sealed as version 2 at its next successful
  * unlock or reveal.
@@ -76,7 +76,25 @@ export type EncryptedSecretValueRecordV2 = {
   ciphertext: string;
 };
 
-export type EncryptedSecretValueRecord = EncryptedSecretValueRecordV1 | EncryptedSecretValueRecordV2;
+/**
+ * A version 3 seal (t928): AES-256-GCM under a random data key that no password
+ * derives. The key is kept only as the record's `hostProtection`, wrapped for
+ * the key's owner, so the server opens it for its owner with host protection
+ * alone; no sign-in, password or PIN is needed to use it. Every saved and
+ * replaced value is written this way. Never a pending seal.
+ */
+export type EncryptedSecretValueRecordV3 = {
+  version: 3;
+  algorithm: "aes-256-gcm";
+  iv: string;
+  tag: string;
+  ciphertext: string;
+};
+
+/** The seals a password opens: written before t928, still read, upgraded and re-sealed at a credential change. */
+export type PasswordSealedSecretValueRecord = EncryptedSecretValueRecordV1 | EncryptedSecretValueRecordV2;
+
+export type EncryptedSecretValueRecord = PasswordSealedSecretValueRecord | EncryptedSecretValueRecordV3;
 
 /**
  * Which model key is the workspace's default, and what the panel assistant uses.
@@ -100,10 +118,26 @@ export type ModelKeySettingsRecord = {
   defaultChosenBy?: string | undefined;
   /** Said when the default changed on its own, until the person picks a default. */
   defaultNotice?: { message: string; atMs: number } | undefined;
-  /** The key the assistant uses; absent means "the default key". */
+  /** The key the assistant uses; absent means "the default key", unless `noAssistantKey` says the workspace has none. */
   assistantKeyId?: string | undefined;
   /** Who chose the assistant's key (or chose "the default key" for it). Cleared when that key stops being a model key. */
   assistantChosenBy?: string | undefined;
+  /**
+   * Set when the workspace's chosen key stopped being a model key (removed,
+   * turned off or changed): the workspace then has no assistant key, and the
+   * default key does not stand in for it, so nobody who relied on the lost key
+   * is moved onto another person's key unless an owner or administrator
+   * chooses it. Cleared by `set-assistant-model`, `set-default-key`, or the
+   * first model key saved into a workspace that has no assistant key.
+   */
+  noAssistantKey?: true | undefined;
+  /**
+   * Each person's own choice of the key their own calls use: set when they
+   * save a model key (`save-model-key`), for their own key and no other, and
+   * dropped when that key stops being a model key. It changes nothing for
+   * anyone else, and for that person it comes before the workspace's key.
+   */
+  personKeyChoices?: SecretKeyPersonChoice[] | undefined;
   /**
    * The keys their holders offered to the workspace: each holder's own act
    * (`offer-key`), for their own key and no other. Without one a key never
@@ -123,6 +157,9 @@ export type ModelKeySettingsRecord = {
 
 /** A holder's offer of their own key to the workspace: the key, who offered it (its holder then), and when. */
 export type SecretKeyOffer = { keyId: string; holderId: string; atMs: number };
+
+/** A person's choice of their own key for their own calls: who, which key (always theirs), and when. */
+export type SecretKeyPersonChoice = { userId: string; keyId: string; atMs: number };
 
 /** The model-key choices as a client shows them: no ids of values, only which key. */
 export type ModelKeySettingsView = {
@@ -260,16 +297,6 @@ export type SecretKeyUnlockPersonRecord = {
   firstUnlockToldAtMs?: number | undefined;
   /** When their password was last reset without the old one: keys sealed before it no longer open. */
   passwordResetAtMs?: number | undefined;
-};
-
-/** A locked paired client as its person chooses among them. */
-export type SecretKeyLockedClient = {
-  holderId: string;
-  label: string;
-  pairedAtMs?: number;
-  lastUsedAtMs?: number;
-  /** No proof has ever reached this browser: its unlock starts from the browser itself, never from a list. */
-  neverUnlocked?: boolean;
 };
 
 /**

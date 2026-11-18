@@ -28,6 +28,7 @@ import { automationStudioAttemptSettled } from "../../../../../runtime/adaptatio
 import { automationStudioUnresolvedFailedAttempt } from "../../../../../runtime/adaptation/recovery/index.ts";
 import type { AutomationStudioFlowBuildPlan, AutomationStudioFlowBootstrapIssueLocator } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioZeroPassLoopBodies } from "../../../../../engine/automation/graph-navigation/index.ts";
 import { AUTOMATION_STUDIO_STATE_NOT_ARISEN_CODE, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
 import { automationStudioTrialExecutedSteps, automationStudioTrialFailureHappened } from "../../candidate-trial/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
@@ -40,6 +41,7 @@ type Failing = NonNullable<Ran["failing"]>;
 type Watch = Pick<AutomationStudioAnswerFirstFlowRunWatch, "order" | "sentCount" | "askedCount" | "succeededCount">;
 
 const SYMBOLIC_KEY = "bootstrapSymbolicKey";
+const FOR_EACH = "builtin.control.for-each";
 const DEADLINE = /^Flow execution deadline exceeded\.$/u;
 const STEP_BOUND = /^Maximum step count exceeded: \d+\.$/u;
 
@@ -59,7 +61,8 @@ const SAID = Object.freeze({
   inState: "Its control already showed the asked state, so it was not pressed.",
   elsewhere: "The page was already at another step, so the run went on from there.",
   notFinished: "The run did not reach the end of the Flow.",
-  notStarted: "The saved Flow could not be started, so nothing was done."
+  notStarted: "The saved Flow could not be started, so nothing was done.",
+  emptyRepeat: "The list this step repeats over had nothing left, so the repeat ran no pass and there was nothing to do."
 });
 
 /** Why nothing ran, by the runner's code (`runAutomationStudioDetachedCandidate`). Every other code reads as `notStarted`. */
@@ -101,10 +104,37 @@ export function automationStudioAnswerFirstFlowRunStepsRan(input: Input): Ran {
     ...ranOf(attempts.filter((entry) => entry.attempt.nodeId === place.nodeId).map((entry) => entry.attempt), place, watch),
     ...deviationsOf(place.nodeId === undefined ? [] : raw.filter((attempt) => attempt.nodeId === place.nodeId))
   }));
-  if (ended.reachedEnd) return { kind: "ran", reachedEnd: true, steps };
+  if (ended.reachedEnd) return { kind: "ran", reachedEnd: true, steps: steps.map((step, index) => emptyRepeatBody(step, placed[index]!, input.saved, steps, emptyLoopBodies(ended))) };
   const failing = failingOf(input, placed, steps);
   const marked = steps.map((step) => step.position === failing.position ? { ...step, ran: "failed" as const, happened: failing.happened } : step);
   return { kind: "ran", reachedEnd: false, steps: marked, failing };
+}
+
+/**
+ * **A repeat over nothing has run (t945).** A step inside a repeat over a list the run read gets no
+ * attempt when the list has no row left (the work is already done), and a step with no attempt reads
+ * `not_reached`, which a replay takes for a step that failed. It is a pass only on the loop's own
+ * evidence: the For Each was reached, answered `done` with a `count` of 0 and never took its body
+ * (`emptyLoopBodies`), the step the repeat is over passed, and the run reached the Flow's end. A Flow
+ * that skipped its loop while rows remained never reached the For Each, or reached it with rows and took
+ * the body, so it keeps `not_reached`, as does a repeat whose list failed or was passed over and any
+ * run that stopped short.
+ */
+function emptyRepeatBody(step: AutomationStudioAnswerFirstFlowRunStep, place: Placed, saved: readonly AutomationStudioFlowDraftStep[], steps: readonly AutomationStudioAnswerFirstFlowRunStep[], emptyBodies: ReadonlySet<string>): AutomationStudioAnswerFirstFlowRunStep {
+  if (step.ran !== "not_reached" || place.nodeId === undefined || !emptyBodies.has(place.nodeId)) return step;
+  const routing = saved.find((each) => each.position === place.position)?.routing;
+  if (routing?.kind !== "repeat" || typeof routing.over !== "string") return step;
+  const source = saved.find((each) => each.id === routing.over);
+  const read = source === undefined ? undefined : steps.find((each) => each.position === source.position);
+  return read?.ran === "passed" ? { ...step, ran: "passed", happened: SAID.emptyRepeat } : step;
+}
+
+/** The nodes only the body of a For Each leads to, where that For Each answered `done` on a list of no items (`count` 0) and took no pass. */
+function emptyLoopBodies(ended: AutomationStudioAnswerFirstFlowRunEnded): ReadonlySet<string> {
+  const attempts = ended.trace?.attempts ?? [];
+  if (!ended.graph) return new Set();
+  const counted = new Set(attempts.filter((attempt) => attempt.definitionId === FOR_EACH && attempt.route === "done" && attempt.outputs?.count === 0).map((attempt) => attempt.nodeId));
+  return new Set(automationStudioZeroPassLoopBodies(ended.graph, attempts.filter((attempt) => attempt.definitionId !== FOR_EACH || counted.has(attempt.nodeId))));
 }
 
 /** The steps of the Flow, in draft order, each with its node where the run named a graph. */

@@ -30,7 +30,9 @@ vi.mock("../write-private-file", async (importOriginal) => {
 });
 
 beforeEach(async () => {
-  instance = await createOwnerClaimInstance({ profile: "service" });
+  // A service root made before new stores started empty: it still holds admin/admin, which the claim retires.
+  // A fresh service root's claim is in `claim-owner.test.ts`.
+  instance = await createOwnerClaimInstance({ profile: "service", start: "old-root" });
   lines.length = 0;
   failure.marker = false;
 });

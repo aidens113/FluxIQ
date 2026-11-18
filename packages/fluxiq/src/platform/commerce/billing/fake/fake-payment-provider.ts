@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PaymentProviderUnavailableError } from "../payment-provider-unavailable-error.ts";
 import { PaymentWebhookVerificationError } from "../payment-webhook-verification-error.ts";
 import { signWebhookPayload, verifyWebhookSignature } from "../signature/index.ts";
 import type {
@@ -23,6 +24,12 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly providerId: string;
   /** How often each subscription was fetched, so tests can prove a duplicate made no provider call. */
   readonly fetches = new Map<string, number>();
+  /** Each cancellation the fake carried out, by idempotency key: a retry with the same key is not another one. */
+  readonly cancellations = new Map<string, string>();
+  /** Each customer closure, by idempotency key. */
+  readonly customerClosures = new Map<string, string>();
+  /** While true, cancelling and closing throw `PaymentProviderUnavailableError`, as an outage would. */
+  unavailable = false;
   private readonly subscriptions = new Map<string, ProviderSubscriptionState>();
   private readonly webhookSecret: string;
   private readonly now: () => number;
@@ -67,6 +74,20 @@ export class FakePaymentProvider implements PaymentProvider {
       throw new PaymentWebhookVerificationError("malformed-payload");
     }
     return { eventId: body.id, type: body.type, payloadSha256: sha256(rawBody), subscriptionId: body.subscriptionId ?? null };
+  }
+
+  async cancelSubscription(subscriptionId: string, options: { idempotencyKey: string }): Promise<void> {
+    if (this.unavailable) throw new PaymentProviderUnavailableError("cancelSubscription");
+    if (this.cancellations.has(options.idempotencyKey)) return;
+    this.cancellations.set(options.idempotencyKey, subscriptionId);
+    const stored = this.subscriptions.get(subscriptionId);
+    if (stored === undefined || stored.status === "canceled") return;
+    this.subscriptions.set(subscriptionId, { ...stored, status: "canceled", cancelAtPeriodEnd: false, endedAtMs: this.now(), entitlements: [] });
+  }
+
+  async closeCustomer(customerId: string, options: { idempotencyKey: string }): Promise<void> {
+    if (this.unavailable) throw new PaymentProviderUnavailableError("closeCustomer");
+    if (!this.customerClosures.has(options.idempotencyKey)) this.customerClosures.set(options.idempotencyKey, customerId);
   }
 
   async getSubscription(subscriptionId: string): Promise<ProviderSubscriptionFetch | null> {

@@ -19,6 +19,7 @@
 //
 // Dummy passwords and values only.
 
+import { createPasswordSealedKey } from "../../../../secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -117,7 +118,7 @@ async function workspace(profile: "service" | "local" = "service") {
     return { sent, read, texts: turns.map((turn) => turn.text) };
   };
   const unlock = (who: ProgramApiActor, password: string) => secretKeys.unlockSession({ sessionId: who.sessionId, userId: who.userId, authorizationPassword: password, expiresAtMs: Date.now() + 3_600_000 });
-  const teamKey = await secretKeys.createKey({ name: "Team key", value: TEAM_VALUE, authorizationPassword: OWNER_PASSWORD, provider: "Anthropic", createdBy: owner.userId });
+  const teamKey = await createPasswordSealedKey(secretKeys, { name: "Team key", value: TEAM_VALUE, authorizationPassword: OWNER_PASSWORD, provider: "Anthropic", createdBy: owner.userId });
   /** The owner offers their own key to the workspace and chooses it as the assistant's: both steps a member's message needs. */
   const share = async () => {
     expect(await call("secret-keys", "offer-key", owner, { id: teamKey.id, offered: true })).toMatchObject({ ok: true });
@@ -198,7 +199,7 @@ describe("the dock on the workspace's assistant key (service)", () => {
 
   it("never lets a member offer someone else's key or choose the workspace's key, and an owner's choice of a member's key pays nothing until the member offers it", async () => {
     const { secretKeys, call, send, unlock, provider, teamKey } = await workspace();
-    const mine = await secretKeys.createKey({ name: "Mine", value: MEMBER_VALUE, authorizationPassword: MEMBER_PASSWORD, provider: "Anthropic", createdBy: member.userId });
+    const mine = await createPasswordSealedKey(secretKeys, { name: "Mine", value: MEMBER_VALUE, authorizationPassword: MEMBER_PASSWORD, provider: "Anthropic", createdBy: member.userId });
     await unlock(owner, OWNER_PASSWORD);
     await unlock(member, MEMBER_PASSWORD);
     expect(await call("secret-keys", "offer-key", member, { id: teamKey.id, offered: true })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });

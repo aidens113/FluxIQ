@@ -1,4 +1,4 @@
-import { pairedClientModelAccessState, readModelAccessState, readModelKeyAvailability } from "@fluxiq/contracts/platform";
+import { pairedClientModelAccessState, readModelAccessState, readModelKeyAvailability, type ModelAccessState } from "@fluxiq/contracts/platform";
 
 const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
 
@@ -38,12 +38,20 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 // - **Nothing destructive, ever.** The route also refuses a token call to any
 //   endpoint the registry classifies as other than `read` or `authoring`, so an
 //   entry added here by mistake still cannot reach a delete, a payment or a
-//   program-gated credential check. Deleting and moving money keep asking the
-//   person, and the token is never a way round that. Answering an ask is
-//   `authoring`: it is how a person answers a question in their own thread, and
-//   the act it answers is still gated where it happens.
+//   program-gated credential check: a token reaches no delete and no payment
+//   through this route. Answering an ask is `authoring`: it is how a person
+//   answers a question in their own thread, and the act it answers is still
+//   gated where it happens. The one exception is named, not classified: the
+//   person's own model key, saved, replaced or removed
+//   (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`), which the registry files as
+//   `program-gated` although its handlers check no credential, so IAM alone
+//   decides it (t928; user, 2026-11-14 and 2026-11-16: a connected client has
+//   model access with no unlock, password or PIN, and IAM still applies).
+//   Removing it asks nothing further: the person pressing Remove in their own
+//   settings is the confirmation, IAM decides whether they may, and only the
+//   key their own calls use, which they added, can be removed this way.
 // - **Only the permissions these endpoints need.** The actor carries the
-//   approving person's role permissions intersected with the four the
+//   approving person's role permissions intersected with the five the
 //   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
 //   whatever the person's role. Where an allowlisted endpoint's body could
 //   still reach further -- an LLM, an inline Flow, a side-effect authorization,
@@ -178,6 +186,16 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
   "secret-keys": Object.freeze([
     // Whether an LLM key is configured and opens here, `read`. Projected: kind, provider, enabled, ownership and safe availability only, nothing that names or identifies a key.
     "snapshot",
+    // The person's own model key from the extension's settings (t928), under `secrets.manage` on the workspace, decided by IAM
+    // alone: see `PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`. Narrowed to the fields each handler reads, and answered with the
+    // person's model access alone, never a key id. A save changes only the key the person's own calls use, never the
+    // workspace's assistant key or model; the one exception is a workspace with no assistant key at all, where the first
+    // saved key becomes it, so a person alone saves and talks at once. Every other key write -- create, update, rotate
+    // and delete-key, the default key, the assistant's model, offering a key to others, and revealing one -- stays the
+    // signed-in person's.
+    "save-model-key",
+    "replace-model-key",
+    "remove-model-key",
   ]),
 });
 
@@ -186,12 +204,37 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
  * allowlisted endpoints require. `flows.write` is here only because the
  * recording proposal and its review, a task's carry-on and Run again, saving a
  * part and a Flow's humanness (`update-flow-settings`) require it, and each of
- * those is narrowed so it reaches nothing else of a Flow.
+ * those is narrowed so it reaches nothing else of a Flow. `secrets.manage` is
+ * here only because the person's own model key (save, replace and remove-model-key)
+ * requires it. It reaches no other key endpoint: the allowlist above names
+ * none, and the route refuses a token on an endpoint it does not name before
+ * IAM is asked. Only a role that holds `secrets.manage` keeps it, so a member's
+ * client is refused those three by IAM, exactly as the member's login is.
  */
-const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
+const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write", "secrets.manage"];
 
 /** The registry classifications a token call may reach. Anything destructive or credential-gated is refused. */
 const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
+
+/**
+ * The allowlisted endpoints a token may reach although the registry classifies
+ * them `program-gated`: the person's own model key, saved, replaced or removed.
+ * `program-gated` means the program decides beyond IAM, and for these three it
+ * decides nothing more: their handlers check no password, PIN or code
+ * (`programs/secret-keys/api/model-key-endpoints.ts`), so IAM alone decides them
+ * (`secrets.manage`, Write, on the workspace), for a login and a token alike.
+ *
+ * Named rather than admitting `program-gated` in general, which is the
+ * narrowest sound rule: other `program-gated` endpoints do run a credential
+ * check (reveal-key asks for the person's password), and admitting the class
+ * would let a later allowlist entry reach one of them on the classification
+ * alone. Each entry here must also be in `PAIRED_CLIENT_ENDPOINTS`; this list
+ * widens only which classification those entries may carry, never which
+ * endpoints a token names.
+ */
+const PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  "secret-keys": Object.freeze(["save-model-key", "replace-model-key", "remove-model-key"]),
+});
 
 /** Whether a paired client's token may name this endpoint at all. */
 export function isPairedClientEndpoint(programId: string, endpoint: string): boolean {
@@ -199,9 +242,18 @@ export function isPairedClientEndpoint(programId: string, endpoint: string): boo
   return allowed?.includes(endpoint.trim().toLowerCase()) === true;
 }
 
-/** Whether the registry's classification of an allowlisted endpoint is one a token may reach. Unknown is refused. */
-export function isPairedClientClassification(classification: string | undefined): boolean {
-  return classification !== undefined && PAIRED_CLIENT_CLASSIFICATIONS.includes(classification);
+/**
+ * Whether the registry's classification of an allowlisted endpoint is one a
+ * token may reach. Unknown is refused. `read` and `authoring` always are;
+ * `program-gated` only on an endpoint `PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`
+ * names, so a caller that names no endpoint is answered for the class alone and
+ * refuses every `program-gated` one.
+ */
+export function isPairedClientClassification(classification: string | undefined, programId?: string, endpoint?: string): boolean {
+  if (classification === undefined) return false;
+  if (PAIRED_CLIENT_CLASSIFICATIONS.includes(classification)) return true;
+  if (classification !== "program-gated" || programId === undefined || endpoint === undefined) return false;
+  return PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS[programId.trim().toLowerCase()]?.includes(endpoint.trim().toLowerCase()) === true;
 }
 
 /** The token from an `Authorization: Bearer <token>` header, or null. */
@@ -347,6 +399,7 @@ const PAIRED_CLIENT_RUN_INTENT = "explore_and_adapt";
 export function narrowPairedClientRequest(programId: string, endpoint: string, payload: unknown): PairedClientRequestNarrowing {
   const program = programId.trim().toLowerCase();
   const name = endpoint.trim().toLowerCase();
+  if (program === "secret-keys" && Object.hasOwn(MODEL_KEY_WRITE_FIELDS, name)) return narrowModelKeyWrite(payload, MODEL_KEY_WRITE_FIELDS[name] ?? []);
   if (program !== "automation-studio") return { ok: true, payload };
   if (name === "projects") return { ok: true, payload: {} };
   if (name === "create-project") return narrowCreateProject(payload);
@@ -365,6 +418,26 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
   if (name === "save-project-part") return narrowSaveProjectPart(payload);
   if (name === "run-project-part") return narrowRunProjectPart(payload);
   return { ok: true, payload };
+}
+
+/** The fields each of the person's model-key writes reads, and so all a token's body hands on. */
+const MODEL_KEY_WRITE_FIELDS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  "save-model-key": Object.freeze(["provider", "value", "name"]),
+  "replace-model-key": Object.freeze(["value"]),
+  "remove-model-key": Object.freeze([]),
+});
+
+/**
+ * A model-key write by token carries only the fields its handler reads: the
+ * payload handed on is rebuilt from those, every other key is ignored rather
+ * than refused (an older client's password or PIN field asks for nothing now),
+ * so a field a handler starts reading later is never reached by token by
+ * default. Each kept field goes on as sent: a missing or malformed value is the
+ * handler's to refuse, in its own words.
+ */
+function narrowModelKeyWrite(payload: unknown, fields: readonly string[]): PairedClientRequestNarrowing {
+  const body = payloadRecord(payload) ?? {};
+  return { ok: true, payload: Object.fromEntries(fields.filter((field) => Object.hasOwn(body, field)).map((field) => [field, body[field]])) };
 }
 
 /**
@@ -582,6 +655,8 @@ const FLOW_HUMANNESS_DETAIL_ENDPOINTS: readonly string[] = ["get-flow-metadata-d
  *   detail (`updateFlowSettingsForRequest` reads it back after the save), so
  *   its answer is cut the same way: otherwise a token could re-send the
  *   current level and read everything the read withholds.
+ * - A model-key write (t928) is cut to the person's model access after it, as
+ *   the snapshot's is: see `projectModelKeyWrite`.
  */
 export function projectPairedClientResponse(programId: string, endpoint: string, response: ProgramAnswer): ProgramAnswer {
   const program = programId.trim().toLowerCase();
@@ -589,16 +664,17 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
   if (program === "automation-studio" && FLOW_HUMANNESS_DETAIL_ENDPOINTS.includes(name)) return projectFlowHumannessDetail(response);
   if (program === "automation-studio" && name === "projects") return projectProjectList(response);
   if (program === "automation-studio" && name === "create-project") return projectCreatedProject(response);
+  if (program === "secret-keys" && Object.hasOwn(MODEL_KEY_WRITE_FIELDS, name)) return projectModelKeyWrite(response);
   if (program !== "secret-keys" || name !== "snapshot" || !response.ok) return response;
   const keys = payloadRecord(response.payload)?.keys;
   // No snapshot list means readiness is unknown, not that no key exists.
   if (!Array.isArray(keys)) return { ...response, payload: {} };
   // The person's own model access (t924), rebuilt field by field and without the key's id, as the keys are; one that does not read is left out, never shown as ready.
-  const modelAccess = readModelAccessState(payloadRecord(response.payload)?.modelAccess);
+  const modelAccess = pairedClientModelAccess(payloadRecord(response.payload)?.modelAccess);
   return {
     ...response,
     payload: {
-      ...(modelAccess ? { modelAccess: pairedClientModelAccessState(modelAccess) } : {}),
+      ...(modelAccess ? { modelAccess } : {}),
       keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {
@@ -613,6 +689,27 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
         }),
     },
   };
+}
+
+/** A model-access state from an answer, read field by field and without its key's id, or null when it does not read. */
+function pairedClientModelAccess(value: unknown): ModelAccessState | null {
+  const modelAccess = readModelAccessState(value);
+  return modelAccess ? pairedClientModelAccessState(modelAccess) : null;
+}
+
+/**
+ * A model-key write as a paired client is answered: exactly `{ modelAccess }`,
+ * the person's model access after the change, rebuilt through
+ * `readModelAccessState` and without the key's id, as the snapshot's is. The
+ * handler already leaves the id out for a paired client (`callerModelAccess`);
+ * this is the route's own copy of that rule, so a handler change cannot hand a
+ * token the id. A state that does not read is left out (`{}`), never shown as
+ * ready; the write still happened. A refusal keeps only its sentence and its code.
+ */
+function projectModelKeyWrite(response: ProgramAnswer): ProgramAnswer {
+  if (!response.ok) return refusalOnly(response);
+  const modelAccess = pairedClientModelAccess(payloadRecord(response.payload)?.modelAccess);
+  return { ok: true, payload: modelAccess ? { modelAccess } : {} };
 }
 
 /** A project as a paired client reads it: its id, its name and when it last changed (epoch milliseconds). */

@@ -35,7 +35,7 @@ async function answer(request: Request, context: RouteParams, method: "GET" | "P
   // Reject disallowed token endpoints before proof lookup can reveal token validity or open any tenant.
   if (manager.tenancy === "multi" && !cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value && readBearerToken(request.headers.get("authorization"))) {
     const classification = manager.primary().fluxiq.programs.api.endpoints().find((entry) => entry.programId === programId && entry.endpoint === endpoint)?.classification;
-    if (!isPairedClientEndpoint(programId, endpoint) || !isPairedClientClassification(classification)) return NextResponse.json({ ok: false, error: "This endpoint is not available to a paired client." }, { status: 403 });
+    if (!isPairedClientEndpoint(programId, endpoint) || !isPairedClientClassification(classification, programId, endpoint)) return NextResponse.json({ ok: false, error: "This endpoint is not available to a paired client." }, { status: 403 });
   }
   const selected = await workspaceProgramContext({ cookies: cookieStore, headers: request.headers, signal: request.signal });
   if (!selected) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });

@@ -1,4 +1,5 @@
 // @fluxiq-test-group real-sql
+import { createPasswordSealedKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -66,7 +67,7 @@ function poolRootsFor(root: string): string[] {
 
 /** Creates a key and unlocks a session on the instance's own secret keys. */
 async function unlock(fluxiq: FluxIQ): Promise<Buffer> {
-  const key = await fluxiq.programs.secretKeys.createKey({ name: "Provider", value: "dummy-provider-value", authorizationPassword: PASSWORD, createdBy: USER });
+  const key = await createPasswordSealedKey(fluxiq.programs.secretKeys, { name: "Provider", value: "dummy-provider-value", authorizationPassword: PASSWORD, createdBy: USER });
   await fluxiq.programs.secretKeys.unlockSession({ sessionId: SESSION, userId: USER, authorizationPassword: PASSWORD, expiresAtMs: Date.now() + 60 * 60 * 1000 });
   const held = heldSessionKey(fluxiq.programs.secretKeys, SESSION, key.id);
   if (!held) throw new Error("the unlock holds no key");

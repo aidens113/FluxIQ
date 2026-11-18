@@ -1,5 +1,7 @@
 export * from "./api/contracts.ts";
 export * from "./api/handlers.ts";
+export type { SecretKeySavedKeyCheck } from "./api/saved-key-check.ts";
+export type { SecretKeyModelAccessOf, SecretKeySessionOf } from "./api/caller-model-access.ts";
 export * from "./metadata.ts";
 export { secretKeyPairedHolderId, secretKeyPanelHolderId, secretKeySessionDigest } from "./runtime/unlocks/index.ts";
 export { HeldKeys } from "./runtime/held-keys.ts";

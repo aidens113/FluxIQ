@@ -10,6 +10,7 @@ import type {
 } from "../../../commerce/index.ts";
 import { SQLiteEnvironmentStore } from "../../storage/index.ts";
 import { DEDICATED_ENVIRONMENT_CAPABILITY, dedicatedEnvironmentTarget, EnvironmentController, FakeEnvironmentDriver } from "../index.ts";
+import type { EnvironmentEnrolment } from "../index.ts";
 
 /** A signed-in person: the account and the workspaces the server's IAM lets them act in. */
 export type TestActor = { principalId: string; accountId: string; workspaceIds: readonly string[] };
@@ -85,7 +86,7 @@ export async function removeHarnessRoots(): Promise<void> {
 }
 
 /** A controller over a real SQLite store, the fake driver and the real commerce admission. */
-export async function harness(options: { rootDir?: string; driver?: FakeEnvironmentDriver } = {}): Promise<Harness> {
+export async function harness(options: { rootDir?: string; driver?: FakeEnvironmentDriver; enrolment?: EnvironmentEnrolment } = {}): Promise<Harness> {
   const rootDir = options.rootDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-environments-"));
   if (options.rootDir === undefined) roots.push(rootDir);
   const ownership: Ownership = new Map();
@@ -117,6 +118,7 @@ export async function harness(options: { rootDir?: string; driver?: FakeEnvironm
       store,
       driver,
       authorize,
+      ...(options.enrolment !== undefined ? { enrolment: options.enrolment } : {}),
       admission: {
         admit: (request) => {
           state.admissions += 1;

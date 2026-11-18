@@ -12,7 +12,7 @@ import {
   type ScryptDerivationOptions,
   type ScryptParameters
 } from "../../_shared/password-kdf/index.ts";
-import type { EncryptedSecretValueRecord, EncryptedSecretValueRecordV2, SecretKeyRecord } from "../types.ts";
+import type { EncryptedSecretValueRecord, EncryptedSecretValueRecordV2, EncryptedSecretValueRecordV3, PasswordSealedSecretValueRecord, SecretKeyRecord } from "../types.ts";
 
 /** A sealed plaintext. `updatedAtMs` is the key's `lastRotatedAtMs` when its value was set. */
 export type SecretKeyValue = {
@@ -27,6 +27,12 @@ export type SealedSecretValue = {
   key: Buffer;
 };
 
+/** A new host-protected seal (version 3) and its random data key. Whoever holds `key` zeroes it. */
+export type HostSealedSecretValue = {
+  sealed: EncryptedSecretValueRecordV3;
+  key: Buffer;
+};
+
 /** A record's verified plaintext and the key that opened it. Whoever holds `key` zeroes it. */
 export type OpenedSecretKey = {
   secret: SecretKeyValue;
@@ -35,12 +41,16 @@ export type OpenedSecretKey = {
 
 const GCM_IV_BYTES = 12;
 const GCM_TAG_BYTES = 16;
+const DATA_KEY_BYTES = 32;
 
 /**
- * Seals and opens Secret Keys values: AES-256-GCM under a password-derived
- * scrypt key. Every derivation runs through `deriveScryptKey` (or a test's
- * injected derive), and a seal's parameters are checked against the read
- * allowlist before any derivation starts.
+ * Seals and opens Secret Keys values: AES-256-GCM, under a random data key that
+ * host protection keeps (version 3, every value written since t928), or under a
+ * password-derived scrypt key (versions 1 and 2, still read, upgraded and
+ * re-sealed at a credential change). Every derivation runs through
+ * `deriveScryptKey` (or a test's injected derive), and a seal's parameters are
+ * checked against the read allowlist before any derivation starts. A password
+ * never opens a version 3 seal, and nothing is derived for one.
  */
 export class SecretValueSealer {
   readonly writeParameters: ScryptParameters;
@@ -54,7 +64,7 @@ export class SecretValueSealer {
   }
 
   /** The parameters a seal derives at, or null when a version 2 seal states parameters outside the read allowlist. */
-  parametersOf(sealed: EncryptedSecretValueRecord): ScryptParameters | null {
+  parametersOf(sealed: PasswordSealedSecretValueRecord): ScryptParameters | null {
     if (sealed.version === 1) return LEGACY_V1_SCRYPT_PARAMETERS;
     return isAcceptedV2ScryptParameters(sealed.kdfParams, this.derivationOptions.testOnlyWeakParameters) ? sealed.kdfParams : null;
   }
@@ -65,11 +75,12 @@ export class SecretValueSealer {
    * with a lower cost cannot downgrade it.
    */
   needsReseal(sealed: EncryptedSecretValueRecord): boolean {
+    if (sealed.version === 3) return false;
     return sealed.version === 1 || isBelowScryptWriteCost(sealed.kdfParams, this.writeParameters);
   }
 
   /** Derives the key a password gives for a seal: version 1 from the salt text, version 2 from the decoded salt bytes. */
-  async deriveKey(sealed: EncryptedSecretValueRecord, password: string): Promise<Buffer> {
+  async deriveKey(sealed: PasswordSealedSecretValueRecord, password: string): Promise<Buffer> {
     const parameters = this.parametersOf(sealed);
     if (!parameters) throw new Error("Secret key seal parameters are not accepted");
     const salt = sealed.version === 1 ? sealed.salt : decodeKdfSalt(sealed.salt);
@@ -77,7 +88,29 @@ export class SecretValueSealer {
     return this.derive(password, salt, parameters, this.derivationOptions);
   }
 
-  /** Seals a value as version 2 at the write parameters under a new salt and IV. */
+  /**
+   * Seals a value as version 3 under a new random data key and IV. The caller
+   * hands `key` to host protection for the key's owner (`SecretKeyDataKeys.protectHostSealed`)
+   * before the record is written, and zeroes it.
+   */
+  sealForHost(secret: SecretKeyValue): HostSealedSecretValue {
+    const plaintext = JSON.stringify({ id: secret.id, value: secret.value, updatedAtMs: secret.updatedAtMs });
+    const key = randomBytes(DATA_KEY_BYTES);
+    try {
+      const iv = randomBytes(GCM_IV_BYTES);
+      const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: GCM_TAG_BYTES });
+      const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+      return {
+        sealed: { version: 3, algorithm: "aes-256-gcm", iv: iv.toString("base64url"), tag: cipher.getAuthTag().toString("base64url"), ciphertext: ciphertext.toString("base64url") },
+        key
+      };
+    } catch (error) {
+      key.fill(0);
+      throw error;
+    }
+  }
+
+  /** Seals a value as version 2 at the write parameters under a new salt and IV: only a credential change and a seal upgrade, which re-seal a password-sealed value under a password, still write one. */
   async seal(secret: SecretKeyValue, password: string, sealedByUserId?: string): Promise<SealedSecretValue> {
     const plaintext = JSON.stringify({ id: secret.id, value: secret.value, updatedAtMs: secret.updatedAtMs });
     const parameters = this.writeParameters;
@@ -139,10 +172,13 @@ export class SecretValueSealer {
   /**
    * Derives a record's key from a password and opens one of its seals, its
    * current seal unless another is given. Null, with the key zeroed, unless the
-   * seal authenticates and names this record at its current rotation. Rejects
-   * when the seal's parameters or salt are not accepted or the derivation fails.
+   * seal authenticates and names this record at its current rotation; null at
+   * once for a version 3 seal. Rejects when the seal's parameters or salt are
+   * not accepted or the derivation fails.
    */
   async openRecord(record: SecretKeyRecord, password: string, sealed: EncryptedSecretValueRecord = record.sealed): Promise<OpenedSecretKey | null> {
+    // No password opens a host-sealed value, so nothing is derived for one.
+    if (sealed.version === 3) return null;
     const key = await this.deriveKey(sealed, password);
     const secret = this.openRecordWithKey(record, key, sealed);
     if (secret) return { secret, key };

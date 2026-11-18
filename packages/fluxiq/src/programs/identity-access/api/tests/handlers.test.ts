@@ -5,6 +5,7 @@
 // without one. Every password here is a dummy value, and derivations run at the
 // test-only N=2^10.
 
+import { createPasswordSealedKey } from "../../../secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { describe, expect, it } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
 import { IdentityAccessService } from "../../runtime/service.ts";
@@ -188,7 +189,7 @@ describe("identity access endpoint authorization", () => {
     service.subscribeSessionRevocation((sessionId, revoker) => { secretKeys.revokeSessionUnlock(sessionId, revoker); });
     try {
       const target = await service.authenticate({ username: "target-viewer", password: PASSWORD });
-      await secretKeys.createKey({ name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-target", authorizationPassword: PASSWORD, createdBy: TARGET });
+      await createPasswordSealedKey(secretKeys, { name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-target", authorizationPassword: PASSWORD, createdBy: TARGET });
       await secretKeys.unlockSession({ sessionId: target.session.id, userId: TARGET, authorizationPassword: PASSWORD, expiresAtMs: target.session.expiresAtMs });
       expect(secretKeys.unlockedSessionFor(TARGET)).toBe(target.session.id);
 

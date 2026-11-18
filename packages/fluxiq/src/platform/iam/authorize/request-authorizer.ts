@@ -1,5 +1,5 @@
 import { evaluateIamRequest, type CompiledIamPolicySet } from "../evaluate/index.ts";
-import type { IamAuditSink, IamDecision, IamPrincipal, IamRequestContext, IamResource } from "../types.ts";
+import type { IamAuditOutcome, IamAuditSink, IamDecision, IamPrincipal, IamRequestContext, IamResource } from "../types.ts";
 import { denyIamRequest } from "./deny-decision.ts";
 import { recordIamDecision } from "./record-decision.ts";
 
@@ -22,6 +22,14 @@ export class IamRequestAuthorizer {
     const decision = this.evaluate(action, resources);
     recordIamDecision(this.sink, decision, this.context, this.requestId);
     return decision;
+  }
+
+  /**
+   * Records one more row for `decision` (the one `decide` returned) under the
+   * same request id, carrying what the handler did. Decides nothing.
+   */
+  recordOutcome(decision: IamDecision, outcome: IamAuditOutcome): void {
+    recordIamDecision(this.sink, decision, this.context, this.requestId, undefined, outcome);
   }
 
   /**

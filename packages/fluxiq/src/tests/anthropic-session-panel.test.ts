@@ -1,3 +1,4 @@
+import { createPasswordSealedKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../programs/secret-keys/index.ts";
 import { heldSessionPorts } from "./held-session-ports.ts";
@@ -22,9 +23,9 @@ describe("Claude keys, Flow resolution and panel requests", () => {
   it("releases an Anthropic key only to its owner, resolves every call and refuses provider/model mismatch", async () => {
     const keys = secretKeys();
     const base = { kind: "llm" as const, authorizationPassword: "fake-password", createdBy: "person.one" };
-    const claude = await keys.createKey({ ...base, name: "Claude", provider: "Anthropic", metadata: { model: "claude-sonnet-5-5" }, value: "dummy-claude-key" });
-    await keys.createKey({ ...base, name: "DeepSeek", provider: "DeepSeek", value: "dummy-deepseek-key" });
-    await keys.createKey({ ...base, createdBy: "person.two", name: "Other person's Claude", provider: "anthropic", value: "dummy-other-key" });
+    const claude = await createPasswordSealedKey(keys, { ...base, name: "Claude", provider: "Anthropic", metadata: { model: "claude-sonnet-5-5" }, value: "dummy-claude-key" });
+    await createPasswordSealedKey(keys, { ...base, name: "DeepSeek", provider: "DeepSeek", value: "dummy-deepseek-key" });
+    await createPasswordSealedKey(keys, { ...base, createdBy: "person.two", name: "Other person's Claude", provider: "anthropic", value: "dummy-other-key" });
     const caller = { userId: "person.one", sessionId: "session.one" };
     await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic" })).rejects.toThrow();
     await keys.unlockSession({ ...caller, authorizationPassword: "fake-password", expiresAtMs: Date.now() + 60_000 });
@@ -92,7 +93,7 @@ describe("Claude keys, Flow resolution and panel requests", () => {
 
   it("a missing Claude key never substitutes an enabled DeepSeek key", async () => {
     const keys = secretKeys();
-    await keys.createKey({ name: "DeepSeek", kind: "llm", provider: "DeepSeek", value: "dummy-deepseek-key", authorizationPassword: "fake-password", createdBy: "person.one" });
+    await createPasswordSealedKey(keys, { name: "DeepSeek", kind: "llm", provider: "DeepSeek", value: "dummy-deepseek-key", authorizationPassword: "fake-password", createdBy: "person.one" });
     await keys.unlockSession({ userId: "person.one", sessionId: "session.one", authorizationPassword: "fake-password", expiresAtMs: Date.now() + 60_000 });
     await expect(automationStudioPanelCommandKeyFromSecretKeys(heldSessionPorts(keys), { provider: "anthropic" })({ userId: "person.one", sessionId: "session.one" })).rejects.toThrow(/no enabled Anthropic/);
   });

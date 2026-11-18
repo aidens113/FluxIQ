@@ -1,5 +1,5 @@
 import { clientGatewayCredentialHash, clientGatewayCredentialId } from "../../../client-gateway/service/credentials/index.ts";
-import type { ClientTrustCredentialProof, ClientTrustRepository } from "../model/index.ts";
+import type { ClientTrustBinding, ClientTrustCredentialProof, ClientTrustRepository } from "../model/index.ts";
 import { proveClientTrustCredential } from "../runtime/index.ts";
 import { readClientTrustDatabase, withClientTrustDatabase } from "./database.ts";
 import { createClientTrustScopedStore } from "./create-scoped-store.ts";
@@ -49,6 +49,12 @@ export function createSqliteClientTrustRepository(options: { filePath: string; n
       const time = now();
       if (!Number.isSafeInteger(time) || time < 0) throw new TypeError("Invalid client trust clock.");
       return await readClientTrustDatabase(options.filePath, (db) => new ClientTrustRecords(db).countActiveForUser(userId, time, replacement)) ?? 0;
+    }),
+    listActiveForUser: (userId) => track(async (): Promise<ClientTrustBinding[]> => {
+      if (typeof userId !== "string" || !userId.trim()) throw new TypeError("A client owner is required.");
+      const time = now();
+      if (!Number.isSafeInteger(time) || time < 0) throw new TypeError("Invalid client trust clock.");
+      return await readClientTrustDatabase(options.filePath, (db) => new ClientTrustRecords(db).listActiveForUser(userId, time)) ?? [];
     }),
     close: async () => {
       closed = true;

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { signWebhookPayload } from "fluxiq/platform";
+import { PaymentProviderUnavailableError, signWebhookPayload } from "fluxiq/platform";
+import Stripe from "stripe";
 import { describe, expect, it } from "vitest";
-import { StripePaymentProvider } from "..";
+import { isStripeOutage, StripePaymentProvider } from "..";
 
 // Payloads are signed here, locally, with Stripe's v1 scheme; the official
 // SDK verifies them. Nothing in this file reaches a network.
@@ -40,5 +41,25 @@ describe("StripePaymentProvider webhooks", () => {
   it("refuses a plan the operator does not sell before calling Stripe", async () => {
     await expect(provider.createCheckout({ accountId: "account-a", planId: "constructor", successUrl: "https://example.invalid/ok", cancelUrl: "https://example.invalid/no" }))
       .rejects.toMatchObject({ code: "unknown-plan" });
+  });
+});
+
+describe("StripePaymentProvider closing an account's billing", () => {
+  // 127.0.0.1:9 refuses every connection: Stripe unreachable, as in an outage.
+  const unreachable = new StripePaymentProvider({ secretKey: "sk_test_local_only", webhookSecret: WEBHOOK_SECRET, plans: {}, apiBaseUrl: "http://127.0.0.1:9", now: Date.now });
+
+  it("reports an unreachable Stripe as a provider outage, for cancelling and for closing", async () => {
+    await expect(unreachable.cancelSubscription("sub_1", { idempotencyKey: "receipt-1:cancel:sub_1" })).rejects.toBeInstanceOf(PaymentProviderUnavailableError);
+    await expect(unreachable.closeCustomer("cus_1", { idempotencyKey: "receipt-1:close:cus_1" })).rejects.toBeInstanceOf(PaymentProviderUnavailableError);
+  }, 60_000);
+
+  it("tells an outage (connection, rate limit, Stripe's own error) from a refusal", () => {
+    const raw = { message: "synthetic" };
+    expect(isStripeOutage(new Stripe.errors.StripeConnectionError(raw))).toBe(true);
+    expect(isStripeOutage(new Stripe.errors.StripeRateLimitError(raw))).toBe(true);
+    expect(isStripeOutage(new Stripe.errors.StripeAPIError(raw))).toBe(true);
+    expect(isStripeOutage(new Stripe.errors.StripeInvalidRequestError(raw))).toBe(false);
+    expect(isStripeOutage(new Stripe.errors.StripeAuthenticationError(raw))).toBe(false);
+    expect(isStripeOutage(new Error("synthetic"))).toBe(false);
   });
 });

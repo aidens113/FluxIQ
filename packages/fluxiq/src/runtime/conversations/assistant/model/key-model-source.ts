@@ -1,6 +1,7 @@
 // The assistant's model, from the key the person chose in Settings.
 //
-// Secret Keys says which key and model (`resolveAssistant()`, brief G: the
+// Secret Keys says which key and model, for the sender (`resolveAssistant`,
+// asked with their user id: their own saved choice first, then the
 // assistant's own choice, else the workspace's default key). The value is
 // released for each call, exactly as the chat window's key is
 // (`releaseAutomationStudioSessionProviderKey`), and to that key and no other.
@@ -45,14 +46,15 @@ const NOT_OFFERED = "The key chosen for this workspace's messages has not been o
 const CHOICE_CHANGED = "The model key or model chosen for this workspace's messages has changed. Send the message again to use the current choice in Settings.";
 
 /**
- * A model source over Secret Keys: `resolveAssistant` names the key and model,
+ * A model source over Secret Keys: `resolveAssistant` names the key and model
+ * for the person asking (it may ignore who asks),
  * `keyPorts` release the value per call. A key whose provider the assistant
  * cannot call, or a model that provider does not offer, is answered with a
  * plain reason rather than a guess at another.
  */
-export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promise<PanelAssistantKeyChoice>; keyPorts: AutomationStudioSessionKeyPorts; fetchImpl?: typeof fetch }): PanelAssistantModelSource {
+export function panelAssistantKeyModelSource(input: { resolveAssistant(userId: string): Promise<PanelAssistantKeyChoice>; keyPorts: AutomationStudioSessionKeyPorts; fetchImpl?: typeof fetch }): PanelAssistantModelSource {
   return async (sender) => {
-    const choice = await input.resolveAssistant();
+    const choice = await input.resolveAssistant(sender.userId);
     if (!choice.ok) return { ok: false, reason: choice.reason };
     const refusal = lentTo(choice, sender.userId) ? notReleasable(choice) : undefined;
     if (refusal) return { ok: false, reason: refusal };
@@ -65,7 +67,7 @@ export function panelAssistantKeyModelSource(input: { resolveAssistant(): Promis
       throw releaseFailure;
     };
     const checkCurrentChoice = async (userId: string): Promise<void> => {
-      const current = await input.resolveAssistant();
+      const current = await input.resolveAssistant(userId);
       if (!current.ok) return refuseRelease(current.reason);
       if (current.keyId !== choice.keyId || current.provider?.trim().toLowerCase() !== provider || current.model !== choice.model || current.ownerId !== choice.ownerId) refuseRelease(CHOICE_CHANGED);
       const refusal = lentTo(current, userId) ? notReleasable(current) : undefined;

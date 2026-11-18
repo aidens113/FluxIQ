@@ -1,5 +1,6 @@
 import { DEV_USAGE, parseDevArguments } from "./dev-arguments.ts";
 import { createFluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
+import { FluxIQDataRootHeldError } from "../data-root-owner/index.ts";
 import { runDev, type DevServer } from "./run-dev.ts";
 
 const USAGE = ["Usage: fluxiq <command>", "", "Commands:", "  dev   Serve FluxIQ on 127.0.0.1 without the web panel", "", DEV_USAGE].join("\n");
@@ -59,6 +60,13 @@ export async function runFluxIQCommand(argv: readonly string[]): Promise<void> {
     }
     process.send?.({ type: "fluxiq.ready", apiUrl: dev.server.apiUrl, gatewayUrl: dev.server.gatewayUrl });
   } catch (error) {
-    if (!stopping) throw error;
+    if (stopping) return;
+    // Another server holds the data directory: say so plainly, without a stack.
+    if (!(error instanceof FluxIQDataRootHeldError)) throw error;
+    console.error(error.message);
+    process.exitCode = 1;
+    // An IPC channel from a parent (the SDK's `fluxiq dev`) would keep this process alive.
+    process.off("disconnect", onSignal);
+    if (process.connected) process.disconnect();
   }
 }

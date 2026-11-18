@@ -260,6 +260,8 @@ export class FluxIQ {
       } finally {
         try { this.programs.secretKeys.close({ mode: options.mode ?? "shutdown" }); } catch (error) { errors.push(error); }
       }
+      // A store read or write the runtime already started ends before the connections close (t928).
+      try { await this.programs.settled(); } catch (error) { errors.push(error); }
       // Program state keeps its database connections open between operations; none outlives FluxIQ (t435), and only this instance's storage root is closed, never another workspace's (t808).
       try { await programStateConnections.close(this.paths.fluxiq); } catch (error) { errors.push(error); }
       if (errors.length === 1) throw errors[0];

@@ -8,7 +8,7 @@ import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockRecord } from 
 import { SecretKeysService } from "../../service.ts";
 import { unwrapCredentialUnlockPrivateKey } from "../crypto.ts";
 import type { SecretKeyHolderVouch } from "../credential-unlocks.ts";
-import { createMemoryRepository, WEAK_SCRYPT_PARAMETERS, type MemoryRepository } from "../../tests/secret-key-fixtures.ts";
+import { createMemoryRepository, WEAK_SCRYPT_PARAMETERS, type MemoryRepository, createPasswordSealedKey, rotatePasswordSealedKey } from "../../tests/secret-key-fixtures.ts";
 
 const weakKdf = { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
 const PASSWORD = "dummy-password-owner";
@@ -48,7 +48,7 @@ function handle(service: SecretKeysService, holder: SecretKeyCredentialHolder): 
 
 /** The person's password, naming this browser: what lifts a lock. */
 async function lift(service: SecretKeysService, holder: SecretKeyCredentialHolder, sessionId = "session.owner"): Promise<void> {
-  await service.unlockSession({ sessionId, userId: holder.userId, authorizationPassword: PASSWORD, expiresAtMs: NOW + 12 * 60 * 60 * 1000, nowMs: clock, unlockClients: [holder.holderId], passwordVerified: true });
+  await service.unlockSession({ sessionId, userId: holder.userId, authorizationPassword: PASSWORD, expiresAtMs: NOW + 12 * 60 * 60 * 1000, nowMs: clock });
 }
 
 function browser(id = "browser.one", options: { userId?: string; approvingSessionDigest?: string } = {}): SecretKeyCredentialHolder {
@@ -73,7 +73,7 @@ async function release(service: SecretKeysService, sessionId: string, keyId: str
 async function paired(repos: Repositories): Promise<{ service: SecretKeysService; keyId: string; sessionId: string; holder: SecretKeyCredentialHolder }> {
   const service = boot(repos);
   const sessionId = "session.owner";
-  const key = await service.createKey({ name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock });
+  const key = await createPasswordSealedKey(service, { name: "Model", value: KEY_VALUE, authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock });
   await service.unlockSession({ sessionId, userId: USER, authorizationPassword: PASSWORD, expiresAtMs: NOW + 12 * 60 * 60 * 1000, nowMs: clock });
   const holder = browser("browser.one", { approvingSessionDigest: digest(sessionId) });
   await service.credentialUnlocks.presentCredential(holder, CREDENTIAL, { verified: true });
@@ -188,7 +188,7 @@ describe("a paired browser's unlock lasts as long as its credential", () => {
     const repos = repositories();
     const { service, holder } = await paired(repos);
     service.credentialUnlocks.release(holder.holderId);
-    const later = await service.createKey({ name: "Later", value: "dummy-later-key-value", authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
+    const later = await createPasswordSealedKey(service, { name: "Later", value: "dummy-later-key-value", authorizationPassword: PASSWORD, createdBy: USER, nowMs: clock + 1 });
     service.close();
 
     const restarted = boot(repos);
@@ -344,7 +344,7 @@ describe("each lock event really locks, and a later message cannot unlock", () =
   it("someone else rotating the key: the old box cannot open the new seal", async () => {
     const repos = repositories();
     const { service, keyId, holder } = await paired(repos);
-    await service.rotateKey({ id: keyId, value: "dummy-rotated-by-admin", authorizationPassword: OTHER_PASSWORD, actorUserId: OTHER });
+    await rotatePasswordSealedKey(service, { id: keyId, value: "dummy-rotated-by-admin", authorizationPassword: OTHER_PASSWORD, actorUserId: OTHER });
     await stillLocked(repos, service, holder, keyId);
   });
 
@@ -352,7 +352,7 @@ describe("each lock event really locks, and a later message cannot unlock", () =
     const repos = repositories();
     const { service, keyId, holder } = await paired(repos);
     const before = repos.unlocks.stored(holder.holderId);
-    await service.rotateKey({ id: keyId, value: "dummy-rotated-by-admin", authorizationPassword: OTHER_PASSWORD, actorUserId: OTHER });
+    await rotatePasswordSealedKey(service, { id: keyId, value: "dummy-rotated-by-admin", authorizationPassword: OTHER_PASSWORD, actorUserId: OTHER });
     service.close();
     repos.unlocks.replace(holder.holderId, before);
     const restarted = boot(repos);
@@ -364,7 +364,7 @@ describe("each lock event really locks, and a later message cannot unlock", () =
     const repos = repositories();
     const { service, keyId, holder } = await paired(repos);
     const before = (repos.unlocks.stored(holder.holderId) as unknown as SecretKeyCredentialUnlockRecord).boxes[keyId];
-    await service.rotateKey({ id: keyId, value: "dummy-rotated-by-owner", authorizationPassword: PASSWORD, actorUserId: USER });
+    await rotatePasswordSealedKey(service, { id: keyId, value: "dummy-rotated-by-owner", authorizationPassword: PASSWORD, actorUserId: USER });
     const after = (repos.unlocks.stored(holder.holderId) as unknown as SecretKeyCredentialUnlockRecord).boxes[keyId];
     expect(after).toBeDefined();
     expect(after).not.toEqual(before);
@@ -398,7 +398,7 @@ describe("each lock event really locks, and a later message cannot unlock", () =
     await service.credentialUnlocks.sessionEnded({ digest: digest(sessionId), revokerUserId: USER, administrator: false, liveSessionDigests: new Set() });
     await service.unlockSession({ sessionId: 'session.elsewhere', userId: USER, authorizationPassword: PASSWORD, expiresAtMs: NOW + DAY, nowMs: clock });
     expect(await release(service, handle(service, holder), keyId)).toBe(KEY_VALUE);
-    expect(await service.credentialUnlocks.lockedClientsFor(USER)).toEqual([]);
+    expect(await service.snapshotFor({ userId: USER, sessionId: null })).not.toHaveProperty("lockedClients");
   });
 
   it('a wrong unrelated password proof changes no independent credential material', async () => {
@@ -451,7 +451,7 @@ describe("what an attacker would need", () => {
     const restarted = boot(repos);
     await expect(restarted.credentialUnlocks.presentCredential(holder, NEXT_CREDENTIAL, { verified: true })).resolves.toEqual({ unlockedKeyCount: 0 });
     expect(await release(restarted, handle(restarted, holder), keyId)).toBeNull();
-    expect((await restarted.credentialUnlocks.lockedClientsFor(USER)).map((client) => client.label)).toEqual([]);
+    expect(await restarted.snapshotFor({ userId: USER, sessionId: null })).not.toHaveProperty("lockedClients");
     const stored = repos.unlocks.stored(holder.holderId) as unknown as SecretKeyCredentialUnlockRecord;
     expect(stored.boxes).toEqual({});
     expect(stored.pending).toBeUndefined();
@@ -519,7 +519,7 @@ describe("nothing secret reaches logs or errors", () => {
 describe('saved-key availability without connection locks', () => {
     it('reports exact legacy recovery and own held availability without affecting foreign metadata', async () => {
       const { service, keyId, holder } = await paired(repositories());
-      const foreign = await service.createKey({ name: 'Foreign', value: 'dummy-other', authorizationPassword: OTHER_PASSWORD, createdBy: OTHER });
+      const foreign = await createPasswordSealedKey(service, { name: 'Foreign', value: 'dummy-other', authorizationPassword: OTHER_PASSWORD, createdBy: OTHER });
       const own = await service.snapshotFor({ userId: USER, sessionId: handle(service, holder) });
       expect(own.keys.find(key => key.id === keyId)?.availability).toEqual({ state: 'available' });
       expect(own.keys.find(key => key.id === foreign.id)).not.toHaveProperty('availability');
@@ -534,7 +534,7 @@ describe('saved-key availability without connection locks', () => {
 describe('historical unlock metadata compatibility', () => {
     it('never produces a new first-unlock gate or ticket', async () => {
       const { service, holder } = await paired(repositories());
-      expect(service.credentialUnlocks.unlockTicketFor(holder.holderId)).toBeUndefined();
-      expect(await service.credentialUnlocks.lockedClientsFor(USER)).toEqual([]);
+      expect(await service.snapshotFor({ userId: USER, sessionId: null, holderId: holder.holderId })).not.toHaveProperty("unlockTicket");
+      expect(await service.snapshotFor({ userId: USER, sessionId: null })).not.toHaveProperty("lockedClients");
     });
   });
