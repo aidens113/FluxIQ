@@ -185,6 +185,10 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     instructionText: input.instructionText,
     // A host with no project store has nowhere to put rows: the sink's own account is all there is, and a read-back answers from it.
     onRecordBatch: datasets.available ? datasets.recordBatchHandler(projectId, runId) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
+    // A publication of the answer starts its dataset over (`../rows/row-sink.ts`): a pass of its own for each.
+    startOver: datasets.available ? (batch) => datasets.restartedPass(projectId, runId).onRecordBatch(batch) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
+    // A publication a later one superseded leaves the run, which then lists one result beside its capture datasets (`../rows/row-sink.ts`).
+    ...(datasets.available ? { retire: (datasetId: string) => datasets.deleteRunDatasets({ projectId, runId, datasetId }) } : {}),
     reader: {
       listDatasets: () => datasets.listRunDatasetsForVerification({ projectId, runId }),
       getPage: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) }),
@@ -314,6 +318,8 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
   });
   // What it found so far is the answer again, as its output step's page carried from the earlier segment (`../result-feed/feed.ts`).
   const shown = carried.result?.rows;
+  // The copy of the earlier segment's publication is a result too: it leaves once this run publishes under another id.
+  if (shown) run.sink.carried(shown.datasetId);
   if (shown?.previewRows.length) run.result.carried(run.steps, shown.previewRows, shown.datasetId);
   if (!copied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I am carrying on, but some of the rows found so far could not be brought along. I will read them again if I need them.");
   automationStudioAnswerFirstSay("Carrying on", "Carrying on from where it got to.");

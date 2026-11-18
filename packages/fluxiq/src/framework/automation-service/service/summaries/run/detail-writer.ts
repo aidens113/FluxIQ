@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
+import { AutomationStudioProjectRuntimeStreamStore, AutomationStudioProjectStoreUnavailableError, type AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
 import { upsertBy } from "../../collections.ts";
 import type { AutomationStudioServiceIndexes } from "../../indexes/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
@@ -66,14 +66,24 @@ export class AutomationStudioRunDetailWriter {
     return normalizedDetail;
   }
 
-  // `null` means typed storage is absent. Once configured, its original open,
-  // read or write failure propagates, including the first write. A legacy file
-  // cannot stand in for the SQL run row that datasets and other records need.
+  // `null` means typed storage is absent, or unavailable (closing or closed).
+  // Once configured, every other open, read or write failure propagates with its
+  // original cause, including the first write. A legacy file cannot stand in for
+  // the SQL run row that datasets need, except when the store itself is gone.
   private async saveTyped(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail | null> {
     if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
     const { projectId, flowId, runId } = detail.summary;
     await this.projects.requireProject(projectId);
-    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+    let store: AutomationStudioProjectRuntimeStreamStore;
+    try {
+      store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+    } catch (error) {
+      // The store is gone (pool closing or closed, t258): no run row and no dataset
+      // row can be written for this run, so the legacy detail written instead is
+      // merged back by the next typed save, and the run ends failed, never throws.
+      if (AutomationStudioProjectStoreUnavailableError.is(error)) return null;
+      throw error;
+    }
     let failed = true;
     try {
       // The stream read here is handed to the write below, so a save reads the

@@ -36,7 +36,7 @@ export type AutomationStudioAnswerFirstAttemptInput = {
     flows: Pick<AutomationStudioFlowPaths, "flowDirectory">;
     projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">;
     drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save"> & Partial<Pick<AutomationStudioFlowCandidateDraftStore, "getAuthoritative" | "getVerificationSource">>;
-    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage">;
+    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage">;
     openSession(input: { runId: string; metadata: NonNullable<AutomationStudioRuntimeSession["metadata"]> }): Promise<AutomationStudioRuntimeSession>;
     writeSession(session: AutomationStudioRuntimeSession): Promise<void>;
   };

@@ -5,6 +5,7 @@ import type { AutomationStudioInputUseAuthority } from "./authority.ts";
 import type { AutomationStudioInputUseBoundaryCapture } from "./boundary-capture.ts";
 import type { AutomationStudioInputUseChildCapture } from "./child-capture.ts";
 import type { AutomationStudioInputUseObservation } from "./observation.ts";
+import type { AutomationStudioInputUseRead } from "./read.ts";
 import type { AutomationStudioInputUseUnknown } from "./unknown.ts";
 import type { AutomationStudioGraphInputUsePort } from "./port.ts";
 import { AutomationStudioGraphInputUseFrame } from "./frame.ts";
@@ -46,11 +47,24 @@ export class AutomationStudioGraphInputUseController {
     return frame;
   }
 
-  async child(handoff: { status: "valid"; value: AutomationStudioInputUseBoundaryCapture } | { status: "invalid" }, parent: AutomationStudioInvocationOptions | undefined,
+  /**
+   * Inspects the ORIGINAL handoff objects against the live run's record owner before anything copies them.
+   * A captured array or row, or an inspection that cannot answer, leaves the child's input use unknown, and
+   * the child then runs on those original objects: a copy would hand back data the parent's markers miss.
+   */
+  handoff(raw: AutomationStudioInputUseBoundaryCapture): AutomationStudioInputUseRead<AutomationStudioInputUseBoundaryCapture> {
+    if (this.#closed || !this.#frame?.canFork || !this.#authority) return { status: "unknown", code: "parent_unverified" };
+    const owned = this.#frame.captured(raw);
+    if (owned !== "clear") return { status: "unknown", code: owned === "captured" ? "captured_records" : "records_unavailable" };
+    const copy = Capture.object(raw);
+    return copy.status === "valid" ? { status: "bound", value: copy.value } : { status: "unknown", code: "unsupported_input" };
+  }
+
+  async child(handoff: AutomationStudioInputUseRead<AutomationStudioInputUseBoundaryCapture>, parent: AutomationStudioInvocationOptions | undefined,
     child: AutomationStudioInvocationOptions | undefined, signal: AbortSignal, activeSecrets: boolean): Promise<AutomationStudioGraphInputUsePort> {
     if (activeSecrets) return this.#createChild(undefined, undefined, "active_secrets");
     if (this.#closed || !this.#frame?.canFork || !this.#authority) return this.#createChild(undefined, undefined, "parent_unverified");
-    if (handoff.status !== "valid") return this.#createChild(undefined, undefined, "unsupported_input");
+    if (handoff.status !== "bound") return this.#createChild(undefined, undefined, handoff.code);
     const locations = Location.child(parent, child);
     if (locations.status !== "bound" || !Capture.same(this.#frame.location, locations.value.parent)) return this.#createChild(undefined, undefined, "unverified_frame");
     const captured = Object.freeze({ boundary: handoff.value, parent: locations.value.parent, child: locations.value.child });

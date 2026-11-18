@@ -2,6 +2,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import type { AutomationStudioInputUseBoundaryCapture } from "./boundary-capture.ts";
+import type { AutomationStudioInputUseRead } from "./read.ts";
 import { AutomationStudioGraphInputUsePort } from "./port.ts";
 
 /** Engine-only hooks. Exposed session/port objects contain none of these methods. */
@@ -14,7 +15,12 @@ export class AutomationStudioGraphInputUseIntegration {
     return AutomationStudioGraphInputUsePort.controller(port)!.enter(graphFlowId, options, suppliedInputs, activeSecrets, seeded);
   }
 
-  static child(port: AutomationStudioGraphInputUsePort, handoff: { status: "valid"; value: AutomationStudioInputUseBoundaryCapture } | { status: "invalid" },
+  /** Checks original objects against the parent run's own records before the private handoff copy is made. */
+  static handoff(port: AutomationStudioGraphInputUsePort, raw: AutomationStudioInputUseBoundaryCapture): AutomationStudioInputUseRead<AutomationStudioInputUseBoundaryCapture> {
+    return AutomationStudioGraphInputUsePort.controller(port)!.handoff(raw);
+  }
+
+  static child(port: AutomationStudioGraphInputUsePort, handoff: AutomationStudioInputUseRead<AutomationStudioInputUseBoundaryCapture>,
     parent: AutomationStudioInvocationOptions | undefined, child: AutomationStudioInvocationOptions | undefined, signal: AbortSignal, activeSecrets: boolean) {
     return AutomationStudioGraphInputUsePort.controller(port)!.child(handoff, parent, child, signal, activeSecrets);
   }

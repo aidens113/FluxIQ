@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioInputRevision } from "../../../runtime/input-basis/contracts/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../contracts/index.ts";
+import type { AutomationStudioRecordTraceSummary } from "../records/index.ts";
 import type { AutomationStudioInputUseAuthority } from "./authority.ts";
 import type { AutomationStudioInputUseChildCapture } from "./child-capture.ts";
 import type { AutomationStudioInputUseLease } from "./lease.ts";
@@ -10,6 +11,7 @@ import type { AutomationStudioInputUseLocation } from "./location.ts";
 import { AutomationStudioInputUseCapture as Capture } from "./capture.ts";
 import { AutomationStudioInputUseLocationRead as Location } from "./location-read.ts";
 import { AutomationStudioInputUseOperation as Operation } from "./operation.ts";
+import { AutomationStudioInputUseOwnedCapture as Owned } from "./owned-capture/index.ts";
 
 /** One private preparation and actual values initialization; never a whole-execution receipt. */
 export class AutomationStudioGraphInputUseFrame {
@@ -28,6 +30,7 @@ export class AutomationStudioGraphInputUseFrame {
   #signal: AbortSignal | undefined;
   #record: (trace: object, observation: AutomationStudioInputUseObservation) => void;
   #boundary: AutomationStudioInputUseChildCapture | undefined;
+  #records: Pick<AutomationStudioRecordTraceSummary, "captured"> | undefined;
 
   constructor(authority: AutomationStudioInputUseAuthority | undefined, signal: AbortSignal | undefined,
     record: (trace: object, observation: AutomationStudioInputUseObservation) => void,
@@ -80,6 +83,16 @@ export class AutomationStudioGraphInputUseFrame {
     }
   }
 
+  /** The running graph's own record owner, bound once by the engine before its first node; never request data. */
+  own(records: Pick<AutomationStudioRecordTraceSummary, "captured">): void {
+    if (!this.#closed) this.#records ??= records;
+  }
+
+  /** Asks that live owner, by identity, whether ORIGINAL handoff objects reach a captured array or row. */
+  captured(original: unknown): "clear" | "captured" | "unavailable" {
+    return Owned.inspect(this.#closed ? undefined : this.#records, original);
+  }
+
   /** This is the initializer the graph actually uses, not a reference attached beside it. */
   initialize(actualInputs: JsonObject): Record<string, JsonValue> {
     if (this.#lease && !this.#code && actualInputs === this.#inputs && Capture.same(actualInputs, this.#template)) this.#consumed = true;
@@ -126,6 +139,7 @@ export class AutomationStudioGraphInputUseFrame {
     this.#template = undefined;
     this.#boundary = undefined;
     this.#authority = undefined;
+    this.#records = undefined;
     if (lease) this.dispose(lease);
     this.publish();
     this.#traces = [];

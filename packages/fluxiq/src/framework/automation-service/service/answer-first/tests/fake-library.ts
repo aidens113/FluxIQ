@@ -57,6 +57,11 @@ export type FakeLibrary = {
   address?: string;
   /** The list's key, as the web domain's list read says it beside the rows (`read.listKey`): two reads of one list carry one. Absent, a read says none. */
   listKey?: string;
+  /**
+   * Whether a read says where its pager was, as the web domain's list read does beside the rows (`read.place`, t905 p2-place):
+   * the address's `page`, else the page the read asked for. Absent, a read says no place, and Core makes none from either.
+   */
+  pager?: boolean;
   /** Whether the account's hold shelf is on: a control a press flips each time, and a toggle site's Save in small. */
   onHold?: boolean;
 };
@@ -105,7 +110,10 @@ async function answerOf(library: FakeLibrary, fault: FakeLibraryFault | undefine
   const code = value.replay === "step" ? { resultCode: "core.replay.replayed" } : {};
   if (value.write === true) return { ...answer({ written: true }, { ...draft, written: true, effect: nodeId === READ_LOANS ? "observe" : "mutate" }), resultCode: "core.run_node.written" };
   const rows = (): JsonObject[] => library.loans.map((loan) => library.shapes?.[String(ran.parameters.shape)]?.(loan) ?? { ...loan });
-  if (nodeId === READ_LOANS) return { ...answer({ read: { extracted: rows(), ...(library.address === undefined ? {} : { url: library.address }), ...(library.listKey === undefined ? {} : { listKey: library.listKey }) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
+  if (nodeId === READ_LOANS) {
+    const place = library.pager ? placeOf(library, ran.parameters) : undefined;
+    return { ...answer({ read: { extracted: rows(), ...(library.address === undefined ? {} : { url: library.address }), ...(library.listKey === undefined ? {} : { listKey: library.listKey }), ...(place === undefined ? {} : { place }) }, page: page(library) }, { ...draft, effect: "observe" }, true), outputs: { records: rows() }, ...code };
+  }
   const declared = ran.consequences;
   if (declared.length && permission) {
     const verdict = await permission({ consequences: declared as AutomationStudioActionConsequence[], control: { name: nodeId === RENEW_CARD ? "Renew card" : `Renew ${String(ran.parameters.title ?? "a loan")}`, kind: "button" }, verb: "press" });
@@ -127,6 +135,14 @@ function loanTitle(library: FakeLibrary, named: string): string {
 
 function stateOf(library: FakeLibrary): string {
   return createHash("sha256").update(JSON.stringify(page(library))).digest("hex").slice(0, 32);
+}
+
+/** Where the pager was, as `FakeLibrary.pager` says it: the address's `page`, else the page the read asked for. */
+function placeOf(library: FakeLibrary, parameters: JsonObject): string | undefined {
+  const fromAddress = /[?&]page=(\d+)/u.exec(library.address ?? "")?.[1];
+  const asked = typeof parameters.page === "number" && Number.isSafeInteger(parameters.page) ? String(parameters.page) : undefined;
+  const at = fromAddress ?? asked;
+  return at === undefined ? undefined : `page=${at}`;
 }
 
 function page(library: FakeLibrary): JsonObject {

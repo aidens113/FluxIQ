@@ -8,6 +8,17 @@ export type AutomationStudioAnswerFirstRowSinkInput = {
   readRowsKey?: string | undefined;
   /** `AutomationStudioRunDatasets.recordBatchHandler(projectId, runId)`. */
   onRecordBatch: (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary>;
+  /**
+   * Stores a batch that starts its dataset over: it clears the dataset and takes on the batch's own schema and
+   * processing, which the store otherwise fixes for the whole run (`AutomationStudioRunDatasets.restartedPass`, one
+   * pass per batch). What a publication of the answer is written through (`./row-sink.ts`). Absent, `onRecordBatch`.
+   */
+  startOver?: ((batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary>) | undefined;
+  /**
+   * Removes one of the run's datasets: a publication a later one superseded, so the run lists one result beside its
+   * capture datasets (`AutomationStudioRunDatasets.deleteRunDatasets`, `./row-sink.ts`). Absent, nothing is retired.
+   */
+  retire?: ((datasetId: string) => Promise<unknown>) | undefined;
   /** Reads the stored rows back for `readBack`; absent, `readBack` answers from what the sink stored. */
   reader?: AutomationStudioAnswerFirstRowReader | undefined;
   /**

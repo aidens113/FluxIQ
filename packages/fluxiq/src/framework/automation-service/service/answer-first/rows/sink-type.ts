@@ -24,8 +24,16 @@ export type AutomationStudioAnswerFirstRowSink = {
    * read, which is how a run that found the wrong list stops standing in the repair's way.
    * What was stored stays stored; a later read simply becomes the result by the plain rule.
    */
-  /** Publish the ledger's declared answer under its step/version dataset, exactly as judged. A store failure propagates. */
+  /**
+   * Publish the ledger's declared answer under its step/version dataset, exactly as judged. A store failure propagates.
+   * Once it is stored, every other publication the run holds is retired (`./row-sink.ts`, "One result in the run").
+   */
   publish(answer: AutomationStudioAnswerFirstRowsSummary, evidence?: AutomationStudioResultEvidenceBundle): Promise<void>;
+  /**
+   * The earlier segment's publication, which a carried-on attempt copied into this run (`./copied-rows.ts`): retired
+   * like this sink's own once a publication under another id supersedes it. An id outside the publications' namespace is ignored.
+   */
+  carried(datasetId: string): void;
   /** What this sink stored, now, from its own account (rows repeated whole are counted once, as processing does). */
   summary(datasetId?: string): AutomationStudioAnswerFirstRowsSummary;
   /** `summary`, read back from the store after processing, so what is judged and shown is what was stored; the sink's own account when the store cannot be read. */

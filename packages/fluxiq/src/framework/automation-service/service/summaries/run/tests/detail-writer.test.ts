@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../../../flows/authoring/model/index.ts";
-import { AutomationStudioProjectDatabasePool, AutomationStudioProjectRuntimeStreamStore } from "../../../../../persistence/automation/index.ts";
+import { AutomationStudioProjectDatabasePool, AutomationStudioProjectRuntimeStreamStore, AutomationStudioProjectStoreUnavailableError } from "../../../../../persistence/automation/index.ts";
 import { AutomationStudioServiceIndexes } from "../../../indexes/index.ts";
 import { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../../paths/index.ts";
 import { AutomationStudioProjectStore } from "../../../projects/index.ts";
@@ -51,6 +51,27 @@ describe("configured runtime storage failures", () => {
     await expect(io.save.save(detail())).rejects.toBe(cause);
     await expect(readFile(io.file)).rejects.toThrow(/ENOENT/u);
     expect(io.summaries.writeFlowRunSummary).not.toHaveBeenCalled();
+  });
+
+  it("writes the legacy detail when the store is unavailable, and the next typed save merges it", async () => {
+    const io = await writer(true);
+    const open = vi.spyOn(AutomationStudioProjectRuntimeStreamStore, "open").mockRejectedValueOnce(new AutomationStudioProjectStoreUnavailableError("Automation Studio project database pool is closing."));
+    const closedDetail = { ...detail(), metadata: { projectStoreUnavailable: true } };
+    expect(await io.save.save(closedDetail)).toMatchObject({ summary: { runId: "run.one" } });
+    expect(JSON.parse(await readFile(io.file, "utf8"))).toMatchObject({ data: { summary: { runId: "run.one" }, metadata: { projectStoreUnavailable: true } } });
+    open.mockRestore();
+    const merged = await io.save.save(detail());
+    expect(merged.metadata).toMatchObject({ projectStoreUnavailable: true });
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: pools[0]!, projectId: "project.one" });
+    try { expect((await store.getRunDetail("run.one", { includeCollections: false }))?.metadata).toMatchObject({ projectStoreUnavailable: true }); } finally { await store.close(); }
+  });
+
+  it("still propagates any other open failure, even one that mentions the pool", async () => {
+    const io = await writer(true);
+    const cause = new Error("Automation Studio project database pool is closing.");
+    vi.spyOn(AutomationStudioProjectRuntimeStreamStore, "open").mockRejectedValue(cause);
+    await expect(io.save.save(detail())).rejects.toBe(cause);
+    await expect(readFile(io.file)).rejects.toThrow(/ENOENT/u);
   });
 
   it.each([false, true])("propagates the original write failure, even if cleanup also fails; existing run: %s", async (existing) => {

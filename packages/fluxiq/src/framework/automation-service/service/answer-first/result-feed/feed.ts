@@ -100,7 +100,11 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
 
   const idOf = (step: AutomationStudioFlowDraftStep): string => {
     const chain = step.standsFor ?? step.id ?? `p${step.position}`;
-    const id = ids.get(chain) ?? (step.id === undefined ? undefined : ids.get(step.id)) ?? step.callId ?? chain;
+    // The step's own id first: a step the ledger already met keeps its ledger id when it later comes to stand for
+    // another. That is a hand fix put in a broken saved step's place at the ending (`../flow-run/stand-in.ts`), whose
+    // pages are its own call's; through the chain it would take the broken step's id, and its pages would drop out of
+    // the result. A rerun is a new step the ledger has not met, so it still takes the id of the step it reran.
+    const id = (step.id === undefined ? undefined : ids.get(step.id)) ?? ids.get(chain) ?? step.callId ?? chain;
     ids.set(chain, id);
     if (step.id !== undefined) ids.set(step.id, id);
     return id;

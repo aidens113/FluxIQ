@@ -14,7 +14,8 @@
 // **Since lane t905 the result is the draft's read steps (lead decision D1).** Every read here that is
 // meant to be the result is made with `add`; a read without it is a look and never changes the result.
 // Pages of one list are one step's pages where the list says one key and each read says its place
-// (`library.listKey`, a `page` parameter or the address's page), as the web domain's list read does;
+// (`library.listKey`, and `library.pager` saying a `page` parameter or the address's page as the answer's
+// `place`), as the web domain's list read does, since Core makes no place of its own (t905 p2-place);
 // reads with no key are steps of their own, and the last is the result. What each read did to the
 // result is the ledger's line on its answer (`resultNote`), no longer the row sink's `resultList`.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -97,7 +98,7 @@ describe("the latest read of a list is the result", () => {
     expect(attempt.answered.status === "answered" && attempt.answered.result?.rows?.totalRows).toBe(3);
   });
 
-  it("a saved step run forward, then read by hand sorted: one list under one dataset, the latest order", async () => {
+  it("a saved step run forward, then read by hand sorted: one result dataset beside each read's capture, the latest order", async () => {
     const library = fakeLibrary();
     library.address = "library://account";
     const attempt = await attemptOf(library, [
@@ -112,7 +113,11 @@ describe("the latest read of a list is the result", () => {
     expect(titles(resultRows(attempt))).toEqual(NAMES);
     if (attempt.answered.status !== "answered") throw new Error("no answer");
     const datasets = await (attempt.service as unknown as { runDatasets: AutomationStudioRunDatasets }).runDatasets.listRunDatasets({ projectId: attempt.projectId, runId: attempt.answered.attempt.runId! });
-    expect(datasets.map((dataset) => dataset.datasetId)).toEqual([attempt.answered.result!.rows!.datasetId]);
+    // Changed by lane t905: every read's rows stay collected in their own capture dataset, and the run holds one result,
+    // the by-hand step's. The first step's publication, which the by-hand one superseded, was retired (`../rows/row-sink.ts`).
+    const result = attempt.answered.result!.rows!.datasetId;
+    expect(result).toBe("step.by-hand.v1");
+    expect(datasets.map((dataset) => dataset.datasetId).sort()).toEqual([result, "read.first", "read.replayed", "read.by-hand"].sort());
   });
 
   it("a list read again after a filter: a row gone from the list is gone from the result", async () => {
@@ -134,6 +139,7 @@ describe("the latest read of a list is the result", () => {
   it("page 2 of a list merges after page 1 in order, by rows alone", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     library.listKey = LIST_KEY;
+    library.pager = true;
     const attempt = await attemptOf(library, [read("first", { page: 1 }), after(library, () => { library.loans = [loan("Clockmaking"), loan("Dunes of the South")]; }, "page-two", { page: 2 })]);
     expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dunes of the South"]);
   });
@@ -142,6 +148,7 @@ describe("the latest read of a list is the result", () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     library.address = "library://account/loans?page=1";
     library.listKey = LIST_KEY;
+    library.pager = true;
     const attempt = await attemptOf(library, [read("first"), after(library, () => {
       library.address = "library://account/loans?page=2";
       library.loans = [loan("Birds of the Coast", "2030-01-02"), loan("Clockmaking")];
@@ -152,6 +159,7 @@ describe("the latest read of a list is the result", () => {
   it("a feed repeating a pinned row on every page: merged, the row once", async () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
     library.listKey = LIST_KEY;
+    library.pager = true;
     const attempt = await attemptOf(library, [read("first", { page: 1 }), after(library, () => { library.loans = [library.loans[0]!, loan("Dunes of the South"), loan("Ephemera of the Harbour")]; }, "page-two", { page: 2 })]);
     expect(titles(resultRows(attempt))).toEqual([...NAMES, "Dunes of the South", "Ephemera of the Harbour"]);
   });
@@ -160,6 +168,7 @@ describe("the latest read of a list is the result", () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const pageTwo = [loan("Clockmaking"), loan("Dunes of the South")];
     library.listKey = LIST_KEY;
+    library.pager = true;
     const attempt = await attemptOf(library, [
       read("first", { ...worded("first"), page: 1 }),
       after(library, () => { library.loans = pageTwo; }, "page-two", { ...worded("two"), page: 2 }),
@@ -173,6 +182,7 @@ describe("the latest read of a list is the result", () => {
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     const pageOne = library.loans;
     library.listKey = LIST_KEY;
+    library.pager = true;
     const attempt = await attemptOf(library, [read("first", { ...worded("first"), page: 1 }), after(library, () => { library.loans = [loan("Clockmaking")]; }, "page-two", { ...worded("two"), page: 2 }), after(library, () => { library.loans = pageOne; }, "page-one-again", { ...worded("again"), page: 1 })]);
     expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast", "Clockmaking"]);
   });
@@ -288,6 +298,7 @@ describe("a read that changes which rows the result holds says so in the model's
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     library.address = "library://account/loans?page=1";
     library.listKey = LIST_KEY;
+    library.pager = true;
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
       library,
@@ -337,6 +348,7 @@ describe("a read that changes which rows the result holds says so in the model's
     const library = fakeLibrary(["Atlas of Rivers", "Birds of the Coast"]);
     // Each read says its place, as the web domain's list read does: a read that says none is the step's next page (`../result/place-order.ts`).
     library.address = "library://account/loans?page=1";
+    library.pager = true;
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const attempt = await scriptedAttempt({
       library,

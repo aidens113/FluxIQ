@@ -90,7 +90,11 @@ installed without rewriting either migration's identity or checksum.
 When typed runtime storage is configured, failure to open or write a run detail
 propagates its original cause, including on the first write. A legacy detail
 file cannot replace the SQL parent that run datasets need. Explicit file-only
-configurations retain their legacy writer.
+configurations retain their legacy writer. The one exception is an unavailable
+(closing or closed) store at open: the detail is written to the legacy file and
+the next typed save merges it back, because a run that loses its store must end
+failed, never throw (t258), and the closed pool refuses dataset writes too, so
+no dataset row can exist without its run row.
 
 Run capture batches retain private result evidence in the nullable
 `evidence_json` column added by `0036_run_dataset_evidence` (`project/batch-evidence`).

@@ -11,7 +11,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioRuntimeRepeatStoppedTrace } from "../repeat/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
-import { AutomationStudioGraphInputUseIntegration as InputUse, AutomationStudioInputUseCapture } from "../input-use/index.ts";
+import { AutomationStudioGraphInputUseIntegration as InputUse } from "../input-use/index.ts";
 import { automationStudioRunSecrets } from "../../../runtime/run-secrets/index.ts";
 
 /** What one call hands across its boundary. */
@@ -60,10 +60,11 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
     if (value !== undefined) childInputs[binding.targetPortId] = value;
   }
   const parentInputUse = InputUse.accepts(parentOptions.inputUse) ? parentOptions.inputUse : undefined;
-  // Full private data, retained before request.frame projects item identity fields.
+  // Full private data, retained before request.frame projects item identity fields. The originals are
+  // checked against the parent run's captured rows first: those cross uncopied, with unknown input use.
   const inputHandoff = parentInputUse && !automationStudioRunSecrets()
-    ? AutomationStudioInputUseCapture.object({ inputs: childInputs, declaredInputDefaults, contract, bindings, callInputs })
-    : { status: "invalid" as const };
+    ? InputUse.handoff(parentInputUse, { inputs: childInputs, declaredInputDefaults, contract, bindings, callInputs })
+    : { status: "unknown" as const, code: "active_secrets" as const };
   const now = parentOptions.now?.() ?? Date.now();
   const ownDeadline = contract.executionDefaults?.timeoutMs ? now + contract.executionDefaults.timeoutMs : undefined;
   const deadlineAt = Math.min(parentOptions.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);

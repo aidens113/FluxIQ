@@ -194,6 +194,8 @@ async function runGraphWithInputs(
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
+  // Before any node runs: a child handoff asks this run's own record owner which originals it captured.
+  inputUse?.own(runState.records);
   const repeatTraceProvenance = automationStudioRuntimeRepeatTraceProvenance.frame(options.invocation);
   if (seed) seedRunState(runState, seed);
   // Every run input is run-time data of unknown sensitivity whether or not a
