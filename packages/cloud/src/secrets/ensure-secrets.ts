@@ -6,7 +6,7 @@ import type { PlannedSecret } from "../plan/index.ts";
 /**
  * Makes sure every secret file the deployment mounts exists. A missing file
  * that can be generated (the provisioning token, the setup code, the host
- * keyring, a key for stripe-mock) is written, readable by its owner only; a
+ * keyring, a key for stripe-mock, the webhook signing secret) is written, readable by its owner only; a
  * missing operator file (a real Stripe key, an SMTP password) is an error
  * naming it. A secret is never printed, never put in an env file, and never
  * regenerated once it exists, so data sealed under the keyring stays
@@ -33,6 +33,7 @@ function contentFor(kind: Exclude<PlannedSecret["generate"], "operator">): strin
     case "token": return `${randomBytes(32).toString("hex")}\n`;
     case "setup-code": return `${randomBytes(24).toString("hex")}\n`;
     case "stripe-mock-key": return `sk_test_${randomBytes(24).toString("hex")}\n`;
+    case "webhook-secret": return `whsec_${randomBytes(24).toString("hex")}\n`;
     case "keyring": {
       const keyId = randomUUID();
       return JSON.stringify({ version: 1, currentKeyId: keyId, keys: { [keyId]: randomBytes(32).toString("base64") } });

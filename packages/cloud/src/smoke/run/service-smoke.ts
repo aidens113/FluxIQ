@@ -1,16 +1,16 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { DriverContext, PlatformDriver } from "../drivers/index.ts";
-import { DockerCli } from "../drivers/index.ts";
-import type { CloudPlan } from "../plan/index.ts";
-import { cloudStateStore } from "../state/index.ts";
-import { waitForMailText } from "./mailpit-inbox.ts";
-import { runOneShot } from "./one-shot-container.ts";
-import { pinnedHttps, type PinnedAnswer } from "./pinned-https.ts";
-import { SMOKE_SCRIPTS } from "./smoke-scripts.ts";
-
-/** One smoke check and what it observed. */
-export type SmokeStep = { name: string; detail: string };
+import type { DriverContext, PlatformDriver } from "../../drivers/index.ts";
+import type { CloudPlan } from "../../plan/index.ts";
+import { checkRestart, checkTeardown, checkWebhook } from "../check/index.ts";
+import { ensureUp } from "../ensure-up.ts";
+import { expectStatus } from "../expect-status.ts";
+import { waitForMailText } from "../mailpit-inbox.ts";
+import { runOneShot } from "../one-shot-container.ts";
+import { pinnedHttps } from "../pinned-https.ts";
+import { secretFile } from "../secret-file.ts";
+import type { SmokeStep } from "../smoke-step.ts";
+import { SMOKE_SCRIPTS } from "../smoke-scripts.ts";
 
 type Account = { email: string; secret: string; session: string[] };
 
@@ -27,29 +27,26 @@ function signInBody(fields: Readonly<Record<string, string>>, secret: string): s
 type ProvisionAnswer = { status: number; body: { ok?: boolean; result?: { status?: string; userId?: string; workspaceId?: string }; error?: { code?: string; message?: string; fields?: unknown } } | null };
 
 /**
- * The end-to-end check of a local rehearsal, from outside as a customer and
- * a sign-up site would see it: two accounts are created through the private
- * provisioning listener from a one-shot container on its network; their
- * welcome emails are read from Mailpit; both set a password and sign in over
- * TLS pinned to the exported certificate; each sees only itself in its own
- * workspace; the payments API answers; the stack goes down with its data
+ * The end-to-end check of a hosted service's local rehearsal, from outside as
+ * a customer and a sign-up site would see it: two accounts are created
+ * through the private provisioning listener from a one-shot container on its
+ * network; their welcome emails are read from Mailpit; both set a password
+ * and sign in over TLS pinned to the exported certificate; each sees only
+ * itself in its own workspace; the payments API answers; the billing webhook
+ * is checked three ways (checkWebhook); the stack goes down with its data
  * kept and comes back with both accounts still signing in; and a final
  * `down` leaves no labelled container, network, volume or image. Any failed
  * check throws with what it observed; the stack is then left up for a look,
  * and `fluxiq-cloud down` removes it.
  */
-export async function runSmoke(plan: CloudPlan, driver: PlatformDriver, context: DriverContext): Promise<SmokeStep[]> {
+export async function runServiceSmoke(plan: CloudPlan, driver: PlatformDriver, context: DriverContext): Promise<SmokeStep[]> {
   if (plan.mailUi === null || plan.exportedCa === null) throw new Error("smoke runs against a local rehearsal: it needs sinks.mail on and tls.mode \"internal\".");
   const steps: SmokeStep[] = [];
   const pass = (name: string, detail: string) => {
     steps.push({ name, detail });
     context.log(`  ok  ${name}: ${detail}`);
   };
-  const state = await cloudStateStore.read(plan.stateFile);
-  if (state?.phase !== "up") {
-    context.log("smoke: the stack is not up; bringing it up first.");
-    await driver.up(plan, { build: false });
-  }
+  await ensureUp(plan, driver, context);
   const https = pinnedHttps(plan.publicOrigin, await readFile(plan.exportedCa, "utf8"));
   const health = await https({ method: "GET", path: "/api/health" });
   expectStatus(health, 200, "GET /api/health over TLS");
@@ -75,30 +72,27 @@ export async function runSmoke(plan: CloudPlan, driver: PlatformDriver, context:
   await expectIsolated(https, accounts);
   pass("isolation", "both signed in over TLS; each sees only itself in its workspace's members");
 
-  if (plan.config.sinks.payments) {
+  const payments = plan.config.payments;
+  if (payments !== null && plan.config.sinks.payments) {
     const key = (await readFile(secretFile(plan, "stripe_secret_key"), "utf8")).trim();
-    const answer = await runOneShot(context.runner, { project: plan.project, image: plan.coreImage, network: plan.networks.edge, script: SMOKE_SCRIPTS.payments, input: { apiBase: plan.config.payments.apiBase, key } }) as { status: number; object: string | null };
+    const answer = await runOneShot(context.runner, { project: plan.project, image: plan.coreImage, network: plan.networks.edge, script: SMOKE_SCRIPTS.payments, input: { apiBase: payments.apiBase, key } }) as { status: number; object: string | null };
     if (answer.status !== 200 || answer.object !== "list") throw new Error(`The payments API answered ${answer.status} (${String(answer.object)}).`);
-    pass("payments", `${plan.config.payments.apiBase} answered a customer list with the deployment's key, from the edge network`);
+    pass("payments", `${payments.apiBase} answered a customer list with the deployment's key, from the edge network`);
   }
 
-  context.log("smoke: down with data kept, then up again.");
-  await driver.down((await cloudStateStore.read(plan.stateFile)) ?? cloudStateStore.empty(plan), { keepData: true, keepImages: true });
-  await driver.up(plan, { build: false });
+  if (plan.config.billing !== null && plan.config.sinks.payments) pass("webhook", await checkWebhook(https, plan, context));
+
+  await checkRestart(plan, driver, context);
   await signInBoth(https, accounts);
   await expectIsolated(https, accounts);
   pass("restart", "after down (data kept) and up, both accounts sign in and are still isolated");
 
-  context.log("smoke: final down.");
-  await driver.down((await cloudStateStore.read(plan.stateFile)) ?? cloudStateStore.empty(plan), { keepData: false, keepImages: false });
-  const docker = new DockerCli(context.runner);
-  const left = await Promise.all((["container", "network", "volume", "image"] as const).map(async (kind) => `${kind}s ${(await docker.labelled(kind, plan.project)).length}`));
-  if (left.some((entry) => !entry.endsWith(" 0"))) throw new Error(`The final down left labelled resources: ${left.join(", ")}.`);
-  pass("teardown", `the final down left nothing labelled ${plan.project} (${left.join(", ")})`);
+  pass("teardown", `the final down left nothing labelled ${plan.project} (${await checkTeardown(plan, driver, context)})`);
   return steps;
 }
 
 async function provision(plan: CloudPlan, context: DriverContext, accounts: readonly Account[]): Promise<void> {
+  if (plan.networks.provisioning === null) throw new Error("This deployment has no provisioning network.");
   const token = (await readFile(secretFile(plan, "provisioning_token"), "utf8")).split(/\r?\n/u)[0]?.trim() ?? "";
   const calls = accounts.map((account, index) => ({
     operation: "createAccount",
@@ -129,14 +123,4 @@ async function expectIsolated(https: ReturnType<typeof pinnedHttps>, accounts: r
     const emails = (payload?.members ?? []).map((member) => member.email);
     if (emails.length !== 1 || emails[0] !== account.email) throw new Error(`${account.email} sees these members in its workspace: ${emails.join(", ") || "none"}; expected only itself.`);
   }
-}
-
-function expectStatus(answer: PinnedAnswer, status: number, what: string): void {
-  if (answer.status !== status) throw new Error(`${what} answered ${answer.status}, not ${status}: ${answer.body.slice(0, 300)}`);
-}
-
-function secretFile(plan: CloudPlan, name: string): string {
-  const secret = plan.secrets.find((candidate) => candidate.name === name);
-  if (secret === undefined) throw new Error(`The plan has no ${name} secret.`);
-  return secret.file;
 }
