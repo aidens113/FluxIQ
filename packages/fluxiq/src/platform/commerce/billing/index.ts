@@ -12,6 +12,7 @@ export type {
   CommerceReconcileReport,
   CommerceWebhookResult,
   PaymentCheckout,
+  PaymentCheckoutExpiry,
   PaymentCheckoutRequest,
   PaymentPortalRequest,
   PaymentProvider,

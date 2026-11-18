@@ -34,6 +34,7 @@ export function checkBillingRules(file: CloudConfigFile): CloudConfigIssue[] {
     if (plan.unit === "dedicated-browser" && !plan.grants.some((grant) => grant.allocation === "dedicated")) {
       add(`billing.plans.${planId}.grants`, 'must include a dedicated grant: a "dedicated-browser" price counts dedicated browsers');
     }
+    if ((plan.unit ?? "flat") === "flat" && (plan.quantity ?? 1) !== 1) add(`billing.plans.${planId}.quantity`, "must be 1 for a flat price: it counts nothing");
     plan.grants.forEach((grant, index) => {
       const at = `billing.plans.${planId}.grants[${index}]`;
       const regions = grant.regions ?? [];

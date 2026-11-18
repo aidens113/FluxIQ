@@ -73,9 +73,9 @@ describe("buildCloudPlan", () => {
     expect(commerce).toEqual({
       provider: "stripe", allowTrial: false, graceMs: 259_200_000, retentionMs: 2_592_000_000, refreshAfterMs: 3_600_000,
       plans: {
-        browser: { priceId: "price_dedicated_browser_monthly", unit: "dedicated-browser", grants: [{ key: "cloud.dedicated", allocation: "dedicated", capabilities: ["execute"], regions: ["local"] }] },
-        seat: { priceId: "price_team_seat_monthly", unit: "seat", grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] },
-        shared: { priceId: "price_shared_monthly", unit: "flat", grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] }
+        browser: { name: "Dedicated browser", priceId: "price_dedicated_browser_monthly", unit: "dedicated-browser", quantity: 1, grants: [{ key: "cloud.dedicated", allocation: "dedicated", capabilities: ["execute", "environment.dedicated"], regions: ["local"] }] },
+        seat: { priceId: "price_team_seat_monthly", unit: "seat", quantity: 1, grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] },
+        shared: { priceId: "price_shared_monthly", unit: "flat", quantity: 1, grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] }
       },
       secretKeyFile: "/run/secrets/stripe_secret_key", webhookSecretFile: "/run/secrets/stripe_webhook_secret", apiBaseUrl: "http://stripe-mock:12111"
     });

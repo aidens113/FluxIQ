@@ -36,8 +36,12 @@ export type CloudBillingGrant = {
   regions: string[];
 };
 
-/** A plan the operator sells: the provider price it is sold as, what that price counts, and what it grants. */
-export type CloudBillingPlan = { priceId: string; unit: CloudBillingUnit; grants: CloudBillingGrant[] };
+/**
+ * A plan the operator sells: its name on the plans page (null: its id), the
+ * provider price it is sold as, what that price counts, how many the
+ * checkout sells, and what it grants.
+ */
+export type CloudBillingPlan = { name: string | null; priceId: string; unit: CloudBillingUnit; quantity: number; grants: CloudBillingGrant[] };
 
 /** The billing policy Core's commerce configuration carries (rendered as commerce.json); every value is the operator's. */
 export type CloudBilling = {
@@ -48,13 +52,19 @@ export type CloudBilling = {
   refreshAfterMs: number;
   /** How old a verification admission still trusts; null leaves Core's default. */
   maxVerificationAgeMs: number | null;
+  /** How long a started checkout stays payable; null leaves Core's default (one hour). */
+  checkoutLifetimeMs: number | null;
+  /** Where dedicated browsers run; null leaves Core's default (the one region dedicated grants name). */
+  region: string | null;
   plans: Record<string, CloudBillingPlan>;
 };
 
 /** The billing section as written: a grant's regions may be left out (control grants have none). */
-export type CloudBillingFile = Omit<CloudBilling, "maxVerificationAgeMs" | "plans"> & {
+export type CloudBillingFile = Omit<CloudBilling, "maxVerificationAgeMs" | "checkoutLifetimeMs" | "region" | "plans"> & {
   maxVerificationAgeMs?: number;
-  plans: Record<string, { priceId: string; unit?: CloudBillingUnit; grants: (Omit<CloudBillingGrant, "regions"> & { regions?: string[] })[] }>;
+  checkoutLifetimeMs?: number;
+  region?: string;
+  plans: Record<string, { name?: string; priceId: string; unit?: CloudBillingUnit; quantity?: number; grants: (Omit<CloudBillingGrant, "regions"> & { regions?: string[] })[] }>;
 };
 
 /** The config file as written, after schema validation (relative paths not yet resolved). */

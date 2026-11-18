@@ -5,7 +5,7 @@
  * message names the operation only, never an id, a key or a provider body.
  */
 export class PaymentProviderUnavailableError extends Error {
-  constructor(readonly operation: "cancelSubscription" | "closeCustomer", options?: { cause?: unknown }) {
+  constructor(readonly operation: "createCheckout" | "expireCheckout" | "cancelSubscription" | "closeCustomer", options?: { cause?: unknown }) {
     super(`Payment provider unavailable for ${operation}`, options);
     this.name = "PaymentProviderUnavailableError";
   }
