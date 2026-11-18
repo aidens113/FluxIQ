@@ -19,6 +19,21 @@ The config defaults to `./fluxiq-cloud.config.json`. Inside this repository,
 run it without building with
 `pnpm --filter @fluxiq/cloud cloud <command> --config <file>`.
 
+## Three Modes
+
+Every cloud unit is tested in all three ways FluxIQ runs:
+
+| Mode | How | What it is |
+| --- | --- | --- |
+| Hosted service | `mode: "service"` (the default; `examples/local.config.json`, `production.config.json`) | The multi-user service: Core on the `service` profile, the provisioning listener, billing, sign-up (`signup`). |
+| Self-hosted | `mode: "self-hosted"` (`examples/self-hosted.config.json`) | One company's own server: Core on the `self-hosted` profile (`deploy/compose/self-hosted.compose.yml`), Caddy with TLS, the full base product. No billing, payments, provisioning listener or sign-up: the config refuses those sections. A signed per-seat license (later) only adds company extras. |
+| Local panel | `node scripts/run-fluxiq-web.mjs` from the repository root | The plain panel on this machine: none of the cloud modules, no billing calls. |
+
+`fluxiq-cloud up`, `smoke` and `down` run the first two with their own
+config; the smoke is per mode (see The Smoke). The third is started with the
+script above and loads no commerce configuration (`FLUXIQ_COMMERCE_CONFIG_FILE`
+is unset, so `getCommerceBilling()` is null and the webhook answers 404).
+
 ## One Deployment, Two Places
 
 A local run is a rehearsal of the real server, not a different setup. Both
@@ -32,7 +47,9 @@ config's values differ:
 | `domain` | `app.fluxiq.localhost` (never reaches DNS) | the public host, e.g. `app.example.org` |
 | `tls` | `internal`: Caddy's own local authority | `acme`: Let's Encrypt, with the operator's address |
 | `email.smtp` | `smtp://mailpit:1025` (Mailpit, `sinks.mail`) | `smtp+starttls://host:587` or `smtps://host:465`, with `username` and `passwordFile` |
-| `payments` | `http://stripe-mock:12111` (`sinks.payments`), a generated test key | `https://api.stripe.com` and `secretKeyFile` (test or live key) |
+| `payments` | `http://stripe-mock:12111` (`sinks.payments`), a generated test key and webhook secret | `https://api.stripe.com`, `secretKeyFile` (test or live key) and `webhookSecretFile` (Stripe's signing secret) |
+| `billing` | the plans and policy, `provider` `stripe` (or `fake`) | the same section; `fake` is refused |
+| `signup` | `off` or `open`, rendered as `FLUXIQ_SIGNUP` | the same |
 | `source.root`, `stateDir`, `secrets.dir` | beside the config | the server's own paths (`/opt/...`, `/var/lib/...`, `/etc/...`) |
 
 `render` writes exactly the files a server runs, without deploying. A test
@@ -42,23 +59,42 @@ byte-identical; `compose.env` differs in `FLUXIQ_CLOUD_PROJECT`, `FLUXIQ_BUILD_C
 `FLUXIQ_PROVISIONING_NETWORK`, plus the sink images and Mailpit's port that
 exist only with sinks on; `env/service.env` differs in the origin, site
 address, instance id and name, ACME address, TLS directive, mail sender and
-From, and Stripe's API, plus the sign-up URL and SMTP sign-in production sets;
-the sinks file exists only when a sink is on. Each of those is checked
-against the config field it comes from.
+From, plus the sign-up URL and SMTP sign-in production sets;
+the sinks file exists only when a sink is on; `env/commerce.json` has the same
+keys in both and differs only in the plans' values and in `apiBaseUrl`, which
+is set for the stripe-mock sink and absent for Stripe's own API. Each of those
+is checked against the config field it comes from.
 
 The profiles keep each other honest. `local` refuses ACME and any domain not
 ending in `.localhost`; `production` refuses sinks, `tls internal`, a
 non-public domain, plain `smtp://` and a missing `secrets.dir`. Credentials
 are refused over plain `smtp://`, and `payments.apiBase` must be `https://`
-unless it is the stripe-mock sink. `fluxiq-cloud schema` prints the full JSON
+unless it is the stripe-mock sink. With `billing`, a server needs
+`payments.webhookSecretFile` (the sink generates its own), the `fake` provider
+is local only, plans need unique price ids and a region for every non-control
+grant, and `billing.maxVerificationAgeMs`, if given, must exceed
+`refreshAfterMs`. `fluxiq-cloud schema` prints the full JSON
 Schema; `packages/cloud/fluxiq-cloud.schema.json` is the same, for editors.
 Every problem in a config is reported at once, with its path.
+
+### Prices Are Configuration
+
+FluxIQ alone sets prices, in the config's `billing.plans`, never in code.
+Each plan is one Stripe price with a `unit`: `dedicated-browser` (a dedicated
+browser each), `seat` (a team seat each) or `flat` (the default: one price
+for the whole plan); the Stripe item quantity is the count. The hosted offer
+is a `browser` plan, a `seat` plan and a `flat` plan, as the examples show.
+`unit` is rendered into `env/commerce.json` and read by
+`apps/web/src/server/commerce/config.ts`; a `dedicated-browser` plan must
+include a dedicated grant. Core does not yet turn a quantity into a count of
+grants (see Limits).
 
 ## What `up` Does
 
 1. Checks Docker is running.
 2. Generates the secret files that are absent (the provisioning token, the
-   setup code, the host keyring, and a key for stripe-mock), readable by
+   setup code, the host keyring, and a key and a webhook signing secret for
+   stripe-mock), readable by
    their owner only. Operator files (a real Stripe key, an SMTP password) are
    never generated: their absence stops `up` with their paths. A secret is
    never regenerated, so data sealed under the keyring stays readable.
@@ -67,7 +103,7 @@ Every problem in a config is reported at once, with its path.
    those.
 4. Writes the bundle to `<state>/deploy/`: copies of the Compose file and the
    Caddyfile, `compose/cloud.override.yml`, `compose/sinks.compose.yml` (only
-   with a sink), `compose/compose.env`, `env/service.env` and
+   with a sink), `compose/compose.env`, `env/service.env`, `env/commerce.json` (with `billing`) and
    `deployment.json`.
 5. Creates the `<project>_runners` network for the runner containers I5
    describes (HC5); nothing joins it yet.
@@ -143,8 +179,20 @@ The machine store is never touched.
 4. Both sign in through `/api/auth/login`; each sees only itself in
    `/api/accounts/members`.
 5. The payments API answers with the deployment's key, from the edge network.
-6. `down --keep-data`, `up`, and both accounts sign in again, still isolated.
-7. A final `down`; no labelled container, network, volume or image is left.
+6. The billing webhook, posted without cookie or Origin to
+   `/api/platform/v1/commerce/webhook` over TLS, three ways: a test event
+   signed with the generated secret that names no subscription is accepted
+   and ignored; one that names a subscription makes billing fetch it from
+   stripe-mock, which answers with its fixture (it names no FluxIQ account),
+   so the delivery answers 500 `commerce.failed` and Core's log says exactly
+   that; the first body signed with another secret is refused with 400.
+7. `down --keep-data`, `up`, and both accounts sign in again, still isolated.
+8. A final `down`; no labelled container, network, volume or image is left.
+
+A self-hosted server's smoke is shorter: `/api/health` and `/api/ready` over
+TLS; discovery names the `self-hosted` profile and the wss gateway; the
+commerce webhook answers 404 (no billing); `down --keep-data`, `up`, and the
+same checks again; a final `down` that leaves nothing labelled.
 
 A failed check stops with what it observed and leaves the stack up for a
 look; `fluxiq-cloud down` removes it.
@@ -165,6 +213,27 @@ a config naming one is refused by every command except `render`.
 
 - The image is built from a Core checkout; a published image is later work.
 - The extension origins in the examples are placeholders of the right shape.
-- `FLUXIQ_STRIPE_API_BASE` and `FLUXIQ_STRIPE_SECRET_KEY_FILE` are set for
-  the billing engine (HC4), which reads them; Core reads neither yet.
+- Billing configuration: the config's `billing` section is rendered as
+  `env/commerce.json`, copied into the secrets volume as `commerce_config`, and
+  named by `FLUXIQ_COMMERCE_CONFIG_FILE` (the one file Core's billing reads,
+  `apps/web/src/server/commerce/config.ts`); its secret paths are the volume's
+  `stripe_secret_key` and `stripe_webhook_secret`. Without `billing` nothing
+  is rendered and the server bills nothing. stripe-mock's subscription fixture
+  names no FluxIQ account, so no ledger version can be written through it;
+  the smoke asserts the provider call and its refusal instead (The Smoke,
+  step 6). A real Stripe subscription carries `fluxiq_account_id`.
+- Per-unit checkout: `createCheckout` still sells one of each price
+  (`quantity: 1`), and a subscription's grants do not yet carry a count from
+  the item quantity. Turning `dedicated-browser` and `seat` quantities into
+  that many dedicated browsers and seats needs the platform commerce model
+  (`CommerceEntitlementGrant`) to carry a quantity: the later checkout unit.
+- The image build sets `NODE_OPTIONS=--max-old-space-size=3584` for the
+  `pnpm build` step only (`deploy/docker/Dockerfile`): `next build`'s type
+  check needs more heap than Node's default inside a 4 GB build VM. Type
+  checking stays on.
+- Cloud admission (`getCloudAdmission()` in `apps/web/src/server/commerce`)
+  is composed beside billing over the same ledger, with grace, trial and
+  verification age from the same file (`maxVerificationAgeMs` defaults to
+  twice `refreshAfterMs`). Its IAM target resolver is installed with
+  `setCloudAuthorizer`; until one is, every admission is refused.
 - Caddy's HTTP to HTTPS redirect and HSTS apply to the local name too.

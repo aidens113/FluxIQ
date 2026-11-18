@@ -1,4 +1,4 @@
-import { EnvironmentRefusal } from "../model/index.ts";
+import { ENVIRONMENT_ID_PATTERN, EnvironmentRefusal } from "../model/index.ts";
 import type { EnvironmentDriverObservation, EnvironmentOperationKind, EnvironmentRecord, EnvironmentStore } from "../model/index.ts";
 import { DEDICATED_ENVIRONMENT_CAPABILITY } from "./dedicated-environment-capability.ts";
 import type {
@@ -6,13 +6,11 @@ import type {
   EnvironmentControllerOptions,
   EnvironmentDriver,
   EnvironmentDriverSpec,
+  EnvironmentEnrolment,
   EnvironmentQuery
 } from "./types.ts";
 
 type Owner = { accountId: string; workspaceId: string };
-
-/** An environment id names a container or virtual machine, so it is held to what both accept. */
-const ENVIRONMENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
 
 /**
  * The dedicated-environment state machine. Each operation is recorded first
@@ -28,6 +26,13 @@ const ENVIRONMENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/;
  * `reconcile` and the purges are the engine's own and never allocate: an
  * environment whose resources are gone waits for an admitted `start`.
  *
+ * Enrolment: with an enrolment port, a start hands the driver a ticket source
+ * bound to the environment, so its client enrols at its tenant's gateway with
+ * no person's approval; the recorded `running` intent is the authority. Any
+ * operation whose intent is not `running` revokes that trust before the
+ * driver stops or releases anything. A failed revocation is reported and the
+ * operation is not recorded as finished, so repeating it revokes again.
+ *
  * Operations on one environment run one after another in this process; across
  * processes, an observation for a superseded operation is never written.
  */
@@ -37,6 +42,7 @@ export class EnvironmentController<Actor> {
   private readonly admission: EnvironmentControllerOptions<Actor>["admission"];
   private readonly authorizeTarget: EnvironmentControllerOptions<Actor>["authorize"];
   private readonly capability: string;
+  private readonly enrolment: EnvironmentEnrolment | null;
   private readonly locks = new Map<string, Promise<void>>();
 
   constructor(options: EnvironmentControllerOptions<Actor>) {
@@ -45,6 +51,7 @@ export class EnvironmentController<Actor> {
     this.admission = options.admission;
     this.authorizeTarget = options.authorize;
     this.capability = options.capability ?? DEDICATED_ENVIRONMENT_CAPABILITY;
+    this.enrolment = options.enrolment ?? null;
     if (!identifier(this.capability)) throw new TypeError("Invalid environment capability");
   }
 
@@ -82,7 +89,8 @@ export class EnvironmentController<Actor> {
     return this.exclusive(environmentId, async () => {
       const record = await this.store.get(environmentId);
       if (record === null || settled(record)) return record;
-      return this.converge(record, false);
+      // An environment already at rest was revoked by the operation that stopped it.
+      return this.converge(record, false, !atRest(record));
     });
   }
 
@@ -137,7 +145,7 @@ export class EnvironmentController<Actor> {
       // A replay of an operation a later one superseded answers what stands now and changes nothing.
       if (replayed && record.operationId !== command.operationId) return record;
       if (settled(record)) return record;
-      return this.converge(record, allocates);
+      return this.converge(record, allocates, true);
     });
   }
 
@@ -155,7 +163,7 @@ export class EnvironmentController<Actor> {
             workspaceId: stored.workspaceId,
             driver: this.driver.kind
           });
-          if (!settled(record)) await this.converge(record, false);
+          if (!settled(record)) await this.converge(record, false, true);
           await this.store.purge(stored.environmentId);
         });
         purged.push(stored.environmentId);
@@ -167,29 +175,65 @@ export class EnvironmentController<Actor> {
     return purged;
   }
 
-  private async converge(record: EnvironmentRecord, mayAllocate: boolean): Promise<EnvironmentRecord> {
+  private async converge(record: EnvironmentRecord, mayAllocate: boolean, revoke: boolean): Promise<EnvironmentRecord> {
     if (record.driver !== this.driver.kind) throw new EnvironmentRefusal("driver-mismatch");
     const spec: EnvironmentDriverSpec = { environmentId: record.environmentId, accountId: record.accountId, workspaceId: record.workspaceId };
+    // Trust ends first, so the client cannot act while its environment is torn down.
+    const revocation = record.desired !== "running" && revoke ? await this.revokeEnrolment(spec, record.desired) : null;
+    let observed: EnvironmentRecord["observed"];
     try {
-      let observed = await this.driver.inspect(spec);
-      if (record.desired === "deleted") return await this.release(record, spec, observed);
-      if (observed === "partial") {
-        await this.driver.release(spec);
+      observed = await this.drive(record, spec, mayAllocate);
+    } catch (error) {
+      return await this.recordFailure(record, spec, revocation === null ? error
+        : new AggregateError([error, revocation.error], `Environment ${spec.environmentId} failed and its client's trust was not revoked.`));
+    }
+    if (revocation !== null) return await this.recordFailure(record, spec, revocation.error);
+    return await this.observe(record, observed);
+  }
+
+  /** Acts until what the driver observes matches the recorded intent; answers the observation to record. */
+  private async drive(record: EnvironmentRecord, spec: EnvironmentDriverSpec, mayAllocate: boolean): Promise<EnvironmentRecord["observed"]> {
+    let observed = await this.driver.inspect(spec);
+    if (record.desired === "deleted") return await this.release(spec, observed);
+    if (observed === "partial") {
+      await this.driver.release(spec);
+      observed = await this.driver.inspect(spec);
+    }
+    if (record.desired === "running") {
+      if (observed === "absent") {
+        if (!mayAllocate) return "absent";
+        await this.allocate(spec);
         observed = await this.driver.inspect(spec);
       }
-      if (record.desired === "running") {
-        if (observed === "absent") {
-          if (!mayAllocate) return await this.observe(record, "absent");
-          await this.allocate(spec);
-          observed = await this.driver.inspect(spec);
-        }
-        if (observed === "stopped" || observed === "crashed") await this.driver.start(spec);
-      } else if (observed === "running" || observed === "crashed") {
-        await this.driver.stop(spec);
-      }
-      return await this.observe(record, await this.driver.inspect(spec));
+      if (observed === "stopped" || observed === "crashed") await this.startDriver(spec);
+    } else if (observed === "running" || observed === "crashed") {
+      await this.driver.stop(spec);
+    }
+    return await this.driver.inspect(spec);
+  }
+
+  /** Starts the driver with a ticket source bound to this environment, closed once the start returned. */
+  private async startDriver(spec: EnvironmentDriverSpec): Promise<void> {
+    if (this.enrolment === null) {
+      await this.driver.start(spec);
+      return;
+    }
+    const session = await this.enrolment.open(spec);
+    try {
+      await this.driver.start(spec, { takeEnrolmentTicket: () => session.takeEnrolmentTicket() });
+    } finally {
+      session.close();
+    }
+  }
+
+  /** Ends the client's trust; a failure is answered so the driver still converges and the operation then reports it. */
+  private async revokeEnrolment(spec: EnvironmentDriverSpec, desired: "stopped" | "deleted"): Promise<{ error: unknown } | null> {
+    if (this.enrolment === null) return null;
+    try {
+      await this.enrolment.revoke(spec, desired === "deleted" ? "The environment was deleted." : "The environment was stopped.");
+      return null;
     } catch (error) {
-      return await this.recordFailure(record, spec, error);
+      return { error };
     }
   }
 
@@ -207,13 +251,13 @@ export class EnvironmentController<Actor> {
     }
   }
 
-  private async release(record: EnvironmentRecord, spec: EnvironmentDriverSpec, observed: EnvironmentDriverObservation): Promise<EnvironmentRecord> {
+  private async release(spec: EnvironmentDriverSpec, observed: EnvironmentDriverObservation): Promise<"deleted"> {
     if (observed !== "absent") {
       await this.driver.release(spec);
       const after = await this.driver.inspect(spec);
       if (after !== "absent") throw new Error(`Environment ${spec.environmentId} still has ${after} resources after release.`);
     }
-    return this.observe(record, "deleted");
+    return "deleted";
   }
 
   /** Records what the driver now observes, then reports the failure; never answers. */
@@ -279,13 +323,18 @@ export class EnvironmentController<Actor> {
   }
 }
 
+/** Stopped with nothing running: the operation that stopped it already revoked its client. */
+function atRest(record: EnvironmentRecord): boolean {
+  return record.desired === "stopped" && (record.observed === "stopped" || record.observed === "absent");
+}
+
 /** Deleted and released: nothing is left to converge. */
 function settled(record: EnvironmentRecord): boolean {
   return record.desired === "deleted" && record.observed === "deleted";
 }
 
 function validQuery(query: { environmentId: unknown; workspaceId: unknown }): boolean {
-  return typeof query.environmentId === "string" && ENVIRONMENT_ID.test(query.environmentId) && identifier(query.workspaceId);
+  return typeof query.environmentId === "string" && ENVIRONMENT_ID_PATTERN.test(query.environmentId) && identifier(query.workspaceId);
 }
 
 function identifier(value: unknown): value is string {

@@ -137,6 +137,29 @@ describe("AutomationStudioProjectSyncClient", () => {
     expect(fetchPage.mock.calls[0]?.[0]).toMatchObject({ afterSequence: 3 });
     client.stop();
   });
+
+  it("reloads on a resync page and follows the feed from the cursor it gives", async () => {
+    const fetchPage = vi.fn<AutomationStudioFetchChangePage>(async ({ afterSequence }) => afterSequence < 40
+      ? { cursor: 50, hasMore: false, resync: true, events: [] }
+      : { cursor: 51, hasMore: false, events: [event(51, "flow", "flow.1")] });
+    const onResync = vi.fn();
+    const client = new AutomationStudioProjectSyncClient({
+      projectId: "project.1",
+      initialCursor: 3,
+      fetchPage,
+      onResync,
+      registerSubscription: () => () => undefined,
+      windowRef: immediateWindow()
+    });
+
+    client.start();
+    await vi.waitFor(() => expect(onResync).toHaveBeenCalledTimes(1));
+    client.notifyMutation();
+    await vi.waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(2));
+    expect(fetchPage.mock.calls[1]?.[0]).toMatchObject({ afterSequence: 50 });
+    expect(onResync).toHaveBeenCalledTimes(1);
+    client.stop();
+  });
 });
 
 function event(sequence: number, entityKind: string, entityId: string, override: Partial<AutomationStudioProjectChangePage["events"][number]> = {}) {

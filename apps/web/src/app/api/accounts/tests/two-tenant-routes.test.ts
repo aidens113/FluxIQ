@@ -1,4 +1,4 @@
-import type { PlatformAccountRecord } from "fluxiq/platform";
+import { iamPrincipalFrn, type PlatformAccountRecord } from "fluxiq/platform";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/headers", async () => (await import("./two-tenant-runtime")).nextHeadersMock());
@@ -89,23 +89,65 @@ describe("accounts writes, two tenants", () => {
     expect(await membershipOf(TENANT_B, shared.userId)).toMatchObject({ status: "active", policies: ["FluxIQAdministratorAccess"] });
   });
 
-  it("refuses a change to the account of a person who is also in another workspace", async () => {
-    const { adminA, shared } = twoTenants.people;
-    const before = await twoTenants.identity.validateSession(shared.sessionId);
-    for (const action of ["turn-off", "turn-on", "revoke-invite", "resend-invite"]) {
-      const response = await changeAs(adminA, { action, userId: shared.userId, proof: PROOF });
-      expect([action, response.status, (await response.json() as { code: string }).code]).toEqual([action, 409, "shared_account"]);
-    }
+  it("turns off a person who is also in another workspace in the caller's workspace only; they still sign in and land in the other", async () => {
+    const { adminA, adminB, shared } = twoTenants.people;
+    const off = await changeAs(adminA, { action: "turn-off", userId: shared.userId, proof: PROOF });
+    expect(off.status).toBe(200);
+    expect(await membershipOf(TENANT_A, shared.userId)).toMatchObject({ status: "suspended", policies: ["FluxIQUserAccess"] });
+    expect(await membershipOf(TENANT_B, shared.userId)).toMatchObject({ status: "active", policies: ["FluxIQAdministratorAccess"] });
     expect(await accountStatus(shared.userId)).toBe("active");
-    expect(before).not.toBeNull();
     expect(await twoTenants.identity.validateSession(shared.sessionId)).not.toBeNull();
+    // Their next request works in B, where they administer, and never holds A.
+    twoTenants.acquired = [];
+    expect((await readMembers(asPerson(shared, `${ORIGIN}/api/accounts/members`))).status).toBe(200);
+    // The members route also holds the primary, the identity directory; never A.
+    expect(twoTenants.acquired).toContain(TENANT_B);
+    expect(twoTenants.acquired).not.toContain(TENANT_A);
+    // Turning off again is already done; B's activity shows nothing of A.
+    expect((await changeAs(adminA, { action: "turn-off", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    const audit = await (await readAudit(asPerson(adminB, `${ORIGIN}/api/security/audit`))).text();
+    expect(audit).not.toContain(TENANT_A);
+    expect(audit).not.toContain(adminA.userId);
+  });
+
+  it("turns them back on in the caller's workspace with the same policies", async () => {
+    const { adminA, shared } = twoTenants.people;
+    expect((await changeAs(adminA, { action: "turn-off", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    expect((await changeAs(adminA, { action: "turn-on", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    expect(await membershipOf(TENANT_A, shared.userId)).toMatchObject({ status: "active", policies: ["FluxIQUserAccess"] });
+    expect(await twoTenants.services.workspaceIam(TENANT_A).listAttachedPolicies(iamPrincipalFrn("user", TENANT_A, shared.userId))).toEqual(["FluxIQUserAccess"]);
+    expect((await changeAs(adminA, { action: "turn-on", userId: shared.userId, proof: PROOF })).status).toBe(200);
+  });
+
+  it("removes a person from the caller's workspace alone, leaving their account and the other workspace", async () => {
+    const { adminA, shared, memberA } = twoTenants.people;
+    expect((await changeAs(adminA, { action: "remove", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    expect(await membershipOf(TENANT_A, shared.userId)).toMatchObject({ status: "removed", policies: [] });
+    expect(await membershipOf(TENANT_B, shared.userId)).toMatchObject({ status: "active", policies: ["FluxIQAdministratorAccess"] });
+    expect(await accountStatus(shared.userId)).toBe("active");
+    expect((await changeAs(adminA, { action: "remove", userId: shared.userId, proof: PROOF })).status).toBe(404);
+    // A person in A alone is removed from A too, never deleted: the account stays.
+    expect((await changeAs(adminA, { action: "remove", userId: memberA.userId, proof: PROOF })).status).toBe(200);
+    expect(await membershipOf(TENANT_A, memberA.userId)).toMatchObject({ status: "removed" });
+    expect(await accountStatus(memberA.userId)).toBe("active");
+  });
+
+  it("has no invite to resend for a person who is also in another workspace", async () => {
+    const { adminA, shared } = twoTenants.people;
+    for (const action of ["resend-invite", "revoke-invite"]) {
+      const response = await changeAs(adminA, { action, userId: shared.userId, proof: PROOF });
+      expect([action, response.status, (await response.json() as { code: string }).code]).toEqual([action, 409, "not_invited"]);
+    }
+    expect(await membershipOf(TENANT_A, shared.userId)).toMatchObject({ status: "active" });
   });
 
   it("turns off a person of the caller's workspace alone, and their session then reaches nothing", async () => {
     const { adminA, memberA } = twoTenants.people;
     const off = await changeAs(adminA, { action: "turn-off", userId: memberA.userId, proof: PROOF });
     expect(off.status).toBe(200);
-    expect(await accountStatus(memberA.userId)).toBe("disabled");
+    // Their membership here is suspended; the account is the operator's and stays, with no workspace left to work in.
+    expect(await membershipOf(TENANT_A, memberA.userId)).toMatchObject({ status: "suspended" });
+    expect(await accountStatus(memberA.userId)).toBe("active");
     twoTenants.acquired = [];
     expect((await inviteAs(memberA, { email: "x@example.test", displayName: "X", role: "read-only", proof: PROOF })).status).toBe(401);
     expect((await readMembers(asPerson(memberA, `${ORIGIN}/api/accounts/members`))).status).toBe(401);

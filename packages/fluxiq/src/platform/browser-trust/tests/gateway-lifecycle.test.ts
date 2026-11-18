@@ -38,7 +38,15 @@ describe("gateway lifecycle through authoritative platform browser trust", () =>
     expect(await lookup.lookupCredential(resumed.token!)).toMatchObject({ status: "inactive", reason: "revoked", binding: { workspaceId: "workspace.first", trustedClientId: trustId } });
     const reopened = f.openRepository();
     expect(await reopened.lookupCredential(resumed.token!)).toMatchObject({ status: "inactive", reason: "revoked" });
-    expect((await gatewaySession(f.createGateway("workspace.first", reopened.scopedStore("workspace.first"))).hello(resumed.token)).status).toBe("pairing_required");
+    // A revoked credential is told so and closed, never offered pairing (t929): the client raises no new request by itself.
+    const afterRevoke = f.createGateway("workspace.first", reopened.scopedStore("workspace.first"));
+    const revokedHello = await gatewaySession(afterRevoke).hello(resumed.token);
+    expect(revokedHello.status).toBe("disconnected");
+    const told = afterRevoke.outbound(revokedHello.sessionId).map((entry) => entry.type);
+    expect(told).toContain("server.revoked");
+    expect(told).toContain("server.disconnect");
+    expect(told).not.toContain("server.pairing_required");
+    expect(afterRevoke.snapshot().pairings).toEqual([]);
     const bytes = await readFile(f.filePath);
     for (const token of [first.token, second.token!, resumed.token!]) expect(bytes.includes(Buffer.from(token))).toBe(false);
   });

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import Stripe from "stripe";
-import { CommerceBillingError, PaymentWebhookVerificationError } from "fluxiq/platform";
+import { CommerceBillingError, PaymentProviderUnavailableError, PaymentWebhookVerificationError } from "fluxiq/platform";
 import type {
   PaymentCheckout,
   PaymentCheckoutRequest,
@@ -11,6 +11,7 @@ import type {
 } from "fluxiq/platform";
 import type { CommercePlanCatalog } from "../types";
 import { stripeEventSubscriptionId } from "./event-subscription-id";
+import { isStripeOutage } from "./is-stripe-outage";
 import { STRIPE_METADATA } from "./metadata";
 import { stripeSubscriptionState } from "./subscription-state";
 
@@ -93,6 +94,50 @@ export class StripePaymentProvider implements PaymentProvider {
       throw error;
     }
     return { subscription: stripeSubscriptionState(subscription, this.plans, this.now()), payloadSha256: sha256(JSON.stringify(subscription)) };
+  }
+
+  /**
+   * Cancels now, with Stripe's idempotency key, so a retried deletion is one
+   * cancellation. A subscription Stripe no longer has, or has already ended,
+   * counts as cancelled. An outage is `PaymentProviderUnavailableError`.
+   */
+  async cancelSubscription(subscriptionId: string, options: { idempotencyKey: string }): Promise<void> {
+    try {
+      await this.stripe.subscriptions.cancel(subscriptionId, {}, { idempotencyKey: options.idempotencyKey });
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("cancelSubscription", { cause: error });
+      if (!(error instanceof Stripe.errors.StripeInvalidRequestError)) throw error;
+      if (error.code === "resource_missing") return;
+      // Stripe refuses to cancel an ended subscription; that is the state asked for.
+      const current = await this.retrieveForCancel(subscriptionId);
+      if (current === null || current.status === "canceled" || current.status === "incomplete_expired") return;
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes the Stripe customer: its payment methods go with it and it can no
+   * longer be charged; its invoices stay at Stripe. A customer Stripe no
+   * longer has counts as closed. An outage is `PaymentProviderUnavailableError`.
+   */
+  async closeCustomer(customerId: string, options: { idempotencyKey: string }): Promise<void> {
+    try {
+      await this.stripe.customers.del(customerId, {}, { idempotencyKey: options.idempotencyKey });
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("closeCustomer", { cause: error });
+      if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "resource_missing") return;
+      throw error;
+    }
+  }
+
+  private async retrieveForCancel(subscriptionId: string): Promise<Stripe.Subscription | null> {
+    try {
+      return await this.stripe.subscriptions.retrieve(subscriptionId);
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("cancelSubscription", { cause: error });
+      if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "resource_missing") return null;
+      throw error;
+    }
   }
 }
 

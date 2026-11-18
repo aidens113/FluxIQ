@@ -222,6 +222,23 @@ export class FluxIQWorkspaceManager {
     return deletion;
   }
 
+  /**
+   * Drops every session unlock one person holds in a tenant's key custody:
+   * their membership there was suspended or removed, or their account is
+   * being deleted. Their unlocks in other workspaces, and other people's,
+   * stay; a paired client's own unlock goes when its trust is revoked.
+   * Wakes anything waiting on their keys so it looks again. Opens nothing;
+   * returns how many were dropped (0 for a workspace with no custody).
+   */
+  dropUserCustody(workspaceId: string, userId: string): number {
+    const heldKeys = this.custody.get(workspaceId);
+    if (!heldKeys) return 0;
+    const sessions = heldKeys.sessionsFor(userId);
+    for (const { sessionId } of sessions) heldKeys.revokeSession(sessionId);
+    heldKeys.notifyChanged(userId);
+    return sessions.length;
+  }
+
   /** A real shutdown: closes every workspace, the primary last, and revokes every tenant's keys. Once; later calls share it. */
   close(): Promise<void> {
     this.closed ??= this.closeAll();

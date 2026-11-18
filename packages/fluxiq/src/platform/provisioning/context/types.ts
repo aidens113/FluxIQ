@@ -24,18 +24,45 @@ export type PlatformIamAttachments = {
   listAttachedPolicies(principalFrn: string): Promise<string[]>;
 };
 
+/** Which of a person's connected clients a revocation reaches: every one, or only those bound to one workspace. */
+export type ConnectedClientScope = { workspaceId: string };
+
+/** What the environments purge of a deletion covers: every environment the account pays for, and each personal workspace being deleted. */
+export type EnvironmentPurgeRequest = {
+  accountId: string;
+  workspaceIds: readonly string[];
+  /** The deletion receipt id: repeating the purge with it finishes a partial one. */
+  operationId: string;
+};
+
+/** Why a deletion step must wait and be retried: the workspace has work in flight, or a provider did not answer. */
+export type DeletionPendingReason = "workspace_busy" | "provider_unavailable" | "environments_pending";
+
 /**
  * What `createPlatformProvisioning` needs.
  *
- * - `revokeConnectedClients`: lane D's port; absent, no client is revoked and
- *   the count is 0;
- * - `deleteWorkspaceData`: lane C's port, called before a personal workspace's
- *   row is removed; absent, only the row goes;
+ * - `revokeConnectedClients`: revokes a person's paired clients with the
+ *   reason they are told (`server.revoked`), all of them or, with a scope,
+ *   only those bound to one workspace; answers how many it revoked. Absent,
+ *   none is revoked and the count is 0;
+ * - `dropWorkspaceCustody`: drops the session unlocks a person holds in one
+ *   workspace's key custody; absent, nothing is dropped;
+ * - `closeBilling`: the deletion's billing step, keyed by the receipt id so
+ *   every retry is one provider operation; absent (nothing is billed), a
+ *   recorded no-op;
+ * - `purgeEnvironments`: the deletion's environments step, keyed the same way;
+ *   absent, a no-op;
+ * - `deleteWorkspaceData`: called before a personal workspace's row is
+ *   removed: closes it and removes its data; absent, only the row goes;
  * - `onWorkspaceCreated`: `workspace.created`, after a personal workspace's row is written;
  * - `entitlements.organisation`: `iam.organisation`; false by default;
  * - `reportEmailFailure`: told when an email could not be sent (the operation
  *   carries on, so an answer never depends on whether mail works); by
  *   default a one-line warning naming the template and the error's name only.
+ *
+ * A deletion step that must wait (a busy workspace, a provider that did not
+ * answer) throws `DeletionPending`; the deletion is then scheduled, due at
+ * once, and the sweep finishes it. Any other throw is an error.
  */
 export type PlatformProvisioningDeps = {
   store: PlatformStore;
@@ -46,7 +73,10 @@ export type PlatformProvisioningDeps = {
   email: EmailSender;
   publicOrigin: string;
   tenancy: PlatformTenancy;
-  revokeConnectedClients?: (userId: string, reason: ClientGatewayRevocationReason) => Promise<number>;
+  revokeConnectedClients?: (userId: string, reason: ClientGatewayRevocationReason, scope?: ConnectedClientScope) => Promise<number>;
+  dropWorkspaceCustody?: (workspaceId: string, userId: string) => Promise<void>;
+  closeBilling?: (accountId: string, operationId: string) => Promise<void>;
+  purgeEnvironments?: (request: EnvironmentPurgeRequest) => Promise<void>;
   deleteWorkspaceData?: (workspaceId: string) => Promise<void>;
   onWorkspaceCreated?: (workspaceId: string) => Promise<void>;
   entitlements?: { organisation?: boolean };
@@ -60,7 +90,7 @@ export type PlatformProvisioningService = PlatformProvisioning &
   PlatformAccountLinks & {
     /** Stamps `lastSignInAt`; false when there is no such account. */
     recordSignIn(userId: string, nowMs?: number): Promise<boolean>;
-    /** Completes every scheduled deletion due by `nowMs`; returns how many were completed. */
+    /** Completes every scheduled deletion due by `nowMs`; returns how many were completed. One that must wait stays scheduled. */
     runDueDeletions(nowMs?: number): Promise<number>;
   };
 
@@ -87,7 +117,10 @@ export type ProvisioningContext = {
   email: EmailSender;
   publicOrigin: string;
   tenancy: PlatformTenancy;
-  revokeConnectedClients(userId: string, reason: ClientGatewayRevocationReason): Promise<number>;
+  revokeConnectedClients(userId: string, reason: ClientGatewayRevocationReason, scope?: ConnectedClientScope): Promise<number>;
+  dropWorkspaceCustody(workspaceId: string, userId: string): Promise<void>;
+  closeBilling(accountId: string, operationId: string): Promise<void>;
+  purgeEnvironments(request: EnvironmentPurgeRequest): Promise<void>;
   deleteWorkspaceData(workspaceId: string): Promise<void>;
   onWorkspaceCreated(workspaceId: string): Promise<void>;
   organisationEntitled: boolean;

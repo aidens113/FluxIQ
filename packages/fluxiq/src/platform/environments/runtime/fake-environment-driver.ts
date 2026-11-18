@@ -1,5 +1,5 @@
 import type { EnvironmentDriverObservation } from "../model/index.ts";
-import type { EnvironmentDriver, EnvironmentDriverSpec } from "./types.ts";
+import type { EnvironmentDriver, EnvironmentDriverSpec, EnvironmentEnrolmentTickets } from "./types.ts";
 
 export type FakeEnvironmentDriverStep = "inspect" | "allocate" | "start" | "stop" | "release";
 
@@ -15,6 +15,12 @@ export class FakeEnvironmentDriver implements EnvironmentDriver {
   readonly kind = "fake" as const;
   /** Every call, in order. */
   readonly calls: Array<{ step: FakeEnvironmentDriverStep; environmentId: string }> = [];
+  /**
+   * The enrolment ticket each environment's runner was last handed, taken at
+   * start as a real runner takes it. A fake runner holds it in memory only,
+   * like a real one, so a test can present it.
+   */
+  readonly tickets = new Map<string, string>();
   private readonly states = new Map<string, Exclude<EnvironmentDriverObservation, "absent">>();
   private readonly faults = new Map<FakeEnvironmentDriverStep, Fault>();
 
@@ -45,10 +51,11 @@ export class FakeEnvironmentDriver implements EnvironmentDriver {
     this.states.set(spec.environmentId, "stopped");
   }
 
-  async start(spec: EnvironmentDriverSpec): Promise<void> {
+  async start(spec: EnvironmentDriverSpec, enrolment?: EnvironmentEnrolmentTickets): Promise<void> {
     this.enter("start", spec);
     const state = this.observation(spec.environmentId);
     if (state !== "stopped" && state !== "crashed") throw new Error(`Fake environment ${spec.environmentId} cannot start from ${state}`);
+    if (enrolment !== undefined) this.tickets.set(spec.environmentId, enrolment.takeEnrolmentTicket());
     this.states.set(spec.environmentId, "running");
   }
 
@@ -62,6 +69,7 @@ export class FakeEnvironmentDriver implements EnvironmentDriver {
   async release(spec: EnvironmentDriverSpec): Promise<void> {
     this.enter("release", spec);
     this.states.delete(spec.environmentId);
+    this.tickets.delete(spec.environmentId);
   }
 
   private enter(step: FakeEnvironmentDriverStep, spec: EnvironmentDriverSpec): void {

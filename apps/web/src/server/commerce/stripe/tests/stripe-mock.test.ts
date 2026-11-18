@@ -6,7 +6,7 @@ import { StripePaymentProvider } from "..";
 // after `docker run --rm -d -p 12111:12111 stripe/stripe-mock`. Without the
 // setting it is skipped; with it and no mock answering, it fails saying so.
 const mockUrl = process.env.FLUXIQ_STRIPE_MOCK_URL?.trim() || null;
-const plans = { shared: { priceId: "price_1", grants: [{ key: "cloud.shared", allocation: "shared" as const, capabilities: ["execute"], regions: ["region-a"] }] } };
+const plans = { shared: { priceId: "price_1", unit: "flat" as const, grants: [{ key: "cloud.shared", allocation: "shared" as const, capabilities: ["execute"], regions: ["region-a"] }] } };
 
 describe.skipIf(mockUrl === null)("StripePaymentProvider against stripe-mock", () => {
   let provider: StripePaymentProvider;
@@ -36,5 +36,10 @@ describe.skipIf(mockUrl === null)("StripePaymentProvider against stripe-mock", (
   it("retrieves a subscription and refuses one that names no FluxIQ account", async () => {
     // stripe-mock answers with its fixture subscription, whose metadata names no account.
     await expect(provider.getSubscription("sub_123")).rejects.toThrow(/names no FluxIQ account/u);
+  });
+
+  it("cancels a subscription and closes a customer with an idempotency key, through the official SDK", async () => {
+    await expect(provider.cancelSubscription("sub_123", { idempotencyKey: "receipt-mock:cancel:sub_123" })).resolves.toBeUndefined();
+    await expect(provider.closeCustomer("cus_123", { idempotencyKey: "receipt-mock:close:cus_123" })).resolves.toBeUndefined();
   });
 });
