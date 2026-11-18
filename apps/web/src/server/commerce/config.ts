@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import type { CommerceConfig, CommerceGrantTemplate, CommercePlan, CommercePlanCatalog } from "./types";
+import type { CommerceConfig, CommerceGrantTemplate, CommercePlan, CommercePlanCatalog, CommercePlanUnit } from "./types";
 
 const ALLOCATIONS = new Set(["control", "shared", "dedicated"]);
+const UNITS = new Set(["dedicated-browser", "seat", "flat"]);
 
 /**
  * The billing configuration, or null when this server bills nothing
@@ -24,12 +25,16 @@ export function commerceConfig(
   const provider = value.provider;
   if (provider !== "stripe" && provider !== "fake") invalid("provider must be \"stripe\" or \"fake\"");
   if (typeof value.allowTrial !== "boolean") invalid("allowTrial must be a boolean");
+  const refreshAfterMs = count(value.refreshAfterMs, "refreshAfterMs", 1);
+  const maxVerificationAgeMs = value.maxVerificationAgeMs === undefined ? refreshAfterMs * 2 : count(value.maxVerificationAgeMs, "maxVerificationAgeMs", 1);
+  if (maxVerificationAgeMs <= refreshAfterMs) invalid(`maxVerificationAgeMs (${maxVerificationAgeMs}) must exceed refreshAfterMs (${refreshAfterMs})`);
   const config: CommerceConfig = {
     provider,
     allowTrial: value.allowTrial,
     graceMs: count(value.graceMs, "graceMs", 0),
     retentionMs: count(value.retentionMs, "retentionMs", 0),
-    refreshAfterMs: count(value.refreshAfterMs, "refreshAfterMs", 1),
+    refreshAfterMs,
+    maxVerificationAgeMs,
     plans: plans(value.plans),
     secretKeyFile: provider === "stripe" ? text(value.secretKeyFile, "secretKeyFile") : null,
     webhookSecretFile: text(value.webhookSecretFile, "webhookSecretFile"),
@@ -51,7 +56,11 @@ function plans(value: unknown): CommercePlanCatalog {
     if (prices.has(priceId)) invalid(`plans.${planId}.priceId is used by another plan`);
     prices.add(priceId);
     if (!Array.isArray(plan.grants) || plan.grants.length === 0) invalid(`plans.${planId}.grants must be a nonempty list`);
-    catalog[planId] = { priceId, grants: plan.grants.map((grant, index) => template(grant, `plans.${planId}.grants[${index}]`)) };
+    const unit = plan.unit === undefined ? "flat" : plan.unit;
+    if (typeof unit !== "string" || !UNITS.has(unit)) invalid(`plans.${planId}.unit must be dedicated-browser, seat or flat`);
+    const grants = plan.grants.map((grant, index) => template(grant, `plans.${planId}.grants[${index}]`));
+    if (unit === "dedicated-browser" && !grants.some((grant) => grant.allocation === "dedicated")) invalid(`plans.${planId}.grants must include a dedicated grant: a dedicated-browser price counts dedicated browsers`);
+    catalog[planId] = { priceId, unit: unit as CommercePlanUnit, grants };
   }
   return catalog;
 }
