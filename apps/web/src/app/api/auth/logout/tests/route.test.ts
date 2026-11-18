@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const revokeSession = vi.hoisted(() => vi.fn());
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "dummy-session" }) }) }));
-vi.mock("../../../../../lib/fluxiq", () => ({ getFluxIQ: () => ({ programs: { identityAccess: { revokeSession } } }) }));
+vi.mock("../../../../../lib/fluxiq", () => ({ getFluxIQ: () => ({ paths: { fluxiq: "unused" }, programs: { identityAccess: { revokeSession } } }), getFluxIQWorkspaces: () => ({ tenancy: "single" }) }));
 
 afterEach(() => {
   delete process.env.FLUXIQ_PROFILE;

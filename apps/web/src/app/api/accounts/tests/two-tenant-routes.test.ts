@@ -1,9 +1,9 @@
 import type { PlatformAccountRecord } from "fluxiq/platform";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/headers", async () => (await import("./two-tenant-runtime")).nextHeadersMock());
-vi.mock("../../../../lib/fluxiq", async () => (await import("./two-tenant-runtime")).fluxiqModuleMock());
-vi.mock("../../../../server/provisioning-listener", async () => (await import("./two-tenant-runtime")).provisioningListenerMock());
+vi.mock("next/headers", async () => (await import("../../tests/two-tenant-runtime")).nextHeadersMock());
+vi.mock("../../../../lib/fluxiq", async () => (await import("../../tests/two-tenant-runtime")).fluxiqModuleMock());
+vi.mock("../../../../server/provisioning-listener", async () => (await import("../../tests/two-tenant-runtime")).provisioningListenerMock());
 vi.mock("../../../../server/browser-trust", () => ({ resolveServiceClientHttpRoute: async () => null }));
 
 import { DUMMY_PASSWORD } from "../server/tests/accounts-harness";
@@ -11,7 +11,7 @@ import { GET as readAudit } from "../../security/audit/route";
 import { POST as invite } from "../invite/route";
 import { POST as changeMember } from "../member/route";
 import { GET as readMembers } from "../members/route";
-import { asPerson, outstandingLeases, resetTwoTenants, TENANT_A, TENANT_B, twoTenants, type Person } from "./two-tenant-runtime";
+import { asPerson, outstandingLeases, resetTwoTenants, TENANT_A, TENANT_B, twoTenants, type Person } from "../../tests/two-tenant-runtime";
 
 // The accounts and activity routes on the hosted `service` profile, with two
 // tenant workspaces: every call acts in, and is decided by, the workspace the

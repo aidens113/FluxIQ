@@ -82,7 +82,7 @@ describe("app routes on the service profile", () => {
     it(`${name}: refuses a hosted user and an administrator alike (operator surface)`, async () => {
       for (const person of ["bob", "alice", "admin"] as const) {
         const seen = await call(name, { kind: "cookie", person });
-        expect([person, seen.outcome, seen.error?.startsWith("Not authorized: ops:")]).toEqual([person, "forbidden", true]);
+        expect([person, seen.outcome, /^(Not authorized: ops:|Framework setup is run by the operator)/u.test(seen.error ?? "")]).toEqual([person, "forbidden", true]);
       }
     });
   }

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { getFluxIQ } from "../../lib/fluxiq";
+import { platformScope } from "../../lib/platform";
 import { isOwnerClaimOpen } from "../../server/owner-claim";
 import { AccountLinkFrame } from "../welcome/client";
 import { LocalSetupClient } from "./LocalSetupClient";
@@ -18,11 +18,11 @@ export const dynamic = "force-dynamic";
  */
 export default async function SetupPage() {
   const settings = resolveFluxIQDeploymentSettings(process.env);
-  const fluxiq = getFluxIQ();
+  const { identityAccess, fluxiqDir } = platformScope();
   if (settings.profile === "local") {
-    if ((await fluxiq.programs.identityAccess.firstRun.state()) === "claimed") notFound();
+    if ((await identityAccess.firstRun.state()) === "claimed") notFound();
     return <AccountLinkFrame title="Set up FluxIQ"><LocalSetupClient /></AccountLinkFrame>;
   }
-  if (!(await isOwnerClaimOpen(settings, fluxiq.paths.fluxiq))) notFound();
+  if (!(await isOwnerClaimOpen(settings, fluxiqDir))) notFound();
   return <AccountLinkFrame title="Set up FluxIQ"><SetupClient service={settings.profile === "service"} /></AccountLinkFrame>;
 }

@@ -70,7 +70,7 @@ describe("first service administrator with real multi-tenancy provisioning", () 
     const code = (await readFile(ownerClaimPaths(instance.fluxiqDir).generatedCode, "utf8")).trim();
     const tracker = (name: string) => new DurableLoginAttemptTracker(path.join(instance.fluxiqDir, "security", name), { windowMs: 600_000, lockoutMs: 60_000, maxAttempts: 10 });
     const request = new Request("https://fluxiq.example.test/setup/submit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, ...FORM, confirmation: PASSWORD }) });
-    const result = await submitOwnerClaim(request, { ...deps(), secretKeys: instance.fluxiq.programs.secretKeys, attempts: { global: tracker("service-setup-global.json"), address: tracker("service-setup-address.json") } });
+    const result = await submitOwnerClaim(request, { ...deps(), restoreKeys: async () => undefined, attempts: { global: tracker("service-setup-global.json"), address: tracker("service-setup-address.json") } });
     expect(result.status).toBe(200);
     expect(result.body).toEqual({ ok: true, redirectTo: "/" });
     const sessionId = result.session?.id;

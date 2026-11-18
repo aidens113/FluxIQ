@@ -71,11 +71,7 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),
-  // Takes no request: building one sets the caller's cookie, which is all it reads.
-  "GET /api/framework/setup": (caller) => {
-    routeRequest(caller, "/api/framework/setup");
-    return inspectSetup();
-  },
+  "GET /api/framework/setup": (caller) => inspectSetup(routeRequest(caller, "/api/framework/setup")),
   "POST /api/framework/setup (setup)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "setup" } })),
   "POST /api/framework/setup (migrate)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "migrate" } })),
   "POST /api/framework/setup (rollback-migration)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "rollback-migration" } })),
