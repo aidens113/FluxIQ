@@ -94,7 +94,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       knownBuild: (buildId) => buildId === ref.buildId && input.running(),
       leases: input.leases,
       startRuntimeSession: () => environment.openSession({ runId, metadata })
-    }, { buildId: ref.buildId, briefId: briefOf(metadata), lease: AutomationStudioHostLeaseScope.current() }),
+    }, { buildId: ref.buildId, briefId: briefOf(metadata), lease: environment.leaseBinding?.current() }),
     predecessorProposals: async (scope) => input.proposals.predecessors(scope),
     // A predecessor proposal an amendment kept still prepares the entry (t590).
     keptUnder: (subflowKey, madeUnder, planDigest) => input.proposals.keptUnder?.(subflowKey, madeUnder, planDigest) === true,

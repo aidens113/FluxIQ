@@ -3,9 +3,12 @@ import {
   CommerceConflictError,
   commerceEventIdentity,
   commerceSubscriptionIdentity,
+  validateCommerceCheckout,
   validateCommerceEvent
 } from "../model/index.ts";
 import type {
+  CommerceApplyOptions,
+  CommerceCheckoutRecord,
   CommerceEventReceipt,
   CommerceEventResult,
   CommerceLedger,
@@ -34,8 +37,10 @@ export class SQLiteCommerceLedger implements CommerceLedger {
     this.now = options.now ?? Date.now;
   }
 
-  async applyVerifiedEvent(input: VerifiedCommerceEvent): Promise<CommerceEventResult> {
+  async applyVerifiedEvent(input: VerifiedCommerceEvent, options: CommerceApplyOptions = {}): Promise<CommerceEventResult> {
     const event = validateCommerceEvent(input);
+    const expected = options.expectedPreviousVersion;
+    if (expected !== undefined && (!Number.isSafeInteger(expected) || expected < 0)) throw new TypeError("Invalid commerce expected version");
     const identity = commerceEventIdentity(event);
     const nowMs = this.now();
     if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new TypeError("Invalid commerce clock");
@@ -52,6 +57,7 @@ export class SQLiteCommerceLedger implements CommerceLedger {
       if (customer !== null && customer.accountId !== subscription.accountId) throw new CommerceConflictError("customer-rebound");
       const subscriptionKey = commerceRecordKey("subscription", event.providerId, subscription.subscriptionId);
       const previous = await records.get<CommerceSubscriptionSnapshot>(subscriptionKey);
+      if (expected !== undefined && (previous?.version ?? 0) !== expected) throw new CommerceConflictError("version-superseded");
       const outcome = this.transition(previous, subscription);
       const receipt: CommerceEventReceipt = {
         providerId: event.providerId,
@@ -99,6 +105,34 @@ export class SQLiteCommerceLedger implements CommerceLedger {
       }
       return subscriptions;
     });
+  }
+
+  listProviderSubscriptions(providerId: string): Promise<CommerceSubscriptionRecord[]> {
+    const prefix = `${commerceRecordKey("subscription", providerId)}/`;
+    return this.transaction(async (records) => {
+      const subscriptions = await records.list<CommerceSubscriptionSnapshot>(prefix);
+      return subscriptions.map((subscription) => ({ ...subscription, providerId }));
+    });
+  }
+
+  async recordCheckout(input: CommerceCheckoutRecord): Promise<void> {
+    const record = validateCommerceCheckout(input);
+    const nowMs = this.now();
+    if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new TypeError("Invalid commerce clock");
+    await this.transaction(async (records) => {
+      const key = commerceRecordKey("checkout", record.accountId, record.providerId, record.checkoutId);
+      const existing = await records.get<CommerceCheckoutRecord>(key);
+      if (existing !== null) {
+        if (JSON.stringify(existing) !== JSON.stringify(record)) throw new CommerceConflictError("checkout-reused");
+        return;
+      }
+      await records.put(key, record, nowMs);
+    });
+  }
+
+  listCheckouts(accountId: string): Promise<CommerceCheckoutRecord[]> {
+    const prefix = `${commerceRecordKey("checkout", accountId)}/`;
+    return this.transaction((records) => records.list<CommerceCheckoutRecord>(prefix));
   }
 
   private transition(previous: CommerceSubscriptionSnapshot | null, next: CommerceSubscriptionSnapshot): CommerceEventReceipt["outcome"] {

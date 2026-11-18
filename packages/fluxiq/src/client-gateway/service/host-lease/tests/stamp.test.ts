@@ -61,4 +61,15 @@ describe("clientGatewayHostLeaseStamp", () => {
     expect(clientGatewayHostLeaseStamp({ actionType: "a" }, perSession, "session.b").command).toEqual({ actionType: "a" });
     expect(asked).toEqual(["session.a", "session.b"]);
   });
+
+  it("preserves the string argument of legacy sources when a trusted target is available", () => {
+    const asked: string[] = [];
+    const legacy: ClientGatewayHostLeaseSource = {
+      current: () => undefined, isCurrent: () => true,
+      requiresLease: (sessionId) => { asked.push(sessionId);
+        return sessionId === "session.a"; }
+    };
+    expect(clientGatewayHostLeaseStamp({ actionType: "a" }, legacy, { sessionId: "session.a", domainId: "trusted" }).refused).toBe("host_lease.missing");
+    expect(asked).toEqual(["session.a"]);
+  });
 });

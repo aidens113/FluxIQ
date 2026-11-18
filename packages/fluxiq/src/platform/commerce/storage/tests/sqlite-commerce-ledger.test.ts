@@ -123,3 +123,34 @@ it("copies queued input before a caller can mutate subscription state", async ()
   await applying;
   expect(await store.getSubscription("fixture-provider", "subscription-a")).toMatchObject({ status: "active", version: 1 });
 });
+
+it("applies a compare-and-set reconciliation only over the version it read, recording nothing when superseded", async () => {
+  const { store } = await ledger();
+  await expect(store.applyVerifiedEvent(event("first", 1), { expectedPreviousVersion: 1 })).rejects.toMatchObject({ code: "version-superseded" });
+  expect(await store.getEvent("fixture-provider", "first")).toBeNull();
+  expect(await store.applyVerifiedEvent(event("first", 1), { expectedPreviousVersion: 0 })).toMatchObject({ outcome: "applied" });
+  await expect(store.applyVerifiedEvent(event("lost-race", 2), { expectedPreviousVersion: 0 })).rejects.toMatchObject({ code: "version-superseded" });
+  expect(await store.getEvent("fixture-provider", "lost-race")).toBeNull();
+  expect(await store.applyVerifiedEvent(event("lost-race", 2), { expectedPreviousVersion: 1 })).toMatchObject({ outcome: "applied", version: 2 });
+  await expect(store.applyVerifiedEvent(event("bad", 3), { expectedPreviousVersion: -1 })).rejects.toBeInstanceOf(TypeError);
+});
+
+it("lists one provider's subscriptions for reconciliation and keeps providers apart", async () => {
+  const { store } = await ledger();
+  await store.applyVerifiedEvent(event("a"));
+  await store.applyVerifiedEvent({ ...event("b", 1, { customerId: "customer-b", subscriptionId: "subscription-b" }), providerId: "other-provider" });
+  expect((await store.listProviderSubscriptions("fixture-provider")).map((row) => [row.providerId, row.subscriptionId])).toEqual([["fixture-provider", "subscription-a"]]);
+  expect((await store.listProviderSubscriptions("other-provider")).map((row) => row.subscriptionId)).toEqual(["subscription-b"]);
+});
+
+it("records checkouts idempotently per account, refuses a changed one and survives reopen", async () => {
+  const { store, rootDir } = await ledger();
+  const checkout = { accountId: "account-a", providerId: "fixture-provider", checkoutId: "cs-1", createdAtMs: 1_000, expiresAtMs: 2_000 };
+  await store.recordCheckout(checkout);
+  await store.recordCheckout({ ...checkout });
+  await expect(store.recordCheckout({ ...checkout, expiresAtMs: 9_000 })).rejects.toMatchObject({ code: "checkout-reused" });
+  await expect(store.recordCheckout({ ...checkout, checkoutId: "cs-2", expiresAtMs: 1_000 })).rejects.toBeInstanceOf(TypeError);
+  const reopened = new SQLiteCommerceLedger({ rootDir });
+  expect(await reopened.listCheckouts("account-a")).toEqual([checkout]);
+  expect(await reopened.listCheckouts("account-b")).toEqual([]);
+});

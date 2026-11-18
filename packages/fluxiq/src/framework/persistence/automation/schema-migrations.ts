@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AutomationStudioProjectDatabase, AutomationStudioSqlExecutor } from "./project/index.ts";
 
 export type AutomationStudioSchemaMigration = {
@@ -55,6 +56,8 @@ const LIFECYCLE_SCHEMA = [
 ] as const;
 
 const migrationQueues = new Map<string, Promise<void>>();
+/** How often a runner waiting on another's lock reads the state again. It only paces the reads: the wait ends when the lock does. */
+const LOCK_POLL_MS = 50;
 
 /**
  * Per open connection, the migration sets already checked as applied and ready,
@@ -126,14 +129,25 @@ export class AutomationStudioSchemaMigrationRunner {
       }
     }
     if (!pending.length) {
-      await this.markReady(null);
+      // Every migration of this set is committed, each with its ledger row in one transaction, so the
+      // set is usable whatever another runner is doing: a runner with nothing to apply never contends
+      // for, or fails on, a lock it does not hold. One store opening a project while another migrates
+      // it (another process, or another copy of this module, whose queue this one cannot see) gets its
+      // tables, and the holder keeps its lock. Only an unheld state is marked ready and remembered.
       // An empty ledger here means an empty set, which there is nothing to remember for.
-      if (appliedRows[0]) this.rememberReady(fingerprint, appliedRows[0].schemaVersion);
+      if (await this.markReadyUnlessHeld() && appliedRows[0]) this.rememberReady(fingerprint, appliedRows[0].schemaVersion);
       return { applied: [], skipped, backupCreated: false, status: "ready" };
     }
 
     const lockToken = this.createLockToken();
-    await this.acquireLock(lockToken);
+    if (!await this.acquireLock(lockToken)) {
+      // Another runner holds the lock and is migrating this project now -- on a new project, usually
+      // these very migrations (another process, or another copy of this module, whose queue this one
+      // cannot see). Wait for it to finish, or for its lock to go stale by the lock's own rule, then
+      // check the ledger again: the open gets its tables instead of an error.
+      await this.waitWhileLockedByAnother();
+      return await this.migrateExclusive();
+    }
     let backupCreated = false;
     const applied: string[] = [];
     try {
@@ -165,7 +179,7 @@ export class AutomationStudioSchemaMigrationRunner {
    * read before that check (any DDL, from any connection or process, moves it, so
    * a migration elsewhere or a restore forces the full check), and the state row
    * still says ready (a lock taken or a failure recorded by anyone forces it too,
-   * so a concurrent migration is refused exactly as before).
+   * so a concurrent migration is waited for exactly as on a first open).
    */
   private async isStillReady(fingerprint: string): Promise<boolean> {
     const schemaVersion = readyByConnection.get(this.database)?.get(fingerprint);
@@ -204,32 +218,54 @@ export class AutomationStudioSchemaMigrationRunner {
     ]));
   }
 
-  private async acquireLock(lockToken: string): Promise<void> {
+  /** Takes the lock; false while another runner holds it live, by the same rule as the takeover below. */
+  private async acquireLock(lockToken: string): Promise<boolean> {
     const now = this.now();
     const staleBefore = now - this.lockTimeoutMs;
-    await this.database.transaction(async (sql) => {
-      const state = await readState(sql);
-      if (state.status === "migrating" && state.lockToken && (state.lockAcquiredAt ?? now) > staleBefore) {
-        throw new Error(`Automation Studio schema migration is already running for project ${this.database.projectId}.`);
-      }
+    return await this.database.transaction(async (sql) => {
+      if (this.heldByAnother(await readState(sql), now)) return false;
       const result = await sql.run(
         `update automation_schema_state set status = 'migrating', lock_token = ?, lock_acquired_at_ms = ?, failure_message = null, updated_at_ms = ?
          where singleton = 1 and (status != 'migrating' or lock_acquired_at_ms is null or lock_acquired_at_ms <= ?)`,
         [lockToken, now, now, staleBefore]
       );
       if (result.changes !== 1) throw new Error(`Automation Studio schema migration lock could not be acquired for project ${this.database.projectId}.`);
+      return true;
     });
   }
 
-  private async markReady(lockToken: string | null): Promise<void> {
-    const params: unknown[] = [this.now()];
-    const lockClause = lockToken ? " and lock_token = ?" : " and status != 'migrating'";
-    if (lockToken) params.push(lockToken);
+  /**
+   * Whether a live lock is held: migrating, with a token, taken after the stale line. Exactly the
+   * complement of the takeover `acquireLock` makes, so a lock is either waited on or taken over.
+   */
+  private heldByAnother(state: AutomationStudioSchemaState, now: number): boolean {
+    return state.status === "migrating" && state.lockToken !== null && state.lockAcquiredAt !== null && state.lockAcquiredAt > now - this.lockTimeoutMs;
+  }
+
+  /** Returns once no live lock is held: its runner finished (ready or failed) or its lock went stale. */
+  private async waitWhileLockedByAnother(): Promise<void> {
+    while (this.heldByAnother(await this.state(), this.now())) await delay(LOCK_POLL_MS);
+  }
+
+  /** Releases this runner's own lock as ready; a lock taken over meanwhile is reported, never overwritten. */
+  private async markReady(lockToken: string): Promise<void> {
     const result = await this.database.run(
-      `update automation_schema_state set status = 'ready', lock_token = null, lock_acquired_at_ms = null, failure_message = null, updated_at_ms = ? where singleton = 1${lockClause}`,
-      params
+      "update automation_schema_state set status = 'ready', lock_token = null, lock_acquired_at_ms = null, failure_message = null, updated_at_ms = ? where singleton = 1 and lock_token = ?",
+      [this.now(), lockToken]
     );
     if (result.changes !== 1) throw new Error(`Automation Studio schema migration lock was lost for project ${this.database.projectId}.`);
+  }
+
+  /**
+   * Marks the state ready (clearing an earlier failure) unless another runner holds the lock, which
+   * is left as it is. Whether the state is ready now: false only while someone else is migrating.
+   */
+  private async markReadyUnlessHeld(): Promise<boolean> {
+    const result = await this.database.run(
+      "update automation_schema_state set status = 'ready', lock_token = null, lock_acquired_at_ms = null, failure_message = null, updated_at_ms = ? where singleton = 1 and status != 'migrating'",
+      [this.now()]
+    );
+    return result.changes === 1;
   }
 
   private async recordFailure(error: unknown, lockToken?: string): Promise<void> {

@@ -16,6 +16,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
+import { actor, ADMIN_PERMISSIONS, fixedPolicySource, pinAcceptingIdentityAccess, recordingSink, registerPrefixOwners } from "../../../../_shared/tests/iam-registry-fixtures.ts";
+import { IAM_USER_ACCESS } from "../../../../../platform/iam/predefined/index.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import {
@@ -417,5 +419,43 @@ describe("Automation Studio conversation API", () => {
       await pool.closeAll();
       await rm(rootDir, { recursive: true, force: true });
     }
+  });
+});
+
+// One project whose conversations cannot be read no longer fails the list across
+// projects: the rest are listed and it is named with why. It is decided by its
+// project like a thread is, so a caller never learns of a project they may not see.
+describe("Automation Studio conversation list across projects with an unreadable project", () => {
+  function ownedList() {
+    const registry = new GlobalProgramApiRegistry({ identityAccess: pinAcceptingIdentityAccess, iam: { profile: "service", source: fixedPolicySource([IAM_USER_ACCESS]), audit: recordingSink() } });
+    registerPrefixOwners(registry);
+    const listConversations = vi.fn((input: { projectId: string }) => input.projectId.endsWith("-2")
+      ? Promise.reject(new Error("SQLITE_CORRUPT: database disk image is malformed"))
+      : Promise.resolve([{ conversationId: `conversation.${input.projectId}`, projectId: input.projectId }]));
+    const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "a-1" }, { id: "a-2" }, { id: "b-1" }, { id: "b-2" }] });
+    registerAutomationStudioConversationEndpoints({ registry, runLinks: { usesThread: vi.fn().mockResolvedValue(false) }, service: { assertProjectDomainAccess: vi.fn(), listProjects, listFlows: vi.fn(), getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations: { listConversations } as unknown as AutomationStudioConversations } });
+    return (userId: string) => registry.call<unknown, { conversations: Array<{ conversationId: string }>; unreadableProjects: Array<{ projectId: string; reason: string }> }>({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations,
+      scope: { domainId: null },
+      actor: actor(userId, "user", ADMIN_PERMISSIONS),
+      payload: { projectId: null }
+    });
+  }
+
+  it("lists the readable projects and names the unreadable one the caller may see, with its reason", async () => {
+    const response = await ownedList()("alice");
+
+    expect(response.ok).toBe(true);
+    expect(response.payload?.conversations.map((conversation) => conversation.conversationId)).toEqual(["conversation.a-1"]);
+    expect(response.payload?.unreadableProjects).toEqual([{ projectId: "a-2", reason: "SQLITE_CORRUPT: database disk image is malformed" }]);
+  });
+
+  it("never names an unreadable project the caller may not see", async () => {
+    const response = await ownedList()("bob");
+
+    expect(response.payload?.conversations.map((conversation) => conversation.conversationId)).toEqual(["conversation.b-1"]);
+    expect(response.payload?.unreadableProjects).toEqual([{ projectId: "b-2", reason: "SQLITE_CORRUPT: database disk image is malformed" }]);
+    expect(JSON.stringify(response.payload)).not.toContain("a-2");
   });
 });

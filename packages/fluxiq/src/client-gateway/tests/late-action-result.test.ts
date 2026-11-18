@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewayLateActionResult, type ClientGatewayReportedActionResult } from "../index.ts";
-import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../service/index.ts";
+import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, ClientGatewayCommandUnsentRefusal, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../service/index.ts";
 
 const ambiguous = { category: "ambiguous_or_unknown", code: "web.action.unknown", retryable: false, effect: "ambiguous" } as const;
 const unacted = { category: "action_failed", code: "web.transport.transient", retryable: true, effect: "unacted" } as const;
@@ -221,6 +221,13 @@ function memoryLedger(): ClientGatewayCommandLedgerPort & { saved(commandId: str
       records.set(key(claim), record);
       return record;
     }),
-    read: vi.fn(async (claim) => records.get(key(claim)) ?? null)
+    read: vi.fn(async (claim) => records.get(key(claim)) ?? null),
+    refuseUnsent: vi.fn(async (claim, proof) => {
+      const current = records.get(key(claim));
+      if (!current || current.state !== "pending") throw new Error("not pending");
+      const record = { ...current, state: "refused_unsent" as const, refusal: { ...ClientGatewayCommandUnsentRefusal.read(proof, claim) } };
+      records.set(key(claim), record);
+      return record;
+    })
   };
 }

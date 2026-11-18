@@ -3,12 +3,13 @@
 // replay never touches a run's real ledger and its durable commands go
 // through the same claim, send and commit as live ones.
 
-import type {
-  ClientGatewayCommandClaim,
-  ClientGatewayCommandLedgerPort,
-  ClientGatewayCommandReceipt,
-  ClientGatewayCommandRecord,
-  ClientGatewayCommandUnknownReason
+import {
+  ClientGatewayCommandUnsentRefusal,
+  type ClientGatewayCommandClaim,
+  type ClientGatewayCommandLedgerPort,
+  type ClientGatewayCommandReceipt,
+  type ClientGatewayCommandRecord,
+  type ClientGatewayCommandUnknownReason
 } from "../../service/index.ts";
 
 export class ClientGatewayTraceReplayLedger implements ClientGatewayCommandLedgerPort {
@@ -43,6 +44,21 @@ export class ClientGatewayTraceReplayLedger implements ClientGatewayCommandLedge
 
   async read(claim: ClientGatewayCommandClaim): Promise<ClientGatewayCommandRecord | null> {
     return this.records.get(claim.binding.commandId) ?? null;
+  }
+
+  /**
+   * Settles a claimed command the gateway refused before sending it, as a live
+   * ledger does: from the gateway's own pre-send proof only, once. A command
+   * already answered or called unknown is never turned into an unsent one.
+   */
+  async refuseUnsent(claim: ClientGatewayCommandClaim, proof: ClientGatewayCommandUnsentRefusal): Promise<ClientGatewayCommandRecord> {
+    const current = this.require(claim);
+    const refusal = { ...ClientGatewayCommandUnsentRefusal.read(proof, claim) };
+    if (current.state === "refused_unsent" && current.refusal?.code === refusal.code && current.refusal.refusedAt === refusal.refusedAt) return current;
+    if (current.state !== "pending") throw new Error(`command ${claim.binding.commandId} is ${current.state} in this replay, so it cannot be settled as unsent`);
+    const record: ClientGatewayCommandRecord = { ...current, state: "refused_unsent", refusal };
+    this.records.set(claim.binding.commandId, record);
+    return record;
   }
 
   private require(claim: ClientGatewayCommandClaim): ClientGatewayCommandRecord {

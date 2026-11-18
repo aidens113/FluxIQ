@@ -26,7 +26,8 @@
     "next": "15.5.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^6.0.1",
+    "stripe": "23.1.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",

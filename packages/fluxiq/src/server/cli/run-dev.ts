@@ -8,6 +8,7 @@ import type { DevArguments } from "./dev-arguments.ts";
 import { openHostInstance } from "./open-host-instance.ts";
 import { loadManagedHostLauncher, startManagedHosts, type FluxIQHostLauncher } from "../managed-hosts/index.ts";
 import { FluxNodeHostPool } from "../../framework/automation-service/service/fluxnode/hosts/index.ts";
+import { AutomationStudioHostLeaseAuthority } from "../../runtime/project-agents/host-resources/index.ts";
 
 /**
  * The seam for the FluxNode runner: given the opened instance (storage ready), builds the
@@ -57,7 +58,7 @@ export async function runDev(args: DevArguments, print: (line: string) => void =
   try {
     await initializeFluxIQServerStorage(fluxiq);
     if (count > 0 && !fluxiq.activeDomainId) throw new Error("Managed browsers require an active domain from FLUXIQ_HOST_MODULE.");
-    pool = count > 0 ? new FluxNodeHostPool({ gateway: fluxiq.programs.clientGateway, domainId: fluxiq.activeDomainId!, capacity: count }) : undefined;
+    pool = count > 0 ? new FluxNodeHostPool({ gateway: fluxiq.programs.clientGateway, domainId: fluxiq.activeDomainId!, capacity: count, leaseAuthority: AutomationStudioHostLeaseAuthority.for(fluxiq.programs.automationStudio) }) : undefined;
     fluxNodes = options.createFluxNodes ? await options.createFluxNodes(fluxiq, pool) : undefined;
     server = await startHeadlessServer({ fluxiq, apiPort: args.apiPort, gatewayPort: args.gatewayPort, ...(fluxNodes ? { fluxNodes } : {}) });
     if (launcher) managed = await startManagedHosts({ gateway: fluxiq.programs.clientGateway, launcher, count, domainId: fluxiq.activeDomainId!,

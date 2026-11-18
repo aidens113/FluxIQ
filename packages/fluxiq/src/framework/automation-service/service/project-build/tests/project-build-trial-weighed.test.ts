@@ -1,3 +1,5 @@
+import { AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 // The build's proposals keep a subflow trial's verdict as the brief's gate
 // weighed it (t634): the port answers before the gate weighs the trial, so each
 // trial it answered is told to the proposals when the gate tells the port what
@@ -35,10 +37,10 @@ async function trialled() {
     inner(at, proposal, verdict);
   };
   const trials = automationStudioProjectBuildSubflowTrials({
-    ref: REF, environment: environment as AutomationStudioProjectBuildTrialEnvironment, binding, judge: { provider: mockProvider(async () => judgeReply("yes")) }, records, proposals, leases: { assertCurrent: () => undefined }, running: () => true
+    ref: REF, environment: Object.assign(environment, { leaseBinding: LEASE_BINDING }) as AutomationStudioProjectBuildTrialEnvironment, binding, judge: { provider: mockProvider(async () => judgeReply("yes")) }, records, proposals, leases: { assertCurrent: () => undefined }, running: () => true
   });
   const proposal: AutomationStudioSubflowProposal = { ...f.request().proposal, scope: { buildId: "build.1", briefId: "brief.add", planDigest: "plan.1", subflowKey: "add" } };
-  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })));
+  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: LEASE_BINDING });
   const result = await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async () => await trials.port({ scope, proposal, signal: new AbortController().signal }));
   return { trials, proposals, proposal, result, told };
 }

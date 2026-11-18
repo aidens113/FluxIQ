@@ -1,14 +1,16 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation";
 import type { ClientGatewayActionCommand, ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "../config.ts";
-import type { ClientGatewayTimer, ClientGatewayTimerSource } from "../types.ts";
+import type { ClientGatewayTimer, ClientGatewayTimerSource, InternalSession, ClientGatewayServiceOptions } from "../types.ts";
 import type { ClientGatewayChannelScopeSource } from "../channel-scope/index.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
 import { COMMAND_ANSWER_MARGIN_MS } from "../command-answer-margin.ts";
 import { clientGatewayReconciledResult, clientGatewaySessionAnswersReconcile } from "../command-reconcile/index.ts";
-import { clientGatewayHostLeaseStamp, isClientGatewayHostLease, type ClientGatewayHostLeaseSource } from "../host-lease/index.ts";
+import { clientGatewayHostLeaseStamp, isClientGatewayHostLease, type ClientGatewayHostLeaseTarget } from "../host-lease/index.ts";
+import { clientGatewayChannelScopeAdmission } from "../channel-scope/index.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "./unsent-refusal.ts";
 import { ClientGatewayCommandContext } from "./context.ts";
 import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
@@ -21,14 +23,18 @@ type Entry = {
   sessionId: string; clientId: string; claim: ClientGatewayCommandClaim;
   phase: "preparing" | "waiting" | "reserved" | "terminal";
   abort: AbortController; timer?: ClientGatewayTimer; detach(): void;
-  resolve(answer: Answer): void; reject(): void;
+  resolve(answer: Answer): void; reject(error?: unknown): void;
   answer: Promise<Answer>; completion: Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>>;
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
   uncertainty?: Promise<void>;
+  target: ClientGatewayHostLeaseTarget; sent: boolean;
+  beforeSendCode?: "timeout_before_send";
   /** The timer source of the channel scope the command was dispatched in, read once at dispatch; undefined: the gateway's own (`../channel-scope/source.ts`). */
   timers: ClientGatewayTimerSource | undefined;
+  /** The channel scope the command was dispatched in, read once at dispatch with its timers; undefined: live. Its session is admitted against this scope again just before sending. */
+  scope: string | undefined;
 };
-type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string, timers: ClientGatewayTimerSource | undefined) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayHostLeaseSource | undefined; channelScope?: ClientGatewayChannelScopeSource | undefined; trace: ClientGatewayTraceTap };
+type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string, timers: ClientGatewayTimerSource | undefined) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayServiceOptions["hostLease"]; hostLeaseTarget?: (session: InternalSession) => ClientGatewayHostLeaseTarget; channelScope?: ClientGatewayChannelScopeSource | undefined; trace: ClientGatewayTraceTap };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
   private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
@@ -51,29 +57,34 @@ export class ClientGatewayDurableDispatch {
     if (!options || typeof options !== "object" || Object.getPrototypeOf(options) !== Object.prototype || Reflect.ownKeys(options).some(key => typeof key !== "string" || !["context", "signal"].includes(key)) || !Object.hasOwn(options, "context") || Object.values(Object.getOwnPropertyDescriptors(options)).some(descriptor => !descriptor.enumerable || !Object.hasOwn(descriptor, "value"))) throw new Error("durable_command.invalid_options");
     if (options.signal !== undefined && !(options.signal instanceof AbortSignal)) throw new Error("durable_command.invalid_signal");
     const owner = ClientGatewayCommandContext.owner(options.context);
-    const leased = this.stampLease(input, sessionId);
+    const session = this.ports.sessions.requireReady(sessionId), target = this.target(session);
+    const leased = this.stampLease(input, target);
     const requestDigest = Controller.digest(leased), command = structuredClone(leased);
-    this.validateCommand(command); this.freeze(command);
-    const session = this.ports.sessions.requireReady(sessionId);
+    this.validateCommand(command);
+    this.freeze(command);
     if (session.projectId && session.projectId !== owner.projectId) throw new Error("durable_command.project_denied");
     const commandId = Controller.commandId(owner);
     if (this.pending.has(commandId)) throw new Error("durable_command.already_pending");
     const claim: ClientGatewayCommandClaim = { binding: { schemaVersion: "gateway_command.v1", ...owner, commandId, clientId: session.clientId, sessionId }, requestDigest };
-    Controller.validateClaim(claim); this.freeze(claim);
+    Controller.validateClaim(claim);
+    this.freeze(claim);
     // Marked for capture under a traced episode after the digest, so tracing never changes what the ledger claims (`../trace-tap/`).
-    const message = this.ports.trace.stampAction(this.ports.transport.message("server.execute_action", { ...command, commandId }, session), owner); this.freeze(message);
+    const message = this.ports.trace.stampAction(this.ports.transport.message("server.execute_action", { ...command, commandId }, session), owner);
+    this.freeze(message);
     let resolve!: Entry["resolve"], reject!: Entry["reject"];
-    const answer = new Promise<Answer>((yes, no) => { resolve = yes; reject = () => no(new Error("durable_command.outcome_unknown")); });
+    const answer = new Promise<Answer>((yes, no) => { resolve = yes;
+      reject = (error) => no(error ?? new Error("durable_command.outcome_unknown")); });
     void answer.catch(/* best-effort: preadmission cancellation is reported by public completion */ () => undefined);
     const observer = ClientGatewayCommandOutcome.observer(options.context);
-    const entry: Entry = { sessionId, clientId: session.clientId, claim, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }), timers: this.ports.channelScope?.timers?.() };
-    const abort = () => this.uncertain(entry);
-    options.signal?.addEventListener("abort", abort, { once: true }); entry.detach = () => options.signal?.removeEventListener("abort", abort);
-    if (options.signal?.aborted) this.uncertain(entry);
+    const entry: Entry = { sessionId, clientId: session.clientId, claim, target, sent: false, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }), timers: this.ports.channelScope?.timers?.(), scope: this.ports.channelScope?.current() };
+    const abort = () => { if (!entry.sent) entry.abort.abort(options.signal?.reason); else this.uncertain(entry); };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    entry.detach = () => options.signal?.removeEventListener("abort", abort);
+    if (options.signal?.aborted) abort();
     this.pending.set(commandId, entry);
-    if (observer) entry.timer = this.startTimer(entry)({ kind: "answer", commandId }, this.answerWaitMs(command), () => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)));
     const pipeline = this.run(entry, options.context, command, message);
-    entry.completion = pipeline; this.pipelines.add(pipeline);
+    entry.completion = pipeline;
+    this.pipelines.add(pipeline);
     void pipeline.finally(() => this.pipelines.delete(pipeline)).catch(/* best-effort: derived observer mirrors the public failure */ () => undefined);
     return { commandId, message, result: pipeline };
   }
@@ -90,10 +101,15 @@ export class ClientGatewayDurableDispatch {
   private async accept(entry: Entry, input: ClientGatewayActionResult, delivered?: (result: ClientGatewayActionResult) => void): Promise<"settled" | "suppressed"> {
     if (entry.phase !== "waiting") return this.suppressed(entry, "not_waiting");
     let result: ClientGatewayActionResult, resultDigest: string;
-    try { resultDigest = clientGatewayCommandResultDigest(input); result = this.parseResult(input); this.freeze(result); }
+    try { resultDigest = clientGatewayCommandResultDigest(input);
+      result = this.parseResult(input);
+      this.freeze(result); }
     catch { return this.suppressed(entry, "invalid_result"); }
-    if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return this.suppressed(entry, "uncertain_status"); }
-    entry.phase = "reserved"; if (!entry.observer) entry.timer?.cancel();
+    if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry);
+      await entry.completion;
+      return this.suppressed(entry, "uncertain_status"); }
+    entry.phase = "reserved";
+    if (!entry.observer) entry.timer?.cancel();
     const receipt: ClientGatewayCommandReceipt = { schemaVersion: "gateway_command_receipt.v1", commandId: entry.claim.binding.commandId, requestDigest: entry.claim.requestDigest, clientId: entry.clientId, sessionId: entry.sessionId, status: result.status, receivedAt: this.ports.config.now(), resultDigest, redaction: "receipt_only", ...(result.status === "failed" ? { failureClass: "action_failed" as const } : {}) };
     entry.resolve({ result, receipt });
     const completed = await entry.completion;
@@ -108,7 +124,8 @@ export class ClientGatewayDurableDispatch {
   }
   drain(): Promise<void> {
     this.closing ??= (async () => {
-      this.closed = true; for (const entry of this.pending.values()) this.uncertain(entry);
+      this.closed = true;
+      for (const entry of this.pending.values()) { if (!entry.sent) entry.abort.abort(); else this.uncertain(entry); }
       try { while (this.pipelines.size) await Promise.allSettled([...this.pipelines]); }
       finally { this.unsubscribe(); }
       if (this.cleanupErrors.length) throw new AggregateError(this.cleanupErrors, "durable_command.lease_cleanup_failed");
@@ -122,37 +139,71 @@ export class ClientGatewayDurableDispatch {
       if (!this.ports.resolve) throw new Error("durable_command.storage_unavailable");
       lease = await this.ports.resolve(context);
       if (entry.observer && lease.outcomeObserver !== entry.observer) throw new Error("command_outcome.observer_mismatch");
+      this.admit(entry, command);
+      if (!lease.ledger.refuseUnsent) throw Unsent.create(entry.claim, "settlement_unsupported", this.ports.config.now());
       const outcome = await new Controller(lease.ledger).dispatch(entry.claim, async () => {
-        const current = this.ports.sessions.requireReady(entry.sessionId);
-        if (entry.abort.signal.aborted || this.closed || current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) throw new Error("durable_command.admission_refused");
-        entry.phase = "waiting";
         const waitMs = this.answerWaitMs(command);
-        if (!entry.observer) entry.timer = this.startTimer(entry)({ kind: "answer", commandId: entry.claim.binding.commandId }, waitMs, () => this.answerNeverCameOrUnknown(entry, waitMs));
         // Account for send rejection without awaiting a transport's possibly stalled flush before the answer deadline.
-        void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message).catch(() => { /* best-effort: send rejection becomes durable unknown through the answer pipeline */ this.uncertain(entry); });
+        void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message, {
+          admit: (current) => this.admit(entry, command, current),
+          prepare: () => { entry.timer = this.startTimer(entry)({ kind: "answer", commandId: entry.claim.binding.commandId }, waitMs, () => {
+            if (!entry.sent) { entry.beforeSendCode = "timeout_before_send";
+              entry.abort.abort(); }
+            else this.answerNeverCameOrUnknown(entry, waitMs);
+          }); },
+          invoking: () => { entry.sent = true;
+            entry.phase = "waiting"; },
+          refuse: (error) => { entry.sent = false;
+            if (Unsent.is(error)) throw error;
+            throw Unsent.create(entry.claim, entry.abort.signal.aborted ? entry.beforeSendCode ?? "cancelled_before_send" : "preparation_failed", this.ports.config.now()); }
+        }).catch((error) => { if (!entry.sent && Unsent.is(error)) entry.reject(error); else this.uncertain(entry); });
         return await entry.answer;
       }, entry.abort.signal);
+      if (outcome.status === "refused_unsent") return outcome;
       if (!entry.observer) return outcome;
-      if (outcome.status !== "completed" || entry.abort.signal.aborted || this.closed) { this.uncertain(entry); await this.notifyUncertainty(entry, outcome.status); return { status: "outcome_unknown" }; }
-      const proof = Object.freeze({}); entry.proof = proof;
-      const value = { context, claim: entry.claim, receipt: structuredClone(outcome.receipt), result: structuredClone(outcome.result) }; this.freeze(value.claim); this.freeze(value.receipt); this.freeze(value.result); Object.freeze(value);
+      if (outcome.status !== "completed" || entry.abort.signal.aborted || this.closed) { this.uncertain(entry);
+        await this.notifyUncertainty(entry, outcome.status);
+        return { status: "outcome_unknown" }; }
+      const proof = Object.freeze({});
+      entry.proof = proof;
+      const value = { context, claim: entry.claim, receipt: structuredClone(outcome.receipt), result: structuredClone(outcome.result) };
+      this.freeze(value.claim);
+      this.freeze(value.receipt);
+      this.freeze(value.result);
+      Object.freeze(value);
       ClientGatewayDurableDispatch.proofs.set(proof, { entry, observer: entry.observer, value });
       let detach: () => void = () => undefined;
-      const stopped = new Promise<void>((_resolve, reject) => { const abort = () => reject(new Error("command_outcome.interrupted")); entry.abort.signal.addEventListener("abort", abort, { once: true }); detach = () => entry.abort.signal.removeEventListener("abort", abort); if (entry.abort.signal.aborted) abort(); });
+      const stopped = new Promise<void>((_resolve, reject) => { const abort = () => reject(new Error("command_outcome.interrupted"));
+        entry.abort.signal.addEventListener("abort", abort, { once: true });
+        detach = () => entry.abort.signal.removeEventListener("abort", abort);
+        if (entry.abort.signal.aborted) abort(); });
       observing = Promise.resolve().then(() => entry.observer!.completed(proof));
-      try { await Promise.race([observing, stopped]); } finally { detach(); ClientGatewayDurableDispatch.proofs.delete(proof); }
+      try { await Promise.race([observing, stopped]); } finally { detach();
+        ClientGatewayDurableDispatch.proofs.delete(proof); }
       if (entry.abort.signal.aborted || this.closed) throw new Error("command_outcome.interrupted");
       return outcome;
     } catch (error) {
+      if (Unsent.is(error)) {
+        if (Unsent.isSettlementFailure(error)) throw error;
+        await entry.observer?.unsent?.(context, entry.claim, error);
+        return { status: "refused_unsent", refusal: { ...Unsent.read(error, entry.claim) } };
+      }
       if (!entry.observer) throw error;
-      this.uncertain(entry); await this.notifyUncertainty(entry, "observer_or_dispatch_failed"); return { status: "outcome_unknown" };
+      this.uncertain(entry);
+      await this.notifyUncertainty(entry, "observer_or_dispatch_failed");
+      return { status: "outcome_unknown" };
     } finally {
-      entry.timer?.cancel(); entry.detach(); entry.phase = "terminal";
+      entry.timer?.cancel();
+      entry.detach();
+      entry.phase = "terminal";
       this.pending.delete(entry.claim.binding.commandId);
       if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
       if (lease) {
-        const owned = lease, cleanup = async () => { try { await observing; } catch { /* best-effort: public result already records observer refusal */ } try { await owned.close(); } catch (error) { this.cleanupErrors.push(error); } };
-        if (observing && entry.abort.signal.aborted) { const pending = cleanup(); this.pipelines.add(pending); void pending.finally(() => this.pipelines.delete(pending)); } else await cleanup();
+        const owned = lease, cleanup = async () => { try { await observing; } catch { /* best-effort: public result already records observer refusal */ }
+          try { await owned.close(); } catch (error) { this.cleanupErrors.push(error); } };
+        if (observing && entry.abort.signal.aborted) { const pending = cleanup();
+          this.pipelines.add(pending);
+          void pending.finally(() => this.pipelines.delete(pending)); } else await cleanup();
       }
     }
   }
@@ -196,31 +247,55 @@ export class ClientGatewayDurableDispatch {
   // own answer window and is reconciled then; any other client's command is
   // unknown at once, as before.
   private disconnected(entry: Entry, answersReconcile: boolean): void {
+    if (!entry.sent) return;
     if (answersReconcile && entry.phase === "waiting" && this.ports.reconcile) return;
     this.uncertain(entry);
   }
   private uncertain(entry: Entry): void {
     if ((!entry.observer && entry.phase === "reserved") || entry.phase === "terminal") return;
     if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
-    entry.phase = "terminal"; entry.timer?.cancel(); entry.abort.abort(); entry.reject();
+    entry.phase = "terminal";
+    entry.timer?.cancel();
+    entry.abort.abort();
+    entry.reject();
     this.ports.trace.synthesized(entry.claim.binding.commandId, "server.execute_action", { outcome: "uncertain" });
   }
-  private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition)); return entry.uncertainty; }
+  private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition));
+    return entry.uncertainty; }
   /**
    * The command as it is digested, claimed and sent: carrying the lease of the
    * scope dispatching it (`../host-lease/`), so the request digest covers the
    * lease. A malformed lease is an invalid command; a stale, foreign or missing
    * one throws here, before anything is claimed.
    */
-  private stampLease(input: ClientGatewayActionCommand, sessionId: string): ClientGatewayActionCommand {
+  private stampLease(input: ClientGatewayActionCommand, target: ClientGatewayHostLeaseTarget): ClientGatewayActionCommand {
     if (!input || typeof input !== "object" || Array.isArray(input)) return input;
     if (Object.hasOwn(input, "lease") && !isClientGatewayHostLease(input.lease)) throw new Error("durable_command.invalid_command");
-    const leased = clientGatewayHostLeaseStamp(input, this.ports.hostLease, sessionId);
+    const leased = clientGatewayHostLeaseStamp(input, this.ports.hostLease, target);
     if (leased.refused) {
-      this.ports.trace.synthesized(null, "server.execute_action", { outcome: "refused_unsent", code: leased.refused, sessionId, durable: true });
+      this.ports.trace.synthesized(null, "server.execute_action", { outcome: "refused_unsent", code: leased.refused, sessionId: target.sessionId, durable: true });
       throw new Error(`durable_command.${leased.refused}`);
     }
     return leased.command;
+  }
+  private target(session: InternalSession): ClientGatewayHostLeaseTarget {
+    return this.ports.hostLeaseTarget?.(session) ?? { sessionId: session.sessionId, domainId: undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) };
+  }
+  /** Re-resolved after storage awaits, and synchronously again immediately before transport invocation. */
+  private admit(entry: Entry, command: ClientGatewayActionCommand, ready?: InternalSession | null): void {
+    const refuse = (code: Parameters<typeof Unsent.create>[1]): never => { throw Unsent.create(entry.claim, code, this.ports.config.now()); };
+    if (entry.abort.signal.aborted || this.closed) refuse(entry.beforeSendCode ?? "cancelled_before_send");
+    let current = ready;
+    if (current === undefined) { try { current = this.ports.sessions.requireReady(entry.sessionId); } catch { refuse("session_unavailable"); } }
+    if (!current) return refuse("session_unavailable");
+    if (current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) refuse("target_changed");
+    if (!current.socket) refuse("socket_unavailable");
+    const target = this.target(current);
+    if (target.domainId !== entry.target.domainId || target.channelScope !== entry.target.channelScope) refuse("target_changed");
+    if (clientGatewayChannelScopeAdmission(current.channelScope, entry.scope)) refuse("channel_scope_changed");
+    const leased = clientGatewayHostLeaseStamp(command, this.ports.hostLease, target);
+    if (leased.refused) refuse(leased.refused);
+    if (Controller.digest(leased.command) !== entry.claim.requestDigest) refuse("target_changed");
   }
   private validateCommand(command: ClientGatewayActionCommand): void {
     const fields = ["actionType", "parameters", "target", "timeoutMs", "metadata", "lease"];
@@ -239,5 +314,6 @@ export class ClientGatewayDurableDispatch {
     if (input.clearedWait !== undefined && (Object.keys(input.clearedWait).length !== 1 || !Object.hasOwn(input.clearedWait, "waitedMs") || !Number.isSafeInteger(input.clearedWait.waitedMs) || input.clearedWait.waitedMs < 0)) throw new Error("durable_command.invalid_cleared_wait");
     return structuredClone(input);
   }
-  private freeze(value: unknown): void { if (value && typeof value === "object") { for (const item of Object.values(value)) this.freeze(item); Object.freeze(value); } }
+  private freeze(value: unknown): void { if (value && typeof value === "object") { for (const item of Object.values(value)) this.freeze(item);
+    Object.freeze(value); } }
 }

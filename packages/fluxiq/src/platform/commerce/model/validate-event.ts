@@ -1,6 +1,6 @@
 import type { CommerceEntitlementGrant, CommerceSubscriptionSnapshot, VerifiedCommerceEvent } from "./types.ts";
 
-const STATUSES = new Set(["active", "trial", "past-due", "canceled", "incomplete"]);
+const STATUSES = new Set(["active", "trial", "past-due", "unpaid", "paused", "canceled", "incomplete"]);
 const ALLOCATIONS = new Set(["control", "shared", "dedicated"]);
 
 /** Validates and copies before any await, so callers cannot mutate a queued event. */
@@ -21,13 +21,15 @@ export function validateCommerceEvent(value: VerifiedCommerceEvent): VerifiedCom
 }
 
 function copySubscription(value: CommerceSubscriptionSnapshot): CommerceSubscriptionSnapshot {
-  exactKeys(value, ["accountId", "customerId", "subscriptionId", "version", "status", "paidThroughMs", "verifiedAtMs", "entitlements"]);
+  exactKeys(value, ["accountId", "customerId", "subscriptionId", "version", "status", "paidThroughMs", "cancelAtPeriodEnd", "endedAtMs", "verifiedAtMs", "entitlements"]);
   identifier(value.accountId, "accountId");
   identifier(value.customerId, "customerId");
   identifier(value.subscriptionId, "subscriptionId");
   if (!Number.isSafeInteger(value.version) || value.version < 1) invalid("version");
   if (!STATUSES.has(value.status)) invalid("status");
   if (value.paidThroughMs !== null) timestamp(value.paidThroughMs, "paidThroughMs");
+  if (typeof value.cancelAtPeriodEnd !== "boolean") invalid("cancelAtPeriodEnd");
+  if (value.endedAtMs !== null) timestamp(value.endedAtMs, "endedAtMs");
   timestamp(value.verifiedAtMs, "verifiedAtMs");
   if (!Array.isArray(value.entitlements)) invalid("entitlements");
   return {
@@ -37,6 +39,8 @@ function copySubscription(value: CommerceSubscriptionSnapshot): CommerceSubscrip
     version: value.version,
     status: value.status,
     paidThroughMs: value.paidThroughMs,
+    cancelAtPeriodEnd: value.cancelAtPeriodEnd,
+    endedAtMs: value.endedAtMs,
     verifiedAtMs: value.verifiedAtMs,
     entitlements: value.entitlements.map(copyGrant)
   };

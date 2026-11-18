@@ -1,4 +1,5 @@
 import { clientGatewayCanonicalDigest } from "./canonical-digest.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "./unsent-refusal.ts";
 import type { ClientGatewayCommandBinding, ClientGatewayCommandClaim, ClientGatewayCommandLedgerPort, ClientGatewayCommandReceipt, ClientGatewayCommandRecord, ClientGatewayCommandUnknownReason, ClientGatewayDurableDispatchResult } from "./contracts.ts";
 
 /** Small-record validation and durable ledger dispatch for the gateway and executor. */
@@ -32,10 +33,16 @@ export class ClientGatewayCommandLedgerController {
     this.time(receipt.receivedAt); this.hash(receipt.resultDigest);
   }
   static validateRecord(claim: ClientGatewayCommandClaim, record: ClientGatewayCommandRecord): void {
-    this.keys(record, ["claim", "claimedAt", "state", "unknownReason", "receipt", "committedAt"]);
+    this.keys(record, ["claim", "claimedAt", "state", "unknownReason", "receipt", "committedAt"], ["refusal"]);
     this.validateClaim(record.claim); this.time(record.claimedAt);
     if (this.digest(claim) !== this.digest(record.claim)) throw new Error("command_ledger.claim_conflict");
-    if (record.state === "committed") {
+    if (record.state === "refused_unsent") {
+      if (record.receipt !== null || record.committedAt !== null || record.unknownReason !== null || !record.refusal) throw new Error("command_ledger.invalid_unsent_record");
+      this.keys(record.refusal, ["code", "refusedAt"]);
+      if (!Unsent.validCode(record.refusal.code)) throw new Error("command_ledger.invalid_unsent_record");
+      this.time(record.refusal.refusedAt);
+    } else if (record.refusal !== undefined) throw new Error("command_ledger.invalid_unsent_record");
+    else if (record.state === "committed") {
       if (!record.receipt || record.committedAt === null || record.unknownReason !== null) throw new Error("command_ledger.invalid_record");
       this.validateReceipt(claim, record.receipt); this.time(record.committedAt);
       if (record.receipt.receivedAt < record.claimedAt || record.committedAt < record.receipt.receivedAt) throw new Error("command_ledger.invalid_receipt_time");
@@ -65,13 +72,16 @@ export class ClientGatewayCommandLedgerController {
     ClientGatewayCommandLedgerController.validateRecord(claim, claimed.record);
     if (!claimed.sendAllowed) return this.reconciled(claimed.record);
     if (claimed.record.state !== "pending") throw new Error("command_ledger.invalid_send_authority");
-    if (signal?.aborted) { await this.ledger.markUnknown(claim, "cancelled_before_send"); return { status: "outcome_unknown" }; }
+    if (signal?.aborted) return await this.refused(claim, Unsent.create(claim, "cancelled_before_send"));
     let answer: Awaited<ReturnType<typeof send>>;
     try {
       const live = await send(); ClientGatewayCommandLedgerController.validateReceipt(claim, live.receipt);
       answer = { result: live.result, receipt: ClientGatewayCommandLedgerController.frozenClone(live.receipt) };
     }
-    catch { await this.ledger.markUnknown(claim, "send_uncertain"); return { status: "outcome_unknown" }; }
+    catch (error) {
+      if (Unsent.is(error)) return await this.refused(claim, error);
+      await this.ledger.markUnknown(claim, "send_uncertain"); return { status: "outcome_unknown" };
+    }
     try { await this.ledger.commitReceipt(claim, answer.receipt); }
     catch {
       const recorded = await this.ledger.read(claim);
@@ -83,5 +93,27 @@ export class ClientGatewayCommandLedgerController {
     if (committed.state !== "committed" || ClientGatewayCommandLedgerController.digest(committed.receipt) !== ClientGatewayCommandLedgerController.digest(answer.receipt)) throw new Error("command_ledger.receipt_conflict");
     return { status: "completed", result: answer.result, receipt: committed.receipt! };
   }
-  private reconciled<TResult>(record: ClientGatewayCommandRecord): ClientGatewayDurableDispatchResult<TResult> { return record.state === "committed" ? { status: "result_unavailable", receipt: record.receipt! } : { status: "outcome_unknown" }; }
+  private async refused<TResult>(claim: ClientGatewayCommandClaim, proof: Unsent): Promise<ClientGatewayDurableDispatchResult<TResult>> {
+    const refusal = Unsent.read(proof, claim);
+    try {
+      if (!this.ledger.refuseUnsent) throw new Error("durable_command.unsent_settlement_unsupported");
+      const settled = await this.ledger.refuseUnsent(claim, proof);
+      ClientGatewayCommandLedgerController.validateRecord(claim, settled);
+      if (settled.state !== "refused_unsent" || ClientGatewayCommandLedgerController.digest(settled.refusal) !== ClientGatewayCommandLedgerController.digest(refusal)) throw new Error("command_ledger.unsent_settlement_conflict");
+      return { status: "refused_unsent", refusal: { ...settled.refusal! } };
+    } catch {
+      // A commit may have landed before its acknowledgement failed. Only an
+      // actual matching terminal record can resolve that; pending is no proof.
+      try {
+        const recorded = await this.ledger.read(claim);
+        if (recorded) ClientGatewayCommandLedgerController.validateRecord(claim, recorded);
+        if (recorded?.state === "refused_unsent" && ClientGatewayCommandLedgerController.digest(recorded.refusal) === ClientGatewayCommandLedgerController.digest(refusal)) return { status: "refused_unsent", refusal: { ...recorded.refusal! } };
+      } catch { /* best-effort: an unreadable reconciliation never grants success; the original live refusal is rethrown below. */ }
+      throw Unsent.settlementFailed(proof);
+    }
+  }
+  private reconciled<TResult>(record: ClientGatewayCommandRecord): ClientGatewayDurableDispatchResult<TResult> {
+    if (record.state === "refused_unsent") return { status: "refused_unsent", refusal: { ...record.refusal! } };
+    return record.state === "committed" ? { status: "result_unavailable", receipt: record.receipt! } : { status: "outcome_unknown" };
+  }
 }

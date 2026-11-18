@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { FluxIQ } from "../../../../index.ts";
 import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayCommandContext } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/project/index.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../../../../../client-gateway/service/command-ledger/index.ts";
 import { AutomationStudioCommandRunController as Controller, type AutomationStudioCommandRunScope, type AutomationStudioCommandExecutorOwner, type AutomationStudioCommandEffectProvenance } from "../index.ts";
 
 type Harness = { controller: Controller; scope: AutomationStudioCommandRunScope; issue(ordinal: number, attemptId?: string): Promise<ClientGatewayCommandContext> };
@@ -51,6 +52,21 @@ function claimFor(context: ClientGatewayCommandContext) {
 }
 
 describe("withdrawing a required command that never left", () => {
+  it("verified post-claim refusal withdraws only that effect, retains terminal replay and admits a fresh attempt", async () => fixture(async h => {
+    const context = await h.issue(0), claim = claimFor(context);
+    const lease = await h.controller.resolve(context);
+    expect((await lease.ledger.claim(claim)).sendAllowed).toBe(true);
+    expect(h.controller.withdraw(context)).toBe(false);
+    const proof = Unsent.create(claim, "host_lease.stale");
+    expect(await lease.ledger.refuseUnsent!(claim, proof)).toMatchObject({ state: "refused_unsent", receipt: null, unknownReason: null });
+    expect(h.controller.withdraw(context)).toBe(true);
+    expect(h.controller.withdraw(context)).toBe(true);
+    expect(h.controller.receipted(context)).toBe(false);
+    await h.controller.checkpoint(h.scope);
+    expect(await lease.ledger.claim(claim)).toMatchObject({ sendAllowed: false, record: { state: "refused_unsent" } });
+    const retry = await h.issue(0, "synthetic.attempt.2"), retried = await h.controller.resolve(retry);
+    expect(await retried.ledger.claim(claimFor(retry))).toMatchObject({ sendAllowed: true });
+  }), 60_000);
   it("frees the run for a new attempt and refuses any later claim, so it can never be sent", async () => fixture(async h => {
     const context = await h.issue(0);
     expect(h.controller.withdraw(context)).toBe(true);

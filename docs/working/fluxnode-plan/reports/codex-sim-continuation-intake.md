@@ -32,3 +32,7 @@ Not verified: No WIP test, typecheck, build, browser, provider, or runtime behav
 Report: `C:/Users/osrs_/FluxStuff/!FluxIQ/docs/working/fluxnode-plan/reports/codex-sim-continuation-intake.md`
 Notes: Branch/head `feat/fluxnode-sims` / `68161d1`; prior report `reports/sim-bindings.md`; recommended next ownership is the Linux read-only binding/example paths above, after t905's read-lineage contract is stable..
 
+
+## Lead standalone utility validation, 2026-11-12
+
+The three read-utility test files have only simulation-local runtime imports; Core references in these modules are erased types or absent. The lead ran `heavy-slot.mjs run lead-sim-read-primitives -- "node --test packages/fluxiq-binding/src/read/tests/rows.test.ts packages/fluxiq-binding/src/read/tests/spec.test.ts packages/fluxiq-binding/src/read/tests/record-output.test.ts"` in the unchanged simulation checkout -> 9/9 passed,251.4385ms,exit0. Log TEMP/fluxiq-lead-sim-read-primitives.log. No source, repository state, or Core dist changed. This validates local row extraction, shape and output-schema utilities only; it does not validate evidence integration, Linux Flow replay/repair, package types, or the rest of the WIP. Those remain behind the stable Core interface.
