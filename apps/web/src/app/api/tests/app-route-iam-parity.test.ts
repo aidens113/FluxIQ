@@ -32,6 +32,7 @@ const CALLERS: readonly RouteCaller[] = [
 
 const COOKIE_ONLY_READ: Row = ["allowed", "allowed", "unauthenticated", "unauthenticated"];
 const SELECTED_PANEL_READ: Row = ["allowed", "allowed", "forbidden: This endpoint is not available to a paired client.", "forbidden: This endpoint is not available to a paired client."];
+const UNBILLED: Row = ["unavailable", "unavailable", "unavailable", "unavailable"];
 const needs = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, "unauthenticated", "unauthenticated"];
 const selectedNeeds = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, SELECTED_PANEL_READ[2], SELECTED_PANEL_READ[3]];
 
@@ -53,6 +54,9 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/framework/setup (setup)": selectedNeeds("programs.write"),
   "POST /api/framework/setup (migrate)": selectedNeeds("programs.write"),
   "POST /api/framework/setup (rollback-migration)": selectedNeeds("programs.write"),
+  // A server that bills nothing (the fixture has no commerce configuration) answers 404 before the caller is looked at, whoever asks.
+  "GET /api/platform/v1/commerce/checkout": UNBILLED,
+  "POST /api/platform/v1/commerce/checkout": UNBILLED,
   "GET /api/framework/io": SELECTED_PANEL_READ,
   "POST /api/framework/io/validate": SELECTED_PANEL_READ,
   // New in t920, not a check that existed before: a panel caller with programs.read, and a paired client as the snapshot serves it.
