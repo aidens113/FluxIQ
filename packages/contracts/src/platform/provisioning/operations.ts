@@ -4,6 +4,7 @@ import { addMemberInputSchema, addMemberResultSchema } from "./add-member.ts";
 import { createAccountHttpInputSchema, createAccountInputSchema, createAccountResultSchema } from "./create-account.ts";
 import { deleteAccountInputSchema, deleteAccountResultSchema } from "./delete-account.ts";
 import { getAccountInputSchema, getAccountResultSchema } from "./get-account.ts";
+import { membershipChangeInputSchema, removeMemberInputSchema, removeMemberResultSchema, resumeMemberResultSchema, suspendMemberResultSchema } from "./membership-change.ts";
 import { rotateCredentialsInputSchema, rotateCredentialsResultSchema } from "./rotate-credentials.ts";
 import { sendWelcomeInputSchema, sendWelcomeResultSchema } from "./send-welcome.ts";
 import { setPasswordInputSchema, setPasswordResultSchema } from "./set-password.ts";
@@ -26,6 +27,9 @@ export const PLATFORM_PROVISIONING_OPERATIONS = Object.freeze({
   setPassword: { action: "platform:SetAccountPassword", http: false, input: setPasswordInputSchema, httpInput: null, result: setPasswordResultSchema },
   setPolicies: { action: "platform:SetAccountPolicies", http: true, input: setPoliciesInputSchema, httpInput: setPoliciesInputSchema, result: setPoliciesResultSchema },
   addMember: { action: "platform:AddAccountMembership", http: true, input: addMemberInputSchema, httpInput: addMemberInputSchema, result: addMemberResultSchema },
+  suspendMember: { action: "platform:SuspendAccountMembership", http: true, input: membershipChangeInputSchema, httpInput: membershipChangeInputSchema, result: suspendMemberResultSchema },
+  resumeMember: { action: "platform:ResumeAccountMembership", http: true, input: membershipChangeInputSchema, httpInput: membershipChangeInputSchema, result: resumeMemberResultSchema },
+  removeMember: { action: "platform:RemoveAccountMembership", http: true, input: removeMemberInputSchema, httpInput: removeMemberInputSchema, result: removeMemberResultSchema },
   disableAccount: { action: "platform:DisableAccount", http: true, input: accountStatusChangeInputSchema, httpInput: accountStatusChangeInputSchema, result: disableAccountResultSchema },
   enableAccount: { action: "platform:EnableAccount", http: true, input: accountStatusChangeInputSchema, httpInput: accountStatusChangeInputSchema, result: enableAccountResultSchema },
   deleteAccount: { action: "platform:DeleteAccount", http: true, input: deleteAccountInputSchema, httpInput: deleteAccountInputSchema, result: deleteAccountResultSchema },

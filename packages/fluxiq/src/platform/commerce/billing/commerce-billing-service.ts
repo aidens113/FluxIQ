@@ -4,6 +4,7 @@ import { CommerceBillingError } from "./commerce-billing-error.ts";
 import { deriveCommerceEntitlement } from "./derive-entitlement.ts";
 import type {
   CommerceBillingServiceOptions,
+  CommerceCloseReport,
   CommerceEntitlement,
   CommerceReconcileReport,
   CommerceWebhookResult,
@@ -129,6 +130,35 @@ export class CommerceBillingService {
       } catch (error) {
         report.failed.push({ subscriptionId: subscription.subscriptionId, error: error instanceof Error ? error.message : String(error) });
       }
+    }
+    return report;
+  }
+
+  /**
+   * Account deletion's billing step: cancels every subscription of the payer
+   * that has not ended, records the provider's ended state for each (the
+   * entitlement then reads `ended`; ledger rows, which hold the account id and
+   * no email, stay for `policy.retentionMs`), then closes the payer's
+   * customers. Every provider call carries an idempotency key derived from
+   * `operationId` (the deletion receipt), so a retry after an outage
+   * (`PaymentProviderUnavailableError`, thrown as it came) cancels each
+   * subscription once. Customers and subscriptions come from the ledger,
+   * never the caller.
+   */
+  async closeAccount(accountId: string, operationId: string): Promise<CommerceCloseReport> {
+    if (!identifier(accountId) || !identifier(operationId)) throw new CommerceBillingError("invalid-request");
+    const subscriptions = (await this.ledger.listSubscriptions(accountId))
+      .filter((subscription) => subscription.providerId === this.provider.providerId && subscription.accountId === accountId);
+    const report: CommerceCloseReport = { cancelled: [], customersClosed: [] };
+    for (const subscription of subscriptions) {
+      if (subscription.status === "canceled" || subscription.endedAtMs !== null) continue;
+      await this.provider.cancelSubscription(subscription.subscriptionId, { idempotencyKey: `${operationId}:cancel:${subscription.subscriptionId}` });
+      await this.reconcile(subscription.subscriptionId, null);
+      report.cancelled.push(subscription.subscriptionId);
+    }
+    for (const customerId of new Set(subscriptions.map((subscription) => subscription.customerId))) {
+      await this.provider.closeCustomer(customerId, { idempotencyKey: `${operationId}:close:${customerId}` });
+      report.customersClosed.push(customerId);
     }
     return report;
   }

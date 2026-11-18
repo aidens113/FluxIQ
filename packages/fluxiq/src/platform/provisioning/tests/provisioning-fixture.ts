@@ -1,5 +1,6 @@
 import { MemoryIamAuditSink } from "../../iam/index.ts";
-import type { PlatformTenancy } from "../context/index.ts";
+import { DeletionPending } from "../context/index.ts";
+import type { EnvironmentPurgeRequest, PlatformTenancy } from "../context/index.ts";
 import { MemoryEmailSender } from "../email/index.ts";
 import { createPlatformServices } from "../service/index.ts";
 import type { PlatformServices } from "../service/index.ts";
@@ -15,7 +16,16 @@ export type ProvisioningHarness = {
   email: MemoryEmailSender;
   audit: MemoryIamAuditSink;
   clock: TestClock;
-  revokedClients: { userId: string; reason: string }[];
+  revokedClients: { userId: string; reason: string; workspaceId?: string }[];
+  droppedCustody: { workspaceId: string; userId: string }[];
+  billingClosed: { accountId: string; operationId: string }[];
+  purgedEnvironments: EnvironmentPurgeRequest[];
+  /** Every cascade port call, in order, as `port:argument`. */
+  steps: string[];
+  /** Personal workspaces with work in flight: deleting their data must wait. */
+  busyWorkspaces: Set<string>;
+  /** The payment provider is not answering: closing billing must wait. */
+  billing: { unavailable: boolean };
   deletedWorkspaces: string[];
   createdWorkspaces: string[];
   emailFailures: string[];
@@ -33,7 +43,13 @@ export async function createProvisioningHarness(options: { tenancy?: PlatformTen
   const email = new MemoryEmailSender();
   const audit = new MemoryIamAuditSink();
   const clock = new TestClock();
-  const revokedClients: { userId: string; reason: string }[] = [];
+  const revokedClients: { userId: string; reason: string; workspaceId?: string }[] = [];
+  const droppedCustody: { workspaceId: string; userId: string }[] = [];
+  const billingClosed: { accountId: string; operationId: string }[] = [];
+  const purgedEnvironments: EnvironmentPurgeRequest[] = [];
+  const steps: string[] = [];
+  const busyWorkspaces = new Set<string>();
+  const billing = { unavailable: false };
   const deletedWorkspaces: string[] = [];
   const createdWorkspaces: string[] = [];
   const emailFailures: string[] = [];
@@ -47,11 +63,27 @@ export async function createProvisioningHarness(options: { tenancy?: PlatformTen
     tenancy: options.tenancy ?? { mode: "multi" },
     serviceIdentityName: options.serviceIdentityName ?? "website-backend",
     entitlements: { organisation: options.organisation ?? false },
-    revokeConnectedClients: async (userId, reason) => {
-      revokedClients.push({ userId, reason });
+    revokeConnectedClients: async (userId, reason, scope) => {
+      revokedClients.push(scope === undefined ? { userId, reason } : { userId, reason, workspaceId: scope.workspaceId });
+      steps.push(`revokeConnectedClients:${reason}${scope === undefined ? "" : `@${scope.workspaceId}`}`);
       return 2;
     },
+    dropWorkspaceCustody: async (workspaceId, userId) => {
+      droppedCustody.push({ workspaceId, userId });
+      steps.push(`dropWorkspaceCustody:${workspaceId}`);
+    },
+    closeBilling: async (accountId, operationId) => {
+      steps.push(`closeBilling:${accountId}`);
+      if (billing.unavailable) throw new DeletionPending("provider_unavailable", "Closing billing must wait: the payment provider did not answer.");
+      billingClosed.push({ accountId, operationId });
+    },
+    purgeEnvironments: async (request) => {
+      steps.push(`purgeEnvironments:${request.accountId}`);
+      purgedEnvironments.push(request);
+    },
     deleteWorkspaceData: async (workspaceId) => {
+      steps.push(`deleteWorkspaceData:${workspaceId}`);
+      if (busyWorkspaces.has(workspaceId)) throw new DeletionPending("workspace_busy", "Deleting the workspace must wait: it has work in flight.");
       deletedWorkspaces.push(workspaceId);
     },
     onWorkspaceCreated: async (workspaceId) => {
@@ -70,6 +102,12 @@ export async function createProvisioningHarness(options: { tenancy?: PlatformTen
     audit,
     clock,
     revokedClients,
+    droppedCustody,
+    billingClosed,
+    purgedEnvironments,
+    steps,
+    busyWorkspaces,
+    billing,
     deletedWorkspaces,
     createdWorkspaces,
     emailFailures,

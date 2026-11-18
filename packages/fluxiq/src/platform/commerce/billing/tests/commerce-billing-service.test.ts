@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { SQLiteCommerceLedger } from "../../storage/index.ts";
 import { grant } from "../../tests/fixtures.ts";
-import { CommerceBillingService, FakePaymentProvider } from "../index.ts";
+import { CommerceBillingService, FakePaymentProvider, PaymentProviderUnavailableError } from "../index.ts";
 import type { PaymentProvider, ProviderSubscriptionState } from "../index.ts";
 
 const SECRET = "whsec_fake_local_test_secret";
@@ -187,6 +187,8 @@ it("serializes racing reconciliations so the last committed write is the newest 
       createCheckout: (request) => fake.createCheckout(request),
       createPortal: (request) => fake.createPortal(request),
       verifyWebhook: (body, header) => fake.verifyWebhook(body, header),
+      cancelSubscription: (id, options) => fake.cancelSubscription(id, options),
+      closeCustomer: (id, options) => fake.closeCustomer(id, options),
       // The first fetch reads the old state, then stalls until a newer write committed.
       getSubscription: async (id) => {
         calls += 1;
@@ -255,4 +257,36 @@ it("keeps each account's entitlement to its own subscriptions", async () => {
   billing.fake.putSubscription(state());
   await billing.deliver("evt-1");
   expect(await billing.service.getEntitlement("account-b")).toMatchObject({ accountId: "account-b", state: "none", grants: [] });
+});
+
+it("closes an account's billing once: cancels what has not ended, records it ended, closes the customer, and leaves other accounts alone", async () => {
+  const billing = await setup();
+  billing.fake.putSubscription(state());
+  billing.fake.putSubscription(state({ subscriptionId: "sub-old", status: "canceled", paidThroughMs: null, endedAtMs: 1_000, entitlements: [] }));
+  billing.fake.putSubscription(state({ accountId: "account-b", customerId: "customer-b", subscriptionId: "sub-b" }));
+  await billing.deliver("evt-a");
+  await billing.deliver("evt-old", "sub-old");
+  await billing.deliver("evt-b", "sub-b");
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: ["sub-a"], customersClosed: ["customer-a"] });
+  expect([...billing.fake.cancellations]).toEqual([["receipt-1:cancel:sub-a", "sub-a"]]);
+  expect([...billing.fake.customerClosures]).toEqual([["receipt-1:close:customer-a", "customer-a"]]);
+  expect(await billing.service.getEntitlement("account-a")).toMatchObject({ state: "ended", grants: [], retentionEndsAt: billing.clock.nowMs + 30_000 });
+  expect(await billing.service.getEntitlement("account-b")).toMatchObject({ state: "active" });
+  // Asked again (a retried deletion), nothing is cancelled twice.
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: [], customersClosed: ["customer-a"] });
+  expect(billing.fake.cancellations.size).toBe(1);
+  expect(billing.fake.customerClosures.size).toBe(1);
+});
+
+it("throws a provider outage as it came, and the retry with the same operation cancels once", async () => {
+  const billing = await setup();
+  billing.fake.putSubscription(state());
+  await billing.deliver("evt-a");
+  billing.fake.unavailable = true;
+  await expect(billing.service.closeAccount("account-a", "receipt-1")).rejects.toBeInstanceOf(PaymentProviderUnavailableError);
+  expect(await billing.service.getEntitlement("account-a")).toMatchObject({ state: "active" });
+  billing.fake.unavailable = false;
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: ["sub-a"], customersClosed: ["customer-a"] });
+  expect(billing.fake.cancellations.size).toBe(1);
+  await expect(billing.service.closeAccount("", "receipt-1")).rejects.toMatchObject({ code: "invalid-request" });
 });
