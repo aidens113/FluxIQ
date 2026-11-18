@@ -1,8 +1,9 @@
 // Barrel for the `/api/security` routes' server logic: the read of the
 // workspace's activity (the IAM audit), its tenancy scope, its field
-// allow-list, its cursor and its per-request dependencies. The `route.ts`
-// files are Next entry points and stay thin.
-export { auditRouteDepsForRequest } from "./deps-for-request";
+// allow-list and its cursor. The route reads through the held workspace
+// authority (`withWorkspaceAccountRead`): the caller's workspace decides, and
+// the platform audit and identity directory are read on the primary instance.
+// The `route.ts` files are Next entry points and stay thin.
 export { authorizeAuditRoute } from "./authorize-audit-route";
 export { belongsToWorkspace } from "./belongs-to-workspace";
 export { formatCursor } from "./format-cursor";
