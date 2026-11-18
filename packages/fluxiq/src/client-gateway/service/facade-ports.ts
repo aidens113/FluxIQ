@@ -1,3 +1,4 @@
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
 import type { ClientGatewaySession } from "../contracts.ts";
 
 // The public service methods a collaborator is allowed to call back into.
@@ -13,5 +14,5 @@ import type { ClientGatewaySession } from "../contracts.ts";
 export type ClientGatewayFacadePorts = {
   ready(): Promise<void>;
   disconnect(sessionId: string, reason?: string): ClientGatewaySession | null;
-  revokeTrustedClient(trustedClientId: string, reason?: string): Promise<boolean>;
+  revokeTrustedClient(trustedClientId: string, reason?: string, revokedFor?: ClientGatewayRevocationReason | null): Promise<boolean>;
 };

@@ -168,7 +168,7 @@ export class ClientGatewayTrustGrant {
     for (const earlier of this.trustedClients.list()) {
       if (earlier.trustedClientId === granted.trustedClientId || earlier.clientId !== granted.clientId || earlier.approvedByUserId !== granted.approvedByUserId || !this.trustedClients.isActive(earlier)) continue;
       try {
-        await this.facade.revokeTrustedClient(earlier.trustedClientId, "the same browser was approved again");
+        await this.facade.revokeTrustedClient(earlier.trustedClientId, "the same browser was approved again", null);
       } catch (error) {
         this.audit.record("trust.revoke_failed", "An earlier trust of a browser approved again could not be ended; it still ends on any copy of its credential being used.", { trustedClientId: earlier.trustedClientId, error: error instanceof Error ? error.name : "unknown" });
       }

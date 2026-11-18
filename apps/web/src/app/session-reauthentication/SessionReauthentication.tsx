@@ -50,8 +50,16 @@ export function SessionReauthentication() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password, ...(totp ? { totp } : {}) })
       });
-      const body = await response.json() as { error?: string; requiresTotp?: boolean } | undefined;
+      const body = await response.json() as { error?: string; requiresTotp?: boolean; payload?: { requiresCredentialSetup?: boolean } } | undefined;
       if (!mounted.current) return;
+      if (response.ok && body?.payload?.requiresCredentialSetup) {
+        // The temporary credential restores no session: the interrupted request
+        // fails, and the page reloads onto the setup form, the only thing it opens.
+        setOpen(false);
+        resolveProgramAuthentication(false);
+        window.location.reload();
+        return;
+      }
       if (response.ok) {
         setOpen(false);
         resolveProgramAuthentication(true);
