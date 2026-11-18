@@ -1,4 +1,4 @@
-export type AutomationStudioCommandLedgerOperation = "claim" | "receipt" | "unknown";
+export type AutomationStudioCommandLedgerOperation = "claim" | "receipt" | "unknown" | "unsent_refusal";
 export type AutomationStudioCommandLedgerMutationProof = { commandId: string; operation: AutomationStudioCommandLedgerOperation; proofDigest: string };
 /** Informational observations cannot grant admission or consumed-result clearance. */
 export type AutomationStudioCommandRunObservation = {

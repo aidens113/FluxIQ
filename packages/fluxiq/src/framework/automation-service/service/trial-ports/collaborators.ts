@@ -5,6 +5,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../../runt
 import type { AutomationStudioCatalogue } from "../catalogue.ts";
 import type { AutomationStudioRunDatasets } from "../datasets/index.ts";
 import type { AutomationStudioPinnedPartGraphs, automationStudioRunGraphOptions } from "../runtime-session/index.ts";
+import type { AutomationStudioHostLeaseAuthority } from "../../../../runtime/project-agents/host-resources/index.ts";
 
 /**
  * The Automation Studio service's collaborators a trial of a build runs with
@@ -18,6 +19,8 @@ import type { AutomationStudioPinnedPartGraphs, automationStudioRunGraphOptions 
  * both read them.
  */
 export type AutomationStudioServiceTrialCollaborators = Readonly<{
+  hostLeaseAuthority?: AutomationStudioHostLeaseAuthority | undefined;
+  hostLeaseBinding?(): import("../../../../runtime/project-agents/host-resources/index.ts").AutomationStudioHostLeaseBinding | undefined;
   getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact>;
   /** The Flow's LLM execution dependency digest now. */
   dependencyDigest(projectId: string, flowId: string): Promise<string>;

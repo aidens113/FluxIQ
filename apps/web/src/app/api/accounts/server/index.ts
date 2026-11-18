@@ -4,7 +4,8 @@
 export { ACCOUNT_ROUTE_IAM_CONTRACTS } from "./iam-contracts";
 export { accountRouteContract } from "./contract-for";
 export type { AccountPlatform, AccountRouteDeps } from "./route-deps";
-export { accountRouteDepsForRequest } from "./deps-for-request";
+export { withAccountRouteDeps } from "./with-account-route-deps";
+export { belongsElsewhere } from "./belongs-elsewhere";
 export type { AccountsResponse } from "./accounts-response";
 export { assignableRoles } from "./assignable-roles";
 export { authorizeAccountRoute } from "./authorize-account-route";

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage, type ClientGatewaySession } from "../../client-gateway/index.ts";
 import { RuntimeService, ClientGatewayRuntimeTransport } from "../index.ts";
 import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, ClientGatewayCommandOutcome, type ClientGatewayCommandRecord } from "../../client-gateway/service/command-ledger/index.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../../client-gateway/service/command-ledger/index.ts";
 
 describe("ClientGatewayRuntimeTransport", () => {
   it("lifts a measured payload fact from ordinary and completed durable results without changing the wire result", async () => {
@@ -23,7 +24,9 @@ describe("ClientGatewayRuntimeTransport", () => {
             record = { ...record!, state: "unknown", unknownReason: reason };
             return structuredClone(record);
           },
-          read: async () => record && structuredClone(record)
+          read: async () => record && structuredClone(record),
+          refuseUnsent: async (claim, proof) => { record = { ...record!, state: "refused_unsent", refusal: { ...Unsent.read(proof, claim) } };
+            return record; }
         }
       }) });
       const paired = await pairGatewayClient(gateway, `extension.control.${durable}`, "user.web", { socket: durable });

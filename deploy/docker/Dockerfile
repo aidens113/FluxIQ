@@ -9,12 +9,15 @@
 # are runtime settings, never build arguments, so nothing private is baked in.
 # docs/operations/self-hosting.md is the operator's guide.
 #
-# Release builds pin NODE_IMAGE to a digest (node:22-bookworm-slim@sha256:...),
+# Release builds pin NODE_IMAGE to a digest (node:22-trixie-slim@sha256:...),
 # as the hosted production plan's supply-chain row requires; the default tag is
 # for local builds. Both stages use the same image, so the native sqlite3 the
 # build stage compiles or downloads matches the runtime's libc and architecture.
+# Debian 13 (trixie, glibc 2.41), not 12 (bookworm, glibc 2.36): sqlite3 6's
+# prebuilt Linux binary needs glibc 2.38, installs on bookworm without
+# complaint, and fails to load at `next build` ("GLIBC_2.38 not found").
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:22-trixie-slim
 ARG PNPM_VERSION=9.15.0
 
 # --- build: the whole workspace, built as CI builds it ----------------------
@@ -35,6 +38,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY apps/web/package.json ./apps/web/
+COPY packages/cloud/package.json ./packages/cloud/
 COPY packages/client-gateway-websocket/package.json ./packages/client-gateway-websocket/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/fluxiq/package.json ./packages/fluxiq/
@@ -51,15 +55,6 @@ COPY . .
 # cache runs every step uncached (scripts/build-cache/run-step.mjs).
 ENV FLUXIQ_WEB_STANDALONE=1
 RUN pnpm build
-
-# The client gateway bundle is loaded by a native import at runtime and keeps
-# `fluxiq` external (apps/web/scripts/build-client-gateway-server.mjs), so
-# Next's file tracing never sees what it imports. A production deploy of the
-# fluxiq package (its dist and its runtime dependencies, sqlite3 included)
-# serves it; the runtime stage keeps it at this same absolute path, so the
-# symlinks pnpm wrote inside it stay valid, and links it beside the bundle.
-# Selected by path: the repository root is also named "fluxiq".
-RUN pnpm --filter ./packages/fluxiq deploy --prod /opt/fluxiq-gateway-runtime
 
 # --- runtime: the standalone server, non-root, writable only at /data -------
 FROM ${NODE_IMAGE} AS runtime
@@ -88,14 +83,19 @@ WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone/ ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/.server-runtime ./apps/web/.server-runtime
-COPY --from=build /opt/fluxiq-gateway-runtime /opt/fluxiq-gateway-runtime
 COPY deploy/docker/healthcheck.mjs ./deploy/healthcheck.mjs
-# The gateway bundle's `import "fluxiq/server"` resolves through this link;
-# Node follows it to the deploy, whose own node_modules then serve fluxiq's
-# dependencies. The same deploy holds the operator command line
-# (/opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js).
-RUN mkdir -p ./apps/web/.server-runtime/node_modules \
-  && ln -s /opt/fluxiq-gateway-runtime ./apps/web/.server-runtime/node_modules/fluxiq
+COPY deploy/docker/one-core.mjs ./deploy/one-core.mjs
+# One copy of Core in the server process. The panel imports Core through Node
+# (apps/web/scripts/core-bridge), and the client gateway bundle, loaded by a
+# native import at runtime with `fluxiq` external, resolves `fluxiq/server` up
+# to the same apps/web/node_modules/fluxiq. The panel's traces carry what both
+# need (apps/web/scripts/core-trace fails a build whose traces lack it), so
+# the standalone output holds the one Core both load, at packages/fluxiq. The
+# image build fails if any of them resolves another copy, or if the operator
+# command line (packages/fluxiq/dist/platform/provisioning/cli/main.js, on the
+# same Core) cannot load.
+RUN node deploy/one-core.mjs apps/web/.next/server/chunks apps/web/.next/server/chunks/ssr apps/web/.server-runtime \
+  && node packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help > /dev/null
 
 # /data holds .fluxiq (accounts, workspaces, the generated setup code). It is
 # the only path the runtime user may write; run the container with a

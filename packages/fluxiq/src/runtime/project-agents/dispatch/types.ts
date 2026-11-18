@@ -4,6 +4,7 @@ import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import type { AutomationStudioProjectSubflowBrief } from "../contracts/index.ts";
 import type { AutomationStudioHostResourceLease, AutomationStudioHostResourcePort } from "../host-resources/index.ts";
+import type { AutomationStudioHostLeaseBinding } from "../host-resources/index.ts";
 import type { AutomationStudioProjectBuildRecordStore, AutomationStudioProjectBuildRef } from "../record/index.ts";
 import type { AutomationStudioProjectWholeTestTried } from "../single-subflow/index.ts";
 
@@ -104,6 +105,7 @@ export type AutomationStudioProjectDispatcherInput = {
   cancellation: AutomationStudioProjectDispatchCancellation;
   /** The domain's host-resource port; one scheduler per port, shared by every build on it. */
   host: AutomationStudioHostResourcePort;
+  leaseBinding?: AutomationStudioHostLeaseBinding | undefined;
   /** The project's one lasting-act ledger. */
   ledger: AutomationStudioSiteResetProjectLedger;
   ports: AutomationStudioProjectBriefPortFactory;

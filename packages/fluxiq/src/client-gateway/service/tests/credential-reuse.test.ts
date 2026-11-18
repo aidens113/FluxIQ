@@ -309,7 +309,9 @@ describe("a revoke while a reconnect is in flight", () => {
     await gateway.revokeTrustedClient(trust(gateway)?.trustedClientId ?? "", "person pressed Forget");
     letGo();
     await received;
-    expect(gateway.snapshot().sessions.find((entry) => entry.sessionId === session.sessionId)?.status).toBe("pairing_required");
+    // A person revoked it, so the reconnect is told so and closed rather than offered pairing (`revoked-credential.test.ts`).
+    expect(gateway.snapshot().sessions.find((entry) => entry.sessionId === session.sessionId)?.status).toBe("disconnected");
+    expect(gateway.outbound(session.sessionId).map((message) => message.type)).toEqual(["server.revoked", "server.disconnect"]);
     expect(gateway.outbound(session.sessionId).some((message) => message.type === "server.session_ready")).toBe(false);
     expect(heard.lastIndexOf("forgotten")).toBeGreaterThan(heard.lastIndexOf("rotating"));
     expect(heard.slice(heard.lastIndexOf("rotating"))).not.toContain("presented");

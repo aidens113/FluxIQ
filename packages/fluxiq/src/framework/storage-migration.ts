@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, rmdir, stat } from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import sqlite3 from "sqlite3";
+import { acquireMigrationLock } from "./migration-lock.ts";
 import {
   atomicWriteJson,
   initializeFluxIQStorage,
@@ -24,6 +24,10 @@ export type FluxIQStorageMigrationResult = {
   mergedDatabases: number;
 };
 
+/** What staging builds and the cutover moves into the root. */
+const PROMOTED_ENTRIES = ["global.sqlite", "artifacts", "domains"] as const;
+const PROMOTED_DIRECTORIES = ["artifacts", "domains"] as const;
+
 export async function rollbackFluxIQStorageMigration(fluxiqRoot: string): Promise<{ rolledBack: boolean; restoredRoots: string[] }> {
   const root = path.resolve(fluxiqRoot);
   const journalPath = path.join(root, ".migration", "v2", "journal.json");
@@ -33,65 +37,46 @@ export async function rollbackFluxIQStorageMigration(fluxiqRoot: string): Promis
     throw new Error("Storage layout v2 is already committed; automatic rollback is only available before the config.json commit marker.");
   }
   const restoredRoots: string[] = [];
-  if (journal.archiveRoot) {
-    for (const promoted of ["global.sqlite", "artifacts", "domains"]) {
-      await rm(path.join(root, promoted), { recursive: true, force: true });
-    }
-    for (const original of journal.legacyRoots) {
-      const archived = path.join(journal.archiveRoot, path.relative(root, original));
-      if (!await exists(archived)) continue;
-      if (await exists(original)) throw new Error(`Cannot roll back over an existing path: ${original}`);
-      await mkdir(path.dirname(original), { recursive: true });
-      await rename(archived, original);
-      restoredRoots.push(original);
-    }
+  // Only a cutover (stage "archived") puts anything in the root, and it removes only what it put there: a v1 root that ran keeps its own runtime store under artifacts/ (t932).
+  if (journal.stage === "archived") {
+    for (const promoted of journal.promoted ?? earlierPromotedPaths(root)) await rm(promoted, { recursive: true, force: true });
+    for (const entry of PROMOTED_DIRECTORIES) await removeIfEmptyDirectory(path.join(root, entry));
   }
+  // The archive is named before any root moves into it, so roots archived by a migration stopped part way through are restored too.
+  const archiveRoot = journal.archiveRoot ?? migrationArchiveRoot(root, journal);
+  for (const original of journal.legacyRoots) {
+    const archived = path.join(archiveRoot, path.relative(root, original));
+    if (!await exists(archived)) continue;
+    if (await exists(original)) throw new Error(`Cannot roll back over an existing path: ${original}`);
+    await mkdir(path.dirname(original), { recursive: true });
+    await rename(archived, original);
+    restoredRoots.push(original);
+  }
+  await removeIfEmptyDirectory(archiveRoot);
+  await removeIfEmptyDirectory(path.dirname(archiveRoot));
   await rm(path.join(root, ".migration"), { recursive: true, force: true });
   return { rolledBack: true, restoredRoots };
 }
 
 export async function migrateFluxIQStorage(input: { fluxiqRoot: string; activeDomainId?: string | null; externalOverrides?: string[] }): Promise<FluxIQStorageMigrationResult> {
-  const inspection = inspectFluxIQStorage(input);
-  if (inspection.layout === "v2") throw new Error("FluxIQ storage already uses layout v2.");
-  if (inspection.layout === "fresh") throw new Error("Fresh FluxIQ storage should be initialized with setup(), not migrated.");
-  if (inspection.layout === "uncommitted_v2") throw new Error("Uncommitted FluxIQ layout v2 must use adoptUncommittedFluxIQStorage(), not migrateStorage().");
-  if (inspection.externalOverrides.length) throw new Error(`Automatic migration does not move external storage overrides: ${inspection.externalOverrides.join(", ")}`);
-
-  const lockPath = path.join(inspection.fluxiqRoot, "migration.lock");
-  await mkdir(inspection.fluxiqRoot, { recursive: true });
-  const lock = await acquireMigrationLock(lockPath);
-  if (!lock) throw new Error(`FluxIQ storage migration is already locked: ${lockPath}`);
-  await lock.writeFile(JSON.stringify({ pid: process.pid, host: os.hostname(), startedAt: Date.now() }));
-  await lock.close();
+  const fluxiqRoot = assertMigratable(inspectFluxIQStorage(input)).fluxiqRoot;
+  const lockPath = path.join(fluxiqRoot, "migration.lock");
+  await mkdir(fluxiqRoot, { recursive: true });
+  if (!await acquireMigrationLock(lockPath)) throw new Error(`FluxIQ storage migration is already locked: ${lockPath}`);
   try {
-    return await runMigration(inspection, input.activeDomainId ?? null);
+    // Judged again once the lock is held: a migration another process finished meanwhile is never run a second time over its result.
+    return await runMigration(assertMigratable(inspectFluxIQStorage(input)), input.activeDomainId ?? null);
   } finally {
     await rm(lockPath, { force: true });
   }
 }
 
-async function acquireMigrationLock(lockPath: string): Promise<Awaited<ReturnType<typeof open>> | null> {
-  const initial = await open(lockPath, "wx").catch(() => null);
-  if (initial) return initial;
-  try {
-    const current = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown; host?: unknown };
-    const sameHost = current.host === os.hostname();
-    const pid = typeof current.pid === "number" ? current.pid : 0;
-    if (!sameHost || (pid > 0 && processIsAlive(pid))) return null;
-    await rm(lockPath, { force: true });
-    return await open(lockPath, "wx").catch(() => null);
-  } catch {
-    return null;
-  }
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
+function assertMigratable(inspection: FluxIQStorageInspection): FluxIQStorageInspection {
+  if (inspection.layout === "v2") throw new Error("FluxIQ storage already uses layout v2.");
+  if (inspection.layout === "fresh") throw new Error("Fresh FluxIQ storage should be initialized with setup(), not migrated.");
+  if (inspection.layout === "uncommitted_v2") throw new Error("Uncommitted FluxIQ layout v2 must use adoptUncommittedFluxIQStorage(), not migrateStorage().");
+  if (inspection.externalOverrides.length) throw new Error(`Automatic migration does not move external storage overrides: ${inspection.externalOverrides.join(", ")}`);
+  return inspection;
 }
 
 async function runMigration(inspection: FluxIQStorageInspection, activeDomainId: string | null): Promise<FluxIQStorageMigrationResult> {
@@ -138,15 +123,23 @@ async function runMigration(inspection: FluxIQStorageInspection, activeDomainId:
         await removeEmptyDirectories(stagedAutomationRoot);
       }
     }
-    await stageDomainDatabases(inspection.fluxiqRoot, stagingRoot);
+    await stageDomainDatabases(inspection.fluxiqRoot, activeDomainId, stagingRoot);
     journal.stage = "verified";
     journal.updatedAt = Date.now();
     await writeMigrationJournal(journalPath, journal);
   }
 
   const sourceTotals = await totalSize(journal.legacyRoots);
-  const archiveRoot = journal.archiveRoot ?? path.join(inspection.fluxiqRoot, "legacy", `v1-${journal.startedAt}`);
+  const archiveRoot = journal.archiveRoot ?? migrationArchiveRoot(inspection.fluxiqRoot, journal);
   if (journal.stage === "verified") {
+    // Nothing moves while the cutover would meet state already in one of its places; the root stays as it was, to resume once that path is cleared or to roll back.
+    const promoted = await promotionTargets(stagingRoot, inspection.fluxiqRoot);
+    const collisions = await promotionCollisions(inspection.fluxiqRoot, promoted, journal.legacyRoots);
+    if (collisions.length) throw new Error(`FluxIQ storage migration stopped before moving anything: layout v2 state already exists at ${collisions.join(", ")}.`);
+    journal.archiveRoot = archiveRoot;
+    journal.promoted = promoted;
+    journal.updatedAt = Date.now();
+    await writeMigrationJournal(journalPath, journal);
     await mkdir(archiveRoot, { recursive: true });
     for (const source of journal.legacyRoots) {
       if (!await exists(source)) continue;
@@ -155,23 +148,13 @@ async function runMigration(inspection: FluxIQStorageInspection, activeDomainId:
       await mkdir(path.dirname(destination), { recursive: true });
       await rename(source, destination);
     }
-    journal.archiveRoot = archiveRoot;
     journal.stage = "archived";
     journal.updatedAt = Date.now();
     await writeMigrationJournal(journalPath, journal);
   }
 
   if (journal.stage === "archived") {
-    for (const entry of ["global.sqlite", "artifacts", "domains"] as const) {
-      const source = path.join(stagingRoot, entry);
-      const destination = path.join(inspection.fluxiqRoot, entry);
-      const sourceExists = await exists(source);
-      const destinationExists = await exists(destination);
-      if (!sourceExists && destinationExists) continue;
-      if (!sourceExists) continue;
-      if (destinationExists) throw new Error(`Migration source and target both exist during cutover: ${destination}`);
-      await rename(source, destination);
-    }
+    for (const entry of PROMOTED_ENTRIES) await promoteStagedEntry(path.join(stagingRoot, entry), path.join(inspection.fluxiqRoot, entry));
     const configPath = await initializeFluxIQStorage(inspection.fluxiqRoot);
     journal.stage = "complete";
     journal.updatedAt = Date.now();
@@ -180,6 +163,72 @@ async function runMigration(inspection: FluxIQStorageInspection, activeDomainId:
     return { migrationId: journal.migrationId, configPath, archiveRoot, sourceFiles: sourceTotals.files, sourceBytes: sourceTotals.bytes, importedProgramDocuments, mergedDatabases };
   }
   throw new Error(`Unsupported migration resume stage: ${journal.stage}`);
+}
+
+/** Where a migration archives its legacy roots: named from the journal alone, so a resumed migration and a rollback find the same place. */
+function migrationArchiveRoot(fluxiqRoot: string, journal: FluxIQMigrationJournal): string {
+  return path.join(fluxiqRoot, "legacy", `v1-${journal.startedAt}`);
+}
+
+/**
+ * The places the cutover fills: a staged file's own place, and for a staged
+ * directory each of its children inside the root's directory of that name,
+ * which a v1 root that ran already holds (its runtime store is
+ * `artifacts/runtime`, outside every legacy root).
+ */
+async function promotionTargets(stagingRoot: string, fluxiqRoot: string): Promise<string[]> {
+  const targets: string[] = [];
+  for (const entry of PROMOTED_ENTRIES) {
+    const source = path.join(stagingRoot, entry);
+    if (await isDirectory(source)) targets.push(...(await readdir(source)).map((child) => path.join(fluxiqRoot, entry, child)));
+    else if (await exists(source)) targets.push(path.join(fluxiqRoot, entry));
+  }
+  return targets;
+}
+
+/** The targets already taken, and any promoted directory the root holds as something else. A place inside a legacy root is free by the cutover, because that root is archived first. */
+async function promotionCollisions(fluxiqRoot: string, targets: string[], legacyRoots: string[]): Promise<string[]> {
+  const archived = legacyRoots.map((root) => path.resolve(root));
+  const archivedFirst = (target: string) => archived.some((root) => target === root || target.startsWith(`${root}${path.sep}`));
+  const collisions: string[] = [];
+  for (const entry of PROMOTED_DIRECTORIES) {
+    const directory = path.join(fluxiqRoot, entry);
+    if (!archivedFirst(directory) && await exists(directory) && !await isDirectory(directory)) collisions.push(directory);
+  }
+  for (const target of targets) {
+    if (!archivedFirst(target) && await exists(target)) collisions.push(target);
+  }
+  return collisions;
+}
+
+/** Moves one staged entry into the root, a directory child by child so the root's own children stay; a resumed cutover moves only what is left. */
+async function promoteStagedEntry(source: string, destination: string): Promise<void> {
+  if (!await exists(source)) return;
+  if (!await isDirectory(source)) {
+    if (await exists(destination)) throw new Error(`Migration source and target both exist during cutover: ${destination}`);
+    await rename(source, destination);
+    return;
+  }
+  await mkdir(destination, { recursive: true });
+  for (const child of await readdir(source)) {
+    const target = path.join(destination, child);
+    if (await exists(target)) throw new Error(`Migration source and target both exist during cutover: ${target}`);
+    await rename(path.join(source, child), target);
+  }
+  await rmdir(source);
+}
+
+/**
+ * What a cutover journaled before `promoted` existed could have put in the
+ * root: it renamed whole entries, and only into places that were free, so a
+ * root's own `artifacts/` (its runtime store) was never one of them.
+ */
+function earlierPromotedPaths(fluxiqRoot: string): string[] {
+  return [path.join(fluxiqRoot, "global.sqlite"), path.join(fluxiqRoot, "domains"), path.join(fluxiqRoot, "artifacts", "automation-studio")];
+}
+
+async function removeIfEmptyDirectory(directory: string): Promise<void> {
+  if (await isDirectory(directory) && (await readdir(directory)).length === 0) await rmdir(directory);
 }
 
 async function migrateLegacyAutomationProjects(sourceRoot: string, targetRoot: string): Promise<void> {
@@ -297,12 +346,14 @@ async function importAutomationJson(automationRoot: string, databasePath: string
 
 async function mergeSQLiteDatabase(sourcePath: string, targetPath: string): Promise<void> {
   await mkdir(path.dirname(targetPath), { recursive: true });
+  const sidecarsBefore = await Promise.all(SQLITE_SIDECARS.map((suffix) => exists(`${sourcePath}${suffix}`)));
   const source = await openDatabase(sourcePath, true);
   const target = await openDatabase(targetPath);
   try {
     const tables = await all<{ name: string; sql: string }>(source, "select name, sql from sqlite_master where type = 'table' and name not like 'sqlite_%'");
     for (const table of tables) {
-      await run(target, table.sql);
+      // SQLite stores a table's CREATE text without IF NOT EXISTS, so a table an earlier source already staged is not created again (a v1 root's unscoped and domain-scoped databases share their tables).
+      if (!await get(target, "select 1 from sqlite_master where type = 'table' and name = ?", [table.name])) await run(target, table.sql);
       const columns = await all<{ name: string }>(source, `pragma table_info(${quoteIdentifier(table.name)})`);
       const names = columns.map((column) => column.name);
       const rows = await all<Record<string, unknown>>(source, `select * from ${quoteIdentifier(table.name)}`);
@@ -319,16 +370,35 @@ async function mergeSQLiteDatabase(sourcePath: string, targetPath: string): Prom
   } finally {
     await closeDatabase(source);
     await closeDatabase(target);
+    await removeReadSidecars(sourcePath, sidecarsBefore);
   }
 }
 
-async function stageDomainDatabases(fluxiqRoot: string, stagingRoot: string): Promise<void> {
-  const legacyDomainRoot = path.join(fluxiqRoot, "databases", "domains");
-  if (!await isDirectory(legacyDomainRoot)) return;
-  for (const entry of await readdir(legacyDomainRoot, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".sqlite")) continue;
-    const domainId = entry.name.replace(/\.sqlite$/i, "");
-    await mergeSQLiteDatabase(path.join(legacyDomainRoot, entry.name), path.join(stagingRoot, "domains", domainId, "domain.sqlite"));
+const SQLITE_SIDECARS = ["-wal", "-shm"] as const;
+
+/**
+ * A read-only connection to a WAL database leaves an empty `-wal` and its
+ * `-shm` beside it, which only a writer may delete. When the database had
+ * neither before the read, those two are the read's own and are removed, so
+ * an archived or rolled-back legacy root holds exactly the files it held.
+ */
+async function removeReadSidecars(databasePath: string, before: boolean[]): Promise<void> {
+  if (before.some(Boolean)) return;
+  const wal = `${databasePath}-wal`;
+  if (await isFile(wal) && (await stat(wal)).size > 0) return;
+  for (const suffix of SQLITE_SIDECARS) await rm(`${databasePath}${suffix}`, { force: true });
+}
+
+/** Layout v1 kept domain-scoped records beside each global database it used, the active domain's scoped tree included (`<domain>/databases/domains/`), so each is staged, not only archived. */
+async function stageDomainDatabases(fluxiqRoot: string, activeDomainId: string | null, stagingRoot: string): Promise<void> {
+  for (const globalDatabase of globalDatabaseSources(fluxiqRoot, activeDomainId)) {
+    const legacyDomainRoot = path.join(path.dirname(globalDatabase), "domains");
+    if (!await isDirectory(legacyDomainRoot)) continue;
+    for (const entry of await readdir(legacyDomainRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".sqlite")) continue;
+      const domainId = entry.name.replace(/\.sqlite$/i, "");
+      await mergeSQLiteDatabase(path.join(legacyDomainRoot, entry.name), path.join(stagingRoot, "domains", domainId, "domain.sqlite"));
+    }
   }
 }
 

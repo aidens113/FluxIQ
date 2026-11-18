@@ -4,4 +4,7 @@
 export { clientGatewayHostLeaseRefusal, type ClientGatewayHostLeaseRefusalCode } from "./refusal.ts";
 export { isClientGatewayHostLease } from "./shape.ts";
 export type { ClientGatewayHostLeaseSource } from "./source.ts";
+export type { ClientGatewayHostLeaseTarget } from "./target.ts";
+export type { ClientGatewayHostLeaseTargetSource } from "./target-source.ts";
+export { ClientGatewayHostLeaseAdmissionRefusal } from "./admission-refusal.ts";
 export { clientGatewayHostLeaseStamp, type ClientGatewayHostLeaseStamp } from "./stamp.ts";

@@ -319,10 +319,12 @@ export async function automationStudioCandidateTrialStart(request: Pick<Automati
   if (!hook) return { status: "not_reset" };
   // An offline trial has no live effects to put back, so it runs no start hook (header, Decision 6).
   if (ports.environment && ports.environment.kind !== "live") return { status: "not_reset" };
-  const lease = AutomationStudioHostLeaseScope.current();
-  if (lease && !AutomationStudioHostLeaseScope.gatewaySource.isCurrent(lease)) {
+  if (!ports.leaseBinding && AutomationStudioHostLeaseScope.current()) return { status: "failed", code: "candidate.trial_start_lease_unbound", failure: "the trial has no bound host lease authority" };
+  const lease = ports.leaseBinding?.current();
+  if (lease && !ports.leaseBinding!.isCurrent(lease)) {
     return { status: "failed", code: "candidate.trial_start_lease_stale", failure: "the host resource lease this trial ran under is no longer held" };
   }
+  if (!lease && ports.leaseBinding?.requiresLease()) return { status: "failed", code: "candidate.trial_start_lease_missing", failure: "the trial does not hold the host resource being used" };
   return await automationStudioLlmStepLogReset({ stage: "start_hook" }, async (): Promise<AutomationStudioCandidateTrialStart> => {
     try {
       const result = await hook({ projectId: ports.projectId, flowId: ports.flowId, candidateId: request.candidateId, revision: request.revision, digest: request.digest, ...(ports.startLocation ? { startLocation: ports.startLocation } : {}), ...(lease ? { lease: structuredClone(lease) } : {}), signal: request.signal });

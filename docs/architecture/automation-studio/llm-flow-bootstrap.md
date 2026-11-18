@@ -2613,7 +2613,7 @@ to it (`runtime/llm/evidence-loop/rerun/replacement.ts`). No other step's
 number changes: the replaced attempt stays listed as the receipt of what was
 replaced, at the end of the draft, carrying `replacedBy` (the rerun's id); the
 draft entry shows it as `replacedBy: <step number>` without the argument it ran
-with, and an amendment or rerun naming it is refused `not_a_kept_step` with
+with (every draft step line, replaced ones included, also shows the step's own `callId` when it has one, never a check's or a prior execution's), and an amendment or rerun naming it is refused `not_a_kept_step` with
 `replacedBy` and a `next` naming the step that replaced it
 (`runtime/flow-authoring/draft/amendment/replaced-attempt.ts`). The receipt used to sit
 just after the rerun, so every later step moved one on and its old argument
