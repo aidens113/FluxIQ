@@ -28,8 +28,12 @@ export function localSecretKeyUseAuthority(input: {
   keys: SecretKeysService;
   api: GlobalProgramApiRegistry;
   resolvePrincipal?: SecretKeyPrincipalAuthority;
-  /** Binds a `standing` principal to its stored grant. Absent, every standing use is refused. */
-  resolveStanding?: SecretKeyStandingGrantResolver;
+  /**
+   * Binds a `standing` principal to its stored grant. Required: a host that
+   * left it out once refused every Flow's result check and repair silently,
+   * so leaving it out is now a type error instead.
+   */
+  resolveStanding: SecretKeyStandingGrantResolver;
 }): SecretKeyUseAuthority {
   /** The person as the identity directory has them now, with the permissions the channel they act through allows. */
   const directoryActor = async (userId: string, sessionId: string, client: boolean): Promise<ProgramApiActor | null> => {
@@ -50,7 +54,7 @@ export function localSecretKeyUseAuthority(input: {
       // session to validate: instead the grant itself must still be stored,
       // the person must still be enabled, and a client they granted it
       // through must still be vouched for by the gateway.
-      const grant = await input.resolveStanding?.(principal);
+      const grant = await input.resolveStanding(principal);
       if (!grant || grant.keyId !== key.id || !(grant.expiresAtMs > Date.now())) return null;
       const viaClient = grant.grantedThrough.kind === "client" ? grant.grantedThrough.trustedClientId : undefined;
       if (viaClient !== undefined && !await input.gateway.vouchesForClient(viaClient, principal.userId)) return null;
@@ -84,13 +88,20 @@ export function localSecretKeyUseAuthority(input: {
     const ownerUserId = key.createdBy;
     if (!ownerUserId) return null;
     if (ownerUserId !== principal.userId) {
-      // A standing grant pays only with the person's own key: the workspace
-      // assistant's delegation never reaches a Flow nobody is watching.
-      if (principal.kind === "standing" || principal.purpose !== "workspace-assistant") return null;
+      // Another person's key pays only as the workspace's lent key: chosen for
+      // the workspace and offered by its holder, both read again at this use,
+      // so withdrawing either stops it. That holds for the assistant and for a
+      // Flow's standing result check or repair alike, which uses the key the
+      // person's chats use (the grant names it, and must still match above).
+      if (principal.kind !== "standing" && principal.purpose !== "workspace-assistant") return null;
       const choice = await input.keys.modelKeys.resolveAssistant();
       if (!choice.ok || choice.keyId !== key.id || choice.ownerId !== ownerUserId || !choice.chosenForWorkspace || !choice.offeredByHolder) return null;
-      // The holder's explicit offer delegates this one assistant use, never key reveal or arbitrary Flow use.
-      if (!(await input.api.authorize({ actor, action: "studio:SendPanelMessage", permission: "programs.write", resources: { kind: "user", self: true }, programId: "automation-studio" })).allowed) return null;
+      // The offer delegates only this use, never key reveal: the assistant's
+      // message, or the checking of a Flow the person may still configure.
+      const delegated = principal.kind === "standing"
+        ? { action: "studio:UpdateFlowSettings", permission: "flows.write", resources: { kind: "project-child", projectId: principal.projectId, child: "flow", childId: principal.flowId }, programId: "automation-studio" } as const
+        : { action: "studio:SendPanelMessage", permission: "programs.write", resources: { kind: "user", self: true }, programId: "automation-studio" } as const;
+      if (!(await input.api.authorize({ actor, ...delegated })).allowed) return null;
     } else if (!(await input.api.authorize({ actor, action: "secrets:UseKey", permission: "programs.write", resources: { kind: "key", keyId: key.id }, programId: "secret-keys" })).allowed) return null;
     return { ownerUserId, expiresAtMs };
   };

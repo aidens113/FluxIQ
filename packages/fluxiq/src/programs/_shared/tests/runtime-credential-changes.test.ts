@@ -3,6 +3,7 @@
 // port. These tests run at the production derivation cost. "admin" is the
 // bootstrap administrator's default password; every other password is a dummy.
 
+import { createPasswordSealedKey } from "../../secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,7 +32,7 @@ describe("global runtime credential-change wiring", () => {
     try {
       const runtime = track(open, createGlobalProgramRuntime(testPaths(root)));
       const login = await runtime.identityAccess.authenticate({ username: "admin", password: BOOTSTRAP_PASSWORD });
-      const key = await runtime.secretKeys.createKey({ name: "Provider", value: SECRET_VALUE, authorizationPassword: BOOTSTRAP_PASSWORD, createdBy: login.user.id });
+      const key = await createPasswordSealedKey(runtime.secretKeys, { name: "Provider", value: SECRET_VALUE, authorizationPassword: BOOTSTRAP_PASSWORD, createdBy: login.user.id });
 
       await runtime.identityAccess.setPasswordAuthorized({
         userId: login.user.id,
@@ -68,7 +69,7 @@ describe("global runtime credential-change wiring", () => {
       const admin = await runtime.identityAccess.authenticate({ username: "admin", password: BOOTSTRAP_PASSWORD });
       await runtime.identityAccess.upsertUser({ id: "user.two", username: "user-two", displayName: "User Two", roleId: "admin", password: USER_TWO_PASSWORD });
       const userTwo = await runtime.identityAccess.authenticate({ username: "user-two", password: USER_TWO_PASSWORD });
-      const key = await runtime.secretKeys.createKey({ name: "User two key", value: SECRET_VALUE, authorizationPassword: USER_TWO_PASSWORD, createdBy: userTwo.user.id });
+      const key = await createPasswordSealedKey(runtime.secretKeys, { name: "User two key", value: SECRET_VALUE, authorizationPassword: USER_TWO_PASSWORD, createdBy: userTwo.user.id });
 
       await runtime.identityAccess.setPasswordAuthorized({
         userId: "user.two",

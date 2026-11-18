@@ -30,6 +30,30 @@ describe("which saved key a person's call uses", () => {
     expect(chooseAutomationStudioCallerModelKey({ keys: [keys[0]!, keys[2]!], userId: "u2" })).toMatchObject({ ok: true, key: { id: "legacy" } });
   });
 
+  it("puts the person's own saved choice ahead of a lent workspace key, which still serves someone with neither", () => {
+    const keys = [key("team", { provider: "Anthropic", createdBy: "owner" }), key("mine", { provider: "DeepSeek", createdBy: "u2" })];
+    const lent = { keyId: "team", ownerId: "owner", chosenForWorkspace: true, offeredByHolder: true, model: "claude-haiku-5-5" };
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u2", preferred: lent, ownKeyId: "mine" })).toEqual(expect.objectContaining({ ok: true, key: expect.objectContaining({ id: "mine" }), provider: "deepseek" }));
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u2", preferred: lent, ownKeyId: "mine" })).not.toHaveProperty("keyOwnerUserId");
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u3", preferred: lent })).toMatchObject({ ok: true, key: { id: "team" }, keyOwnerUserId: "owner", model: "claude-haiku-5-5" });
+  });
+
+  it("ignores an own choice that names another person's key, or a key turned off, and chooses as if there were none", () => {
+    const keys = [key("team", { provider: "Anthropic", createdBy: "owner" }), key("off", { provider: "DeepSeek", createdBy: "u2", enabled: false })];
+    const lent = { keyId: "team", ownerId: "owner", chosenForWorkspace: true, offeredByHolder: true };
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u2", preferred: lent, ownKeyId: "team" })).toMatchObject({ ok: true, key: { id: "team" }, keyOwnerUserId: "owner" });
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u2", preferred: lent, ownKeyId: "off" })).toMatchObject({ ok: true, key: { id: "team" }, keyOwnerUserId: "owner" });
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u2", ownKeyId: "off" })).toMatchObject({ ok: false, status: "no_key" });
+  });
+
+  it("keeps the workspace's model only when the person's own choice is the workspace's key", () => {
+    const keys = [key("mine", { provider: "Anthropic", createdBy: "u1" }), key("other", { provider: "Anthropic", createdBy: "u1" })];
+    expect(chooseAutomationStudioCallerModelKey({ keys, userId: "u1", preferred: { keyId: "mine", model: "claude-opus-5-5" }, ownKeyId: "mine" })).toMatchObject({ key: { id: "mine" }, model: "claude-opus-5-5" });
+    const elsewhere = chooseAutomationStudioCallerModelKey({ keys, userId: "u1", preferred: { keyId: "mine", model: "claude-opus-5-5" }, ownKeyId: "other" });
+    expect(elsewhere).toMatchObject({ key: { id: "other" } });
+    expect(elsewhere.ok && elsewhere.model).not.toBe("claude-opus-5-5");
+  });
+
   it("says no key only when no enabled model key Core can call exists", () => {
     const none = { ok: false, status: "no_key", message: AUTOMATION_STUDIO_NO_MODEL_KEY_MESSAGE };
     expect(chooseAutomationStudioCallerModelKey({ keys: [], userId: "u1" })).toEqual(none);

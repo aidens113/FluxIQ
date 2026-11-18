@@ -15,7 +15,9 @@ import {
   legacyV1Record,
   serviceRecord,
   waitUntil,
-  type MemoryRepository
+  type MemoryRepository,
+  createPasswordSealedKey,
+  rotatePasswordSealedKey
 } from "./secret-key-fixtures.ts";
 
 const PASSWORD = "dummy-password";
@@ -51,8 +53,11 @@ describe("SecretKeysService seal upgrade", () => {
 
     const stored = store.stored(record.id)!;
     expect(stored.sealed).toMatchObject({ version: 2, kdfParams: { N: WEAK_N, r: 8, p: 1, keyLength: 32 }, sealedByUserId: "user.one" });
-    expect(stored.sealed.salt).not.toBe(record.sealed.salt);
-    expect(decodeKdfSalt(stored.sealed.salt)?.length).toBe(16);
+    const resealed = stored.sealed;
+    const original = record.sealed;
+    if (resealed.version !== 2 || original.version === 3) throw new Error("A version 1 key re-seals as version 2.");
+    expect(resealed.salt).not.toBe(original.salt);
+    expect(decodeKdfSalt(resealed.salt)?.length).toBe(16);
     expect(stored).toMatchObject({ updatedAtMs: 1000, lastRotatedAtMs: 1000 });
     expect(store.putCount()).toBe(1);
     expect(probe.count(LEGACY_V1_SCRYPT_PARAMETERS.N)).toBe(1);
@@ -172,7 +177,7 @@ describe("SecretKeysService seal upgrade", () => {
 
     const unlocking = unlock(service, "session.one");
     await sealing.started;
-    await service.rotateKey({ id: record.id, value: "rotated-value", authorizationPassword: PASSWORD, actorUserId: "user.one", nowMs: 2000 });
+    await rotatePasswordSealedKey(service, { id: record.id, value: "rotated-value", authorizationPassword: PASSWORD, actorUserId: "user.one", nowMs: 2000 });
     const rotated = serviceRecord(service, record.id)?.sealed;
     sealing.release();
     await unlocking;
@@ -190,7 +195,7 @@ describe("SecretKeysService seal upgrade", () => {
 
     const unlocking = unlock(service, "session.one");
     await writing.started;
-    const rotating = service.rotateKey({ id: record.id, value: "rotated-value", authorizationPassword: PASSWORD, actorUserId: "user.one", nowMs: 2000 });
+    const rotating = rotatePasswordSealedKey(service, { id: record.id, value: "rotated-value", authorizationPassword: PASSWORD, actorUserId: "user.one", nowMs: 2000 });
     // Neither operation publishes an unpersisted seal while the first write is held.
     expect(serviceRecord(service, record.id)?.lastRotatedAtMs).toBe(record.lastRotatedAtMs);
     writing.release();
@@ -205,7 +210,7 @@ describe("SecretKeysService seal upgrade", () => {
   it("never rewrites a seal stronger than its write parameters", async () => {
     const store = createMemoryRepository();
     const production = new SecretKeysService({ repository: store.repository });
-    const key = await production.createKey({ name: "Strong", value: "strong-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(production, { name: "Strong", value: "strong-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
     const sealed = store.stored(key.id)?.sealed;
     expect(sealed).toMatchObject({ version: 2, kdfParams: { N: 2 ** 17 } });
     const puts = store.putCount();

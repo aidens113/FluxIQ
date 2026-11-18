@@ -11,10 +11,11 @@ import type { ModelKeyAvailability } from "./availability.ts";
  * - `no_key`: no model key this person may use exists. The only status that says to add one.
  * - `key_unopenable`: the key exists but could not be opened on this server (`unopenableCode` says why).
  * - `not_permitted`: a key exists, but this person may not use it (IAM, or another person's key not chosen and offered for the workspace).
- * - `provider_refused`: the provider refused the key on its last call (a bad or revoked key, or an account with no credit).
+ * - `provider_refused`: the provider refused the key on its last call or check (a bad or revoked key).
+ * - `no_credit`: the provider says the account behind the key has no credit left (a balance refusal on a call, or a free check).
  * - `provider_unreachable`: the provider could not be reached on the last call.
  */
-export const MODEL_ACCESS_STATUSES = ["ready", "no_key", "key_unopenable", "not_permitted", "provider_refused", "provider_unreachable"] as const;
+export const MODEL_ACCESS_STATUSES = ["ready", "no_key", "key_unopenable", "not_permitted", "provider_refused", "no_credit", "provider_unreachable"] as const;
 export type ModelAccessStatus = (typeof MODEL_ACCESS_STATUSES)[number];
 
 export const MODEL_ACCESS_PROVIDERS = ["anthropic", "deepseek"] as const;
@@ -28,7 +29,7 @@ const UNOPENABLE_CODES: readonly ModelAccessUnopenableCode[] = ["legacy_recovery
 export type ModelAccessKey = { id?: string; name: string; provider: ModelAccessProvider; model: string };
 
 /** How the last model call on the key went, since the key last changed. */
-export type ModelAccessCallOutcome = "answered" | "provider_refused" | "provider_unreachable";
+export type ModelAccessCallOutcome = "answered" | "provider_refused" | "no_credit" | "provider_unreachable";
 export type ModelAccessLastCall = { outcome: ModelAccessCallOutcome; atMs: number };
 
 export type ModelAccessState = {
@@ -44,7 +45,7 @@ export type ModelAccessState = {
 };
 
 const MAX_MESSAGE_CHARS = 600;
-const NEEDS_KEY: ReadonlySet<ModelAccessStatus> = new Set(["ready", "key_unopenable", "provider_refused", "provider_unreachable"]);
+const NEEDS_KEY: ReadonlySet<ModelAccessStatus> = new Set(["ready", "key_unopenable", "provider_refused", "no_credit", "provider_unreachable"]);
 
 /** The state as a paired client receives it: the same, without the key's id. */
 export function pairedClientModelAccessState(state: ModelAccessState): ModelAccessState {
@@ -72,7 +73,7 @@ export function readModelAccessState(value: unknown): ModelAccessState | null {
   if (typed === "no_key" && key) return null;
   const lastCall = record.lastCall === null ? null : readLastCall(record.lastCall);
   if (lastCall === undefined) return null;
-  if ((typed === "provider_refused" || typed === "provider_unreachable") && lastCall?.outcome !== typed) return null;
+  if ((typed === "provider_refused" || typed === "no_credit" || typed === "provider_unreachable") && lastCall?.outcome !== typed) return null;
   const code = record.unopenableCode;
   if (typed === "key_unopenable") {
     if (!UNOPENABLE_CODES.includes(code as ModelAccessUnopenableCode)) return null;
@@ -95,7 +96,7 @@ function readLastCall(value: unknown): ModelAccessLastCall | undefined {
   const record = recordOf(value);
   if (!record) return undefined;
   const { outcome, atMs } = record;
-  if (outcome !== "answered" && outcome !== "provider_refused" && outcome !== "provider_unreachable") return undefined;
+  if (outcome !== "answered" && outcome !== "provider_refused" && outcome !== "no_credit" && outcome !== "provider_unreachable") return undefined;
   if (typeof atMs !== "number" || !Number.isFinite(atMs) || atMs < 0) return undefined;
   return { outcome, atMs };
 }

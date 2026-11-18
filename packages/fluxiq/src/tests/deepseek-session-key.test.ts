@@ -1,3 +1,4 @@
+import { createPasswordSealedKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../programs/secret-keys/index.ts";
 import { heldSessionPorts } from "./held-session-ports.ts";
@@ -25,7 +26,7 @@ function secretKeys(): SecretKeysService {
 }
 
 async function key(service: SecretKeysService, value: string, password: string, nowMs: number, createdBy?: string): Promise<string> {
-  const created = await service.createKey({ name: `DeepSeek ${nowMs}`, kind: "llm", provider: "deepseek", value, authorizationPassword: password, nowMs, ...(createdBy ? { createdBy } : {}) });
+  const created = await createPasswordSealedKey(service, { name: `DeepSeek ${nowMs}`, kind: "llm", provider: "deepseek", value, authorizationPassword: password, nowMs, ...(createdBy ? { createdBy } : {}) });
   return created.id;
 }
 

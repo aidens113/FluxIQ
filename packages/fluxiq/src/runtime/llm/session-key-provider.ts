@@ -103,12 +103,14 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
       resolveSecret: async (request) => {
         if (request.projectId !== input.projectId || request.flowId !== input.flowId) throw new Error("LLM request scope mismatch.");
         // Resolved now, for this call, for the caller's authenticated principal.
-        const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata);
+        const flowKeyId = (await options.flowSecretKeyId?.({ projectId: input.projectId, flowId: input.flowId })) ?? metadataKeyId(input.metadata) ?? input.lentKey?.keyId;
+        // A lent key is released as its holder's, for the workspace; the release refuses it without both consents.
+        const lent = input.lentKey && flowKeyId === input.lentKey.keyId ? { keyOwnerUserId: input.lentKey.ownerUserId } : {};
         let secret: string;
         try {
           secret = await releaseAutomationStudioSessionProviderKey(options.ports, { userId: caller.actorUserId, sessionId: caller.actorSessionId }, {
             provider: providerId, model,
-            ...(flowKeyId ? { flowKeyId } : {})
+            ...(flowKeyId ? { flowKeyId } : {}), ...lent
           });
         } catch (error) {
           if (savedKeyUnavailable(error)) locked.set(request.requestId, error);

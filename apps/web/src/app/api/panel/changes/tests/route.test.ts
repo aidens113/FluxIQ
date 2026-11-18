@@ -366,6 +366,77 @@ describe("GET /api/panel/changes: threads and activity", () => {
     await readerB.cancel();
   });
 
+  describe("the model-access topic, from each workspace's own runtime", () => {
+    /** A source like the one the program runtime holds as `modelAccessChanges`, counting who listens. */
+    const source = () => {
+      const heard = new Set<() => void>();
+      return {
+        heard,
+        signal: () => {
+          for (const listener of [...heard]) listener();
+        },
+        modelAccessChanges: {
+          subscribe: (listener: () => void) => {
+            heard.add(listener);
+            return () => {
+              heard.delete(listener);
+            };
+          }
+        }
+      };
+    };
+    const hold = (instance: object, held: { modelAccessChanges: object } | undefined) => {
+      if (held) Object.assign(instance, { modelAccessChanges: held.modelAccessChanges });
+      else delete (instance as { modelAccessChanges?: unknown }).modelAccessChanges;
+    };
+    beforeEach(() => vi.stubEnv("FLUXIQ_PROFILE", "local"));
+    afterEach(() => {
+      hold(runtime.tenantA.programs, undefined);
+      hold(runtime.tenantB.programs, undefined);
+    });
+
+    it("tells a panel caller to read model access again when its workspace's runtime signals, and never another workspace's", async () => {
+      const a = source();
+      const b = source();
+      hold(runtime.tenantA.programs, a);
+      hold(runtime.tenantB.programs, b);
+      const reader = await openTopics(changesRequest());
+      expect([a.heard.size, b.heard.size]).toEqual([1, 0]);
+      b.signal();
+      await flush();
+      const next = chunk(reader);
+      a.signal();
+      a.signal();
+      expect(await next).toBe('event: model-access\ndata: {"version":1}\n\n');
+      await reader.cancel();
+      await vi.waitFor(() => expect(runtime.releases.a).toHaveBeenCalledOnce());
+      expect(a.heard.size).toBe(0);
+    });
+
+    it("subscribes to nothing, and streams the other topics as before, while the runtime has no model-access signal", async () => {
+      hold(runtime.tenantA.programs, { modelAccessChanges: { subscribe: "not a function" } });
+      const reader = await openTopics(changesRequest());
+      const next = chunk(reader);
+      threadsA.signal({ kind: "project", projectId: "same-project" }, "conversation.mine");
+      expect(await next).toBe('event: conversation\ndata: {"conversationId":"conversation.mine","version":1}\n\n');
+      await reader.cancel();
+      hold(runtime.tenantA.programs, undefined);
+      const again = await openTopics(changesRequest());
+      const after = chunk(again);
+      threadsA.signal({ kind: "project", projectId: "same-project" }, "conversation.mine");
+      expect(await after).toBe('event: conversation\ndata: {"conversationId":"conversation.mine","version":1}\n\n');
+      await again.cancel();
+    });
+
+    it("tells a paired browser nothing of it: model access reaches it over the gateway socket", async () => {
+      const a = source();
+      hold(runtime.tenantA.programs, a);
+      const { reader } = await open(paired());
+      expect(a.heard.size).toBe(0);
+      await reader.cancel();
+    });
+  });
+
   it("tells a paired browser of no thread or activity: those reach it over the gateway socket", async () => {
     vi.stubEnv("FLUXIQ_PROFILE", "local");
     const { reader } = await open(paired());

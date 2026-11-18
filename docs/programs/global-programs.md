@@ -81,6 +81,8 @@ Current behavior:
   same credential recheck before encrypted rows can be viewed.
 - create, edit, rotate, reveal, and delete are mutually exclusive operations in the browser, retain retryable errors, and cannot be submitted twice by rapid input;
 - key filters reconcile detail to a visible key and clear stale detail after deletion.
+- saving a model key (`save-model-key`) makes it what the saving person's own chats, Flows, model-access state and panel assistant use, and changes nobody else's: the workspace's assistant key and model stay as an owner or administrator chose them, except that the first key saved into a workspace with no assistant key at all becomes it. A person's own saved choice comes before the workspace's key for their own calls; removing the workspace's chosen key leaves the workspace with none ("No key" for those who relied on it), never another person's key;
+- a key its holder offered to the workspace, and an owner or administrator chose for it, may pay for members' chats, Flows and their Flows' standing result checks; withdrawing the offer stops it at the next use.
 
 Planned improvements:
 
