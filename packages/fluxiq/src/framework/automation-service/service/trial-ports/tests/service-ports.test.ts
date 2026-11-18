@@ -30,15 +30,17 @@ describe("a service's whole-candidate trial ports, outside a build", () => {
   it("equal the build's composition member for member, with the judge given, the binding's view keys once each and no start hook", async () => {
     const owner = {};
     const { collaborators } = fakeCollaborators({ binding: BINDING });
-    AutomationStudioServiceTrialCollaboratorRegistry.adopt(owner, collaborators);
+    // A build composes from the collaborators as adopted, which carry the owner's own lease authority.
+    const adopted = AutomationStudioServiceTrialCollaboratorRegistry.adopt(owner, collaborators);
 
     const ports = await automationStudioServiceWholeTrialPorts(owner as AutomationStudioService, INPUT);
 
     const { registry, resolution } = automationStudioServiceRegistryResolution(undefined, PARENT.scope);
-    const environment = automationStudioServiceTrialEnvironment(collaborators, { projectId: PROJECT, flowId: FLOW, sourceInstructionIds: ["instruction.1"], startLocation: "https://start.test/", registry, resolution, observedStateKeys: ["read.view", "read.other"] });
+    const environment = automationStudioServiceTrialEnvironment(adopted, { projectId: PROJECT, flowId: FLOW, sourceInstructionIds: ["instruction.1"], startLocation: "https://start.test/", registry, resolution, observedStateKeys: ["read.view", "read.other"] });
     const built = automationStudioWholeTrialPorts({ environment, binding: BINDING, judge });
     expect(Object.keys(ports).sort()).toEqual(Object.keys(built).sort());
     expect(ports.judge).toBe(judge);
+    expect(ports.leaseBinding).toBe(built.leaseBinding);
     expect(ports.prepareStart).toBeUndefined();
     expect(ports.observedStateKeys).toEqual(["read.view", "read.other"]);
     expect(ports.deniedEvidenceKeys).toEqual(built.deniedEvidenceKeys);

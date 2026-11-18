@@ -66,7 +66,7 @@ export async function runProjectPartNow(deps: AutomationStudioProjectPartsDepend
   // A part that is not there is answered as one: nothing asks who is on the page for it.
   if (!part) return await guarded(deps, input, closure, inputs);
   return await projectPartWhileDriving({
-    hostResources: executor.hostRuntime?.hostResources, holder: input.newRunId ?? randomUUID(), ports: deps.run.driving, projectId: input.projectId, caller: input.caller,
+    hostResources: executor.hostRuntime?.hostResources, leaseBinding: collaborators.hostLeaseBinding?.() ?? (executor.io && collaborators.hostLeaseAuthority ? collaborators.hostLeaseAuthority.forDomain(executor.io.domainId) : undefined), holder: input.newRunId ?? randomUUID(), ports: deps.run.driving, projectId: input.projectId, caller: input.caller,
     work: async () => await guarded(deps, input, closure, inputs)
   });
 }

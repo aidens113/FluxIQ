@@ -11,6 +11,7 @@ import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../.
 import type { AutomationStudioFactCondition, AutomationStudioTargetReacquireRequest } from "../../../../../../runtime/automation-host/contracts/index.ts";
 import type { AutomationStudioHostResourcePort, AutomationStudioHostRuntimeBoundary } from "../../../../../../runtime/automation-host/index.ts";
 import type { AutomationStudioNativeNodeRuntime } from "../../../../../../runtime/native-nodes/index.ts";
+import { AutomationStudioHostLeaseAuthority, type AutomationStudioHostLeaseBinding } from "../../../../../../runtime/project-agents/host-resources/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../../../../persistence/automation/index.ts";
 import { AutomationStudioProjectParts, saveProjectPartsOfAppliedFlow, type AutomationStudioProjectPartRunPorts, type AutomationStudioProjectPartsPorts } from "../../index.ts";
 
@@ -215,6 +216,7 @@ function nativeOf(page: RowsPage, domain: RowsDomain, moves: ReadonlySet<string>
 }
 
 export type RowsHarness = {
+  leaseBinding: AutomationStudioHostLeaseBinding;
   page: RowsPage;
   domain: RowsDomain;
   parts: AutomationStudioProjectParts;
@@ -229,6 +231,7 @@ export type RowsHarness = {
 };
 
 export async function openRowsHarness(options: { rows?: Row[]; hostResources?: AutomationStudioHostResourcePort; moves?: readonly string[]; host?: Partial<AutomationStudioHostRuntimeBoundary>; noMatcher?: boolean } = {}): Promise<RowsHarness> {
+  const leaseBinding = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.parts");
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-part-rows-test-"));
   const pool = new AutomationStudioProjectDatabasePool({ rootDir });
   const page: RowsPage = { rows: options.rows ?? [{ key: "a", words: "first" }, { key: "b", words: "second" }, { key: "c", words: "third" }], noControl: new Set(), cannotTell: new Set() };
@@ -238,6 +241,7 @@ export async function openRowsHarness(options: { rows?: Row[]; hostResources?: A
   const moves = new Set(options.moves ?? []);
   const run: AutomationStudioProjectPartRunPorts = {
     collaborators: () => ({
+      hostLeaseBinding: () => leaseBinding,
       catalogue: () => ({ listPublishedFlowSnapshots: async () => [], listFlowPublicationRecords: async () => [] }),
       writeRuntimeSession: async (_projectId: string, session: AutomationStudioRuntimeSession) => {
         sessions.push(structuredClone(session));
@@ -252,7 +256,7 @@ export async function openRowsHarness(options: { rows?: Row[]; hostResources?: A
   };
   const parts = new AutomationStudioProjectParts({ pool, ports: {} as unknown as AutomationStudioProjectPartsPorts, run });
   return {
-    page, domain, parts, sessions, otherRuns, pool,
+    page, domain, parts, sessions, otherRuns, pool, leaseBinding,
     executor: () => run.collaborators()!.executor(),
     save: async (graphs, flowId = "flow.source") => {
       const saved = await saveProjectPartsOfAppliedFlow({ pool, projectId: PROJECT, flowId, requestWords: "do what a person asked", startLocation: `${SITE}/start`, subflows: graphs.map((graph) => ({ subflow: subflowOf(graph.name, flowId), graphFlow: graph })) });

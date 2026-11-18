@@ -1,11 +1,12 @@
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioHostResourcePort } from "../../../../runtime/automation-host/index.ts";
-import { AutomationStudioHostLeaseScope, automationStudioProjectHostLeaseScope } from "../../../../runtime/project-agents/index.ts";
+import { automationStudioProjectHostLeaseScope, type AutomationStudioHostLeaseBinding } from "../../../../runtime/project-agents/index.ts";
 
 /** What telling whether another run holds the project's page reads. */
 export type AutomationStudioPageHeldPorts = {
   /** The host's resource port; absent on a host with nothing to lease, where only sessions can say. */
   hostResources: AutomationStudioHostResourcePort | undefined;
+  leaseBinding?: AutomationStudioHostLeaseBinding | undefined;
   listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]>;
 };
 
@@ -28,9 +29,10 @@ export const AUTOMATION_STUDIO_PAGE_CHECK_FAILED_MESSAGE = "FluxIQ could not che
  */
 export function automationStudioPageHeldReader(ports: AutomationStudioPageHeldPorts): (projectId: string) => Promise<boolean> {
   return async (projectId) => {
-    if (AutomationStudioHostLeaseScope.current()) return false;
+    const lease = ports.leaseBinding?.current();
+    if (lease && ports.leaseBinding!.isCurrent(lease)) return false;
     if (ports.hostResources) {
-      const { scheduler } = automationStudioProjectHostLeaseScope(ports.hostResources);
+      const { scheduler } = automationStudioProjectHostLeaseScope(ports.hostResources, ports.leaseBinding);
       if (scheduler.snapshot().held.length >= scheduler.capacity) return true;
     }
     let sessions: AutomationStudioRuntimeSession[];

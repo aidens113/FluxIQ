@@ -19,7 +19,7 @@ export type AutomationStudioProjectPartOpenRun = { gate: AutomationStudioRunCont
 /** What a part run reaches of the service, each read when a run asks for it. */
 export type AutomationStudioProjectPartRunPorts = {
   /** The executor's parts, sessions, datasets and catalogue every run of the service is made from. */
-  collaborators(): Pick<AutomationStudioServiceTrialCollaborators, "catalogue" | "writeRuntimeSession" | "executor" | "runDatasets" | "conversations"> | undefined;
+  collaborators(): Pick<AutomationStudioServiceTrialCollaborators, "catalogue" | "writeRuntimeSession" | "executor" | "runDatasets" | "conversations" | "hostLeaseAuthority" | "hostLeaseBinding"> | undefined;
   /** Registers the run so a person can pause and stop it as they can any other. */
   openRun(projectId: string, runId: string, abort: AbortController): AutomationStudioProjectPartOpenRun;
   getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null>;

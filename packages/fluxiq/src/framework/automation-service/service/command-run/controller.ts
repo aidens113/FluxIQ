@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandContext as Context, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, clientGatewayCommandResultDigest, type ClientGatewayCommandClaim, type ClientGatewayCommandReceipt, type ClientGatewayCommandRecord, type ClientGatewayCommandUnknownReason, type ClientGatewayCommandOutcomeObserver, type ClientGatewayCommandLedgerLease } from "../../../../client-gateway/service/command-ledger/index.ts";
 import { AutomationStudioProjectCommandLedgerStore as Store, type AutomationStudioCommandRunAdmission } from "../../../persistence/automation/project/index.ts";
 import { AutomationStudioCommandRunScope, type AutomationStudioCommandRunOwner, type AutomationStudioCommandRunPorts, type AutomationStudioCommandEffectProvenance } from "./contracts.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../../../../client-gateway/service/command-ledger/index.ts";
 
 type Effect = { context: Context; capability: object; provenance: AutomationStudioCommandEffectProvenance; observer: ClientGatewayCommandOutcomeObserver; claim?: ClientGatewayCommandClaim; ticket?: object; receipt?: ClientGatewayCommandReceipt; consumed: boolean; withdrawn?: true };
 type State = { owner: AutomationStudioCommandRunOwner; incarnation: string; fingerprint: string; store: Store; admission: AutomationStudioCommandRunAdmission; signal?: AbortSignal; detach(): void; first: ClientGatewayCommandClaim | null; blocked: string | null; closed: boolean; pipelines: Set<Promise<unknown>>; closing?: Promise<void>; effects: Map<Context, Effect>; consumed: Map<object, { claim: ClientGatewayCommandClaim; receipt: ClientGatewayCommandReceipt }> };
@@ -26,14 +27,14 @@ export class AutomationStudioCommandRunController {
       if (typeof provenance.executingFlowDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(provenance.executingFlowDigest) || !Number.isSafeInteger(provenance.effectOrdinal) || provenance.effectOrdinal < 0) throw new Error("command_run.invalid_effect_provenance");
       if (state.effects.size >= 4096 || [...state.effects.values()].some(effect => effect.capability === capability || effect.provenance.invocationId === provenance.invocationId && effect.provenance.attemptId === provenance.attemptId && effect.provenance.effectOrdinal === provenance.effectOrdinal)) throw new Error("command_run.duplicate_effect");
       const context = Context.issue({ projectId: state.owner.projectId, runId: state.owner.runId, flowId: state.owner.rootFlowId, invocationId: provenance.invocationId, attemptId: provenance.attemptId, effectOrdinal: provenance.effectOrdinal });
-      const effect: Effect = { context, capability, provenance: Object.freeze({ ...provenance }), observer: { completed: proof => this.observe(scope, state, effect, proof), uncertain: async received => { if (received !== context) throw new Error("command_run.foreign_uncertainty"); if (!this.withdraw(context)) state.blocked ??= "command_run.outcome_unknown"; } }, consumed: false };
+      const effect: Effect = { context, capability, provenance: Object.freeze({ ...provenance }), observer: { completed: proof => this.observe(scope, state, effect, proof), uncertain: async received => { if (received !== context) throw new Error("command_run.foreign_uncertainty"); if (!this.withdraw(context)) state.blocked ??= "command_run.outcome_unknown"; }, unsent: (received, claim, proof) => this.observeUnsent(state, effect, received, claim, proof) }, consumed: false };
       Outcome.require(context, effect.observer); state.effects.set(context, effect); this.contexts.set(context, { state, scope, effect }); return context;
     });
   }
   resolve(context: Context): Promise<ClientGatewayCommandLedgerLease> {
     const registered = this.contexts.get(context); if (!registered) throw new Error("command_run.foreign_context");
     const { state, scope, effect } = registered;
-    return this.operation(state, async () => { await this.live(state); if (state.blocked || effect.consumed) throw new Error(state.blocked ?? "command_run.effect_consumed"); const exact = (input: ClientGatewayCommandClaim) => { const claim = this.claimForState(state, input); if (this.effectClaim(state, claim) !== effect) throw new Error("command_run.context_claim_conflict"); return claim; }; return { outcomeObserver: effect.observer, ledger: { claim: input => this.claim(scope, exact(input)), read: input => this.read(scope, exact(input)), commitReceipt: (input, receipt) => this.commitReceipt(scope, exact(input), receipt), markUnknown: (input, reason) => this.markUnknown(scope, exact(input), reason) }, close: async () => undefined }; });
+    return this.operation(state, async () => { await this.live(state); if (state.blocked || effect.consumed) throw new Error(state.blocked ?? "command_run.effect_consumed"); const exact = (input: ClientGatewayCommandClaim) => { const claim = this.claimForState(state, input); if (this.effectClaim(state, claim) !== effect) throw new Error("command_run.context_claim_conflict"); return claim; }; return { outcomeObserver: effect.observer, ledger: { claim: input => this.claim(scope, exact(input)), read: input => this.read(scope, exact(input)), commitReceipt: (input, receipt) => this.commitReceipt(scope, exact(input), receipt), markUnknown: (input, reason) => this.markUnknown(scope, exact(input), reason), refuseUnsent: (input, proof) => this.refuseUnsent(state, effect, exact(input), proof) }, close: async () => undefined }; });
   }
   consume(consumer: object, context: Context): Promise<void> {
     const registered = this.contexts.get(context); if (!registered) throw new Error("command_run.foreign_context");
@@ -58,6 +59,7 @@ export class AutomationStudioCommandRunController {
   withdraw(context: Context): boolean {
     const effect = this.contexts.get(context)?.effect;
     if (!effect) throw new Error("command_run.foreign_context");
+    if (effect.withdrawn) return true;
     if (effect.claim || effect.ticket || effect.consumed) return false;
     effect.withdrawn = true;
     return true;
@@ -78,15 +80,31 @@ export class AutomationStudioCommandRunController {
   claim(scope: AutomationStudioCommandRunScope, input: ClientGatewayCommandClaim): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const state = this.state(scope), claim = this.claimForState(state, input);
     const effect = this.effectClaim(state, claim);
-    if (effect?.withdrawn) return Promise.reject(new Error("command_run.effect_withdrawn"));
+    if (effect?.withdrawn) {
+      if (!effect.claim) return Promise.reject(new Error("command_run.effect_withdrawn"));
+      return this.reconcile(state, async () => {
+        const record = await state.store.read(claim);
+        if (!record || record.state !== "refused_unsent") throw new Error("command_run.effect_withdrawn");
+        return { sendAllowed: false, record };
+      });
+    }
     if (state.first && Rules.digest(state.first) !== Rules.digest(claim) && (!effect || [...state.effects.values()].some(item => item !== effect && !item.consumed && !item.withdrawn))) { state.blocked ??= "command_run.first_command_only"; throw new Error("command_run.first_command_only"); }
     state.first = claim; if (effect) effect.claim ??= claim;
     return this.operation(state, async () => {
       // An exact first replay reconciles; it never grants send or continuation.
       await this.live(state); if (state.blocked) { const recorded = await state.store.read(claim); if (!recorded) throw new Error(state.blocked); return { sendAllowed: false, record: recorded }; }
       const result = await state.store.claimForRun(claim, state.admission);
-      try { await this.live(state); } catch (error) { state.blocked ??= "command_run.owner_changed"; if (result.record.state === "pending") await state.store.markUnknown(claim, "cancelled_before_send"); throw error; }
-      if (!result.sendAllowed) state.blocked ??= result.record.state === "committed" ? "command_run.result_unavailable" : "command_run.outcome_unknown";
+      try { await this.live(state); } catch (error) {
+        state.blocked ??= "command_run.owner_changed";
+        if (result.sendAllowed && result.record.state === "pending") {
+          const proof = Unsent.create(claim, state.signal?.aborted || state.closed || this.closed ? "cancelled_before_send" : "target_changed");
+          const record = await state.store.refuseUnsent(claim, proof);
+          if (effect) effect.withdrawn = true;
+          return { sendAllowed: false, record };
+        }
+        throw error;
+      }
+      if (!result.sendAllowed && result.record.state !== "refused_unsent") state.blocked ??= result.record.state === "committed" ? "command_run.result_unavailable" : "command_run.outcome_unknown";
       return result;
     });
   }
@@ -101,6 +119,29 @@ export class AutomationStudioCommandRunController {
   markUnknown(scope: AutomationStudioCommandRunScope, input: ClientGatewayCommandClaim, reason: ClientGatewayCommandUnknownReason): Promise<ClientGatewayCommandRecord> {
     const state = this.state(scope), claim = this.exactClaim(state, input); if (!Rules.unknownReason(reason)) throw new Error("command_run.invalid_unknown_reason"); state.blocked ??= "command_run.outcome_unknown";
     return this.reconcile(state, () => state.store.markUnknown(claim, reason));
+  }
+  private refuseUnsent(state: State, effect: Effect, claim: ClientGatewayCommandClaim, proof: Unsent): Promise<ClientGatewayCommandRecord> {
+    Unsent.read(proof, claim);
+    return this.reconcile(state, async () => {
+      if (effect.consumed || effect.ticket || effect.receipt || !effect.claim || Rules.digest(effect.claim) !== Rules.digest(claim)) throw new Error("command_run.foreign_unsent_claim");
+      const record = await state.store.refuseUnsent(claim, proof);
+      Rules.validateRecord(claim, record);
+      if (record.state !== "refused_unsent" || Rules.digest(record.refusal) !== Rules.digest(Unsent.read(proof, claim))) throw new Error("command_run.invalid_unsent_settlement");
+      effect.withdrawn = true;
+      return record;
+    });
+  }
+  private observeUnsent(state: State, effect: Effect, context: Context, input: ClientGatewayCommandClaim, proof: Unsent): Promise<void> {
+    const claim = this.claimForState(state, input);
+    Unsent.read(proof, claim);
+    if (context !== effect.context || this.effectClaim(state, claim) !== effect || effect.consumed || effect.ticket) throw new Error("command_run.foreign_unsent_claim");
+    return this.reconcile(state, async () => {
+      if (effect.claim) {
+        const record = await state.store.read(claim);
+        if (!record || record.state !== "refused_unsent" || Rules.digest(record.refusal) !== Rules.digest(Unsent.read(proof, claim))) throw new Error("command_run.invalid_unsent_settlement");
+      }
+      effect.withdrawn = true;
+    });
   }
   checkpoint(scope: AutomationStudioCommandRunScope): Promise<void> {
     const state = this.state(scope);

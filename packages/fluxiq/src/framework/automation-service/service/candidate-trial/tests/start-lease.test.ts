@@ -8,15 +8,17 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { automationStudioLiveRunEnvironment } from "../../../environment/index.ts";
-import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, type AutomationStudioHostResourceLease } from "../../../../../runtime/project-agents/host-resources/index.ts";
+import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, AutomationStudioHostLeaseAuthority, type AutomationStudioHostResourceLease } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";
 import { automationStudioCandidateTrialPort, automationStudioCandidateTrialStart, type AutomationStudioPrepareCandidateStart } from "../index.ts";
 import { trialFixture } from "./fixtures.ts";
 
 type HookInput = Parameters<AutomationStudioPrepareCandidateStart>[0];
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 
 function hooked() {
   const fixture = trialFixture();
+  fixture.ports.leaseBinding = LEASE_BINDING;
   const seen: HookInput[] = [];
   fixture.ports.prepareStart = async (input) => {
     seen.push(input);
@@ -27,10 +29,36 @@ function hooked() {
 }
 
 function scope(capacity: number): AutomationStudioHostLeaseScope {
-  return new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity })));
+  return new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity })), { binding: LEASE_BINDING });
 }
 
 describe("a trial's start hook under a host lease", () => {
+  it.each(["domain", "owner"] as const)("an ambient foreign %s cannot reset B while B's lease is held elsewhere", async (foreign) => {
+    const b = AutomationStudioHostLeaseAuthority.for({}).forDomain("b");
+    const a = foreign === "domain" ? b.owner.forDomain("a") : AutomationStudioHostLeaseAuthority.for({}).forDomain("b");
+    const scopeA = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: a });
+    const scopeB = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: b });
+    let entered!: () => void, release!: () => void;
+    const holding = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const heldB = scopeB.run({ role: "builder", briefId: "b" }, async () => { entered();
+      await gate; });
+    const { fixture, seen } = hooked();
+    fixture.ports.leaseBinding = b;
+    try {
+      await holding;
+      await scopeA.run({ role: "builder", briefId: "a" }, async () => {
+        expect(await automationStudioCandidateTrialStart(fixture.request(), fixture.ports)).toMatchObject({ status: "failed", code: "candidate.trial_start_lease_missing" });
+        expect(seen).toEqual([]);
+      });
+    } finally { release();
+      await heldB; }
+    await scopeA.run({ role: "builder", briefId: "a.again" }, async () => {
+      expect(await automationStudioCandidateTrialStart(fixture.request(), fixture.ports)).toMatchObject({ status: "reset" });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).not.toHaveProperty("lease");
+    });
+  });
   it("outside any lease scope calls the hook with no lease, as before", async () => {
     const { fixture, seen } = hooked();
     const start = await automationStudioCandidateTrialStart(fixture.request(), fixture.ports);
@@ -69,6 +97,7 @@ describe("a trial's start hook under a host lease", () => {
   it("hands the hook a copy, so a hook cannot change the lease its holder carries", async () => {
     const leases = scope(1);
     const fixture = trialFixture();
+    fixture.ports.leaseBinding = LEASE_BINDING;
     fixture.ports.prepareStart = async (input) => {
       (input.lease as { resourceKey: string }).resourceKey = "someone-else";
       return {};
