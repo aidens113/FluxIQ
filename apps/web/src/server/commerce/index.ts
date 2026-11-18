@@ -1,3 +1,5 @@
+export { cloudAdmissionPolicy, getCloudAdmission, setCloudAuthorizer } from "./cloud";
+export type { CloudAuthorizer } from "./cloud";
 export { commerceConfig } from "./config";
 export { commerceCompositions } from "./compositions";
 export { getCommerceBilling } from "./service";

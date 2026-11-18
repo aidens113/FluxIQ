@@ -2,6 +2,7 @@
   "$schema": "../fluxiq-cloud.schema.json",
   "project": "fluxiq-production",
   "profile": "production",
+  "mode": "service",
   "driver": "local-docker",
   "source": { "root": "/opt/fluxiq/core" },
   "stateDir": "/var/lib/fluxiq-cloud",
@@ -10,6 +11,7 @@
   "tls": { "mode": "acme", "email": "operator@example.org" },
   "instance": { "id": "fluxiq-production", "name": "FluxIQ" },
   "signUpUrl": "https://www.example.org/sign-up",
+  "signup": "off",
   "gateway": { "allowedOrigins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop", "moz-extension://*"] },
   "provisioning": { "subnet": "172.31.250.0/24", "address": "172.31.250.10" },
   "email": {
@@ -18,6 +20,30 @@
     "username": "fluxiq-mailer",
     "passwordFile": "/etc/fluxiq-cloud/secrets/smtp-password"
   },
-  "payments": { "apiBase": "https://api.stripe.com", "secretKeyFile": "/etc/fluxiq-cloud/secrets/stripe-secret-key" },
+  "payments": { "apiBase": "https://api.stripe.com", "secretKeyFile": "/etc/fluxiq-cloud/secrets/stripe-secret-key", "webhookSecretFile": "/etc/fluxiq-cloud/secrets/stripe-webhook-secret" },
+  "billing": {
+    "provider": "stripe",
+    "allowTrial": false,
+    "graceMs": 259200000,
+    "retentionMs": 2592000000,
+    "refreshAfterMs": 3600000,
+    "plans": {
+      "browser": {
+        "priceId": "price_dedicated_browser_monthly",
+        "unit": "dedicated-browser",
+        "grants": [{ "key": "cloud.dedicated", "allocation": "dedicated", "capabilities": ["execute"], "regions": ["region-a"] }]
+      },
+      "seat": {
+        "priceId": "price_team_seat_monthly",
+        "unit": "seat",
+        "grants": [{ "key": "cloud.shared", "allocation": "shared", "capabilities": ["execute"], "regions": ["region-a"] }]
+      },
+      "shared": {
+        "priceId": "price_shared_monthly",
+        "unit": "flat",
+        "grants": [{ "key": "cloud.shared", "allocation": "shared", "capabilities": ["execute"], "regions": ["region-a"] }]
+      }
+    }
+  },
   "secrets": { "dir": "/etc/fluxiq-cloud/secrets" }
 }

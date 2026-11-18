@@ -28,7 +28,9 @@ describe("parseCloudConfig", () => {
       ports: { http: 80, https: 443 }, tls: { mode: "internal", trustLocalCa: false },
       sinks: { mail: true, payments: true, mailUiPort: 8025 },
       email: { smtp: "smtp://mailpit:1025", username: null, passwordFile: null },
-      payments: { apiBase: "http://stripe-mock:12111", secretKeyFile: null },
+      payments: { apiBase: "http://stripe-mock:12111", secretKeyFile: null, webhookSecretFile: null },
+      billing: { provider: "stripe", allowTrial: false, graceMs: 259_200_000, refreshAfterMs: 3_600_000, maxVerificationAgeMs: null, plans: { shared: { priceId: "price_shared_monthly", unit: "flat", grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] } } },
+      mode: "service", signup: "off",
       images: { core: "fluxiq-cloud/core", caddy: "caddy:2.10-alpine" }
     });
     expect(config.sourceRoot).toMatch(/\/!FluxIQ$|\/[^/]+$/u);
@@ -43,7 +45,8 @@ describe("parseCloudConfig", () => {
     expect(config.sourceRoot).toBe("/opt/fluxiq/core");
     expect(config.stateDir).toBe("/var/lib/fluxiq-cloud/fluxiq-production");
     expect(config.secretsDir).toBe("/etc/fluxiq-cloud/secrets");
-    expect(config.payments.secretKeyFile).toBe("/etc/fluxiq-cloud/secrets/stripe-secret-key");
+    expect(config.payments?.secretKeyFile).toBe("/etc/fluxiq-cloud/secrets/stripe-secret-key");
+    expect(config.payments?.webhookSecretFile).toBe("/etc/fluxiq-cloud/secrets/stripe-webhook-secret");
     expect(config.email.passwordFile).toBe("/etc/fluxiq-cloud/secrets/smtp-password");
   });
 
@@ -72,7 +75,7 @@ describe("parseCloudConfig", () => {
   it("keeps a local rehearsal off real DNS, certificates, mail and money", () => {
     expect(issues({ ...local, tls: { mode: "acme", email: "a@b.example" } })).toEqual(['tls.mode: must be "internal" on the local profile: a rehearsal never asks a public certificate authority']);
     expect(issues({ ...local, domain: "app.example.org" })).toEqual(["domain: must end in .localhost on the local profile, so nothing reaches real DNS"]);
-    expect(issues({ ...local, sinks: { mail: true, payments: false } })).toEqual(["payments.apiBase: must be https:// unless it is the stripe-mock sink", "payments.secretKeyFile: is required unless the stripe-mock sink runs"]);
+    expect(issues({ ...local, sinks: { mail: true, payments: false } })).toEqual(["payments.apiBase: must be https:// unless it is the stripe-mock sink", "payments.secretKeyFile: is required unless the stripe-mock sink runs", "payments.webhookSecretFile: is required with billing unless the stripe-mock sink runs: it is the signing secret of this endpoint"]);
     expect(issues({ ...local, sinks: { mail: false, payments: true } })).toEqual(["email.smtp: names the Mailpit sink, which runs only with sinks.mail on"]);
   });
 
@@ -83,6 +86,63 @@ describe("parseCloudConfig", () => {
     expect(issues({ ...production, email: { from: "a@b.example", smtp: "smtp://smtp.example.org:25" } })).toEqual(["email.smtp: must be smtp+starttls:// or smtps:// on the production profile, so mail leaves encrypted"]);
     const { secrets: _secrets, ...withoutSecrets } = production;
     expect(issues(withoutSecrets)).toEqual(["secrets.dir: is required on the production profile: the server's secrets live where the operator keeps them"]);
+  });
+
+  it("checks the billing section: shape, plans, the fake provider's place, and the verification age", () => {
+    const billing = local.billing as Record<string, unknown>;
+    const plan = { priceId: "price_a", grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] };
+    expect(issues({ ...local, billing: { ...billing, graceMs: -1, refreshAfterMs: "hourly", extra: 1 } })).toEqual(expect.arrayContaining([
+      "billing.graceMs: must be at least 0", "billing.refreshAfterMs: must be a whole number", "billing.extra: is not a known setting"
+    ]));
+    const { plans: _plans, ...withoutPlans } = billing;
+    expect(issues({ ...local, billing: withoutPlans })).toEqual(["billing.plans: is required"]);
+    expect(issues({ ...local, billing: { ...billing, plans: {} } })).toEqual(["billing.plans: must name at least one plan"]);
+    expect(issues({ ...local, billing: { ...billing, plans: { a: plan, b: plan } } })).toEqual(["billing.plans.b.priceId: is used by another plan"]);
+    expect(issues({ ...local, billing: { ...billing, plans: { a: { priceId: "p", grants: [{ key: "k", allocation: "dedicated", capabilities: ["execute"] }] } } } })).toEqual(["billing.plans.a.grants[0].regions: must name a region unless the allocation is control"]);
+    expect(issues({ ...local, billing: { ...billing, plans: { a: { priceId: "p", grants: [{ key: "k", allocation: "cluster", capabilities: ["execute"] }] } } } })).toEqual(['billing.plans.a.grants[0].allocation: must be one of "control", "shared", "dedicated"']);
+    expect(issues({ ...local, billing: { ...billing, plans: { a: { priceId: "p", grants: [] } } } })).toEqual(["billing.plans.a.grants: must list at least 1"]);
+    expect(issues({ ...local, billing: { ...billing, refreshAfterMs: 1000, maxVerificationAgeMs: 1000 } })).toEqual(["billing.maxVerificationAgeMs: must exceed billing.refreshAfterMs (1000): admission would refuse a subscription before it is due to be refreshed"]);
+    expect(issues({ ...local, billing: { ...billing, provider: "fake" } })).toEqual([]);
+    expect(issues({ ...production, billing: { ...(production.billing as Record<string, unknown>), provider: "fake" } })).toEqual(['billing.provider: must be "stripe" on the production profile: the fake provider takes no real money']);
+    const { webhookSecretFile: _webhook, ...paymentsWithout } = production.payments as Record<string, unknown>;
+    expect(issues({ ...production, payments: paymentsWithout })).toEqual(["payments.webhookSecretFile: is required with billing unless the stripe-mock sink runs: it is the signing secret of this endpoint"]);
+    expect(issues({ ...local, payments: { ...(local.payments as Record<string, unknown>), webhookSecretFile: "whsec.txt" } })).toEqual(["payments.webhookSecretFile: is generated while the stripe-mock sink runs; leave it out"]);
+    const { billing: _billing, ...unbilled } = production;
+    expect(issues({ ...unbilled, payments: paymentsWithout })).toEqual([]);
+  });
+
+  it("prices per dedicated browser and per seat, plus a flat plan, as configuration", () => {
+    const config = parseCloudConfig(localText, `${examples}local.config.json`);
+    expect(Object.fromEntries(Object.entries(config.billing!.plans).map(([id, plan]) => [id, [plan.priceId, plan.unit]]))).toEqual({
+      browser: ["price_dedicated_browser_monthly", "dedicated-browser"], seat: ["price_team_seat_monthly", "seat"], shared: ["price_shared_monthly", "flat"]
+    });
+    const billing = local.billing as Record<string, unknown>;
+    const grants = [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }];
+    expect(issues({ ...local, billing: { ...billing, plans: { a: { priceId: "p", unit: "device", grants } } } })).toEqual(['billing.plans.a.unit: must be one of "dedicated-browser", "seat", "flat"']);
+    expect(issues({ ...local, billing: { ...billing, plans: { a: { priceId: "p", unit: "dedicated-browser", grants } } } })).toEqual(['billing.plans.a.grants: must include a dedicated grant: a "dedicated-browser" price counts dedicated browsers']);
+    expect(parseCloudConfig(JSON.stringify({ ...local, billing: { ...billing, plans: { a: { priceId: "p", grants } } } }), "/c/x.json").billing!.plans.a?.unit).toBe("flat");
+  });
+
+  it("takes signup on a service only, off unless asked", () => {
+    expect(parseCloudConfig(JSON.stringify({ ...local, signup: "open" }), "/c/x.json").signup).toBe("open");
+    expect(issues({ ...local, signup: "everyone" })).toEqual(['signup: must be one of "off", "open"']);
+  });
+
+  it("describes a self-hosted server: the full base product, no billing, payments, provisioning or sign-up", () => {
+    const selfHosted = JSON.parse(readFileSync(`${examples}self-hosted.config.json`, "utf8")) as Record<string, unknown>;
+    const config = parseCloudConfig(JSON.stringify(selfHosted), `${examples}self-hosted.config.json`);
+    expect(config).toMatchObject({ mode: "self-hosted", billing: null, payments: null, signup: "off", sinks: { mail: true, payments: false } });
+    const { mode: _mode, ...asService } = selfHosted;
+    expect(issues(asService)).toEqual(["payments: is required on a service: it names the payments API"]);
+    expect(issues({ ...selfHosted, payments: { apiBase: "https://api.stripe.com" }, billing: local.billing, signup: "open", signUpUrl: "https://x.example", provisioning: { subnet: "10.9.0.0/24", address: "10.9.0.5" }, sinks: { mail: true, payments: true } })).toEqual([
+      "payments: applies to a service only; a self-hosted server has none",
+      "billing: applies to a service only; a self-hosted server has none",
+      "signup: applies to a service only; a self-hosted server has none",
+      "signUpUrl: applies to a service only; a self-hosted server has none",
+      "provisioning: applies to a service only; a self-hosted server has none",
+      "sinks.payments: applies to a service only; a self-hosted server has none",
+      "payments.apiBase: must be http://stripe-mock:12111 while sinks.payments is on"
+    ]);
   });
 
   it("checks fields that go together", () => {

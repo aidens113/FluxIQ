@@ -92,4 +92,18 @@ describe("ClientGatewayHostEnrolmentTickets", () => {
     expect(() => table.issue({ hostId: "host-1", domainId: WEB, profile: "kept" as "named" })).toThrow(/enrolment_profile_invalid/u);
     expect(() => table.issue({ hostId: "host-1", domainId: WEB, profile: "fresh", ttlMs: 0 })).toThrow(/enrolment_ttl_invalid/u);
   });
+
+  it("binds a ticket to the environment and workspace it was minted for, and reports that binding with its one redemption", () => {
+    const { table, clock } = tickets();
+    const environment = { workspaceId: "workspace-a", environmentId: "env-a" };
+    const { ticket } = table.issue({ hostId: "environment:env-a", domainId: WEB, profile: "named", environment });
+    expect(table.redeem(ticket, WEB)).toEqual({ kind: "redeemed", binding: { hostId: "environment:env-a", domainId: WEB, profile: "named", environment } });
+    expect(table.redeem(ticket, WEB)).toMatchObject({ kind: "refused", code: CLIENT_GATEWAY_ENROLMENT_REFUSALS.used.code });
+    const expiring = table.issue({ hostId: "environment:env-a", domainId: WEB, profile: "named", environment, ttlMs: 10 });
+    clock.now += 10;
+    expect(table.redeem(expiring.ticket, WEB)).toMatchObject({ kind: "refused", code: CLIENT_GATEWAY_ENROLMENT_REFUSALS.expired.code });
+    expect(() => table.issue({ hostId: "environment:env-a", domainId: WEB, profile: "fresh", environment })).toThrow(/enrolment_environment_profile/u);
+    expect(() => table.issue({ hostId: "environment:env-a", domainId: WEB, profile: "named", environment: { workspaceId: " workspace-a", environmentId: "env-a" } })).toThrow(/enrolment_environment_invalid/u);
+    expect(() => table.issue({ hostId: "environment:env-a", domainId: WEB, profile: "named", environment: { workspaceId: "workspace-a", environmentId: "" } })).toThrow(/enrolment_environment_invalid/u);
+  });
 });
