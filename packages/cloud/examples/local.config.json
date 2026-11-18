@@ -1,0 +1,16 @@
+{
+  "$schema": "../fluxiq-cloud.schema.json",
+  "project": "fluxiq-local",
+  "profile": "local",
+  "driver": "local-docker",
+  "source": { "root": "../../.." },
+  "domain": "app.fluxiq.localhost",
+  "ports": { "http": 80, "https": 443 },
+  "tls": { "mode": "internal", "email": "operator@fluxiq.localhost", "trustLocalCa": false },
+  "instance": { "id": "fluxiq-local", "name": "FluxIQ (local rehearsal)" },
+  "gateway": { "allowedOrigins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop", "moz-extension://*"] },
+  "provisioning": { "subnet": "172.31.250.0/24", "address": "172.31.250.10" },
+  "email": { "from": "FluxIQ <accounts@fluxiq.localhost>", "smtp": "smtp://mailpit:1025" },
+  "payments": { "apiBase": "http://stripe-mock:12111" },
+  "sinks": { "mail": true, "payments": true, "mailUiPort": 8025 }
+}
