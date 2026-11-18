@@ -66,7 +66,7 @@ export class ClientGatewayTrustIssuer implements ClientGatewayTrustIssuance {
       return { credential: issued.token, credentialExpiresAt: issued.trustedClient.expiresAt, trustedClientId: issued.trustedClient.trustedClientId };
     } catch (error) {
       try {
-        if (c.trustedClients.isActive(issued.trustedClient)) await c.facade.revokeTrustedClient(issued.trustedClient.trustedClientId, "credential delivery or its approval ended before publication");
+        if (c.trustedClients.isActive(issued.trustedClient)) await c.facade.revokeTrustedClient(issued.trustedClient.trustedClientId, "credential delivery or its approval ended before publication", null);
         if (c.trustedClients.isActive(issued.trustedClient)) throw new ClientGatewayTrustIssuanceError("cleanup_failed");
         // Another issuance may already have revoked it during the strict grant. Its holder must still be forgotten.
         await c.custody.forgotten(issued.trustedClient.trustedClientId);
