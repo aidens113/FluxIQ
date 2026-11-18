@@ -74,6 +74,7 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
   // The chat reads its options once, when it is made; a later change of the requested thread is not a new chat.
   const requestedConversationId = useRef(props.requestedConversationId).current;
   const options = useMemo(() => panelChatOptions({
+    assistant: latest.current.panel !== undefined,
     asks: createPanelAskPort(setRequest),
     attachments: createPanelAttachmentPort({
       read: readAttachment(studio, latest.current.panel ? { panel: { openProjectId: () => latest.current.projectId ?? undefined } } : {}),

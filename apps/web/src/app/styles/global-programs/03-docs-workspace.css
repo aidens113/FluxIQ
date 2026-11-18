@@ -73,11 +73,16 @@
   gap: var(--space-sm);
 }
 
+.docs-viewer-header {
+  min-width: 0;
+}
+
 .docs-viewer-header > div {
   min-width: 0;
 }
 
 .docs-viewer-header .panel-kicker {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

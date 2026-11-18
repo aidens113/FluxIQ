@@ -180,7 +180,7 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     const shownId = target.kind === "thread" ? target.conversationId : conversationId;
     const threads = catalog.threads();
     const selected = threads.find((thread) => thread.conversationId === shownId) ?? null;
-    const title = conversationDisplayTitle(selected, deps.projectName());
+    const title = conversationDisplayTitle(selected, deps.projectName(), options.emptyTitle);
     header.update({
       title,
       showTitle: options.onTitle === undefined,

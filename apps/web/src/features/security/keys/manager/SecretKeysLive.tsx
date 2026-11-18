@@ -226,7 +226,7 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
 
   return (
     <OperationBusyBoundary busy={operation.busy}><section aria-busy={operation.busy || undefined} className="secret-keys-workspace">
-      <header className="program-inner-header"><div><strong>Saved logins and keys for Flows</strong><span>What your Flows use to sign in to other sites and services. FluxIQ keeps each one and never shows it again.</span></div><div className="inline-actions"><StatusText value={operation.activeOperation ? "Working on it..." : status} /><button className="button" disabled={operation.busy || reading} onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" disabled={operation.busy} onClick={() => { if (current() && canOpen()) {
+      <header className="program-inner-header"><div><strong>Saved logins and keys for Flows</strong><span>What your Flows use to sign in to other sites and services. FluxIQ keeps each one and never shows it again.</span></div><div className="inline-actions"><StatusText value={operation.activeOperation ? "Working on it…" : status} /><button className="button" disabled={operation.busy || reading} onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" disabled={operation.busy} onClick={() => { if (current() && canOpen()) {
         wizard.current++;
         setCreateOpen(true);
         createDialog.open(emptyAuth);

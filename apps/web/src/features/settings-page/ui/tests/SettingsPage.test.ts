@@ -17,4 +17,9 @@ describe("the Settings page", () => {
   it("gives the assistant's model section the anchor the card's Change model goes to", () => {
     expect(readFileSync(new URL("../AssistantModelSection.tsx", import.meta.url), "utf8")).toContain('id="assistant-model"');
   });
+
+  it("keeps room for the sections that wait for the keys, so the page does not shift when they arrive (sweep #3)", () => {
+    expect(source).toContain('className="settings-reserve"');
+    expect(readFileSync(new URL("../settings-page.css", import.meta.url), "utf8")).toMatch(/\.settings-reserve \{ min-height:/);
+  });
 });

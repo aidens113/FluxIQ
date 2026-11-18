@@ -1,13 +1,15 @@
 
 
+/* Notices sit just under the top bar (one row wide, two rows on a phone), never over its Account button. */
 .global-alert-viewport {
+  --toast-top: calc(var(--space-xxl) + var(--space-xl));
   position: fixed;
-  top: 14px;
-  right: 14px;
+  top: var(--toast-top);
+  right: var(--space-lg);
   z-index: var(--layer-toast);
   display: grid;
   gap: var(--space-sm);
-  width: min(380px, calc(100vw - 28px));
+  width: min(380px, calc(100vw - var(--space-xxl)));
   pointer-events: none;
 }
 

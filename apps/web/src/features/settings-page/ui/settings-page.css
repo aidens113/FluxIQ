@@ -1,16 +1,18 @@
 /* Settings: one column that never scrolls the page sideways, down to a phone. Colours and sizes come from tokens. */
-.settings-page { max-width: 720px; min-width: 0; display: grid; gap: 24px; }
+.settings-page { max-width: var(--settings-column, 960px); min-width: 0; display: grid; gap: calc(var(--space-4) + var(--space-2)); }
+/* Room for the assistant and spending sections while the keys load: they are about this tall, so nothing below shifts. */
+.settings-reserve { min-height: var(--settings-late-height, 26rem); padding-top: var(--space-4); border-top: 1px solid var(--divider); color: var(--muted); }
 .settings-page section, .settings-page details { min-width: 0; }
 .settings-page section[id] { scroll-margin-top: var(--space-lg, 20px); }
-.settings-page form, .settings-add-key, .settings-remove, .settings-replace { display: grid; gap: 8px; max-width: 100%; }
-.settings-page label { display: grid; gap: 4px; min-width: 0; }
+.settings-page form, .settings-add-key, .settings-remove, .settings-replace { display: grid; gap: var(--space-2); max-width: 100%; }
+.settings-page label { display: grid; gap: var(--space-1); min-width: 0; }
 /* Text boxes and lists are tall enough to touch; a radio or a checkbox keeps its own small size. */
 .settings-page input:not([type="radio"]):not([type="checkbox"]), .settings-page select { min-width: 0; max-width: 100%; min-height: var(--control-height-default, 36px); }
 .settings-page input[type="radio"], .settings-page input[type="checkbox"] { width: 1rem; height: 1rem; min-height: 0; margin: 0; flex: none; accent-color: var(--accent, currentColor); }
 .settings-keys { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-keys legend { padding: 0; color: var(--muted); font-size: var(--font-size-compact, 0.9rem); }
-.settings-keys ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
-.settings-keys li { display: grid; gap: 8px; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); min-width: 0; }
+.settings-keys ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.settings-keys li { display: grid; gap: var(--space-2); padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); min-width: 0; }
 .settings-keys li[data-selected="true"] { border-color: var(--focus); }
 .settings-key-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
 .settings-key-name { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: var(--font-weight-semibold, 600); text-align: left; cursor: pointer; min-height: 0; overflow-wrap: anywhere; }
@@ -30,7 +32,7 @@
 
 /* Sections read as one family: a hairline between them, the same heading rhythm, the same muted notes. */
 .settings-page > section, .settings-page > details { padding-top: var(--space-lg, 20px); border-top: 1px solid var(--divider); }
-.settings-page > h1 { margin: 0; }
+.settings-page > h1 { margin: 0; font-size: var(--font-size-page-title, 24px); }
 .settings-page h2, .settings-page h3 { margin: 0; }
 .settings-page h3 { font-size: var(--font-size-body, 1rem); }
 .settings-page section > p { margin: var(--space-xs, 4px) 0 0; }

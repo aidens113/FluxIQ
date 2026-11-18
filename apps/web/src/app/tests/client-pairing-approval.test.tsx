@@ -40,14 +40,14 @@ it("approves from the authenticated panel with only the pairing reference", asyn
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it("lays the request out as labelled lines: name, code and time left, then what approving does", async () => {
+it("names the browser in the title, then lays out code and time left as labelled lines, then what approving does", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: true,
     json: async () => ({ ok: true, payload: { pairings: [{ pairingCode: "310437", requestedBySessionId: "session", requestedByClientName: "Chrome on Windows", requestedByClientId: "extension-90dd", expiresAt: Date.now() + 60_000 }] } })
   })));
   await act(async () => { view = create(<GlobalClientGatewayPairing />); });
   const terms = view!.root.findAllByType("dt").map((node) => node.children.join(""));
-  expect(terms).toEqual(["Name", "Code", "Time left"]);
+  expect(terms).toEqual(["Code", "Time left"]);
   expect(JSON.stringify(view!.toJSON())).toMatch(/Chrome on Windows.*310437/u);
   expect(JSON.stringify(view!.toJSON())).not.toContain("extension-90dd");
   const effect = view!.root.findByProps({ className: "client-pairing-request-effect" });

@@ -33,6 +33,12 @@ const PHRASES: Readonly<Record<string, { did: string; tried: string }>> = {
 
 const NOUN_AFTER = new Set(["secrets:CreateKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey", "secrets:RevealKey", "secrets:UseKey", "secrets:OfferKey", "secrets:SetDefaultKey"]);
 
+/**
+ * Acts on a saved key that can still fail after the permission check passed (the store refuses, the account password is
+ * wrong). Allowed only says the person may try, so without the operation's own `result` these read "tried to ...", never "added".
+ */
+const MAY_FAIL_AFTER_ALLOWED = new Set(["secrets:CreateKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey", "secrets:OfferKey", "secrets:SetDefaultKey"]);
+
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
@@ -49,6 +55,8 @@ export function activitySentence(entry: ActivityEntry): string {
   const verb = phrase === undefined ? lowerFirst(actionLabel(entry.action)) : allowed ? phrase.did : phrase.tried;
   const subject = entry.resources.map(resourceWords)[0];
   const tail = NOUN_AFTER.has(entry.action) ? ` ${subject?.startsWith("the key ") ? subject : "a key"}` : "";
+  const unsure = allowed && phrase !== undefined && entry.result === undefined && MAY_FAIL_AFTER_ALLOWED.has(entry.action);
+  if (allowed && phrase !== undefined && (entry.result === "failed" || unsure)) return `${entry.who} tried to ${phrase.tried}${tail}${entry.result === "failed" ? ", but it did not work" : ""}.`;
   const lead = allowed ? verb : phrase === undefined ? `was not allowed to ${verb}` : `tried to ${verb}`;
   return `${entry.who} ${lead}${tail}.`;
 }

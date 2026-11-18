@@ -29,7 +29,7 @@ export function RemoveKeyConfirm(props: { keyName: string; onRemove(password: st
       <label className="field"><span className="field-label">Your password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
       {message ? <p role="alert" className="settings-problem">{message}</p> : null}
       <div className="settings-actions">
-        <button type="submit" className="button danger" disabled={pending || !password}>{pending ? "Removing..." : "Remove key"}</button>
+        <button type="submit" className="button danger" disabled={pending || !password}>{pending ? "Removing…" : "Remove key"}</button>
         <button type="button" className="button" disabled={pending} onClick={props.onCancel}>Keep it</button>
       </div>
     </form>

@@ -36,7 +36,7 @@ export function AddKeyForm(props: { onAdd(form: NewKeyForm): Promise<string> }) 
       </label>
       <label className="field"><span className="field-label">Key</span><input type="password" value={form.value} onChange={(event) => set({ value: event.target.value })} autoComplete="off" spellCheck={false} /></label>
       <label className="field"><span className="field-label">Your password</span><input type="password" value={form.password} onChange={(event) => set({ password: event.target.value })} autoComplete="current-password" /></label>
-      <button type="submit" className="button primary" disabled={!canSaveNewKey(form) || pending}>{pending ? "Saving..." : "Save key"}</button>
+      <button type="submit" className="button primary" disabled={!canSaveNewKey(form) || pending}>{pending ? "Saving…" : "Save key"}</button>
       {error ? <p role="alert" className="settings-problem">{error}</p> : null}
     </form>
   );

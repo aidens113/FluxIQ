@@ -107,3 +107,13 @@ describe("Global client pairing dismissal", () => {
     expect(liveUpdatesNotice("closed")).toMatch(/off/u);
   });
 });
+
+describe("Pairing dialog names the client", () => {
+  it("titles the dialog with the browser's own name", async () => {
+    const { pairingTitle, pairingClientName } = await import("../GlobalClientGatewayPairing");
+    expect(pairingTitle(request({ requestedByClientName: "Chrome on Windows" }))).toBe("Chrome on Windows wants to connect");
+    expect(pairingClientName(request(), "Edge on Mac")).toBe("Edge on Mac");
+    expect(pairingTitle(request())).toBe("A browser wants to connect");
+    expect(pairingTitle(request({ requestedByClientName: "  " }))).toBe("A browser wants to connect");
+  });
+});

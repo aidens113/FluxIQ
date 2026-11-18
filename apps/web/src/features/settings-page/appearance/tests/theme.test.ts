@@ -14,12 +14,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the panel's appearance", () => {
-  it("is dark unless a known choice is given", () => {
-    expect(parseTheme(undefined)).toBe("dark");
-    expect(parseTheme("purple")).toBe("dark");
+  it("follows the device unless a known choice is given", () => {
+    expect(parseTheme(undefined)).toBe("system");
+    expect(parseTheme("purple")).toBe("system");
     expect(parseTheme("light")).toBe("light");
-    expect(parseTheme("system")).toBe("system");
-    expect(readTheme()).toBe("dark");
+    expect(parseTheme("dark")).toBe("dark");
+    expect(readTheme()).toBe("system");
   });
 
   it("applies a choice to the root element and remembers it", () => {
@@ -29,9 +29,9 @@ describe("the panel's appearance", () => {
     expect(readTheme()).toBe("light");
   });
 
-  it("is dark, and does not throw, when storage is blocked", () => {
+  it("follows the device, and does not throw, when storage is blocked", () => {
     vi.stubGlobal("window", { get localStorage(): never { throw new Error("blocked"); } });
-    expect(readTheme()).toBe("dark");
+    expect(readTheme()).toBe("system");
     expect(applyTheme("system")).toBe(false);
     expect(root.get("data-theme")).toBe("system");
   });
@@ -40,8 +40,11 @@ describe("the panel's appearance", () => {
     store.set(themeStorageKey, "system");
     new Function(themeInitScript)();
     expect(root.get("data-theme")).toBe("system");
-    store.set(themeStorageKey, "garbage");
+    store.set(themeStorageKey, "dark");
     new Function(themeInitScript)();
     expect(root.get("data-theme")).toBe("dark");
+    store.set(themeStorageKey, "garbage");
+    new Function(themeInitScript)();
+    expect(root.get("data-theme")).toBe("system");
   });
 });

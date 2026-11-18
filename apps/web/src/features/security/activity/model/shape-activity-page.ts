@@ -7,8 +7,9 @@ function entryOf(value: unknown): ActivityEntry | null {
   if (typeof row.who !== "string" || typeof row.action !== "string") return null;
   if (row.outcome !== "allowed" && row.outcome !== "denied") return null;
   const resources = Array.isArray(row.resources) ? row.resources.filter((item): item is string => typeof item === "string") : [];
+  const result = row.result === "succeeded" || row.result === "failed" ? row.result : undefined;
   const hidden = typeof row.hidden === "number" && Number.isSafeInteger(row.hidden) && row.hidden > 0 ? row.hidden : undefined;
-  return { at: row.at, who: row.who, action: row.action, outcome: row.outcome, resources, ...(hidden === undefined ? {} : { hidden }) };
+  return { at: row.at, who: row.who, action: row.action, outcome: row.outcome, ...(result === undefined ? {} : { result }), resources, ...(hidden === undefined ? {} : { hidden }) };
 }
 
 /**

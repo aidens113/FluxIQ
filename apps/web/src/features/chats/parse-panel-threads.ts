@@ -1,6 +1,7 @@
 import type { Conversation } from "../automation-studio/conversation/thread";
 
-const PANEL_PROJECT = "panel";
+/** The project id Core gives the assistant's own threads; it is never shown to a person. */
+export const PANEL_PROJECT = "panel";
 
 /**
  * The assistant's own threads as chats. `list-panel-threads` answers flat records

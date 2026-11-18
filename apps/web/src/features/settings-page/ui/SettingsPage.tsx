@@ -25,10 +25,12 @@ export function SettingsPage(props: { engineTools?: readonly EngineTool[]; mayCh
     <div className="settings-page">
       <PublishPanelPage page="settings" selection={selected ? { keyId: selected } : {}} />
       <h1>Settings</h1>
-      {data.loading ? <p role="status">Loading your settings...</p> : null}
       {data.loadError ? <p role="alert">{data.loadError}</p> : null}
       <AiKeysSection data={data} port={modelKeys} sharing={sharing} selectedId={selected} onSelect={setSelectedId} />
-      {data.loading || data.loadError ? null : (
+      {data.loadError ? null : data.loading ? (
+        // The two sections that wait for the keys keep their room, so what is below them does not jump when they arrive.
+        <div className="settings-reserve" role="status" aria-busy="true">Loading your settings…</div>
+      ) : (
         <>
           <AssistantModelSection data={data} />
           <AllowanceSection data={data} />

@@ -2,7 +2,7 @@
 
 import { FolderOpen, GripVertical, MoreHorizontal, Plus, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState, type DragEvent } from "react";
-import { Button, EmptyState, LoadingState, Menu, StatusText } from "../../programs/shared-ui";
+import { Button, EmptyState, LoadingState, Menu } from "../../programs/shared-ui";
 import type { AutomationStudioProject, AutomationStudioProjectCategory } from "./model";
 import { projectGridSections } from "./ProjectModal";
 
@@ -77,16 +77,20 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
           {query ? <small>{resultCount} found</small> : null}
         </label>
         <div className="automation-project-browser-actions">
-          <Button onClick={props.onRefresh} size="compact"><RefreshCw size={14} aria-hidden />{props.status ? "Retry" : "Refresh"}</Button>
+          <Button onClick={props.onRefresh} size="compact"><RefreshCw size={14} aria-hidden />Refresh</Button>
           <Button onClick={props.onCreateCategory} size="compact"><Plus size={14} aria-hidden />Category</Button>
           <Button onClick={() => props.onCreateProject()} size="compact" variant="primary"><Plus size={14} aria-hidden />Project</Button>
         </div>
       </div>
 
-      <StatusText value={props.status} />
+      {props.status ? (
+        <p className="automation-project-browser-error" role="alert">
+          The projects could not be loaded. <button type="button" onClick={props.onRefresh}>Try again</button>
+        </p>
+      ) : null}
       <div className="automation-project-sections">
-        {!props.loaded ? <LoadingState detail="Reading the project index." label="Loading projects" /> : null}
-        {props.loaded && !props.projects.length && !props.categories.length ? (
+        {!props.loaded ? <LoadingState detail="Reading your projects…" label="Loading projects…" /> : null}
+        {props.loaded && !props.status && !props.projects.length && !props.categories.length ? (
           <EmptyState
             action={<Button onClick={() => props.onCreateProject()} variant="primary"><Plus size={14} aria-hidden />Create project</Button>}
             description="Create a project to start building Flows."
@@ -94,7 +98,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
             title="No projects yet"
           />
         ) : null}
-        {props.loaded && (props.projects.length > 0 || props.categories.length > 0) && !sections.length ? (
+        {props.loaded && !props.status && (props.projects.length > 0 || props.categories.length > 0) && !sections.length ? (
           <EmptyState
             action={<Button onClick={() => setQuery("")}>Clear search</Button>}
             description="Try a different project name, description, or category."
@@ -156,7 +160,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
                     <span className="automation-project-row-icon"><FolderOpen size={16} aria-hidden /></span>
                     <span className="automation-project-row-copy">
                       <strong title={project.name}>{project.name}</strong>
-                      <small title={project.description || "No description"}>{project.description || "No description"}</small>
+                      {project.description ? <small title={project.description}>{project.description}</small> : null}
                     </span>
                     <time dateTime={new Date(project.updatedAt).toISOString()}>Updated {formatProjectUpdatedAt(project.updatedAt)}</time>
                   </button>
@@ -171,7 +175,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
                   />
                 </div>
               ))}
-              {!section.projects.length && !query ? <p className="automation-project-category-empty">No projects in this category.</p> : null}
+              {!section.projects.length && !query && props.projects.length > 0 ? <p className="automation-project-category-empty">No projects in this category.</p> : null}
             </div>
           </section>
         )) : null}
@@ -182,7 +186,6 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
 
 function formatProjectUpdatedAt(value: number): string {
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short"
+    dateStyle: "medium"
   }).format(new Date(value));
 }

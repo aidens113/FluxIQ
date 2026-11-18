@@ -1,7 +1,8 @@
 // The empty chat, centred in the stream: a title, one line, the latest
 // chat's two starts as buttons, the model-key line with its Open FluxIQ, and
 // example prompts as quiet buttons that fill the composer when chosen, or a
-// host's welcome lines, each with its icon. Built
+// host's welcome lines, each with its icon. The key line or card sits right under the title and line, above the
+// welcome lines, so the one thing the person must do first is never below the fold of a short dock. Built
 // once; the starts and examples are rebuilt only when their set changes.
 
 import { createElement } from "../../dom/index.ts";
@@ -40,7 +41,7 @@ export function createEmptyState(choose: (text: string) => void, hooks: EmptySta
   const card = createElement("div", { className: "chat-key-card", hidden: true });
   const examples = createElement("div", { className: "chat-examples", attrs: { role: "list", "aria-label": "Examples" } });
   const items = createElement("ul", { className: "chat-welcome-items" });
-  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, items, starts, key, card, examples]);
+  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, card, key, items, starts, examples]);
   let keyCard: ModelKeyCard | undefined;
   let shownItems = "";
   let shownStarts = "";

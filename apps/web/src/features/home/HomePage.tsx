@@ -5,6 +5,7 @@ import { useProgramTransport } from "../automation-studio/data/use-program-trans
 import { PublishPanelPage, useEngineReading, usePanelContext, type EngineStatus } from "../panel-shell";
 import { useGatewayChanges } from "../client-gateway-changes";
 import { pendingPairings } from "../settings-page/connect";
+import { readRevokedAccess } from "./model";
 import { loadAllRuns, loadClients, loadRuns, loadThreads, useReloadOnChange, useResource, type Resource } from "./data";
 import { HomeAiKey, HomeConnected, HomeEngine, HomeNeedsYou, HomeRecentRuns, HomeToday } from "./sections";
 import "./home.css";
@@ -31,6 +32,7 @@ export function HomePage() {
   const gateway = useGatewayChanges();
   useReloadOnChange(clients, gateway.revision);
   const now = Date.now();
+  const revoked = useMemo(() => readRevokedAccess(gateway.snapshot?.trustedClients), [gateway.snapshot]);
   const waiting = pendingPairings(gateway.snapshot?.pairings, now).length;
   return (
     <div className="home">
@@ -40,7 +42,7 @@ export function HomePage() {
       <div className="home-grid">
         <HomeEngine engine={engine} />
         <HomeToday runs={runs} now={now} />
-        <HomeConnected clients={clients} waiting={waiting} now={now} />
+        <HomeConnected clients={clients} waiting={waiting} now={now} revoked={revoked} />
         <HomeNeedsYou threads={threads} runs={runs} />
       </div>
       <HomeRecentRuns runs={runs} now={now} />

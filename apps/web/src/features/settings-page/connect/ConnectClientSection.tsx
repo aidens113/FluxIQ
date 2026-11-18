@@ -17,8 +17,8 @@ export function ConnectClientSection() {
   const { state, reload, live } = useConnectView();
   const studio = useProgramTransport("automation-studio");
   return (
-    <section aria-labelledby="devices-heading" className="devices">
-      <h2 id="devices-heading">Devices and apps</h2>
+    // The Security tab already says "Devices and apps"; a second heading under it would only repeat it.
+    <section aria-label="Devices and apps" className="devices">
       {state.state === "loading" ? <p role="status">Loading your devices…</p> : null}
       {state.state === "error" ? (
         <div role="alert">

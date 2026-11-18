@@ -54,3 +54,5 @@
 
 /* The chat's bar that holds the compact card above the composer, in the composer's column. */
 .chat-key-bar { max-width: var(--chat-column); margin: 0 auto 8px; }
+/* The card is never squeezed or cut by the transcript's scroller: it keeps its own height, and the scroller scrolls. */
+.chat-key-card, .chat-key-bar { flex: none; min-height: min-content; overflow: visible; }

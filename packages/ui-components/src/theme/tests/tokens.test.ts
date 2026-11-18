@@ -45,3 +45,9 @@ test("every colour token has a light value, unless it is the same in both themes
 test("tokens.css does not use light-dark(), which the extension's oldest Chrome cannot read", () => {
   assert.doesNotMatch(TOKENS, /light-dark\(/);
 });
+
+test("one thin scrollbar for both clients, from tokens that follow the theme", () => {
+  assert.match(TOKENS, /scrollbar-width:\s*thin;/);
+  assert.match(TOKENS, /scrollbar-color:\s*var\(--scrollbar-thumb\) transparent;/);
+  assert.ok(block(":root").has("--scrollbar-thumb"));
+});

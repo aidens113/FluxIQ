@@ -44,6 +44,19 @@ export function pendingPairingRequests(pairings: ClientPairingRequest[], nowMs: 
   return pairings.filter((pairing) => pairing.requestedBySessionId && !pairing.consumedAt && pairing.expiresAt > nowMs && !dismissed.has(pairing.pairingCode));
 }
 
+/**
+ * Who is asking, as the person knows it: the name the browser gave the gateway
+ * ("Chrome on Windows"), or "A browser" when it gave none.
+ */
+export function pairingClientName(pairing: Pick<ClientPairingRequest, "requestedByClientName">, sessionName?: string): string {
+  return pairing.requestedByClientName?.trim() || sessionName?.trim() || "A browser";
+}
+
+/** The dialog's title: "Chrome on Windows wants to connect". */
+export function pairingTitle(pairing: Pick<ClientPairingRequest, "requestedByClientName">, sessionName?: string): string {
+  return `${pairingClientName(pairing, sessionName)} wants to connect`;
+}
+
 export function pairingExpiryLabel(expiresAt: number, nowMs: number): string {
   const seconds = Math.max(0, Math.ceil((expiresAt - nowMs) / 1_000));
   return seconds ? `Expires in ${seconds}s` : "Expired";
@@ -203,17 +216,15 @@ export function GlobalClientGatewayPairing() {
   }
 
   return (
-    <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Check that the code below matches the one shown in the app you are connecting." title="A browser or app wants to connect" onClose={dismissPairingPrompt}>
+    <Modal busy={Boolean(busyAction)} closeOnEscape={!busyAction} description="Check that the code below matches the one shown in the app you are connecting." title={pairingTitle(pendingPairing, pendingSession?.name)} onClose={dismissPairingPrompt}>
       {liveUpdatesNotice(changes.status) ? <InlineNotice message={liveUpdatesNotice(changes.status) ?? ""} title="Not live" tone="warning" /> : null}
       {pending.length > 1 ? <InlineNotice message={`Showing request 1 of ${pending.length}. The next request will open after this one is resolved.`} tone="info" /> : null}
       {closedNotice ? <InlineNotice message={closedNotice.message} title={`Previous request: ${closedNotice.title.toLowerCase()}`} tone={closedNotice.tone === "error" ? "warning" : "info"} /> : null}
       {actionError ? <InlineNotice message={actionError} title="Pairing unchanged" tone="error" /> : null}
       {snapshot.webRuntime?.clientGatewayError ? <InlineNotice message={snapshot.webRuntime.clientGatewayError} title="Gateway issue" tone="warning" /> : null}
       <div className="client-pairing-request">
-        <div className="client-pairing-request-head"><QrCode aria-hidden size={20} /><span>Someone is asking to connect</span></div>
+        <div className="client-pairing-request-head"><QrCode aria-hidden size={20} /><span>Check this code against the one in {pairingClientName(pendingPairing, pendingSession?.name)}</span></div>
         <dl className="client-pairing-request-lines">
-          <dt>Name</dt>
-          <dd><strong>{pendingPairing.requestedByClientName ?? pendingSession?.name ?? "FluxIQ extension"}</strong></dd>
           <dt>Code</dt>
           <dd><code className="client-pairing-request-code">{pendingPairing.referenceCode ?? pendingPairing.pairingCode}</code></dd>
           <dt>Time left</dt>

@@ -27,7 +27,7 @@ export function ReplaceKeyForm(props: { keyName: string; onReplace(value: string
       <label className="field"><span className="field-label">Your password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
       {error ? <p role="alert" className="settings-problem">{error}</p> : null}
       <div className="settings-actions">
-        <button type="submit" className="button primary" disabled={pending || !value || !password}>{pending ? "Saving..." : "Replace key"}</button>
+        <button type="submit" className="button primary" disabled={pending || !value || !password}>{pending ? "Saving…" : "Replace key"}</button>
         <button type="button" className="button" disabled={pending} onClick={props.onCancel}>Cancel</button>
       </div>
     </form>

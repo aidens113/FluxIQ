@@ -1,7 +1,7 @@
 import { act, create } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { AccountMenu } from "../AccountMenu";
-import { signOut } from "../sign-out";
+import { signOut, signedOutPath } from "../sign-out";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => vi.unstubAllGlobals());
@@ -31,4 +31,14 @@ it("offers Sign out in the top bar's account menu and says when it failed", asyn
   await act(async () => { item.props.onClick(); });
   expect(signOutAction).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(renderer.toJSON())).toContain("Could not sign out. Try again.");
+});
+
+it("signing out stays on the current page, so signing in returns to it", async () => {
+  vi.stubGlobal("window", { location: { pathname: "/security/keys", search: "?x=1", hash: "" } });
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true })));
+  const go = vi.fn();
+  await signOut(go);
+  expect(go).toHaveBeenCalledWith("/security/keys?x=1");
+  expect(signedOutPath({ pathname: "//evil.example" })).toBe("/");
+  expect(signedOutPath(undefined)).toBe("/");
 });

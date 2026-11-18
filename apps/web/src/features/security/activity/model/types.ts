@@ -6,7 +6,8 @@
  * - `at`: when, in epoch milliseconds (the audit keeps whole seconds);
  * - `who`: the name of whoever acted, in words;
  * - `action`: the IAM action, `<service>:<PascalCase>`;
- * - `outcome`: whether it was allowed or denied;
+ * - `outcome`: whether it was allowed or denied (the permission check, not what the operation then did);
+ * - `result`: present only when the audit recorded what the operation itself did after it was allowed;
  * - `resources`: what it acted on, in words;
  * - `hidden`: present only on a list request that hid items from whoever
  *   asked: how many it hid, a positive integer. The audit keeps one entry for
@@ -17,6 +18,7 @@ export type ActivityEntry = {
   who: string;
   action: string;
   outcome: "allowed" | "denied";
+  result?: "succeeded" | "failed";
   resources: string[];
   hidden?: number;
 };

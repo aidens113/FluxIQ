@@ -262,6 +262,7 @@
   .program-inner-header > .button,
   .program-list-toolbar > *,
   .modal-actions > .button {
+    flex: none;
     width: 100%;
   }
 
@@ -290,8 +291,9 @@
   }
 
   .global-alert-viewport {
+    --toast-top: calc(var(--space-xxl) * 3);
     right: var(--space-sm);
-    bottom: var(--space-sm);
+    bottom: auto;
     left: var(--space-sm);
     width: auto;
   }

@@ -30,9 +30,11 @@
   font-family: var(--font-sans);
   /* Native controls and scrollbars in the brand rather than the system's blue
      and light grey: checkboxes, radios and ranges take the amber accent, and
-     scrollbars the edge hairline. Both inherit, so they hold in every theme. */
+     scrollbars one thin thumb (`--scrollbar-thumb`) for both clients. Both inherit, so they hold in every theme. */
   accent-color: var(--accent);
-  scrollbar-color: var(--edge) transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 55%, transparent);
 
   --canvas: #0c0d0f;
   --surface: #111214;

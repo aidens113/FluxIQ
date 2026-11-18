@@ -197,7 +197,7 @@ function DatabaseWorkspace({ api, currentUser, ownerCurrent }: { api: ReturnType
           {currentUser.pinConfigured ? <Field label="PIN" required><input disabled={recheckBusy} inputMode="numeric" value={credentialRecheck.pin} onChange={(event) => { if (targetCurrent() && recheckRef.current.epoch === recheckEpoch && !recheckRef.current.busy) setCredentialRecheck({ ...credentialRecheck, pin: digits(event.target.value) }); }} /></Field> : null}
           {currentUser.totpEnabled ? <Field label="2FA code" required><input autoComplete="one-time-code" disabled={recheckBusy} inputMode="numeric" value={credentialRecheck.totp} onChange={(event) => { if (targetCurrent() && recheckRef.current.epoch === recheckEpoch && !recheckRef.current.busy) setCredentialRecheck({ ...credentialRecheck, totp: digits(event.target.value).slice(0, 6) }); }} /></Field> : null}
         </div>
-        {recheckBusy ? <p role="status">Checking authorization...</p> : null}
+        {recheckBusy ? <p role="status">Checking authorization…</p> : null}
         <div className="modal-actions"><button className="button" onClick={dismissRecheck} type="button">Cancel</button><button className="button button-primary" disabled={recheckBusy || !credentialRecheck.password || (currentUser.pinConfigured && credentialRecheck.pin.length < 4) || (currentUser.totpEnabled && credentialRecheck.totp.length !== 6)} onClick={() => void authorizeSensitiveStore()} type="button">Authorize for 5 Minutes</button></div>
       </Modal> : null}
     </section></>

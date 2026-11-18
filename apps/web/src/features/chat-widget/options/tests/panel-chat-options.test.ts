@@ -29,6 +29,13 @@ describe("the chat's options in this panel", () => {
     expect(options.fallback?.line).not.toContain("FluxIQ window");
   });
 
+  it("leaves the assistant's chat open to a message with no project, and keeps a project-only chat's reason", () => {
+    expect(panelChatOptions({ ...input, assistant: true }).threads?.unavailableReason).toBeUndefined();
+    expect(panelChatOptions({ ...input, assistant: false }).threads?.unavailableReason).toContain("Open a project");
+    expect(panelChatOptions({ ...input, assistant: true }).threads?.emptyTitle).toBe("FluxIQ assistant");
+    expect(panelChatOptions({ ...input, assistant: false }).threads?.emptyTitle).toBeUndefined();
+  });
+
   it("bounds the transcript, announces who spoke and when, and warns of a waiting question", () => {
     expect(options.history).toEqual({ window: 200 });
     expect(options.turnMeta?.formatTime(0)).toBe(new Date(0).toLocaleString());
