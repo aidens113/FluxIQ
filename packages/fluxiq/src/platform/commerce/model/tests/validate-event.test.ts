@@ -26,6 +26,8 @@ const invalidSnapshots: Partial<CommerceSubscriptionSnapshot>[] = [
   { paidThroughMs: -1 },
   { paidThroughMs: Number.NaN },
   { verifiedAtMs: Number.POSITIVE_INFINITY },
+  { endedAtMs: -1 },
+  { cancelAtPeriodEnd: "yes" as unknown as boolean },
   { accountId: " account-a" },
   { entitlements: [grant({ validUntilMs: 1_000 })] },
   { entitlements: [grant({ capabilities: ["execute", "execute"] })] },
