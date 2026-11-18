@@ -25,6 +25,17 @@ export class IamRequestAuthorizer {
   }
 
   /**
+   * Decides `action` on `resources` and records nothing: for a holder that
+   * reuses the decision until the policies behind it change, and records the
+   * events it acts on itself (the client gateway's activity delivery, through
+   * `GlobalProgramApiRegistry.decideUnrecorded`), as `filter` decides each
+   * item of a list without a row of its own.
+   */
+  decideUnrecorded(action: string, resources: readonly IamResource[]): IamDecision {
+    return this.evaluate(action, resources);
+  }
+
+  /**
    * Keeps the items the principal may `action`, locating each by `toResource`,
    * and records exactly one audit row for the list, naming `action` and
    * `listScope`:
@@ -54,11 +65,11 @@ export class IamRequestAuthorizer {
   }
 
   private evaluate(action: string, resources: readonly IamResource[]): IamDecision {
-    if (this.compiled === null) return denyIamRequest(this.principal, action, resources);
+    if (this.compiled === null) return { ...denyIamRequest(this.principal, action, resources), failure: "policy_unavailable" };
     try {
       return evaluateIamRequest(this.compiled, this.principal, action, resources, this.context);
     } catch {
-      return denyIamRequest(this.principal, action, resources);
+      return { ...denyIamRequest(this.principal, action, resources), failure: "policy_unavailable" };
     }
   }
 }
@@ -72,6 +83,7 @@ function listDecision(action: string, listScope: IamResource, items: readonly Ia
   const citing = items.find((item) => item.decision === "deny") ?? items[0]!;
   const reason = citing.resources[0]?.reason ?? (citing.decision === "allow" ? "allowed" : "implicit-deny");
   return {
+    ...(citing.failure === undefined ? {} : { failure: citing.failure }),
     principal: citing.principal,
     action,
     decision: citing.decision,

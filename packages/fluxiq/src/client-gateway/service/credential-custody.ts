@@ -15,8 +15,8 @@ export type ClientGatewayCredentialHolder = {
  * `confirmed`, `rotating` or `presented`, and the gateway never logs one.
  */
 export type ClientGatewayCredentialCustody = {
-  /** A person approved this client, in `approvedBySessionId` when the caller knows it. It starts locked: a proof, not the approval, opens anything for it. */
-  issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined }): Promise<void>;
+  /** A person approved this independent client, in `approvedBySessionId` when known. Exact own-session custody may migrate legacy keys; approval never creates an extra key lock. */
+  issued(input: { holder: ClientGatewayCredentialHolder; credential: string; approvedBySessionId?: string | undefined; approvedBySessionDigest?: string | undefined }): Promise<void>;
   /** The credential with this digest is confirmed in use, so what its predecessor could open ends. Told only of one that has really become the client's. */
   confirmed(input: { holder: ClientGatewayCredentialHolder; credentialDigest: string }): Promise<void>;
   /** Written ahead of the new credential's digest, so a crash either side of it leaves the accepted credential able to open what custody keeps. */
@@ -31,8 +31,8 @@ export type ClientGatewayCredentialCustody = {
 
 /**
  * Custody as the gateway calls it: optional, and never able to fail what the
- * gateway was doing. A client whose custody failed is still paired, and finds its
- * key locked, which it says. A failure is audited by step and error name only,
+ * gateway was doing. Host-protected key use is authorized independently; legacy credential-box
+ * restoration failure is a saved-key recovery condition, never a second authentication step. A failure is audited by step and error name only,
  * because a store's message could quote what it was writing.
  */
 export class ClientGatewayCredentialCustodian {

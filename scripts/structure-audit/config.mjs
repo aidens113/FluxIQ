@@ -157,6 +157,7 @@ export const CONFIG = {
       "packages/fluxiq/src/client-gateway/contracts.ts",
       "packages/contracts/src/automation.ts",
       "packages/contracts/src/fluxnode.ts",
+      "packages/contracts/src/platform.ts",
       "packages/client-gateway-websocket/src/index.ts",
       "packages/fluxiq/src/ui/index.ts",
       "packages/ui-components/src/index.ts",
@@ -306,6 +307,11 @@ export const CONFIG = {
   // The downstream web-extension repository lists them, so that a provider
   // call written there fails the build instead of only a Lab network policy.
   restrictedReferences: [],
+
+  // Next.js apps, for the server-client-boundary rule: each { name, src },
+  // `src` being the app's source root (ending in `/`), which `@/` names. A
+  // repository with none, such as the web extension, leaves the rule inert.
+  nextApps: [{ name: "Core web app", src: "apps/web/src/" }],
 
   // Modules that must never load others through any chain of imports, for the
   // module-reach rule. Each entry is { name, from, to, reason, remedy }; a

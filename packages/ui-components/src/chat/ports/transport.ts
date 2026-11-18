@@ -108,9 +108,18 @@ export type ChatConversationPort = {
  * knows of it. Absent: the chat reads on its 4 s poll alone. Present: it reads at
  * once on each change and its poll drops to a slow beat, which stays because a
  * change made elsewhere reaches a client with no push channel in no other way.
+ *
+ * `complete: true` says the client does have such a channel: `subscribe` tells
+ * of every change the chat shows whoever made it (a run, another tab, another
+ * person), and tells once with `{}` whenever its channel opens, opens again or
+ * may have missed a change. The chat then runs no poll at all: it reads when
+ * told, and reads the model keys again when the person turns to the composer.
+ * Absent or false keeps the beat, so a client without such a channel is
+ * unchanged.
  */
 export type ChatChangesPort = {
   subscribe(listener: (change: { conversationId?: string }) => void): () => void;
+  readonly complete?: boolean;
 };
 
 /** How a page overlay shows, for a client that has one; a client with none answers `hidden`. */

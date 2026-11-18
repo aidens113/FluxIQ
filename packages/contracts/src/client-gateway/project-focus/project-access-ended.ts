@@ -1,0 +1,2 @@
+/** `server.project_access_ended`, unprompted: the pairing person can no longer read the session's project `projectId` (access removed, disabled, or deleted), so its activity stopped; Core moved the session where a null focus goes (`currentProjectId`) and says why in `message`. */
+export type ClientGatewayProjectAccessEnded = { projectId: string; currentProjectId: string | null; message: string };

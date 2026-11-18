@@ -125,6 +125,8 @@ export type IamResourceDecision = {
  * workspace with no `Deny` anywhere in the set).
  */
 export type IamDecision = {
+  /** The authority could not be evaluated; access remains denied. Never includes provider details. */
+  failure?: "policy_unavailable";
   principal: string;
   action: string;
   decision: "allow" | "deny";

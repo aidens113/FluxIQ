@@ -34,7 +34,6 @@ function contextWith(handlers: Record<string, Handler>, extra: Partial<Automatio
     projectId: "project.run",
     conversationId: "conversation.run",
     sessionId: "session.person",
-    keyLocked: false,
     paired: false,
     startLocation: null,
     ...extra

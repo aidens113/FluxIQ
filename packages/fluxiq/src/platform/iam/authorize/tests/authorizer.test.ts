@@ -62,6 +62,7 @@ describe("IamAuthorizer.authorize", () => {
     const decision = await authorizer.authorize(principal(), READ, [{ frn: KEY }], context());
     expect(decision.decision).toBe("deny");
     expect(decision.matched).toBe("implicit");
+    expect(decision).not.toHaveProperty("failure");
     expect(sink.records[0]).toMatchObject({ category: "deny", matched: "implicit" });
   });
 
@@ -79,6 +80,8 @@ describe("IamAuthorizer.authorize", () => {
     const decision = await authorizer.authorize(principal(), READ, [{ frn: P1 }], context({ requestId: "req-2" }));
     expect(decision.decision).toBe("deny");
     expect(decision.resources).toEqual([{ resource: P1, decision: "deny", reason: "implicit-deny", matched: "implicit" }]);
+    expect(decision.failure).toBe("policy_unavailable");
+    expect(JSON.stringify(decision)).not.toContain("store down");
     expect(sink.records).toHaveLength(1);
     expect(sink.records[0]).toMatchObject({ category: "deny", requestId: "req-2", resources: [P1] });
   });

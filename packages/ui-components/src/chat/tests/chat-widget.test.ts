@@ -327,8 +327,8 @@ test("a client without onExtract is not offered \"Extract data from this page\""
 
 test("the empty latest chat asks for the model keys once, says when none is enabled, and Extract still goes to the panel", async () => {
   for (const [reply, line] of [
-    [{ ok: true, value: { ok: true, payload: { keys: [{ kind: "model", provider: "deepseek", enabled: false }] } } }, MODEL_KEY_LINE],
-    [{ ok: true, value: { ok: true, payload: { keys: [{ kind: "model", provider: "deepseek", enabled: true }] } } }, null],
+    [{ ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "deepseek", enabled: false }] } } }, MODEL_KEY_LINE],
+    [{ ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "deepseek", enabled: true }] } } }, null],
     [{ ok: false, sentence: "FluxIQ is not connected." }, null]
   ] as const) {
     await withFakeDocument(async () => {
@@ -398,13 +398,13 @@ test("a key added after the chat read it missing lifts the line on the next poll
   });
 });
 
-test("a key that locks while the chat is open shows the step without reopening, and it lifts the same way", async () => {
+test("saved-key availability refreshes while the chat stays usable, with no client unlock step", async () => {
   await withFakeDocument(async () => {
     const core = targetCore([]);
-    let unlocked = true;
+    let available = true;
     const request = async <T>(message: TestMessage): Promise<ChatResult<T>> => {
       if (message.type !== TEST_MESSAGES.panelModelReadiness) return core.request<T>(message);
-      return { ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "DeepSeek", enabled: true, unlocked, ...(unlocked ? {} : { lockedBecause: "signed_out" }) }] } } } as unknown as ChatResult<T>;
+      return { ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "DeepSeek", enabled: true, availability: available ? { state: "available" } : { state: "unavailable", code: "host_protection_unavailable" } }] } } } as unknown as ChatResult<T>;
     };
     vi.useFakeTimers({ toFake: ["setInterval", "Date"] });
     const chat = createChatWidget(messageTransport(request), { openControl: opener });
@@ -415,16 +415,19 @@ test("a key that locks while the chat is open shows the step without reopening, 
       await settle();
       const key = fake(chat.element).byClass("chat-key-line")[0]!;
       assert.equal(key.hidden, true, "it opens: nothing to say");
-      unlocked = false;
+      available = false;
       vi.advanceTimersByTime(16_000);
       await settle();
       await settle();
-      assert.equal(key.hidden, false, "locked since: the step shows by itself");
-      unlocked = true;
+      assert.equal(key.hidden, false, "the saved-key problem is shown without reopening");
+      assert.match(fake(chat.element).byClass("chat-key-text")[0]!.textContent, /host configuration/u);
+      assert.doesNotMatch(fake(chat.element).byClass("chat-key-text")[0]!.textContent, /unlock|password|PIN/iu);
+      assert.equal(fake(chat.element).byClass("composer-box")[0]!.disabled, false, "saved-key availability never gates the composer");
+      available = true;
       vi.advanceTimersByTime(4_000);
       await settle();
       await settle();
-      assert.equal(key.hidden, true, "unlocked again: gone by itself");
+      assert.equal(key.hidden, true, "available again: the line clears by itself");
     } finally {
       chat.setActive(false);
       vi.useRealTimers();
@@ -520,7 +523,7 @@ test("a client with no models port never claims a key is missing, and one with n
     const core = targetCore([]);
     const request = async (message: TestMessage): Promise<ChatResult<unknown>> => {
       if (message.type === TEST_MESSAGES.panelModelReadiness) {
-        return { ok: true, value: { ok: true, payload: { keys: [{ kind: "model", provider: "deepseek", enabled: false }] } } };
+        return { ok: true, value: { ok: true, payload: { keys: [{ kind: "llm", provider: "deepseek", enabled: false }] } } };
       }
       return core.request<unknown>(message);
     };

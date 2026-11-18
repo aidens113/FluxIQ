@@ -1,5 +1,6 @@
-// The conversation itself: its records, how a transcript behaves, what a
-// person may answer, and how a turn reaches a browser nothing can push to.
+// The conversation itself: its records, how a transcript behaves, and what a
+// person may answer. How a turn reaches the browser is the page's change stream
+// (`features/panel-changes`, `GET /api/panel/changes`), not a poll.
 //
 // Nothing here renders. That is the point: the globally mounted prompt has to
 // reach a person on every page of the product, and importing the Studio's
@@ -38,15 +39,6 @@ export {
   type ConversationAnswerAction,
   type ConversationAskPresentation
 } from "./answers";
-export {
-  CONVERSATION_POLL_CEILING_MS,
-  CONVERSATION_POLL_FAST_MS,
-  CONVERSATION_POLL_HIDDEN_MS,
-  createBackoffPoller,
-  nextConversationPollDelayMs,
-  type BackoffPoller,
-  type ConversationPollOutcome
-} from "./poller";
 export {
   CONVERSATION_DISMISSED_LIMIT,
   conversationPromptCopy,

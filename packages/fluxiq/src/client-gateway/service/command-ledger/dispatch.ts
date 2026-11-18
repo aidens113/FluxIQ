@@ -31,6 +31,8 @@ type Entry = {
   beforeSendCode?: "timeout_before_send";
   /** The timer source of the channel scope the command was dispatched in, read once at dispatch; undefined: the gateway's own (`../channel-scope/source.ts`). */
   timers: ClientGatewayTimerSource | undefined;
+  /** The channel scope the command was dispatched in, read once at dispatch with its timers; undefined: live. Its session is admitted against this scope again just before sending. */
+  scope: string | undefined;
 };
 type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string, timers: ClientGatewayTimerSource | undefined) => Promise<ClientGatewayReconcileAnswer | undefined>; hostLease?: ClientGatewayServiceOptions["hostLease"]; hostLeaseTarget?: (session: InternalSession) => ClientGatewayHostLeaseTarget; channelScope?: ClientGatewayChannelScopeSource | undefined; trace: ClientGatewayTraceTap };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
@@ -74,7 +76,7 @@ export class ClientGatewayDurableDispatch {
       reject = (error) => no(error ?? new Error("durable_command.outcome_unknown")); });
     void answer.catch(/* best-effort: preadmission cancellation is reported by public completion */ () => undefined);
     const observer = ClientGatewayCommandOutcome.observer(options.context);
-    const entry: Entry = { sessionId, clientId: session.clientId, claim, target, sent: false, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }), timers: this.ports.channelScope?.timers?.() };
+    const entry: Entry = { sessionId, clientId: session.clientId, claim, target, sent: false, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }), timers: this.ports.channelScope?.timers?.(), scope: this.ports.channelScope?.current() };
     const abort = () => { if (!entry.sent) entry.abort.abort(options.signal?.reason); else this.uncertain(entry); };
     options.signal?.addEventListener("abort", abort, { once: true });
     entry.detach = () => options.signal?.removeEventListener("abort", abort);
@@ -290,7 +292,7 @@ export class ClientGatewayDurableDispatch {
     if (!current.socket) refuse("socket_unavailable");
     const target = this.target(current);
     if (target.domainId !== entry.target.domainId || target.channelScope !== entry.target.channelScope) refuse("target_changed");
-    if (clientGatewayChannelScopeAdmission(current.channelScope, this.ports.channelScope?.current())) refuse("channel_scope_changed");
+    if (clientGatewayChannelScopeAdmission(current.channelScope, entry.scope)) refuse("channel_scope_changed");
     const leased = clientGatewayHostLeaseStamp(command, this.ports.hostLease, target);
     if (leased.refused) refuse(leased.refused);
     if (Controller.digest(leased.command) !== entry.claim.requestDigest) refuse("target_changed");

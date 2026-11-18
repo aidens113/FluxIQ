@@ -1,0 +1,21 @@
+name            = "fluxiq-platform"
+subscription_id = "REPLACE_WITH_SUBSCRIPTION_UUID"
+location        = "westus2"
+vm_size         = "Standard_D2s_v5" # Illustrative only: choose capacity and check availability/pricing.
+ubuntu_image = {
+  publisher = "Canonical"
+  offer     = "ubuntu-24_04-lts"
+  sku       = "server"
+  version   = "REPLACE_WITH_EXACT_MARKETPLACE_VERSION"
+}
+admin_public_key = "ssh-ed25519 REPLACE_WITH_EXISTING_PUBLIC_KEY"
+data_size_gb     = 40
+config_secret = {
+  vault_id = "/subscriptions/REPLACE/resourceGroups/REPLACE/providers/Microsoft.KeyVault/vaults/REPLACE"
+  name     = "fluxiq-runtime"
+  version  = "REPLACE_WITH_EXACT_SECRET_VERSION"
+}
+release = {
+  url    = "https://releases.example.org/fluxiq/core-release.tar.gz"
+  sha256 = "REPLACE_WITH_VERIFIED_ARCHIVE_SHA256"
+}

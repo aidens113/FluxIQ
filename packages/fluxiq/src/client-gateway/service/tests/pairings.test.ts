@@ -80,3 +80,85 @@ describe("ClientGatewayPairingRegistry pending caps", () => {
     expect(registry.getLimits()).toEqual({ perAddress: null, total: 1000 });
   });
 });
+
+// t916: the registry tells of the changes no other collaborator records as
+// they happen -- a challenge created, and challenges lapsing -- and lapses a
+// challenge at its expiry, not when something next reads it.
+describe("ClientGatewayPairingRegistry changes", () => {
+  function manualTimers() {
+    const waits: Array<{ delayMs: number; fire: () => void; cancelled: boolean }> = [];
+    return {
+      waits,
+      start: (delayMs: number, fire: () => void) => {
+        // A wait that ran out is over, as a cancelled one is.
+        const wait = {
+          delayMs,
+          cancelled: false,
+          fire: () => {
+            wait.cancelled = true;
+            fire();
+          }
+        };
+        waits.push(wait);
+        return { cancel: () => { wait.cancelled = true; } };
+      },
+      live: () => waits.filter((wait) => !wait.cancelled)
+    };
+  }
+
+  it("says a challenge was requested once per challenge created", () => {
+    const changed: string[] = [];
+    const registry = new ClientGatewayPairingRegistry(resolveClientGatewayConfig(), () => null, { changed: (kind) => changed.push(kind), startExpiryTimer: manualTimers().start });
+    registry.create({ requestedBySessionId: "s1" });
+    registry.create({ requestedBySessionId: "s2" });
+    expect(changed).toEqual(["pairing.requested", "pairing.requested"]);
+  });
+
+  it("lapses the earliest waiting challenge just after its expiry, says so once, and waits for the next", () => {
+    let now = 10_000;
+    const timers = manualTimers();
+    const changed: string[] = [];
+    const registry = new ClientGatewayPairingRegistry(resolveClientGatewayConfig({ now: () => now, pairingTtlMs: 1_000 }), () => null, { changed: (kind) => changed.push(kind), startExpiryTimer: timers.start });
+    registry.create({ requestedBySessionId: "s1" });
+    now = 10_500;
+    const second = registry.create({ requestedBySessionId: "s2" });
+    // One wait, for the earlier challenge, just past its expiry.
+    expect(timers.live().map((wait) => wait.delayMs)).toEqual([1_001]);
+
+    now = 11_001;
+    timers.live()[0]!.fire();
+    expect(changed).toEqual(["pairing.requested", "pairing.requested", "pairing.expired"]);
+    expect(registry.list().map((pairing) => pairing.pairingCode)).toEqual([second.pairingCode]);
+    expect(timers.live().map((wait) => wait.delayMs)).toEqual([500]);
+
+    now = 11_501;
+    timers.live()[0]!.fire();
+    expect(changed.filter((kind) => kind === "pairing.expired")).toHaveLength(2);
+    expect(registry.size()).toBe(0);
+    expect(timers.live()).toEqual([]);
+  });
+
+  it("moves the wait to an earlier challenge, and says nothing when a read finds nothing lapsed", () => {
+    let now = 0;
+    const timers = manualTimers();
+    const changed: string[] = [];
+    const registry = new ClientGatewayPairingRegistry(resolveClientGatewayConfig({ now: () => now }), () => null, { changed: (kind) => changed.push(kind), startExpiryTimer: timers.start });
+    registry.create({ requestedBySessionId: "s1", ttlMs: 5_000 });
+    registry.create({ requestedBySessionId: "s2", ttlMs: 1_000 });
+    expect(timers.live().map((wait) => wait.delayMs)).toEqual([1_001]);
+    registry.pruneExpired();
+    expect(changed).toEqual(["pairing.requested", "pairing.requested"]);
+    now = 2_000;
+    registry.pruneExpired();
+    expect(changed.at(-1)).toBe("pairing.expired");
+  });
+
+  it("does not start the wait again on a clock that has not moved since it began", () => {
+    const timers = manualTimers();
+    const registry = new ClientGatewayPairingRegistry(resolveClientGatewayConfig({ now: () => 5_000, pairingTtlMs: 0 }), () => null, { startExpiryTimer: timers.start });
+    registry.create({ requestedBySessionId: "s1" });
+    timers.live()[0]!.fire();
+    expect(registry.size()).toBe(1);
+    expect(timers.live()).toEqual([]);
+  });
+});

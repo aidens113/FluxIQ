@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayActionResult, type ClientGatewayCapability, type ClientGatewayClientMessage, type ClientGatewayServerMessage } from "../../index.ts";
 import type { ClientGatewayChannelScopeSource } from "../channel-scope/index.ts";
-import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../command-ledger/index.ts";
+import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayCommandUnsentRefusal as Unsent, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../command-ledger/index.ts";
 import type { ClientGatewayServiceOptions, ClientGatewayTimedWait, ClientGatewayTimerSource } from "../types.ts";
 
 const PLAIN: ClientGatewayCapability = { id: "synthetic.actions", kind: "action", actionTypes: ["synthetic.act"] };
@@ -129,7 +129,12 @@ describe("a channel scope's timer source", () => {
         if (saved!.state !== "committed") saved = { ...saved!, state: "unknown", unknownReason: reason };
         return saved!;
       },
-      read: async () => saved
+      read: async () => saved,
+      refuseUnsent: async (claim, proof) => {
+        if (saved?.state !== "pending") throw new Error("not pending");
+        saved = { ...saved, state: "refused_unsent", refusal: { ...Unsent.read(proof, claim) } };
+        return saved;
+      }
     };
     const observer = { completed: vi.fn(async () => undefined), uncertain: vi.fn(async () => undefined) };
     const run = setup(ANSWERS, { resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) });

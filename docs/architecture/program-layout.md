@@ -155,7 +155,7 @@ argument preserves existing one-argument callers. Explicit false omits the
 standing result-check resolver, session-key execution resolver and chat
 model/key bindings before any provider-key release or request. It preserves
 ordinary program services, authentication, Secret Keys, storage, native
-libraries, gateway and unlocked-session lookup. It does not rewrite stored
+libraries, gateway and session lookup. It does not rewrite stored
 result policies or guarantee immutability against trusted later manual binding.
 
 The web host accepts `FLUXIQ_MODEL_PROVIDERS_ENABLED`: absent or `true` enables,

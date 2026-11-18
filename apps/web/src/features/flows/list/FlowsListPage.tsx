@@ -6,6 +6,7 @@ import { useProgramTransport } from "../../automation-studio/data/use-program-tr
 import { PublishPanelPage, usePanelContext } from "../../panel-shell";
 import { loadFlowListing } from "../data";
 import { listedFlows } from "../model";
+import { FlowsProjectPicker } from "./FlowsProjectPicker";
 import { useLoaded } from "../use-loaded";
 import "../flows.css";
 
@@ -22,7 +23,7 @@ export function FlowsListPage() {
       <PublishPanelPage page="flows" />
       <h1>Flows</h1>
       {projectId === null ? (
-        <p className="flows-note">Choose a project in the top bar to see its Flows.</p>
+        <FlowsProjectPicker />
       ) : (
         <section className="flows-list" aria-label="Flows in this project" aria-busy={listing.state === "loading"}>
           <label className="flows-search">

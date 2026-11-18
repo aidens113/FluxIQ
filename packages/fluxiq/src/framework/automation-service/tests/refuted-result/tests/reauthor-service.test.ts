@@ -206,7 +206,7 @@ async function createHarness(options: {
   const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
     ports: {
       snapshot: async () => ({ keys: [{ id: KEY_ID, kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
-      createSessionRevealAuthorization: async (input) => ({
+      createUseAuthorization: async (input) => ({
         authorizationId: `reveal-t240-${++revealCount}`,
         keyId: input.id,
         keyUpdatedAtMs: 1,

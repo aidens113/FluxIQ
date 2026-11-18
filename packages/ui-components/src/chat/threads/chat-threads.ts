@@ -54,6 +54,8 @@ export type ChatThreadsDeps = {
   changed(): void;
   /** Puts the caret in the composer. */
   focusComposer(): void;
+  /** Draws the chat bar (name, "Chats", "+ New chat") in a drawer instead of the bare "Chats" button. */
+  bar?: boolean;
 };
 
 /** The mounted thread list. */
@@ -113,7 +115,7 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     open: deps.open,
     changed: () => render(drawn)
   });
-  const header = createThreadHeader(layout, () => setOpen(!open), listId);
+  const header = createThreadHeader(layout, () => setOpen(!open), listId, deps.bar === true && layout === "drawer" ? { create: newChat } : undefined);
   const list = createConversationList(listId, layout, {
     open(conversationId) {
       const thread = catalog.threads().find((candidate) => candidate.conversationId === conversationId);
@@ -121,11 +123,7 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
       deps.open({ kind: "thread", conversationId, projectId: thread.projectId });
       handOff();
     },
-    create() {
-      void actions.create().then((made) => {
-        if (made) handOff();
-      });
-    },
+    create: newChat,
     rename: (conversationId, title) => void actions.rename(conversationId, title),
     remove: (conversationId) => void actions.remove(conversationId),
     more: () => void catalog.more(),
@@ -136,6 +134,14 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     }
   });
   list.element.hidden = !open;
+
+  /** New chat, from the list or the chat bar. */
+  function newChat(): void {
+    if (actions.busy()) return;
+    void actions.create().then((made) => {
+      if (made) handOff();
+    });
+  }
 
   /** A chat came on screen from the list: the drawer gives the thread back and the composer takes the caret. */
   function handOff(): void {
@@ -173,7 +179,7 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     const threads = catalog.threads();
     const selected = threads.find((thread) => thread.conversationId === shownId) ?? null;
     const title = conversationDisplayTitle(selected, deps.projectName());
-    header.update({ title, showTitle: options.onTitle === undefined, open, waiting: unansweredThreadCount(threads) });
+    header.update({ title, showTitle: options.onTitle === undefined, open, waiting: unansweredThreadCount(threads), canCreate: actions.can.create, busy: actions.busy() });
     list.update({
       rows: threadRows(threads, selected?.conversationId, Date.now()),
       loaded: catalog.loaded(),

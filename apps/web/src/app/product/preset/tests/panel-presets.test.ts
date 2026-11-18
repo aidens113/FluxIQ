@@ -10,14 +10,14 @@ afterEach(() => { delete process.env.FLUXIQ_PANEL_PRESET; });
 const navLabels = (id: string): string[] => navItemsForPages(resolvePanelPreset(id).pages).map((item) => item.label);
 
 describe("each preset's nav", () => {
-  it("full lists all six screens", () => {
-    expect(navLabels("full")).toEqual(["Home", "Flows", "Runs", "Data", "Security", "Settings"]);
+  it("full lists every screen", () => {
+    expect(navLabels("full")).toEqual(["Home", "Projects", "Flows", "Runs", "Data", "Chats", "Security", "Settings"]);
   });
   it("data-collection lists the screens that collect and show data", () => {
-    expect(navLabels("data-collection")).toEqual(["Home", "Flows", "Runs", "Data", "Security", "Settings"]);
+    expect(navLabels("data-collection")).toEqual(["Home", "Projects", "Flows", "Runs", "Data", "Chats", "Security", "Settings"]);
   });
   it("task-automation hides Data", () => {
-    expect(navLabels("task-automation")).toEqual(["Home", "Flows", "Runs", "Security", "Settings"]);
+    expect(navLabels("task-automation")).toEqual(["Home", "Projects", "Flows", "Runs", "Chats", "Security", "Settings"]);
   });
   it("every preset keeps Home, Security and Settings reachable and lists only real Settings tools", () => {
     for (const preset of Object.values(PANEL_PRESETS)) {

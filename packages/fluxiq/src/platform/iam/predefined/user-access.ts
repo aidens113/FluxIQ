@@ -9,7 +9,7 @@ import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 // session, every recording) would show a user other users' data. A registry
 // test fails when a declared filtered workspace list is missing here, and
 // another when a user reaches any unfiltered one (programs/_shared/tests).
-const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:Projects", "secrets:Snapshot"];
+const FILTERED_WORKSPACE_LISTS: readonly string[] = ["studio:ListConversations", "studio:ListRecentFlowRuns", "studio:ListWorkspaceFlowSummaries", "studio:Projects", "secrets:Snapshot"];
 
 // The panel assistant's endpoints a person needs for their own chats in the
 // dock: list, read, open, rename and delete their threads, read a turn's
@@ -71,8 +71,7 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  * - `SelfService`: the actions that change only the caller's own credentials,
  *   the caller's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`:
  *   their starting humanness), the caller's own sign-in name in another case
- *   (`iam:RecaseMyUsername`: only its capitals, never another name), and a
- *   person's own unlock of their own keys with their own password, on
+ *   (`iam:RecaseMyUsername`: only its capitals, never another name), on
  *   `user/${fluxiq:PrincipalId}`, and minting a press grant (the mint also
  *   checks the confirmed endpoint against the caller's own policy). Not `iam:CreateUser`,
  *   `iam:UpdateUser` (moves a role) or `iam:Snapshot` (every user). The plan
@@ -116,7 +115,6 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Sid: "SelfService",
     Effect: "Allow",
     Action: [
-      "secrets:Unlock",
       "iam:SetPassword",
       "iam:SetPin",
       "iam:BeginTotp",
@@ -137,6 +135,13 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Sid: "OwnPanelAssistant",
     Effect: "Allow",
     Action: [...OWN_PANEL_ASSISTANT],
+    Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
+    Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
+  },
+  {
+    Sid: "OwnClientCredentials",
+    Effect: "Allow",
+    Action: ["gateway:ApprovePairing", "iam:ListApiKeys", "iam:EnrollApiKey", "iam:RevokeApiKey"],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
     Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
   }

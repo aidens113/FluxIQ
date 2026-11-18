@@ -272,7 +272,7 @@ describe("the workspace's key: no key is shared automatically; it needs an owner
     expect(keys.find((key) => key.id === team.id)?.offeredToWorkspace).toBe(false);
     const forMember = await service.snapshotFor({ userId: "member", sessionId: null });
     expect(forMember.keys.find((key) => key.id === mine.id)).toMatchObject({ heldByYou: true, offeredToWorkspace: true });
-    expect(forMember.keys.find((key) => key.id === team.id)?.heldByYou).toBeUndefined();
+    expect(forMember.keys.find((key) => key.id === team.id)?.heldByYou).toBe(false);
   });
 
   it("keeps the choice and the offer across a restart", async () => {

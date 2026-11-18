@@ -55,7 +55,7 @@ export function leaseTransport(transport: ChatTransport, valid: () => boolean): 
     },
     ...(recordings === undefined ? {} : { recordings: { list: leased(valid, (query) => recordings.list(query)) } }),
     ...(models === undefined ? {} : { models: { readKeys: leased(valid, () => models.readKeys()) } }),
-    ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener) } }),
+    ...(changes === undefined ? {} : { changes: { subscribe: (listener) => changes.subscribe(listener), ...(changes.complete === true ? { complete: true } : {}) } }),
     ...(results === undefined ? {} : {
       results: {
         ...(results.reportsSpend === undefined ? {} : { reportsSpend: results.reportsSpend }),

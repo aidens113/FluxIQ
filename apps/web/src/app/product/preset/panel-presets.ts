@@ -17,17 +17,17 @@ export const DEFAULT_PANEL_PRESET_ID = "full";
 export const PANEL_PRESETS: Readonly<Record<string, PanelPreset>> = Object.freeze({
   full: {
     id: "full",
-    pages: ["home", "flows", "runs", "data", "security", "settings"],
+    pages: ["home", "projects", "flows", "runs", "data", "chats", "security", "settings"],
     settingsTools: ["background-tasks", "deployment-sync", "database-manager", "docs", "runtime", "compute-control", "production-runner"]
   },
   "data-collection": {
     id: "data-collection",
-    pages: ["home", "flows", "runs", "data", "security", "settings"],
+    pages: ["home", "projects", "flows", "runs", "data", "chats", "security", "settings"],
     settingsTools: ["docs", "runtime"]
   },
   "task-automation": {
     id: "task-automation",
-    pages: ["home", "flows", "runs", "security", "settings"],
+    pages: ["home", "projects", "flows", "runs", "chats", "security", "settings"],
     settingsTools: ["background-tasks", "production-runner", "docs", "runtime"]
   }
 });

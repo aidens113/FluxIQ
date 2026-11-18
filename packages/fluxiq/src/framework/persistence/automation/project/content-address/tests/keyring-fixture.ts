@@ -9,6 +9,7 @@ import { AutomationStudioAesGcmProjectContentProtection } from "../../content-pr
 import type { AutomationStudioProjectContentProtectionKey } from "../../content-protection.ts";
 import { AutomationStudioProjectDatabasePool } from "../../database.ts";
 import type { AutomationStudioProjectDatabase } from "../../database.ts";
+import { automationStudioSchemaMigrationOrder } from "../../../migration-order/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 import { AUTOMATION_STUDIO_CONTENT_ADDRESS_KEY_MEDIA_TYPE, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION } from "../index.ts";
 
@@ -25,12 +26,23 @@ export async function makeTempRoot(): Promise<{ rootDir: string; remove(): Promi
   return { rootDir, remove: () => rm(rootDir, { recursive: true, force: true }) };
 }
 
-/** A project database on its own pool (its own connection), migrated through 0033. */
+/**
+ * A project database on its own pool (its own connection), with 0033 and the
+ * administration ledger composed in ID order as the stores compose them. A failed
+ * open closes its connection, so the failure is reported rather than an EBUSY
+ * from the temporary root's removal.
+ */
 export async function openTestProject(rootDir: string, projectId: string): Promise<KeyringTestProject> {
   const pool = new AutomationStudioProjectDatabasePool({ rootDir });
   const lease = await pool.acquire(projectId);
-  const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION];
-  await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
+  try {
+    const migrations = automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CONTENT_ADDRESS_MIGRATION]);
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
+  } catch (error) {
+    await lease.release();
+    await pool.closeAll();
+    throw error;
+  }
   return {
     pool,
     database: lease.database,

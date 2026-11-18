@@ -104,17 +104,23 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
       const projectId = request.payload !== null && typeof request.payload === "object" ? (request.payload as { projectId?: unknown }).projectId : undefined;
       return projectId === null || projectId === undefined ? { kind: "workspace" } : { kind: "project", projectId: String(projectId) };
     }),
+    // A project that could not be read is decided like its threads, by its project, so the
+    // list never names a project the caller may not see.
     list: {
-      items: (payload) => {
-        const found = (payload as { conversations?: unknown } | null)?.conversations;
-        return Array.isArray(found) ? found : [];
-      },
+      items: (payload) => [...listed(payload, "conversations"), ...listed(payload, "unreadableProjects")],
       ref: (item) => ({ kind: "project", projectId: (item as { projectId?: unknown } | null)?.projectId }),
-      replace: (payload, kept) => ({ ...(payload as object), conversations: kept })
+      replace: (payload, kept) => {
+        const keep = new Set(kept);
+        return {
+          ...(payload as object),
+          conversations: listed(payload, "conversations").filter((item) => keep.has(item)),
+          unreadableProjects: listed(payload, "unreadableProjects").filter((item) => keep.has(item))
+        };
+      }
     },
     handler: async (request) => {
       const payload = conversationPayload<ConversationListRequest>(request.payload);
-      return { ok: true, payload: { conversations: await listConversationsForRequest(service, request.scope.domainId, payload) } };
+      return { ok: true, payload: await listConversationsForRequest(service, request.scope.domainId, payload) };
     }
   });
 
@@ -293,6 +299,12 @@ function projectGate(registry: GlobalProgramApiRegistry, request: ProgramApiRequ
     if (!request.actor) return false;
     return (await registry.authorize({ actor: request.actor, action, permission: "programs.write", resources: { kind: "project", projectId }, programId: "automation-studio" })).allowed;
   };
+}
+
+/** The entries of one array field of a list payload; a payload without it holds none. */
+function listed(payload: unknown, field: "conversations" | "unreadableProjects"): unknown[] {
+  const found = (payload as Record<string, unknown> | null)?.[field];
+  return Array.isArray(found) ? found : [];
 }
 
 function conversationPayload<TRequest>(payload: unknown): Partial<TRequest> {

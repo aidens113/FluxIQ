@@ -52,6 +52,61 @@ function harness(overrides: Partial<WorkspaceManagerOptions> = {}) {
 }
 
 describe("FluxIQWorkspaceManager", () => {
+  it("retires exact instance projections before eviction, deletion and shutdown close", async () => {
+    const retired: Array<{ workspaceId: string; fluxiq: FluxIQ }> = [];
+    const { manager, advance, primary } = harness({ onRetire: entry => {
+      expect((entry.fluxiq as FakeInstance).closes).toEqual([]);
+      if (entry.workspaceId !== "workspace-main") expect(manager.get(entry.workspaceId)).toBeUndefined();
+      retired.push(entry);
+    } });
+    const idle = await manager.acquire("ws-idle");
+    const idleInstance = idle.fluxiq;
+    idle.release();
+    advance(60_000);
+    await manager.sweep();
+    const deleted = await manager.acquire("ws-delete");
+    const deletedInstance = deleted.fluxiq;
+    deleted.release();
+    await manager.deleteWorkspace("ws-delete");
+    const last = await manager.acquire("ws-last");
+    const lastInstance = last.fluxiq;
+    last.release();
+    await manager.close();
+    await manager.close();
+    expect(retired).toEqual([
+      { workspaceId: "ws-idle", fluxiq: idleInstance },
+      { workspaceId: "ws-delete", fluxiq: deletedInstance },
+      { workspaceId: "ws-last", fluxiq: lastInstance },
+      { workspaceId: "workspace-main", fluxiq: primary }
+    ]);
+  });
+
+  it("retires the replaced primary only and does not retire an identical replacement", async () => {
+    const onRetire = vi.fn();
+    const { manager, primary } = harness({ onRetire });
+    manager.primary();
+    manager.replacePrimary(primary);
+    expect(onRetire).not.toHaveBeenCalled();
+    const replacement = fakeInstance("replacement");
+    manager.replacePrimary(replacement);
+    expect(onRetire).toHaveBeenCalledTimes(1);
+    expect(onRetire).toHaveBeenCalledWith({ workspaceId: "workspace-main", fluxiq: primary });
+    expect(manager.primary().fluxiq).toBe(replacement);
+    await manager.close();
+    expect(onRetire).toHaveBeenLastCalledWith({ workspaceId: "workspace-main", fluxiq: replacement });
+  });
+
+  it("still closes storage when a projection observer fails and logs no thrown details", async () => {
+    const { manager, advance, created, warnings } = harness({ onRetire: () => { throw new Error("private host detail"); } });
+    (await manager.acquire("ws-idle")).release();
+    advance(60_000);
+    await manager.sweep();
+    expect(created[0]!.closes).toEqual(["evict"]);
+    expect(manager.get("ws-idle")).toBeUndefined();
+    expect(warnings).toEqual(["[FluxIQ] Workspace projection retirement failed."]);
+    await manager.close();
+  });
+
   it("creates one instance per workspace however many callers ask at once", async () => {
     const { manager, createTenant } = harness();
     const leases = await Promise.all([manager.acquire("ws-a"), manager.acquire("ws-a"), manager.acquire("ws-a")]);

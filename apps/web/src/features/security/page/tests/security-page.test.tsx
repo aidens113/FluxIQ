@@ -25,10 +25,11 @@ describe("section states", () => {
 
 describe("keys", () => {
   it("renders names and state, and no key value", () => {
-    const rows = [{ id: "k1", name: "Work", provider: "Anthropic", addedAt: 0, lastRevealedAt: undefined, enabled: true, lock: "locked" as const, value: "sk-SECRET-VALUE" }];
+    const rows = [{ id: "k1", name: "Work", provider: "Anthropic", addedAt: 0, lastRevealedAt: undefined, enabled: true, availability: { state: "unavailable" as const, code: "host_protection_unavailable" as const }, value: "sk-SECRET-VALUE" }];
     const html = renderToStaticMarkup(createElement(KeysList, { rows, now: 1000 }));
     expect(html).toContain("Work");
-    expect(html).toContain("Locked");
+    expect(html).toContain("Host key protection unavailable");
+    expect(html).not.toMatch(/unlock|password/iu);
     expect(html).toContain("Anthropic");
     expect(html).not.toContain("sk-SECRET-VALUE");
   });
@@ -61,13 +62,13 @@ describe("access", () => {
     expect(managed).toContain("ACTIONS-u1");
     expect(managed).toMatch(/data-slot="access-admin"[^>]*><p>ADMIN-TOOLS<\/p>/u);
   });
-  it("offers Forget only for a browser still trusted", () => {
+  it("offers Forget for every paired browser, trusted or not", () => {
     const rows = [
       { trustedClientId: "t1", name: "Chrome", clientType: "extension", status: "active", approvedAt: 1, lastUsedAt: 2 },
       { trustedClientId: "t2", name: "Old", clientType: "extension", status: "revoked", approvedAt: 1, lastUsedAt: 2 }
     ];
     const html = renderToStaticMarkup(createElement(PairedClientsList, { rows, now: 10, onForget: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
-    expect(html.match(/>Forget</g)).toHaveLength(1);
+    expect(html.match(/>Forget</g)).toHaveLength(2);
   });
 });
 

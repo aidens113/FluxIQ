@@ -1,13 +1,21 @@
 # t911 takeover, phase 1 (worker report)
 
 Status: Active
-Status detail: Phase 1 done: the goal, state and conflict forecast are recorded; package check passed on the tip. Phase 2 (merge dev, resolve, finish) waits for t929.
+Status detail: Phase 2 under way: dev merged into the branch (t924, t927, t929), conflicts resolved, t911's unfinished durable-settlement gaps being fixed; the lead concludes the merge.
 Created: 2026-11-17
 Last updated: 2026-11-17
 Owner: Senior supervisor agent (written by its worker-heavy worker for t911)
 Scope: Taking over Codex's t911 runtime lease isolation in Core: what it set out to do, what is done and unfinished, the dev merge forecast, and the storage layout questions met on the way.
 Paired document: none
 Related: [FluxNode plan](./fluxnode-plan.md), [t911 brief](./fluxnode-plan/reports/codex-t911-lease-brief.md), [Codex's t911 report](./fluxnode-plan/reports/codex-t911-lease-isolation.md)
+
+## Current State
+
+- Phase 1 (goal, state, conflict forecast, storage layout questions) is done; see below.
+- Phase 2: dev is merged into `task/t911-runtime-lease-isolation`, and the three conflicts are resolved by
+  editing the files. The merge itself is the lead's to conclude. See "Phase 2 results" at the end for what
+  changed and what each check printed.
+- Next: once the phase 2 checks pass, the lead concludes the merge and merges t911 into dev.
 
 Worker: worker-heavy (Claude Opus 5.5), 2026-11-17. Worktree
 `C:/Users/osrs_/FluxStuff/fxwork/t911/!FluxIQ`, branch
@@ -313,3 +321,111 @@ Risks that the text diff will not show:
    `apps/web/src/lib/fluxiq.ts` is being edited by t927).
 4. The accounts CLI's offline mode writes to a v1 root without migrating
    (`platform/provisioning/cli/main.ts:40-46`).
+
+## Phase 2 results (merging dev into t911, 2026-11-17)
+
+The lead ran `git merge --no-edit dev` (dev at `276245603`, "Merge task t929"). I resolved it by editing
+files only; the lead concludes the merge.
+
+### Conflicts resolved
+
+- `packages/fluxiq/src/client-gateway/service.ts`: took dev's `ClientGatewayLifecycle` arguments
+  (with t929's `sessionMetadata`) and kept t911's `hostLeaseTarget` closure on `ClientGatewayCommands`.
+  Checked against t929: `trustedClients.get()` and `trustedClients.isActive()` still exist
+  (`client-gateway/service/trusted-clients.ts:85-96`), and `isActive` is false once `revokedAt` is set.
+  A revoked or expired trust therefore yields lease domain `undefined`: no lease is stamped for it, and
+  an explicit lease claim is refused.
+- `packages/fluxiq/src/framework/automation-service/service/runtime-session/admission.ts`: both sides
+  combined, `ports.ownLeaseAdmits !== false && lease?.sessionId !== undefined &&
+  ports.leaseBinding!.isCurrent(lease) && ports.leaseBinding!.requiresLease(...)`. dev's driving gate
+  passes `ownLeaseAdmits: false` and no binding, so the lease branch is skipped there.
+- `.structure-baseline.json`: removed the markers by keeping dev's entry, then regenerated the file with
+  `pnpm structure:baseline`. The regeneration dropped dev's
+  `command-execution/tests/controller.test.ts` statement-packing entry as no longer needed.
+- dev added no new static `AutomationStudioHostLeaseScope.current()` / `.gatewaySource` readers; the
+  same five call sites remain, all bound or legacy-guarded.
+
+### t911's unfinished work that the merged run exposed (20 failures, all fixed)
+
+None of the eight failing test files changed on either side since the merge base. These were t911's
+own gaps, which Codex never ran against them.
+
+- **Durable dispatch now needs a ledger that can settle a pre-send refusal** (approved: "Unsupported
+  custom ledgers refuse before claiming"). The replay's in-memory ledger lacked it, so every replayed
+  durable command was refused. Fixed in production:
+  `client-gateway/trace-replay/walk/ledger.ts` gained `refuseUnsent` (from the gateway's own proof only,
+  once; never turns an answered or unknown command into an unsent one). The test memory ledgers gained
+  the same capability: `tests/durable-reconcile.test.ts`, `tests/late-action-result.test.ts`,
+  `tests/trace-tap.test.ts` and `service/tests/scope-timers.test.ts`. No other production port lacks it:
+  Core's store and the command-run wrapper have it, and the extension implements no ledger port.
+- **`claimForRun` had a real defect** (`framework/persistence/automation/project/command-ledger/store.ts`).
+  t911 moved the first-command check into the async claim, so a different second command was no longer
+  refused at once, and the admission's recorded first command was overwritten by the refused claim before
+  the refusal, corrupting the run's admission. Fixed: the refusal is synchronous again, before the
+  admission changes. A first command may be passed over only when this store settled it as never sent
+  (an in-memory set filled by `refuseUnsent`), and that settlement is confirmed again from storage
+  inside the claim's transaction; if storage disagrees, the admission is restored and the claim is
+  refused. `run-fence.test.ts` passes unchanged.
+- **Command-run close before send** (`command-run/tests/controller.test.ts`): t911 deliberately settles
+  a claim whose run closed before sending as `refused_unsent` (`cancelled_before_send`) and answers
+  `{ sendAllowed: false }`, where it used to mark it unknown and throw. The test now asserts that contract.
+- **Trial ports** (`trial-ports/tests/service-ports.test.ts`): the service's ports carry the owner's
+  `leaseBinding` because a build composes from the adopted collaborators. The test now composes its
+  comparison from the adopted collaborators too, and asserts that the binding is the same object.
+- **Durable dispatch re-read the ambient channel scope at send time**
+  (`client-gateway/service/command-ledger/dispatch.ts`). It now re-admits the session against the scope
+  captured at dispatch, beside the timers already read there (`entry.scope`). The production scope is
+  `AsyncLocalStorage`, so the live behaviour is the same, but the check no longer depends on the send
+  running in the dispatch's async context.
+
+### Lead's additions
+
+- **`conversation-requests/list.ts`**: a list across projects reads each project on its own. An
+  unreadable one is reported in `unreadableProjects: [{ projectId, reason }]` and the rest are still
+  listed; a named single project still fails as before. The handler
+  (`programs/automation-studio/api/handlers/conversations.ts`) returns both fields and passes both
+  through the per-project IAM list filter, so an unreadable project the caller may not see is never
+  named. Tests: `conversation-requests/tests/list.test.ts` (4 cases, including one failing project) and
+  two cases in `handlers/tests/conversations.test.ts` under real IAM (`IAM_USER_ACCESS`; alice sees her
+  unreadable project, bob never sees alice's).
+- **Schema-migration lock** (`framework/persistence/automation/schema-migrations.ts`): a runner whose
+  set has nothing pending no longer tries to mark the shared state ready while another runner holds the
+  lock. Its set is fully committed, so it answers ready, leaves the holder's lock alone, and is not
+  remembered (`markReadyUnlessHeld`). A set with something pending is still refused ("already running").
+  Tests: a new concurrent opener and reader in `tests/schema-migrations.test.ts` (the reader is a second
+  copy of the module, via `vi.resetModules`, so the per-file queue cannot order them, as with two bundles
+  or processes); the old ready-memo case that asserted `/lock was lost/` now asserts the new contract.
+  Why the in-process queue did not prevent it live: the panel holds Core twice (two module copies, noted
+  in the usable-client plan), so each copy has its own queue, and the two meet only at the database.
+
+### Phase 2 commands and observed results (all through `fxwork/.heavy-slots/heavy-slot.mjs run t911`)
+
+- Pass 1 (after resolving the markers):
+  - `pnpm --filter fluxiq check` -> exit 0.
+  - `pnpm --filter @fluxiq/web check` -> exit 2: 130 errors. 41 were TS2307 for `fluxiq/*` subpath exports,
+    because `packages/fluxiq/dist` did not exist in this worktree; the rest followed from those.
+  - vitest over client-gateway, runtime-session, the lease, command-run, command-ledger, trial-ports,
+    conversation and schema-migration tests -> 8 files failed / 148 passed; 20 tests failed / 1158 passed.
+    All new tests passed: `list.test.ts` 4, handler `conversations.test.ts` 20, `schema-migrations.test.ts` 5,
+    `schema-migrations-ready-memo.test.ts` 4.
+  - `pnpm structure:baseline` -> refused (statement packing in my new test); `pnpm structure:check` -> 3
+    violations (that, plus this report's missing `## Current State` and the stale index).
+- Pass 2 (after the fixes above):
+  - `pnpm --filter fluxiq check` -> exit 0.
+  - `node scripts/build-cache/cli.mjs contracts:build sdk:build fluxiq:build client-gateway-websocket:build ui-components:build` -> exit 0.
+  - `pnpm --filter @fluxiq/web check` -> exit 0.
+  - vitest (same set, narrowed) -> 1 failed (`scope-timers`: durable re-admission read the ambient scope at
+    send time), 772 passed.
+  - `pnpm structure:baseline` -> "baseline written: 911 entries across 13 rules (0 lowered, 1 removed)".
+  - `pnpm structure:check` -> "passed (551 warning(s), 911 baselined)".
+- Pass 3 (after `dispatch.ts` captured its scope at dispatch):
+  - `pnpm --filter fluxiq check` -> exit 0.
+  - `vitest run src/client-gateway src/framework/persistence/automation/project/command-ledger/tests src/framework/automation-service/service/command-run/tests src/programs/_shared/tests/runtime-host-lease.test.ts --maxWorkers 2 --minWorkers 1`
+    -> "Test Files 87 passed | 1 skipped (88); Tests 718 passed | 2 skipped (720)".
+  - `pnpm structure:baseline` -> "baseline already current, not rewritten: 911 entries".
+  - `pnpm structure:check` -> "passed (551 warning(s), 911 baselined)".
+
+Not re-run after pass 2: the web check (pass 3 changed only a private field in Core's durable dispatch, so
+no exported type changed), and the runtime-session, host-resources, trial-ports and conversation tests
+(their files were unchanged after they passed). Core dev's `96b33bbc3` is not in this tree; the lead merges
+it on concluding.

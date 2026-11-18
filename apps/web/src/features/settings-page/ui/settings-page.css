@@ -16,3 +16,29 @@
 .settings-page button { min-height: 36px; }
 .settings-appearance { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-appearance-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
+.settings-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; min-width: 0; }
+.settings-copy-label { font-weight: 600; flex-basis: 100%; }
+.settings-copy-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; margin: 0; }
+
+/* Sections read as one family: a hairline between them, the same heading rhythm, the same muted notes. */
+.settings-page > section, .settings-page > details { padding-top: var(--space-lg, 20px); border-top: 1px solid var(--divider); }
+.settings-page > h1 { margin: 0; }
+.settings-page h2, .settings-page h3 { margin: 0; }
+.settings-page h3 { font-size: var(--font-size-body, 1rem); }
+.settings-page section > p { margin: var(--space-xs, 4px) 0 0; }
+.settings-muted { color: var(--muted); font-size: var(--font-size-compact); overflow-wrap: anywhere; }
+.settings-problem { color: var(--danger); margin: 0; }
+.settings-page .field { max-width: 32rem; }
+.settings-page .button { min-height: var(--control-height-default, 36px); }
+
+/* Connect a client */
+.settings-connect { display: grid; gap: var(--space-md, 12px); }
+.settings-connect > h3 { margin-top: var(--space-sm, 8px); }
+.settings-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.settings-copy { padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); background: var(--surface-muted, transparent); }
+.settings-copy-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--font-size-compact); }
+.settings-pairings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm, 8px); }
+.settings-pairing { display: grid; gap: 4px; min-width: 0; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); }
+.settings-pairing-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm, 8px); }
+.settings-pairing-dialog { color: var(--accent-text); font-weight: var(--font-weight-semibold, 600); }
+.settings-copy pre.settings-copy-value { flex: 1 1 100%; max-height: 14rem; overflow: auto; }

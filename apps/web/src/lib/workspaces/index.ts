@@ -6,12 +6,16 @@
 // `lib/fluxiq` builds the manager and holds it for the process; this
 // directory never imports it statically.
 export { createTenantFluxIQ } from "./create-tenant";
+export { defaultWorkspaceId } from "./default-workspace";
 export { DeferredIamAuditSink } from "./deferred-audit-sink";
 export { WorkspaceDecisionAudit } from "./decision-audit";
 export { initializeFluxIQWebStorage } from "./initialize-storage";
 export { instanceBusy } from "./instance-busy";
 export { workspaceManagerLimits } from "./manager-limits";
 export { primaryWorkspaceId } from "./primary-workspace-id";
+export { workspaceProgramContext } from "./program-context";
+export { workspaceRouteContext, withWorkspaceRouteJson } from "./routes";
+export type { WorkspaceRouteBinding, WorkspaceRouteCaller, WorkspaceRouteContext, WorkspaceRouteRefusal, WorkspaceRouteSelection, WorkspaceRouteValidation } from "./routes";
 export { serviceWorkspaceIam } from "./service-iam";
 export { sessionIdOf } from "./session-id-of";
 export { sessionWorkspaceId } from "./session-workspace";

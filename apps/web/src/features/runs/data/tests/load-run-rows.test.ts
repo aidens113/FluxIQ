@@ -4,32 +4,39 @@ import { loadRunRows } from "../load-run-rows";
 
 const signal = new AbortController().signal;
 
-function transport(answers: Record<string, (payload?: Record<string, unknown>) => { ok: boolean; payload?: unknown }>): ProgramCommandTransport {
-  const answer = (endpoint: string, payload?: Record<string, unknown>) => Promise.resolve((answers[endpoint] ?? (() => ({ ok: false })))(payload));
-  return { get: (endpoint: string) => answer(endpoint), post: (endpoint: string, payload: Record<string, unknown>) => answer(endpoint, payload) } as ProgramCommandTransport;
+function transport(answers: Record<string, { ok: boolean; payload?: unknown }>): { studio: ProgramCommandTransport; calls: string[] } {
+  const calls: string[] = [];
+  const answer = (endpoint: string) => {
+    calls.push(endpoint);
+    return Promise.resolve(answers[endpoint] ?? { ok: false });
+  };
+  return { studio: { get: answer, post: answer } as unknown as ProgramCommandTransport, calls };
 }
 
+const runs = { ok: true, payload: { runs: [
+  { runId: "r-p1", flowId: "f1", projectId: "p1", startedAt: 1, actionAttemptCount: 4, metadata: { client: "extension" } },
+  { runId: "r-p2", flowId: "f2", projectId: "p2", startedAt: 2 }
+] } };
+
 describe("loadRunRows", () => {
-  it("joins every project's runs with Flow names and the metadata the run recorded", async () => {
-    const studio = transport({
-      projects: () => ({ ok: true, payload: { projects: [{ id: "p1" }, { id: "p2" }] } }),
-      "list-flow-runs": (payload) => ({ ok: true, payload: { runs: [{ runId: `r-${String(payload?.projectId)}`, flowId: "f1", startedAt: 1, actionAttemptCount: 4, metadata: { client: "extension" } }] } }),
-      "list-flow-summaries": () => ({ ok: true, payload: { flows: [{ flowId: "f1", name: "Cheapest listings" }] } })
+  it("joins every project's runs with Flow names and the metadata the run recorded, in two requests", async () => {
+    const { studio, calls } = transport({
+      "list-recent-flow-runs": runs,
+      "list-workspace-flow-summaries": { ok: true, payload: { flows: [{ flowId: "f1", name: "Cheapest listings" }, { flowId: "f2", name: "Prices" }] } }
     });
     const result = await loadRunRows(studio, signal);
-    expect(result.rows.map((row) => [row.runId, row.flowName, row.steps, row.client])).toEqual([["r-p1", "Cheapest listings", 4, "extension"], ["r-p2", "Cheapest listings", 4, "extension"]]);
+    expect(result.rows.map((row) => [row.runId, row.projectId, row.flowName, row.steps, row.client])).toEqual([["r-p1", "p1", "Cheapest listings", 4, "extension"], ["r-p2", "p2", "Prices", undefined, undefined]]);
     expect(result.incomplete).toBe(false);
+    expect([...calls].sort()).toEqual(["list-recent-flow-runs", "list-workspace-flow-summaries"]);
   });
-  it("marks the answer incomplete when one project cannot be read, and fails when none can", async () => {
-    const partial = transport({
-      projects: () => ({ ok: true, payload: { projects: [{ id: "p1" }, { id: "p2" }] } }),
-      "list-flow-runs": (payload) => (payload?.projectId === "p1" ? { ok: true, payload: { runs: [] } } : { ok: false })
-    });
-    expect((await loadRunRows(partial, signal)).incomplete).toBe(true);
-    const none = transport({
-      projects: () => ({ ok: true, payload: { projects: [{ id: "p1" }] } }),
-      "list-flow-runs": () => ({ ok: false })
-    });
-    await expect(loadRunRows(none, signal)).rejects.toThrow();
+  it("still lists the runs, marked incomplete, when the Flow names cannot be read", async () => {
+    const { studio } = transport({ "list-recent-flow-runs": runs });
+    const result = await loadRunRows(studio, signal);
+    expect(result.rows).toHaveLength(2);
+    expect(result.incomplete).toBe(true);
+  });
+  it("fails when the runs cannot be read", async () => {
+    const { studio } = transport({ "list-workspace-flow-summaries": { ok: true, payload: { flows: [] } } });
+    await expect(loadRunRows(studio, signal)).rejects.toThrow();
   });
 });

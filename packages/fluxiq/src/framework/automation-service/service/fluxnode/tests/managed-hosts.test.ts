@@ -1,4 +1,5 @@
 // @fluxiq-test-group real-sql
+import { createHash } from "node:crypto";
 import { fluxNodeSpecSchema, parseDataPipeline } from "@fluxiq/contracts/fluxnode";
 import { setImmediate } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +10,8 @@ import { createFluxNodeService } from "../create-fluxnode-service.ts";
 import * as acts from "../act-scope/index.ts";
 import { FluxNodeHostPool } from "../hosts/index.ts";
 import { FluxNodeRunRegistry } from "../run-registry.ts";
-import { findLoans, findLoansSpec, fluxNodeLane, OWNER } from "./library-lane.ts";
+import * as maps from "../../pipelines/map/index.ts";
+import { findLoans, findLoansAsked, findLoansSpec, fluxNodeLane, OWNER, titleAsked } from "./library-lane.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 const cleanups: Array<() => Promise<void>> = [];
@@ -21,6 +23,7 @@ afterEach(async () => {
 function fixture() {
   const bound = new Map<string, { isCurrent(): boolean }>();
   const leaves: string[] = [];
+  const firstLeaf = deferred();
   let releases = 0;
   const gateway = { snapshot: () => ({ sessions: [{ sessionId: "isolated-one", managedHostId: "host-one", status: "ready", metadata: { domainId: "library" } }] }),
     onEvent: () => () => undefined,
@@ -28,6 +31,7 @@ function fixture() {
       expect(bound.size).toBe(0);
       bound.set(input.runId, input);
       leaves.push(input.runId);
+      firstLeaf.resolve();
       return () => {
         expect(bound.delete(input.runId)).toBe(true);
         releases++;
@@ -36,7 +40,7 @@ function fixture() {
   } as unknown as ClientGatewayService;
   const pool = new FluxNodeHostPool({ gateway, domainId: "library", capacity: 1 });
   cleanups.push(() => pool.close());
-  return { pool, bound, leaves, releases: () => releases };
+  return { pool, bound, leaves, firstLeaf: firstLeaf.promise, releases: () => releases };
 }
 
 function deferred() {
@@ -61,6 +65,36 @@ function owners(onRelease: (ordinal: number) => Promise<void> = async () => unde
   return () => released;
 }
 
+/**
+ * Makes the mapped call whose record has `title` explore: every other call of the map waits, before it takes its
+ * execution ownership, until that call holds the host. Left alone, which of two concurrent calls of one FluxNode
+ * reaches its Flow first depends on each call's own file work, and the later one replays what the first saved.
+ */
+function explores(title: string, firstLeaf: Promise<void>): void {
+  // A record's invocation is a pure function of the map's records, so the same call names each record's invocation.
+  const titleOf = new Map<string, unknown>();
+  const mapStep = maps.mapStep;
+  vi.spyOn(maps, "mapStep").mockImplementation(async (step, records, context) => {
+    maps.pipelineMapInvocations(step.id, records).forEach((invocation, index) => titleOf.set(invocation.invocationId, records[index]?.data.title));
+    return await mapStep(step, records, context);
+  });
+  // A call's owner file is named by the digest of its act scope, which its invocation decides.
+  const titleOfOwner = new Map<string, unknown>();
+  const childScope = acts.fluxNodeChildActScope;
+  vi.spyOn(acts, "fluxNodeChildActScope").mockImplementation((parent, invocation, target) => {
+    const scope = childScope(parent, invocation, target);
+    if (!titleOf.has(invocation.invocationId)) throw new Error("explores: a mapped call whose record was never seen");
+    titleOfOwner.set(`${createHash("sha256").update(scope).digest("hex")}.owner`, titleOf.get(invocation.invocationId));
+    return scope;
+  });
+  const owner = acts.fluxNodeExecutionOwner;
+  vi.spyOn(acts, "fluxNodeExecutionOwner").mockImplementation(async (file) => {
+    const called = [...titleOfOwner].find(([name]) => file.endsWith(name));
+    if (called !== undefined && called[1] !== title) await firstLeaf;
+    return await owner(file);
+  });
+}
+
 describe("leased FluxNode leaf execution", () => {
   it("a one-host pipeline owns only its child leaves and completes nested map calls", async () => {
     const f = fixture();
@@ -70,9 +104,10 @@ describe("leased FluxNode leaf execution", () => {
     const pipeline = parseDataPipeline({ name: "library.leased-report", source: { kind: "input", field: "titles" },
       steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
     if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
-    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [() => {
+    // Either call may explore (`explores`), so the scripted model finds what the call it answers was asked for.
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
       expect(AutomationStudioHostLeaseScope.current()?.sessionId).toBe("isolated-one");
-      return findLoans("Atlas");
+      return findLoansAsked(request);
     }, complete("Found the loans.")] });
     expect(result.result.status).toBe("achieved");
     expect(result.result.outputs).toEqual([
@@ -84,6 +119,30 @@ describe("leased FluxNode leaf execution", () => {
     expect(f.releases()).toBe(2);
     expect(released()).toBe(3);
     expect(f.bound.size).toBe(0);
+  });
+
+  it.each([["Atlas", "Clock"], ["Clock", "Atlas"]])("each nested map call gets its own rows when the %s call explores and the %s call replays its Flow", async (first, second) => {
+    const f = fixture();
+    explores(first, f.firstLeaf);
+    const lane = await fluxNodeLane(cleanups, { hosts: f.pool });
+    await lane.fluxNodes.register(OWNER, { spec: fluxNodeSpecSchema.parse(findLoansSpec({ hasCheck: false, options: { judge: "off" } })) });
+    const pipeline = parseDataPipeline({ name: "library.leased-report", source: { kind: "input", field: "titles" },
+      steps: [{ id: "find", kind: "map", target: { fluxNode: "library.find-loans" }, inputs: { title: { field: "title" } }, concurrency: 2, as: "found" }] });
+    if (!pipeline.ok) throw new Error("The fixture pipeline is invalid.");
+    const explored: string[] = [];
+    const result = await lane.run({ pipeline: pipeline.value, inputs: { titles: [{ title: "Atlas" }, { title: "Clock" }] } }, { script: [(request) => {
+      explored.push(titleAsked(request));
+      return findLoansAsked(request);
+    }, complete("Found the loans.")] });
+    expect(result.result.status).toBe("achieved");
+    expect(explored).toEqual([first]);
+    // The later call replays the Flow the first saved, on its own title: the engine pressed "Find loans" once, with it.
+    expect(lane.engineFinds).toEqual([second]);
+    expect(result.result.outputs).toEqual([
+      { title: "Atlas", found: { loans: [{ title: "Atlas of Rivers", due: "2030-01-01" }] } },
+      { title: "Clock", found: { loans: [{ title: "Clockmaking", due: "2030-01-03" }] } }
+    ]);
+    expect(f.leaves).toHaveLength(2);
   });
 
   it("a queued user Stop never claims a host and releases execution ownership once", async () => {

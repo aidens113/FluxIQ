@@ -68,7 +68,7 @@ import { automationStudioAnswerFirstFlowStage } from "./flow-stage.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstRecordOpening } from "./opening-row.ts";
 import { automationStudioAnswerFirstOpening } from "./opening.ts";
-import { automationStudioAnswerFirstUnboundedPort, automationStudioAnswerFirstWatchKeyWaits } from "../person-waits/index.ts";
+import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstAttemptPorts } from "./ports.ts";
 import { automationStudioAnswerFirstRoundNote } from "./round-note.ts";
 import { automationStudioAnswerFirstRounds, type AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
@@ -96,10 +96,8 @@ async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promi
   const attemptId = hold?.attemptId ?? again?.attemptId ?? `attempt.${randomUUID()}`;
   const live = automationStudioAnswerFirstLiveAttemptsOf(input.owner);
   live.claim(attemptId);
-  let opening: AutomationStudioAnswerFirstAttemptRun | undefined;
   try {
     const run = await opened(input, attemptId, hold, again);
-    opening = run;
     automationStudioAnswerFirstKeepBackJudge(input.creation.purse);
     // On the row before anything is sent, so the first round shows as working and a Core that dies in it leaves something to read as cut off. A carry-on's press has already written its own.
     if (!hold) await automationStudioAnswerFirstKeep(run);
@@ -113,7 +111,6 @@ async function attemptRun(given: AutomationStudioAnswerFirstAttemptInput): Promi
     automationStudioAnswerFirstHoldAnswer(input.request, answer);
     return answer;
   } finally {
-    opening?.keyWaits?.stop();
     live.release(attemptId);
   }
 }
@@ -220,7 +217,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     // A replay of the saved Flow that ran exactly as its judged whole run is accepted on its record; any deviation is judged (`../completion/replay-stands.ts`).
     replay: () => automationStudioAnswerFirstReplayOf(run),
     judge: (summary) => automationStudioFlowLessJudge({
-      personHeldMs: () => run.keyWaits?.heldMs() ?? run.waitedMs,
+      personHeldMs: () => run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       // The judge's request is built to the attempt model's window, as every round's is; a routed judge model's own window still wins (`runtime/llm/harness/served-limits.ts`).
@@ -289,7 +286,6 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
       await automationStudioAnswerFirstBestEffort(() => opening.memory.update(projectId, opening.taskId, (current) => (current.humanness === undefined ? { ...current, humanness: startingValue } : current)));
     }
   }
-  run.keyWaits = automationStudioAnswerFirstWatchKeyWaits({ run, provider: input.provider.provider, keep: () => void automationStudioAnswerFirstKeep(run) });
   return run;
 }
 

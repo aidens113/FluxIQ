@@ -2,7 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../project/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
@@ -95,5 +95,53 @@ describe("AutomationStudioSchemaMigrationRunner", () => {
     await expect(runner.migrate()).resolves.toMatchObject({ applied: ["0001_initial"], status: "ready" });
     await lease.release();
     await pool.closeAll();
+  });
+
+  // A first project is opened and migrated while another store opens it to read
+  // (Home's "what needs you" listing conversations a few seconds after the first
+  // pairing). The reader runs in a second copy of this module, as in a server
+  // whose bundle holds Core twice, so this module's per-file queue cannot order
+  // the two: only the database does. A reader whose set is already applied must
+  // get its tables, not "schema migration lock was lost".
+  it("lets a reader whose set is applied open the project while another runner holds the lock migrating it", async () => {
+    const opening = new AutomationStudioProjectDatabasePool({ rootDir });
+    const reading = new AutomationStudioProjectDatabasePool({ rootDir });
+    const opener = await opening.acquire("project.first");
+    const reader = await reading.acquire("project.first");
+    await new AutomationStudioSchemaMigrationRunner({ database: opener.database, migrations: initial }).migrate();
+
+    let migrating!: () => void;
+    let release!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      migrating = resolve;
+    });
+    const mayFinish = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const opened = new AutomationStudioSchemaMigrationRunner({
+      database: opener.database,
+      migrations: [...initial, { id: "0002_labels", statements: ["create table labels (id text primary key)"] }],
+      createLockToken: () => "opener",
+      // Runs once the lock is taken and before anything is applied: the opener is mid-migration until released.
+      backup: async () => {
+        migrating();
+        await mayFinish;
+      }
+    }).migrate();
+    await lockHeld;
+
+    vi.resetModules();
+    const { AutomationStudioSchemaMigrationRunner: SecondCopy } = await import("../schema-migrations.ts");
+    await expect(new SecondCopy({ database: reader.database, migrations: initial }).migrate())
+      .resolves.toEqual({ applied: [], skipped: ["0001_initial"], backupCreated: false, status: "ready" });
+    await expect(reader.database.get("select status, lock_token as lockToken from automation_schema_state")).resolves.toEqual({ status: "migrating", lockToken: "opener" });
+
+    release();
+    await expect(opened).resolves.toMatchObject({ applied: ["0002_labels"], status: "ready" });
+    await expect(reader.database.get("select status, lock_token as lockToken from automation_schema_state")).resolves.toEqual({ status: "ready", lockToken: null });
+    await opener.release();
+    await reader.release();
+    await opening.closeAll();
+    await reading.closeAll();
   });
 });

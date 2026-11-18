@@ -1,4 +1,5 @@
-import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewaySession, ClientGatewaySocket, ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayClientHello, ClientGatewayPairingChallenge, ClientGatewayPairingCredentialRefusal, ClientGatewaySession, ClientGatewaySocket, ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayCredentialCustodian, ClientGatewayCredentialHolder } from "./credential-custody.ts";
 import { ClientGatewayPairingCapacityError, clientGatewayPeerAuditFields, type ClientGatewayPeer } from "./security/index.ts";
@@ -13,6 +14,8 @@ import { ClientGatewayTrustEndedError } from "./trust-ended-error.ts";
 import type { ClientGatewayTrustedClientRegistry } from "./trusted-clients.ts";
 import type { InternalSession } from "./types.ts";
 import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
+import { ClientGatewaySessionMetadataUnavailableError, type ClientGatewaySessionMetadataResolver } from "./session-metadata/index.ts";
+import { clientGatewayRevokedNotice } from "./revocation/index.ts";
 
 import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 
@@ -30,6 +33,7 @@ type LifecycleCollaborators = {
   // through the collaborator that owns the method. See ./facade-ports.ts.
   facade: ClientGatewayFacadePorts;
   custody: ClientGatewayCredentialCustodian;
+  sessionMetadata: ClientGatewaySessionMetadataResolver;
 };
 
 /** The holder custody knows a trusted client by. */
@@ -39,6 +43,13 @@ export function clientGatewayCredentialHolder(client: { trustedClientId: string;
 
 /** The reason an older session of a reconnecting client is closed for. */
 const SESSION_REPLACED = "replaced by newer session";
+
+/** What `server.pairing_required` says, by why the hello's credential was not accepted, or without one. */
+const PAIRING_REASONS: Readonly<Record<ClientGatewayPairingCredentialRefusal | "none", string>> = {
+  none: "Approve this client in FluxIQ before sending data.",
+  expired: "This client's approval expired. Approve it again in FluxIQ before sending data.",
+  refused: "FluxIQ did not accept this client's saved approval. Approve it again in FluxIQ before sending data."
+};
 
 /**
  * Connect, hello, and disconnect. These three are one collaborator because
@@ -57,6 +68,7 @@ export class ClientGatewayLifecycle {
   private readonly facade: ClientGatewayFacadePorts;
   private readonly trace: ClientGatewayTraceTap;
   private readonly custody: ClientGatewayCredentialCustodian;
+  private readonly sessionMetadata: ClientGatewaySessionMetadataResolver;
 
   constructor(collaborators: LifecycleCollaborators) {
     this.config = collaborators.config;
@@ -70,6 +82,7 @@ export class ClientGatewayLifecycle {
     this.facade = collaborators.facade;
     this.trace = collaborators.trace;
     this.custody = collaborators.custody;
+    this.sessionMetadata = collaborators.sessionMetadata;
   }
 
   connect(input: { socket?: ClientGatewaySocket; hello?: ClientGatewayClientHello; peer?: ClientGatewayPeer } = {}): ClientGatewaySession {
@@ -145,13 +158,27 @@ export class ClientGatewayLifecycle {
   async handleHello(sessionId: string, hello: ClientGatewayClientHello): Promise<void> {
     await this.facade.ready();
     const session = this.sessions.require(sessionId);
+    if (session.disconnectedAt !== undefined || session.status === "disconnected") return;
     this.applyHello(session, hello);
     // A managed host the engine launched is enrolled by its ticket or refused and closed; it never pairs.
     if (hello.enrolmentTicket !== undefined) {
       await this.enrolment.enrol(session, hello.enrolmentTicket);
       return;
     }
-    if (hello.token && await this.resumeTrustedSession(session, hello.token)) return;
+    let refused: ClientGatewayPairingCredentialRefusal | undefined;
+    if (hello.token) {
+      if (await this.resumeTrustedSession(session, hello.token)) return;
+      if (this.sessions.get(sessionId) !== session || session.disconnectedAt !== undefined) return;
+      const ending = await this.trustedClients.credentialEnding(hello.token);
+      if (this.sessions.get(sessionId) !== session || session.disconnectedAt !== undefined) return;
+      // Revoked by a person or by Core: told so and closed, never offered pairing, so the client raises no request by itself.
+      // A reused credential pairs again instead: the hello may be the real client's, and a person decides.
+      if (ending?.revokedFor !== undefined && ending.revokedFor !== "credential_reused") {
+        await this.refuseRevoked(session, ending.revokedFor);
+        return;
+      }
+      refused = ending?.expired === true ? "expired" : "refused";
+    }
     session.status = "pairing_required";
     let pairing: ClientGatewayPairingChallenge;
     try {
@@ -163,8 +190,24 @@ export class ClientGatewayLifecycle {
     }
     await this.transport.send(sessionId, this.transport.message("server.pairing_required", {
       referenceCode: pairing.referenceCode ?? pairing.pairingCode,
-      reason: "Approve this client in FluxIQ before sending data."
+      reason: PAIRING_REASONS[refused ?? "none"],
+      ...(refused !== undefined ? { credential: refused } : {})
     }, session));
+  }
+
+  /**
+   * A hello carried the credential of a trust a person or Core revoked
+   * (`ClientGatewayTrustedClient.revokedFor`): the client is told so
+   * (`server.revoked`) and closed, as its live sockets were when it was
+   * revoked, and no pairing is offered: it pairs again when its person asks.
+   * `server.disconnect` follows for a client that predates `server.revoked`,
+   * so it stops reconnecting rather than retrying the dead credential.
+   */
+  private async refuseRevoked(session: InternalSession, reason: ClientGatewayRevocationReason): Promise<void> {
+    this.audit.record("session.credential_revoked", "A client connected with a revoked credential; it was told and closed instead of offered pairing.", { sessionId: session.sessionId, clientId: session.clientId, reason });
+    await this.transport.send(session.sessionId, this.transport.message("server.revoked", clientGatewayRevokedNotice(reason), session));
+    await this.transport.send(session.sessionId, this.transport.message("server.disconnect", { reason: "Client trust was revoked." }, session));
+    this.facade.disconnect(session.sessionId, "client trust revoked");
   }
 
   /**
@@ -196,7 +239,7 @@ export class ClientGatewayLifecycle {
   private async resumeTrustedSession(session: InternalSession, token: string): Promise<boolean> {
     await this.refuseReuse(token);
     const trustedClient = this.trustedClients.resolveByToken(token);
-    if (!trustedClient || !this.trustedClients.isActive(trustedClient) || trustedClient.clientId !== session.clientId) {
+    if (!trustedClient || !this.trustedClients.isActive(trustedClient) || trustedClient.clientId !== session.clientId || trustedClient.clientType !== session.clientType) {
       this.audit.record("session.credential_rejected", "Client credential was not accepted; pairing is required.", {
         sessionId: session.sessionId,
         clientId: session.clientId
@@ -216,46 +259,60 @@ export class ClientGatewayLifecycle {
       });
       return false;
     }
-    const holder = clientGatewayCredentialHolder(trustedClient);
-    // A client with its current credential has it confirmed; one with the credential before has not received what it was last sent.
-    if (this.trustedClients.isCurrentToken(trustedClient, token)) await this.custody.confirmed({ holder, credentialDigest: trustedClient.tokenHash });
-    let rotatedToken: string;
+    const binding = this.sessionMetadata.capture(session, trustedClient);
     try {
-      rotatedToken = await this.trustedClients.rotateToken(trustedClient, token, (nextCredential) => this.custody.rotating({ holder, previousCredential: token, nextCredential }));
-    } catch (error) {
-      if (!(error instanceof ClientGatewayTrustEndedError)) throw error;
-      return await this.refuseEndedTrust(session, trustedClient);
-    }
-    // Before the client is told it is ready, so its first request finds its key.
-    await this.custody.presented({ holder: clientGatewayCredentialHolder(trustedClient), credential: rotatedToken });
-    // Each of those took a moment, and a revoke in one of them must stand: no ready session, no credential sent.
-    if (!this.trustedClients.isActive(trustedClient)) return await this.refuseEndedTrust(session, trustedClient);
-    for (const existing of this.sessions.listReadyByTrustedClient(trustedClient.trustedClientId)) {
-      if (existing.sessionId === session.sessionId) continue;
-      await this.transport.send(existing.sessionId, this.transport.message("server.disconnect", { reason: "Client reconnected in a newer session." }, existing));
-      this.disconnect(existing.sessionId, SESSION_REPLACED);
-      this.audit.record("session.replaced", "A trusted client reconnected in a newer session; the older session was closed.", {
-        sessionId: existing.sessionId,
-        replacedBySessionId: session.sessionId,
-        trustedClientId: trustedClient.trustedClientId,
-        clientId: session.clientId,
-        ...clientGatewayPeerAuditFields(session.peer)
+      const initial = await this.sessionMetadata.resolve(binding, token, false);
+      const holder = clientGatewayCredentialHolder(trustedClient);
+      // Current confirms receipt; previous still follows the existing lost-reply recovery path.
+      if (this.trustedClients.isCurrentToken(trustedClient, token)) await this.custody.confirmed({ holder, credentialDigest: initial.tokenHash });
+      this.sessionMetadata.assert(binding, initial.tokenHash);
+      const rotatedToken = await this.trustedClients.rotateToken(trustedClient, token, async (nextCredential) => {
+        await this.custody.rotating({ holder, previousCredential: token, nextCredential });
+        this.sessionMetadata.assert(binding, initial.tokenHash);
       });
+      const tokenHash = this.trustedClients.hashToken(rotatedToken);
+      this.sessionMetadata.assert(binding, tokenHash);
+      await this.custody.presented({ holder: clientGatewayCredentialHolder(trustedClient), credential: rotatedToken });
+      this.sessionMetadata.assert(binding, tokenHash);
+      for (const existing of this.sessions.listReadyByTrustedClient(trustedClient.trustedClientId)) {
+        if (existing.sessionId === session.sessionId) continue;
+        await this.transport.send(existing.sessionId, this.transport.message("server.disconnect", { reason: "Client reconnected in a newer session." }, existing));
+        this.sessionMetadata.assert(binding, tokenHash);
+        this.disconnect(existing.sessionId, SESSION_REPLACED);
+        this.audit.record("session.replaced", "A trusted client reconnected in a newer session; the older session was closed.", {
+          sessionId: existing.sessionId, replacedBySessionId: session.sessionId,
+          trustedClientId: trustedClient.trustedClientId, clientId: session.clientId,
+          ...clientGatewayPeerAuditFields(session.peer)
+        });
+      }
+      const current = await this.sessionMetadata.resolve(binding, rotatedToken, true);
+      this.sessionMetadata.assert(binding, tokenHash);
+      this.sessions.attachTrustedClient(session, trustedClient);
+      // What a `client.focus_project` of null returns to (`./project-focus/`): a reconnect binds no project.
+      session.pairedProjectId = session.projectId ?? null;
+      session.sentCredentialHash = tokenHash;
+      await this.transport.send(session.sessionId, this.transport.message("server.session_ready", {
+        sessionId: session.sessionId, token: rotatedToken,
+        ...(session.projectId !== undefined ? { projectId: session.projectId } : {}),
+        ...current.fields
+      }, session));
+      if (!this.sessionMetadata.current(binding, tokenHash)) return true;
+      this.audit.record("session.reconnected", "Trusted client reconnected and its credential was rotated.", {
+        sessionId: session.sessionId, trustedClientId: trustedClient.trustedClientId, clientId: session.clientId
+      });
+      await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
+      return true;
+    } catch (error) {
+      if (error instanceof ClientGatewaySessionMetadataUnavailableError) {
+        await this.sessionMetadata.refuse(session);
+        return true;
+      }
+      if (error instanceof ClientGatewayTrustEndedError) {
+        if (this.sessions.get(session.sessionId) !== session || session.disconnectedAt !== undefined) return true;
+        return await this.refuseEndedTrust(session, trustedClient);
+      }
+      throw error;
     }
-    this.sessions.attachTrustedClient(session, trustedClient);
-    session.sentCredentialHash = this.trustedClients.hashToken(rotatedToken);
-    await this.transport.send(session.sessionId, this.transport.message("server.session_ready", {
-      sessionId: session.sessionId,
-      token: rotatedToken,
-      ...(session.projectId !== undefined ? { projectId: session.projectId } : {})
-    }, session));
-    this.audit.record("session.reconnected", "Trusted client reconnected and its credential was rotated.", {
-      sessionId: session.sessionId,
-      trustedClientId: trustedClient.trustedClientId,
-      clientId: session.clientId
-    });
-    await this.events.emit({ type: "session.ready", session: this.sessions.toPublic(session) });
-    return true;
   }
 
   /** A credential this client moved past was presented: only someone holding a copy can, so its trust ends, and the real browser pairs again. */
@@ -263,7 +320,7 @@ export class ClientGatewayLifecycle {
     const reused = this.trustedClients.reuseOf(token, options);
     if (!reused) return;
     this.audit.record("credential.reuse_detected", "A retired credential was presented, so this client's trust was revoked.", { trustedClientId: reused.trustedClientId, clientId: reused.clientId });
-    await this.facade.revokeTrustedClient(reused.trustedClientId, "credential reuse detected");
+    await this.facade.revokeTrustedClient(reused.trustedClientId, "credential reuse detected", "credential_reused");
   }
 
   /** The trust ended while this reconnect was in flight: what custody keeps goes, and the session asks to pair. */

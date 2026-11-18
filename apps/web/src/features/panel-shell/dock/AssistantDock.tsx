@@ -3,7 +3,8 @@
 // The assistant on the right of every panel page: the chat's shared widget over
 // the panel-wide thread. On a wide screen it is a column beside the page; on a
 // phone it is a full-height sheet behind a round button. It follows the project the top bar names, since a
-// conversation needs one to start in. Closing it hides it
+// conversation needs one to start in. The chat mounts at once when the dock is a column beside the page, otherwise on the
+// first open, so a dock never opened costs nothing; closing it afterwards hides it
 // without unmounting, so the thread and a half-typed message stay. A link
 // ending in `?chat=open` (where the old chat page now redirects) opens it.
 
@@ -12,14 +13,20 @@ import { ProgramChatWidget } from "../../chat-widget";
 import { onScreenFromContext, usePanelContext } from "../context";
 import { useProjectChoices } from "../top-bar";
 import { openProjectName } from "./open-project-name";
+import { useDockedBesidePage } from "./use-docked-beside-page";
 
 export function AssistantDock() {
   const { context, read } = usePanelContext();
   const [open, setOpen] = useState(false);
+  const [everOpened, setEverOpened] = useState(false);
+  const beside = useDockedBesidePage();
   const { projects } = useProjectChoices();
   const projectName = openProjectName(projects, context.projectId);
   const panel = useMemo(() => ({ onScreen: () => onScreenFromContext(read()) }), [read]);
   const toggle = useCallback(() => setOpen((was) => !was), []);
+  useEffect(() => {
+    if (open) setEverOpened(true);
+  }, [open]);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("chat") === "open") setOpen(true);
   }, []);
@@ -32,7 +39,7 @@ export function AssistantDock() {
           <button type="button" className="panel-dock-close" onClick={toggle} aria-label="Close the assistant">Close</button>
         </div>
         <div className="panel-dock-body">
-          <ProgramChatWidget projectId={context.projectId ?? null} projectName={projectName} panel={panel} />
+          {open || everOpened || beside ? <ProgramChatWidget projectId={context.projectId ?? null} projectName={projectName} panel={panel} /> : null}
         </div>
       </aside>
       <button

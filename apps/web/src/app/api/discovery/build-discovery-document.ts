@@ -1,4 +1,5 @@
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
+import { readCoreRuntimeBuildIdentity } from "fluxiq/runtime";
 import { CLIENT_GATEWAY_PROTOCOL_VERSIONS, FLUXIQ_CONNECT_PATHS, fluxiqDiscoveryDocumentSchema } from "../../../lib/request-guard";
 
 export type DiscoveryBuild = { ok: true; document: unknown } | { ok: false; fields: string[] };
@@ -12,9 +13,12 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
     return { ok: false, fields: ["deployment_settings"] };
   }
   const signUpUrl = env.FLUXIQ_SIGN_UP_URL?.trim();
+  const instanceId = env.FLUXIQ_INSTANCE_ID?.trim();
+  if (settings.profile === "service" && !instanceId) return { ok: false, fields: ["instance.id"] };
+  const identity = readCoreRuntimeBuildIdentity();
   const candidate = {
     fluxiqDiscoveryVersion: 1,
-    instance: { name: env.FLUXIQ_INSTANCE_NAME?.trim() || "FluxIQ", profile: settings.profile },
+    instance: { name: env.FLUXIQ_INSTANCE_NAME?.trim() || "FluxIQ", profile: settings.profile, ...(instanceId ? { id: instanceId } : {}) },
     origin: settings.publicOrigin,
     gatewayUrl: settings.gateway.publicUrl,
     connect: {
@@ -22,10 +26,21 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
       tokenUrl: FLUXIQ_CONNECT_PATHS.token,
       revokeUrl: FLUXIQ_CONNECT_PATHS.revoke,
       codeEntryUrl: FLUXIQ_CONNECT_PATHS.codeEntry,
+      flows: {
+        authorizationCodePkce: settings.profile === "service" && settings.gateway.enabled,
+        referenceCode: false,
+        gatewayReferencePairing: (settings.profile === "local" || settings.profile === "self-hosted") && settings.gateway.enabled
+      },
       ...(signUpUrl ? { signUpUrl } : {})
     },
     protocols: { clientGateway: [...CLIENT_GATEWAY_PROTOCOL_VERSIONS] },
-    minimumClient: { "browser-extension": "0.1.0" }
+    minimumClient: { "browser-extension": "0.1.0" },
+    ...(identity ? { runtime: {
+      schema: identity.schema,
+      protocol: identity.protocol,
+      version: identity.version,
+      artifactDigest: identity.artifactDigest
+    } } : {})
   };
   const parsed = fluxiqDiscoveryDocumentSchema.safeParse(candidate);
   if (parsed.success) return { ok: true, document: parsed.data };

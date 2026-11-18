@@ -102,6 +102,45 @@ describe("FluxIQClientGatewayConnection open failures", () => {
     expect(FakeSocket.created).toHaveLength(2);
     h.connection.stopReconnecting();
   });
+
+  it.each(["resolve", "reject"] as const)("a late beforeConnect %s cannot replace a newer ready connection", async (outcome) => {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const pending = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    let calls = 0;
+    const h = harness({ autoReconnect: true, overrides: { beforeConnect: () => ++calls === 1 ? pending : Promise.resolve() } });
+    const oldConnect = h.connection.connect();
+    await h.settle();
+    const current = await connectReady(h);
+    if (outcome === "resolve") resolve();
+    else reject(new Error("Superseded setup failure."));
+    await oldConnect;
+    await h.settle();
+    expect(current.closed).toBe(false);
+    expect(h.connection.state()).toBe("connected");
+    expect(FakeSocket.created).toHaveLength(1);
+    expect(errors(h.events)).toEqual([]);
+    h.connection.stopReconnecting();
+    h.connection.closeClient();
+  });
+
+  it.each(["close", "stop"] as const)("an explicit %s invalidates a pending beforeConnect continuation", async (operation) => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((yes) => { resolve = yes; });
+    const h = harness({ overrides: { beforeConnect: () => pending } });
+    const connecting = h.connection.connect();
+    await h.settle();
+    if (operation === "close") h.connection.closeClient();
+    else h.connection.stopReconnecting();
+    resolve();
+    await connecting;
+    await h.settle();
+    expect(FakeSocket.created).toHaveLength(0);
+    expect(errors(h.events)).toEqual([]);
+  });
 });
 
 describe("FluxIQClientGatewayConnection reconnecting", () => {
@@ -449,12 +488,155 @@ describe("FluxIQClientGatewayConnection heartbeat", () => {
 });
 
 describe("FluxIQClientGatewayConnection credential", () => {
+  function deferredWrite() {
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  }
+
   it("says it stored a new credential only once it has, so Core never ends the old one too soon", async () => {
     let acknowledgedAtWrite = -1;
     const h = harness({ overrides: { tokenStorage: { read: () => undefined, write: () => { acknowledgedAtWrite = FakeSocket.latest().credentialsAcknowledged; } } } });
     await connectReady(h);
     expect(acknowledgedAtWrite).toBe(0);
     expect(FakeSocket.latest().credentialsAcknowledged).toBe(1);
+  });
+
+  it("makes a rejected credential read terminal without a hello or automatic retry", async () => {
+    const h = harness({ autoReconnect: true, overrides: { tokenStorage: {
+      read: () => Promise.reject(new Error("synthetic.read secret")), write: () => undefined
+    } } });
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    expect(h.connection.state()).toBe("error");
+    expect(h.connection.wantsConnection()).toBe(false);
+    expect(h.connection.retryNow()).toBe(false);
+    expect(FakeSocket.latest().closed).toBe(true);
+    expect(FakeSocket.latest().sent).toEqual([]);
+    expect(errors(h.events)).toEqual(["error FluxIQ could not read the connection credential. Reconnect when storage is available."]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.created).toHaveLength(1);
+    expect(h.ticks).toEqual([]);
+  });
+
+  it.each(["throw", "reject"] as const)("makes a credential write %s terminal without flushing or automatically retrying", async (outcome) => {
+    let failWrites = true;
+    let stored = SYNTHETIC_TOKEN;
+    const h = harness({ autoReconnect: true, overrides: { tokenStorage: {
+      read: () => stored,
+      write: (token) => {
+        if (failWrites) {
+          const error = new Error(`synthetic.secret ${token}`);
+          if (outcome === "throw") throw error;
+          return Promise.reject(error);
+        }
+        stored = token;
+      }
+    } } });
+    const rawReady: string[] = [];
+    h.connection.on("message", ({ message }) => {
+      if (message.type === "server.session_ready") rawReady.push(message.payload.token);
+    });
+    await h.outbox.setLineage("lineage.stored");
+    await h.connection.send("client.state_update", { state: { step: 1 } });
+    const connecting = h.connection.connect();
+    await h.settle();
+    await connecting;
+    const failed = FakeSocket.latest();
+    failed.serverSays("server.session_ready", { sessionId: "wire.rejected", token: "synthetic.rejected" });
+    await h.settle();
+    expect(h.connection.state()).toBe("error");
+    expect(h.connection.wantsConnection()).toBe(false);
+    expect(h.connection.retryNow()).toBe(false);
+    expect(failed.closed).toBe(true);
+    expect(failed.credentialsAcknowledged).toBe(0);
+    expect(failed.sentTypes()).toEqual(["client.hello"]);
+    expect(stored).toBe(SYNTHETIC_TOKEN);
+    expect(rawReady).toEqual([]);
+    expect(h.lineagesAtReady).toEqual([]);
+    expect(await h.outbox.size()).toBe(1);
+    expect(errors(h.events)).toEqual(["error FluxIQ could not save the connection credential. Reconnect when storage is available."]);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeSocket.created).toHaveLength(1);
+    expect(h.ticks).toEqual([]);
+    failWrites = false;
+    const recovered = await connectReady(h, "synthetic.recovered");
+    expect(recovered.sent[0]!.payload).toMatchObject({ token: SYNTHETIC_TOKEN });
+    expect(recovered.credentialsAcknowledged).toBe(1);
+    expect(h.connection.state()).toBe("connected");
+    expect(h.lineagesAtReady).toEqual(["lineage.stored"]);
+    expect(await h.outbox.size()).toBe(0);
+    h.connection.stopReconnecting();
+    h.connection.closeClient();
+  });
+
+  it.each(["resolve", "reject"] as const)("serializes a replaced socket's pending write and ignores its late %s", async (outcome) => {
+    const pending = deferredWrite();
+    let stored = SYNTHETIC_TOKEN;
+    const writes: string[] = [];
+    const read = vi.fn(() => stored);
+    const h = harness({ autoReconnect: true, overrides: { tokenStorage: { read, write: async (token) => {
+      writes.push(token);
+      if (token === "synthetic.old") await pending.promise;
+      stored = token;
+    } } } });
+    const firstConnect = h.connection.connect();
+    await h.settle();
+    await firstConnect;
+    const old = FakeSocket.latest();
+    old.serverSays("server.session_ready", { sessionId: "wire.old", token: "synthetic.old" });
+    await h.settle();
+    expect(writes).toEqual(["synthetic.old"]);
+    const secondConnect = h.connection.connect();
+    await h.settle();
+    const current = FakeSocket.latest();
+    expect(current).not.toBe(old);
+    expect(current.sentTypes()).toEqual([]);
+    expect(read).toHaveBeenCalledTimes(1);
+    old.drop();
+    old.reportError();
+    if (outcome === "resolve") pending.resolve();
+    else pending.reject(new Error("synthetic.old secret rejection"));
+    await h.settle();
+    await secondConnect;
+    expect(current.sent[0]!.payload).toMatchObject({ token: outcome === "resolve" ? "synthetic.old" : SYNTHETIC_TOKEN });
+    current.serverSays("server.session_ready", { sessionId: "wire.current", token: "synthetic.current" });
+    await h.settle();
+    expect(writes).toEqual(["synthetic.old", "synthetic.current"]);
+    expect(stored).toBe("synthetic.current");
+    expect(h.connection.state()).toBe("connected");
+    expect(h.connection.wantsConnection()).toBe(true);
+    expect(errors(h.events)).toEqual([]);
+    expect(h.lineagesAtReady).toHaveLength(1);
+    expect(old.credentialsAcknowledged).toBe(0);
+    expect(current.credentialsAcknowledged).toBe(1);
+    expect(FakeSocket.created).toHaveLength(2);
+    h.connection.stopReconnecting();
+    h.connection.closeClient();
+  });
+
+  it("keeps ordinary network errors recoverable through automatic reconnect", async () => {
+    const h = harness({ autoReconnect: true });
+    const old = await connectReady(h);
+    old.reportError();
+    expect(h.connection.state()).toBe("error");
+    expect(h.connection.wantsConnection()).toBe(true);
+    old.drop();
+    expect(h.connection.state()).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(1_000);
+    await h.settle();
+    FakeSocket.latest().serverSays("server.session_ready", { sessionId: "wire.recovered", token: "synthetic.recovered" });
+    await h.settle();
+    expect(h.connection.state()).toBe("connected");
+    expect(FakeSocket.created).toHaveLength(2);
+    expect(errors(h.events)).toEqual(["error WebSocket connection failed."]);
+    h.connection.stopReconnecting();
+    h.connection.closeClient();
   });
 });
 

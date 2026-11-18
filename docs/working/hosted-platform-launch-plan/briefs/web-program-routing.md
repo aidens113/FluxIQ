@@ -1,0 +1,11 @@
+# Web program tenant routing
+- Role/model: standard worker, gpt-6.1-sol, medium.
+- Goal: Wire existing new program identity authority seam into web program route with tenant lease ownership; preserve local behavior and fail closed on unresolved service bearer.
+- Read: plan Current State, reports/tenancy-discovery.md B, reports/program-authority.md, current workspace resolver, existing route/tests.
+- Own: apps/web/src/app/api/programs/[programId]/[endpoint]/route.ts and its tests; new apps/web/src/lib/workspaces/program-context.ts and its tests plus workspace index export only.
+- Must not touch: other web routes, workspace resolver/tests already edited, composition/mail/key files, Core packages, shared docs/git.
+- Use platform identity to select existing service workspace from valid session before any acquire. Pass platform identityAuthority and tenant data instance to Core handler; release lease in finally. Local/single retains existing primary paired-client support.
+- A valid cookie for A plus bearer for B stays A. Service missing/invalid cookie has no verified browser credential router yet: refuse without primary dispatch; do not scan gateways or trust body workspace. Explicitly document this temporary unavailable path in report.
+- Service response runtime status must not expose primary filesystem paths/context; omit webRuntimeStatus until a tenant-scoped presenter exists. Local keeps existing presenter.
+- Test selected A instance vs primary, valid-cookie precedence, null/invalid membership and lookup error refusal before acquire, lease release on errors, local legacy behavior. No broad tests/builds while peers edit; report stale-build guard honestly.
+- Report: docs/working/hosted-platform-launch-plan/reports/web-program-routing.md; exact checks, integration limitations, return contract.

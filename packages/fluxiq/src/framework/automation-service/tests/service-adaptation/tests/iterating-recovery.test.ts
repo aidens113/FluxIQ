@@ -169,7 +169,7 @@ async function recoveryFixture(intent: AutomationStudioRuntimeSessionLlmIntent) 
     llmProviderResolver: createAutomationStudioSessionKeyProviderResolver({
       ports: {
         snapshot: async () => ({ keys: [{ id: "secret:key", kind: "llm", provider: "deepseek", enabled: true, updatedAtMs: 1 }] }),
-        createSessionRevealAuthorization: async (input) => {
+        createUseAuthorization: async (input) => {
           reveals.push({ userId: input.userId, sessionId: input.sessionId });
           return { authorizationId: `secret-reveal:${reveals.length}`, keyId: input.id, keyUpdatedAtMs: 1 };
         },

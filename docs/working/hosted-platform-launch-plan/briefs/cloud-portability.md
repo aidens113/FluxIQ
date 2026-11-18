@@ -1,0 +1,12 @@
+# Portable deployment discovery and implementation
+- Role/model: heavy worker, gpt-6.1-sol, max.
+- User clarification: landing repo https://github.com/aidens113/FluxIQWebsite stays separate. No selected cloud account/region/payment vendor. Platform should be easy to launch on AWS, Google Cloud and Azure at least.
+- Goal: Deliver a coherent provider-independent deployment package plus vendor entrypoints using existing Core containers/Compose; no real infrastructure creation. Prefer minimal dependable IaC over new app runtime machinery.
+- Read: Current State, reports/deployment-discovery.md, deploy/docker, deploy/compose, deploy/env, deploy/caddy, .github/workflows/deploy.yml and self-hosting operation docs. Read official provider documentation via web when necessary for current Terraform/CLI syntax.
+- Own: new deploy/cloud/**, owner-local tests/scripts there, and docs/operations/cloud-portability.md; own report. May add references to .github/workflows/deploy.yml only after proposing exact change to lead.
+- Must not touch: existing compose/env/docker files, shared docs/index, packages/apps, git, secrets, provider accounts. Lead owns self-hosting docs. No paid network/provider/terraform apply/cloud resource changes.
+- One pinned Core image and release contract across providers. Common ports/TLS/health/persistent state/backup requirements. Vendor files only provision networking/compute/storage/identity and bootstrap same artifacts; no duplicated auth/billing logic.
+- Infrastructure must not embed cloud credentials, app secrets or private keys in user-data/state. Default no public SSH/debug/gateway/provisioning ports; only TLS edge needed plus certificate HTTP if required. Explicit environment/region/machine settings; no invented cost guarantees.
+- State clearly whether only control plane or browser worker is supported. Do not pretend core-only container includes downstream browser product. No multi-tenant rollout claim before C2/C3 acceptance.
+- First inspect and report concise recommended deliverable/limitations to lead before source edits. Then proceed with validated provider-free packaging/config tests where possible; if Terraform/Docker missing report actual unavailable validation, never claim vendor deployment certified.
+- Report: docs/working/hosted-platform-launch-plan/reports/cloud-portability.md, tested commands, official sources, user-owned inputs and return contract.

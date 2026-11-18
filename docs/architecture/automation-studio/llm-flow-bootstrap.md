@@ -1665,7 +1665,7 @@ write, so the prohibitions are worded without the word too.
 
 A build may carry `permittedConsequences`, the lasting consequences the person
 allowed its actions to have. The build's model calls need no authorization of
-their own: they run on the caller's own unlocked Secret Keys key. The domain
+their own: they run on the caller's authorized Secret Keys key. The domain
 declares, action by action, what one would do --
 for a step the build takes now while exploring, and for a step the finished Flow
 would take each time it runs -- and
@@ -2260,7 +2260,7 @@ outside the Bootstrap Adaptation persistence path.
 The public service command generateFlowBootstrapAdaptation is the only Core
 command that joins production provider resolution to the strict bootstrap
 contract. Its input is deliberately narrow: project ID, blank Flow ID, the
-`caller` (`AutomationStudioLlmModelCaller`, the actor whose unlocked Secret Keys
+`caller` (`AutomationStudioLlmModelCaller`, the actor whose authorized Secret Keys
 key pays), and optional `permittedConsequences`. The API endpoint takes the
 caller from the request's authenticated actor. Runtime flags, dry-run flags,
 side-effect authorization, provider overrides, and arbitrary metadata are
@@ -2290,14 +2290,15 @@ untrusted data. Nothing was explored on this path, so a plan that names a
 handle is refused. Core then rechecks the Flow's base binding before
 persistence. Provider or validation failures create no proposal.
 
-The caller's key is released per call by a one-use Secret Keys session reveal
-authorization against the unlock established at web login; the account
-password or PIN is never asked for again. Secret Keys derives per-key
-decryption buffers for that session and retains them only in memory, bounded
-by the session expiry. One-use reveal authorizations copy only the selected
-derived buffer; logout, session expiry, key mutation, and runtime close revoke
-and zero the applicable buffers. Neither the login password nor the unlock state
-is persisted. The per-request ceiling is the model's context window --
+The caller's key is released per call through a one-use authorization for the
+actual authenticated session or trusted client, with current IAM and key state
+rechecked at consumption. Durable host protection removes dependence on a live
+panel unlock. Approval does not ask for a second password/PIN; ordinary panel
+logout ends the panel session, not an independent client's access. Revocation,
+account disablement and lost permissions still deny use. The provider receives
+the selected secret only for dispatch; client responses never expose it. See
+[Model keys](../platform.md#model-keys) for custody and legacy recovery.
+The per-request ceiling is the model's context window --
 1,000,000 tokens for both configured models, derived from
 `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` as
 `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST` -- and the session-key
@@ -3971,7 +3972,7 @@ Runtime Debug exposes `Build Flow from instructions` only for a blank top-level 
 
 The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by the Flow creation's one purse -- the explicit Flow policy, defaulting to $0.25, with a lower environment ceiling only in an explicitly scoped test process -- and by its token budget and its deadline, and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
-The authoring action runs on the current authenticated session's own unlocked key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
+The authoring action runs on the current authenticated caller's authorized key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
 
 Website exploration distinguishes its two safety boundaries in the interface: bounded browser actions happen immediately against the connected tab, while the generated Router, Subflows, and actions remain an unapplied proposal. Preparing and exploring states expose an accessible indeterminate progress indicator, elapsed time, and a reminder to keep the target tab connected. Shared LLM progress vocabulary uses `Checking prior evidence`, `Inspecting live target`, `Generating proposal`, and `Ready for review`; the current authoring surface renders only phases supported by observable state. In particular, prior-evidence wording and controls remain hidden until reusable-context candidate data exists. Successful generation states explicitly confirm that no generated change has been applied. Failures map only allowlisted diagnostic codes to fixed, actionable recovery guidance; raw service errors, provider output, prompts, and page evidence are never rendered.
 

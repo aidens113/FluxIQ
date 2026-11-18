@@ -31,13 +31,13 @@ export function AssistantModelSection(props: { data: SettingsData }) {
       ) : choice.keys.length === 0 ? <p>Add an AI key above to turn the assistant on.</p> : (
         <div className="settings-assistant-row">
           <span>The assistant uses</span>
-          <label>Key
+          <label className="field"><span className="field-label">Key</span>
             <select value={choice.keyId} disabled={busy} onChange={(event) => void save({ keyId: event.target.value, model: "" })}>
               <option value="">The default key{choice.effectiveKey && !choice.keyId ? ` (${choice.effectiveKey.name})` : ""}</option>
               {choice.keys.map((key) => <option key={key.id} value={key.id}>{key.name}</option>)}
             </select>
           </label>
-          <label>Model
+          <label className="field"><span className="field-label">Model</span>
             <select value={choice.model} disabled={busy || choice.models.length === 0} onChange={(event) => void save({ keyId: choice.keyId, model: event.target.value })}>
               <option value="">The provider&rsquo;s usual model</option>
               {choice.models.map((model) => <option key={model} value={model}>{model}</option>)}

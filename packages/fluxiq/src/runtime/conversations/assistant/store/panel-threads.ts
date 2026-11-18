@@ -13,6 +13,7 @@
 import { randomUUID } from "node:crypto";
 import { AutomationStudioProjectDatabasePool } from "../../../../framework/persistence/automation/index.ts";
 import type { AutomationStudioConversationAsk, AutomationStudioConversationAskInput } from "../../ask.ts";
+import type { AutomationStudioConversationSignalSink } from "../../signals/index.ts";
 import { AutomationStudioProjectConversationStore } from "../../store.ts";
 import type { AutomationStudioConversation } from "../../thread.ts";
 import type { AutomationStudioConversationAttachment, AutomationStudioConversationAuthor, AutomationStudioConversationTurn } from "../../turn.ts";
@@ -30,23 +31,30 @@ type Opened = { threads: AutomationStudioProjectConversationStore; waiting: Pane
 export class PanelAssistantThreads {
   private readonly pool: AutomationStudioProjectDatabasePool;
   private readonly now: () => number;
+  private readonly signals: AutomationStudioConversationSignalSink | undefined;
 
-  /** `rootDir` holds the panel databases and nothing else; it must not be the projects' root. */
-  constructor(options: { rootDir: string; idleCloseMs?: number; now?: () => number }) {
+  /**
+   * `rootDir` holds the panel databases and nothing else; it must not be the
+   * projects' root. `signals` hears each committed write as a change to the
+   * person's thread (scope `panel` with their user id), so their panel hears a
+   * turn the assistant's work wrote by push.
+   */
+  constructor(options: { rootDir: string; idleCloseMs?: number; now?: () => number; signals?: AutomationStudioConversationSignalSink }) {
     this.pool = new AutomationStudioProjectDatabasePool({ rootDir: options.rootDir, ...(options.idleCloseMs === undefined ? {} : { idleCloseMs: options.idleCloseMs }) });
     this.now = options.now ?? Date.now;
+    this.signals = options.signals;
   }
 
   /** A new thread, or the one `conversationId` already names. */
   open(userId: string, input: { conversationId?: string; title?: string | null }): Promise<PanelAssistantConversation> {
     const conversationId = input.conversationId ?? `conversation.${randomUUID()}`;
-    return this.with(userId, async ({ threads }) => panelConversation(await threads.openConversation({
+    return this.with(userId, async ({ threads }) => panelConversation(this.signalled(userId, await threads.openConversation({
       mutationId: `conversation.open:${conversationId}`,
       conversationId,
       subjectKind: "panel",
       subjectId: PANEL,
       title: input.title ?? null
-    })));
+    }))));
   }
 
   /** The person's threads, most recently touched first. */
@@ -69,7 +77,7 @@ export class PanelAssistantThreads {
 
   /** Gives a thread the person's own name; the store refuses a thread they do not have as `conversation_not_found`. */
   rename(userId: string, input: { conversationId: string; title: string }): Promise<PanelAssistantConversation> {
-    return this.with(userId, async ({ threads }) => panelConversation(await threads.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title })));
+    return this.with(userId, async ({ threads }) => panelConversation(this.signalled(userId, await threads.renameConversation({ mutationId: `conversation.rename:${randomUUID()}`, conversationId: input.conversationId, title: input.title }))));
   }
 
   /**
@@ -79,7 +87,7 @@ export class PanelAssistantThreads {
    * under the same id can be removed again.
    */
   delete(userId: string, input: { conversationId: string }): Promise<{ deleted: true; conversationId: string }> {
-    return this.with(userId, ({ threads }) => threads.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId }));
+    return this.with(userId, async ({ threads }) => this.signalled(userId, await threads.deleteConversation({ mutationId: `conversation.delete:${randomUUID()}`, conversationId: input.conversationId })));
   }
 
   /** The newest `count` turns of a thread, oldest first: what the model reads. */
@@ -90,7 +98,7 @@ export class PanelAssistantThreads {
   /** Appends one turn, and the ask it carries. */
   append(userId: string, input: { conversationId: string; author: AutomationStudioConversationAuthor; text: string; actorId?: string | null; attachment?: AutomationStudioConversationAttachment | null; ask?: AutomationStudioConversationAskInput | null }): Promise<AutomationStudioConversationTurn> {
     const turnId = `turn.${randomUUID()}`;
-    return this.with(userId, ({ threads }) => threads.appendTurn({
+    return this.with(userId, async ({ threads }) => this.signalled(userId, await threads.appendTurn({
       mutationId: `conversation.turn:${turnId}`,
       conversationId: input.conversationId,
       turnId,
@@ -99,7 +107,7 @@ export class PanelAssistantThreads {
       actorId: input.actorId ?? null,
       attachment: input.attachment ?? null,
       ask: input.ask ?? null
-    }));
+    })));
   }
 
   /** Appends a confirm card and keeps the exact call it asks about, so Allow runs that call and no other, with the words and place it was raised under. */
@@ -116,7 +124,7 @@ export class PanelAssistantThreads {
 
   /** Settles one ask with the person's answer. A second, different answer is refused by the store. */
   answer(userId: string, input: { askId: string; kind: "grant" | "deny"; actorId: string }): Promise<AutomationStudioConversationAsk> {
-    return this.with(userId, ({ threads }) => threads.answerAsk({ mutationId: `conversation.answer:${input.askId}:${input.kind}`, askId: input.askId, kind: input.kind, value: null, actorId: input.actorId }));
+    return this.with(userId, async ({ threads }) => this.signalled(userId, await threads.answerAsk({ mutationId: `conversation.answer:${input.askId}:${input.kind}`, askId: input.askId, kind: input.kind, value: null, actorId: input.actorId })));
   }
 
   /** Takes the call a card waits on, once; null when none waits or another press took it. */
@@ -127,6 +135,12 @@ export class PanelAssistantThreads {
   /** Closes every open database. */
   close(): Promise<void> {
     return this.pool.closeAll();
+  }
+
+  /** Signals that `written`'s thread, in this person's database, changed; called once the write committed. */
+  private signalled<TWritten extends { conversationId: string }>(userId: string, written: TWritten): TWritten {
+    this.signals?.signal({ kind: "panel", userId }, written.conversationId);
+    return written;
   }
 
   private async with<TResult>(userId: string, operation: (opened: Opened) => Promise<TResult>): Promise<TResult> {

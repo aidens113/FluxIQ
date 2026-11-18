@@ -11,3 +11,4 @@ export * from "./headless/index.ts";
 export * from "./managed-hosts/index.ts";
 export * from "./program-route/index.ts";
 export * from "./client-gateway-routes/index.ts";
+export * from "./keys-api/index.ts";

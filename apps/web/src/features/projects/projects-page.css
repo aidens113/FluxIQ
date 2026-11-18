@@ -1,0 +1,37 @@
+.projects-page { display: grid; gap: 16px; min-width: 0; max-width: 960px; overflow-wrap: anywhere; }
+.projects-error { margin: 0; color: var(--danger); }
+.projects-error button { min-height: 32px; padding: 4px 10px; font: inherit; cursor: pointer; }
+
+/* The project catalog (`automation-studio/hierarchy/ProjectBrowser.tsx`). The Studio's own stylesheets
+   load only with the graph editor, so on this page these classes had none (live walk-through, D8). */
+.projects-page .automation-project-browser { display: grid; gap: 16px; min-width: 0; }
+.projects-page .automation-project-browser-heading { display: flex; align-items: center; gap: 12px; }
+.projects-page .automation-project-browser-heading h1 { margin: 0; font-size: inherit; }
+.projects-page .automation-project-browser-heading p { margin: 2px 0 0; color: var(--muted); }
+.projects-page .automation-project-browser-icon,
+.projects-page .automation-project-row-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border-radius: 8px; background: var(--surface-muted, var(--divider)); color: var(--muted); }
+.projects-page .automation-project-row-icon { width: 30px; height: 30px; }
+.projects-page .automation-project-browser-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.projects-page .automation-project-search { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; max-width: 360px; min-height: 36px; padding: 0 10px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); color: var(--muted); }
+.projects-page .automation-project-search input { flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.projects-page .automation-project-browser-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.projects-page .automation-project-sections { display: grid; gap: 20px; }
+.projects-page .automation-project-category-section { display: grid; gap: 8px; }
+.projects-page .automation-project-category-section.drag-over { outline: 2px dashed var(--accent); outline-offset: 4px; }
+.projects-page .automation-project-category-section > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.projects-page .automation-project-category-title { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); }
+.projects-page .automation-project-category-title h2 { margin: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projects-page .automation-project-list { display: grid; gap: 6px; }
+.projects-page .automation-project-row { display: flex; align-items: center; gap: 4px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface); }
+.projects-page .automation-project-row-main { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; min-width: 0; padding: 10px 12px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 8px; }
+.projects-page .automation-project-row-main:hover { background: var(--surface-muted, var(--divider)); }
+.projects-page .automation-project-row-copy { display: grid; flex: 1 1 auto; min-width: 0; }
+.projects-page .automation-project-row-copy strong,
+.projects-page .automation-project-row-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projects-page .automation-project-row-copy small,
+.projects-page .automation-project-row-main time { color: var(--muted); font-size: 12px; }
+.projects-page .automation-project-category-empty { margin: 0; padding: 8px 12px; color: var(--muted); border: 1px dashed var(--divider); border-radius: 8px; }
+@media (max-width: 720px) {
+  .projects-page .automation-project-row-main time { display: none; }
+  .projects-page .automation-project-search { max-width: none; }
+}

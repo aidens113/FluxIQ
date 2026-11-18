@@ -11,7 +11,7 @@ import { registerAutomationStudioApi } from "../index.ts";
 import { automationStudioConversationEffectiveCaller } from "../../../../../runtime/conversations/commands/index.ts";
 
 /** The service's conversations, answering `callerFor` as Core does for a person's own session: unchanged. */
-const CONVERSATIONS = { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who, () => null) };
+const CONVERSATIONS = { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who) };
 
 const ACTOR: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control", "flows.write"] };
 

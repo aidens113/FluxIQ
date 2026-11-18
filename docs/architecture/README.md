@@ -28,6 +28,40 @@ Downstream projects provide domain behavior:
 Framework packages must not directly import downstream domains. Domain behavior
 is loaded through manifests and explicit adapters.
 
+## Hosted Web Request Ownership
+
+The web host selects a customer's workspace through its trusted identity and
+workspace adapters. `apps/web/src/lib/workspaces/routes` holds that exact
+instance until the response finishes, with current session, membership, client
+binding and IAM checks. Body-derived resources may be resolved after identity
+selection and before target authorization; this does not grant permission to
+execute an action while parsing the request. The selected workspace never
+changes halfway through a request.
+
+Buffered JSON routes retain their lease through serialization and a final
+authority check. Dataset exports use the separate stream owner: no producer
+read before consumer demand, authority/domain checks around each read, and one
+cleanup path for EOF, cancellation, abort and failure. Cleanup requests producer
+return and waits for pending work before releasing the instance. Already
+delivered bytes cannot be recalled after authority changes.
+
+`apps/web/src/lib/workspaces/presentation` owns panel and recording context per
+exact workspace/runtime instance and user/client. Replacing or retiring an
+instance invalidates its pending context writes and recording callbacks. The
+web composition installs a provider on every primary and tenant instance;
+primary reload preserves other tenants' contexts. Service status projects only
+safe readiness fields and omits host paths and raw gateway errors. Presentation
+is not authorization: routes must still verify current project visibility and
+gateway-row ownership before returning it.
+
+The shared `uploadTraceArtifact` helper accepts an optional synchronous
+`beforeIntake` veto after its awaited authorization check. Only a literal `true`
+allows intake when the hook is present; a false result preserves the stale-upload
+403 and a thrown hook returns a fixed 503. No await separates this guard from
+artifact intake. It supplements full authorization and does not replace it or
+provide an atomic transaction across external identity stores. Existing callers
+that omit the hook retain their behavior.
+
 ## Domain Inputs And Outputs
 
 Importer repositories are responsible for specifying what a domain can observe

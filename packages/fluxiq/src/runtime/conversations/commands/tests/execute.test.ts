@@ -71,7 +71,7 @@ async function chat(conversations: AutomationStudioConversations): Promise<strin
 }
 
 function contextFor(conversations: AutomationStudioConversations, conversationId: string, port: AutomationStudioConversationCommandContext["port"], extra: Partial<AutomationStudioConversationCommandContext> = {}): AutomationStudioConversationCommandContext {
-  return { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE, ...extra };
+  return { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", paired: false, startLocation: PAGE, ...extra };
 }
 
 /**
@@ -260,7 +260,7 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.provider_refused).", payload: { diagnostic: { code: "flow_bootstrap.provider_refused", stage: "provider" } } })
     });
 
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, { keyLocked: true, ...await personAsked(conversations, conversationId, "Watch kettle prices") }), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, { ...await personAsked(conversations, conversationId, "Watch kettle prices") }), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
     await automationStudioConversationCommandWork.idle();
 
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");

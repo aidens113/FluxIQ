@@ -18,6 +18,7 @@ const fixture = vi.hoisted(() => {
 vi.mock("fluxiq", () => ({ DEFAULT_SESSION_TTL_MS: 60_000, TotpRequiredError: fixture.TotpRequiredError }));
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 vi.mock("../../../../../lib/fluxiq", () => ({
+  getFluxIQWorkspaces: () => ({ tenancy: "single" }),
   getFluxIQ: () => ({
     paths: { fluxiq: fixture.root },
     programs: {

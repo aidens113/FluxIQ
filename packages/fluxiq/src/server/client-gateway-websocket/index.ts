@@ -11,6 +11,7 @@ export * from "./native-connection.ts";
 export * from "./origin-policy.ts";
 export * from "./parse-allowed-origins.ts";
 export * from "./rate-limit.ts";
+export * from "./routing/index.ts";
 export * from "./read-frame.ts";
 export * from "./reject-upgrade.ts";
 export * from "./server-envelope.ts";

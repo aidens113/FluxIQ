@@ -6,6 +6,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { withAutomationStudioCostLimitChoice } from "../flow-settings/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING, AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION, automationStudioFlowSizeSettingIssue, withAutomationStudioInterventionMode } from "../../../../flows/authoring/model/index.ts";
 import { withStoredCheckAuthorization } from "./stored-check-authorization.ts";
+import type { AutomationStudioResultCheckAuthorization } from "../../../../runtime/result-verification/check-authorization/index.ts";
 import type { AutomationStudioService } from "../../service.ts";
 import { assertFlowLlmExecutionSettings } from "./llm-execution-settings.ts";
 import { withFlowSizeSettings } from "./size-settings.ts";
@@ -13,7 +14,8 @@ import { assertFlowHumanness } from "./assert-flow-humanness.ts";
 import { withFlowHumannessPatch } from "./flow-humanness-patch.ts";
 import { withFlowHumanness } from "./humanness-detail.ts";
 
-export async function updateFlowSettingsForRequest(service: Pick<AutomationStudioService, "getFlow" | "saveFlow" | "getFlowMetadataDetail">, projectId: string, flowId: string, payload: Record<string, any>) {
+/** `checkAuthorization` is the result-check grant the handler made as the request's actor: `undefined` keeps the stored one, `null` withdraws it. */
+export async function updateFlowSettingsForRequest(service: Pick<AutomationStudioService, "getFlow" | "saveFlow" | "getFlowMetadataDetail">, projectId: string, flowId: string, payload: Record<string, any>, checkAuthorization?: AutomationStudioResultCheckAuthorization | null) {
   const current = await service.getFlow(projectId, flowId);
   const patch = payload.flow as Record<string, any>;
   const metadata = patch.metadata && typeof patch.metadata === "object" ? patch.metadata : {};
@@ -27,7 +29,7 @@ export async function updateFlowSettingsForRequest(service: Pick<AutomationStudi
     ...(patch.visibility === "private" || patch.visibility === "public" ? { visibility: patch.visibility } : {}),
     ...(patch.interface && typeof patch.interface === "object" ? { interface: patch.interface } : {}),
     ...(patch.executionDefaults && typeof patch.executionDefaults === "object" ? { executionDefaults: patch.executionDefaults } : {}),
-    metadata: withFlowHumannessPatch(withAutomationStudioCostLimitChoice(withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata), metadata), current.metadata, metadata), metadata),
+    metadata: withFlowHumannessPatch(withAutomationStudioCostLimitChoice(withStatedInterventionMode(withStoredCheckAuthorization({ ...(current.metadata ?? {}), ...metadata }, current.metadata, checkAuthorization), metadata), current.metadata, metadata), metadata),
     ...(current.source?.mode === "code" && patch.source?.mode === "code"
       ? { source: { ...current.source, declaredDependencies: Array.isArray(patch.source.declaredDependencies) ? patch.source.declaredDependencies : current.source.declaredDependencies } }
       : {})

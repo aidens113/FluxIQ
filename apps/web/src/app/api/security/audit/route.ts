@@ -1,9 +1,12 @@
-import { toAccountsHttp } from "../../accounts/server";
-import { auditRouteDepsForRequest, readActivity } from "../server";
+import { appRouteIamContract } from "../../../../lib/app-route-iam";
+import { withWorkspaceAccountRead } from "../../../../lib/workspaces/account-reads";
+import { assembleAuditActivity, workspaceAuditSource } from "../server/audit-read";
+
+const ROUTE = appRouteIamContract("GET", "/api/security/audit");
 
 /** The workspace's activity, newest first, a page at a time, for its owner or an administrator. */
 export async function GET(request: Request) {
-  const deps = await auditRouteDepsForRequest();
-  if ("status" in deps) return toAccountsHttp(deps);
-  return toAccountsHttp(await readActivity(deps, new URL(request.url).searchParams.get("cursor")));
+  return withWorkspaceAccountRead(request, ROUTE, context => assembleAuditActivity(
+    () => workspaceAuditSource(context), new URL(request.url).searchParams.get("cursor")
+  ));
 }

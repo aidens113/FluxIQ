@@ -60,6 +60,8 @@ test("question navigation and Latest-chat back inherit scope while explicit diff
     root.byClass("chat-context-back")[0]!.dispatch("click");
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.deepEqual(chat.target(), { kind: "latest", projectId: "new" });
+    // The latest chat of a project is named by the chat bar and the host's project switcher, not by this line.
+    assert.equal(root.byClass("chat-context")[0]!.hidden, true);
     chat.open({ kind: "question", projectId: "other", activityId: "other-work", subjectKind: "run", subjectId: "other-run", title: "Other question" });
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(chat.target().projectId, "other");

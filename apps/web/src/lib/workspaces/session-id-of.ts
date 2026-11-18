@@ -8,6 +8,7 @@ export type WorkspaceRequestSource =
   | {
     headers?: { get(name: string): string | null } | undefined;
     cookies?: { get(name: string): { value: string } | undefined } | undefined;
+    signal?: AbortSignal | undefined;
   };
 
 /**

@@ -3,6 +3,7 @@ import type {
   ClientGatewayClientHello,
   ClientGatewayServerMessage
 } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayCredentialWriteMetadata } from "./credential-write-metadata.ts";
 
 export type FluxIQWebSocketLike = {
   readyState: number;
@@ -38,7 +39,7 @@ export type FluxIQClientGatewayWebSocketOptions = {
   openTimeoutMs?: number;
   tokenStorage?: {
     read(): string | undefined | Promise<string | undefined>;
-    write(token: string): void | Promise<void>;
+    write(token: string, metadata?: ClientGatewayCredentialWriteMetadata): void | Promise<void>;
     clear?(): void | Promise<void>;
   };
   idFactory?: () => string;

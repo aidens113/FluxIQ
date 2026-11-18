@@ -4,6 +4,7 @@ import { IamRequestAuthorizer, type IamPolicySource } from "../../../platform/ia
 import { compileIamPolicySet, type CompiledIamPolicySet } from "../../../platform/iam/evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../../platform/iam/frn/index.ts";
 import { IAM_SERVICE_GUARDRAIL, resolveIamPredefinedPolicy } from "../../../platform/iam/predefined/index.ts";
+import { iamStoreChanges } from "../../../platform/iam/store/index.ts";
 import type { IamAuditSink, IamPolicy, IamPolicySet, IamPrincipal, IamRequestConsent, IamRequestContext, IamRequestVia, IamResource } from "../../../platform/iam/index.ts";
 import { rolePolicyNames } from "../../identity-access/runtime/roles.ts";
 import type { Permission } from "../../identity-access/index.ts";
@@ -25,7 +26,7 @@ export type ProgramIamRegisteredAction = {
 /** The decisions of one call: one compiled set, one request id, one context. */
 export type ProgramIamRequest = {
   authorizer: IamRequestAuthorizer;
-  compiled: CompiledIamPolicySet;
+  compiled: CompiledIamPolicySet | null;
   /** Owners are looked up only where a decision can depend on them (`service`). */
   resolveOwners: boolean;
   actorUserId: string;
@@ -54,6 +55,8 @@ const EVERY_PERMISSION = Object.keys(PERMISSIONS) as Permission[];
 const IDENTITY_POLICY = "FluxIQPermissions";
 const SESSION_POLICY = "FluxIQPermissionSession";
 const CACHE_LIMIT = 256;
+
+type PreparedPolicies = { available: true; compiled: CompiledIamPolicySet } | { available: false };
 
 const NO_POLICIES: IamPolicySet = Object.freeze({ identity: [], guardrails: [], sessions: [], boundary: null });
 
@@ -84,6 +87,7 @@ export class ProgramIamGate {
   private readonly source: IamPolicySource | undefined;
   private readonly sink: IamAuditSink;
   private readonly compiledSets = new Map<string, CompiledIamPolicySet>();
+  private readonly changeListeners = new Set<() => void>();
   private requests = 0;
 
   constructor(
@@ -98,14 +102,34 @@ export class ProgramIamGate {
     this.sink = options.audit ?? DISCARD;
   }
 
-  /** Drops every cached set; the registry calls it when a registration is added. */
+  /** Drops every cached set; the registry calls it when a registration is added. Decisions made before may now differ, so holders are told. */
   invalidate(): void {
     this.compiledSets.clear();
+    for (const listener of [...this.changeListeners]) listener();
   }
 
   /**
-   * Gathers and compiles the actor's policies for one call. A failure is a set
-   * that denies everything, never a throw. `via` names who made the call on
+   * Tells `listener` whenever a decision this gate made may since have
+   * changed: a registration was added (the permission policies are built from
+   * them), or a write to an IAM store of this gate's workspace or of the
+   * platform level (`iamStoreChanges`), where `service` reads its policies.
+   * Who the actor is (their role, whether they are enabled) is the caller's to
+   * watch. Returns the function that stops it.
+   */
+  subscribeChanges(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    const stopStore = iamStoreChanges.subscribe((workspaceId) => {
+      if (workspaceId === null || workspaceId === this.workspaceId) listener();
+    });
+    return () => {
+      this.changeListeners.delete(listener);
+      stopStore();
+    };
+  }
+
+  /**
+   * Gathers and compiles the actor's policies for one call. A failure is null
+   * and produces a marked unavailable denial, never an allow. `via` names who made the call on
    * the actor's behalf (the panel assistant); it is written to every audit row
    * of the call and decides nothing. `consent` is how the person consented to
    * the act a press grant confirms (a mint, or the call it confirms); it is
@@ -126,7 +150,8 @@ export class ProgramIamGate {
       ...(via === undefined ? {} : { via }),
       ...(consent === undefined ? {} : { consent })
     };
-    const compiled = await this.compiledFor(actor, principal, override);
+    const prepared = await this.compiledFor(actor, principal, override);
+    const compiled = prepared.available ? prepared.compiled : null;
     return { authorizer: new IamRequestAuthorizer(compiled, principal, context, this.sink, requestId), compiled, resolveOwners: this.profile === "service", actorUserId: actor.serviceIdentity?.id ?? actor.userId };
   }
 
@@ -140,6 +165,7 @@ export class ProgramIamGate {
     const scope = { workspaceId: this.workspaceId, programId, actorUserId: request.actorUserId };
     const described = refs.map((ref) => describeProgramResource(ref, scope));
     const compiled = request.compiled;
+    if (compiled === null) return described.map((item) => ({ frn: item.frn }));
     const covered = compiled.fullAccess && described.every((item) => compiled.coveredByFullAccess(item.frn));
     return Promise.all(described.map(async (item): Promise<IamResource> => {
       if ("userId" in item.owner) return { frn: item.frn, ownerId: item.owner.userId };
@@ -150,23 +176,23 @@ export class ProgramIamGate {
     }));
   }
 
-  private async compiledFor(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<CompiledIamPolicySet> {
+  private async compiledFor(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<PreparedPolicies> {
     // A lease's resources change between calls of the same machine. Never
     // reuse a person/role cache entry or a policy from its previous lease.
     if (actor.serviceIdentity !== undefined) return this.compiledMachineSet(actor, principal);
     if (this.profile === "service") return this.compiledServiceSet(actor, principal, override);
     const key = [actor.userId, actor.roleId, [...new Set(actor.permissions)].sort().join(","), override === undefined ? "" : `${override.action}=${String(actor.permissions.includes(override.permission))}`].join("\u0001");
     const cached = this.compiledSets.get(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return { available: true, compiled: cached };
     const compiled = this.compileOrDeny(() => this.staticSet(actor, override), principal);
     if (this.compiledSets.size >= CACHE_LIMIT) this.compiledSets.delete(this.compiledSets.keys().next().value ?? key);
-    this.compiledSets.set(key, compiled);
+    if (compiled.available) this.compiledSets.set(key, compiled.compiled);
     return compiled;
   }
 
-  private async compiledMachineSet(actor: ProgramApiActor, principal: IamPrincipal): Promise<CompiledIamPolicySet> {
+  private async compiledMachineSet(actor: ProgramApiActor, principal: IamPrincipal): Promise<PreparedPolicies> {
     try {
-      if (!actor.serviceIdentity || (this.profile === "service" && this.source === undefined)) return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+      if (!actor.serviceIdentity || (this.profile === "service" && this.source === undefined)) return { available: true, compiled: compileIamPolicySet(NO_POLICIES, principal, this.workspaceId) };
       const inherited = this.source === undefined ? NO_POLICIES : await this.source.resolvePolicySet(principal);
       const identity: IamPolicy = { name: "FluxIQManagedHost", kind: "identity", document: actor.serviceIdentity.policy };
       const session: IamPolicy = { name: "FluxIQManagedHostLease", kind: "session", document: actor.serviceIdentity.policy };
@@ -174,20 +200,20 @@ export class ProgramIamGate {
         ? [...inherited.guardrails, IAM_SERVICE_GUARDRAIL] : inherited.guardrails;
       return this.compileOrDeny(() => ({ ...inherited, identity: [...inherited.identity, identity], guardrails, sessions: [...inherited.sessions, session] }), principal);
     } catch {
-      return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+      return { available: false };
     }
   }
 
-  private async compiledServiceSet(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<CompiledIamPolicySet> {
+  private async compiledServiceSet(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<PreparedPolicies> {
     const source = this.source;
-    if (source === undefined) return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+    if (source === undefined) return { available: true, compiled: compileIamPolicySet(NO_POLICIES, principal, this.workspaceId) };
     let resolved: IamPolicySet;
     try {
       resolved = await source.resolvePolicySet(principal);
     } catch {
-      // Fail closed, as `IamAuthorizer.forRequest` does: an unreadable store
-      // is a set that allows nothing, and each decision records its deny.
-      return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+      // Preserve unavailable authority for the request authorizer; a real
+      // empty policy set remains an ordinary denial, not an outage.
+      return { available: false };
     }
     return this.compileOrDeny(() => {
       const guardrails = resolved.guardrails.some((policy) => policy.name === IAM_SERVICE_GUARDRAIL.name) ? resolved.guardrails : [...resolved.guardrails, IAM_SERVICE_GUARDRAIL];
@@ -216,13 +242,13 @@ export class ProgramIamGate {
   }
 
   // A set that will not build or compile (a policy the grammar refuses)
-  // allows nothing: each decision then records an implicit deny, as the
-  // authorizer's own fail-closed path does.
-  private compileOrDeny(build: () => IamPolicySet, principal: IamPrincipal): CompiledIamPolicySet {
+  // stays unavailable: each decision denies with the same safe failure
+  // discriminator as the authorizer's own fail-closed path.
+  private compileOrDeny(build: () => IamPolicySet, principal: IamPrincipal): PreparedPolicies {
     try {
-      return compileIamPolicySet(build(), principal, this.workspaceId);
+      return { available: true, compiled: compileIamPolicySet(build(), principal, this.workspaceId) };
     } catch {
-      return compileIamPolicySet(NO_POLICIES, principal, this.workspaceId);
+      return { available: false };
     }
   }
 }

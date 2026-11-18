@@ -2,7 +2,7 @@ import type { AutomationStudioProject, AutomationStudioProjectCategory } from ".
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowPublicationRecord } from "../../../flows/authoring/model/index.ts";
 import { type CanonicalAutomationStudioRepositories, emptyFlowSummaryIndex } from "../../persistence/automation/index.ts";
 import type { AutomationStudioProjectPaths } from "./paths/index.ts";
-import type { AutomationStudioProjectStore } from "./projects/index.ts";
+import { projectDomainMatches, type AutomationStudioProjectStore } from "./projects/index.ts";
 import type { AutomationStudioServiceIndexes } from "./indexes/index.ts";
 import type { AutomationStudioFlowStore } from "./flows/index.ts";
 
@@ -15,19 +15,22 @@ export class AutomationStudioCatalogue {
     private readonly projects: AutomationStudioProjectStore,
     private readonly indexes: AutomationStudioServiceIndexes,
     private readonly flows: AutomationStudioFlowStore,
-    private readonly repositories: CanonicalAutomationStudioRepositories
+    private readonly repositories: CanonicalAutomationStudioRepositories,
+    /** The domain this instance's host serves; listing it also lists the instance's global projects, and the reverse (`projectDomainMatches`). */
+    private readonly instanceDomainId: () => string | null = () => null
   ) {}
 
   async listProjects(domainId?: string | null): Promise<{ categories: AutomationStudioProjectCategory[]; projects: AutomationStudioProject[] }> {
     const state = await this.projects.readProjectIndex();
     const inferredScopes = await this.inferLegacyProjectScopes(state.projects);
+    const instanceDomainId = this.instanceDomainId();
     const projects = state.projects.map((project) => project.domainId === undefined && inferredScopes.has(project.id)
       ? { ...project, domainId: inferredScopes.get(project.id)! }
       : project);
     return {
-      categories: this.projects.sortCategories((state.categories ?? []).filter((category) => (category.domainId ?? null) === (domainId ?? null))),
+      categories: this.projects.sortCategories((state.categories ?? []).filter((category) => projectDomainMatches(category.domainId, domainId, instanceDomainId))),
       projects: projects
-        .filter((project) => (project.domainId ?? null) === (domainId ?? null))
+        .filter((project) => projectDomainMatches(project.domainId, domainId, instanceDomainId))
         .sort((left, right) => right.updatedAt - left.updatedAt)
     };
   }

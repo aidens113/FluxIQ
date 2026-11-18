@@ -87,7 +87,7 @@ describe.each<Mode>(["candidate", "project"])("automate this, when a %s build's 
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: `Flow Bootstrap generation failed (${String(diagnostic.code)}).`, payload: { diagnostic } })
     };
     const context: AutomationStudioConversationCommandContext = { port: { call: async (endpoint) => handlers[endpoint]?.() ?? { ok: false, error: `No fake for ${endpoint}.` } },
-      host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: "https://shop.example/hub", answerTurnId: answer.turnId };
+      host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", paired: false, startLocation: "https://shop.example/hub", answerTurnId: answer.turnId };
     const command = AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get("flow.createHere");
     if (!command) throw new Error("no create-here command");
     await executeAutomationStudioConversationCommand({ command, context, arguments: { instruction: "Put three hubs in the cart", name: "Hubs" } });

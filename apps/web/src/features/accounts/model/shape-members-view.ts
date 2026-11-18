@@ -36,10 +36,12 @@ export function shapeMembersView(payload: unknown): MembersView {
   const root = asRecord(payload);
   const kind = typeof root?.workspaceKind === "string" && KINDS.has(root.workspaceKind) ? (root.workspaceKind as WorkspaceKind) : "single";
   const assignableRoles = (Array.isArray(root?.assignableRoles) ? root.assignableRoles : []).flatMap((role) => (typeof role === "string" && ASSIGNABLE.has(role) ? [role as AssignableRole] : []));
+  const readOnly = root !== undefined && Object.hasOwn(root, "readOnly") ? root.readOnly !== false : false;
   return {
     workspaceKind: kind,
     assignableRoles,
-    canRemove: root?.canRemove === true,
+    canRemove: !readOnly && root?.canRemove === true,
+    readOnly,
     members: (Array.isArray(root?.members) ? root.members : []).flatMap(shapeMember)
   };
 }

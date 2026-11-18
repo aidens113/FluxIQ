@@ -34,6 +34,8 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   listProjectArtifacts: "list-project-artifacts",
   listFlows: "list-flows",
   listFlowSummaries: "list-flow-summaries",
+  listWorkspaceFlowSummaries: "list-workspace-flow-summaries",
+  listRecentFlowRuns: "list-recent-flow-runs",
   listFlowMetadataPage: "list-flow-metadata-page",
   getFlowMetadataDetail: "get-flow-metadata-detail",
   createFlow: "create-flow",

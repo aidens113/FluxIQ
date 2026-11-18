@@ -6,6 +6,7 @@ import { EmptyState, LoadingState, Panel, SummaryStrip, VisualAlert } from "../.
 import { useProgramApi } from "../../../programs/program-api";
 import { reconcileVisibleSelection } from "../../../programs/selection";
 import { projectRuntimeSnapshot, RuntimeInventory, RuntimeRunDetail } from ".";
+import "./runtime.css";
 
 const sections = ["clients", "capabilities", "runs", "dispatch", "transports"] as const;
 type Section = typeof sections[number];
@@ -75,32 +76,34 @@ export function RuntimeLive() {
   return <Panel title="Runtime" action={<button type="button" className="button" onClick={() => void refresh()}>Refresh Runtime</button>}>
     <section aria-label="Global Runtime workspace" aria-busy={loading}>
       <SummaryStrip items={[["Clients", snapshot.clients.length], ["Capability entries", snapshot.capabilities.length], ["Runs", snapshot.runs.length], ["Dispatch attempts", snapshot.dispatch.length]]} />
-      <p>Global runtime inventory: {snapshot.runtimeId}. Snapshot loaded at {loadedAt === null ? "-" : new Date(loadedAt).toLocaleTimeString()}. Use Refresh for current state.</p>
-      <p>Pages show 50 entries from the returned global snapshot. The Runtime API returns the full inventory; these are client-side pages.</p>
+      <p className="runtime-note">Global runtime inventory: {snapshot.runtimeId}. Snapshot loaded at {loadedAt === null ? "-" : new Date(loadedAt).toLocaleTimeString()}. Use Refresh for current state.</p>
+      <p className="runtime-note">Pages show 50 entries from the returned global snapshot. The Runtime API returns the full inventory; these are client-side pages.</p>
       {loading ? <LoadingState compact label="Refreshing Runtime; displayed snapshot may be stale" /> : null}
       {error ? <VisualAlert tone="error" title="Displayed snapshot is stale" message={error} /> : null}
-      <nav aria-label="Runtime sections">{sections.map((value) => <button key={value} type="button" aria-pressed={section === value} onClick={() => {
+      <nav aria-label="Runtime sections" className="segmented-control runtime-sections">{sections.map((value) => <button key={value} type="button" className={section === value ? "selected" : ""} aria-pressed={section === value} onClick={() => {
         setSection(value);
         setSearch("");
         setFilter("all");
         setOffset(0);
         setSelectedKey("");
       }}>{labels[value]}</button>)}</nav>
-      <label>Search {labels[section]}<input type="search" aria-label="Search Runtime entries" value={search} onChange={(event) => {
+      <div className="runtime-toolbar">
+      <label className="field"><span className="field-label">Search {labels[section]}</span><input type="search" aria-label="Search Runtime entries" value={search} onChange={(event) => {
         setSearch(event.target.value);
         setOffset(0);
         setSelectedKey("");
       }} /></label>
-      <label>Filter {labels[section]}<select aria-label="Filter Runtime entries" value={filter} onChange={(event) => {
+      <label className="field"><span className="field-label">Filter {labels[section]}</span><select aria-label="Filter Runtime entries" value={filter} onChange={(event) => {
         setFilter(event.target.value);
         setOffset(0);
         setSelectedKey("");
       }}><option value="all">All</option>{choices.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+      </div>
       <RuntimeInventory label={labels[section]} rows={page} selected={selected} onSelect={setSelectedKey} showDetail={section !== "runs"} />
-      <footer><span>{filtered.length ? pageOffset + 1 : 0}-{Math.min(filtered.length, pageOffset + PAGE_SIZE)} of {filtered.length} matching entries</span><button type="button" disabled={pageOffset === 0} onClick={() => {
+      <footer className="runtime-footer"><span>{filtered.length ? pageOffset + 1 : 0}-{Math.min(filtered.length, pageOffset + PAGE_SIZE)} of {filtered.length} matching entries</span><button type="button" className="button" disabled={pageOffset === 0} onClick={() => {
         setOffset(Math.max(0, pageOffset - PAGE_SIZE));
         setSelectedKey("");
-      }}>Previous Runtime page</button><button type="button" disabled={pageOffset + PAGE_SIZE >= filtered.length} onClick={() => {
+      }}>Previous Runtime page</button><button type="button" className="button" disabled={pageOffset + PAGE_SIZE >= filtered.length} onClick={() => {
         setOffset(pageOffset + PAGE_SIZE);
         setSelectedKey("");
       }}>Next Runtime page</button></footer>

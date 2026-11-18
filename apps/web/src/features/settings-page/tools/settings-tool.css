@@ -2,3 +2,34 @@
 .settings-tool { display: grid; gap: 12px; min-width: 0; align-content: start; }
 .settings-tool h1, .settings-tool-note { margin: 0; overflow-wrap: anywhere; }
 .settings-tool-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-tool { container-type: inline-size; container-name: settings-tool; }
+.settings-tool-back { justify-self: start; }
+
+/* The engine tools lay out two or three panes side by side. Below about 1100px
+   of the room the page itself has (the assistant dock takes a share of the
+   screen, so the viewport is the wrong measure) they stack into one column. */
+@container settings-tool (max-width: 1100px) {
+  .settings-tool .background-task-shell,
+  .settings-tool .compute-control-shell,
+  .settings-tool .db-explorer-shell { grid-template-columns: minmax(0, 1fr); }
+  .settings-tool .background-task-detail,
+  .settings-tool .background-task-list { min-height: 0; }
+  .settings-tool .db-explorer-shell { overflow: visible; }
+  .settings-tool .db-sidebar,
+  .settings-tool .db-inspector { max-height: 320px; border: 0; border-bottom: 1px solid var(--divider); }
+  .settings-tool .db-inspector { border-bottom: 0; border-top: 1px solid var(--divider); }
+  .settings-tool .db-main { min-height: 280px; }
+  .settings-tool .docs-program-layout { display: flex; flex-direction: column; grid-template-columns: minmax(0, 1fr); height: auto; overflow: visible; }
+  .settings-tool .docs-explorer-panel { flex: none; width: auto; max-height: 420px; border-right: 0; border-bottom: 1px solid var(--divider); }
+  .settings-tool .docs-viewer-panel { flex: none; min-height: 480px; }
+  .settings-tool .docs-outline-panel { flex: none; width: auto; max-height: 180px; border-left: 0; border-top: 1px solid var(--divider); }
+}
+
+/* Tables never need a wider page than the phone: they scroll inside their own box. */
+.settings-tool .background-run-table-wrap, .settings-tool .table-wrap { max-width: 100%; overflow-x: auto; }
+@container settings-tool (max-width: 600px) {
+  .settings-tool :is(.background-run-table, .data-table) { min-width: 0; }
+  .settings-tool :is(.background-run-table, .data-table) :is(th, td) { white-space: normal; overflow-wrap: anywhere; padding: 6px 8px; }
+  .settings-tool .status-badge-pill { padding: 2px 6px; }
+}
+.settings-tool .status-badge-pill svg { flex: 0 0 12px; width: 12px; height: 12px; min-width: 12px; }

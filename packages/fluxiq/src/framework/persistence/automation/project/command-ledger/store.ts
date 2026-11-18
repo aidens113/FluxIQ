@@ -20,6 +20,8 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
   private readonly pipelines = new Set<Promise<unknown>>();
   private closed = false;
   private closing?: Promise<void>;
+  /** Commands this store settled as refused before sending: a run's first command may be passed over only for one of these, confirmed again from storage. */
+  private readonly refusedUnsent = new Set<string>();
   private constructor(private readonly lease: AutomationStudioProjectDatabaseLease, private readonly unitOfWork: AutomationStudioProjectUnitOfWork) {}
   static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }): Promise<AutomationStudioProjectCommandLedgerStore> {
     const lease = await input.pool.acquire(input.projectId);
@@ -52,12 +54,18 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
   claimForRun(input: ClientGatewayCommandClaim, admission: AutomationStudioCommandRunAdmission): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const claim = this.prepare(input), registered = this.admissions.get(admission);
     if (!registered || claim.binding.runId !== registered.runId) throw new Error("command_ledger.foreign_admission");
+    // A different command after the first is refused at once, before the admission changes, unless the first was
+    // consumed, or settled here as never sent; that settlement is confirmed from storage in the claim's own transaction.
     const previous = registered.first;
+    const passesOver = previous !== null && Rules.digest(previous) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(previous.binding.commandId));
+    if (passesOver && !this.refusedUnsent.has(previous.binding.commandId)) throw new Error("command_ledger.first_command_only");
     registered.first = this.freeze(structuredClone(claim));
     return this.pipeline(() => this.claimStored(claim, async sql => {
       const observed = await this.scanRun(sql, registered.runId);
-      if (previous && Rules.digest(previous) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(previous.binding.commandId))
-        && observed.records.find((record) => record.claim.binding.commandId === previous.binding.commandId)?.state !== "refused_unsent") throw new Error("command_ledger.first_command_only");
+      if (passesOver && observed.records.find((record) => record.claim.binding.commandId === previous.binding.commandId)?.state !== "refused_unsent") {
+        registered.first = previous;
+        throw new Error("command_ledger.first_command_only");
+      }
       for (const record of observed.records) {
         if (Rules.digest(record.claim) === Rules.digest(claim)) continue;
         if (record.state === "refused_unsent") continue;
@@ -135,6 +143,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
       const before = await this.required(claim);
       if (before.state === "refused_unsent") {
         if (Rules.digest(before.refusal) !== Rules.digest(refusal)) throw new Error("command_ledger.unsent_conflict");
+        this.refusedUnsent.add(claim.binding.commandId);
         return before;
       }
       if (before.state !== "pending") throw new Error("command_ledger.unsent_conflict");
@@ -149,6 +158,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
       const record = await this.required(claim);
       if (record.state !== "refused_unsent" || Rules.digest(record.refusal) !== Rules.digest(refusal)) throw new Error("command_ledger.unsent_conflict");
       await this.verifyReturned(claim, "unsent_refusal", outcome.response);
+      this.refusedUnsent.add(claim.binding.commandId);
       return record;
     });
   }

@@ -1,0 +1,5 @@
+
+/* A turn's speaker and time are read aloud, not drawn. Anchored to their own row, so the clipped box can never reach past it and
+   widen a narrow page; the time wraps inside the 1px box instead of running on. */
+.chat-msg { position: relative; min-width: 0; }
+.chat-sr-only strong, .chat-sr-only time { display: inline-block; max-width: 1px; overflow: hidden; font-variant-numeric: tabular-nums; }

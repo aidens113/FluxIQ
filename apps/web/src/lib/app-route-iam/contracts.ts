@@ -84,8 +84,11 @@ function framework(method: "GET" | "POST", path: string, action: string, permiss
 }
 
 export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.freeze([
+  { path: "/api/connect/authorize", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "GET", action: "iam:ListApiKeys", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "POST", action: "iam:EnrollApiKey", callers: { panel: "none" }, resource: selfUser },
+  { path: "/api/keys", method: "DELETE", action: "iam:RevokeApiKey", callers: { panel: "none" }, resource: selfUser },
   { path: "/api/client-gateway/approve-pairing", method: "POST", action: "gateway:ApprovePairing", callers: { panel: "runtime.control" }, resource: selfUser },
-  { path: "/api/client-gateway/forget-pairing", method: "POST", action: "gateway:ForgetPairing", callers: { "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/first-project", method: "POST", action: "gateway:CreateFirstProject", callers: { "paired-client": "none" }, resource: workspace },
   { path: "/api/client-gateway/dismiss-pairing", method: "POST", action: "gateway:DismissPairing", callers: { panel: "runtime.control" }, resource: workspace },
   { path: "/api/client-gateway/automation-studio-context", method: "POST", action: "gateway:SetAutomationStudioContext", callers: { panel: "runtime.control" }, resource: studioContext },
@@ -97,6 +100,11 @@ export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.fr
   framework("POST", "/api/framework/setup", "ops:RollbackFrameworkStorageMigration", "programs.write", "rollback-migration"),
   framework("GET", "/api/framework/io", "ops:InspectFrameworkIo", "programs.read"),
   framework("POST", "/api/framework/io/validate", "ops:ValidateFrameworkIo", "programs.read"),
+  // The panel's one change stream (t920): a watch over what the caller may read, so decided as the
+  // filtered conversation list is; each event is then decided as the read it prompts (the gateway
+  // snapshot as its own route, a thread as `get-conversation` or `get-panel-thread`, activity as
+  // `get-activity`). A paired client hears only the gateway, as the snapshot serves it.
+  { path: "/api/panel/changes", method: "GET", action: "studio:ListConversations", callers: { panel: "programs.read", "paired-client": "none" }, resource: workspace },
   { path: "/api/programs", method: "GET", action: "studio:ListPrograms", callers: { panel: "none" }, resource: workspace },
   { path: "/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]", method: "GET", action: "studio:StreamRunDataset", callers: { panel: "programs.read" }, resource: runDataset },
   { path: "/api/programs/automation-studio/state-assets/[projectId]/[sha256]", method: "GET", action: "studio:ReadStateAsset", callers: { panel: "programs.read" }, resource: project },

@@ -188,7 +188,7 @@ import {
   AutomationStudioProposalApproval,
   clampInteger,
   embedAutomationStudioTaskGraphs, inspectAutomationStudioFlowMigration, type AutomationStudioFlowMigrationInspection, listAutomationStudioProposalSummaries, repairAutomationStudioFlowSummaryMetadataIndex, updateAutomationStudioProject, withAutomationStudioCanonicalFlowHierarchySubflows,
-  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, nodeDefinitionScopeAllows, assertInstructionScopeOwners, subflowMetadataWithParentCategory,
+  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, projectDomainMatches, nodeDefinitionScopeAllows, assertInstructionScopeOwners, subflowMetadataWithParentCategory,
   subflowSummaryFromSql,
   type AutomationStudioInstructionSummaryPage,
   canonicalFlowDocument,
@@ -461,7 +461,7 @@ export class AutomationStudioService {
     this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
     this.durableAdaptations = this.projectParts.keepingRepairs(new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches, automationStudioFacadePorts(this)), { patches: this.adaptationPatches, flowWriter: this.flowWriter });
-    this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories);
+    this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories, () => this.ioRuntime?.domainId ?? null);
     this.summaries = new AutomationStudioSummaryStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowMutations, this.bootstrapAdaptations, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
     this.evidenceMining = new AutomationStudioEvidenceMining(this.recordingDomains, this.recordings, this.repositories, automationStudioFacadePorts(this), (domainId) => this.nativeNodeRuntime?.getTargetHooks(domainId)?.stateElementKindReader);
     this.flowSubflowMigration = new AutomationStudioFlowSubflowMigration(this.flowWriter, automationStudioFacadePorts(this));
@@ -1379,7 +1379,7 @@ export class AutomationStudioService {
 
   async assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void> {
     const project = await this.projects.findProjectSummary(projectId);
-    if ((project.domainId ?? null) !== (domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
+    if (!projectDomainMatches(project.domainId, domainId, this.ioRuntime?.domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
   }
 
   async listReusableLlmContexts(input: { projectId: string } & AutomationStudioReusableLlmContextList): Promise<AutomationStudioReusableLlmContextSummary[]> {
@@ -3755,7 +3755,7 @@ export class AutomationStudioService {
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
     await this.projects.requireProject(projectId);
-    return await this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
+    return await this.projects.removals.run(projectId, () => this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
       if (this.objectStore && this.projects.indexStore) {
         await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
           const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
@@ -3774,7 +3774,7 @@ export class AutomationStudioService {
       if (this.projectPaths.root) await removeAutomationStudioProjectFiles({ objectStore: this.objectStore, pool: this.runtimeProjectDatabasePool, projectId, projectDirectory: this.projectPaths.projectDirectory(projectId) });
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
-    });
+    }));
   }
 
   async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {

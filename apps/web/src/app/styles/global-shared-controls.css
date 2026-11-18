@@ -329,8 +329,9 @@
     flex-direction: column;
   }
 
-  .workspace-panel,
-  .workspace-panel:first-child {
+  .program-workspace-grid > .workspace-panel,
+  .program-workspace-grid > .workspace-panel:first-child,
+  .deployment-sync-shell .workspace-panel {
     grid-column: span 12;
   }
 

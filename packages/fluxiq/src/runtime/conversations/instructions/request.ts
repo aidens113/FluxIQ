@@ -20,7 +20,7 @@ export type AutomationStudioConversationInstructionRequest = AutomationStudioCon
   /** Null when the Flows could not be listed; the model is told so and a written name is passed on as written. */
   flows: readonly AutomationStudioConversationFlowReference[] | null;
   onScreen: AutomationStudioConversationOnScreen;
-  /** Who sent it, from the request's actor. The model's key is released only to this person's unlocked session. */
+  /** Who sent it, from the request's actor. The model's key is released only for this person's authenticated principal. */
   caller?: AutomationStudioConversationCaller | null;
   /** Tests shorten the model's time budget; production takes the defaults. */
   limits?: Partial<AutomationStudioConversationInterpretLimits>;

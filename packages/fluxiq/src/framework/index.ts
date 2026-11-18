@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ComponentRegistry } from "../components/index.ts";
+import type { ClientGatewayTrustedClientStore, ClientGatewayTrustAuthority, ClientGatewaySessionMetadataProvider } from "../client-gateway/index.ts";
 import { DomainRegistry, domainSummary, normalizeDomainId, type DomainRegistration } from "../domains/index.ts";
 import {
   IoRegistry,
@@ -12,7 +13,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type ProgramDirectory, type ProgramApiIamOptions } from "../programs/index.ts";
+import { buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type HeldKeys, type GlobalProgramRuntime, type GlobalProgramRuntimeOptions, type ProgramDirectory, type ProgramApiIamOptions } from "../programs/index.ts";
 import { programStateConnections } from "./persistence/program-state/state-connections.ts";
 import { AutomationStudioIoRecorder, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration } from "./automation-service/public/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
@@ -81,6 +82,10 @@ export type FluxIQOptions = {
   loadEnv?: boolean;
   /** Omitted enables the host's built-in model provider bindings. */
   modelProvidersEnabled?: boolean;
+  secretKeyHostProtection?: GlobalProgramRuntimeOptions["secretKeyHostProtection"];
+  secretKeyProtectionStoreId?: string;
+  secretKeyPrincipalAuthority?: GlobalProgramRuntimeOptions["secretKeyPrincipalAuthority"];
+  secretKeyIdentityAuthority?: GlobalProgramRuntimeOptions["secretKeyIdentityAuthority"];
   envFiles?: string[];
   /**
    * Key custody owned by the host rather than this instance (a workspace
@@ -88,6 +93,11 @@ export type FluxIQOptions = {
    * every key, as a single local install always has.
    */
   heldKeys?: HeldKeys;
+  /** Authoritative workspace-scoped browser trust, optionally resolved after host paths are known. Absent preserves local JSON. */
+  clientGatewayTrustedClientStore?: ClientGatewayTrustedClientStore | ((paths: FluxIQHostPaths) => ClientGatewayTrustedClientStore);
+  /** Trusted server authority for pre-socket client consent. Absent, consent issuance fails closed. */
+  clientGatewayTrustAuthority?: ClientGatewayTrustAuthority;
+  clientGatewaySessionMetadata?: ClientGatewaySessionMetadataProvider;
   /**
    * How the program registry decides. Omitted, the profile comes from
    * `FLUXIQ_PROFILE` (`local` when unset) and decisions are today's. A hosted
@@ -200,7 +210,21 @@ export class FluxIQ {
       artifacts: resolveInside(root, path.join(fluxiqDir, "artifacts")),
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
-    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}), ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}), ...(options.iam ? { iam: options.iam } : {}) });
+    this.programs = createGlobalProgramRuntime(this.paths, {
+      ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}),
+      ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}),
+      ...(options.secretKeyHostProtection ? { secretKeyHostProtection: options.secretKeyHostProtection } : {}),
+      ...(options.secretKeyProtectionStoreId ? { secretKeyProtectionStoreId: options.secretKeyProtectionStoreId } : {}),
+      ...(options.secretKeyPrincipalAuthority ? { secretKeyPrincipalAuthority: options.secretKeyPrincipalAuthority } : {}),
+      ...(options.secretKeyIdentityAuthority ? { secretKeyIdentityAuthority: options.secretKeyIdentityAuthority } : {}),
+      ...(options.iam ? { iam: options.iam } : {}),
+      ...(options.clientGatewayTrustAuthority ? { clientGatewayTrustAuthority: options.clientGatewayTrustAuthority } : {}),
+      ...(options.clientGatewaySessionMetadata ? { clientGatewaySessionMetadata: options.clientGatewaySessionMetadata } : {}),
+      ...(options.clientGatewayTrustedClientStore ? {
+        clientGatewayTrustedClientStore: typeof options.clientGatewayTrustedClientStore === "function"
+          ? options.clientGatewayTrustedClientStore(this.paths) : options.clientGatewayTrustedClientStore
+      } : {})
+    });
     this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ENGINE_UNKNOWN, engineStatusFromHttp } from "../engine-status";
+import { ENGINE_UNKNOWN, engineStatusFromHttp } from "../engine";
 import { formatSpend } from "../format-spend";
 
 describe("today's spend", () => {

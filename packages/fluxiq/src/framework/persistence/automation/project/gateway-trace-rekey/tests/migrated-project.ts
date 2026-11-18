@@ -11,6 +11,7 @@ import path from "node:path";
 import type { ClientGatewayTraceEvent, ClientGatewayTraceStore } from "../../../../../../client-gateway/trace/index.ts";
 import { evaluateClientGatewayTraceCompleteness } from "../../../../../../client-gateway/trace/index.ts";
 import { correlation, newRecorder, textEvent } from "../../../../../../client-gateway/trace/tests/trace-builders.ts";
+import { automationStudioSchemaMigrationOrder } from "../../../migration-order/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../../administration.ts";
 import { AutomationStudioProjectContentStore } from "../../content-store.ts";
@@ -141,7 +142,7 @@ export class MigratedProject {
     const lease = await this.pool.acquire(this.projectId);
     const content = await AutomationStudioProjectContentStore.open({ pool: this.pool, projectId: this.projectId });
     try {
-      const migrations = [...AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION];
+      const migrations = automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_CLIENT_GATEWAY_TRACE_MIGRATION]);
       await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations }).migrate();
       await lease.database.run(
         `insert into client_gateway_traces (trace_id, episode_id, activity, origin_kind, started_at, closed_at, claimed_completeness, manifest_json)

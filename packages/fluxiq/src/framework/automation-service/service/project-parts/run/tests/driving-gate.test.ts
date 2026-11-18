@@ -56,6 +56,15 @@ describe("a part run while another run drives the project", () => {
     untouched();
   });
 
+  it("refuses a person on a host with resources while a plain Flow run is running: the part's own lease does not see a run that holds none", async () => {
+    const port = hostOfOne();
+    const partId = await open(port);
+    harness.otherRuns.list = async () => [SESSION_AT("running")];
+    expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ ok: false, code: "part.run_in_progress" });
+    untouched();
+    expect(automationStudioProjectHostLeaseScope(port).scheduler.snapshot().held, "the refused part lets go of the host").toEqual([]);
+  });
+
   it.each([["succeeded"], ["failed"], ["cancelled"]] as const)("does not count a run that %s", async (status) => {
     const partId = await open();
     harness.otherRuns.list = async () => [SESSION_AT(status)];

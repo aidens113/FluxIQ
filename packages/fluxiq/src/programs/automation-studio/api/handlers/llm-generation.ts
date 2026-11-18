@@ -1,6 +1,6 @@
 // Live LLM work: bootstrap-generation readiness, generation instructions, and
 // the generated adaptation itself. A build's model calls need no grant: the
-// build runs for the signed-in actor, whose unlocked Secret Keys key pays, and
+// build runs for the signed-in actor, whose configured Secret Keys key pays, and
 // only a lasting consequence of one of its actions is asked about
 // (`permittedConsequences`).
 

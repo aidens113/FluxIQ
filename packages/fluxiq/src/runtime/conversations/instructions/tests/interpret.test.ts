@@ -315,3 +315,71 @@ describe("the answer a model writes, read forgivingly", () => {
     expect(read('{"do": ')).toBeNull();
   });
 });
+
+describe("a message when the model key is missing", () => {
+  const keyless = (message: string): AutomationStudioConversationModel => ({ name: "keyless", decide: async () => { throw Object.assign(new Error(message), { code: "llm.provider_secret_unavailable" }); } });
+
+  it("gets exactly the setup reply, with no unrelated example", async () => {
+    const result = await interpret(keyless("There is no enabled DeepSeek key of yours in Secret Keys."), "make me a thing that is unrelated to anything");
+    expect(result.decision).toEqual({ kind: "reply", text: "No model key is set up yet, so add one in Settings, under AI keys." });
+    expect(result.keySetup).toBe(true);
+  });
+
+  it("still runs a saved Flow it is confidently asked for, since running one needs no model", async () => {
+    const result = await interpret(keyless("There is no enabled DeepSeek key of yours in Secret Keys."), "run my kettle flow");
+    expect(result).toMatchObject({
+      source: "closest_match",
+      decision: { kind: "invoke", invocation: { capabilityId: "run.execute", arguments: { flowId: "flow.kettle-1" } } }
+    });
+    expect(result.keySetup).toBeUndefined();
+  });
+
+  it("keeps its own words for a saved key that needs one sign-in", async () => {
+    const result = await interpret(keyless("This saved key requires recovery from its original encryption material."), "hello there");
+    expect(result.decision).toMatchObject({ kind: "reply", text: expect.stringContaining("needs one sign-in to the panel to upgrade it") });
+  });
+});
+
+describe("a message when the model cannot be reached for an access reason (t924)", () => {
+  const key = { id: "claude", name: "Claude", provider: "anthropic" as const, model: "claude-sonnet-4-5" };
+  const failing = (access: unknown, retryable = false): AutomationStudioConversationModel & { calls: number } => {
+    const model = {
+      name: "access",
+      calls: 0,
+      decide: async () => {
+        model.calls += 1;
+        throw Object.assign(new Error("access"), { code: "llm.provider_secret_unavailable", retryable, access });
+      }
+    };
+    return model;
+  };
+
+  it("answers with the state's own words when the provider refused the saved key, and carries the state", async () => {
+    const access = { status: "provider_refused", message: "Anthropic (Claude) refused the saved model key, so check or replace it in Settings, under AI keys.", key, lastCall: { outcome: "provider_refused", atMs: 1 } };
+    const model = failing(access);
+    const result = await interpret(model, "make me a thing that is unrelated to anything");
+    expect(result.decision).toEqual({ kind: "reply", text: access.message });
+    expect(result).toMatchObject({ keySetup: true, modelAccess: access, attempts: 1 });
+    expect(model.calls).toBe(1);
+  });
+
+  it("tries a provider out of reach again before naming it", async () => {
+    const access = { status: "provider_unreachable", message: "Anthropic (Claude) could not be reached, so check this server's internet connection and try again.", key, lastCall: { outcome: "provider_unreachable", atMs: 1 } };
+    const model = failing(access, true);
+    const result = await interpret(model, "hello there");
+    expect(model.calls).toBe(3);
+    expect(result.decision).toEqual({ kind: "reply", text: access.message });
+  });
+
+  it("still runs a saved Flow it is confidently asked for, and says why the model was not used", async () => {
+    const access = { status: "key_unopenable", message: "The saved model key could not be opened because its stored value is damaged, so add it again in Settings, under AI keys.", key, lastCall: null, unopenableCode: "ciphertext_invalid" };
+    const result = await interpret(failing(access), "run my kettle flow");
+    expect(result).toMatchObject({ source: "closest_match", decision: { kind: "invoke" }, modelAccess: access });
+    expect(result.modelProblem).toMatch(/^the model could not be used: The saved model key could not be opened/u);
+  });
+
+  it("ignores a carried state that does not read as one", async () => {
+    const result = await interpret(failing({ status: "ready" }), "hello there");
+    expect(result.modelAccess).toBeUndefined();
+  });
+});

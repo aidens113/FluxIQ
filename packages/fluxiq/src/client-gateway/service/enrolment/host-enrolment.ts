@@ -128,7 +128,8 @@ export class ClientGatewayHostEnrolment implements ClientGatewayManagedHosts {
     let revoked = 0;
     for (const client of this.trustedClients.list()) {
       if (client.managedHost === undefined || !matches(client.managedHost) || !this.trustedClients.isActive(client)) continue;
-      if (await this.facade.revokeTrustedClient(client.trustedClientId, reason)) revoked += 1;
+      // The engine ends its own hosts and enrols them again with a ticket: nothing for a person to see.
+      if (await this.facade.revokeTrustedClient(client.trustedClientId, reason, null)) revoked += 1;
     }
     return revoked;
   }

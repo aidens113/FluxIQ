@@ -12,6 +12,8 @@ export async function uploadTraceArtifact(input: {
   sha256: string;
   sessionId: string;
   stillAuthorized(): boolean | Promise<boolean>;
+  /** Additional synchronous refusal guard at intake, after awaited authorization. */
+  beforeIntake?: () => boolean;
 }): Promise<ProgramRouteResponse> {
   const sha256 = input.sha256.toLowerCase();
   if (!/^[a-f0-9]{64}$/u.test(sha256)) return uploadResponse(400, { ok: false, error: "Invalid artifact digest" });
@@ -20,6 +22,11 @@ export async function uploadTraceArtifact(input: {
   const body = await readUploadBody(input.request, "Trace artifact");
   if ("status" in body) return body;
   if (!await input.stillAuthorized()) return uploadResponse(403, { ok: false, error: "The upload's authorization is no longer current." });
+  try {
+    if (input.beforeIntake !== undefined && input.beforeIntake() !== true) return uploadResponse(403, { ok: false, error: "The upload's authorization is no longer current." });
+  } catch {
+    return uploadResponse(503, { ok: false, error: "Trace artifact authorization could not be verified." });
+  }
   const intake = input.fluxiq.programs.clientGateway.receiveTraceArtifact(input.sessionId, { sha256, mediaType, bytes: body });
   if (intake.status === "refused") return uploadResponse(409, { ok: false, error: "Trace artifact digest does not match its bytes." });
   return uploadResponse(200, { ok: true, payload: { sha256, traces: intake.traces } });

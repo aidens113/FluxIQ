@@ -34,8 +34,9 @@ function context(options: { authorization?: unknown; spentUsd?: number } = {}): 
         ...("authorization" in options ? { authorization: options.authorization } : {
           authorization: {
             taskKind: AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND,
+            authorizationId: "result-check:1",
             authorizedByUserId: "user.aiden",
-            unlockSessionId: "session.unlock.1",
+            grantedThrough: { kind: "person" },
             keyId: "key.deepseek",
             maxTotalCostUsd: 1,
             maxCostUsdPerCall: 0.05,
@@ -51,7 +52,7 @@ function context(options: { authorization?: unknown; spentUsd?: number } = {}): 
 }
 
 describe("resolving an unattended repair's model", () => {
-  it("hands the host the key and the ceiling, and nothing that could name a purpose", async () => {
+  it("hands the host the key, the grant, the ceiling and the repair purpose it set itself", async () => {
     const seen: Array<Record<string, unknown>> = [];
     const authority = await resolveAutomationStudioUnattendedRepairAuthority({
       context: context(),
@@ -62,7 +63,7 @@ describe("resolving an unattended repair's model", () => {
       }
     });
 
-    expect(seen).toEqual([{ projectId: "project.1", flowId: "flow.1", keyId: "key.deepseek", unlockSessionId: "session.unlock.1", authorizedByUserId: "user.aiden", maxEstimatedCostUsd: 0.25 }]);
+    expect(seen).toEqual([{ projectId: "project.1", flowId: "flow.1", keyId: "key.deepseek", authorizationId: "result-check:1", authorizedByUserId: "user.aiden", purpose: "repair", maxEstimatedCostUsd: 0.25 }]);
     expect(authority.redemption).toMatchObject({ redeemed: true });
     expect(authority.resolution?.maxTotalEstimatedCostUsd).toBe(0.25);
   });
@@ -122,7 +123,7 @@ describe("resolving an unattended repair's model", () => {
   it("answers with a refusal rather than throwing when a host resolves nothing", async () => {
     const authority = await resolveAutomationStudioUnattendedRepairAuthority({ context: context(), nowMs: NOW, resolveStandingProvider: () => undefined });
 
-    // A host that could not open the key -- a lapsed unlock, a disabled key --
+    // A host that could not open the key -- a revoked client, a disabled key --
     // leaves the redemption standing and the run unrepaired, rather than failing.
     expect(authority.redemption).toMatchObject({ redeemed: true });
     expect(authority.resolution).toBeUndefined();

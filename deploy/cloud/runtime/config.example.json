@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "environment": {
+    "FLUXIQ_PUBLIC_ORIGIN": "https://app.example.org",
+    "FLUXIQ_SITE_ADDRESS": "app.example.org",
+    "ACME_EMAIL": "operator@example.org",
+    "FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS": "chrome-extension://<replace-with-extension-id>",
+    "FLUXIQ_INSTANCE_ID": "replace-with-stable-instance-id",
+    "FLUXIQ_EMAIL_SENDER": "file"
+  },
+  "secrets": {
+    "provisioning-token": "",
+    "setup-code": "",
+    "email-api-key": "",
+    "secret-keyring": "REPLACE_WITH_VERSIONED_KEYRING_JSON_FROM_PRIVATE_HOST_SECRET_STORAGE"
+  }
+}

@@ -670,7 +670,7 @@ so a weak password (under 12 characters) or a disabled account leaves it usable.
 string that is not 43 base64url characters is `invalid_link` without a store read,
 and unknown, used and expired tokens share that one code. Both purposes set
 `emailVerifiedAtMs` if it is unset, set the password, and revoke all the account's
-sessions (which also drops each session's key unlock).
+sessions (which also drops each session's held-key cache, the legacy-key migration state).
 
 The link is the authority for the new password, so it never asks for the old one.
 The password is set through `PlatformIdentityPort.resetPassword`, which
@@ -714,7 +714,7 @@ Core's own pages are in `apps/web/src/app/`.
 | Route | What it does |
 | --- | --- |
 | `/welcome` | Reads `#token=` and clears it from the address bar at once. Asks for a password and confirmation, posts to `/welcome/submit`, then goes to the returned `continueUrl` or `/`. With no token or a bad one it shows a single message. |
-| `/welcome/submit` | Refuses a cross-site request (403), requires JSON of at most 8 KiB and redeems the link. It then creates a session, unlocks the person's Secret Keys with the new password (revoking the session if that fails), records the sign-in and sets the session cookie with the login route's options. Responses are `no-store`; only codes are echoed. |
+| `/welcome/submit` | Refuses a cross-site request (403), requires JSON of at most 8 KiB and redeems the link. It then creates a session and opens the person's legacy Secret Keys with the new password, which only migrates keys stored before host protection (revoking the session if that fails), records the sign-in and sets the session cookie with the login route's options. Responses are `no-store`; only codes are echoed. |
 | `/reset` | With no fragment, an email form posting to `/reset/request`, which answers the same for every address ("if an account uses that address, we sent a link"). With `#token=`, a new-password form posting to `/reset/submit`, then a link to sign in. A reset does not sign the person in. |
 
 Both modes of the reset page warn that model keys saved under the old password
@@ -906,260 +906,100 @@ window in which such a change gets through.
 
 ## Model keys
 
-Where a model call finds its key is now owner-aware. In
-`releaseAutomationStudioSessionDeepSeekKey`:
+**An authenticated client is usable without a second unlock.** Approval authorizes
+that client immediately. Core and the extension do not add a password dialog,
+first-unlock flag, unlock ticket or client-specific key lock. The client can use
+its person's configured, enabled model keys within current IAM policy, including
+keys added after approval. Reconnect and Core restart do not require another
+approval or a panel session to remain open. Signing out of a panel ends that
+panel's authority; it does not partially disable an independently approved client.
 
-- When the Flow names a key (`flowKeyId`), that key is used. It is refused, with a
-  plain message, if it is missing, disabled, not a DeepSeek key, or stamped for
-  another user.
-- Otherwise the caller's own enabled DeepSeek keys are tried, newest first
-  (`createdBy` equals the caller). Then come legacy keys with no owner stamp, used
-  only if one of the caller's unlocks actually opens them. Another person's stamped
-  key is never offered.
-- `secrets:UseKey` goes through the optional `authorizeUseKey(userId, keyId)` port
-  before any release; absent means allowed. If every candidate is refused, the call
-  fails with a message naming `secrets:UseKey`.
+Authentication is still checked for every use. `authenticatedModelKeyPorts`
+resolves the actual ready gateway session to its trusted client, without borrowing
+another panel session. `localSecretKeyUseAuthority` validates the current session
+or trusted client, enabled identity, current role and `secrets:UseKey`. Hosted
+tenants use the primary identity authority and current account/membership checks.
+An authorization is short-lived and single-use; consuming it checks current
+authority and the key's current contents again. Revocation, account disablement,
+membership removal and lost permissions deny access, including authorizations
+minted before those changes. A model-use authorization is not a plaintext-key
+management authorization.
 
-The Flow's key comes from the `flowSecretKeyId({projectId, flowId})` option of the
-session key provider resolver, then from the request's `llmSecretKeyId` metadata.
+An explicit Flow key never silently changes to another key. Implicit selection
+tries the person's enabled provider-compatible keys; unavailable stored material
+may move selection to the next compatible candidate, but an authority denial is
+not bypassed. Ownerless legacy records are not assigned to someone merely because
+they can name the record or share its workspace.
 
-**The workspace's assistant key.** The panel assistant (the dock) answers with the key
-Secret Keys resolves for it (`ModelKeySettings.resolveAssistant`: the key chosen for the
-assistant, else the workspace's default key), whoever sends. In
-`runtime/conversations/assistant/model/key-model-source.ts`:
+### Durable protection and legacy recovery
 
-- The sender's own key, or a legacy key nobody is stamped on, is released to the sender's
-  own unlock, as before.
-- **No key is ever shared automatically.** Another person's key pays for the sender's
-  message only when both hold, `resolveAssistant`'s `chosenForWorkspace` and
-  `offeredByHolder`:
-  - **Chosen**: an owner or administrator chose it as the workspace's key, with
-    `set-default-key` or `set-assistant-model` (both decided on the workspace, so locally a
-    role with `secrets.manage`). The chooser is recorded (`defaultChosenBy`,
-    `assistantChosenBy`, the acting user, never a payload). Choosing "the default key" for
-    the assistant records the default it names as chosen, so a default that later passes
-    on by itself is not. The oldest key standing as the default, a default that passed on
-    by itself, and the workspace's first key are chosen by nobody: adding a key chooses
-    nothing.
-  - **Offered**: its holder offered it to the workspace with `offer-key` (`{ id, offered }`,
-    `secrets:OfferKey`, declared on the key). IAM decides it under `OwnData`, so a member
-    reaches only their own key, and the service refuses anyone but the person who added it
-    (`createdBy`), an owner or administrator included: nobody offers another person's key.
-    A paired browser's call is refused. The offer is stored beside the choices
-    (`keyOffers`), shown on each model key of the snapshot (`offeredToWorkspace`), and goes
-    when the holder withdraws it or the key stops being a model key (removed, turned off,
-    changed); turning the key back on shares nothing until it is offered again.
-    Both `set-default-key` and `set-assistant-model` take another person's key
-    only once it is offered.
-- Every provider call re-resolves the current choice and the holder's consent,
-  before the asynchronous unlock/reveal and again before returning the value to
-  the provider adapter. A turn's initial resolution never grants a later call:
-  withdrawing the offer or clearing the workspace choice prevents that call.
-  A changed key, provider, model or holder refuses the old bound adapter, with
-  plain instructions to send the message again using the current choice. No
-  other key is tried, and the sender never receives the released value.
-- With both, it is released server-side, for that one call, to **the holder's own live
-  panel unlock** (`fallbackUnlockFor(holder, null)`, never a paired browser's), the only
-  thing that can open a key sealed under the holder's password. The sender never holds,
-  reads or names the value; what IAM decides for them is `studio:SendPanelMessage` on
-  their own user.
-- Otherwise the sender is answered in the thread, in plain words naming who can choose
-  one, and no model is called: "No model key has been chosen for this workspace's messages
-  yet. An owner or administrator of this workspace chooses one in Settings, from a key its
-  holder has offered to the workspace.", or, chosen but not offered, that the person who
-  added it has not offered it and an owner or administrator can choose another.
-- The sender's own key needs neither step, so a single person locally or self-hosted, and
-  an owner on their own key, work as before.
-- `get-assistant-model` carries `assistantKeyChosen` and `assistantKeyOffered` for the key
-  in use, and the snapshot marks the caller's own keys `heldByYou`. Settings shows an
-  "Offer to the workspace" control on each of the person's own model keys only, tells a
-  chooser whether the workspace's key pays for other people's messages (with a control to
-  choose the key in use when nobody has), and tells a member in plain words when no
-  chosen, offered key pays for their messages.
-- When no unlock of the holder holds the key, the call ends with the typed
-  `AutomationStudioSecretsLockedError` (`secrets.locked`) and no other key is tried. The
-  provider adapters turn a throw from the key lookup into a generic provider error, so the
-  model source remembers the lock and rethrows the typed error, for the holder's own
-  messages as well. The dock says it in the thread. The holder is told
-  `secretsLockedMessage` ("Unlock your model key: ..."); anyone else is told the
-  workspace's key is locked and its owner must unlock it (`workspaceKeyLockedMessage`,
-  contracts `platform/model-keys`, raised as `PanelAssistantWorkspaceKeyLockedError`, the
-  same code and type, with no sign-in link, since their own unlock cannot open it).
-- `get-assistant-model` (and the snapshot's `modelSettings`) carries `assistantProvider`,
-  the provider of the key in use, so Settings shows a member which provider and model
-  answer without listing a key that is not theirs, and offers no control to change it.
-- **The default key and the assistant's key are the workspace's choices.** `set-default-key`
-  and `set-assistant-model` both declare `endpointResource.workspace()`, so IAM decides
-  `secrets:SetDefaultKey` and `secrets:SetAssistantModel` on the workspace FRN, never on the
-  key: owning a key does not let a person make it everyone's default. Hosted, the Owner
-  and Administrator policies allow them and `FluxIQUserAccess` does not; local and
-  self-hosted, the role's `secrets.manage` decides (`admin` yes, `viewer` no). A person's
-  own key management (create, rename, rotate, reveal, delete) is unchanged, decided on the
-  key under `OwnData`. Settings hides both controls from a person whose role lacks
-  `secrets.manage` (`mayChooseWorkspaceKeys`), once the page is given the role's
-  permissions (`useSettingsData(port, { mayChooseForWorkspace })`); without it the page
-  offers them and the server refuses.
+Records retain their password-derived encryption seals. Core additionally wraps
+the verified per-record data key under a host protection key, authenticated to the
+store identity, owner, record and current ciphertext digest. The wrap is durable;
+normal authenticated use therefore does not depend on a password being held in
+process memory. A credential may also retain its existing encrypted custody boxes.
+Issuance persists the required holder before publishing a hosted credential, and
+rotation preserves the existing pending/current generation and lost-reply rules.
+Only the exact validated approving session may delegate its own proven material.
 
-**Unlock resolution happens on every model call.** The caller's own session is only
-the preferred one. If it was signed out, a panel caller's resolver tries
-`unlockedSessionFor(userId)` for another live panel unlock of the same person. A
-paired browser uses its own unlock and falls back to nothing, so a lock on that
-browser holds while the person is signed in elsewhere (`fallbackUnlockFor`, bound in
-`createGlobalProgramRuntime`). A session a password change ended, or one that ended before
-the change, falls back on nothing either: that is what a person does when they suspect
-someone, and it covers a session signed out first. The order is held in this process, as long as
-anything started there can run; a session that only expired was never told about, so it is not
-in it. When nothing can open the key, the call waits for
-the person (below); only where nothing can wake it does it throw
-`AutomationStudioSecretsLockedError`, which carries the contract code
-`secrets.locked` and the message for the instance host. The DeepSeek adapter turns
-any throw from the secret lookup into a generic provider error, so the resolver
-remembers a locked error per request and rethrows the typed one. The panel chat
-gets the same fallback and error.
+Local persistent Windows installations protect the host keyring with DPAPI for
+the current OS user. POSIX installations use a private owner-only file. These
+protect separately stored database ciphertext, not against access as that same
+OS account. Memory-only runtimes have ephemeral protection. Service deployments
+require the explicitly mounted keyring selected by
+`FLUXIQ_SECRET_KEYS_KEYRING_FILE`; they do not silently generate a replacement.
+Back up the keyring together with the database and retain every key version still
+needed by stored wraps. A missing initialized local keyring is a recovery problem,
+not a reason to create a new master and pretend existing records remain readable.
 
-**An unlock lasts as long as its credential.** A key is sealed under a key derived
-from the person's password, so nothing else could open it, and an unlock used to live
-only in process memory: a Core restart or a session ending left a person locked
-while their browser still looked paired, and they found out from a failed task.
-`programs/secret-keys/runtime/unlocks/` now lets the unlock come back
-from what the holder already has, with no password and no prompt. A holder is a
-paired browser (its gateway credential) or a signed-in panel session (its cookie).
+Existing owner-stamped records migrate when legitimate password or credential
+material proves their data key. Normal login restores that material in the selected
+tenant using primary identity. Proven material can repair an unavailable old wrap
+under the configured current host key; it cannot create missing authority or infer
+an owner. There is no automatic key retirement command: retain older key IDs until
+all affected records have been migrated and verified.
 
-- Each holder has an X25519 key pair (`unlocks/crypto.ts`). The stored
-  record (`secret.credential-unlocks`, its own repository) holds the public key, the
-  private key under AES-256-GCM with a key derived by HKDF-SHA256 from the credential
-  and bound to the holder and person, and one box per data key, sealed to the public
-  key and bound to the holder, person and record. Core stores a credential only as a
-  digest and a panel session only as a digest, so the store opens nothing alone.
-- A public key means anything the person proves themselves for reaches a browser of
-  theirs that is already unlocked, with no credential present: a sign-in, a key added
-  or rotated with their password. Pairing first and adding a key afterwards, the usual
-  order, just works. This is why it is not a plain symmetric wrap.
-- **A holder gets a key only on a proof.** A new paired browser starts locked, with
-  nothing copied from a live session, because a stolen cookie must not be able to mint
-  a lasting holder. The person's password at its approval
-  (`/api/client-gateway/approve-pairing`, optional) lifts it at once; otherwise it pairs
-  fine and shows the one-time Unlock step. A browser paired before this existed gets
-  the same step. A browser nobody has proved for keeps that mark through every later lock, a
-  password change or a disable among them, so it never reaches the panel's offer: only its
-  own step lifts it.
-- **Only a holder the host vouches for is boxed to** (`SecretKeyHolderVouch`, bound in
-  `createGlobalProgramRuntime`): a paired row must be an active trusted client of that
-  person, a panel row a live session of theirs. A stored row alone proves nothing, and
-  with no answer bound nothing is boxed. The store is sensitive
-  (`programs/database-manager/sensitive-stores.ts`, the one list): read only after a
-  recheck, written only by its owner, recheck or not, and so are the rows of `identity.users`
-  that prove who a person is (`credential`, `session`), by their id or by what they say
-  they are. Its deletes overwrite the row (`secure_delete`) and checkpoint the write-ahead log.
-  A `user` row can be written, but an account made again over a credential still stored
-  takes no password or PIN (`upsertUser`): a credential changes only through a change that locks.
-- A lift does not stand on a password that opened nothing when the person has sealed keys
-  and no recorded reset: that password is not theirs to prove with.
-- A paired unlock is held in memory under a random per-process handle, never its public
-  id, so nothing can name another person's. A Flow's standing result-check authorization
-  cannot draw on one, and no client write can set that authorization.
-- A rotated credential gets a whole new key pair, written beside the old one as
-  `pending` until it is confirmed, so an old credential with an old copy of the row
-  opens nothing written since. A confirmation names the credential by its digest, and only
-  the generation written for that credential is promoted: one written ahead for a reconnect
-  still in flight is not the client's until its own credential says so.
-- The gateway reports each moment it handles a credential it verified
-  (`client-gateway/service/credential-custody.ts`, `credentialCustody`): `issued` at
-  approval, `rotating` written ahead of a rotated credential's digest so a crash on
-  either side leaves the accepted credential able to open the record, `presented` on
-  every hello and bearer request, `confirmed` when a credential is confirmed in use, `released` when the last socket goes (the unlock
-  leaves memory; the credential brings it back), `forgotten` when trust ends. Custody
-  never fails what the gateway was doing, and is audited by step and error name only.
-  A revoke landing during a reconnect stands: the gateway checks the trust again after
-  each wait, and a holder forgotten in this process cannot come back from a presentation
-  already in flight.
-- **A credential of a client's that is no longer its own ends the trust.** A credential
-  names its trusted client and is signed under a key that client alone keeps, so Core can
-  tell one it issued from noise with nothing remembered per credential. One that is neither
-  the client's current one nor the one before revokes that trusted client, forgets its
-  unlock and audits `credential.reuse_detected` with its id: whoever had it, a copy or the
-  real browser, the copy is out and the real browser pairs again. A credential merely naming
-  a client, unsigned, ends nothing. The credential before the current one is not a reuse
-  while it is in its lost-reply window (at most 14 days until confirmed). A request, not a
-  hello, is only refused just after its credential moved on, since it can still have been on
-  its way; a client stores what it was sent before it says hello again. Approving the same
-  client id again ends the trust that same person gave it before. A credential's life slides
-  with use and has no upper bound, because this is what covers a stolen one.
-- Held keys keep their invariant: a box is opened, the key it holds is checked against
-  the record's current seal, and a box that no longer opens it is dropped.
+Snapshots expose safe `availability` metadata rather than `unlocked`,
+`lockedBecause`, `lockedClients` or tickets. Unavailable causes are distinct:
+`legacy_recovery_required`, `host_protection_unavailable`, and `ciphertext_invalid`.
+A missing provider configuration is a setup issue; an unavailable old ciphertext
+requires recovery or replacement; neither means the client's connection is locked.
+Readiness considers enabled supported model keys belonging to the caller and
+ignores admin-visible foreign keys. Legacy `unlocked: false` metadata is treated
+as unavailable/upgrade-required, never as permission to prompt for a new unlock.
+Historical wait records and compatibility types can still be read, but active
+runtime composition does not produce a first-unlock task wait or unlock CTA.
 
-What locks, immediately and for that holder (a lock empties the boxes and drops the
-memory; `lockedAtMs` keeps it locked):
+Plaintext-key reveal remains a separate management action. It requires fresh
+password authentication against the current identity authority, matching the
+acting user/session, and current `secrets:RevealKey` authority. Its internal proof
+is short-lived and one-use; a model call cannot use it to return a key to a client.
 
-| Event | What happens |
-| --- | --- |
-| Signing out of the session that approved a browser | That browser locks. Linked by `approvingSessionDigest`. |
-| A person's own sign-out, when a browser's approving session has already ended | That browser locks too: nothing else links it to a session, and staying unlocked after a sign-out is the failure that must not happen. A sign-out elsewhere leaves a browser whose approving session still lives. |
-| A session merely expiring | Nothing. It is not a sign-out. |
-| Forgetting the pairing (`client.forget_pairing`), an operator's `revokeTrustedClient` | The record is deleted and the credential speaks for nobody. |
-| An administrator's revoke of the approving session (by raw id or digest) | That browser locks, even if this process never saw the raw id. |
-| `revokeUserSessions`, a disabled or deleted account, including `updateUser` with `enabled: false` | Every browser of that person locks, and every key of theirs leaves memory (`IdentitySessionEnd.wholeUserId`). |
-| Deleting a key | Its box goes from every holder. |
-| Rotating a key | Its boxes go. The old key cannot open the new seal. The new value reaches the rotator's own browsers because they proved their password for it; nobody else's. |
-| A password change with the current password | Re-boxed under the new seals, only for the session making the change and the browsers it approved. Everything else of theirs locks with `password_changed`, because a change often means they suspect someone, and every other session of theirs ends. Work one of those started draws on nothing else of theirs; work that is theirs waits. |
-| A password reset nobody proved the old password for | Every browser of that person locks, and their live unlocks go. |
-| An administrator setting someone else's password | That person's sessions end, as provisioning's reset does. |
-| A credential of a client's that is no longer its own, presented | The trusted client is revoked and its record deleted. |
-| The same client id approved again by the same person | The earlier trust is revoked. |
+### The workspace's assistant key
 
-A lock is attempted on every holder even when a write fails, keys leave memory first,
-and the failures are raised together. A lock the store refused is written again on each
-next presentation. Identity tells these listeners before it deletes the session, so a crash
-between the two leaves a lock and a live session rather than a dead session and no lock.
-What remains: a store that refuses a lock's write and keeps refusing until a restart.
+The assistant uses the workspace's selected assistant/default key. Another
+person's key pays only when an authorized workspace chooser selected it **and**
+the key's holder explicitly offered it. Adding the first key or inheriting a
+default does not create either consent. `offer-key` is restricted to the holder;
+a paired client and an administrator cannot offer someone else's key.
 
-Only the person's own explicit unlock lifts a lock: the `secret-keys` `unlock` endpoint
-with `clientIds`, from the panel's Secret Keys page. It lifts the named holders and no
-others. With one browser unlocked before the page names it ("Unlock Chrome on Windows");
-with several it lists them with their label and last use, and the person picks. **A browser
-nobody has ever unlocked is not offered at all from the page**, because anyone with a stolen
-cookie can pair one under any name. Its unlock starts from the browser itself: its Open
-FluxIQ button carries a ticket only that browser can read (`unlockTicketFor`, in the
-address's fragment), and without one the page only says it exists, when it was paired, and
-how to revoke it. An ordinary sign-in boxes keys to their unlocked browsers but leaves a
-locked one locked, so signing in elsewhere, or unlocking a new laptop, never undoes signing
-out on a lost one. The proof is what sign-in asks, a password and the 2FA code where one is
-set, and never a PIN. Rechecks of a password are limited per session and counted as they
-start (`identity-access/runtime/sessions/credential-attempts.ts`), so guesses on a stolen
-session do not hold the person back on their own.
+Every provider use re-resolves the current choice and offer, and checks the
+sender's `studio:SendPanelMessage` authority. The use retains the sender as its
+principal and identifies the holder only as the authorized payer. It does not
+borrow the holder's live panel session. Withdrawal, deletion, disablement or a
+changed key/model invalidates the old binding; the call does not silently charge
+another key. This assistant-only delegation does not authorize arbitrary Flow
+use or expose the key to the sender.
 
-**A locked key is found before a task starts.** `secret-keys` `snapshot` says of each
-of the caller's own keys whether their unlock opens it (`unlocked`), and the chat's
-readiness read (`readModelReadiness`) answers `locked`: the empty state shows one line
-with Open FluxIQ, which opens that page. An open empty chat reads it again as it polls,
-so a key that locks later shows the step without reopening. A command that needs the model
-(`needsModelKey`: create-here, explore, improve) shows the same step instead of
-starting, and spends nothing; `keyNeedsUnlock` on the effective caller decides it, and
-is false for a person with no key at all. A saved Flow still runs.
+`get-assistant-model` exposes the selected provider/model and choice/offer state;
+key snapshots mark ownership with `heldByYou`. Workspace-wide choices remain IAM
+workspace actions (`secrets:SetDefaultKey`, `secrets:SetAssistantModel`), distinct
+from a person's own key management under `OwnData`.
 
-**If a key locks during a task, the task waits for the person and carries on.**
-`ModelProvider.whenReady` runs before an attempt starts its deadline
-(`runtime/models/retry/call.ts`), so a long wait is no timeout and no spent attempt.
-The session-key provider waits there while the key is locked
-(`runtime/models/secrets/locked-wait.ts`), wakes when something the person holds
-changes, tells the thread the work came from, and ends on the call's own signal when
-the person presses Stop. It is reported as `waiting_for_person` with the closed reason
-`model_key_locked`, and an attempt's stored row says so for as long as it lasts: the
-attempt listens to its own provider (`observeHolds`, `answer-first/attempt/key-wait.ts`), so
-only its own waits count, and a judge's deadline leaves out only those. Time spent waiting
-is no part of what a retry may spend, and it is recorded against the Flow
-(`runtime/models/secrets/person-wait-clock.ts`), so a limit on that Flow's work can read a
-clock that stands still while it waits. The limits above a model call on the older build
-path do not read it yet, so a long wait can still end there:
-`docs/working/answer-first-plan/reports/model-key-unlock.md` lists each one.
-
-**Every sentence about a locked key comes from one place**
-(`modelKeyLockedWords`, `packages/contracts/src/task-attempts/model-key-lock.ts`): why
-it locked, in plain words, and the one action. The closed reasons are `first_unlock`
-(nothing stored yet: explained in a thread once for each person, across restarts),
-`signed_out`, `administrator`, `sessions_ended`, `password_reset` (nothing they can
-type opens the key, so it asks them to add it again) and `unknown`. `secretsLockedMessage`,
-the rare typed error, says the same action, and `secrets.locked` stays its code.
+Standing unattended cloud grants are a separate incomplete capability. Existing
+Flow result-check metadata is not a durable, revocable, concurrency-safe spending
+grant. The new authenticated access authority refuses a standing principal until
+that grant service exists; this work does not claim unattended paid execution.
 
 **A paired credential's life slides, and a rotation is not over until it is confirmed**
 (`client-gateway/service/trusted-clients.ts`). It lasts 60 days from its last use,
@@ -1170,8 +1010,8 @@ one is confirmed, and at most 14 days from that rotation; presenting it again ca
 stretch that. Confirmation is the client saying it stored the new one
 (`client.credential_received`, sent after its token storage has written) or any use of
 the new one. Once confirmed, the old one is refused for good, and its wrap is deleted
-with `confirmed`. The unlock's expiry slides with it, what it holds untouched, so a call
-in flight is not cut.
+with `confirmed`. Credential custody follows that expiry; every model use still rechecks current
+authority.
 
 **Session revocation.** The identity-access service gained `revokeUserSessions(
 userId)` (it reloads from the store first, so sessions minted by another instance
@@ -1196,7 +1036,8 @@ passes the caller as an administrator by that permission check.
 
 **Wiring.** `createGlobalProgramRuntime` subscribes
 `secretKeys.revokeSessionUnlock(sessionId, revoker)` to these revokes, so an
-admin revoke, a sign-out, a reset and a deletion take the key unlock away.
+admin revoke, a sign-out, a reset and a deletion clear the held-key cache (the legacy-key migration state;
+model use is authorized per call and does not read it).
 `revokeSessionUnlock` drops an unlock only for the user it belongs to or an
 administrator; anyone else is refused and the unlock kept, so knowing a session
 id is not enough. The sign-out route no longer drops the unlock itself. Likewise

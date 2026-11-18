@@ -68,7 +68,7 @@ async function library(model: AutomationStudioConversationModel) {
       projectId: PROJECT, conversationId, text, actorId: "user.reader",
       capabilities: [AUTOMATION_STUDIO_CONVERSATION_ANSWER_ASK.capability], flows: [], onScreen: {}, limits: QUICK
     });
-    const context = { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.reader", keyLocked: false, paired: false, startLocation: null };
+    const context = { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.reader", paired: false, startLocation: null };
     return { answer, execution: await startAutomationStudioConversationCommand({ response: answer.response, context }) };
   };
   const status = async (askId: string) => (await conversations.getAsk({ projectId: PROJECT, askId }))?.status;

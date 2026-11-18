@@ -55,7 +55,7 @@ describe("AutomationStudioSchemaMigrationRunner ready memo", () => {
     await mine.closeAll(); await theirs.closeAll();
   });
 
-  it("still refuses while another connection holds the migration lock", async () => {
+  it("checks in full while another connection holds the migration lock, and leaves that lock alone", async () => {
     const mine = new AutomationStudioProjectDatabasePool({ rootDir });
     const theirs = new AutomationStudioProjectDatabasePool({ rootDir });
     const lease = await mine.acquire("project.locked");
@@ -63,9 +63,14 @@ describe("AutomationStudioSchemaMigrationRunner ready memo", () => {
     await migrate(lease.database);
     const now = Date.now();
     await other.database.run("update automation_schema_state set status = 'migrating', lock_token = 'other', lock_acquired_at_ms = ?, updated_at_ms = ? where singleton = 1", [now, now]);
-    await expect(migrate(lease.database)).rejects.toThrow(/lock was lost/);
+    // Its set is all applied, so it is ready to use: it neither fails on nor takes the other's lock.
+    await expect(migrate(lease.database)).resolves.toEqual({ applied: [], skipped: ["0001_initial"], backupCreated: false, status: "ready" });
+    await expect(lease.database.get("select status, lock_token as lockToken from automation_schema_state")).resolves.toEqual({ status: "migrating", lockToken: "other" });
+    // Not remembered while held: a set with something to apply is still refused, never answered from the memo.
+    await forgetLedger(lease.database);
+    await expect(migrate(lease.database)).rejects.toThrow(/already running/);
     await other.database.run("update automation_schema_state set status = 'ready', lock_token = null, lock_acquired_at_ms = null where singleton = 1");
-    await expect(migrate(lease.database)).resolves.toMatchObject({ applied: [], status: "ready" });
+    await expect(migrate(lease.database)).resolves.toMatchObject({ applied: ["0001_initial"], status: "ready" });
     await lease.release(); await other.release();
     await mine.closeAll(); await theirs.closeAll();
   });

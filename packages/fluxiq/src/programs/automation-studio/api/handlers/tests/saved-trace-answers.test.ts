@@ -79,7 +79,7 @@ describe("an answer carrying a saved trace", () => {
       runRuntimeSession: vi.fn(async () => session(stored)),
       cancelRuntimeSession: vi.fn(async () => session(stored)),
       getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })),
-      conversations: { callerFor: () => ({ keyLocked: true, paired: false }) }
+      conversations: { callerFor: () => ({ paired: false }) }
     };
     expectWhole((await call(service, AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, { projectId: "project.one", flowId: "flow.answers" })).runtimeSession.trace.attempts, executed);
     expectWhole((await call(service, AUTOMATION_STUDIO_ENDPOINTS.cancelRuntimeSession, { projectId: "project.one", runId: "run.one" })).runtimeSession.trace.attempts, executed);

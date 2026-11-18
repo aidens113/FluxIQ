@@ -1,3 +1,5 @@
+import type { ModelKeyAvailability } from "fluxiq/ui";
+
 /** An answer that may be refused: the person lacks access to it, or the data is here. */
 export type Guarded<T> = { state: "denied" } | { state: "ready"; data: T };
 
@@ -9,8 +11,8 @@ export type KeyRow = {
   addedAt: number | undefined;
   lastRevealedAt: number | undefined;
   enabled: boolean;
-  /** `unknown` when the engine does not say whether this person has unlocked it. */
-  lock: "locked" | "unlocked" | "unknown";
+  /** Saved-key availability says nothing about client authentication or provider health. */
+  availability: ModelKeyAvailability | { state: "unknown" } | { state: "unavailable"; code: "upgrade_required" };
 };
 
 export type SessionRow = { digest: string; expiresAt: number | undefined };

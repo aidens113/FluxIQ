@@ -11,8 +11,8 @@ import { AutomationStudioService } from "../../../../framework/automation-servic
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../_shared/api.ts";
 import { registerAutomationStudioApi } from "../handlers/index.ts";
 
-const NAMED_BY_CLIENT = { authorizedByUserId: "user.someone-else", unlockSessionId: "session.named-by-client", keyId: "key.someone-elses", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: 1, expiresAtMs: 9_999_999_999_999 };
-const STORED = { ...NAMED_BY_CLIENT, authorizedByUserId: "user.owner", unlockSessionId: "session.owner", keyId: "key.own" };
+const NAMED_BY_CLIENT = { authorizationId: "result-check:named", authorizedByUserId: "user.someone-else", grantedThrough: { kind: "person" }, keyId: "key.someone-elses", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: 1, expiresAtMs: 9_999_999_999_999 };
+const STORED = { ...NAMED_BY_CLIENT, authorizationId: "result-check:own", authorizedByUserId: "user.owner", keyId: "key.own" };
 const ACTOR: ProgramApiActor = { userId: "user.owner", sessionId: "session.owner", roleId: "admin", permissions: ["programs.read", "programs.write", "flows.write"] } as ProgramApiActor;
 
 function checkOf(metadata: Record<string, any> | undefined): Record<string, unknown> | undefined {
@@ -67,5 +67,26 @@ describe("a Flow's standing result-check authorization, through the endpoints", 
     const saved = await service.getFlow(project.id, flow.flowId);
     await call(AUTOMATION_STUDIO_ENDPOINTS.saveFlow, { projectId: project.id, flow: { ...saved, metadata: namingAuthorization(saved.metadata, NAMED_BY_CLIENT) } });
     expect(checkOf((await service.getFlow(project.id, flow.flowId)).metadata)?.authorization).toMatchObject({ keyId: "key.own" });
+  });
+
+  it("is granted only by the request's own resultCheckAuthorization, as the request's actor, and withdrawn by null", async () => {
+    const { project, flow, call } = await flowAndCaller();
+    const granted = await call(AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings, { projectId: project.id, flowId: flow.flowId, flow: { metadata: {} }, resultCheckAuthorization: { keyId: "key.own", authorizedByUserId: "user.someone-else", maxTotalCostUsd: 2 } });
+    expect(granted.error).toBeUndefined();
+    expect(checkOf((await service.getFlow(project.id, flow.flowId)).metadata)?.authorization).toMatchObject({ authorizedByUserId: "user.owner", grantedThrough: { kind: "person" }, keyId: "key.own", maxTotalCostUsd: 2 });
+    await call(AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings, { projectId: project.id, flowId: flow.flowId, flow: { metadata: {} }, resultCheckAuthorization: null });
+    expect(checkOf((await service.getFlow(project.id, flow.flowId)).metadata)?.authorization).toBeUndefined();
+  });
+
+  it("refuses a grant from a paired client the gateway does not know, and a malformed one", async () => {
+    const { project, flow } = await flowAndCaller();
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, service);
+    const paired: ProgramApiActor = { ...ACTOR, sessionId: "client-gateway:gateway.unknown", channel: "paired-client" };
+    const unknown = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings, scope: {}, actor: paired, payload: { projectId: project.id, flowId: flow.flowId, flow: { metadata: {} }, resultCheckAuthorization: { keyId: "key.own" } } });
+    expect(unknown.error).toMatch(/paired for them/);
+    const malformed = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.updateFlowSettings, scope: {}, actor: ACTOR, payload: { projectId: project.id, flowId: flow.flowId, flow: { metadata: {} }, resultCheckAuthorization: { keyId: "key.own", maxTotalCostUsd: -1 } } });
+    expect(malformed.error).toMatch(/positive number/);
+    expect(checkOf((await service.getFlow(project.id, flow.flowId)).metadata)?.authorization).toBeUndefined();
   });
 });

@@ -1,5 +1,6 @@
 import type {
   ClientGatewayActionResult,
+  ClientGatewayConversationChanged,
   ClientGatewayPairingChallenge,
   ClientGatewayServerMessage,
   ClientGatewaySession,
@@ -46,6 +47,10 @@ export type ClientGatewayServiceOptions = {
   trustedClientStore?: ClientGatewayTrustedClientStore;
   /** Who keeps something for a client's credential, told of each moment one is handled (`./credential-custody.ts`). Unset, nothing is. */
   credentialCustody?: import("./credential-custody.ts").ClientGatewayCredentialCustody;
+  /** Server-only authenticated issuance before a client socket exists. Unset, this path refuses all grants. */
+  trustAuthority?: import("./trust-issuance/index.ts").ClientGatewayTrustAuthority;
+  /** Server-owned current identity for ordinary trusted clients; omission preserves generic local behavior. */
+  sessionMetadata?: import("./session-metadata/index.ts").ClientGatewaySessionMetadataProvider;
   createToken?: () => string;
   now?: () => number;
   resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;
@@ -97,6 +102,12 @@ export type ClientGatewayServiceOptions = {
    * `setTimeout`.
    */
   startTimer?: ClientGatewayTimerSource;
+  /**
+   * Decides a `client.focus_project` (`./project-focus/`); a host may also
+   * install it later through `ClientGatewayService.projectFocus`.
+   * Unset, every focus to a project is refused as `project_focus.unavailable`.
+   */
+  projectFocusAuthority?: ClientGatewayProjectFocusAuthority;
 };
 
 /** What the gateway is minting an id for (`ClientGatewayServiceOptions.createId`). */
@@ -126,6 +137,57 @@ export type InternalSession = ClientGatewaySession & {
   sentCredentialHash?: string;
   /** Where the transport says the connection came from; never public, audited as its prefix only. */
   peer?: import("./security/index.ts").ClientGatewayPeer;
+  /**
+   * The project the session was bound to when it became ready (its pairing's,
+   * or none on a reconnect), which a `client.focus_project` of null returns it
+   * to (`./project-focus/`). Never public.
+   */
+  pairedProjectId?: string | null;
+  /** How many `client.focus_project` requests this session has sent, so only the latest one decided is applied. Never public. */
+  focusRequests?: number;
+};
+
+/**
+ * Whether the person who paired `session` may read `projectId` in `domainId`,
+ * the domain the session declared: what a `client.focus_project` is decided by
+ * (`./project-focus/`). Supplied by the layer that owns identity and IAM; a
+ * thrown error reads as "could not decide".
+ */
+export type ClientGatewayProjectFocusAuthority = (request: { session: ClientGatewaySession; projectId: string; domainId: string | null }) => Promise<boolean>;
+
+/** Where a host installs the focus authority (`ClientGatewayService.projectFocus`); undefined refuses every focus to a project as unavailable. */
+export type ClientGatewayProjectFocusPort = { setAuthority(authority: ClientGatewayProjectFocusAuthority | undefined): void };
+
+/**
+ * Whether the person who paired `session` may read the chats of `projectId`
+ * in `domainId`, the domain the session declared, as reading one of them
+ * (`get-conversation`) would decide it for that person on the paired-client
+ * channel: what a `server.conversation_changed` waits on
+ * (`./project-focus/conversation-delivery.ts`). Supplied by the layer that owns
+ * identity and IAM; a thrown error reads as "could not decide".
+ */
+export type ClientGatewayConversationReadAuthority = (request: { session: ClientGatewaySession; projectId: string; domainId: string | null }) => Promise<boolean>;
+
+/**
+ * Telling paired clients which chats changed (`ClientGatewayService.conversationPush`,
+ * `./project-focus/conversation-delivery.ts`).
+ */
+export type ClientGatewayConversationPushPort = {
+  /**
+   * Installs the conversation read authority; undefined sends no
+   * `server.conversation_changed` at all. Installing one, even the one
+   * installed already, says what decisions were made from changed, which voids
+   * every one the gateway reused.
+   */
+  setAuthority(authority: ClientGatewayConversationReadAuthority | undefined): void;
+  /**
+   * Tells each ready person-paired session whose person may read the chat
+   * that it changed (its id and project, no content), as the installed
+   * authority decides; a panel thread's change (null project) is sent to no
+   * one. Returns how many sessions it was sent to, or queued for behind that
+   * decision.
+   */
+  publish(change: ClientGatewayConversationChanged): number;
 };
 
 /** An action command dispatched to a client and still awaiting its result. */

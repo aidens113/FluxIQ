@@ -21,6 +21,22 @@
 .chat-thread-toggle .chat-thread-title::before { content: "\00B7"; margin-right: 8px; color: var(--text-dim); }
 .chat-thread-badge { flex: 0 0 auto; border-radius: 999px; background: var(--accent-soft); color: var(--accent-text); padding: 1px 8px; font-size: 11.5px; font-weight: 650; }
 
+/* The chat bar (`threads/`, `view/thread-header.ts`): the chat's name, "Chats" with its waiting badge, and "+ New chat". On a narrow host it wraps to two rows. */
+.chat-bar { flex-wrap: wrap; gap: 6px 8px; padding: 6px 8px; }
+.chat-bar-title {
+  flex: 1 1 120px; min-width: 0; border: 0; border-radius: 8px; background: none; color: var(--text); padding: 4px 6px;
+  font-size: 14px; font-weight: 650; text-align: left;
+}
+.chat-bar-title:hover { background: var(--hover); }
+.chat-bar-title-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-bar .chat-thread-toggle { flex: 0 1 auto; }
+.chat-bar-new {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 32px; border: 1px solid var(--accent-edge);
+  border-radius: 8px; background: var(--accent); color: var(--accent-ink); padding: 4px 12px; font-size: 13px; font-weight: 650;
+}
+.chat-bar-new:hover:not(:disabled) { background: var(--accent-hover); }
+.chat-bar-new[hidden], .chat-bar-title[hidden] { display: none; }
+
 /* The list itself. Open in a drawer, it takes the thread's place until a chat is picked or Escape closes it. */
 .chat-thread-nav { display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
 .chat-thread-nav[data-layout="drawer"] { flex: 1 1 auto; }

@@ -423,13 +423,16 @@ the user who created or last rotated the key. A version 2 seal records
 
 A value is decrypted only with a password or a key derived from one. An explicit
 reveal and a runtime resolver's reveal authorization each take a fresh
-credential recheck, and creating an authorization checks that the password opens
-the key. Login also opens values: `unlockSession` tries every key sealed for
-that user, plus keys with no `sealedByUserId` and version 1 keys, and holds the
-derived keys of those that open for that session. A key keeps unlocking after a
-metadata edit, because its seal is matched to its `lastRotatedAtMs`.
+credential recheck. Model use needs no password: a record also stores
+`hostProtection`, its data key wrapped under the host's protection key, so a
+connected client's authenticated principal opens the key for one call. Login still
+runs `unlockSession`, which now only migrates keys stored before host protection
+(no `hostProtection`): it tries every key sealed for that user, plus keys with no
+`sealedByUserId` and version 1 keys, and wraps the data key of those that open. A
+key stays openable after a metadata edit, because its seal is matched to its
+`lastRotatedAtMs`.
 
-An older seal upgrades itself after a successful unlock or reveal. A version 1
+An older seal upgrades itself after a successful login migration or reveal. A version 1
 seal (`scrypt` at N=2^14, keyed from the salt text) or one below the current
 cost is re-sealed as version 2, once per record, stamped for the user whose
 password opened it, keeping `updatedAtMs` and `lastRotatedAtMs`. The new derived

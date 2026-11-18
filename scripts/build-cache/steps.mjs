@@ -125,8 +125,9 @@ export const STEPS = Object.freeze({
   "web:check": {
     package: "apps/web",
     kind: "check",
-    // apps/web/tsconfig.json already sets `incremental`.
-    command: "tsc --noEmit",
+    // apps/web/tsconfig.json already sets `incremental`. The 4 GB heap matches
+    // the other packages' checks: the web program outgrew Node's default heap.
+    command: "node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit",
     tsconfigs: ["tsconfig.json"],
     // tsconfig.json includes `.next/types/**/*.ts`, which next build writes.
     ignoredInputs: [{ path: ".next/types" }],

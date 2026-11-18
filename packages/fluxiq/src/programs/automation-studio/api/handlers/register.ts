@@ -21,6 +21,7 @@ import { registerSubflowEndpoints } from "./subflows.ts";
 import { registerProjectPartEndpoints } from "./project-parts.ts";
 import { registerInstructionEndpoints } from "./instructions.ts";
 import { registerRunEndpoints } from "./runs.ts";
+import { registerAcrossProjectEndpoints } from "./across-projects/index.ts";
 import { registerRunDatasetEndpoints } from "./datasets.ts";
 import { registerAutomationStudioConversationEndpoints } from "./conversations.ts";
 import { registerAutomationStudioActivityEndpoints } from "./activity.ts";
@@ -54,13 +55,15 @@ export function registerAutomationStudioApi(registry: GlobalProgramApiRegistry, 
   registerProjectPartEndpoints(dependencies);
   registerInstructionEndpoints(dependencies);
   registerRunEndpoints(dependencies);
+  registerAcrossProjectEndpoints(dependencies);
   registerRunDatasetEndpoints(dependencies);
   registerTaskAttemptEndpoints(dependencies);
   registerProjectTaskEndpoints(dependencies);
   registerTaskKnownFlowEndpoint(dependencies);
   // The conversation endpoints take their own dependency record: the registry, the narrow service surface they use, and what checks an answer's PIN.
   registerAutomationStudioConversationEndpoints({ registry, service, identityAccess, runLinks: automationStudioConversationRunLinks(service) });
-  registerAutomationStudioActivityEndpoints({ registry });
+  // Read on each call, never at registration: only this instance's own projects' activity is answered.
+  registerAutomationStudioActivityEndpoints({ registry, holds: (projectId) => service.projects.held.holds(projectId) });
   registerRouterEndpoints(dependencies);
   registerLlmGenerationEndpoints(dependencies);
   registerRuntimeExecutionEndpoints(dependencies);
