@@ -6,6 +6,7 @@
 
 import { createElement } from "../../dom/index.ts";
 import { lucideIcon } from "../../icons/index.ts";
+import { createModelKeyCard, defaultModelKeyProviders, type ModelKeyCard, type ModelKeyHostAction, type ModelKeysPort } from "../../model-access/index.ts";
 import type { EmptyStart, EmptyStateModel } from "./empty-state-model.ts";
 import { placeChildren } from "./place-children.ts";
 
@@ -22,6 +23,11 @@ export type EmptyStateHooks = {
   start?: (start: EmptyStart["id"]) => void;
   /** The control shown after the model-key line (the chat's Open FluxIQ); moved in only while the line shows. */
   keyAction?: HTMLElement;
+  /**
+   * The model-keys port, and what the host does for the card's Change model, Try now, How to update and Open
+   * FluxIQ. With it, the key line is the compact key card; without it, the line and `keyAction` as before.
+   */
+  modelKeys?: { port: ModelKeysPort; onAction(action: ModelKeyHostAction): void };
 };
 
 /** Creates it; `choose` receives an example the person picked. */
@@ -31,9 +37,11 @@ export function createEmptyState(choose: (text: string) => void, hooks: EmptySta
   const starts = createElement("div", { className: "chat-starts", attrs: { role: "group", "aria-label": "Start" } });
   const keyText = createElement("span", { className: "chat-key-text" });
   const key = createElement("div", { className: "chat-key-line", hidden: true, attrs: { role: "status" } }, [keyText]);
+  const card = createElement("div", { className: "chat-key-card", hidden: true });
   const examples = createElement("div", { className: "chat-examples", attrs: { role: "list", "aria-label": "Examples" } });
   const items = createElement("ul", { className: "chat-welcome-items" });
-  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, items, starts, key, examples]);
+  const element = createElement("div", { className: "chat-empty", hidden: true }, [title, line, items, starts, key, card, examples]);
+  let keyCard: ModelKeyCard | undefined;
   let shownItems = "";
   let shownStarts = "";
   let shownExamples = "";
@@ -50,7 +58,17 @@ export function createEmptyState(choose: (text: string) => void, hooks: EmptySta
       if ((element.getAttribute("data-onboarding") !== null) !== onboarding) {
         if (onboarding) element.setAttribute("data-onboarding", ""); else element.removeAttribute("data-onboarding");
       }
-      const keyHidden = model.keyLine === null;
+      // With a port the key card says it, in place of the line; the card reads the state itself.
+      const cardShown = hooks.modelKeys !== undefined && model.keyLine !== null;
+      if (card.hidden === cardShown) {
+        card.hidden = !cardShown;
+        if (cardShown && keyCard !== undefined) void keyCard.refresh();
+      }
+      if (cardShown && keyCard === undefined) {
+        keyCard = createModelKeyCard({ port: hooks.modelKeys!.port, variant: "compact", providers: defaultModelKeyProviders, onAction: (action) => hooks.modelKeys!.onAction(action) });
+        card.append(keyCard.element);
+      }
+      const keyHidden = model.keyLine === null || cardShown;
       if (key.hidden !== keyHidden) key.hidden = keyHidden;
       if (keyText.textContent !== (model.keyLine ?? "")) keyText.textContent = model.keyLine ?? "";
       const action = hooks.keyAction;

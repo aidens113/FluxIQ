@@ -7,6 +7,7 @@ import { useProjectList } from "../automation-studio/project";
 import { useLoaded } from "../flows";
 import { PublishPanelPage, usePanelContext } from "../panel-shell";
 import { chatRows } from "./chat-rows";
+import { useReloadOnChatChanges } from "./use-reload-on-chat-changes";
 import { CHATS_PAGE_SIZE, loadChats } from "./load-chats";
 import "./chats.css";
 
@@ -20,6 +21,7 @@ export function ChatsPage() {
   const projectId = scope === "current" ? context.projectId ?? null : null;
   const projects = useProjectList();
   const chats = useLoaded(`${projectId ?? "*"}|${limit}`, useCallback((signal: AbortSignal) => loadChats(studio, projectId, limit, signal), [studio, projectId, limit]));
+  useReloadOnChatChanges(chats.reload);
   const names = useMemo(() => new Map(projects.state === "ready" ? projects.projects.map((project) => [project.id, project.name] as const) : []), [projects]);
   const rows = chats.state === "ready" ? chatRows(chats.data, names, search) : [];
   const canLoadMore = chats.state === "ready" && chats.data.length >= limit;

@@ -37,7 +37,7 @@ describe("ActivitySection", () => {
     });
     const renderer = await mount(load);
     const first = text(renderer);
-    for (const shown of ["Ada", "Set member role", "Allowed", "Cy", "Denied", "Ben", "5 min ago", "2 h ago", "Load more"]) expect([shown, first.includes(shown)]).toEqual([shown, true]);
+    for (const shown of ["Ada changed someone's role.", "Cy tried to change someone's role.", "Not allowed", "Ben", "5 min ago", "2 h ago", "Load more"]) expect([shown, first.includes(shown)]).toEqual([shown, true]);
     await act(async () => {
       renderer.root.findByProps({ className: "activity-more" }).props.onClick();
     });
@@ -83,7 +83,7 @@ describe("ActivitySection", () => {
     expect(html).toContain("This workspace · 4 items hidden · ");
     expect(html).toContain("This workspace · 1 item hidden · ");
     expect(html.match(/hidden/gu)).toHaveLength(2);
-    expect(html).toContain("List projects");
+    expect(html).toContain("Bo was not allowed to list projects.");
   });
 
   it("draws an entry's values as text", () => {
@@ -122,5 +122,33 @@ describe("loadActivity", () => {
   it("keeps only the fields it knows from an answer", async () => {
     stub(200, { ok: true, payload: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r", 7], requestId: "dummy-request", ipPrefix: "203.0.113.0/24" }, { at: "bad" }], next: "" } });
     expect(await loadActivity(null)).toEqual({ state: "ready", data: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r"] }], next: null } });
+  });
+});
+
+describe("activity in plain words", () => {
+  it("names a key by its readable name and never shows hex", () => {
+    const hex = Array.from(new TextEncoder().encode("secret:Work")).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const html = renderToStaticMarkup(createElement(ActivityList, { entries: [{ at: NOW, who: "Ada", action: "secrets:DeleteKey", outcome: "allowed", resources: [`key ~${hex}`] }], now: NOW }));
+    expect(html).toContain("Ada removed the key Work.");
+    expect(html).not.toContain(hex);
+  });
+
+  it("says a key whose reference is only an id, without the id", () => {
+    const html = renderToStaticMarkup(createElement(ActivityList, { entries: [{ at: NOW, who: "Ada", action: "secrets:DeleteKey", outcome: "allowed", resources: ["key ~7365637265743a3733363537323635373437"] }], now: NOW }));
+    expect(html).toContain("Ada removed a key.");
+    expect(html).not.toContain("7365");
+  });
+
+  it("keeps system activity behind Show system activity", async () => {
+    const system: ActivityEntry = { at: NOW, who: "The platform administrator", action: "iam:AttachUserPolicy", outcome: "allowed", resources: ["service-identity website-backend"] };
+    const lookup: ActivityEntry = { at: NOW, who: "Ada", action: "iam:Snapshot", outcome: "allowed", resources: [] };
+    const renderer = await mount(async () => ({ state: "ready", data: { entries: [entry(NOW, "Ada"), system, lookup], next: null } }));
+    expect(text(renderer)).not.toContain("platform administrator");
+    expect(text(renderer)).not.toContain("snapshot");
+    await act(async () => {
+      renderer.root.findByProps({ type: "checkbox" }).props.onChange({ target: { checked: true } });
+    });
+    expect(text(renderer)).toContain("The platform administrator");
+    expect(text(renderer)).toContain("Ada snapshot.");
   });
 });

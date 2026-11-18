@@ -27,17 +27,17 @@ afterEach(() => {
   renderer = undefined;
   vi.unstubAllGlobals();
 });
-it.each(["password", "pin"])("binds %s replacement to the dialog subject despite retained background selection", async (kind) => {
+it("binds password replacement to the dialog subject despite retained background selection", async () => {
   await mount();
   const selectB = row("b").props.onClick;
-  act(() => action(kind === "password" ? "Change password" : "Change PIN").props.onClick());
-  const passwords = renderer!.root.findByProps({ "data-modal": kind === "password" ? "Change password" : "Change pin" }).findAllByType("input");
-  act(() => { passwords[0]!.props.onChange({ target: { value: kind === "password" ? "new-value" : "1234" } }); });
-  act(() => passwords[1]!.props.onChange({ target: { value: kind === "password" ? "new-value" : "1234" } }));
+  act(() => action("Change password").props.onClick());
+  const passwords = renderer!.root.findByProps({ "data-modal": "Change password" }).findAllByType("input");
+  act(() => { passwords[0]!.props.onChange({ target: { value: "new-value" } }); });
+  act(() => passwords[1]!.props.onChange({ target: { value: "new-value" } }));
   act(() => passwords[2]!.props.onChange({ target: { value: "synthetic-auth" } }));
   act(() => selectB());
   await act(async () => button("Save Credential").props.onClick());
-  expect(fixture.api.post).toHaveBeenLastCalledWith(kind === "password" ? "set-password" : "set-pin", expect.objectContaining({ userId: "a" }));
+  expect(fixture.api.post).toHaveBeenLastCalledWith("set-password", expect.objectContaining({ userId: "a" }));
 });
 const passwordDraft = () => {
   act(() => action("Change password").props.onClick());
@@ -99,10 +99,10 @@ it("does not close a replacement credential dialog after an old issued write fin
   // Retained/programmatic callbacks model an obsolete epoch, not an enabled normal Cancel gesture.
   act(() => close());
   // The old retained close is itself fenced; replace through a current synthetic menu action.
-  act(() => action("Change PIN").props.onClick());
+  act(() => action("Change password").props.onClick());
   await act(async () => resolve({ ok: true }));
-  expect(renderer!.root.findByProps({ "data-modal": "Change pin" })).toBeDefined();
-  expect(text()).not.toContain("password updated");
+  expect(renderer!.root.findByProps({ "data-modal": "Change password" })).toBeDefined();
+  expect(text()).not.toContain("Password updated");
 });
 it.each(["actor", "factor"])("invalidates proof and retained submit on %s changes", async (kind) => {
   await mount();
@@ -173,7 +173,7 @@ it("preserves final-enabled-admin restrictions and refuses captured disabled rol
 it("preserves the authorized create-user envelope and clears the completed draft", async () => {
   await mount();
   act(() => button("Add User").props.onClick());
-  for (const [index, value] of ["created", "Created User", "temporary", "", "synthetic-auth"].entries()) {
+  for (const [index, value] of ["created", "Created User", "temporary", "synthetic-auth"].entries()) {
     act(() => renderer!.root.findByProps({ "data-modal": "Add User" }).findAllByType("input").filter((node) => node.props.type !== "checkbox")[index]!.props.onChange({ target: { value } }));
   }
   await act(async () => button("Create User").props.onClick());
@@ -220,13 +220,12 @@ it.each([null, {}, { ok: "true" }, { ok: false, error: {} }])("recovers malforme
   expect(text()).toContain("The identity operation could not be completed. Try again.");
   expect(text()).toContain("new-value");
 });
-it("revalidates newly configured actor PIN before accepting old proof", async () => {
-  await mount();
-  passwordDraft();
-  const old = button("Save Credential").props.onClick;
+it("offers no PIN anywhere in the people console", async () => {
   payload.users[0].pinConfigured = true;
-  await act(async () => button("Refresh").props.onClick());
-  await act(async () => old());
-  expect(fixture.api.post).not.toHaveBeenCalled();
-  expect(text()).not.toContain("new-value");
+  await mount();
+  act(() => button("Add User").props.onClick());
+  expect(text()).not.toMatch(/\bPIN\b/iu);
+  expect(text()).not.toMatch(/Credential vault|Unlocked|Locked/iu);
+  expect(renderer!.root.findAllByType("button").some((node) => /PIN/u.test(label(node)))).toBe(false);
+  expect(renderer!.root.findByProps({ "data-menu": "Actions for a" }).findAllByType("button").map(label)).not.toContain("Change PIN");
 });

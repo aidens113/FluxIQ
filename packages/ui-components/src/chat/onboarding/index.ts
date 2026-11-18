@@ -3,3 +3,4 @@
 // whether a model key is enabled (`model-readiness.ts`).
 export { readModelReadiness, type ModelReadiness } from "./model-readiness.ts";
 export { modelUnavailableWords } from "./model-unavailable-words.ts";
+export { modelAccessFromReadiness } from "./access-from-readiness.ts";

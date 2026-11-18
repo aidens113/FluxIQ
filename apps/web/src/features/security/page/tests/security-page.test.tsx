@@ -8,6 +8,8 @@ import { ConfirmButton } from "../../confirm";
 import type { ChangeResult } from "../../data";
 import { KeysList } from "../../keys";
 import { SectionBody } from "../../state";
+import { SecurityTabs } from "../SecurityTabs";
+import { SECURITY_TABS } from "../security-tabs";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,8 +45,10 @@ describe("access", () => {
   it("lists people with roles, sessions and a place for the admin tools", () => {
     const html = renderToStaticMarkup(createElement(PeopleList, { access, onRevoke: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
     expect(html).toContain("Ana");
-    expect(html).toContain("role admin");
-    expect(html).toContain("Sign out");
+    expect(html).toContain("Administrator. Everything in the workspace, including people.");
+    expect(html).not.toContain("identity.manage");
+    expect(html).not.toContain("Can:");
+    expect(html).toContain("End session");
     expect(html).toContain('data-slot="access-admin"');
     expect(html).not.toContain("d1");
   });
@@ -62,13 +66,18 @@ describe("access", () => {
     expect(managed).toContain("ACTIONS-u1");
     expect(managed).toMatch(/data-slot="access-admin"[^>]*><p>ADMIN-TOOLS<\/p>/u);
   });
-  it("offers Forget for every paired browser, trusted or not", () => {
+  it("lists connected browsers one row each with Remove access, and folds removed ones under Removed (n)", () => {
     const rows = [
-      { trustedClientId: "t1", name: "Chrome", clientType: "extension", status: "active", approvedAt: 1, lastUsedAt: 2 },
-      { trustedClientId: "t2", name: "Old", clientType: "extension", status: "revoked", approvedAt: 1, lastUsedAt: 2 }
+      { trustedClientId: "t1", name: "Chrome on Windows", clientType: "extension", status: "active", approvedAt: 1, lastUsedAt: 2 },
+      { trustedClientId: "t2", name: "Old laptop", clientType: "extension", status: "revoked", approvedAt: 1, lastUsedAt: 2 }
     ];
     const html = renderToStaticMarkup(createElement(PairedClientsList, { rows, now: 10, onForget: async (): Promise<ChangeResult> => "done", onDone: () => undefined }));
-    expect(html.match(/>Forget</g)).toHaveLength(2);
+    expect(html.match(/>Remove access</g)).toHaveLength(1);
+    expect(html).toContain("Chrome on Windows · paired ");
+    expect(html).toContain("last used");
+    expect(html).toContain("<summary>Removed (1)</summary>");
+    expect(html).toContain("Old laptop");
+    expect(html).not.toMatch(/Windowsextension|extension ·/u);
   });
 });
 
@@ -102,5 +111,19 @@ describe("ConfirmButton", () => {
     act(() => { renderer.root.findByProps({ children: "Forget" }).props.onClick(); });
     await act(async () => { renderer.root.findByProps({ children: "Yes" }).props.onClick(); });
     expect(texts(renderer)).toContain("You do not have access to do this.");
+  });
+});
+
+describe("the tab bar", () => {
+  it("lists the four tabs in order, links each, and marks only the current one", () => {
+    const html = renderToStaticMarkup(createElement(SecurityTabs, { active: "devices" }));
+    expect(SECURITY_TABS.map((tab) => tab.label)).toEqual(["Your sign-in", "Devices and apps", "People", "Activity"]);
+    expect(html.indexOf("Your sign-in")).toBeLessThan(html.indexOf("Devices and apps"));
+    expect(html.indexOf("Devices and apps")).toBeLessThan(html.indexOf("People"));
+    expect(html.indexOf("People")).toBeLessThan(html.indexOf("Activity"));
+    for (const href of ["/security/sign-in", "/security/devices", "/security/people", "/security/activity"]) expect(html).toContain(`href="${href}"`);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-current="page"[^>]*>Devices and apps</u);
+    expect(html).not.toMatch(/Keys/u);
   });
 });

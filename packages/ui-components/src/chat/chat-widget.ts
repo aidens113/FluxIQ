@@ -341,6 +341,8 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       }
     }, {
       ...(keyOpener === undefined ? {} : { keyAction: keyOpener.element }),
+      // The key card's host actions all lead to FluxIQ's own page for the key (its Open FluxIQ control).
+      ...(captured.transport.modelKeys === undefined ? {} : { modelKeys: { port: captured.transport.modelKeys, onAction: () => { if (eligible()) keyOpener?.element.click(); } } }),
       start: (start) => {
         if (!eligible()) {
           return;

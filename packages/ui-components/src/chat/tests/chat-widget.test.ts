@@ -420,7 +420,7 @@ test("saved-key availability refreshes while the chat stays usable, with no clie
       await settle();
       await settle();
       assert.equal(key.hidden, false, "the saved-key problem is shown without reopening");
-      assert.match(fake(chat.element).byClass("chat-key-text")[0]!.textContent, /host configuration/u);
+      assert.match(fake(chat.element).byClass("chat-key-text")[0]!.textContent, /can't read it any more/u);
       assert.doesNotMatch(fake(chat.element).byClass("chat-key-text")[0]!.textContent, /unlock|password|PIN/iu);
       assert.equal(fake(chat.element).byClass("composer-box")[0]!.disabled, false, "saved-key availability never gates the composer");
       available = true;

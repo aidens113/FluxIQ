@@ -1,0 +1,16 @@
+/* Devices and apps: the connect page's own styles (it is reached from Security, not only from Settings). */
+.devices { display: grid; gap: var(--space-md, 12px); min-width: 0; }
+.devices h2, .devices h3 { margin: 0; }
+.devices > h3 { margin-top: var(--space-sm, 8px); }
+.devices-muted { color: var(--muted); font-size: var(--font-size-compact, 0.9rem); overflow-wrap: anywhere; }
+.devices-problem { color: var(--danger); margin: 0; }
+.devices-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.devices-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; min-width: 0; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); }
+.devices-copy-label { font-weight: 600; flex-basis: 100%; }
+.devices-copy-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; margin: 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--font-size-compact, 0.9rem); }
+.devices-copy pre.devices-copy-value { flex: 1 1 100%; max-height: 14rem; overflow: auto; }
+.devices-pairings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm, 8px); }
+.devices-pairing { display: grid; gap: 4px; min-width: 0; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); }
+.devices-pairing-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm, 8px); }
+.devices-pairing-dialog { color: var(--accent-text); font-weight: 600; }
+.devices-technical > summary { cursor: pointer; }

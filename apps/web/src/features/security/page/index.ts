@@ -1,4 +1,10 @@
+export { SecurityActivityPage } from "./SecurityActivityPage";
+export { SecurityAdvancedPage } from "./SecurityAdvancedPage";
+export { SecurityDevicesPage } from "./SecurityDevicesPage";
 export { SecurityKeysPage } from "./SecurityKeysPage";
-export { SecurityPage } from "./SecurityPage";
+export { SecurityPeoplePage } from "./SecurityPeoplePage";
 export { SecuritySignInPage } from "./SecuritySignInPage";
 export { SecuritySubPage } from "./SecuritySubPage";
+export { SecurityTabPage } from "./SecurityTabPage";
+export { SecurityTabs } from "./SecurityTabs";
+export { SECURITY_TABS, type SecurityTabId } from "./security-tabs";

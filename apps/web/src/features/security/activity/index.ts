@@ -4,5 +4,5 @@ export { ActivityList } from "./ActivityList";
 export { ActivitySection } from "./ActivitySection";
 export type { ActivityState } from "./ActivitySection";
 export { loadActivity } from "./data";
-export { actionLabel, shapeActivityPage } from "./model";
+export { actionLabel, activitySentence, isSystemActivity, resourceWords, shapeActivityPage } from "./model";
 export type { ActivityEntry, ActivityPage } from "./model";

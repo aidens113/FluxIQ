@@ -1,0 +1,53 @@
+/* The shared AI-key card (`model-key-card.ts`): state line with a badge, one action, and the inline form.
+   Tokens only; fits 360px. chat.css imports it, so a chat host imports nothing more; a screen outside the chat
+   imports this sheet after tokens.css. Native radio, checkbox and select are sized here, scoped to the card. */
+
+.model-key-card { display: grid; gap: 10px; min-width: 0; box-sizing: border-box; color: var(--text); font-size: 13.5px; line-height: 1.45; }
+.model-key-card[data-variant="compact"] { gap: 8px; padding: 10px 12px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface-muted); font-size: 13px; }
+.model-key-card[data-variant="full"] { padding: 14px 16px; border: 1px solid var(--divider); border-radius: 10px; background: var(--surface); }
+.model-key-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
+.model-key-line { flex: 1 1 200px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.model-key-card[data-state="checking"] .model-key-line { color: var(--muted); }
+.model-key-badge {
+  flex: none; padding: 1px 9px; border: 1px solid var(--divider); border-radius: 999px; font-size: 12px; font-weight: 650;
+  color: var(--muted); background: var(--surface);
+}
+.model-key-badge[data-tone="ok"] { color: var(--success); border-color: var(--success); }
+.model-key-badge[data-tone="warn"] { color: var(--warning-text); border-color: var(--warning); background: var(--warning-soft); }
+.model-key-badge[data-tone="bad"] { color: var(--danger-text); border-color: var(--danger); background: var(--danger-soft); }
+.model-key-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.model-key-action, .model-key-save, .model-key-remove-confirm {
+  min-height: 32px; padding: 4px 14px; cursor: pointer; border: 1px solid var(--accent-edge); border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 13px; font-weight: 650;
+}
+.model-key-action:hover:not(:disabled), .model-key-save:hover:not(:disabled), .model-key-remove-confirm:hover:not(:disabled) { background: var(--accent-hover); }
+.model-key-keep, .model-key-open, .model-key-remove-link {
+  min-height: 32px; padding: 4px 12px; cursor: pointer; border: 1px solid var(--divider); border-radius: 999px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
+}
+.model-key-keep:hover:not(:disabled), .model-key-open:hover:not(:disabled), .model-key-remove-link:hover:not(:disabled) { border-color: var(--accent-edge); background: var(--hover); }
+.model-key-action:disabled, .model-key-save:disabled, .model-key-remove-confirm:disabled, .model-key-keep:disabled { cursor: default; opacity: 0.6; }
+.model-key-action:focus-visible, .model-key-save:focus-visible, .model-key-keep:focus-visible, .model-key-open:focus-visible,
+.model-key-remove-link:focus-visible, .model-key-remove-confirm:focus-visible, .model-key-input:focus-visible, .model-key-link:focus-visible {
+  outline: var(--focus-width) solid var(--focus); outline-offset: 2px;
+}
+.model-key-slot { display: grid; gap: 8px; min-width: 0; }
+.model-key-form, .model-key-remove { display: grid; gap: 10px; min-width: 0; }
+.model-key-field { display: grid; gap: 4px; min-width: 0; }
+.model-key-label { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.model-key-input {
+  box-sizing: border-box; width: 100%; min-height: 34px; padding: 5px 10px; border: 1px solid var(--edge); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13.5px;
+}
+.model-key-link { justify-self: start; color: var(--accent-text); font-size: 12.5px; }
+.model-key-form .model-key-save { justify-self: start; }
+.model-key-problem, .model-key-remove-line { margin: 0; font-size: 13px; }
+.model-key-problem { color: var(--danger-text); }
+.model-key-form [hidden], .model-key-remove [hidden], .model-key-card [hidden] { display: none; }
+.model-key-offer { display: flex; gap: 8px; }
+/* Native controls at a size a person can hit; the browser's own are small and ignore the token palette. */
+.model-key-card select { appearance: auto; height: 34px; }
+.model-key-card input[type="radio"], .model-key-card input[type="checkbox"] { width: 16px; height: 16px; margin: 0 6px 0 0; accent-color: var(--accent); cursor: pointer; vertical-align: middle; }
+/* In the empty chat the card stands where the key line did, centred under the starts. */
+.chat-key-card { box-sizing: border-box; width: 100%; max-width: 420px; margin-top: 4px; text-align: left; }
+.chat-key-card[hidden] { display: none; }

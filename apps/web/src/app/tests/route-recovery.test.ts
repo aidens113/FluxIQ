@@ -11,7 +11,7 @@ describe("App Router recovery contract", () => {
       expect(readFileSync(new URL(`../${file}`, import.meta.url), "utf8")).toContain('role="status"');
     }
     const notFound = readFileSync(new URL("../not-found.tsx", import.meta.url), "utf8");
-    expect(notFound).toContain("Back to Programs");
+    expect(notFound).toContain("Go to Home");
   });
 
   it("keeps Retry and safe navigation in the shared error boundary", () => {

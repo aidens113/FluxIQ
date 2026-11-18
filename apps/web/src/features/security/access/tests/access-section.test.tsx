@@ -18,7 +18,7 @@ vi.mock("../../../automation-studio/data/use-program-transport", () => {
   return { useProgramTransport: () => transport };
 });
 
-import { AccessSection } from "../AccessSection";
+import { PeopleSection } from "../PeopleSection";
 
 const MEMBERS = {
   ok: true,
@@ -45,7 +45,7 @@ function stubFetch(members: { status: number; body: unknown }) {
 
 async function render(): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(createElement(AccessSection)); });
+  await act(async () => { renderer = create(createElement(PeopleSection, { twoStep: false })); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   return renderer;
 }
@@ -54,7 +54,7 @@ const labels = (renderer: ReactTestRenderer) => renderer.root.findAllByType("but
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("AccessSection", () => {
+describe("PeopleSection", () => {
   it("gives an administrator each other person's controls and the invite tools, and none on their own row", async () => {
     stubFetch({ status: 200, body: MEMBERS });
     const renderer = await render();
@@ -62,7 +62,9 @@ describe("AccessSection", () => {
     expect(text).toContain("Invite someone");
     expect(labels(renderer)).toEqual(expect.arrayContaining(["Change role", "Turn off", "Remove", "Invite"]));
     expect(labels(renderer).filter((label) => label === "Turn off")).toHaveLength(1);
-    expect(text).toContain("Your own access is changed by another administrator.");
+    expect(text).not.toContain("Your own access is changed by another administrator.");
+    expect(text).toContain("Administrator. Everything in the workspace, including people.");
+    expect(text).not.toContain("identity.manage");
   });
 
   it("shows a person refused by the server no admin tools, and does not ask again on the next refresh", async () => {
@@ -80,7 +82,5 @@ describe("AccessSection", () => {
     expect(labels(renderer)).not.toContain("Turn off");
     expect(labels(renderer)).not.toContain("Change role");
     expect(calls.filter((url) => url === "/api/accounts/members")).toHaveLength(1);
-    // The refresh did run: the paired browsers were read again.
-    expect(calls.filter((url) => url === "/api/client-gateway/snapshot").length).toBeGreaterThan(1);
   });
 });

@@ -148,3 +148,11 @@
   }
   .panel-dock-button[aria-expanded="true"] { display: none; }
 }
+
+/* The account menu in the top bar. */
+.panel-account { position: relative; }
+.panel-account-button { min-height: 32px; padding: 0 var(--space-md); border: 1px solid var(--divider); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.panel-account-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: grid; min-width: 11rem; padding: 4px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface, Canvas); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
+.panel-account-menu > a, .panel-account-menu > button { display: block; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.panel-account-menu > a:hover, .panel-account-menu > button:hover:not(:disabled) { background: var(--hover, rgb(127 127 127 / 0.15)); }
+.panel-account-problem { padding: 6px 10px; color: var(--danger); font-size: 0.85rem; }

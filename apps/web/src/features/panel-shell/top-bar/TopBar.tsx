@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountMenu } from "../account";
 import { formatSpend } from "./format-spend";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useEngineStatus } from "./use-engine-status";
@@ -23,6 +24,7 @@ export function TopBar(props: TopBarProps) {
         <span className="panel-spend" aria-label={`Spent today: ${formatSpend(props.spendTodayUsd)}`}>
           Today: {formatSpend(props.spendTodayUsd)}
         </span>
+        <AccountMenu />
       </div>
     </header>
   );
