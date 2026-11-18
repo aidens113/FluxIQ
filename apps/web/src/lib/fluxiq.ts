@@ -2,7 +2,6 @@ import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { getBrowserTrustRepository } from "../server/browser-trust";
 import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority, createWorkspaceSessionMetadata } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
-import { claimFluxIQDataRoot } from "fluxiq/server";
 import type { HeldKeys } from "fluxiq/secret-keys";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
@@ -18,7 +17,7 @@ import { announceOwnerClaim } from "../server/startup";
 import type { ProvisioningListenerHandle } from "../server/provisioning-listener";
 import { createWorkspacePresentations, WorkspacePresentationError, type WorkspacePresentations, type WorkspacePresentationCaller } from "./workspaces/presentation";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
-import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, WorkspaceDecisionAudit, workspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
+import { createTenantFluxIQ, DeferredIamAuditSink, FluxIQWorkspaceManager, initializeFluxIQWebStorage, primaryWorkspaceId, webDataRootHold, WorkspaceDecisionAudit, workspaceIam, workspaceManagerLimits, workspaceTenancyOfProfile } from "./workspaces";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
@@ -89,13 +88,22 @@ export function getFluxIQWorkspaces(): FluxIQWorkspaceManager {
 }
 
 export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
-  await claimFluxIQDataRoot(resolveFluxIQWebHostRoot(process.cwd()), { role: "the web panel" });
   const settings = resolveFluxIQDeploymentSettings(process.env);
   const globalState = globalThis as FluxIQWebGlobal;
   globalState.__fluxiqWebPreparation ??= (async () => {
-    if (settings.gateway.enabled) await gatewayServerRuntime.load();
-    await loadFluxIQHostModule();
-    await prepareFluxIQWebHostDomain();
+    // Before anything opens storage, and inside the preparation a shutdown awaits, so the close
+    // that ends this runtime always finds the hold it must give back.
+    const root = resolveFluxIQWebHostRoot(process.cwd());
+    await webDataRootHold.take(root);
+    try {
+      if (settings.gateway.enabled) await gatewayServerRuntime.load();
+      await loadFluxIQHostModule();
+      await prepareFluxIQWebHostDomain();
+    } catch (error) {
+      // No runtime opened the root yet (the domain probe closes before this throws): give it back with the failure.
+      if (!globalState.__fluxiqWebRuntime) await webDataRootHold.release(root);
+      throw error;
+    }
     return getWebRuntimeState();
   })();
   let state: WebRuntimeState;
@@ -264,15 +272,28 @@ export async function closeFluxIQWebRuntime(): Promise<void> {
     await state.initializationPromise?.then(() => undefined, () => undefined);
     // Every workspace, tenants first and the primary last; admitted work drains
     // before the last IAM audit flush and the root-owned audit store close.
-    try { await state.workspaces.close(); } catch (error) { errors.push(error); }
+    let storageClosed = true;
+    try {
+      await state.workspaces.close();
+    } catch (error) {
+      storageClosed = false;
+      errors.push(error);
+    }
     await flushIamAudit(state);
     try {
       const { closePlatformServices } = await import("../server/provisioning-listener");
       await closePlatformServices(primary);
     } catch (error) {
+      storageClosed = false;
       errors.push(error);
     } finally {
       removeFluxIQWebShutdownHooks(state);
+    }
+    // The data root goes back with this close, once every instance and root-owned store is
+    // closed, so the next server on it never opens what this one still writes. A close that
+    // failed keeps it until the process exits, which gives it up (`fluxiq/server`).
+    if (storageClosed) {
+      try { await webDataRootHold.release(primary.paths.root); } catch (error) { errors.push(error); }
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "web_runtime.close_failed");
@@ -319,8 +340,11 @@ function createWebRuntimeState(): WebRuntimeState {
   const opened = (workspaceId: string, fluxiq: FluxIQ): FluxIQ => {
     decisions.learn(fluxiq.programs.api);
     fluxiq.programs.identityAccess.authority.holdElsewhere(accountAuthority);
-    // A local panel's empty store gets no account anyone knows the password of: the printed setup link creates the owner.
-    if (profile === "local") fluxiq.programs.identityAccess.firstRun.startUnclaimed();
+    // An empty store gets no account anyone knows the password of, on every profile: the owner is
+    // created by the claim, through the printed setup link on `local` and the one-time setup code on
+    // `self-hosted` and `service`. A store made before this still holding admin/admin keeps it until
+    // the claim retires it (`server/owner-claim/retire-default-admin.ts`).
+    fluxiq.programs.identityAccess.firstRun.startUnclaimed();
     const owner = presentations.bind({ workspaceId, instance: fluxiq, profile, runtimeId: `${runtimeId}.${++generation}`, isCurrent: () => !state.closePromise && workspaces.get(workspaceId)?.fluxiq === fluxiq });
     fluxiq.programs.automationStudioClientGateway.setClientRecordingContextProvider(owner.recordingContextProvider);
     return fluxiq;

@@ -18,7 +18,15 @@ export type FluxIQDataRootLostHandler = (message: string) => void;
  * than the stale window and another process has taken the root; it must stop serving at once, so
  * the default ends the process with a plain message.
  */
-export function renewFluxIQDataRootClaim(input: { file: string; owner: FluxIQDataRootOwner; rootDir: string; lease: FluxIQDataRootLease; onLost?: FluxIQDataRootLostHandler }): () => void {
+export function renewFluxIQDataRootClaim(input: {
+  file: string;
+  owner: FluxIQDataRootOwner;
+  rootDir: string;
+  lease: FluxIQDataRootLease;
+  onLost?: FluxIQDataRootLostHandler;
+  /** Told once when renewal ends by itself (the root is gone, or another process took it): the claim holds nothing any more. */
+  onEnded?: () => void;
+}): () => void {
   let renewing = false;
   let stopped = false;
   const timer = setInterval(() => {
@@ -28,6 +36,7 @@ export function renewFluxIQDataRootClaim(input: { file: string; owner: FluxIQDat
       if (outcome === "renewed" || stopped) return;
       stopped = true;
       clearInterval(timer);
+      input.onEnded?.();
       if (outcome === "gone") {
         // The data root was deleted under this process: no other process can serve it, so there is nothing to give way to.
         writeSync(2, `[FluxIQ] The FluxIQ data at ${input.rootDir} no longer exists; its claim is no longer renewed.\n`);

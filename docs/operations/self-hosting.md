@@ -198,9 +198,12 @@ other third parties needs a commercial licence
 ([COMMERCIAL-LICENSING.md](../../COMMERCIAL-LICENSING.md),
 [Licensing](../legal/licensing.md)).
 
-First-time service setup creates an administrator in a new personal
-workspace and retires the default admin login. It grants no primary-workspace
-or platform-wide authority. Operator provisioning remains on the private
+A new install has no login at all until its owner is claimed: the web panel
+starts every identity store empty, tenant workspaces included, and the one-time
+setup code is the only way in. First-time service setup creates an
+administrator in a new personal workspace. An install created before this
+still holds the old `admin`/`admin` login until setup retires it. Setup grants
+no primary-workspace or platform-wide authority. Operator provisioning remains on the private
 listener below. Self-hosted setup retains its single-workspace owner policy.
 
 ## The Provisioning Listener

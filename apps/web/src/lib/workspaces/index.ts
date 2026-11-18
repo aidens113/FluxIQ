@@ -6,6 +6,7 @@
 // `lib/fluxiq` builds the manager and holds it for the process; this
 // directory never imports it statically.
 export { createTenantFluxIQ } from "./create-tenant";
+export { webDataRootHold } from "./data-root-hold";
 export { defaultWorkspaceId } from "./default-workspace";
 export { DeferredIamAuditSink } from "./deferred-audit-sink";
 export { WorkspaceDecisionAudit } from "./decision-audit";

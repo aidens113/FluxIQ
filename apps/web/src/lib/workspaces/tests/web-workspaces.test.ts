@@ -1,13 +1,15 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { FluxIQ, type FluxIQOptions } from "fluxiq";
 import { IamAuditStore } from "fluxiq/platform";
+import { fluxIQDataRootOwnerFile } from "fluxiq/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { closeFluxIQWebRuntime, getFluxIQ, getFluxIQWorkspaces, getWorkspaceWebPresentation, initializeFluxIQWebRuntime, isCurrentFluxIQPrimary, reloadFluxIQWebInstance } from "../../fluxiq";
 import { FLUXIQ_SESSION_COOKIE } from "../../session-cookie";
 import { workspaceManagerLimits } from "../manager-limits";
 import { sessionIdOf } from "../session-id-of";
+import { webDataRootHold } from "../data-root-hold";
 import { workspaceFluxIQ } from "../workspace-fluxiq";
 
 // The web runtime's manager as routes and pages reach it: one entry, created
@@ -71,6 +73,13 @@ async function signIn(fluxiq: FluxIQ, username: string): Promise<{ userId: strin
   }
   const session = await fluxiq.programs.identityAccess.createSession(user.id);
   return { userId: user.id, sessionId: session.id };
+}
+
+/** The token of the claim recorded in a data root's owner file. */
+function ownerToken(ownerFile: string): string {
+  const token = (JSON.parse(readFileSync(ownerFile, "utf8")) as { token?: unknown }).token;
+  if (typeof token !== "string" || !token) throw new Error(`No claim recorded in ${ownerFile}`);
+  return token;
 }
 
 function requestWith(sessionId: string): Request {
@@ -501,16 +510,37 @@ describe("the web runtime's workspaces", () => {
   });
 
   it("still reports a resource-close failure after finishing runtime cleanup", async () => {
-    runtimeEnv("local");
+    const root = runtimeEnv("local");
     const primary = await initializeFluxIQWebRuntime();
     const close = primary.close.bind(primary);
     vi.spyOn(primary, "close").mockRejectedValue(new Error("workspace close failed"));
     try {
       await expect(closeFluxIQWebRuntime()).rejects.toThrow("workspace close failed");
+      // The primary may still have the root open, so no other server may take it yet.
+      expect(existsSync(fluxIQDataRootOwnerFile(root))).toBe(true);
     } finally {
       await close();
       delete globalState.__fluxiqWebRuntime;
+      await webDataRootHold.release(root);
     }
+    expect(existsSync(fluxIQDataRootOwnerFile(root))).toBe(false);
+  });
+
+  it("holds its data root once while it serves, across reloads, and gives it back as its close returns", async () => {
+    const root = runtimeEnv("local");
+    const ownerFile = fluxIQDataRootOwnerFile(root);
+    await initializeFluxIQWebRuntime();
+    const token = ownerToken(ownerFile);
+    await reloadFluxIQWebInstance();
+    expect(ownerToken(ownerFile)).toBe(token);
+    await closeFluxIQWebRuntime();
+    expect(existsSync(ownerFile)).toBe(false);
+    // The next runtime on the root, in this process, takes it at once and gives it back the same way.
+    delete globalState.__fluxiqWebRuntime;
+    await initializeFluxIQWebRuntime();
+    expect(ownerToken(ownerFile)).not.toBe(token);
+    await closeFluxIQWebRuntime();
+    expect(existsSync(ownerFile)).toBe(false);
   });
 });
 

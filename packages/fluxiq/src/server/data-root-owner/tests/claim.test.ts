@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -201,6 +201,26 @@ describe("claimFluxIQDataRoot", () => {
     await pause(lease.renewMs * 5);
     expect(lost).toEqual([]);
     await claim.release();
+  });
+
+  it("claims a root made again at a deleted root's path afresh, not with the claim the deletion ended", async () => {
+    const first = await claimFluxIQDataRoot(root, { role: "the web panel", lease, onLost: () => undefined });
+    await rm(root, { recursive: true, force: true });
+    // Renewal finds the root gone and ends the claim.
+    await pause(lease.renewMs * 5);
+    await mkdir(root, { recursive: true });
+    const second = await claimFluxIQDataRoot(root, { role: "the web panel", lease, onLost: () => undefined });
+    expect(second.token).not.toBe(first.token);
+    expect(JSON.parse(await readFile(second.ownerFile, "utf8"))).toMatchObject({ token: second.token });
+    // Live: its holder keeps renewing it.
+    const before = (await stat(second.ownerFile)).mtimeMs;
+    await pause(lease.renewMs * 5);
+    expect((await stat(second.ownerFile)).mtimeMs).toBeGreaterThan(before);
+    // A late release of the ended claim leaves the new one alone.
+    await first.release();
+    expect(JSON.parse(await readFile(second.ownerFile, "utf8"))).toMatchObject({ token: second.token });
+    await second.release();
+    expect(existsSync(second.ownerFile)).toBe(false);
   });
 
   it("reclaims past a reclaim guard left by a claimant in another container that died", async () => {

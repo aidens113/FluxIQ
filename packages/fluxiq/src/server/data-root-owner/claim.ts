@@ -87,7 +87,9 @@ async function settle(context: Context, current: FluxIQDataRootOwnerRead): Promi
 function held(context: Context, owner: FluxIQDataRootOwner): FluxIQDataRootClaim {
   const stop = renewFluxIQDataRootClaim({
     file: context.file, owner, rootDir: context.root, lease: context.lease,
-    ...(context.options.onLost ? { onLost: context.options.onLost } : {})
+    ...(context.options.onLost ? { onLost: context.options.onLost } : {}),
+    // A claim whose renewal ended holds nothing: this process's next claim on the root must take it afresh, not be handed this one.
+    onEnded: () => processClaims.forget(context.file, owner.token)
   });
   return Object.freeze({
     ownerFile: context.file,

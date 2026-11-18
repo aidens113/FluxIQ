@@ -60,6 +60,17 @@ export const processClaims = Object.freeze({
         await claim.release();
       }
     });
+  },
+
+  /**
+   * Forgets the claim holding `token` on `file`, once it holds nothing (its root was deleted, or
+   * another process took it). Its callers keep their handles, whose release then does nothing; the
+   * next caller claims the root afresh. A claim of another token, or none, is left alone.
+   */
+  forget(file: string, token: string): void {
+    const claims = registry();
+    const key = keyOf(file);
+    if (claims.get(key)?.token === token) claims.delete(key);
   }
 });
 

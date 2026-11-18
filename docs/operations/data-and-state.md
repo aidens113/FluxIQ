@@ -405,8 +405,10 @@ session:<SHA-256 hex digest of the session id>
 vault
 ```
 
-The first default admin user is created with username `admin` and password
-`admin`. No default PIN is created.
+A bare FluxIQ instance created without the web panel seeds a temporary
+`admin`/`admin` user. The web panel starts every identity store empty instead,
+on every profile, so a panel install has no login until its owner is claimed
+through the one-time setup code. No default PIN is created.
 
 
 ## Secret Key State
