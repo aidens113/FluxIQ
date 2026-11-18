@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { act, create, type ReactTestRenderer } from "react-test-renderer";
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GlobalTopbar, LoginPanel, setupPasswordError } from "../AuthShell";
 
@@ -117,7 +117,8 @@ describe("initial sign-in destination", () => {
     await submitLogin(); expect(location.href).toBe(`https://panel.invalid${target}`);
     expect(loginRenderer!.root.findAllByType("input").map((input) => input.props.value)).toEqual(["new-secure-password", "new-secure-password"]);
     await submitLogin(); expect(location.href).toBe(target);
-    expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toEqual({ userId: "user.setup", value: "new-secure-password", authorizationPassword: "password-retained" });
+    expect(fetcher.mock.calls[2]![0]).toBe("/api/auth/credential-setup");
+    expect(JSON.parse(fetcher.mock.calls[2]![1].body)).toEqual({ password: "new-secure-password", confirmation: "new-secure-password" });
   });
   it("retains destination and entries after network failure until explicit retry", async () => {
     const fetcher = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(response({ ok: true }));
@@ -179,5 +180,54 @@ describe("initial sign-in destination", () => {
     const rendered = JSON.stringify(loginRenderer!.toJSON());
     expect(rendered).not.toContain("Obsolete response"); expect(rendered).not.toContain("could not be reached");
     if (stage === "login") expect(rendered).not.toContain("Replace the temporary password");
+  });
+});
+
+describe("first setup stays on the setup form", () => {
+  const submitButton = () => loginRenderer!.root.findAllByType("button").find((button) => button.props.type === "submit")!;
+  const rendered = () => JSON.stringify(loginRenderer!.toJSON());
+  const textOf = (node: ReactTestInstance): string => node.children.map((child) => (typeof child === "string" ? child : textOf(child))).join("");
+  async function mountReloaded(target: string, fetcher: ReturnType<typeof vi.fn>) {
+    const url = new URL(target, "https://panel.invalid");
+    const location = { origin: url.origin, pathname: url.pathname, search: url.search, hash: url.hash, href: url.href };
+    vi.stubGlobal("window", { location });
+    vi.stubGlobal("fetch", fetcher);
+    vi.stubGlobal("document", { cookie: "theme=dark; fluxiq_credential_setup_pending=1" });
+    await act(async () => { loginRenderer = create(<LoginPanel />); });
+    return { location };
+  }
+
+  it("shows the setup form after a reload or on another page while the setup marker is set", async () => {
+    const fetcher = vi.fn();
+    await mountReloaded("/settings/ai-keys", fetcher);
+    expect(rendered()).toContain("Replace the temporary password");
+    expect(loginRenderer!.root.findAllByProps({ name: "username" })).toHaveLength(0);
+    expect(submitButton().props.children).toContain("Finish setup");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("returns to the sign-in form when the server says setup has ended", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ ok: false, code: "setup_expired", error: "Setup timed out." }, 401));
+    const { location } = await mountReloaded("/", fetcher);
+    await enterReplacement();
+    await submitLogin();
+    expect(fetcher.mock.calls[0]![0]).toBe("/api/auth/credential-setup");
+    expect(rendered()).toContain("Setup timed out.");
+    expect(loginRenderer!.root.findAllByProps({ name: "username" })).toHaveLength(1);
+    expect(location.href).toBe("https://panel.invalid/");
+  });
+
+  it("signs out of setup through the logout route and returns to the sign-in form", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ ok: true, payload: { requiresCredentialSetup: true } })).mockResolvedValueOnce(response({ ok: true }));
+    await mountLogin("/", fetcher);
+    await submitLogin();
+    expect(rendered()).toContain("Replace the temporary password");
+    const signOut = loginRenderer!.root.findAllByType("button").find((button) => button.props.type === "button" && textOf(button).includes("Sign out"))!;
+    await act(async () => {
+      signOut.props.onClick();
+      for (let index = 0; index < 10; index += 1) await Promise.resolve();
+    });
+    expect(fetcher.mock.calls[1]).toEqual(["/api/auth/logout", { method: "POST" }]);
+    expect(loginRenderer!.root.findAllByProps({ name: "username" })).toHaveLength(1);
   });
 });
