@@ -41,4 +41,9 @@ export type AutomationStudioProjectChangeFeedPage = {
   cursor: number;
   hasMore: boolean;
   fallback: boolean;
+  /**
+   * True when changes after the requested cursor were pruned by retention, so `events` cannot be
+   * complete. The reader reloads what it shows and continues from `cursor`, the last sequence written.
+   */
+  resync: boolean;
 };

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../../service.ts";
 import { secretKeySessionDigest, type SecretKeyLockedCredentialHolder } from "../index.ts";
 import { strictEnrollmentFixture } from "./strict-enrollment-fixture.ts";
+import { createPasswordSealedKey } from "../../tests/secret-key-fixtures.ts";
 
 const services: SecretKeysService[] = [];
 afterEach(() => {
@@ -55,7 +56,7 @@ describe("strict authenticated credential enrollment", () => {
     vi.spyOn(f.unlocks.repository, "put").mockRejectedValueOnce(new Error("synthetic persistence rejection"));
     await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("synthetic persistence rejection");
     expect(f.stored()).toBeUndefined();
-    expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
+    expect(await f.service.snapshotFor({ userId: f.holder.userId, sessionId: null })).not.toHaveProperty("lockedClients");
     expect(f.service.activeSessionUnlockCount()).toBe(0);
     await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     expect(f.stored()).toMatchObject({ boxes: {}, approvingSessionDigest: f.holder.approvingSessionDigest });
@@ -71,7 +72,7 @@ describe("strict authenticated credential enrollment", () => {
     });
     await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("post-commit rejection");
     expect(f.stored()).toBeUndefined();
-    expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
+    expect(await f.service.snapshotFor({ userId: f.holder.userId, sessionId: null })).not.toHaveProperty("lockedClients");
     await f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     expect(f.stored()?.boxes).toEqual({});
   });
@@ -85,7 +86,7 @@ describe("strict authenticated credential enrollment", () => {
     });
     vi.spyOn(f.unlocks.repository, "delete").mockRejectedValueOnce(new Error("synthetic cleanup rejection"));
     await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("provisional persistence could not be removed");
-    expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
+    expect(await f.service.snapshotFor({ userId: f.holder.userId, sessionId: null })).not.toHaveProperty("lockedClients");
     expect(f.service.activeSessionUnlockCount()).toBe(0);
     await expect(f.service.credentialUnlocks.enrollCredential(f.holder, f.credential)).rejects.toThrow("requires a fresh holder");
     expect(f.unlocks.repository.put).toHaveBeenCalledTimes(1);
@@ -97,7 +98,7 @@ describe("strict authenticated credential enrollment", () => {
     const first = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     await held.started;
     expect(f.stored()).toBeUndefined();
-    expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
+    expect(await f.service.snapshotFor({ userId: f.holder.userId, sessionId: null })).not.toHaveProperty("lockedClients");
     const second = f.service.credentialUnlocks.enrollCredential(f.holder, f.credential);
     const refused = expect(second).rejects.toThrow("requires a fresh holder");
     held.release();
@@ -126,7 +127,7 @@ describe("strict authenticated credential enrollment", () => {
     const f = fixture();
     for (const userId of [f.holder.userId, "user.someone-else"]) {
       const password = `synthetic-password-${userId}`;
-      await f.service.createKey({ name: "Synthetic model key", value: `synthetic-value-${userId}`, authorizationPassword: password, createdBy: userId });
+      await createPasswordSealedKey(f.service, { name: "Synthetic model key", value: `synthetic-value-${userId}`, authorizationPassword: password, createdBy: userId });
       await f.service.unlockSession({ sessionId: `synthetic-session-${userId}`, userId, authorizationPassword: password, expiresAtMs: f.clock.now + 60_000 });
     }
     const count = f.service.activeSessionUnlockCount();
@@ -154,7 +155,7 @@ describe("strict enrollment versus ending authority", () => {
     held.release();
     await Promise.all([refused, ended]);
     expect(f.stored()).toBeUndefined();
-    expect(await f.service.credentialUnlocks.lockedClientsFor(f.holder.userId)).toEqual([]);
+    expect(await f.service.snapshotFor({ userId: f.holder.userId, sessionId: null })).not.toHaveProperty("lockedClients");
     expect(f.service.activeSessionUnlockCount()).toBe(0);
   });
 

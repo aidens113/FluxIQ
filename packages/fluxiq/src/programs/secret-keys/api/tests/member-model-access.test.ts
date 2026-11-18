@@ -17,7 +17,7 @@ import { IAM_OWNER_FULL_ACCESS, IAM_READ_ONLY_ACCESS, IAM_USER_ACCESS } from "..
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramApiResponse } from "../../../_shared/api.ts";
 import { actor } from "../../../_shared/tests/iam-registry-fixtures.ts";
 import { SecretKeysService } from "../../runtime/service.ts";
-import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository } from "../../runtime/tests/secret-key-fixtures.ts";
+import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, hostProtectionOptions } from "../../runtime/tests/secret-key-fixtures.ts";
 import { registerSecretKeysApi } from "../handlers.ts";
 
 const PASSWORD = "dummy-owner-password";
@@ -37,12 +37,12 @@ const membership: IamPolicySource = {
 };
 
 async function workspace() {
-  const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS } });
+  const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS }, ...hostProtectionOptions() });
   const registry = new GlobalProgramApiRegistry({ iam: { profile: "service", source: membership } });
   registerSecretKeysApi(registry, service);
   const call = (endpoint: string, caller: ProgramApiActor, payload: Record<string, unknown> = {}) =>
     registry.call({ programId: "secret-keys", endpoint, scope: {}, actor: caller, payload }) as Promise<ProgramApiResponse<any>>;
-  const key = await service.createKey({ name: "Team key", value: VALUE, authorizationPassword: PASSWORD, provider: "Anthropic", createdBy: owner.userId });
+  const key = await service.createKey({ name: "Team key", value: VALUE, provider: "Anthropic", createdBy: owner.userId });
   return { service, call, key };
 }
 

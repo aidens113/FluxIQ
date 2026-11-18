@@ -11,6 +11,26 @@ export class SecretKeyDataKeys {
     if (options.hostProtection && !options.storeId) throw new TypeError("Host secret protection requires an immutable store identity.");
   }
 
+  /** Whether this server was given host protection at all; a configured one can still be unavailable when it seals. */
+  get configured(): boolean {
+    return this.options.hostProtection !== undefined;
+  }
+
+  /**
+   * Wraps a host-sealed (version 3) value's data key for its owner. It is the
+   * value's only way in, so it is never skipped: no host protection, or a
+   * record that names another owner or none, is refused before anything is
+   * written, and an unavailable protection key rejects with
+   * `host_protection_unavailable`.
+   */
+  async protectHostSealed(record: SecretKeyRecord, key: Buffer, ownerUserId: string): Promise<SecretKeyRecord> {
+    if (!this.options.hostProtection) throw new SecretKeyAccessUnavailableError("host_protection_unavailable");
+    if (record.sealed.version !== 3 || !ownerUserId || record.createdBy !== ownerUserId) throw new TypeError("A host-sealed key is protected only for the owner it names.");
+    const protectedRecord = await this.protect(record, key, ownerUserId);
+    if (!protectedRecord.hostProtection) throw new SecretKeyAccessUnavailableError("host_protection_unavailable");
+    return protectedRecord;
+  }
+
   async protect(record: SecretKeyRecord, key: Buffer, ownerUserId: string | undefined): Promise<SecretKeyRecord> {
     if (!this.options.hostProtection || !ownerUserId || record.createdBy !== ownerUserId) return record;
     const secret = this.options.sealer.openRecordWithKey(record, key);

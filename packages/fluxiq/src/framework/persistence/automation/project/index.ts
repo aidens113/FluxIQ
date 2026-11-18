@@ -26,6 +26,7 @@ export * from "./content-protection.ts";
 export * from "./event-chunk-store.ts";
 export * from "./event-stream-writer.ts";
 export * from "./retention-store.ts";
+export * from "./change-feed-retention/index.ts";
 export * from "./object-index-migration.ts";
 export * from "./hierarchy/index.ts";
 export * from "./flow-resource-repository.ts";

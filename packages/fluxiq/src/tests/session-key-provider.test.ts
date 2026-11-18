@@ -1,3 +1,4 @@
+import { createPasswordSealedKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../runtime/llm/harness/index.ts";
 import type { AutomationStudioSessionKeyPorts } from "../runtime/llm/deepseek/index.ts";
@@ -191,7 +192,7 @@ describe("session-key provider resolver, unlock resolved per call", () => {
     const keys = secretKeys();
     const identity = new IdentityAccessService({ passwordKdf: WEAK_KDF });
     const login = await identity.authenticate({ username: "admin", password: "admin" });
-    await keys.createKey({ name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-admin", authorizationPassword: "admin", createdBy: login.user.id });
+    await createPasswordSealedKey(keys, { name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-admin", authorizationPassword: "admin", createdBy: login.user.id });
     await keys.unlockSession({ sessionId: login.session.id, userId: login.user.id, authorizationPassword: "admin", expiresAtMs: login.session.expiresAtMs });
     const { fetchImpl, bearers } = stubbedFetch();
     const { provider } = createAutomationStudioSessionKeyProviderResolver({ ports: heldSessionPorts(keys), fetchImpl })({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: login.user.id, actorSessionId: login.session.id } })!;
@@ -201,8 +202,8 @@ describe("session-key provider resolver, unlock resolved per call", () => {
 
   it("uses the Flow's own key, from the host's lookup or the call's metadata", async () => {
     const keys = secretKeys();
-    const flowKey = await keys.createKey({ name: "Flow key", kind: "llm", provider: "deepseek", value: "fake-key-flow", authorizationPassword: PASSWORD_A, createdBy: "user.A", nowMs: 100 });
-    await keys.createKey({ name: "Newest", kind: "llm", provider: "deepseek", value: "fake-key-newest", authorizationPassword: PASSWORD_A, createdBy: "user.A", nowMs: 200 });
+    const flowKey = await createPasswordSealedKey(keys, { name: "Flow key", kind: "llm", provider: "deepseek", value: "fake-key-flow", authorizationPassword: PASSWORD_A, createdBy: "user.A", nowMs: 100 });
+    await createPasswordSealedKey(keys, { name: "Newest", kind: "llm", provider: "deepseek", value: "fake-key-newest", authorizationPassword: PASSWORD_A, createdBy: "user.A", nowMs: 200 });
     await keys.unlockSession({ sessionId: "sess.A", userId: "user.A", authorizationPassword: PASSWORD_A, expiresAtMs: later() });
     const { fetchImpl, bearers } = stubbedFetch();
     const caller = { actorUserId: "user.A", actorSessionId: "sess.A" };
@@ -216,7 +217,7 @@ describe("session-key provider resolver, unlock resolved per call", () => {
 
   it("never reaches A's unlock from B's paired browser", async () => {
     const keys = secretKeys();
-    await keys.createKey({ name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-A", authorizationPassword: PASSWORD_A, createdBy: "user.A" });
+    await createPasswordSealedKey(keys, { name: "DeepSeek", kind: "llm", provider: "deepseek", value: "fake-key-A", authorizationPassword: PASSWORD_A, createdBy: "user.A" });
     await keys.unlockSession({ sessionId: "sess.A", userId: "user.A", authorizationPassword: PASSWORD_A, expiresAtMs: later() });
     const { fetchImpl, bearers } = stubbedFetch();
     const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: heldSessionPorts(keys), fetchImpl });

@@ -41,6 +41,8 @@ export type AutomationStudioCallerKeyChatModelOptions = {
   ports: AutomationStudioSessionKeyPorts;
   /** The workspace's Settings choice, read for every call; absent or undefined when there is none. */
   preferred?: () => Promise<AutomationStudioPreferredModelKey | undefined>;
+  /** The key the sender chose for their own calls, read for every call; it comes before the workspace's choice. */
+  ownKeyId?: (userId: string) => Promise<string | undefined>;
   /** Where each call's outcome is noted for the model-access state. */
   ledger: AutomationStudioModelAccessLedger;
   fetchImpl?: typeof fetch;
@@ -56,7 +58,7 @@ export function createAutomationStudioCallerKeyChatModel(options: AutomationStud
       const caller = execution.caller;
       if (!caller) throw new AutomationStudioModelAccessError({ status: "not_permitted", message: NO_SENDER, key: null, lastCall: null });
       const { keys } = await options.ports.snapshot();
-      const choice = chooseAutomationStudioCallerModelKey({ keys, userId: caller.userId, preferred: await options.preferred?.() });
+      const choice = chooseAutomationStudioCallerModelKey({ keys, userId: caller.userId, preferred: await options.preferred?.(), ownKeyId: await options.ownKeyId?.(caller.userId) });
       if (!choice.ok) throw new AutomationStudioModelAccessError({ status: choice.status, message: choice.message, key: null, lastCall: null });
       const key = automationStudioModelAccessKey(choice);
       // The adapters wrap a failed release in their own error; the cause is kept here to name it.
@@ -84,9 +86,8 @@ export function createAutomationStudioCallerKeyChatModel(options: AutomationStud
         if (releaseFailure !== undefined) throw new AutomationStudioModelAccessError(releaseAccess(releaseFailure, key), { cause: releaseFailure });
         const outcome = automationStudioModelAccessOutcomeOf(error);
         if (!outcome) throw error;
-        const balance = (error as { code?: unknown }).code === "llm.provider_balance_exhausted";
         const message = outcome === "provider_unreachable" ? automationStudioModelAccessUnreachableMessage(choice.provider)
-          : balance ? automationStudioModelAccessBalanceMessage(choice.provider) : automationStudioModelAccessRefusedMessage(choice.provider);
+          : outcome === "no_credit" ? automationStudioModelAccessBalanceMessage(choice.provider, key.name) : automationStudioModelAccessRefusedMessage(choice.provider);
         const lastCall = options.ledger.note(choice.key, outcome, message);
         // Out of reach may pass; a refused key is refused again.
         throw new AutomationStudioModelAccessError({ status: outcome, message, key, lastCall }, { retryable: outcome === "provider_unreachable", cause: error });

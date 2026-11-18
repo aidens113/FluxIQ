@@ -1,4 +1,5 @@
 import type { AutomationStudioChangeFeedOperation } from "../administration.ts";
+import { automationStudioChangeFeedPosition } from "../change-feed-retention/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administration.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AUTOMATION_STUDIO_HIERARCHY_ROOT_PARENT_CACHE_ID } from "./mutations.ts";
@@ -22,6 +23,8 @@ export type AutomationStudioHierarchyCacheUpdatePage = {
   updates: AutomationStudioHierarchyCacheUpdate[];
   nextSequence: number;
   hasMore: boolean;
+  /** Rows after the cursor were pruned: reload the hierarchy, then continue from `nextSequence`. */
+  resync: boolean;
 };
 
 export class AutomationStudioProjectHierarchyFeed {
@@ -45,6 +48,8 @@ export class AutomationStudioProjectHierarchyFeed {
   async listUpdatesAfter(input: { afterSequence: number; limit?: number }): Promise<AutomationStudioHierarchyCacheUpdatePage> {
     const limit = clampLimit(input.limit);
     const afterSequence = Math.max(0, Math.trunc(input.afterSequence));
+    const position = await automationStudioChangeFeedPosition(this.lease.database, afterSequence);
+    if (position.resync) return { updates: [], nextSequence: position.head, hasMore: false, resync: true };
     const rows = await this.lease.database.all<ChangeFeedRow>(
       `select * from change_feed where sequence > ? and entity_kind = 'hierarchy_entry' order by sequence limit ?`,
       [afterSequence, limit + 1]
@@ -52,7 +57,7 @@ export class AutomationStudioProjectHierarchyFeed {
     const pageRows = rows.slice(0, limit);
     const updates: AutomationStudioHierarchyCacheUpdate[] = [];
     for (const row of pageRows) updates.push(await this.updateFromRow(row));
-    return { updates, nextSequence: pageRows.at(-1)?.sequence ?? afterSequence, hasMore: rows.length > limit };
+    return { updates, nextSequence: pageRows.at(-1)?.sequence ?? afterSequence, hasMore: rows.length > limit, resync: false };
   }
 
   private async updateFromRow(row: ChangeFeedRow): Promise<AutomationStudioHierarchyCacheUpdate> {

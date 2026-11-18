@@ -1,3 +1,4 @@
+import { createPasswordSealedKey } from "../../../../../../packages/fluxiq/src/programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -87,7 +88,7 @@ async function unlockIn(manager: FluxIQWorkspaceManager, workspaceId: string): P
     const { identityAccess, secretKeys } = lease.fluxiq.programs;
     const user = await identityAccess.upsertUser({ username: "owner", displayName: "Owner", roleId: "admin", password: PASSWORD });
     const session = await identityAccess.createSession(user.id);
-    await secretKeys.createKey({ name: "DeepSeek", value: KEY_VALUE, kind: "llm", provider: "deepseek", authorizationPassword: PASSWORD, createdBy: user.id });
+    await createPasswordSealedKey(secretKeys, { name: "DeepSeek", value: KEY_VALUE, kind: "llm", provider: "deepseek", authorizationPassword: PASSWORD, createdBy: user.id });
     await secretKeys.unlockSession({ sessionId: session.id, userId: user.id, authorizationPassword: PASSWORD, expiresAtMs: Date.now() + 60 * 60 * 1000 });
     return { userId: user.id, sessionId: session.id, instance: new WeakRef(lease.fluxiq) };
   } finally {

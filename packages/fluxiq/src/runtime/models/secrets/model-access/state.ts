@@ -26,6 +26,8 @@ export function automationStudioModelAccessState(input: {
   keys: readonly (AutomationStudioSessionKeySummary & { availability?: ModelKeyAvailability | null | undefined })[];
   userId: string;
   preferred?: AutomationStudioPreferredModelKey | undefined;
+  /** The key this person chose for their own calls, if any (`chooseAutomationStudioCallerModelKey`'s `ownKeyId`). */
+  ownKeyId?: string | undefined;
   ledger: AutomationStudioModelAccessLedger;
 }): ModelAccessState {
   const choice = chooseAutomationStudioCallerModelKey(input);
@@ -36,13 +38,14 @@ export function automationStudioModelAccessState(input: {
   const lastCall = input.ledger.lastCall(choice.key);
   const said = input.ledger.lastMessage(choice.key);
   if (lastCall?.outcome === "provider_refused") return { status: "provider_refused", message: said ?? automationStudioModelAccessRefusedMessage(choice.provider), key, lastCall };
+  if (lastCall?.outcome === "no_credit") return { status: "no_credit", message: automationStudioModelAccessBalanceMessage(choice.provider, key.name), key, lastCall };
   if (lastCall?.outcome === "provider_unreachable") return { status: "provider_unreachable", message: said ?? automationStudioModelAccessUnreachableMessage(choice.provider), key, lastCall };
   return { status: "ready", message: `Chats use the key “${key.name}” with ${automationStudioLlmProviderLabel(choice.provider)} (${choice.model}).`, key, lastCall };
 }
 
 export function automationStudioModelAccessUnopenable(key: ModelAccessKey, code: ModelAccessUnopenableCode): ModelAccessState {
   const message = code === "legacy_recovery_required"
-    ? "The saved model key needs one sign-in to the panel to upgrade it, then try again."
+    ? "The saved model key is in an old format, and it is upgraded automatically the next time its owner signs in to the FluxIQ panel."
     : code === "host_protection_unavailable"
       ? "The saved model key could not be opened because this server's key protection is unavailable, so restart FluxIQ on the machine that saved the key, or add the key again in Settings, under AI keys."
       : "The saved model key could not be opened because its stored value is damaged, so add it again in Settings, under AI keys.";
@@ -58,14 +61,15 @@ export function automationStudioModelAccessUnreachableMessage(provider: Automati
 }
 
 /** A balance refusal is the provider refusing the key's account: said as such, with its own fix. */
-export function automationStudioModelAccessBalanceMessage(provider: AutomationStudioLlmProviderId): string {
-  return `${automationStudioLlmProviderLabel(provider)} refused the call because the key's account has no credit left, so add credit with ${automationStudioLlmProviderLabel(provider)} and try again.`;
+export function automationStudioModelAccessBalanceMessage(provider: AutomationStudioLlmProviderId, keyName: string): string {
+  return `${automationStudioLlmProviderLabel(provider)} says the account behind ${keyName} has no credit left.`;
 }
 
 /** Which access outcome a failed provider call was, from its code; undefined when it says nothing about access (a slow or malformed answer). */
 export function automationStudioModelAccessOutcomeOf(error: unknown): Exclude<ModelAccessCallOutcome, "answered"> | undefined {
   const code = typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
-  if (code === "llm.provider_auth_failed" || code === "llm.provider_balance_exhausted") return "provider_refused";
+  if (code === "llm.provider_balance_exhausted") return "no_credit";
+  if (code === "llm.provider_auth_failed") return "provider_refused";
   if (code === "llm.provider_network_error" || code === "llm.provider_redirect_rejected") return "provider_unreachable";
   return undefined;
 }

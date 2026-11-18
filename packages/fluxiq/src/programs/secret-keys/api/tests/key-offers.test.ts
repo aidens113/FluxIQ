@@ -19,10 +19,9 @@ import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramApiResponse
 import { actor, PAIRED_PERMISSIONS } from "../../../_shared/tests/iam-registry-fixtures.ts";
 import type { ProgramApiIamOptions } from "../../../_shared/iam/index.ts";
 import { SecretKeysService } from "../../runtime/service.ts";
-import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository } from "../../runtime/tests/secret-key-fixtures.ts";
+import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, hostProtectionOptions } from "../../runtime/tests/secret-key-fixtures.ts";
 import { registerSecretKeysApi } from "../handlers.ts";
 
-const PASSWORD = "dummy-password";
 const WORKSPACE = "workspace-main";
 
 const owner = actor("owner", "admin", adminRole.permissions);
@@ -39,12 +38,12 @@ const membership: IamPolicySource = {
 
 async function workspace(iam: ProgramApiIamOptions) {
   const audit = new MemoryIamAuditSink();
-  const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS } });
+  const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS }, ...hostProtectionOptions() });
   const registry = new GlobalProgramApiRegistry({ iam: { ...iam, workspaceId: WORKSPACE, audit } });
   registerSecretKeysApi(registry, service);
   const call = (endpoint: string, caller: ProgramApiActor, payload: Record<string, unknown> = {}) =>
     registry.call({ programId: "secret-keys", endpoint, scope: {}, actor: caller, payload }) as Promise<ProgramApiResponse<any>>;
-  const add = (name: string, createdBy: string) => service.createKey({ name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider: "Anthropic", createdBy });
+  const add = (name: string, createdBy: string) => service.createKey({ name, value: `dummy-${name}`, provider: "Anthropic", createdBy });
   const ownersKey = await add("Owner's key", owner.userId);
   const membersKey = await add("Member's key", member.userId);
   const decisions = (who: string, action: string) => audit.records.filter((record) => record.action === action && record.principal.endsWith(`:user/${who}`)).map((record) => record.decision);

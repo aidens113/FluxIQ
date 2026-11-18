@@ -15,10 +15,11 @@ export function accountsUsage(): string {
     "  --terms-version <v>  --continue-url <path>  --send-welcome  --request-id <id>",
     "  --json '<object>' | --json -   the whole input as JSON (flags override it)",
     "  --password-stdin | --password-file <path>   a password is never taken from argv",
-    "  --offline   run in this process (server stopped); setPassword needs it",
+    "  --offline   run in this process; refused while a server serves the data root; setPassword needs it",
     "",
     "environment: FLUXIQ_PROVISIONING_LISTEN (host:port) and FLUXIQ_PROVISIONING_TOKEN_FILE",
-    "select the private listener; without both the command runs offline.",
+    "select the private listener; without both the command runs offline, which is refused while",
+    "a server (the web panel or `fluxiq dev`) serves the data root.",
     "",
     "A mutating operation gets a random --request-id unless you pass one.",
     "exit: 0 ok, 1 a typed error or no answer, 2 usage."

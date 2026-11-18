@@ -11,6 +11,8 @@ test-results
 !.env.example
 .fluxiq
 .fluxiq/
+# The data root's serving owner file (packages/fluxiq/src/server/data-root-owner).
+.fluxiq.owner
 storage/*
 !storage/.gitkeep
 *.tsbuildinfo

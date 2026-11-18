@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
+import { AutomationStudioProjectDatabasePool, pruneAutomationStudioChangeFeed } from "../../../../persistence/automation/project/index.ts";
 
 let tempRoot: string;
 
@@ -46,6 +47,29 @@ describe("AutomationStudioService canonical Flow persistence", () => {
       { projectId: project.id, entityKind: "flow", entityId: "flow.feed", operation: "delete" }
     ]);
     expect(feed.events.every((event) => event.revision >= 1 && event.changedAt > 0 && event.transactionId.startsWith(`project-change.${event.operation}.`))).toBe(true);
+  });
+
+  it("tells a reader whose cursor is behind pruned rows to reload, and where to continue", async () => {
+    const service = createService({ dataDir: tempRoot, seedFixture: false });
+    const project = await service.createProject({ name: "Pruned Feed Project" });
+    const created = await service.createFlow({ projectId: project.id, flowId: "flow.pruned", name: "Pruned Flow" });
+    await service.saveFlow({ projectId: project.id, flow: { ...created, name: "Pruned Flow, renamed" } });
+    const full = await service.listProjectChangeFeed({ projectId: project.id, afterSequence: 0, limit: 10 });
+    const head = full.events.at(-1)!.sequence;
+    expect(full.resync).toBe(false);
+    // Retention, as a later write would run it, with a window that keeps only the newest row.
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(tempRoot, "programs", "automation-studio") });
+    const lease = await pool.acquire(project.id);
+    try {
+      await pruneAutomationStudioChangeFeed(lease.database, { retention: { keepMs: 0, keepRows: 1, pruneEveryMs: 0 }, force: true });
+    } finally {
+      await lease.release();
+      await pool.closeAll();
+    }
+    expect(await service.listProjectChangeFeed({ projectId: project.id, afterSequence: 0, limit: 10 })).toEqual({ events: [], cursor: head, hasMore: false, fallback: false, resync: true });
+    const current = await service.listProjectChangeFeed({ projectId: project.id, afterSequence: head - 1, limit: 10 });
+    expect(current).toMatchObject({ resync: false, cursor: head });
+    expect(current.events.map((event) => event.sequence)).toEqual([head]);
   });
 
   it("emits scoped project change-feed rows for subflow create, update, and delete", async () => {

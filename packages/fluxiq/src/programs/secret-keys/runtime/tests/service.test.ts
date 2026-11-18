@@ -13,7 +13,8 @@ import {
   createDeriveProbe,
   createMemoryRepository,
   legacyV1Record,
-  serviceRecord
+  serviceRecord,
+  createPasswordSealedKey
 } from "./secret-key-fixtures.ts";
 
 const weakKdf = { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
@@ -25,7 +26,7 @@ describe("SecretKeysService", () => {
   it("stores encrypted secret values and returns redacted snapshots", async () => {
     const service = new SecretKeysService({ passwordKdf: weakKdf });
 
-    const key = await service.createKey({
+    const key = await createPasswordSealedKey(service, {
       name: "OpenAI production",
       value: "sk-live-secret",
       authorizationPassword: "admin",
@@ -47,7 +48,7 @@ describe("SecretKeysService", () => {
     try {
       const repository = new SQLiteRepository({ rootDir: root, kind: SecretKeysService.storeKind });
       const first = new SecretKeysService({ repository, passwordKdf: weakKdf });
-      const key = await first.createKey({
+      const key = await createPasswordSealedKey(first, {
         name: "Custom token",
         value: "custom-secret-value",
         authorizationPassword: "admin",
@@ -71,7 +72,7 @@ describe("SecretKeysService", () => {
 
   it("issues opaque one-use reveal authorizations and zeroes derived key material", async () => {
     const service = new SecretKeysService({ now: () => 1000, passwordKdf: weakKdf });
-    const key = await service.createKey({
+    const key = await createPasswordSealedKey(service, {
       name: "DeepSeek",
       value: "provider-secret",
       authorizationPassword: "account-password",
@@ -103,7 +104,7 @@ describe("SecretKeysService", () => {
     vi.useFakeTimers();
     let now = 1000;
     const service = new SecretKeysService({ now: () => now, passwordKdf: weakKdf });
-    const key = await service.createKey({
+    const key = await createPasswordSealedKey(service, {
       name: "DeepSeek",
       value: "provider-secret",
       authorizationPassword: "account-password",
@@ -145,7 +146,7 @@ describe("SecretKeysService", () => {
     vi.useFakeTimers();
     let now = 1000;
     const service = new SecretKeysService({ now: () => now, passwordKdf: weakKdf });
-    await service.createKey({ name: "DeepSeek", value: "provider-secret", authorizationPassword: "right", nowMs: now });
+    await createPasswordSealedKey(service, { name: "DeepSeek", value: "provider-secret", authorizationPassword: "right", nowMs: now });
     const wrong = await service.unlockSession({ sessionId: "session.wrong", userId: "user.one", authorizationPassword: "wrong", expiresAtMs: 2000, nowMs: now });
     expect(wrong.unlockedKeyCount).toBe(0);
     const unlocked = await service.unlockSession({ sessionId: "session.right", userId: "user.one", authorizationPassword: "right", expiresAtMs: 2000, nowMs: now });
@@ -159,7 +160,7 @@ describe("SecretKeysService", () => {
     vi.useFakeTimers();
     let now = 1000;
     const service = new SecretKeysService({ now: () => now, passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "DeepSeek", value: "one", authorizationPassword: "account-password", nowMs: now });
+    const key = await createPasswordSealedKey(service, { name: "DeepSeek", value: "one", authorizationPassword: "account-password", nowMs: now });
     await service.createRevealAuthorization({ id: key.id, authorizationPassword: "account-password", ttlMs: 1000, nowMs: now });
     expect(service.activeRevealAuthorizationCount()).toBe(1);
     now = 2000;
@@ -175,33 +176,23 @@ describe("SecretKeysService", () => {
     expect(service.activeRevealAuthorizationCount()).toBe(0);
   });
 
-  it("fails closed when persistence delays a claimed reveal beyond its TTL", async () => {
+  it("writes nothing when a reveal authorization is claimed, and fails closed once it has expired", async () => {
     let now = 1000;
-    let putCount = 0;
-    let releasePersist = () => {};
-    let signalPersist = () => {};
-    const persistStarted = new Promise<void>((resolve) => { signalPersist = resolve; });
-    const persistGate = new Promise<void>((resolve) => { releasePersist = resolve; });
-    const repository = {
-      list: async () => [],
-      put: async () => {
-        putCount += 1;
-        if (putCount === 2) {
-          signalPersist();
-          await persistGate;
-        }
-      }
-    } as any;
-    const service = new SecretKeysService({ repository, now: () => now, passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "DeepSeek", value: "provider-secret", authorizationPassword: "account-password", nowMs: now });
-    const authorization = await service.createRevealAuthorization({ id: key.id, authorizationPassword: "account-password", ttlMs: 1000, nowMs: now });
+    const store = createMemoryRepository();
+    const service = new SecretKeysService({ repository: store.repository, now: () => now, passwordKdf: weakKdf });
+    const key = await createPasswordSealedKey(service, { name: "DeepSeek", value: "provider-secret", authorizationPassword: "account-password", nowMs: now });
+    const first = await service.createRevealAuthorization({ id: key.id, authorizationPassword: "account-password", ttlMs: 1000, nowMs: now });
+    const puts = store.putCount();
 
-    const pending = service.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id: key.id });
-    await persistStarted;
+    await expect(service.revealKeyWithAuthorization({ authorizationId: first.authorizationId, id: key.id })).resolves.toMatchObject({ value: "provider-secret" });
+    expect(store.putCount()).toBe(puts);
+    expect(store.stored(key.id)).not.toHaveProperty("lastRevealedAtMs");
+
+    const second = await service.createRevealAuthorization({ id: key.id, authorizationPassword: "account-password", ttlMs: 1000, nowMs: now });
     now = 2001;
-    releasePersist();
-    await expect(pending).rejects.toThrow("unavailable");
+    await expect(service.revealKeyWithAuthorization({ authorizationId: second.authorizationId, id: key.id })).rejects.toThrow("unavailable");
     expect(service.activeRevealAuthorizationCount()).toBe(0);
+    service.close();
   });
 });
 
@@ -216,26 +207,13 @@ describe("SecretKeysService seal versions and parameters", () => {
     await expect(service.revealKey({ id: record.id, authorizationPassword: PASSWORD })).resolves.toMatchObject({ value: "legacy-value" });
   });
 
-  it("stamps the user whose password seals a key on create and rotate", async () => {
-    const service = new SecretKeysService({ passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "Stamped", value: "one", authorizationPassword: PASSWORD, createdBy: "user.one" });
-    expect(serviceRecord(service, key.id)?.sealed).toMatchObject({ version: 2, sealedByUserId: "user.one" });
-
-    await service.rotateKey({ id: key.id, value: "two", authorizationPassword: PASSWORD, actorUserId: "user.two" });
-    expect(serviceRecord(service, key.id)?.sealed).toMatchObject({ sealedByUserId: "user.two" });
-
-    await service.rotateKey({ id: key.id, value: "three", authorizationPassword: PASSWORD });
-    expect(serviceRecord(service, key.id)?.sealed).not.toHaveProperty("sealedByUserId");
-    await expect(service.revealKey({ id: key.id, authorizationPassword: PASSWORD })).resolves.toMatchObject({ value: "three" });
-  });
-
   it("tries at unlock only keys sealed for the unlocking user, unstamped keys, and version 1 keys", async () => {
     const probe = createDeriveProbe();
     const store = createMemoryRepository([legacyV1Record({ id: "secret:legacy", value: "legacy-value", password: PASSWORD })]);
     const service = new SecretKeysService({ repository: store.repository, now: () => 1000, passwordKdf: { derive: probe.derive, testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS } });
-    await service.createKey({ name: "Mine", value: "mine-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
-    await service.createKey({ name: "Theirs", value: "theirs-value", authorizationPassword: PASSWORD, createdBy: "user.two" });
-    await service.createKey({ name: "Unstamped", value: "unstamped-value", authorizationPassword: PASSWORD });
+    await createPasswordSealedKey(service, { name: "Mine", value: "mine-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
+    await createPasswordSealedKey(service, { name: "Theirs", value: "theirs-value", authorizationPassword: PASSWORD, createdBy: "user.two" });
+    await createPasswordSealedKey(service, { name: "Unstamped", value: "unstamped-value", authorizationPassword: PASSWORD });
     const before = probe.count();
 
     const unlock = await service.unlockSession({ sessionId: "session.one", userId: "user.one", authorizationPassword: PASSWORD, expiresAtMs: 1_000_000 });
@@ -248,7 +226,7 @@ describe("SecretKeysService seal versions and parameters", () => {
 
   it("keeps unlocking and claiming a key after a metadata edit", async () => {
     const service = new SecretKeysService({ now: () => 5000, passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "Edited", value: "edited-value", authorizationPassword: PASSWORD, createdBy: "user.one", nowMs: 1000 });
+    const key = await createPasswordSealedKey(service, { name: "Edited", value: "edited-value", authorizationPassword: PASSWORD, createdBy: "user.one", nowMs: 1000 });
     await service.updateKey({ id: key.id, description: "Renamed", nowMs: 2000 });
 
     const unlock = await service.unlockSession({ sessionId: "session.one", userId: "user.one", authorizationPassword: PASSWORD, expiresAtMs: 1_000_000 });
@@ -262,7 +240,7 @@ describe("SecretKeysService seal versions and parameters", () => {
   it("does not rewrite a version 2 seal already at the write parameters on unlock", async () => {
     const store = createMemoryRepository();
     const service = new SecretKeysService({ repository: store.repository, now: () => 5000, passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "Current", value: "current-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(service, { name: "Current", value: "current-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
     const before = store.storedText(key.id);
     const puts = store.putCount();
 
@@ -278,7 +256,7 @@ describe("SecretKeysService seal versions and parameters", () => {
     const passwordKdf = { derive, testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
     const store = createMemoryRepository();
     const writer = new SecretKeysService({ repository: store.repository, passwordKdf });
-    const key = await writer.createKey({ name: "Tamper target", value: "tamper-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(writer, { name: "Tamper target", value: "tamper-value", authorizationPassword: PASSWORD, createdBy: "user.one" });
     const stored = store.stored(key.id)!;
     await expect(new SecretKeysService({ repository: store.repository, passwordKdf }).revealKey({ id: key.id, authorizationPassword: PASSWORD })).resolves.toMatchObject({ value: "tamper-value" });
 
@@ -302,7 +280,7 @@ describe("SecretKeysService seal versions and parameters", () => {
   it("reads its own weak-parameter records, while a service at the real parameters skips them without deriving", async () => {
     const store = createMemoryRepository();
     const writer = new SecretKeysService({ repository: store.repository, passwordKdf: weakKdf });
-    const key = await writer.createKey({ name: "Weak", value: "weak-value", authorizationPassword: PASSWORD });
+    const key = await createPasswordSealedKey(writer, { name: "Weak", value: "weak-value", authorizationPassword: PASSWORD });
     await expect(new SecretKeysService({ repository: store.repository, passwordKdf: weakKdf }).revealKey({ id: key.id, authorizationPassword: PASSWORD })).resolves.toMatchObject({ value: "weak-value" });
 
     const probe = createDeriveProbe();
@@ -318,7 +296,7 @@ describe("SecretKeysService seal versions and parameters", () => {
 
   it("refuses a password reveal authorization whose derived key does not open the key", async () => {
     const service = new SecretKeysService({ now: () => 1000, passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "Guarded", value: "guarded-value", authorizationPassword: PASSWORD });
+    const key = await createPasswordSealedKey(service, { name: "Guarded", value: "guarded-value", authorizationPassword: PASSWORD });
 
     await expect(service.createRevealAuthorization({ id: key.id, authorizationPassword: "wrong-dummy-password", ttlMs: 1000 })).rejects.toThrow("refused");
     expect(service.activeRevealAuthorizationCount()).toBe(0);
