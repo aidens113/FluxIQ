@@ -540,6 +540,12 @@ describe("a paired client on the program route", () => {
     expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [] } })).toEqual({ ok: true, payload: { keys: [] } });
   });
 
+  it("hands a paired client its person's model access without the key's id, and drops one that does not read (t924)", () => {
+    const modelAccess = { status: "provider_refused", message: "Anthropic (Claude) refused the saved model key.", key: { id: "secret:1", name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5", value: "must-not-leak" }, lastCall: { outcome: "provider_refused", atMs: 5 } };
+    expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [], modelAccess } })).toEqual({ ok: true, payload: { keys: [], modelAccess: { status: "provider_refused", message: modelAccess.message, key: { name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5" }, lastCall: { outcome: "provider_refused", atMs: 5 } } } });
+    expect(projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { keys: [], modelAccess: { status: "ready", message: "x", key: null, lastCall: null } } })).toEqual({ ok: true, payload: { keys: [] } });
+  });
+
   it("never hands a paired client a retired unlock ticket or browser lock list", () => {
     const projected = projectPairedClientResponse("secret-keys", "snapshot", { ok: true, payload: { unlockTicket: "paired-client:one.part", lockedClients: [], keys: [] } });
     expect(projected).toEqual({ ok: true, payload: { keys: [] } });

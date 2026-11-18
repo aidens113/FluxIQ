@@ -8,11 +8,13 @@ import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
 import { AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX } from "../../runtime/conversations/commands/index.ts";
-import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioAnthropicPanelCommandModel, automationStudioLlmModelProvider, AUTOMATION_STUDIO_LLM_DEFAULT_MODEL, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver } from "../../framework/automation-service/public/index.ts";
+import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioHostLeaseScope, automationStudioActivityRunScope, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioSessionKeyProvider, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver } from "../../framework/automation-service/public/index.ts";
 import { registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index.ts";
 import { installPairedProjectFocus, relayOwnProjectActivity, relayProjectConversationChanges } from "../automation-studio/api/project-focus/index.ts";
 import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
+import { createAutomationStudioCallerKeyChatModel } from "../../runtime/llm/caller-key-chat/index.ts";
+import { AutomationStudioModelAccessLedger, automationStudioModelAccessState, chooseAutomationStudioCallerModelKey, type AutomationStudioPreferredModelKey } from "../../runtime/models/secrets/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../../runtime/recording/gateway-trace/wiring/index.ts";
@@ -291,6 +293,15 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     return trustedClientId ? { holderId: secretKeyPairedHolderId(trustedClientId) } : {};
   };
   const sessionKeyPorts = authenticatedModelKeyPorts(secretKeys, clientGateway);
+  // The key a person's model call uses decides its provider and model (t924): the workspace's Settings
+  // choice when it may serve them, else their own newest model key. The chat, a Flow call naming no
+  // provider and the model-access state all choose through `chooseAutomationStudioCallerModelKey`.
+  const preferredModelKey = async (): Promise<AutomationStudioPreferredModelKey | undefined> => {
+    const choice = await secretKeys.modelKeys.resolveAssistant();
+    return choice.ok ? { keyId: choice.keyId, model: choice.model, ownerId: choice.ownerId, chosenForWorkspace: choice.chosenForWorkspace, offeredByHolder: choice.offeredByHolder } : undefined;
+  };
+  // How the last model call on each key went, for the model-access state clients read; this instance's own.
+  const modelAccessLedger = new AutomationStudioModelAccessLedger();
   const resolveSessionProvider = modelProvidersEnabled ? createAutomationStudioSessionKeyProviderResolver({
     ports: sessionKeyPorts,
     flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId)
@@ -299,18 +310,26 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     const flow = await automationStudio.getFlow(request.projectId, request.flowId);
     const metadata = { ...flow.metadata, ...request.metadata };
     const key = typeof metadata.llmSecretKeyId === "string" ? await secretKeys.getKeySummary(metadata.llmSecretKeyId) : undefined;
-    const providerId = request.providerId ?? (typeof metadata.llmProvider === "string" ? metadata.llmProvider : undefined)
+    let providerId = request.providerId ?? (typeof metadata.llmProvider === "string" ? metadata.llmProvider : undefined)
       ?? (key ? automationStudioSessionKeyProvider(key) : undefined);
-    const modelId = request.modelId ?? (typeof metadata.llmModel === "string" ? metadata.llmModel : undefined)
+    let modelId = request.modelId ?? (typeof metadata.llmModel === "string" ? metadata.llmModel : undefined)
       ?? (typeof key?.metadata?.model === "string" && key.metadata.model ? key.metadata.model : undefined);
+    // A Flow that names neither uses the provider and model of the key the person's calls use, not the
+    // process-wide default model's provider, which would look only for a key of that provider (t924).
+    if (!providerId && !modelId && request.caller) {
+      const choice = chooseAutomationStudioCallerModelKey({ keys: (await sessionKeyPorts.snapshot()).keys, userId: request.caller.actorUserId, preferred: await preferredModelKey() });
+      if (choice.ok && !choice.keyOwnerUserId) {
+        providerId = choice.provider;
+        modelId = choice.model;
+      }
+    }
     return resolveSessionProvider({ ...request, metadata, ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}) });
   });
-  // Chat uses the configured provider with the sender's authenticated per-use
-  // authority; missing model configuration is distinct from client authentication.
-  const chatProvider = automationStudioLlmModelProvider(AUTOMATION_STUDIO_LLM_DEFAULT_MODEL)!;
-  const chatFactory = chatProvider === "anthropic" ? createAutomationStudioAnthropicPanelCommandModel : createAutomationStudioDeepSeekPanelCommandModel;
-  if (modelProvidersEnabled) automationStudio.conversations.bindModel(chatFactory({
-    resolveKey: automationStudioPanelCommandKeyFromSecretKeys(sessionKeyPorts, { provider: chatProvider, model: AUTOMATION_STUDIO_LLM_DEFAULT_MODEL })
+  // A chat reads each message with the provider of the key the sender's call uses, chosen per call and
+  // released to the sender's authenticated principal. It was bound to the default model's provider at
+  // startup, so a saved Anthropic key was never looked at and every chat said no key existed (t924).
+  if (modelProvidersEnabled) automationStudio.conversations.bindModel(createAutomationStudioCallerKeyChatModel({
+    ports: sessionKeyPorts, preferred: preferredModelKey, ledger: modelAccessLedger
   }));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
@@ -391,7 +410,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   registerSecretKeysApi(api, secretKeys, options.secretKeyIdentityAuthority ?? identityAccess, (actor) => ({
     sessionId: actor.sessionId.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX) ? pairedUnlockOf(actor.userId, actor.sessionId) : secretKeys.holdingSession(actor.sessionId, actor.userId) ?? secretKeys.unlockedSessionFor(actor.userId),
     ...holderOf(actor.sessionId)
-  }));
+  }), async (actor, snapshot) => automationStudioModelAccessState({ keys: snapshot.keys, userId: actor.userId, preferred: await preferredModelKey(), ledger: modelAccessLedger }));
   registerProductionRunnerApi(api, productionRunner);
   registerRuntimeApi(api, runtime);
 

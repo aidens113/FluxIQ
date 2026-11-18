@@ -1,7 +1,7 @@
 import { automationStudioLlmProviderLabel, type AutomationStudioLlmProviderId } from "../catalog/index.ts";
 
 /** One key as Secret Keys lists it: metadata only, never a value. */
-export type AutomationStudioSessionKeySummary = { id: string; kind: string; provider?: string | undefined; enabled: boolean; updatedAtMs: number; createdBy?: string | undefined; metadata?: { model?: unknown } | undefined };
+export type AutomationStudioSessionKeySummary = { id: string; name?: string | undefined; kind: string; provider?: string | undefined; enabled: boolean; updatedAtMs: number; createdBy?: string | undefined; metadata?: { model?: unknown } | undefined };
 
 /** The Secret Keys operations releasing a person's key needs. */
 export type AutomationStudioSessionKeyPorts = {
