@@ -13,7 +13,8 @@ function secretsIn(root: string): PlannedSecret[] {
     { name: "provisioning_token", file: path.join(root, "s", "provisioning-token"), generate: "token" },
     { name: "setup_code", file: path.join(root, "s", "setup-code"), generate: "setup-code" },
     { name: "secret_keyring", file: path.join(root, "s", "secret-keyring"), generate: "keyring" },
-    { name: "stripe_secret_key", file: path.join(root, "s", "stripe-secret-key"), generate: "stripe-mock-key" }
+    { name: "stripe_secret_key", file: path.join(root, "s", "stripe-secret-key"), generate: "stripe-mock-key" },
+    { name: "stripe_webhook_secret", file: path.join(root, "s", "stripe-webhook-secret"), generate: "webhook-secret" }
   ];
 }
 
@@ -23,10 +24,11 @@ describe("ensureSecrets", () => {
     roots.push(root);
     const secrets = secretsIn(root);
     expect(await ensureSecrets(secrets)).toEqual(secrets.map((secret) => secret.file));
-    const [token, code, keyring, stripe] = secrets.map((secret) => readFileSync(secret.file, "utf8"));
+    const [token, code, keyring, stripe, webhook] = secrets.map((secret) => readFileSync(secret.file, "utf8"));
     expect(token).toMatch(/^[0-9a-f]{64}\n$/u);
     expect(code).toMatch(/^[0-9a-f]{48}\n$/u);
     expect(stripe).toMatch(/^sk_test_[0-9a-f]{48}\n$/u);
+    expect(webhook).toMatch(/^whsec_[0-9a-f]{48}\n$/u);
     const ring = JSON.parse(keyring ?? "") as { version: number; currentKeyId: string; keys: Record<string, string> };
     expect(ring.version).toBe(1);
     expect(Buffer.from(ring.keys[ring.currentKeyId] ?? "", "base64")).toHaveLength(32);

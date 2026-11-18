@@ -22,7 +22,7 @@ process.stdout.write(JSON.stringify(Object.keys(files).sort()));
 
 /**
  * Fills the deployment's secrets volume (Core's /run/secrets) from the
- * secret files: each as `<name>`, owned by Core's user and readable only by
+ * secret files and the plan's rendered files (the commerce configuration): each as `<name>`, owned by Core's user and readable only by
  * it, the folder writable only by root. The volume is created with the
  * project label when absent (one of another project's is refused). The
  * contents travel on the container's standard input, never in an argument,
@@ -37,6 +37,10 @@ export async function syncSecretsVolume(docker: DockerCli, plan: CloudPlan): Pro
   for (const secret of plan.secrets) {
     if (!/^[a-z][a-z_]*$/u.test(secret.name)) throw new Error(`${secret.name} is not a secret name.`);
     files[secret.name] = await readFile(secret.file, "utf8");
+  }
+  for (const rendered of plan.renderedFiles) {
+    if (!/^[a-z][a-z_]*$/u.test(rendered.name) || Object.hasOwn(files, rendered.name)) throw new Error(`${rendered.name} is not a usable file name in the secrets volume.`);
+    files[rendered.name] = rendered.content;
   }
   const written = await docker.must([
     "run", "--rm", "--interactive", "--network", "none",

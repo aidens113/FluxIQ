@@ -1,10 +1,9 @@
 import path from "node:path";
-import { checkAgainstSchema, type SchemaNode } from "./check-against-schema.ts";
-import { checkProfileRules } from "./check-profile-rules.ts";
+import { checkAgainstSchema, checkBillingRules, checkModeRules, checkProfileRules, type SchemaNode } from "./check/index.ts";
 import { CLOUD_CONFIG_SCHEMA } from "./cloud-config-schema.ts";
 import { CloudConfigError } from "./cloud-config-error.ts";
 import { resolveConfigPath } from "./resolve-config-path.ts";
-import type { CloudConfig, CloudConfigFile } from "./types.ts";
+import type { CloudBilling, CloudConfig, CloudConfigFile } from "./types.ts";
 
 /** The images used when a config names none. Pinned, so a rebuild is the same stack. */
 const DEFAULT_IMAGES = { core: "fluxiq-cloud/core", caddy: "caddy:2.10-alpine", mailpit: "axllent/mailpit:v1.33.1", stripeMock: "stripe/stripe-mock:v0.205.0" };
@@ -22,7 +21,7 @@ export function parseCloudConfig(text: string, configFile: string): CloudConfig 
   const schemaIssues = checkAgainstSchema(raw, CLOUD_CONFIG_SCHEMA as unknown as SchemaNode);
   if (schemaIssues.length > 0) throw new CloudConfigError(file, schemaIssues);
   const value = raw as CloudConfigFile;
-  const ruleIssues = checkProfileRules(value);
+  const ruleIssues = [...checkModeRules(value), ...checkProfileRules(value), ...checkBillingRules(value)];
   if (ruleIssues.length > 0) throw new CloudConfigError(file, ruleIssues);
 
   const configDir = path.dirname(path.resolve(configFile));
@@ -32,6 +31,7 @@ export function parseCloudConfig(text: string, configFile: string): CloudConfig 
     configFile: file,
     project: value.project,
     profile: value.profile,
+    mode: value.mode ?? "service",
     driver: value.driver,
     sourceRoot: at(value.source.root),
     stateDir,
@@ -40,12 +40,36 @@ export function parseCloudConfig(text: string, configFile: string): CloudConfig 
     tls: { mode: value.tls.mode, email: value.tls.email, trustLocalCa: value.tls.trustLocalCa ?? false },
     instance: { id: value.instance.id, name: value.instance.name ?? null },
     signUpUrl: value.signUpUrl ?? null,
+    signup: value.signup ?? "off",
     gateway: { allowedOrigins: [...value.gateway.allowedOrigins] },
     provisioning: { subnet: value.provisioning?.subnet ?? "172.31.250.0/24", address: value.provisioning?.address ?? "172.31.250.10" },
     email: { from: value.email.from, smtp: value.email.smtp, username: value.email.username ?? null, passwordFile: value.email.passwordFile === undefined ? null : at(value.email.passwordFile) },
-    payments: { apiBase: value.payments.apiBase, secretKeyFile: value.payments.secretKeyFile === undefined ? null : at(value.payments.secretKeyFile) },
+    payments: value.payments === undefined ? null : {
+      apiBase: value.payments.apiBase,
+      secretKeyFile: value.payments.secretKeyFile === undefined ? null : at(value.payments.secretKeyFile),
+      webhookSecretFile: value.payments.webhookSecretFile === undefined ? null : at(value.payments.webhookSecretFile)
+    },
+    billing: resolveBilling(value),
     sinks: { mail: value.sinks?.mail ?? false, payments: value.sinks?.payments ?? false, mailUiPort: value.sinks?.mailUiPort ?? 8025 },
     secretsDir: value.secrets?.dir === undefined ? `${stateDir}/secrets` : at(value.secrets.dir),
     images: { ...DEFAULT_IMAGES, ...value.images }
+  };
+}
+
+function resolveBilling(value: CloudConfigFile): CloudBilling | null {
+  const billing = value.billing;
+  if (billing === undefined) return null;
+  return {
+    provider: billing.provider,
+    allowTrial: billing.allowTrial,
+    graceMs: billing.graceMs,
+    retentionMs: billing.retentionMs,
+    refreshAfterMs: billing.refreshAfterMs,
+    maxVerificationAgeMs: billing.maxVerificationAgeMs ?? null,
+    plans: Object.fromEntries(Object.entries(billing.plans).map(([id, plan]) => [id, {
+      priceId: plan.priceId,
+      unit: plan.unit ?? "flat",
+      grants: plan.grants.map((grant) => ({ key: grant.key, allocation: grant.allocation, capabilities: [...grant.capabilities], regions: [...(grant.regions ?? [])] }))
+    }]))
   };
 }

@@ -55,11 +55,14 @@ describe("local-docker driver", () => {
       volumes: ["fluxiq-local_secrets", "fluxiq-local_fluxiq-data", "fluxiq-local_caddy-data", "fluxiq-local_caddy-config"],
       images: ["fluxiq-cloud/core:0.1.0"]
     });
-    expect(state.generatedSecrets.map((file) => path.basename(file))).toEqual(["provisioning-token", "setup-code", "secret-keyring", "stripe-secret-key"]);
+    expect(state.generatedSecrets.map((file) => path.basename(file))).toEqual(["provisioning-token", "setup-code", "secret-keyring", "stripe-secret-key", "stripe-webhook-secret"]);
     expect(state.pulledImages).toEqual(["caddy:2.10-alpine", "axllent/mailpit:v1.33.1", "stripe/stripe-mock:v0.205.0", "node:22-trixie-slim"]);
     expect(readFileSync(plan.exportedCa ?? "", "utf8")).toBe(docker.pem);
     expect(existsSync(`${plan.bundleDir}/compose/cloud.override.yml`)).toBe(true);
-    expect([...docker.secretsVolumeFiles.keys()]).toEqual(["provisioning_token", "setup_code", "secret_keyring", "stripe_secret_key"]);
+    expect([...docker.secretsVolumeFiles.keys()]).toEqual(["provisioning_token", "setup_code", "secret_keyring", "stripe_secret_key", "stripe_webhook_secret", "commerce_config"]);
+    expect(docker.secretsVolumeFiles.get("commerce_config")).toBe(plan.renderedFiles[0]?.content);
+    expect(JSON.parse(docker.secretsVolumeFiles.get("commerce_config") ?? "")).toMatchObject({ provider: "stripe", webhookSecretFile: "/run/secrets/stripe_webhook_secret" });
+    expect(docker.secretsVolumeFiles.get("stripe_webhook_secret")).toMatch(/^whsec_[0-9a-f]{48}\n$/u);
     expect(docker.secretsVolumeFiles.get("secret_keyring")).toBe(readFileSync(plan.secrets[2]?.file ?? "", "utf8"));
     expect(JSON.parse(docker.secretsVolumeFiles.get("secret_keyring") ?? "")).toMatchObject({ version: 1, currentKeyId: expect.any(String) });
     const sync = docker.calls.find((call) => call.args[0] === "run");
