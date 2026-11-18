@@ -4,8 +4,12 @@ import { request } from "node:https";
 /** One HTTPS answer: status, the session values the server set, and the body as text. */
 export type PinnedAnswer = { status: number; sessionPairs: string[]; body: string };
 
-/** One HTTPS call: method, path, an optional JSON body (as text), and the session pairs to send. */
-export type PinnedCall = { method: "GET" | "POST"; path: string; body?: string; session?: readonly string[] };
+/**
+ * One HTTPS call: method, path, an optional JSON body (as text), the session
+ * pairs to send, extra headers, and whether to send the public origin as the
+ * Origin (default yes; a provider's webhook sends none).
+ */
+export type PinnedCall = { method: "GET" | "POST"; path: string; body?: string; session?: readonly string[]; headers?: Readonly<Record<string, string>>; withOrigin?: boolean };
 
 /**
  * An HTTPS client for the smoke that trusts only the deployment's exported
@@ -18,7 +22,9 @@ export function pinnedHttps(publicOrigin: string, authority: string) {
   const origin = new URL(publicOrigin);
   return async (call: PinnedCall): Promise<PinnedAnswer> => {
     const body = call.body;
-    const headers = new Map<string, string>([["origin", origin.origin], ["accept", "application/json"]]);
+    const headers = new Map<string, string>([["accept", "application/json"]]);
+    if (call.withOrigin !== false) headers.set("origin", origin.origin);
+    for (const [name, value] of Object.entries(call.headers ?? {})) headers.set(name.toLowerCase(), value);
     if (body !== undefined) headers.set("content-type", "application/json");
     if (call.session !== undefined && call.session.length > 0) headers.set("cookie", call.session.join("; "));
     return new Promise((resolve, reject) => {

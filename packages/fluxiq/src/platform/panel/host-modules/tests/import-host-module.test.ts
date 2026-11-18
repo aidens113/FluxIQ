@@ -18,7 +18,8 @@ beforeAll(() => {
   if (configFile.error) throw new Error(ts.flattenDiagnosticMessageText(configFile.error.messageText, "\n"));
   const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, packageRoot, undefined, configPath);
   expect(parsed.errors).toEqual([]);
-  expect(parsed.fileNames).toEqual([sourcePath.replaceAll("\\", "/")]);
+  // The config re-emits every native importer (`server/managed-hosts/load-launcher.ts` too), each tested beside itself.
+  expect(parsed.fileNames).toContain(sourcePath.replaceAll("\\", "/"));
   const { tsBuildInfoFile: _buildInfo, ...compilerOptions } = parsed.options;
   const outputRoot = path.join(temporaryRoot, "compiled");
   const program = ts.createProgram(parsed.fileNames, { ...compilerOptions, incremental: false, outDir: outputRoot });

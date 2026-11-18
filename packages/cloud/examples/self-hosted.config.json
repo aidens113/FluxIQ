@@ -1,0 +1,15 @@
+{
+  "$schema": "../fluxiq-cloud.schema.json",
+  "project": "fluxiq-selfhosted",
+  "profile": "local",
+  "mode": "self-hosted",
+  "driver": "local-docker",
+  "source": { "root": "../../.." },
+  "domain": "company.fluxiq.localhost",
+  "ports": { "http": 80, "https": 443 },
+  "tls": { "mode": "internal", "email": "operator@fluxiq.localhost", "trustLocalCa": false },
+  "instance": { "id": "fluxiq-selfhosted", "name": "FluxIQ (self-hosted rehearsal)" },
+  "gateway": { "allowedOrigins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop", "moz-extension://*"] },
+  "email": { "from": "FluxIQ <accounts@fluxiq.localhost>", "smtp": "smtp://mailpit:1025" },
+  "sinks": { "mail": true, "mailUiPort": 8025 }
+}

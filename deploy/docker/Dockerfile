@@ -54,16 +54,12 @@ COPY . .
 # next.config.ts add `output: "standalone"`. The image has no git, so the build
 # cache runs every step uncached (scripts/build-cache/run-step.mjs).
 ENV FLUXIQ_WEB_STANDALONE=1
-RUN pnpm build
-
-# The client gateway bundle is loaded by a native import at runtime and keeps
-# `fluxiq` external (apps/web/scripts/build-client-gateway-server.mjs), so
-# Next's file tracing never sees what it imports. A production deploy of the
-# fluxiq package (its dist and its runtime dependencies, sqlite3 included)
-# serves it; the runtime stage keeps it at this same absolute path, so the
-# symlinks pnpm wrote inside it stay valid, and links it beside the bundle.
-# Selected by path: the repository root is also named "fluxiq".
-RUN pnpm --filter ./packages/fluxiq deploy --prod /opt/fluxiq-gateway-runtime
+# `next build` type-checks the whole panel in one process, which needs more V8
+# heap than Node's default old-space limit allows on a small build VM (a 4 GB
+# Docker VM aborted with FatalProcessOutOfMemory). The larger heap applies to
+# this build step only, never the runtime, and type checking stays on. Keep it
+# under the build machine's memory.
+RUN NODE_OPTIONS=--max-old-space-size=3584 pnpm build
 
 # --- runtime: the standalone server, non-root, writable only at /data -------
 FROM ${NODE_IMAGE} AS runtime
@@ -92,14 +88,19 @@ WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone/ ./
 COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/.server-runtime ./apps/web/.server-runtime
-COPY --from=build /opt/fluxiq-gateway-runtime /opt/fluxiq-gateway-runtime
 COPY deploy/docker/healthcheck.mjs ./deploy/healthcheck.mjs
-# The gateway bundle's `import "fluxiq/server"` resolves through this link;
-# Node follows it to the deploy, whose own node_modules then serve fluxiq's
-# dependencies. The same deploy holds the operator command line
-# (/opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js).
-RUN mkdir -p ./apps/web/.server-runtime/node_modules \
-  && ln -s /opt/fluxiq-gateway-runtime ./apps/web/.server-runtime/node_modules/fluxiq
+COPY deploy/docker/one-core.mjs ./deploy/one-core.mjs
+# One copy of Core in the server process. The panel imports Core through Node
+# (apps/web/scripts/core-bridge), and the client gateway bundle, loaded by a
+# native import at runtime with `fluxiq` external, resolves `fluxiq/server` up
+# to the same apps/web/node_modules/fluxiq. The panel's traces carry what both
+# need (apps/web/scripts/core-trace fails a build whose traces lack it), so
+# the standalone output holds the one Core both load, at packages/fluxiq. The
+# image build fails if any of them resolves another copy, or if the operator
+# command line (packages/fluxiq/dist/platform/provisioning/cli/main.js, on the
+# same Core) cannot load.
+RUN node deploy/one-core.mjs apps/web/.next/server/chunks apps/web/.next/server/chunks/ssr apps/web/.server-runtime \
+  && node packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help > /dev/null
 
 # /data holds .fluxiq (accounts, workspaces, the generated setup code). It is
 # the only path the runtime user may write; run the container with a
