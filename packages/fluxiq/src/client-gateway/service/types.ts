@@ -65,7 +65,7 @@ export type ClientGatewayServiceOptions = {
    * own is refused unsent. Unset, no command carries a lease and none is
    * refused for one.
    */
-  hostLease?: import("./host-lease/index.ts").ClientGatewayHostLeaseSource;
+  hostLease?: import("./host-lease/index.ts").ClientGatewayHostLeaseSource | import("./host-lease/index.ts").ClientGatewayHostLeaseTargetSource;
   /**
    * The channel scope the dispatching async context runs in (traces and
    * offline trials, P1), read as `hostLease` is (`./channel-scope/`). Inside a

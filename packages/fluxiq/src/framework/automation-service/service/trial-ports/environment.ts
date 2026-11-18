@@ -32,7 +32,9 @@ export type AutomationStudioServiceTrialEnvironmentInput = {
 /** The trial environment a build of `input`'s Flow runs every trial with, over `collaborators` (header). */
 export function automationStudioServiceTrialEnvironment(collaborators: AutomationStudioServiceTrialCollaborators, input: AutomationStudioServiceTrialEnvironmentInput): AutomationStudioProjectBuildTrialEnvironment {
   const { projectId, flowId } = input;
+  const domainId = collaborators.binding()?.domainId ?? collaborators.executor().io?.domainId;
   return {
+    ...(domainId !== undefined && collaborators.hostLeaseAuthority ? { leaseBinding: collaborators.hostLeaseAuthority.forDomain(domainId) } : {}),
     projectId, flowId, sourceInstructionIds: input.sourceInstructionIds, startLocation: input.startLocation, registry: input.registry, resolution: input.resolution,
     parentFlow: () => collaborators.getFlow(projectId, flowId),
     currentBaseDigest: () => collaborators.dependencyDigest(projectId, flowId),

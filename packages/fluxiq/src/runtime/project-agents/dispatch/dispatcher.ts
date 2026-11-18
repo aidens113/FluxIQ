@@ -66,7 +66,7 @@ export function createAutomationStudioProjectDispatcher(input: AutomationStudioP
     const { waitsOn, cyclic } = automationStudioProjectDispatchDependencies(request.briefs);
     const earlier = earlierReturns(view);
     const dispatched = new Set(request.briefs.map((brief) => brief.subflowKey));
-    const leases = automationStudioProjectHostLeaseScope(input.host);
+    const leases = automationStudioProjectHostLeaseScope(input.host, input.leaseBinding);
     const ended = request.briefs.map(() => deferred<AutomationStudioProjectBuilderReturn>());
     // The briefs not yet carved: what a waiting brief's start-time share is split with, beside the build's finishing (header).
     const uncarved = new Set(request.briefs.map((_, index) => index));

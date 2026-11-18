@@ -32,6 +32,7 @@ import { registerPressGrantApi } from "./press-grant/index.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import type { ProgramApiIamOptions } from "./iam/index.ts";
 import { ProgramJsonStore, programDataFile } from "../../framework/persistence/program-state/storage.ts";
+import { AutomationStudioHostLeaseAuthority } from "../../runtime/project-agents/host-resources/index.ts";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
@@ -172,7 +173,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     // The run a command is sent from, so a result that comes after Core stopped waiting is put on that run (C8).
     commandOwner: automationStudioActivityRunScope,
     // The host lease a command is sent under, stamped on it; a stale or foreign one is refused unsent (automation-project-agents-plan).
-    hostLease: AutomationStudioHostLeaseScope.gatewaySource,
+    hostLease: AutomationStudioHostLeaseAuthority.for(automationStudio).gatewaySource,
     // The channel scope a command is sent and a session list read from: an offline run's work sees and reaches only its own sessions, and live work never sees those (traces and offline trials, P1). No scope is entered yet, so every caller is live.
     channelScope: AutomationStudioChannelScope.gatewaySource,
     // The trace the dispatching async context records into: what the gateway sends and receives for a build, trial or run goes into that episode's trace (traces and offline trials, P2, D8). Passed only when tracing is on.

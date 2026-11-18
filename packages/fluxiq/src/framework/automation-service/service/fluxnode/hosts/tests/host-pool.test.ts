@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ClientGatewayService } from "../../../../../../client-gateway/index.ts";
-import { AutomationStudioHostLeaseScope } from "../../../../../../runtime/project-agents/host-resources/index.ts";
+import { AutomationStudioHostLeaseScope, AutomationStudioHostLeaseAuthority } from "../../../../../../runtime/project-agents/host-resources/index.ts";
 import { FluxNodeHostPool } from "../host-pool.ts";
 
-function fixture() {
+function fixture(authority?: AutomationStudioHostLeaseAuthority) {
   const held = new Set<string>();
   let releases = 0;
   const gateway = { snapshot: () => ({ sessions: [{ sessionId: "session", managedHostId: "one", status: "ready", metadata: { domainId: "web" } }] }),
@@ -16,11 +16,29 @@ function fixture() {
       };
     } }
   } as unknown as ClientGatewayService;
-  const pool = new FluxNodeHostPool({ gateway, domainId: "web", capacity: 1 });
+  const pool = new FluxNodeHostPool({ gateway, domainId: "web", capacity: 1, ...(authority ? { leaseAuthority: authority } : {}) });
   return { pool, held, released: () => releases };
 }
 
 describe("FluxNode browser leases", () => {
+  it("two bound pools in the same domain remain independent while own nested acquisition still refuses", async () => {
+    const ownerA = AutomationStudioHostLeaseAuthority.for({}), ownerB = AutomationStudioHostLeaseAuthority.for({});
+    const a = fixture(ownerA), b = fixture(ownerB), target = { sessionId: "session", domainId: "web" };
+    try {
+      await a.pool.run("a", "project", new AbortController().signal, async () => {
+        expect(ownerA.gatewaySource.current(target)?.holder.briefId).toBe("a");
+        expect(ownerB.gatewaySource.current(target)).toBeUndefined();
+        expect(ownerB.gatewaySource.requiresLease(target)).toBe(false);
+        expect(() => a.pool.run("nested", "project", new AbortController().signal, async () => undefined)).toThrow("nested_lease");
+        await b.pool.run("b", "project", new AbortController().signal, async () => {
+          expect(ownerB.gatewaySource.current(target)?.holder.briefId).toBe("b");
+          expect(ownerA.gatewaySource.current(target)).toBeUndefined();
+        });
+      });
+      expect(a.released()).toBe(1);
+      expect(b.released()).toBe(1);
+    } finally { await Promise.all([a.pool.close(), b.pool.close()]); }
+  });
   it("cancels a queued leaf without taking a lease and releases a throwing leaf", async () => {
     const f = fixture();
     let finish = (): void => undefined;

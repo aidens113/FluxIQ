@@ -1,10 +1,11 @@
 import type { AutomationStudioRuntimeSession } from "../../../../flows/authoring/model/index.ts";
-import { AutomationStudioHostLeaseScope } from "../../../../runtime/project-agents/host-resources/index.ts";
+import type { AutomationStudioHostLeaseBinding } from "../../../../runtime/project-agents/host-resources/index.ts";
 
 /** What admitting a run reaches the service for. */
 export type AutomationStudioRuntimeSessionAdmissionPorts = {
   /** Projects whose adaptive run is between its admission check and its session's first write. */
   admissions: Set<string>;
+  leaseBinding?: AutomationStudioHostLeaseBinding | undefined;
   listRuntimeSessions(projectId: string): Promise<AutomationStudioRuntimeSession[]>;
   /**
    * Whether another run holds the project's page (`./page-held.ts`). Asked of every run with a
@@ -36,12 +37,12 @@ export async function admitAutomationStudioRuntimeSession(
   adaptive: boolean
 ): Promise<AutomationStudioRuntimeSession> {
   if (projectId && ports.pageHeld && await ports.pageHeld(projectId)) throw new Error(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
-  const lease = AutomationStudioHostLeaseScope.current();
+  const lease = ports.leaseBinding?.current();
   // A concrete, current resource lease already excludes every other driver
   // of that browser. Independent resources in one project may run together;
   // a stale async frame confers no such admission.
-  if (lease?.sessionId !== undefined && AutomationStudioHostLeaseScope.gatewaySource.isCurrent(lease)
-    && AutomationStudioHostLeaseScope.gatewaySource.requiresLease?.(lease.sessionId) === true) return await ports.startRuntimeSession();
+  if (lease?.sessionId !== undefined && ports.leaseBinding!.isCurrent(lease)
+    && ports.leaseBinding!.requiresLease(lease.sessionId) === true) return await ports.startRuntimeSession();
   if (!projectId || !adaptive) return await ports.startRuntimeSession();
   if (ports.admissions.has(projectId)) throw new Error("Only one adaptive runtime run can be admitted per project at a time.");
   ports.admissions.add(projectId);

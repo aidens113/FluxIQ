@@ -7,10 +7,13 @@ import { automationStudioSchemaMigrationOrder } from "../../migration-order/inde
 import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation, type AutomationStudioCommandConsumptionOwner } from "./contracts.ts";
 import { AutomationStudioCommandRunAdmission } from "./admission.ts";
 import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "./migration.ts";
+import { AUTOMATION_STUDIO_COMMAND_UNSENT_MIGRATION } from "./unsent-migration.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../../../../../client-gateway/service/command-ledger/index.ts";
 
 type ClaimRow = { command_id: string; claim_json: string; proof_digest: string; claimed_at_ms: number };
 type ReceiptRow = { command_id: string; receipt_json: string; proof_digest: string; committed_at_ms: number };
 type UnknownRow = { command_id: string; reason: ClientGatewayCommandUnknownReason; proof_digest: string };
+type UnsentRow = { command_id: string; code: string; refused_at_ms: number; proof_digest: string };
 /** Receipt-only project storage; closed run admission is not wired to Flow execution. */
 export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayCommandLedgerPort {
   private readonly admissions = new WeakMap<AutomationStudioCommandRunAdmission, { runId: string; first: ClientGatewayCommandClaim | null; owner?: AutomationStudioCommandConsumptionOwner; consumed: Map<string, { ticket: object; claim: ClientGatewayCommandClaim; receipt: ClientGatewayCommandReceipt }> }>();
@@ -22,7 +25,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     const lease = await input.pool.acquire(input.projectId);
     let unitOfWork: AutomationStudioProjectUnitOfWork | undefined;
     try {
-      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION]) }).migrate();
+      await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: automationStudioSchemaMigrationOrder(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, [AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION, AUTOMATION_STUDIO_COMMAND_UNSENT_MIGRATION]) }).migrate();
       unitOfWork = await AutomationStudioProjectUnitOfWork.open(input);
       return new AutomationStudioProjectCommandLedgerStore(lease, unitOfWork);
     } catch (error) { await unitOfWork?.close(); await lease.release(); throw error; }
@@ -49,12 +52,15 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
   claimForRun(input: ClientGatewayCommandClaim, admission: AutomationStudioCommandRunAdmission): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const claim = this.prepare(input), registered = this.admissions.get(admission);
     if (!registered || claim.binding.runId !== registered.runId) throw new Error("command_ledger.foreign_admission");
-    if (registered.first && Rules.digest(registered.first) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(registered.first.binding.commandId))) throw new Error("command_ledger.first_command_only");
+    const previous = registered.first;
     registered.first = this.freeze(structuredClone(claim));
     return this.pipeline(() => this.claimStored(claim, async sql => {
       const observed = await this.scanRun(sql, registered.runId);
+      if (previous && Rules.digest(previous) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(previous.binding.commandId))
+        && observed.records.find((record) => record.claim.binding.commandId === previous.binding.commandId)?.state !== "refused_unsent") throw new Error("command_ledger.first_command_only");
       for (const record of observed.records) {
         if (Rules.digest(record.claim) === Rules.digest(claim)) continue;
+        if (record.state === "refused_unsent") continue;
         const consumed = registered.consumed.get(record.claim.binding.commandId), original = consumed && registered.owner?.resolveConsumed(consumed.ticket);
         if (!consumed || !original || Rules.digest(original) !== Rules.digest({ claim: consumed.claim, receipt: consumed.receipt }) || Rules.digest(record.claim) !== Rules.digest(consumed.claim) || Rules.digest(record.receipt) !== Rules.digest(consumed.receipt) || record.state !== "committed" || observed.historicalUnknownCommandIds.includes(record.claim.binding.commandId)) throw new Error("command_ledger.run_claim_conflict");
       }
@@ -92,6 +98,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     const outcome = await this.unitOfWork.runIdempotent(this.mutation(claim, "receipt", { claim, receipt }), async context => {
       const current = await this.readChecked(claim, context.sql);
       if (!current) throw new Error("command_ledger.missing_claim");
+      if (current.state === "refused_unsent") throw new Error("command_ledger.unsent_terminal");
       const committedAt = context.changedAt, proofDigest = Rules.digest({ claim, receipt, committedAt });
       Rules.validateRecord(claim, { ...current, state: "committed", receipt, committedAt, unknownReason: null });
       await context.sql.run("insert into gateway_command_receipts(command_id,receipt_json,proof_digest,committed_at_ms) values(?,?,?,?)", [claim.binding.commandId, JSON.stringify(receipt), proofDigest, committedAt]);
@@ -109,9 +116,11 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     // A committed receipt always wins; never downgrade or overwrite it on timeout/cancel.
     const before = await this.required(claim);
     if (before.state === "committed") return before;
+    if (before.state === "refused_unsent") throw new Error("command_ledger.unsent_terminal");
     const outcome = await this.unitOfWork.runIdempotent(this.mutation(claim, "unknown", { claim, reason }), async context => {
       const current = await this.readChecked(claim, context.sql);
       if (!current) throw new Error("command_ledger.missing_claim");
+      if (current.state === "refused_unsent") throw new Error("command_ledger.unsent_terminal");
       const proofDigest = Rules.digest({ claim, reason });
       await context.sql.run("insert into gateway_command_unknowns(command_id,reason,proof_digest) values(?,?,?)", [claim.binding.commandId, reason, proofDigest]);
       return { commandId: claim.binding.commandId, operation: "unknown" as const, proofDigest };
@@ -119,6 +128,29 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     const record = await this.required(claim);
     await this.verifyReturned(claim, "unknown", outcome.response);
     return record;
+  }
+  refuseUnsent(input: ClientGatewayCommandClaim, proof: Unsent): Promise<ClientGatewayCommandRecord> {
+    const claim = this.prepare(input), refusal = Unsent.read(proof, claim);
+    return this.pipeline(async () => {
+      const before = await this.required(claim);
+      if (before.state === "refused_unsent") {
+        if (Rules.digest(before.refusal) !== Rules.digest(refusal)) throw new Error("command_ledger.unsent_conflict");
+        return before;
+      }
+      if (before.state !== "pending") throw new Error("command_ledger.unsent_conflict");
+      const outcome = await this.unitOfWork.runIdempotent(this.mutation(claim, "unsent_refusal", { claim, refusal }), async context => {
+        const current = await this.readChecked(claim, context.sql);
+        if (!current || current.state !== "pending") throw new Error("command_ledger.unsent_conflict");
+        Unsent.read(proof, claim);
+        const proofDigest = Rules.digest({ claim, refusal });
+        await context.sql.run("insert into gateway_command_unsent_refusals(command_id,code,refused_at_ms,proof_digest) values(?,?,?,?)", [claim.binding.commandId, refusal.code, refusal.refusedAt, proofDigest]);
+        return { commandId: claim.binding.commandId, operation: "unsent_refusal" as const, proofDigest };
+      });
+      const record = await this.required(claim);
+      if (record.state !== "refused_unsent" || Rules.digest(record.refusal) !== Rules.digest(refusal)) throw new Error("command_ledger.unsent_conflict");
+      await this.verifyReturned(claim, "unsent_refusal", outcome.response);
+      return record;
+    });
   }
   read(input: ClientGatewayCommandClaim): Promise<ClientGatewayCommandRecord | null> {
     const claim = this.prepare(input);
@@ -151,8 +183,15 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     await this.verifyMutation(sql, claim, "claim", original, claimProof);
     const ack = await sql.get<ReceiptRow>("select * from gateway_command_receipts where command_id=?", [commandId]);
     const unknown = await sql.get<UnknownRow>("select * from gateway_command_unknowns where command_id=?", [commandId]);
+    const unsent = await sql.get<UnsentRow>("select * from gateway_command_unsent_refusals where command_id=?", [commandId]);
     if (!ack) await this.verifyAbsent(sql, commandId, "receipt");
     if (!unknown) await this.verifyAbsent(sql, commandId, "unknown");
+    if (!unsent) await this.verifyAbsent(sql, commandId, "unsent_refusal");
+    const refusal = unsent ? { code: unsent.code, refusedAt: unsent.refused_at_ms } : undefined;
+    if (unsent) {
+      if (ack || unknown || unsent.command_id !== commandId || !Unsent.validCode(unsent.code) || unsent.proof_digest !== Rules.digest({ claim, refusal })) throw new Error("command_ledger.corrupt_unsent_refusal");
+      await this.verifyMutation(sql, claim, "unsent_refusal", { claim, refusal }, unsent.proof_digest);
+    }
     let receipt: ClientGatewayCommandReceipt | null = null;
     if (ack) {
       receipt = this.decode<ClientGatewayCommandReceipt>(ack.receipt_json); Rules.validateReceipt(claim, receipt);
@@ -164,7 +203,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
       if (!Rules.unknownReason(unknown.reason) || unknown.command_id !== commandId || unknown.proof_digest !== Rules.digest({ claim, reason: unknown.reason })) throw new Error("command_ledger.corrupt_unknown");
       await this.verifyMutation(sql, claim, "unknown", { claim, reason: unknown.reason }, unknown.proof_digest);
     }
-    const record: ClientGatewayCommandRecord = { claim: original, claimedAt: row.claimed_at_ms, state: ack ? "committed" : unknown ? "unknown" : "pending", receipt, committedAt: ack?.committed_at_ms ?? null, unknownReason: ack ? null : unknown?.reason ?? null };
+    const record: ClientGatewayCommandRecord = { claim: original, claimedAt: row.claimed_at_ms, state: unsent ? "refused_unsent" : ack ? "committed" : unknown ? "unknown" : "pending", receipt, committedAt: ack?.committed_at_ms ?? null, unknownReason: ack ? null : unknown?.reason ?? null, ...(refusal ? { refusal } : {}) };
     Rules.validateRecord(claim, record);
     return record;
   }
@@ -206,14 +245,14 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
       if (claim.binding.runId === runId) records.push(record);
     }
     const historicalUnknownCommandIds: string[] = [];
-    for (const table of ["gateway_command_receipts", "gateway_command_unknowns"]) {
+    for (const table of ["gateway_command_receipts", "gateway_command_unknowns", "gateway_command_unsent_refusals"]) {
       for (const row of await this.inventory(sql, table, "command_id")) {
         const claim = claims.get(row.command_id as string); if (!claim) throw new Error("command_ledger.orphan_history");
         if (table === "gateway_command_unknowns" && claim.binding.runId === runId) historicalUnknownCommandIds.push(claim.binding.commandId);
       }
     }
-    for (const row of await this.inventory(sql, "mutation_records", "mutation_id", "and (owner_kind='gateway_command' or operation_kind like 'gateway_command.%' or mutation_id like 'command.%')", SCAN_LIMIT * 3)) {
-      const mutationId = row.mutation_id as string, match = /^(command\.[a-f0-9]{64})\.(claim|receipt|unknown)$/.exec(mutationId);
+    for (const row of await this.inventory(sql, "mutation_records", "mutation_id", "and (owner_kind='gateway_command' or operation_kind like 'gateway_command.%' or mutation_id like 'command.%')", SCAN_LIMIT * 4)) {
+      const mutationId = row.mutation_id as string, match = /^(command\.[a-f0-9]{64})\.(claim|receipt|unknown|unsent_refusal)$/.exec(mutationId);
       if (!match || row.owner_kind !== "gateway_command" || row.owner_id !== match[1] || row.operation_kind !== `gateway_command.${match[2]}` || typeof row.request_digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(row.request_digest)) throw new Error("command_ledger.invalid_mutation_inventory");
       if (row.status === "committed") { if (!claims.has(match[1]!)) throw new Error("command_ledger.orphan_mutation"); }
       else if (row.status !== "failed" || row.response_json !== null || typeof row.error_json !== "string" || Buffer.byteLength(row.error_json, "utf8") > 8192) throw new Error("command_ledger.invalid_mutation_status");

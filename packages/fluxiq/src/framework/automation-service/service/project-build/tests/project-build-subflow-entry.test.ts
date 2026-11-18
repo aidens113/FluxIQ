@@ -1,3 +1,5 @@
+import { AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 // A subflow trial's entry is setup, not the subflow's work (t599).
 //
 // A8 social `run-mv8ic6mk-09bf12ff`: a trial of a read-only subflow ran its
@@ -58,11 +60,11 @@ async function trialOfAdd(predecessors: string[]): Promise<AutomationStudioLlmTa
     return judgeReply("yes");
   });
   const trials = automationStudioProjectBuildSubflowTrials({
-    ref: REF, environment: environment as AutomationStudioProjectBuildTrialEnvironment, binding, judge: { provider }, records, proposals, leases: { assertCurrent: () => undefined }, running: () => true
+    ref: REF, environment: Object.assign(environment, { leaseBinding: LEASE_BINDING }) as AutomationStudioProjectBuildTrialEnvironment, binding, judge: { provider }, records, proposals, leases: { assertCurrent: () => undefined }, running: () => true
   });
   const scope = scopeOf("add", "brief.add", predecessors);
   const proposal: AutomationStudioSubflowProposal = { ...f.request().proposal, scope: { buildId: "build.1", briefId: "brief.add", planDigest: "plan.1", subflowKey: "add" } };
-  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })));
+  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: LEASE_BINDING });
   const result = await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async () => await trials.port({ scope, proposal, signal: new AbortController().signal }));
   expect(result.verdict, JSON.stringify(result.feedback)).toBe("yes");
   return seen;

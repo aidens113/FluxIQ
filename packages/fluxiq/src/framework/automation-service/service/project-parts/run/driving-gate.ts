@@ -28,7 +28,7 @@
 // held, or a part run's session active) before it writes the run's session.
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioHostResourcePort } from "../../../../../runtime/automation-host/index.ts";
-import { AutomationStudioHostLeaseScope, automationStudioProjectHostLeaseScope } from "../../../../../runtime/project-agents/index.ts";
+import { automationStudioProjectHostLeaseScope, type AutomationStudioHostLeaseBinding } from "../../../../../runtime/project-agents/index.ts";
 import type { AutomationStudioPartCaller } from "../../../../../runtime/project-parts/index.ts";
 import { admitAutomationStudioRuntimeSession, AUTOMATION_STUDIO_PAGE_HELD_MESSAGE } from "../../runtime-session/index.ts";
 import type { AutomationStudioProjectPartRunRefusal } from "./types.ts";
@@ -52,6 +52,7 @@ export type AutomationStudioProjectPartDrivingPorts = {
 /** Runs `work` holding the host, or answers that another run does. */
 export async function projectPartWhileDriving<T>(input: {
   hostResources: AutomationStudioHostResourcePort | undefined;
+  leaseBinding?: AutomationStudioHostLeaseBinding | undefined;
   holder: string;
   ports: AutomationStudioProjectPartDrivingPorts;
   projectId: string;
@@ -59,8 +60,10 @@ export async function projectPartWhileDriving<T>(input: {
   work(): Promise<T>;
 }): Promise<T | AutomationStudioProjectPartRunRefusal> {
   const guarded = async (): Promise<T | AutomationStudioProjectPartRunRefusal> => (await sessionsRefusal(input.ports, input.projectId, input.caller)) ?? await input.work();
-  if (!input.hostResources || (input.caller === "build" && AutomationStudioHostLeaseScope.current())) return await guarded();
-  const scope = automationStudioProjectHostLeaseScope(input.hostResources);
+  const lease = input.leaseBinding?.current();
+  if (!input.hostResources || (input.caller === "build" && lease && input.leaseBinding!.isCurrent(lease))) return await guarded();
+  if (!input.leaseBinding) return PROJECT_PART_PAGE_UNCHECKED;
+  const scope = automationStudioProjectHostLeaseScope(input.hostResources, input.leaseBinding);
   const { held, waiting } = scope.scheduler.snapshot();
   if (held.length >= scope.scheduler.capacity || waiting.length > 0) return PROJECT_PART_RUN_IN_PROGRESS;
   // A port may hold back a grant with nothing held: no browser paired, or two it will not choose between.

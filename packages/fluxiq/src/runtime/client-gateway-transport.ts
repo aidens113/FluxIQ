@@ -63,6 +63,12 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
       if (Object.hasOwn(context, "commandContext")) {
         ClientGatewayCommandContext.owner(context.commandContext!);
         const outcome = await this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command), { context: context.commandContext!, ...(context.signal ? { signal: context.signal } : {}) }).result;
+        if (outcome.status === "refused_unsent") return {
+          commandId: command.commandId ?? "unknown",
+          status: context.signal?.aborted ? "cancelled" : "failed",
+          message: "The command was not sent. Its host can be acquired again for another attempt.",
+          ...(context.signal?.aborted ? {} : { failure: { category: "action_failed" as const, code: "executor.required_command_not_sent", retryable: true, stage: "dispatch" as const, effect: "unacted" as const } })
+        };
         if (outcome.status !== "completed") { await ClientGatewayCommandOutcome.stop(context.commandContext!, outcome.status); return { commandId: command.commandId ?? "unknown", status: "unknown", error: `Required command ${outcome.status}.` }; }
         return hostResultFromGateway(outcome.result);
       }

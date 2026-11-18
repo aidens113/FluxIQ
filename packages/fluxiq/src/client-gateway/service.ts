@@ -128,7 +128,11 @@ export class ClientGatewayService {
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease,
+      hostLeaseTarget: (session) => {
+        const trusted = session.trustedClientId ? trustedClients.get(session.trustedClientId) : undefined;
+        return { sessionId: session.sessionId, domainId: trusted && trustedClients.isActive(trusted) ? trusted.domainId : undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) };
+      }, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
     this.pairings = pairings;

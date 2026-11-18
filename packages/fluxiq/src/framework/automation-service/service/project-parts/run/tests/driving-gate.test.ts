@@ -92,14 +92,14 @@ describe("a part run while another run drives the project", () => {
       unreadable();
       expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ code: "parts.unavailable" });
       untouched();
-      expect(automationStudioProjectHostLeaseScope(port).scheduler.snapshot().held).toEqual([]);
+      expect(automationStudioProjectHostLeaseScope(port, harness.leaseBinding).scheduler.snapshot().held).toEqual([]);
     });
   });
 
   it("refuses a person while a build holds the host, and runs once the build has let it go", async () => {
     const port = hostOfOne();
     const partId = await open(port);
-    const { scheduler } = automationStudioProjectHostLeaseScope(port);
+    const { scheduler } = automationStudioProjectHostLeaseScope(port, harness.leaseBinding);
     const lease = await scheduler.acquire(BUILDER);
     expect(await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED })).toMatchObject({ code: "part.run_in_progress" });
     untouched();
@@ -117,7 +117,7 @@ describe("a part run while another run drives the project", () => {
     let heldInRun: unknown;
     harness.page.afterRead = async (count) => {
       if (count !== 1) return;
-      heldInRun = automationStudioProjectHostLeaseScope(port).scheduler.snapshot().held[0]?.holder.role;
+      heldInRun = automationStudioProjectHostLeaseScope(port, harness.leaseBinding).scheduler.snapshot().held[0]?.holder.role;
       second = await harness.parts.run({ projectId: PROJECT, partId, inputs: {}, ...ASKED });
       reads = harness.domain.reads.count;
     };
@@ -152,7 +152,7 @@ describe("a part run while another run drives the project", () => {
       const bundle = automationStudioProjectBuildRunPartBundle({ parts: harness.parts, permittedConsequences: ["create_new"], done: new Set(), landed: () => undefined });
       const call = bundle.implementations["core.run_part"]!;
       const value: JsonObject = { partId, inputs: {} };
-      return await automationStudioProjectHostLeaseScope(port).run(BUILDER, async () => await call({ projectId: PROJECT, flowId: "flow.source", callId: "c.1", optionId: "core.run_part", value, permission: async () => ({ permitted: true }) } as unknown as Parameters<typeof call>[0]));
+      return await automationStudioProjectHostLeaseScope(port, harness.leaseBinding).run(BUILDER, async () => await call({ projectId: PROJECT, flowId: "flow.source", callId: "c.1", optionId: "core.run_part", value, permission: async () => ({ permitted: true }) } as unknown as Parameters<typeof call>[0]));
     };
 
     it("a build's own call, from inside its own lease, is its own run and is not refused, beside its own trial's session", async () => {
