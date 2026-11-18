@@ -71,6 +71,21 @@ export interface PaymentProvider {
   verifyWebhook(rawBody: string, signatureHeader: string | null): Promise<ProviderWebhookEvent>;
   /** The provider's current state of one subscription; null when the provider has no such subscription. */
   getSubscription(subscriptionId: string): Promise<ProviderSubscriptionFetch | null>;
+  /**
+   * Ends a subscription now (no further charge; invoices stay at the
+   * provider). Every retry passes the same `idempotencyKey`, so it is one
+   * provider operation. A subscription the provider already ended, or does
+   * not have, counts as ended. Throws `PaymentProviderUnavailableError` when
+   * the provider did not answer.
+   */
+  cancelSubscription(subscriptionId: string, options: { idempotencyKey: string }): Promise<void>;
+  /**
+   * Closes a customer: its saved payment methods go with it and it can never
+   * be charged again; its invoices stay at the provider. Same idempotency and
+   * unavailability rules as `cancelSubscription`; an unknown customer counts
+   * as closed.
+   */
+  closeCustomer(customerId: string, options: { idempotencyKey: string }): Promise<void>;
 }
 
 export type CommerceBillingServiceOptions = {
@@ -87,6 +102,12 @@ export type CommerceWebhookResult = {
   outcome: "applied" | "unchanged" | "stale" | "duplicate" | "ignored";
   subscriptionId: string | null;
   version: number | null;
+};
+
+/** What closing an account's billing did: the subscriptions it cancelled now, and the customers it closed. */
+export type CommerceCloseReport = {
+  cancelled: string[];
+  customersClosed: string[];
 };
 
 export type CommerceReconcileReport = {

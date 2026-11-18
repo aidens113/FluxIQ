@@ -254,6 +254,47 @@ docker compose -f deploy/compose/service.compose.yml exec fluxiq \
   node /app/packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help
 ```
 
+## The Sign-Up Page
+
+Core can take sign-ups itself at `<origin>/signup`, so a website only links
+there instead of running a backend on the provisioning network. It is off by
+default. `FLUXIQ_SIGNUP=open` turns it on, and only on the `service` profile,
+where each sign-up gets its own personal workspace. On `local` and
+`self-hosted` it stays off whatever the value, because a sign-up there would
+join the one shared workspace. Any value other than `off` or `open` refuses
+to start. While it is off, `/signup` and `/signup/submit` answer 404.
+
+The page asks for an email, a display name and acceptance of the terms. It
+calls the same provisioning service as the listener, inside the server, not
+over the listener's port. The new account is pending: it has no password and
+an unverified email, it administers a new personal workspace
+(`FluxIQAdministratorAccess`), and the terms version the person accepted is
+recorded on it. Core then sends the welcome email through the configured
+sender (`FLUXIQ_EMAIL_SENDER`). The link opens `/welcome`, which verifies the
+address, sets the password and signs the person in. It lasts 24 hours.
+
+The answer is always "check your email", whether or not the address is
+already in use, so the page cannot be used to find out who has an account. An
+address that already has an account gets no second account. If its password
+is set, it gets "you already have an account" with the sign-in and reset
+links. If it was never activated, it gets a fresh welcome link.
+
+Abuse controls:
+
+- A post from another site is refused, by the same rule as the welcome and
+  setup forms.
+- Each normalised email may sign up at most 3 times per 15 minutes, so no one
+  can flood an inbox.
+- Each client address may sign up at most 10 times per 10 minutes. This limit
+  needs `FLUXIQ_TRUST_PROXY=true` (the compose files set it), because the
+  client address comes from the proxy.
+- The counters are kept in memory for each server process.
+
+The terms version shown is a constant in the web app
+(`apps/web/src/app/signup/server/signupTermsVersion.ts`). Bump it when the
+terms change. A form still showing the old version is then refused and asks
+the person to reload.
+
 ## Settings Reference
 
 Settings an operator usually sets; each is read from the container's
@@ -276,6 +317,7 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 | `FLUXIQ_EMAIL_API_KEY` | unset | Alternative operator environment credential; never commit or expose |
 | `FLUXIQ_INSTANCE_NAME` | `FluxIQ` | The name discovery gives the extension |
 | `FLUXIQ_SIGN_UP_URL` | none | Where the extension sends someone without an account |
+| `FLUXIQ_SIGNUP` | `off` | `open` serves Core's own sign-up page at `/signup` (`service` only; see The Sign-Up Page) |
 | `FLUXIQ_PANEL_PRESET` | `full` | Which panel screens and Settings tools show: `full`, `data-collection` or `task-automation` (see Customise The Panel) |
 | `FLUXIQ_WORKSPACE_IDLE_MS`, `FLUXIQ_WORKSPACE_CACHE_MAX` | 15 minutes, 100 | How long and how many workspaces stay loaded (`service`) |
 | `FLUXIQ_CLIENT_GATEWAY_*` limits | 16 MiB frames, hello within 10 s, 50 messages/s, bursts of 200 off `local` | Gateway limits; see the resolver |

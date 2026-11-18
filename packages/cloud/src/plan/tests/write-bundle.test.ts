@@ -70,7 +70,7 @@ describe("writeBundle: local and production render the same files, differing onl
     // service.env: values, each from the config.
     const [ls, ps] = [envOf(l["env/service.env"] ?? ""), envOf(p["env/service.env"] ?? "")];
     expect(envDiff(ls, ps)).toEqual({
-      changed: ["FLUXIQ_PUBLIC_ORIGIN", "FLUXIQ_INSTANCE_ID", "FLUXIQ_SITE_ADDRESS", "ACME_EMAIL", "FLUXIQ_SITE_TLS", "FLUXIQ_EMAIL_SENDER", "FLUXIQ_EMAIL_FROM", "FLUXIQ_STRIPE_API_BASE", "FLUXIQ_INSTANCE_NAME"],
+      changed: ["FLUXIQ_PUBLIC_ORIGIN", "FLUXIQ_INSTANCE_ID", "FLUXIQ_SITE_ADDRESS", "ACME_EMAIL", "FLUXIQ_SITE_TLS", "FLUXIQ_EMAIL_SENDER", "FLUXIQ_EMAIL_FROM", "FLUXIQ_INSTANCE_NAME"],
       onlyLeft: [],
       onlyRight: ["FLUXIQ_SIGN_UP_URL", "FLUXIQ_EMAIL_SMTP_USERNAME", "FLUXIQ_EMAIL_SMTP_PASSWORD_FILE"]
     });
@@ -83,9 +83,17 @@ describe("writeBundle: local and production render the same files, differing onl
       expect(env.get("FLUXIQ_SITE_TLS")).toBe(config.tls.mode === "internal" ? "tls internal" : `tls ${config.tls.email}`);
       expect(env.get("FLUXIQ_EMAIL_SENDER")).toBe(config.email.smtp);
       expect(env.get("FLUXIQ_EMAIL_FROM")).toBe(config.email.from);
-      expect(env.get("FLUXIQ_STRIPE_API_BASE")).toBe(config.payments.apiBase);
+      expect(env.get("FLUXIQ_COMMERCE_CONFIG_FILE")).toBe("/run/secrets/commerce_config");
+      expect(env.has("FLUXIQ_STRIPE_API_BASE") || env.has("FLUXIQ_STRIPE_SECRET_KEY_FILE")).toBe(false);
     }
     expect([ps.get("FLUXIQ_SIGN_UP_URL"), ps.get("FLUXIQ_EMAIL_SMTP_USERNAME")]).toEqual([production.signUpUrl, production.email.username]);
+
+    // commerce.json: the same keys; only the sink's API base differs (stripe-mock locally, Stripe's own, so absent, in production), and the plan's region.
+    const [lj, pj] = [JSON.parse(l["env/commerce.json"] ?? "{}") as Record<string, unknown>, JSON.parse(p["env/commerce.json"] ?? "{}") as Record<string, unknown>];
+    expect(Object.keys(lj).filter((key) => !(key in pj))).toEqual(["apiBaseUrl"]);
+    expect(Object.keys(pj).filter((key) => !(key in lj))).toEqual([]);
+    expect(Object.keys(lj).filter((key) => key in pj && JSON.stringify(lj[key]) !== JSON.stringify(pj[key]))).toEqual(["plans"]);
+    expect(l["env/commerce.json"]).toBe(JSON.stringify(lj, null, 2) + "\n");
 
     // deployment.json: the same keys; the values that differ are the project's, the profile's, the origin's and the paths'.
     const [ld, pd] = [JSON.parse(l["deployment.json"] ?? "{}") as Record<string, unknown>, JSON.parse(p["deployment.json"] ?? "{}") as Record<string, unknown>];

@@ -9,6 +9,7 @@ export * from "./delete-account.ts";
 export * from "./disable-account.ts";
 export * from "./enable-account.ts";
 export * from "./get-account.ts";
+export * from "./membership/index.ts";
 export * from "./personal-workspace-ids.ts";
 export * from "./provisioning-operation-table.ts";
 export * from "./refresh-identity-role.ts";

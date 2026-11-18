@@ -10,14 +10,18 @@ function warnEmailFailure(template: PanelEmailTemplate, error: unknown): void {
 }
 
 /**
- * Fills the defaults: no connected-client revocation (0), no workspace data
- * to delete, no `workspace.created` listener, no organisation entitlement,
+ * Fills the defaults: no connected-client revocation (0), no custody to drop,
+ * no billing to close, no environments to purge, no workspace data to delete,
+ * no `workspace.created` listener, no organisation entitlement,
  * the warning above, the system clock and `crypto.randomBytes`. The public
  * origin is reduced to its origin (`new URL(...).origin`), which throws for
  * anything that is not an absolute URL.
  */
 export function createProvisioningContext(deps: PlatformProvisioningDeps): ProvisioningContext {
   const revokeConnectedClients = deps.revokeConnectedClients ?? (async () => 0);
+  const dropWorkspaceCustody = deps.dropWorkspaceCustody ?? (async () => undefined);
+  const closeBilling = deps.closeBilling ?? (async () => undefined);
+  const purgeEnvironments = deps.purgeEnvironments ?? (async () => undefined);
   const deleteWorkspaceData = deps.deleteWorkspaceData ?? (async () => undefined);
   const onWorkspaceCreated = deps.onWorkspaceCreated ?? (async () => undefined);
   return {
@@ -30,6 +34,9 @@ export function createProvisioningContext(deps: PlatformProvisioningDeps): Provi
     publicOrigin: new URL(deps.publicOrigin).origin,
     tenancy: deps.tenancy,
     revokeConnectedClients,
+    dropWorkspaceCustody,
+    closeBilling,
+    purgeEnvironments,
     deleteWorkspaceData,
     onWorkspaceCreated,
     organisationEntitled: deps.entitlements?.organisation ?? false,

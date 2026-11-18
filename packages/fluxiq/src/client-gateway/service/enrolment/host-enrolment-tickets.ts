@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { CLIENT_GATEWAY_ENROLMENT_REFUSALS } from "./enrolment-refusal.ts";
-import type { ClientGatewayHostEnrolmentBinding, ClientGatewayHostEnrolmentRedemption, ClientGatewayHostEnrolmentRequest, ClientGatewayHostEnrolmentTicket } from "./types.ts";
+import type { ClientGatewayHostEnrolmentBinding, ClientGatewayHostEnrolmentEnvironment, ClientGatewayHostEnrolmentRedemption, ClientGatewayHostEnrolmentRequest, ClientGatewayHostEnrolmentTicket } from "./types.ts";
 
 /** How long a ticket lives unless its request says otherwise: long enough for a launched host's first hello. */
 const DEFAULT_TICKET_TTL_MS = 60_000;
@@ -69,7 +69,9 @@ export class ClientGatewayHostEnrolmentTickets {
     if (expired) return { kind: "refused", code: CLIENT_GATEWAY_ENROLMENT_REFUSALS.expired.code, hostId };
     if (revoked) return { kind: "refused", code: CLIENT_GATEWAY_ENROLMENT_REFUSALS.revoked.code, hostId };
     if (record.domainId !== declaredDomainId) return { kind: "refused", code: CLIENT_GATEWAY_ENROLMENT_REFUSALS.domainMismatch.code, hostId };
-    return { kind: "redeemed", binding: { hostId, domainId: record.domainId, profile: record.profile } };
+    const binding: ClientGatewayHostEnrolmentBinding = { hostId, domainId: record.domainId, profile: record.profile };
+    if (record.environment !== undefined) binding.environment = { workspaceId: record.environment.workspaceId, environmentId: record.environment.environmentId };
+    return { kind: "redeemed", binding };
   }
 
   /** Revokes the host's live ticket, if it has one; true when one was revoked. */
@@ -112,5 +114,16 @@ function validBinding(request: ClientGatewayHostEnrolmentRequest): ClientGateway
   if (!hostId) throw new Error("client_gateway.enrolment_host_required: an enrolment ticket names the host it enrols.");
   if (!domainId) throw new Error("client_gateway.enrolment_domain_required: an enrolment ticket names the domain its host must declare.");
   if (request.profile !== "fresh" && request.profile !== "named") throw new Error("client_gateway.enrolment_profile_invalid: profile is \"fresh\" or \"named\".");
-  return { hostId, domainId, profile: request.profile };
+  if (request.environment === undefined) return { hostId, domainId, profile: request.profile };
+  return { hostId, domainId, profile: request.profile, environment: validEnvironment(request.environment, request.profile) };
+}
+
+/** An environment binding names both ids exactly, and its host keeps its profile with the environment. */
+function validEnvironment(environment: ClientGatewayHostEnrolmentEnvironment, profile: ClientGatewayHostEnrolmentBinding["profile"]): ClientGatewayHostEnrolmentEnvironment {
+  const exact = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.trim() === value;
+  if (typeof environment !== "object" || environment === null || !exact(environment.workspaceId) || !exact(environment.environmentId)) {
+    throw new Error("client_gateway.enrolment_environment_invalid: an environment-bound ticket names its workspace and environment exactly.");
+  }
+  if (profile !== "named") throw new Error("client_gateway.enrolment_environment_profile: an environment's host keeps its profile, so its ticket is \"named\".");
+  return { workspaceId: environment.workspaceId, environmentId: environment.environmentId };
 }

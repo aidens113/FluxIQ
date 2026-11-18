@@ -27,5 +27,7 @@ export type FluxIQDeploymentSettings = {
   /** The panel session carrier: its name and whether it is marked Secure (`__Host-` on an https origin). */
   session: { name: "fluxiq_session" | "__Host-fluxiq_session"; secure: boolean };
   setupCodeFile: string | null;
+  /** Core's own sign-up page (`FLUXIQ_SIGNUP`): `open` only when set so on the `service` profile, else `off` (the page answers 404). */
+  signup: "off" | "open";
   logFormat: "text" | "json";
 };

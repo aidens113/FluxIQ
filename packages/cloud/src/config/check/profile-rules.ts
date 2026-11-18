@@ -1,4 +1,4 @@
-import type { CloudConfigFile, CloudConfigIssue } from "./types.ts";
+import type { CloudConfigFile, CloudConfigIssue } from "../types.ts";
 
 const MAIL_SINK = "smtp://mailpit:1025";
 const PAYMENTS_SINK = "http://stripe-mock:12111";
@@ -35,9 +35,12 @@ export function checkProfileRules(file: CloudConfigFile): CloudConfigIssue[] {
   if (file.email.username !== undefined && smtpScheme === "smtp") add("email.smtp", "a relay that takes a sign-in needs smtp+starttls:// or smtps://; credentials are never sent unencrypted");
   if (mailSink && file.email.smtp !== MAIL_SINK) add("email.smtp", `must be ${MAIL_SINK} while sinks.mail is on`);
   if (!mailSink && file.email.smtp.includes("://mailpit:")) add("email.smtp", "names the Mailpit sink, which runs only with sinks.mail on");
-  if (paymentsSink && file.payments.apiBase !== PAYMENTS_SINK) add("payments.apiBase", `must be ${PAYMENTS_SINK} while sinks.payments is on`);
-  if (!paymentsSink && !file.payments.apiBase.startsWith("https://")) add("payments.apiBase", "must be https:// unless it is the stripe-mock sink");
-  if (!paymentsSink && file.payments.secretKeyFile === undefined) add("payments.secretKeyFile", "is required unless the stripe-mock sink runs");
+  // A self-hosted server has no payments section; checkModeRules refuses one there and requires one on a service.
+  if (file.payments !== undefined) {
+    if (paymentsSink && file.payments.apiBase !== PAYMENTS_SINK) add("payments.apiBase", `must be ${PAYMENTS_SINK} while sinks.payments is on`);
+    if (!paymentsSink && !file.payments.apiBase.startsWith("https://")) add("payments.apiBase", "must be https:// unless it is the stripe-mock sink");
+    if (!paymentsSink && file.payments.secretKeyFile === undefined) add("payments.secretKeyFile", "is required unless the stripe-mock sink runs");
+  }
   if (file.sinks?.mailUiPort !== undefined && !mailSink) add("sinks.mailUiPort", "applies only with sinks.mail on");
   const http = file.ports?.http ?? 80;
   const https = file.ports?.https ?? 443;
