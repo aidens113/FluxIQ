@@ -74,9 +74,10 @@ exploring calls a model.
   the data in memory, so a second process writing the same directory would leave the first serving
   stale chats, permissions and pairings. A second server started on a directory in use refuses with
   a message naming the one that holds it; give it its own `--data-dir`, or stop the first. The claim
-  is the file `.fluxiq.owner` in the data directory. A server that exits removes it, and one that
-  crashed or was killed leaves it behind for the next server, which takes it over once it has
-  checked that the recorded process is gone.
+  is the file `.fluxiq.owner` in the data directory, which the server renews every few seconds. A
+  server that exits removes it. One that crashed or was killed leaves it behind for the next
+  server, which takes it over once it has checked that the recorded process is gone, or, for a
+  server in another container or on another machine, that nobody renewed the claim for 20 seconds.
 - **Which model.** `FLUXIQ_LLM_DEFAULT_MODEL` names the default model, for either provider, in the
   environment of `fluxiq dev`. It is a model name, never a key. Without it the engine uses its own
   default model. A FluxNode can name another with its `model` option.

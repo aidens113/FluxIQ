@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as pause } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   claimFluxIQDataRoot,
@@ -16,6 +17,8 @@ import {
 } from "../index.ts";
 
 const claimModule = pathToFileURL(fileURLToPath(new URL("../claim.ts", import.meta.url))).href;
+// Short windows so a test watches a heartbeat for a fraction of a second, not twenty.
+const lease = { renewMs: 40, staleAfterMs: 400 };
 let root: string;
 const children: ChildProcess[] = [];
 
@@ -28,10 +31,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** A second process that claims the root with the real module and holds it until killed. */
-async function holdInAnotherProcess(role: string): Promise<ChildProcess> {
+/**
+ * A second process that claims the root with the real module and holds it, renewing, until killed.
+ * `container` makes it claim as a process in a container with that hostname and no machine id.
+ */
+async function holdInAnotherProcess(role: string, container?: string): Promise<ChildProcess> {
+  const identity = container ? `identity: { pid: process.pid, startedAt: "container-start", platform: process.platform, machine: null, hostname: ${JSON.stringify(container)} },` : "";
   const script = `const { claimFluxIQDataRoot } = await import(${JSON.stringify(claimModule)});
-await claimFluxIQDataRoot(${JSON.stringify(root)}, { role: ${JSON.stringify(role)} });
+await claimFluxIQDataRoot(${JSON.stringify(root)}, { role: ${JSON.stringify(role)}, lease: ${JSON.stringify(lease)}, ${identity} });
 process.stdout.write("held\\n");
 setInterval(() => {}, 60_000);`;
   const child = spawn(process.execPath, ["--input-type=module", "-e", script], { stdio: ["ignore", "pipe", "pipe"] });
@@ -123,25 +130,88 @@ describe("claimFluxIQDataRoot", () => {
     expect(error.holder.kind).toBe("live");
   });
 
-  it("never reclaims a holder on another machine, and says how to clear a stale one", async () => {
-    await writeOwner({ pid: 4242, machine: "0".repeat(64), hostname: "another-host" });
-    const error = await refusal(claimFluxIQDataRoot(root, { role: "fluxiq dev" }));
-    expect(error.holder.kind).toBe("foreign");
-    expect(error.message).toContain("another-host");
-    expect(error.message).toContain(`delete ${fluxIQDataRootOwnerFile(root)}`);
+  it("reclaims the root of a container recreated after a crash: new hostname, no machine id, nobody renewing", async () => {
+    const crashed = await holdInAnotherProcess("the web panel", "container-a1");
+    await stop(crashed);
+    const self = await currentProcessIdentity();
+    const recreated: ProcessIdentity = { ...self, machine: null, hostname: "container-b2" };
+    const waits: number[] = [];
+    const claim = await claimFluxIQDataRoot(root, { role: "the web panel", identity: recreated, lease, onLost: () => undefined, onWaiting: (_owner, waitMs) => waits.push(waitMs) });
+    expect(waits).toEqual([lease.staleAfterMs]);
+    expect(JSON.parse(await readFile(claim.ownerFile, "utf8"))).toMatchObject({ token: claim.token, hostname: "container-b2" });
+    await claim.release();
   });
 
-  it("refuses rather than guesses when the owner file cannot be read", async () => {
+  it("still refuses a second server while a holder in another container keeps renewing", async () => {
+    const holder = await holdInAnotherProcess("the web panel", "container-a1");
+    const self = await currentProcessIdentity();
+    const error = await refusal(claimFluxIQDataRoot(root, { role: "fluxiq dev", identity: { ...self, machine: null, hostname: "container-b2" }, lease, onLost: () => undefined }));
+    expect(error.holder.kind).toBe("renewing");
+    expect(error.message).toContain(`the web panel (process ${holder.pid} on container-a1`);
+    expect(error.message).toContain("kept renewing its claim");
+    expect(error.message).not.toContain("delete");
+  });
+
+  it("reclaims an owner file that cannot be read once nobody renews it", async () => {
     await writeFile(fluxIQDataRootOwnerFile(root), "", "utf8");
-    const error = await refusal(claimFluxIQDataRoot(root, { role: "fluxiq dev" }));
-    expect(error.holder.kind).toBe("unreadable");
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: () => undefined });
+    expect(JSON.parse(await readFile(claim.ownerFile, "utf8"))).toMatchObject({ token: claim.token });
+    await claim.release();
   });
 
-  it("refuses when the holder is running but its start time was never recorded", async () => {
+  it("settles a running holder whose start time was never recorded by its heartbeat", async () => {
     const other = await aliveProcess();
     await writeOwner({ pid: other.pid!, startedAt: null });
-    const error = await refusal(claimFluxIQDataRoot(root, { role: "fluxiq dev" }));
-    expect(error.holder.kind).toBe("unverified");
+    const file = fluxIQDataRootOwnerFile(root);
+    const renewer = setInterval(() => void utimes(file, new Date(), new Date()), 40);
+    const error = await refusal(claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: () => undefined }).finally(() => clearInterval(renewer)));
+    expect(error.holder.kind).toBe("renewing");
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: () => undefined });
+    expect(JSON.parse(await readFile(claim.ownerFile, "utf8"))).toMatchObject({ token: claim.token });
+    await claim.release();
+  });
+
+  it("renews its own claim while it holds the root", async () => {
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: () => undefined });
+    const before = (await stat(claim.ownerFile)).mtimeMs;
+    await pause(lease.renewMs * 5);
+    expect((await stat(claim.ownerFile)).mtimeMs).toBeGreaterThan(before);
+    await claim.release();
+  });
+
+  it("tells a holder whose root was taken over to stop serving", async () => {
+    const lost: string[] = [];
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: (message) => lost.push(message) });
+    // Another process took the root over while this one was frozen.
+    await writeOwner({ pid: 4242, token: "taker", machine: null, hostname: "container-b2" });
+    await pause(lease.renewMs * 5);
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toContain(`FluxIQ stopped fluxiq dev: another process has taken over the FluxIQ data at ${root}.`);
+    await claim.release();
+    expect(JSON.parse(await readFile(claim.ownerFile, "utf8"))).toMatchObject({ token: "taker" });
+  });
+
+  it("writes its claim again when its owner file disappears, and stops quietly when the root itself is gone", async () => {
+    const lost: string[] = [];
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: (message) => lost.push(message) });
+    await rm(claim.ownerFile);
+    await pause(lease.renewMs * 5);
+    expect(JSON.parse(await readFile(claim.ownerFile, "utf8"))).toMatchObject({ token: claim.token });
+    await rm(root, { recursive: true, force: true });
+    await pause(lease.renewMs * 5);
+    expect(lost).toEqual([]);
+    await claim.release();
+  });
+
+  it("reclaims past a reclaim guard left by a claimant in another container that died", async () => {
+    const dead = await aliveProcess();
+    const deadPid = dead.pid!;
+    await stop(dead);
+    const owner = await writeOwner({ pid: deadPid, startedAt: "gone" });
+    await writeFile(`${fluxIQDataRootOwnerFile(root)}.reclaim`, JSON.stringify({ ...owner, token: "guard-token", machine: null, hostname: "container-a1" }), "utf8");
+    const claim = await claimFluxIQDataRoot(root, { role: "fluxiq dev", lease, onLost: () => undefined });
+    expect(existsSync(`${claim.ownerFile}.reclaim`)).toBe(false);
+    await claim.release();
   });
 
   it("reclaims past a reclaim guard left by a claimant that died", async () => {

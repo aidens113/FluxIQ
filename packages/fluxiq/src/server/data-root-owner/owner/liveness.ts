@@ -8,7 +8,9 @@ import type { FluxIQDataRootOwner } from "./record.ts";
  *   reused, including by this process), so the record can be reclaimed;
  * - `foreign`: another machine (or container) holds it, and no process check here can tell;
  * - `unverified`: the process exists but its start time could not be compared.
- * Only `dead` may be reclaimed. No clock timeout proves an owner dead.
+ * Only `dead` may be reclaimed at once. `foreign` and `unverified` are settled by the holder's
+ * heartbeat (`ownerHeartbeat.observe`): an owner that keeps renewing its file holds the root,
+ * one that stopped does not, whatever host wrote it.
  */
 export type FluxIQDataRootOwnerLiveness = { kind: "live" } | { kind: "dead" } | { kind: "foreign" } | { kind: "unverified" };
 

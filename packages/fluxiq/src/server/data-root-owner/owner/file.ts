@@ -3,7 +3,7 @@ import { link, open, readFile, rename, unlink } from "node:fs/promises";
 import { parseFluxIQDataRootOwner, type FluxIQDataRootOwner, type FluxIQDataRootOwnerRead } from "./record.ts";
 
 /**
- * The owner file's three operations. Creation is atomic and never leaves a half-written file:
+ * The owner file's operations. Creation is atomic and never leaves a half-written file:
  * the record is written to a private file and hard-linked into place, which fails when the
  * name exists. Removal of someone else's record compares its token after moving it aside, so a
  * claim made in between is put back rather than deleted.
@@ -38,6 +38,11 @@ export const ownerFile = Object.freeze({
 
   /** Removes the file only while it still holds `token`; true when it did. */
   async removeIfToken(file: string, token: string): Promise<boolean> {
+    return await ownerFile.removeIf(file, (read) => read.kind === "known" && read.owner.token === token);
+  },
+
+  /** Removes the file only while what it holds still `matches`; true when it did. */
+  async removeIf(file: string, matches: (read: FluxIQDataRootOwnerRead) => boolean): Promise<boolean> {
     const aside = `${file}.${randomUUID()}.removing`;
     try {
       await rename(file, aside);
@@ -46,7 +51,7 @@ export const ownerFile = Object.freeze({
       throw error;
     }
     const moved = await ownerFile.read(aside);
-    if (moved.kind === "known" && moved.owner.token === token) {
+    if (matches(moved)) {
       await unlink(aside);
       return true;
     }

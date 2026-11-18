@@ -145,9 +145,11 @@ export class AutomationStudioFlowStore {
     await this.projects.requireProject(input.projectId);
     const afterSequence = Math.max(0, Math.trunc(Number(input.afterSequence ?? 0)) || 0);
     const limit = Math.max(1, Math.min(500, Math.trunc(Number(input.limit ?? 100)) || 100));
-    if (!this.paths.root || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true };
+    if (!this.paths.root || !this.projectDatabasePool) return { events: [], cursor: afterSequence, hasMore: false, fallback: true, resync: false };
     const admin = await AutomationStudioProjectAdministration.open({ pool: this.projectDatabasePool, projectId: input.projectId });
     try {
+      const position = await admin.changeFeed.position(afterSequence);
+      if (position.resync) return { events: [], cursor: position.head, hasMore: false, fallback: false, resync: true };
       const events = await admin.changeFeed.listAfter(afterSequence, limit + 1);
       const page = events.slice(0, limit).map((event) => ({
         projectId: input.projectId,
@@ -165,7 +167,8 @@ export class AutomationStudioFlowStore {
         events: page,
         cursor: page.at(-1)?.sequence ?? afterSequence,
         hasMore: events.length > limit,
-        fallback: false
+        fallback: false,
+        resync: false
       };
     } finally {
       await admin.close();

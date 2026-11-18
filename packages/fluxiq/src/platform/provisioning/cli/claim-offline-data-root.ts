@@ -9,11 +9,16 @@ import { AccountsTransportError } from "./transport-error.ts";
  */
 export async function claimOfflineAccountsDataRoot(rootDir: string, options: Omit<ClaimFluxIQDataRootOptions, "role"> = {}): Promise<FluxIQDataRootClaim> {
   try {
-    return await claimFluxIQDataRoot(rootDir, { ...options, role: "offline fluxiq accounts" });
+    return await claimFluxIQDataRoot(rootDir, { onWaiting: waiting, ...options, role: "offline fluxiq accounts" });
   } catch (error) {
     if (!(error instanceof FluxIQDataRootHeldError)) throw error;
     throw new AccountsTransportError(refusal(error));
   }
+}
+
+function waiting(_owner: unknown, waitMs: number): void {
+  process.stderr.write(`Checking whether the server recorded for this data root is still running (up to ${Math.round(waitMs / 1000)} seconds)...
+`);
 }
 
 function refusal(error: FluxIQDataRootHeldError): string {
@@ -23,6 +28,5 @@ function refusal(error: FluxIQDataRootHeldError): string {
     "Run the command against the live server instead: leave out --offline and set FLUXIQ_PROVISIONING_LISTEN (host:port) and FLUXIQ_PROVISIONING_TOKEN_FILE to that server's private provisioning listener.",
     "If the server has no provisioning listener (`fluxiq dev` has none), stop it and run the command again."
   ];
-  if (error.holder.kind !== "live") lines.push(`If no FluxIQ server is running there, delete ${error.ownerFile} and run the command again.`);
   return lines.join("\n");
 }

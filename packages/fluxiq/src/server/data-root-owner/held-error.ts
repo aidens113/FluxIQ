@@ -1,9 +1,15 @@
 import type { FluxIQDataRootOwner } from "./owner/index.ts";
 
-/** Why a claim was refused: the root's owner, as far as this process could tell. */
+/**
+ * Why a claim was refused:
+ * - `live`: the holder is a running process on this machine, checked by its id and start time;
+ * - `renewing`: the holder could not be checked that way (another machine or container, or an
+ *   unreadable start time or owner file), but it kept renewing its claim while this process watched;
+ * - `contended`: the owner file kept changing hands while this process tried to take it.
+ */
 export type FluxIQDataRootHolder =
-  | { kind: "live" | "foreign" | "unverified"; owner: FluxIQDataRootOwner }
-  | { kind: "unreadable" }
+  | { kind: "live"; owner: FluxIQDataRootOwner }
+  | { kind: "renewing"; owner: FluxIQDataRootOwner | null }
   | { kind: "contended" };
 
 /**
@@ -16,7 +22,7 @@ export class FluxIQDataRootHeldError extends Error {
   readonly ownerFile: string;
   readonly holder: FluxIQDataRootHolder;
   constructor(rootDir: string, ownerFile: string, holder: FluxIQDataRootHolder, role: string) {
-    super(describe(rootDir, ownerFile, holder, role));
+    super(describe(rootDir, holder, role));
     this.name = "FluxIQDataRootHeldError";
     this.rootDir = rootDir;
     this.ownerFile = ownerFile;
@@ -29,30 +35,25 @@ export class FluxIQDataRootHeldError extends Error {
   }
 }
 
-function describe(rootDir: string, file: string, holder: FluxIQDataRootHolder, role: string): string {
+function describe(rootDir: string, holder: FluxIQDataRootHolder, role: string): string {
   const head = `Cannot start ${role}: the FluxIQ data at ${rootDir} is already being served by ${summary(holder)}.`;
   const rule = "Only one process may serve a data root at a time, because each keeps its own live view of the data and would not see the other's changes.";
-  return [head, rule, advice(holder, file)].join("\n");
+  return [head, rule, advice(holder)].join("\n");
 }
 
 function summary(holder: FluxIQDataRootHolder): string {
-  if (holder.kind === "unreadable") return "a process whose owner file cannot be read";
   if (holder.kind === "contended") return "another process that is starting or stopping at the same moment";
+  if (!holder.owner) return "a process whose owner file cannot be read but is still being renewed";
   const { owner } = holder;
   return `${owner.role} (process ${owner.pid} on ${owner.hostname}, since ${owner.claimedAt})`;
 }
 
-function advice(holder: FluxIQDataRootHolder, file: string): string {
-  const clear = `If no FluxIQ server is running there, delete ${file} and start again.`;
+function advice(holder: FluxIQDataRootHolder): string {
   switch (holder.kind) {
     case "live":
-      return `Stop that process first, or give this one a different data directory.`;
-    case "foreign":
-      return `That process runs on another machine or container, so this one cannot check whether it is still running. Stop it first. ${clear}`;
-    case "unverified":
-      return `Process ${holder.owner.pid} is running, but its start time could not be read to confirm it is the same process. Stop it first. ${clear}`;
-    case "unreadable":
-      return clear;
+      return "Stop that process first, or give this one a different data directory.";
+    case "renewing":
+      return "It kept renewing its claim while this process watched, so it is still running, possibly on another machine or in another container. Stop it first, or give this one a different data directory.";
     case "contended":
       return "Try again once the other process has started or stopped.";
   }

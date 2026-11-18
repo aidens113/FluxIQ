@@ -6,3 +6,4 @@ export * from "./held-error.ts";
 export * from "./owner/index.ts";
 export * from "./process/index.ts";
 export * from "./process-claims.ts";
+export * from "./renewal.ts";

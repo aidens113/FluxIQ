@@ -14,8 +14,12 @@ import { workspaceFluxIQ } from "../workspace-fluxiq";
 // as before, under a single-tenancy profile; under `service`, IAM on every
 // instance and a signed-in person routed to their workspace's own instance.
 
-const ownerClaim = vi.hoisted(() => ({ prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })) }));
-vi.mock("../../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare }));
+const ownerClaim = vi.hoisted(() => ({
+  prepare: vi.fn(async (_input: unknown) => ({ claimed: false, codeFile: "/setup-code-file" })),
+  // The local profile's first-run setup link (f9a1ae37c) is not this file's subject.
+  prepareLocalFirstRun: vi.fn(async (_input: unknown) => ({ state: "claimed" as const, link: null, revokedSessions: 0 }))
+}));
+vi.mock("../../../server/owner-claim", () => ({ prepareOwnerClaim: ownerClaim.prepare, prepareLocalFirstRun: ownerClaim.prepareLocalFirstRun }));
 
 const ENV_KEYS = [
   "FLUXIQ_IMPORTER_ROOT", "FLUXIQ_CLIENT_GATEWAY_ENABLED", "FLUXIQ_PROFILE", "FLUXIQ_PUBLIC_ORIGIN", "FLUXIQ_PROVISIONING_LISTEN",

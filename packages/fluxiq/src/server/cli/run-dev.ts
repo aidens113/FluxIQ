@@ -43,7 +43,10 @@ export async function runDev(args: DevArguments, print: (line: string) => void =
   const host = hostPath ? { path: hostPath, register: await loadFluxIQHostRegistration(hostPath) } : null;
   // The gateway tells a pairing client where to connect from this (`programs/_shared/runtime.ts`), as the web panel sets it.
   if (args.gatewayPort !== 0) process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= `ws://127.0.0.1:${args.gatewayPort}/client`;
-  const claim = await claimFluxIQDataRoot(args.dataDir, { role: "fluxiq dev" });
+  const claim = await claimFluxIQDataRoot(args.dataDir, {
+    role: "fluxiq dev",
+    onWaiting: (owner, waitMs) => print(`Checking whether ${owner ? `${owner.role} (process ${owner.pid} on ${owner.hostname})` : "the server recorded for this data directory"} is still running (up to ${Math.round(waitMs / 1000)} seconds)...`)
+  });
   let fluxiq: FluxIQ;
   try {
     fluxiq = await openHostInstance(args.dataDir, host);

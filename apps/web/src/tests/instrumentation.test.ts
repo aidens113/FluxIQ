@@ -30,12 +30,30 @@ describe("register", () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
-  it("leaves any other startup failure to Next", async () => {
+  it("exits on any other startup failure too, with a plain message and its details", async () => {
     const failure = new Error("storage could not be initialized");
     initialize.mockRejectedValue(failure);
     const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as typeof process.exit);
-    await expect(register()).rejects.toBe(failure);
-    expect(exit).not.toHaveBeenCalled();
+    await register();
+    const written = String(writeSync.mock.calls[0]?.[1]);
+    expect(writeSync.mock.calls[0]?.[0]).toBe(2);
+    expect(written.startsWith("The FluxIQ web panel could not start: storage could not be initialized")).toBe(true);
+    expect(written).toContain("Details:");
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it("exits when a thrown value is not an Error", async () => {
+    initialize.mockRejectedValue("host module missing");
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as typeof process.exit);
+    await register();
+    expect(writeSync).toHaveBeenCalledWith(2, "The FluxIQ web panel could not start: host module missing\n");
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it("does nothing on the edge runtime", async () => {
+    process.env.NEXT_RUNTIME = "edge";
+    await register();
+    expect(initialize).not.toHaveBeenCalled();
   });
 
   it("starts the runtime once on the node runtime", async () => {
