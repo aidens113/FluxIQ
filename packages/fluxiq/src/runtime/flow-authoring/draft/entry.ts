@@ -183,9 +183,11 @@ function shownBindable(step: AutomationStudioFlowDraftStep): string[] | undefine
 }
 
 function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
+  // Stable call bookkeeping only; a check or prior execution never supplies this step's identity.
+  const call = Object.hasOwn(step, "callId") && typeof step.callId === "string" && step.callId ? { callId: step.callId } : {};
   // The attempt a rerun replaced: which step stands in its place now, and not the argument it ran with (header).
   const replacing = automationStudioFlowDraftReplacingStep(all, step);
-  if (replacing) return { step: step.position, actionId: step.actionId, replacedBy: replacing.position, inResult: false };
+  if (replacing) return { step: step.position, actionId: step.actionId, replacedBy: replacing.position, inResult: false, ...call };
   const bindable = automationStudioFlowDraftStepIsProposed(step) ? shownBindable(step) : undefined;
   return {
     step: step.position,
@@ -248,7 +250,8 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     // sentence here would be paid for on every request by every build,
     // including the ones whose Flow is a straight line.
     ...(step.routing ? { runs: routingLine(step.routing, all) } : {}),
-    ...(step.settings ? { settings: step.settings } : {})
+    ...(step.settings ? { settings: step.settings } : {}),
+    ...call
   };
 }
 
