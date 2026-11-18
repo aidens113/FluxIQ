@@ -54,12 +54,13 @@ COPY . .
 # next.config.ts add `output: "standalone"`. The image has no git, so the build
 # cache runs every step uncached (scripts/build-cache/run-step.mjs).
 ENV FLUXIQ_WEB_STANDALONE=1
-# `next build` type-checks the whole panel in one process, which needs more V8
-# heap than Node's default old-space limit allows on a small build VM (a 4 GB
-# Docker VM aborted with FatalProcessOutOfMemory). The larger heap applies to
-# this build step only, never the runtime, and type checking stays on. Keep it
-# under the build machine's memory.
-RUN NODE_OPTIONS=--max-old-space-size=3584 pnpm build
+# `next build` type-checks the whole panel in a worker process, which needs more
+# V8 heap than Node's default old-space limit allows (a 4 GB Docker VM aborted
+# with FatalProcessOutOfMemory). `pnpm build` runs apps/web/scripts/next-build,
+# which sets that heap (3584 MB, BUILD_HEAP_MB in build-heap-mb.mjs) for the
+# build only, never the runtime, so image and local builds share one value.
+# Type checking stays on. Keep it under the build machine's memory.
+RUN pnpm build
 
 # --- runtime: the standalone server, non-root, writable only at /data -------
 FROM ${NODE_IMAGE} AS runtime

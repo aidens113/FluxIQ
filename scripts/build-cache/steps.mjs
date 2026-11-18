@@ -100,7 +100,7 @@ export const STEPS = Object.freeze({
     kind: "build",
     // The last command fails the step when the server output still embeds
     // Core's unstamped runtime identity, i.e. compiled Core from source.
-    command: "node scripts/build-client-gateway-server.mjs && next build --turbopack && node ../../scripts/web-build/identity/check-web-build.mjs",
+    command: "node scripts/build-client-gateway-server.mjs && node scripts/next-build/run-next-build.mjs && node ../../scripts/web-build/identity/check-web-build.mjs",
     // `.next/cache` is Next's own compile and fetch cache, not the build: it
     // survives a build, is never restored and never digested.
     outputs: [{ path: ".next", exclude: ["cache"] }, { path: ".server-runtime" }],
