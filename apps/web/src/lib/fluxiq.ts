@@ -2,6 +2,7 @@ import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { getBrowserTrustRepository } from "../server/browser-trust";
 import { createWorkspaceTrustAuthority, workspaceKeyPrincipalAuthority, createWorkspaceSessionMetadata } from "../server/connect";
 import { FluxIQ, fluxiqLayoutV3Paths, removeFluxIQWorkspaceRoot, type FluxIQOptions } from "fluxiq";
+import { claimFluxIQDataRoot } from "fluxiq/server";
 import type { HeldKeys } from "fluxiq/secret-keys";
 import type { IdentityAuthorityOwner } from "fluxiq/auth";
 import { existsSync } from "node:fs";
@@ -88,6 +89,7 @@ export function getFluxIQWorkspaces(): FluxIQWorkspaceManager {
 }
 
 export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
+  await claimFluxIQDataRoot(resolveFluxIQWebHostRoot(process.cwd()), { role: "the web panel" });
   const settings = resolveFluxIQDeploymentSettings(process.env);
   const globalState = globalThis as FluxIQWebGlobal;
   globalState.__fluxiqWebPreparation ??= (async () => {
