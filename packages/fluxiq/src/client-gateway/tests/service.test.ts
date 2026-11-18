@@ -318,7 +318,7 @@ describe("ClientGatewayService", () => {
     expect(restartedGateway.snapshot().trustedClients[0]).not.toHaveProperty("tokenHash");
   });
 
-  it("requires pairing for expired, revoked, and client-mismatched credentials", async () => {
+  it("requires pairing for expired and client-mismatched credentials, and tells a revoked one it was revoked instead", async () => {
     let now = 1_000;
     const tokens = ["expiry-token", "mismatch-token", "revoked-token"];
     const gateway = new ClientGatewayService({ now: () => now, trustedClientTtlMs: 100, createToken: () => tokens.shift() ?? "unused" });
@@ -341,7 +341,9 @@ describe("ClientGatewayService", () => {
     expect(gateway.snapshot().sessions.find((session) => session.sessionId === revoked.sessionId)?.status).toBe("disconnected");
     const revokedReconnect = gateway.connect();
     await gateway.receive(revokedReconnect.sessionId, clientMessage("client.hello", { clientId: "extension.revoked", clientType: "extension", token: revoked.token }));
-    expect(gateway.snapshot().sessions.find((session) => session.sessionId === revokedReconnect.sessionId)?.status).toBe("pairing_required");
+    // Revoked by a person: told so and closed, never offered pairing (`revoked-credential.test.ts`).
+    expect(gateway.outbound(revokedReconnect.sessionId).map((message) => message.type)).toEqual(["server.revoked", "server.disconnect"]);
+    expect(gateway.snapshot().sessions.find((session) => session.sessionId === revokedReconnect.sessionId)?.status).toBe("disconnected");
   });
 
   it("keeps the recording a start opened while a client Stop was being handled as the session's active recording", async () => {

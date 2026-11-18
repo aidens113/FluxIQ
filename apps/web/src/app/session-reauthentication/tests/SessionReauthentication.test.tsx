@@ -96,6 +96,27 @@ describe("authenticated root session recovery", () => {
     expect(hasPendingProgramAuthentication()).toBe(false);
   });
 
+  it("does not treat the temporary credential as a restored session and reloads onto the setup form", async () => {
+    const fetch = vi.fn(async (url: string) => (url === "/api/auth/login"
+      ? response(200, { ok: true, payload: { requiresCredentialSetup: true } })
+      : response(401, { ok: false, error: "Expired" })));
+    vi.stubGlobal("fetch", fetch);
+    const reload = vi.fn();
+    Object.assign(browser.location, { reload });
+    await mount();
+    let pending!: ReturnType<typeof api.get>;
+    await act(async () => {
+      pending = api.get("snapshot");
+      await flush();
+    });
+    await credentials();
+    await act(async () => { await renderer!.root.findByType("form").props.onSubmit({ preventDefault() {} }); });
+    await expect(pending).resolves.toMatchObject({ ok: false });
+    expect(fetch.mock.calls.filter(([url]) => url.includes("secret-keys"))).toHaveLength(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(hasPendingProgramAuthentication()).toBe(false);
+  });
+
   it("coalesces concurrent authentication requests and cancellation releases all waiters", async () => {
     await mount();
     let first!: Promise<boolean>; let second!: Promise<boolean>;
