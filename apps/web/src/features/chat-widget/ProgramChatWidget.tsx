@@ -13,6 +13,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ChatAttachment, ChatReauthorizeRequest } from "@fluxiq/ui-components";
 import type { ConversationOnScreen } from "../automation-studio/conversation";
 import { useProgramTransport } from "../automation-studio/data/use-program-transport";
+import { AI_KEYS_HREF, ASSISTANT_MODEL_HREF, createPanelModelKeysPort } from "../model-keys";
 import { createPanelAskPort } from "./asks";
 import { createPanelAttachmentPort, readAttachment } from "./attachments";
 import { ChatWidget } from "./ChatWidget";
@@ -52,9 +53,12 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
   // The project of the thread on screen, which may be any the person can see; the host's own when none is chosen.
   const shown = useRef<string | undefined>(undefined);
 
+  // The key card the dock's empty state shows reads Core's real key state through this port.
+  const modelKeys = useMemo(() => createPanelModelKeysPort(secretKeys), [secretKeys]);
   const transport = useMemo(() => createProgramChatTransport(studio, {
     projectId: () => shown.current ?? latest.current.projectId ?? undefined,
     secretKeys,
+    modelKeys,
     onScreen: () => latest.current.onScreen ?? {},
     // The panel-wide assistant talks to the panel's own endpoints; whether this chat is that one is fixed when it is made.
     // The open project's threads join the person's own in the list, so choices and questions raised in them are answered here.
@@ -65,7 +69,7 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
         return projectId ? { projectId, name: latest.current.projectName ?? undefined } : undefined;
       }
     } } : {})
-  }), [studio, secretKeys]);
+  }), [studio, secretKeys, modelKeys]);
 
   // The chat reads its options once, when it is made; a later change of the requested thread is not a new chat.
   const requestedConversationId = useRef(props.requestedConversationId).current;
@@ -77,6 +81,7 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
       canOpen: () => latest.current.onOpenAttachment !== undefined
     }),
     openControl: createPanelOpenControl((href) => routerRef.current.push(href)),
+    onModelKeyAction: (action) => routerRef.current.push(action === "change-model" ? ASSISTANT_MODEL_HREF : AI_KEYS_HREF),
     threads: {
       ...(requestedConversationId ? { initialConversationId: requestedConversationId } : {}),
       onSelected: (conversationId) => latest.current.onSelectedConversationChange?.(conversationId)

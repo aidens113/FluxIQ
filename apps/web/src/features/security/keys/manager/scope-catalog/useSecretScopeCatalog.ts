@@ -58,7 +58,7 @@ export function useSecretScopeCatalog({ api, active, epoch, isOwner }: Options) 
    const domains = options(object(directory) ? directory.domains : null, "domain"), rows = options(projects.payload?.projects, "project");
    if (!domains || !rows) throw Error("invalid catalog");
    setState(s => ({ ...s, domains, projects: rows, catalogError: "", error: s.projectError }));
-  } catch { if (current() && !controller.signal.aborted && catalog.current === controller) setState(s => ({ ...s, catalogError: "Scope choices could not be loaded. Try again.", error: "Scope choices could not be loaded. Try again." })); }
+  } catch { if (current() && !controller.signal.aborted && catalog.current === controller) setState(s => ({ ...s, catalogError: "The choices could not be loaded. Try again.", error: "The choices could not be loaded. Try again." })); }
   finally { if (current() && catalog.current === controller) {
     catalog.current = null;
     catalogBusy.current = false;

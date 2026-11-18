@@ -1,24 +1,32 @@
-/* Settings: one column that never scrolls the page sideways, down to a phone. */
+/* Settings: one column that never scrolls the page sideways, down to a phone. Colours and sizes come from tokens. */
 .settings-page { max-width: 720px; min-width: 0; display: grid; gap: 24px; }
 .settings-page section, .settings-page details { min-width: 0; }
-.settings-page form, .settings-add-key, .settings-remove { display: grid; gap: 8px; max-width: 100%; }
+.settings-page section[id] { scroll-margin-top: var(--space-lg, 20px); }
+.settings-page form, .settings-add-key, .settings-remove, .settings-replace { display: grid; gap: 8px; max-width: 100%; }
 .settings-page label { display: grid; gap: 4px; min-width: 0; }
-.settings-page input, .settings-page select { min-width: 0; max-width: 100%; min-height: 36px; }
+/* Text boxes and lists are tall enough to touch; a radio or a checkbox keeps its own small size. */
+.settings-page input:not([type="radio"]):not([type="checkbox"]), .settings-page select { min-width: 0; max-width: 100%; min-height: var(--control-height-default, 36px); }
+.settings-page input[type="radio"], .settings-page input[type="checkbox"] { width: 1rem; height: 1rem; min-height: 0; margin: 0; flex: none; accent-color: var(--accent, currentColor); }
 .settings-keys { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-keys legend { padding: 0; color: var(--muted); font-size: var(--font-size-compact, 0.9rem); }
 .settings-keys ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
-.settings-keys li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px; border: 1px solid var(--divider); border-radius: 8px; }
+.settings-keys li { display: grid; gap: 8px; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); min-width: 0; }
 .settings-keys li[data-selected="true"] { border-color: var(--focus); }
-.settings-key-default { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
-.settings-key-facts { color: var(--text-dim); overflow-wrap: anywhere; }
+.settings-key-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.settings-key-name { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: var(--font-weight-semibold, 600); text-align: left; cursor: pointer; min-height: 0; overflow-wrap: anywhere; }
+.settings-key-facts { color: var(--muted); font-size: var(--font-size-compact, 0.9rem); overflow-wrap: anywhere; }
+.settings-key-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.settings-key-default, .settings-key-offer { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: var(--font-size-compact, 0.9rem); }
+.settings-key-buttons, .settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm, 8px); }
 .settings-assistant-row { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; }
 .settings-notice { padding: 8px; border: 1px solid var(--warning); border-radius: 8px; }
 .settings-advanced ul { padding-left: 20px; overflow-wrap: anywhere; }
-.settings-page button { min-height: 36px; }
+.settings-page button { min-height: var(--control-height-default, 36px); }
+.settings-page .settings-key-name { min-height: 0; }
+.settings-add-another > summary { cursor: pointer; }
+.settings-add-another[open] > summary { margin-bottom: var(--space-sm, 8px); }
 .settings-appearance { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-appearance-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
-.settings-copy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 6px 0; min-width: 0; }
-.settings-copy-label { font-weight: 600; flex-basis: 100%; }
-.settings-copy-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; margin: 0; }
 
 /* Sections read as one family: a hairline between them, the same heading rhythm, the same muted notes. */
 .settings-page > section, .settings-page > details { padding-top: var(--space-lg, 20px); border-top: 1px solid var(--divider); }
@@ -26,19 +34,8 @@
 .settings-page h2, .settings-page h3 { margin: 0; }
 .settings-page h3 { font-size: var(--font-size-body, 1rem); }
 .settings-page section > p { margin: var(--space-xs, 4px) 0 0; }
+.settings-page section > .panel-model-key-card { margin: var(--space-sm, 8px) 0; }
 .settings-muted { color: var(--muted); font-size: var(--font-size-compact); overflow-wrap: anywhere; }
 .settings-problem { color: var(--danger); margin: 0; }
 .settings-page .field { max-width: 32rem; }
 .settings-page .button { min-height: var(--control-height-default, 36px); }
-
-/* Connect a client */
-.settings-connect { display: grid; gap: var(--space-md, 12px); }
-.settings-connect > h3 { margin-top: var(--space-sm, 8px); }
-.settings-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; overflow-wrap: anywhere; }
-.settings-copy { padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); background: var(--surface-muted, transparent); }
-.settings-copy-value { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--font-size-compact); }
-.settings-pairings { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm, 8px); }
-.settings-pairing { display: grid; gap: 4px; min-width: 0; padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); }
-.settings-pairing-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm, 8px); }
-.settings-pairing-dialog { color: var(--accent-text); font-weight: var(--font-weight-semibold, 600); }
-.settings-copy pre.settings-copy-value { flex: 1 1 100%; max-height: 14rem; overflow: auto; }

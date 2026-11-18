@@ -1,5 +1,6 @@
 import type { ConversationOnScreen } from "../../automation-studio/conversation";
 import type { ProgramCommandTransport } from "../../automation-studio/data/program-transport";
+import type { PanelModelKeysPort } from "../../model-keys";
 import type { PanelConversationOptions } from "./panel-conversation-port";
 import type { PanelChangesPort } from "../../panel-changes";
 import type { ActivityTimers } from "../activity";
@@ -18,6 +19,11 @@ export type ProgramChatTransportOptions = {
    * Absent, the chat has no `models` port and never claims a key is missing.
    */
   secretKeys?: ProgramCommandTransport;
+  /**
+   * The key card's port over the same program (`createPanelModelKeysPort`): handed to the chat as `modelKeys`, so
+   * the empty state shows the card with Core's real key state, and told after a message that failed.
+   */
+  modelKeys?: PanelModelKeysPort;
   /** What the panel has open, asked at each send and each confirmed run so "run it" means the Flow on screen. */
   onScreen?(): ConversationOnScreen;
   /** The clock and timers the activity's paced status runs on; the browser's own when absent. */

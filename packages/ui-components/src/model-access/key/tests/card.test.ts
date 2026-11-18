@@ -88,11 +88,31 @@ test("while the state is read the card says it is checking; each state then show
   });
 });
 
-test("Change model, Try now and How to update go to the host; the other three open the form", async () => {
+test("Try now reads the key again in place; nothing goes to the host", async () => {
+  await withFakeDocument(async () => {
+    let reads = 0;
+    const { value } = port(STATES[4]!);
+    const counted: ModelKeysPort = {
+      ...value,
+      readState: async () => {
+        reads += 1;
+        return value.readState();
+      }
+    };
+    const { root, actions } = mount(counted);
+    await settle();
+    const before = reads;
+    one(root, "model-key-action").dispatch("click");
+    await settle();
+    assert.deepEqual(actions, []);
+    assert.equal(reads, before + 1);
+  });
+});
+
+test("Change model and How to update go to the host; the other three open the form", async () => {
   await withFakeDocument(async () => {
     const pairs: Array<[ModelAccessState, ModelKeyHostAction]> = [
       [STATES[0]!, "change-model"],
-      [STATES[4]!, "try-now"],
       [STATES[5]!, "how-to-update"]
     ];
     for (const [state, expected] of pairs) {

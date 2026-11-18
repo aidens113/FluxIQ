@@ -171,6 +171,7 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
       case "add-key": return open("add");
       case "paste-again":
       case "replace-key": return open(keyId === undefined ? "add" : "replace");
+      case "try-now": return void refresh();
       default: return options.onAction(shown.action.id);
     }
   });

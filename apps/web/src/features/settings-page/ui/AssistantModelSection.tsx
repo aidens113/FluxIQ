@@ -18,7 +18,7 @@ export function AssistantModelSection(props: { data: SettingsData }) {
     setStatus(failure || "Saved.");
   }
   return (
-    <section aria-labelledby="settings-assistant">
+    <section id="assistant-model" aria-labelledby="settings-assistant">
       <h2 id="settings-assistant">The assistant</h2>
       {choice.workspace && keyStatus === "not-chosen" ? (
         <p className="settings-assistant-row">No key pays for your messages to the assistant yet. An owner or administrator of this workspace chooses one in Settings, from a key its holder has offered to the workspace.</p>

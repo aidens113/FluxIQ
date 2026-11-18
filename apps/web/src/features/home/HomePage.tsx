@@ -3,8 +3,10 @@
 import { useCallback, useMemo } from "react";
 import { useProgramTransport } from "../automation-studio/data/use-program-transport";
 import { PublishPanelPage, useEngineReading, usePanelContext, type EngineStatus } from "../panel-shell";
-import { loadAllRuns, loadClients, loadRuns, loadThreads, useResource, type Resource } from "./data";
-import { HomeConnected, HomeEngine, HomeNeedsYou, HomeRecentRuns, HomeToday } from "./sections";
+import { useGatewayChanges } from "../client-gateway-changes";
+import { pendingPairings } from "../settings-page/connect";
+import { loadAllRuns, loadClients, loadRuns, loadThreads, useReloadOnChange, useResource, type Resource } from "./data";
+import { HomeAiKey, HomeConnected, HomeEngine, HomeNeedsYou, HomeRecentRuns, HomeToday } from "./sections";
 import "./home.css";
 
 /** The panel's Home: how the engine is, what is connected, what needs the person, and the latest runs. */
@@ -25,15 +27,20 @@ export function HomePage() {
   );
   const threads = useResource(useCallback((signal: AbortSignal) => loadThreads(studio, signal), [studio]));
   const clients = useResource(useCallback((signal: AbortSignal) => loadClients(runtime, signal), [runtime]));
+  // The client gateway's own change stream says when a browser asks to connect, is approved or leaves: read again then, not on a timer.
+  const gateway = useGatewayChanges();
+  useReloadOnChange(clients, gateway.revision);
   const now = Date.now();
+  const waiting = pendingPairings(gateway.snapshot?.pairings, now).length;
   return (
     <div className="home">
       <PublishPanelPage page="home" />
       <h1>Home</h1>
+      <HomeAiKey />
       <div className="home-grid">
         <HomeEngine engine={engine} />
         <HomeToday runs={runs} now={now} />
-        <HomeConnected clients={clients} now={now} />
+        <HomeConnected clients={clients} waiting={waiting} now={now} />
         <HomeNeedsYou threads={threads} runs={runs} />
       </div>
       <HomeRecentRuns runs={runs} now={now} />

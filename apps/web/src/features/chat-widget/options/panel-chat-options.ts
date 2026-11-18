@@ -3,7 +3,7 @@
 // Only what each surface owns is passed in (the ports, which thread the host
 // restores, and who hears the chat's name and how many threads wait).
 
-import type { ChatAskPort, ChatAttachmentPort, ChatOpenControlFactory, ChatThreadsOptions, ChatWidgetOptions } from "@fluxiq/ui-components";
+import type { ChatAskPort, ChatAttachmentPort, ChatOpenControlFactory, ChatThreadsOptions, ChatWidgetOptions, ModelKeyHostAction } from "@fluxiq/ui-components";
 import { CONVERSATION_TEXT_MAX } from "../../automation-studio/conversation";
 import { formatRuntimeTimestamp } from "../../automation-studio/runtime";
 import { PANEL_CHAT_WELCOME } from "./welcome";
@@ -15,6 +15,8 @@ export type PanelChatOptionsInput = {
   attachments: ChatAttachmentPort;
   openControl: ChatOpenControlFactory;
   threads: Omit<ChatThreadsOptions, "unavailableReason">;
+  /** The key card's host actions: Change model opens the assistant's model, the rest the AI keys. */
+  onModelKeyAction?: (action: ModelKeyHostAction) => void;
 };
 
 /** The chat's options for this panel, without the owner key (the mount knows the project). */
@@ -24,6 +26,7 @@ export function panelChatOptions(input: PanelChatOptionsInput): Omit<ChatWidgetO
     asks: input.asks,
     attachments: input.attachments,
     openControl: input.openControl,
+    ...(input.onModelKeyAction ? { onModelKeyAction: input.onModelKeyAction } : {}),
     welcome: PANEL_CHAT_WELCOME,
     fallback: {
       title: "Sign in again to keep chatting.",

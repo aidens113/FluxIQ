@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { usePanelModelKeys } from "../../model-keys";
 import { PublishPanelPage } from "../../panel-shell";
-import { useSettingsData, useSettingsPort } from "../data";
+import { useSettingsData, useSettingsPort, useWorkspaceHasOthers } from "../data";
 import { AiKeysSection } from "./AiKeysSection";
 import { AppearanceSection } from "../appearance";
 import { StartingHumannessSection } from "../humanness";
-import { ConnectClientSection } from "../connect";
 import { AllowanceSection } from "./AllowanceSection";
 import type { EngineTool } from "../model";
 import { AssistantModelSection } from "./AssistantModelSection";
@@ -16,6 +16,8 @@ import "./settings-page.css";
 /** `engineTools`: the Advanced tools the deployment's panel preset lists; `mayChooseForWorkspace`: whether the signed-in role may set the workspace's default and assistant key. The route passes both from the server. */
 export function SettingsPage(props: { engineTools?: readonly EngineTool[]; mayChooseForWorkspace?: boolean }) {
   const port = useSettingsPort();
+  const modelKeys = usePanelModelKeys();
+  const sharing = useWorkspaceHasOthers();
   const data = useSettingsData(port, { mayChooseForWorkspace: props.mayChooseForWorkspace });
   const [selectedId, setSelectedId] = useState("");
   const selected = data.keys.some((key) => key.id === selectedId) ? selectedId : "";
@@ -25,14 +27,17 @@ export function SettingsPage(props: { engineTools?: readonly EngineTool[]; mayCh
       <h1>Settings</h1>
       {data.loading ? <p role="status">Loading your settings...</p> : null}
       {data.loadError ? <p role="alert">{data.loadError}</p> : null}
+      <AiKeysSection data={data} port={modelKeys} sharing={sharing} selectedId={selected} onSelect={setSelectedId} />
       {data.loading || data.loadError ? null : (
         <>
-          <AiKeysSection data={data} selectedId={selected} onSelect={setSelectedId} />
           <AssistantModelSection data={data} />
           <AllowanceSection data={data} />
         </>
       )}
-      <ConnectClientSection />
+      <section aria-labelledby="settings-connect">
+        <h2 id="settings-connect">Connect a browser or app</h2>
+        <p>Connecting and approving browsers and apps is under <a href="/security/devices">Security, Devices and apps</a>.</p>
+      </section>
       <StartingHumannessSection port={port} />
       <AppearanceSection />
       <EngineToolsSection {...(props.engineTools ? { tools: props.engineTools } : {})} />

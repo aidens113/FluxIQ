@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { PanelModelKeysPort } from "../../../model-keys";
 import type { SettingsData } from "../../data";
 import type { SettingsKey, SettingsModelChoices } from "../../model";
 import { AiKeysSection } from "../AiKeysSection";
@@ -9,9 +11,10 @@ const refused = async () => "That did not work. Try again.";
 
 /** What the section reads; the actions refuse, since a render never calls them. */
 function data(keys: SettingsKey[], choices: SettingsModelChoices): SettingsData {
-  return { loading: false, loadError: "", keys, choices, allowance: null, setDefault: refused, saveAssistant: refused, saveAllowance: refused, addKey: refused, remove: async () => ({ kind: "failed", error: "" }) } as unknown as SettingsData;
+  return { loading: false, loadError: "", keys, choices, allowance: null, setDefault: refused, saveAssistant: refused, saveAllowance: refused, addKey: refused, replace: refused, remove: async () => ({ kind: "refused", message: "" }), reload: async () => undefined } as unknown as SettingsData;
 }
-const render = (keys: SettingsKey[], choices: SettingsModelChoices) => renderToStaticMarkup(createElement(AiKeysSection, { data: data(keys, choices), selectedId: "", onSelect: () => undefined }));
+const port = { onChange: () => () => undefined, notify: () => undefined } as unknown as PanelModelKeysPort;
+const render = (keys: SettingsKey[], choices: SettingsModelChoices, sharing = true) => renderToStaticMarkup(createElement(AiKeysSection, { data: data(keys, choices), port, sharing, selectedId: "", onSelect: () => undefined }));
 
 const MINE: SettingsKey[] = [
   { id: "mine-1", name: "My key", kind: "llm", provider: "Anthropic", enabled: true },
@@ -24,7 +27,7 @@ describe("AiKeysSection", () => {
     const html = render(MINE, choices({ mayChoose: true }));
     expect(html.match(/type="radio"/g)).toHaveLength(2);
     expect(html).toContain("Make My spare the default key");
-    expect(html).toContain("pick another below any time");
+    expect(html).toContain("Replace My key");
   });
 
   it("offers it when the panel says nothing about the person, and the server decides", () => {
@@ -84,5 +87,32 @@ describe("AiKeysSection", () => {
     expect(html).not.toContain("No key is chosen to pay");
     expect(html).not.toContain("Choose My key as the workspace’s key");
     expect(html).not.toContain("settings-workspace-key");
+  });
+
+  it("hides sharing entirely when the workspace has one person: no offer, no workspace key, no sharing sentence", () => {
+    const keys: SettingsKey[] = [{ ...MINE[0]!, heldByYou: true, offeredToWorkspace: true }, { id: "other", name: "Other key", kind: "llm", provider: "Anthropic", enabled: true, offeredToWorkspace: true }];
+    const html = render(keys, choices({ mayChoose: true, assistantKeyChosen: true, assistantKeyOffered: false }), false);
+    expect(html).not.toContain("Offer My key to the workspace");
+    expect(html).not.toContain("Offered to the workspace");
+    expect(html).not.toContain("workspace");
+    expect(html).not.toContain("settings-workspace-key");
+    expect(html).not.toContain("type=\"checkbox\"");
+    // The key list itself, Replace and Remove stay.
+    expect(html).toContain("Replace My key");
+    expect(html).toContain("Remove My key");
+  });
+
+  it("is the AI keys anchor, says the honest line, and shows no Reveal", () => {
+    const html = render(MINE, choices({ mayChoose: true }));
+    expect(html).toContain("id=\"ai-keys\"");
+    expect(html).toContain("FluxIQ keeps the key and never shows it again.");
+    expect(html).not.toMatch(/reveal|sealed|shown to nobody/iu);
+    expect(html).not.toMatch(/\bPIN\b/u);
+  });
+
+  it("styles its radios and checkboxes by class, never as the 36px text boxes", () => {
+    const css = readFileSync(new URL("../settings-page.css", import.meta.url), "utf8");
+    expect(css).toContain("input:not([type=\"radio\"]):not([type=\"checkbox\"])");
+    expect(css).toContain("input[type=\"radio\"]");
   });
 });

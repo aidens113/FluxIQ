@@ -72,6 +72,7 @@
 // the transport carries them; `setBackground` leaves only that list reading; `history` and `welcome`
 // change how much of a thread is kept and what the empty chat says.
 
+import type { ModelKeyHostAction } from "../model-access/index.ts";
 import { createElement } from "../dom/index.ts";
 import type { ClientGatewayActivity } from "fluxiq/ui";
 import { createRecordingAttachment } from "./attachment/index.ts";
@@ -341,8 +342,12 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       }
     }, {
       ...(keyOpener === undefined ? {} : { keyAction: keyOpener.element }),
-      // The key card's host actions all lead to FluxIQ's own page for the key (its Open FluxIQ control).
-      ...(captured.transport.modelKeys === undefined ? {} : { modelKeys: { port: captured.transport.modelKeys, onAction: () => { if (eligible()) keyOpener?.element.click(); } } }),
+      // The key card's host actions go to the host when it takes them, else to FluxIQ's own page for the key.
+      ...(captured.transport.modelKeys === undefined ? {} : { modelKeys: { port: captured.transport.modelKeys, onAction: (action: ModelKeyHostAction) => {
+        if (!eligible()) return;
+        if (options.onModelKeyAction) options.onModelKeyAction(action);
+        else keyOpener?.element.click();
+      } } }),
       start: (start) => {
         if (!eligible()) {
           return;

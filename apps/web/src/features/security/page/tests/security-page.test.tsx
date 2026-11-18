@@ -6,7 +6,6 @@ import { PeopleList, PairedClientsList } from "../../access";
 import { ActivitySection } from "../../activity";
 import { ConfirmButton } from "../../confirm";
 import type { ChangeResult } from "../../data";
-import { KeysList } from "../../keys";
 import { SectionBody } from "../../state";
 import { SecurityTabs } from "../SecurityTabs";
 import { SECURITY_TABS } from "../security-tabs";
@@ -22,21 +21,6 @@ describe("section states", () => {
     expect(denied).toContain("You do not have access to this.");
     expect(denied).not.toContain("Could not read");
     expect(body({ state: "ready", data: { state: "ready", data: 1 } })).toContain("DATA");
-  });
-});
-
-describe("keys", () => {
-  it("renders names and state, and no key value", () => {
-    const rows = [{ id: "k1", name: "Work", provider: "Anthropic", addedAt: 0, lastRevealedAt: undefined, enabled: true, availability: { state: "unavailable" as const, code: "host_protection_unavailable" as const }, value: "sk-SECRET-VALUE" }];
-    const html = renderToStaticMarkup(createElement(KeysList, { rows, now: 1000 }));
-    expect(html).toContain("Work");
-    expect(html).toContain("Host key protection unavailable");
-    expect(html).not.toMatch(/unlock|password/iu);
-    expect(html).toContain("Anthropic");
-    expect(html).not.toContain("sk-SECRET-VALUE");
-  });
-  it("says plainly when there are none", () => {
-    expect(renderToStaticMarkup(createElement(KeysList, { rows: [], now: 0 }))).toContain("No keys yet");
   });
 });
 

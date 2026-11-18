@@ -5,3 +5,4 @@ export { createProgramChatTransport } from "./program-chat-transport";
 export { createComposedConversationPort, type ComposedConversationOptions } from "./composed-conversation-port";
 export { createPanelConversationPort, type PanelConversationOptions } from "./panel-conversation-port";
 export { createThreadChanges } from "./thread-changes";
+export { notifyKeysOnFailedSend } from "./notify-keys-on-failed-send";

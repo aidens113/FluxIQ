@@ -6,7 +6,7 @@ const apis = vi.hoisted(() => ({ secret: { get: vi.fn(), post: vi.fn() }, automa
 vi.mock("../../../../programs/program-api", () => ({ useProgramApi: (id: string) => id === "secret-keys" ? apis.secret : apis.automation }));
 vi.mock("../../../../programs/shared-ui", async original => ({ ...await original<object>(), Modal: (p: any) => <section data-modal={p.title} data-close={p.onClose}>{p.children}</section>, Menu: (p: any) => <div>{p.options.map((o: any) => <button key={o.id} onClick={o.onSelect}>{o.label}</button>)}</div> }));
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-const user = { id: "actor", displayName: "Actor", roleId: "admin", pinConfigured: false, totpEnabled: false };
+const user = { id: "actor", displayName: "Actor", roleId: "admin", pinConfigured: undefined, totpEnabled: false };
 const key = { id: "key", name: "Synthetic", kind: "custom", scope: "global", enabled: true, createdAtMs: 1, updatedAtMs: 2, lastRotatedAtMs: 2 };
 let view: ReactTestRenderer;
 const label = (n: any): string => n.children.map((c: any) => typeof c === "string" ? c : label(c)).join("");
@@ -18,7 +18,7 @@ function deferred() {
   const promise = new Promise<any>(done => { resolve = done; });
   return { promise, resolve };
 }
-async function mount() { await act(async () => { view = create(<SecretKeysLive currentUser={user} />); }); }
+async function mount(person = user) { await act(async () => { view = create(<SecretKeysLive currentUser={person} />); }); }
 beforeEach(() => {
   vi.stubGlobal("window", { setTimeout, clearTimeout, dispatchEvent() {}, location: { hash: "", pathname: "/", search: "" }, history: { replaceState() {} } });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ domains: [] }) }));
@@ -31,23 +31,29 @@ afterEach(() => {
 });
 it("shows saved-key unavailability without a browser chooser, ticket or password ceremony", async () => {
   apis.secret.get.mockResolvedValue({ ok: true, payload: {
-    keys: [{ ...key, kind: "llm", provider: "Anthropic", availability: { state: "unavailable", code: "legacy_recovery_required" } }],
+    keys: [{ ...key, provider: "Example", availability: { state: "unavailable", code: "legacy_recovery_required" } }],
     lockedClients: [{ holderId: "paired-client:obsolete", neverUnlocked: true, label: "Old browser" }],
     unlockTicket: "obsolete"
   } });
   await mount();
-  expect(text()).toContain("Sign in to the panel once to upgrade this key, or add it again");
+  expect(text()).toContain("FluxIQ can't open it any more. Replace it.");
   expect(text()).not.toMatch(/unlock|needs your password|Old browser/iu);
   expect(view.root.findAllByType("input").filter(input => input.props.type === "password")).toHaveLength(0);
   expect(apis.secret.post).not.toHaveBeenCalled();
+});
+it("lists no AI key: those are added and kept in Settings", async () => {
+  apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [{ ...key, id: "ai", name: "My AI key", kind: "llm", provider: "Anthropic" }, key] } });
+  await mount();
+  expect(text()).toContain("Synthetic");
+  expect(text()).not.toContain("My AI key");
 });
 it("project A/B/A publishes only the newest A request", async () => {
  const requests = [deferred(), deferred(), deferred()];
   let calls = 0;
   apis.automation.post.mockImplementation(() => requests[calls++]!.promise);
  await mount();
-  await act(async () => button("Add Key").props.onClick());
-  act(() => field("Scope").findByType("select").props.onChange({ target: { value: "flow" } }));
+  await act(async () => button("Add login or key").props.onClick());
+  act(() => field("Where it's used").findByType("select").props.onChange({ target: { value: "flow" } }));
  act(() => field("Project").findByType("select").props.onChange({ target: { value: "a" } }));
   act(() => field("Project").findByType("select").props.onChange({ target: { value: "b" } }));
   act(() => field("Project").findByType("select").props.onChange({ target: { value: "a" } }));
@@ -60,23 +66,24 @@ it("project A/B/A publishes only the newest A request", async () => {
 
 async function open(choice: string) { await act(async () => button(choice).props.onClick()); }
 function fill(name: string, value: string) { act(() => field(name).findByType("input").props.onChange({ target: { value } })); }
-for (const [choice, submit, endpoint] of [["Edit metadata", "Save Changes", "update-key"], ["Rotate value", "Rotate Value", "rotate-key"], ["Delete key", "Delete Key", "delete-key"]]) {
+for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "update-key"], ["Replace", "Save new value", "rotate-key"], ["Remove", "Remove for good", "delete-key"]]) {
  it("keeps acknowledged " + endpoint + " visible through follow-up read failure and retries reads only", async () => {
   await mount();
    await open(choice!);
    fill("Your password", "synthetic-proof");
-   if (endpoint === "rotate-key") fill("New secret value", "synthetic-new-value");
+   if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
   apis.secret.get.mockResolvedValueOnce({ ok: false, error: "synthetic private metadata detail" });
    await act(async () => button(submit!).props.onClick());
-  const receipt = endpoint === "update-key" ? "Secret key updated" : endpoint === "rotate-key" ? "Secret value rotated" : "Secret key deleted";
+  const receipt = endpoint === "update-key" ? "Details updated." : endpoint === "rotate-key" ? "Replaced." : "Removed.";
   expect(view.root.findAll(n => n.props.role === "status" && label(n) === receipt)).toHaveLength(1);
    expect(text()).toContain("Synthetic");
    expect(text()).not.toContain("synthetic private metadata detail");
   expect(apis.secret.post).toHaveBeenCalledTimes(1);
    expect(apis.secret.post.mock.calls[0]?.[0]).toBe(endpoint);
    expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ id: "key", authorizationPassword: "synthetic-proof" });
+   expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
   if (endpoint === "update-key") expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("value");
-  await act(async () => button("Retry metadata").props.onClick());
+  await act(async () => button("Try again").props.onClick());
    expect(apis.secret.post).toHaveBeenCalledTimes(1);
    expect(view.root.findAll(n => n.props.role === "status" && label(n) === receipt)).toHaveLength(1);
  });
@@ -85,13 +92,13 @@ for (const [choice, submit, endpoint] of [["Edit metadata", "Save Changes", "upd
    await open(choice!);
    fill("Your password", "synthetic-proof");
    if (endpoint === "update-key") fill("Name", "Current edited name");
-   if (endpoint === "rotate-key") fill("New secret value", "synthetic-new-value");
+   if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
   apis.secret.post.mockResolvedValueOnce({ ok: false, error: "synthetic private refusal" });
    await act(async () => button(submit!).props.onClick());
    expect(text()).not.toContain("synthetic private refusal");
    expect(button(submit!).props.disabled).toBe(false);
   if (endpoint === "update-key") expect(field("Name").findByType("input").props.value).toBe("Current edited name");
-   if (endpoint === "rotate-key") expect(field("New secret value").findByType("input").props.value).toBe("synthetic-new-value");
+   if (endpoint === "rotate-key") expect(field("New value").findByType("input").props.value).toBe("synthetic-new-value");
   await act(async () => button(submit!).props.onClick());
    expect(apis.secret.post).toHaveBeenCalledTimes(2);
  });
@@ -99,65 +106,80 @@ for (const [choice, submit, endpoint] of [["Edit metadata", "Save Changes", "upd
   await mount();
    await open(choice!);
    fill("Your password", "synthetic-proof");
-   if (endpoint === "rotate-key") fill("New secret value", "synthetic-new-value");
+   if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
    const submitOld = button(submit!).props.onClick;
   await act(async () => view.update(<SecretKeysLive currentUser={{ ...user, id: "other" }} />));
    await act(async () => submitOld());
    expect(apis.secret.post).not.toHaveBeenCalled();
  });
 }
-it("creation preserves its deliberate password/PIN-only policy and exact wire envelope", async () => {
- await act(async () => { view = create(<SecretKeysLive currentUser={{ ...user, pinConfigured: true, totpEnabled: true }} />); });
-  await open("Add Key");
-  fill("Name", "New synthetic key");
-  fill("Secret value", "synthetic-new-value");
-  await open("Continue");
+it("asks for the two-step code on a change only where the person turned it on", async () => {
+  await mount({ ...user, totpEnabled: true });
+  await open("Remove");
   fill("Your password", "synthetic-proof");
-  fill("Your PIN", "1234");
-  expect(view.root.findAll(n => n.props.label === "Your 2FA code")).toHaveLength(0);
-  expect(button("Save Key").props.disabled).toBe(false);
- apis.secret.get.mockResolvedValueOnce({ ok: false });
-  await act(async () => button("Save Key").props.onClick());
-  expect(apis.secret.post).toHaveBeenCalledWith("create-key", expect.objectContaining({ name: "New synthetic key", value: "synthetic-new-value", authorizationPassword: "synthetic-proof", authorizationPin: "1234" }));
+  expect(button("Remove for good").props.disabled).toBe(true);
+  fill("Your two-step code", "123456");
+  expect(button("Remove for good").props.disabled).toBe(false);
+  await act(async () => button("Remove for good").props.onClick());
+  expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ id: "key", authorizationPassword: "synthetic-proof", authorizationTotp: "123456" });
+  expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+});
+it("adding takes the password in the same dialog, sends one call, and never a type, a PIN or a two-step code", async () => {
+  await mount({ ...user, totpEnabled: true });
+  await open("Add login or key");
+  expect(view.root.findAll(n => n.props.label === "Type")).toHaveLength(0);
+  fill("Name", "New synthetic key");
+  fill("Login or key", "synthetic-new-value");
+  fill("Your password", "synthetic-proof");
+  expect(view.root.findAll(n => n.props.label === "Your two-step code")).toHaveLength(0);
+  expect(button("Save").props.disabled).toBe(false);
+  apis.secret.get.mockResolvedValueOnce({ ok: false });
+  await act(async () => button("Save").props.onClick());
+  expect(apis.secret.post).toHaveBeenCalledTimes(1);
+  expect(apis.secret.post).toHaveBeenCalledWith("create-key", expect.objectContaining({ name: "New synthetic key", value: "synthetic-new-value", kind: "custom", authorizationPassword: "synthetic-proof" }));
   expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationTotp");
-  expect(view.root.findAll(n => n.props.role === "status" && label(n) === "Secret key saved")).toHaveLength(1);
-  await act(async () => button("Retry metadata").props.onClick());
+  expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+  expect(view.root.findAll(n => n.props.role === "status" && label(n) === "Saved.")).toHaveLength(1);
+  await act(async () => button("Try again").props.onClick());
   expect(apis.secret.post).toHaveBeenCalledTimes(1);
 });
-it("wizard Back preserves chosen project and scope draft", async () => {
+it("shows no way to see a saved value again", async () => {
+  await mount();
+  expect(text()).not.toMatch(/reveal|show the value/iu);
+  expect(apis.secret.post).not.toHaveBeenCalled();
+});
+it("keeps the chosen project and where-it-is-used draft when the dialog is reopened state-free", async () => {
  apis.automation.post.mockResolvedValue({ ok: true, payload: { flows: [] } });
   await mount();
-  await open("Add Key");
+  await open("Add login or key");
   fill("Name", "New synthetic key");
-  fill("Secret value", "synthetic-new-value");
-  act(() => field("Scope").findByType("select").props.onChange({ target: { value: "flow" } }));
+  fill("Login or key", "synthetic-new-value");
+  act(() => field("Where it's used").findByType("select").props.onChange({ target: { value: "flow" } }));
   await act(async () => field("Project").findByType("select").props.onChange({ target: { value: "a" } }));
   fill("Flow", "manual-flow-ref");
-  await open("Continue");
-  await open("Back");
   expect(field("Project").findByType("select").props.value).toBe("a");
   expect(field("Flow").findByType("input").props.value).toBe("manual-flow-ref");
 });
-it("unexpected update rejection releases original gate and retains metadata draft", async () => {
+it("unexpected update rejection releases original gate and retains the draft", async () => {
   await mount();
-  await open("Edit metadata");
+  await open("Edit details");
   fill("Name", "Current edited name");
   fill("Your password", "synthetic-proof");
   apis.secret.post.mockRejectedValueOnce(Error("synthetic private detail"));
-  await act(async () => button("Save Changes").props.onClick());
+  await act(async () => button("Save changes").props.onClick());
   expect(text()).not.toContain("synthetic private detail");
   expect(field("Name").findByType("input").props.value).toBe("Current edited name");
-  expect(button("Save Changes").props.disabled).toBe(false);
-  await act(async () => button("Save Changes").props.onClick());
+  expect(button("Save changes").props.disabled).toBe(false);
+  await act(async () => button("Save changes").props.onClick());
   expect(apis.secret.post).toHaveBeenCalledTimes(2);
 });
 it("operation gate still synchronously prevents duplicate privileged writes", async () => {
   await mount();
-  await open("Delete key");
+  await open("Remove");
   fill("Your password", "synthetic-proof");
   const pending = deferred();
   apis.secret.post.mockReturnValueOnce(pending.promise);
-  const submit = button("Delete Key").props.onClick;
+  const submit = button("Remove for good").props.onClick;
   act(() => {
     void submit();
     void submit();
@@ -169,16 +191,16 @@ for (const payload of [undefined, {}, { keys: [null] }, { keys: [{ ...key, name:
  it("malformed successful key metadata produces direct recovery rather than false empty", async () => {
    apis.secret.get.mockResolvedValue({ ok: true, payload });
    await mount();
-   expect(text()).toContain("Secret Keys unavailable");
+   expect(text()).toContain("Saved logins and keys unavailable");
    expect(button("Retry")).toBeDefined();
-   expect(text()).not.toContain("No secret keys have been added");
+   expect(text()).not.toContain("No saved logins or keys yet");
  });
 }
 it("valid empty key list is distinct from unavailable metadata", async () => {
   apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [] } });
   await mount();
-  expect(text()).toContain("No secret keys have been added");
-  expect(text()).not.toContain("Secret Keys unavailable");
+  expect(text()).toContain("No saved logins or keys yet");
+  expect(text()).not.toContain("Saved logins and keys unavailable");
 });
 it("unexpected initial snapshot rejection offers fixed read Retry", async () => {
   apis.secret.get.mockRejectedValueOnce(Error("synthetic private detail"));
@@ -191,10 +213,10 @@ it("unexpected initial snapshot rejection offers fixed read Retry", async () => 
 it("catalog failure exposes read-only Retry and preserves form draft", async () => {
   vi.mocked(fetch).mockResolvedValueOnce({ ok: false, json: vi.fn() } as unknown as Response);
   await mount();
-  await open("Add Key");
+  await open("Add login or key");
   fill("Name", "Preserved draft");
-  expect(button("Retry scope choices")).toBeDefined();
-  await act(async () => button("Retry scope choices").props.onClick());
+  expect(button("Retry the choices")).toBeDefined();
+  await act(async () => button("Retry the choices").props.onClick());
   expect(field("Name").findByType("input").props.value).toBe("Preserved draft");
   expect(apis.secret.post).not.toHaveBeenCalled();
 });
@@ -222,45 +244,32 @@ it("captured old metadata Retry refuses requests after actor replacement", async
 });
 it("old authorization dismiss cannot close a newer same-kind edit", async () => {
  await mount();
-  await open("Edit metadata");
-  const close = view.root.findByProps({ "data-modal": "Edit Key Metadata" }).props["data-close"];
+  await open("Edit details");
+  const close = view.root.findByProps({ "data-modal": "Edit details" }).props["data-close"];
   act(() => close());
-  await open("Edit metadata");
+  await open("Edit details");
   act(() => close());
-  expect(view.root.findAll(n => n.props["data-modal"] === "Edit Key Metadata")).toHaveLength(1);
+  expect(view.root.findAll(n => n.props["data-modal"] === "Edit details")).toHaveLength(1);
 });
 it("pending update result cannot overwrite a replacement actor or trigger old follow-up read", async () => {
  await mount();
-  await open("Edit metadata");
+  await open("Edit details");
   fill("Your password", "synthetic-proof");
   const pending = deferred(), old = apis.secret;
   old.post.mockReturnValueOnce(pending.promise);
-  act(() => button("Save Changes").props.onClick());
+  act(() => button("Save changes").props.onClick());
   await act(async () => view.update(<SecretKeysLive currentUser={{ ...user, id: "other" }} />));
   const reads = old.get.mock.calls.length;
   await act(async () => pending.resolve({ ok: true }));
   expect(old.get).toHaveBeenCalledTimes(reads);
-  expect(text()).not.toContain("Secret key updated");
+  expect(text()).not.toContain("Details updated.");
 });
 
 it("confirmed removal invalidates an open editor instead of leaving a silently inert submit", async () => {
   await mount();
-  await open("Edit metadata");
+  await open("Edit details");
   fill("Your password", "synthetic-proof");
   apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [] } });
   await act(async () => button("Refresh").props.onClick());
-  expect(view.root.findAll(n => n.props["data-modal"] === "Edit Key Metadata")).toHaveLength(0);
-});
-
-it.each(["anthropic", "Anthropic (Claude)"])("edits API-provisioned %s keys through the Claude picker without rewriting their provider", async provider => {
-  apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [{ ...key, kind: "llm", provider }] } });
-  await mount();
-  await open("Edit metadata");
-  const picker = field("Provider").findByType("select");
-  expect(picker.props.value).toBe("Anthropic");
-  expect(picker.findAllByType("option").find(option => option.props.value === "Anthropic")!.children).toEqual(["Anthropic (Claude)"]);
-  fill("Your password", "synthetic-proof");
-  await act(async () => button("Save Changes").props.onClick());
-  expect(apis.secret.post.mock.calls[0]?.[0]).toBe("update-key");
-  expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ provider });
+  expect(view.root.findAll(n => n.props["data-modal"] === "Edit details")).toHaveLength(0);
 });

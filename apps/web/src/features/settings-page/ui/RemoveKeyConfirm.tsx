@@ -1,43 +1,37 @@
 "use client";
 
-import { useState } from "react";
-import type { RemoveOutcome, RemoveProof } from "../model";
+import { useState, type FormEvent } from "react";
+import type { RemoveOutcome } from "../model";
 
 /**
- * Removing a key is destructive, so it takes one press here and nothing more:
- * no PIN unless the engine says the person turned one on, and then it asks for
- * it in plain words. Your password is asked for only if the engine still wants it.
+ * Removing a key is one confirm: the password is asked in this same box and sent with the one call that removes
+ * the key. Nothing is asked first and nothing is asked again.
  */
-export function RemoveKeyConfirm(props: { keyName: string; onRemove(proof?: RemoveProof): Promise<RemoveOutcome>; onCancel(): void }) {
-  const [ask, setAsk] = useState<"nothing" | "pin" | "password">("nothing");
+export function RemoveKeyConfirm(props: { keyName: string; onRemove(password: string): Promise<RemoveOutcome>; onCancel(): void }) {
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   async function press() {
+    const sent = password;
     setPending(true);
-    const outcome = await props.onRemove({ ...(password ? { password } : {}), ...(pin ? { pin } : {}) });
-    setPending(false);
     setPassword("");
-    setPin("");
-    if (outcome.kind === "needs-pin") {
-      setAsk("pin");
-      setMessage("You turned a PIN on, so enter it to remove this key.");
-    } else if (outcome.kind === "needs-password") {
-      setAsk("password");
-      setMessage(outcome.message);
-    } else if (outcome.kind === "refused") {
-      setMessage(outcome.message);
-    }
+    const outcome = await props.onRemove(sent);
+    setPending(false);
+    if (outcome.kind === "refused") setMessage(outcome.message);
+  }
+  function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (password && !pending) void press();
   }
   return (
-    <div role="group" aria-label={`Remove ${props.keyName}`} className="settings-remove">
+    <form className="settings-remove" aria-label={`Remove ${props.keyName}`} onSubmit={onSubmit}>
       <p>Remove the key &ldquo;{props.keyName}&rdquo;? FluxIQ forgets it for good. If it was your default, the next key you have turned on takes over.</p>
-      {ask === "pin" ? <label className="field"><span className="field-label">Your PIN</span><input inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))} autoComplete="off" /></label> : null}
-      {ask === "password" ? <label className="field"><span className="field-label">Your password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label> : null}
-      {message ? <p role="alert">{message}</p> : null}
-      <button type="button" className="button danger" disabled={pending || (ask === "pin" && pin.length < 4) || (ask === "password" && !password)} onClick={() => void press()}>{pending ? "Removing..." : "Remove key"}</button>
-      <button type="button" className="button" disabled={pending} onClick={props.onCancel}>Keep it</button>
-    </div>
+      <label className="field"><span className="field-label">Your password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label>
+      {message ? <p role="alert" className="settings-problem">{message}</p> : null}
+      <div className="settings-actions">
+        <button type="submit" className="button danger" disabled={pending || !password}>{pending ? "Removing..." : "Remove key"}</button>
+        <button type="button" className="button" disabled={pending} onClick={props.onCancel}>Keep it</button>
+      </div>
+    </form>
   );
 }

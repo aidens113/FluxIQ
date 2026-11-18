@@ -25,11 +25,8 @@ describe("adding a key", () => {
     expect(canSaveNewKey(EMPTY_NEW_KEY)).toBe(false);
     expect(canSaveNewKey(filled)).toBe(true);
   });
-  it("sends the existing create-key shape: a global, enabled model key sealed by the password", () => {
+  it("sends the existing create-key shape: a global, enabled model key with the password in the same call, and no PIN", () => {
     expect(newKeyPayload(filled)).toEqual({ name: "Work", value: "sk-secret", kind: "llm", provider: "Anthropic", scope: "global", scopeRef: "", description: "", metadata: {}, enabled: true, authorizationPassword: "pw" });
-  });
-  it("adds the PIN only when one was typed", () => {
-    expect(newKeyPayload({ ...filled, pin: "1234" })).toMatchObject({ authorizationPin: "1234" });
     expect(newKeyPayload(filled)).not.toHaveProperty("authorizationPin");
   });
 });
