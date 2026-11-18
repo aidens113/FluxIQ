@@ -1,6 +1,7 @@
 import { pairedClientModelAccessState, readModelAccessState } from "@fluxiq/contracts/platform";
 import type { ClientGatewayAuditLog } from "../audit-log.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
+import { personPaired } from "../project-focus/index.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { InternalSession } from "../types.ts";
@@ -173,16 +174,13 @@ function eligible(session: InternalSession): boolean {
 }
 
 /**
- * The person a session speaks for, only when a person paired it: trusted,
- * acting for its approver, and neither a managed host nor a channel-scoped
- * stand-in, which have no person whose model access could be read. The same
- * rule as `../project-focus/person-paired.ts`, which that folder's barrel does
- * not export.
+ * The person a session speaks for, only when a person paired it
+ * (`personPaired`): a managed host or a channel-scoped stand-in has no person
+ * whose model access could be read.
  */
 function speakerOf(session: InternalSession): Speaker | undefined {
-  const { trustedClientId, operatorUserId } = session;
-  if (!trustedClientId || !operatorUserId || session.managedHostId !== undefined || session.channelScope !== undefined) return undefined;
-  return { trustedClientId, userId: operatorUserId };
+  if (!personPaired(session) || !session.trustedClientId || !session.operatorUserId) return undefined;
+  return { trustedClientId: session.trustedClientId, userId: session.operatorUserId };
 }
 
 function sameSpeaker(left: Speaker, right: Speaker): boolean {

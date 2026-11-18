@@ -4,3 +4,4 @@
 export * from "./activity-delivery.ts";
 export * from "./conversation-delivery.ts";
 export * from "./focus.ts";
+export * from "./person-paired.ts";
