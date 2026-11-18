@@ -1,0 +1,23 @@
+{
+  "$schema": "../fluxiq-cloud.schema.json",
+  "project": "fluxiq-production",
+  "profile": "production",
+  "driver": "local-docker",
+  "source": { "root": "/opt/fluxiq/core" },
+  "stateDir": "/var/lib/fluxiq-cloud",
+  "domain": "app.example.org",
+  "ports": { "http": 80, "https": 443 },
+  "tls": { "mode": "acme", "email": "operator@example.org" },
+  "instance": { "id": "fluxiq-production", "name": "FluxIQ" },
+  "signUpUrl": "https://www.example.org/sign-up",
+  "gateway": { "allowedOrigins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop", "moz-extension://*"] },
+  "provisioning": { "subnet": "172.31.250.0/24", "address": "172.31.250.10" },
+  "email": {
+    "from": "FluxIQ <accounts@example.org>",
+    "smtp": "smtp+starttls://smtp.example.org:587",
+    "username": "fluxiq-mailer",
+    "passwordFile": "/etc/fluxiq-cloud/secrets/smtp-password"
+  },
+  "payments": { "apiBase": "https://api.stripe.com", "secretKeyFile": "/etc/fluxiq-cloud/secrets/stripe-secret-key" },
+  "secrets": { "dir": "/etc/fluxiq-cloud/secrets" }
+}

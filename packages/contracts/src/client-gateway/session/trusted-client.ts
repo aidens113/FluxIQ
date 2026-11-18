@@ -1,3 +1,4 @@
+import type { ClientGatewayRevocationReason } from "../../platform/index.ts";
 import type { ClientGatewayClientType } from "./client-type.ts";
 import type { ClientGatewayManagedHost } from "./managed-host.ts";
 
@@ -35,6 +36,15 @@ export type ClientGatewayTrustedClient = {
   expiresAt: number;
   revokedAt?: number;
   revocationReason?: string;
+  /**
+   * What the client is told its trust ended for (`server.revoked`), kept with
+   * `revokedAt` when a person or Core ended it from outside the client. Its live
+   * sockets are told at once, and a later hello with its credential is told
+   * again and closed instead of offered pairing. Absent when the client ended
+   * the trust itself, when the trust never reached it, or when a newer approval
+   * of the same client took over: such a client is not told, and pairs again.
+   */
+  revokedFor?: ClientGatewayRevocationReason;
 };
 
 export type ClientGatewayTrustedClientView = Omit<ClientGatewayTrustedClient, "tokenHash" | "previousTokenHash" | "reuseKey" | "approvingSessionDigest"> & {
