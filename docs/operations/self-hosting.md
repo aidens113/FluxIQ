@@ -70,10 +70,13 @@ fails if it compiled Core from source instead of its built `dist`
 every step without caching. `sqlite3` is built for Linux in the same base image
 the runtime uses.
 
-The runtime stage holds only the standalone server, its static files, the
-client gateway bundle and a production install of the `fluxiq` package at
-`/opt/fluxiq-gateway-runtime`, linked beside that bundle (the gateway imports
-`fluxiq` natively, which Next's tracing cannot see). It runs as the `node` user, and `/data` is the only path that user can
+The runtime stage holds only the standalone server, its static files and the
+client gateway bundle. Core is in the standalone output once, at
+`/app/packages/fluxiq`: the panel's server and the gateway bundle both import
+`fluxiq` through Node and resolve that one copy, and the operator command line
+runs from it too. The image build refuses a second copy
+(`deploy/docker/one-core.mjs`), and the panel build refuses traces that would
+leave Core out (`apps/web/scripts/core-trace/`). It runs as the `node` user, and `/data` is the only path that user can
 write. `.dockerignore` keeps `.fluxiq`, every `.env` file, `deploy/env`,
 `deploy/secrets`, `node_modules`, build output, test runs and worktrees out of
 the build context.
@@ -243,7 +246,7 @@ through the listener from inside the container:
 
 ```sh
 docker compose -f deploy/compose/service.compose.yml exec fluxiq \
-  node /opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts --help
+  node /app/packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help
 ```
 
 ## Settings Reference
