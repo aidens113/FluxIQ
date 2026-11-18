@@ -132,7 +132,7 @@ export class ClientGatewayInbound {
     }
     if (message.type === "client.forget_pairing") {
       // The person pressed Forget in this browser: its trust ends here, and what its credential kept with it.
-      if (session.trustedClientId) await this.facade.revokeTrustedClient(session.trustedClientId, "forgotten by its person");
+      if (session.trustedClientId) await this.facade.revokeTrustedClient(session.trustedClientId, "forgotten by its person", null);
       return "pairing_forgotten";
     }
     if (message.type === "client.state_update") {

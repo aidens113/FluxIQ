@@ -53,7 +53,7 @@ describe("credential-only client teardown", () => {
     expect(state.repository).toHaveBeenCalledWith(primary.paths.fluxiq);
     expect(state.platform).toHaveBeenCalledWith(primary);
     expect(state.acquire).toHaveBeenCalledWith("tenant-one", expect.objectContaining({ current: expect.any(Function), exists: expect.any(Function) }));
-    expect(state.revoke).toHaveBeenCalledWith("trust-one", expect.any(String));
+    expect(state.revoke).toHaveBeenCalledWith("trust-one", expect.any(String), null);
     expect(state.release).toHaveBeenCalledOnce();
     expect(state.primaryRelease).toHaveBeenCalledOnce();
     expect(state.ready).not.toHaveBeenCalled();
@@ -77,7 +77,7 @@ describe("credential-only client teardown", () => {
     state.revoke.mockResolvedValue(false);
     expect(await forgetClientCredential("synthetic-proof")).toBe(false);
     expect(state.acquire).toHaveBeenCalledWith("tenant-one", expect.any(Object));
-    expect(state.revoke).toHaveBeenCalledWith("trust-one", expect.any(String));
+    expect(state.revoke).toHaveBeenCalledWith("trust-one", expect.any(String), null);
     expect(state.release).toHaveBeenCalledOnce();
     expect(state.primaryRelease).toHaveBeenCalledOnce();
   });
