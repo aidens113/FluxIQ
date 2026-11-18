@@ -2,6 +2,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../project/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
@@ -83,18 +84,75 @@ describe("AutomationStudioSchemaMigrationRunner", () => {
     await pool.closeAll();
   });
 
-  it("refuses an active schema lock and can take over a stale lock", async () => {
+  it("waits on an active schema lock and takes it over once it goes stale", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const lease = await pool.acquire("project.lock");
     let now = 100_000;
     const runner = new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: initial, now: () => now, lockTimeoutMs: 1_000, createLockToken: () => "new-lock" });
     await runner.state();
     await lease.database.run("update automation_schema_state set status = 'migrating', lock_token = 'other', lock_acquired_at_ms = ?, updated_at_ms = ? where singleton = 1", [now, now]);
-    await expect(runner.migrate()).rejects.toThrow(/already running/);
+    let settled = false;
+    const migrating = runner.migrate().finally(() => {
+      settled = true;
+    });
+    // The lock is live on this runner's clock, so it waits rather than failing or taking it.
+    await delay(200);
+    expect(settled).toBe(false);
+    await expect(runner.state()).resolves.toMatchObject({ status: "migrating", lockToken: "other" });
+    // Its holder never came back: once the lock is stale by its own rule, the waiter takes it over.
     now += 2_000;
-    await expect(runner.migrate()).resolves.toMatchObject({ applied: ["0001_initial"], status: "ready" });
+    await expect(migrating).resolves.toMatchObject({ applied: ["0001_initial"], status: "ready" });
     await lease.release();
     await pool.closeAll();
+  });
+
+  // The first open of a new project: the opener holds the lock while it applies the
+  // migrations a second store needs too. That reader (a second copy of this module,
+  // as in a server whose bundle holds Core twice) waits for the opener to finish and
+  // then reads, instead of failing with "already running".
+  it("makes a reader whose set is still pending wait for the runner migrating it, then read", async () => {
+    const opening = new AutomationStudioProjectDatabasePool({ rootDir });
+    const reading = new AutomationStudioProjectDatabasePool({ rootDir });
+    const opener = await opening.acquire("project.new");
+    const reader = await reading.acquire("project.new");
+    let migrating!: () => void;
+    let release!: () => void;
+    const lockHeld = new Promise<void>((resolve) => {
+      migrating = resolve;
+    });
+    const mayFinish = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const opened = new AutomationStudioSchemaMigrationRunner({
+      database: opener.database,
+      migrations: [...initial, { id: "0002_labels", statements: ["create table labels (id text primary key)"] }],
+      createLockToken: () => "opener",
+      // Runs once the lock is taken and before anything is applied: the opener is mid-migration until released.
+      backup: async () => {
+        migrating();
+        await mayFinish;
+      }
+    }).migrate();
+    await lockHeld;
+
+    vi.resetModules();
+    const { AutomationStudioSchemaMigrationRunner: SecondCopy } = await import("../schema-migrations.ts");
+    let settled = false;
+    const read = new SecondCopy({ database: reader.database, migrations: initial }).migrate().finally(() => {
+      settled = true;
+    });
+    await delay(200);
+    expect(settled).toBe(false);
+
+    release();
+    await expect(opened).resolves.toMatchObject({ applied: ["0001_initial", "0002_labels"], status: "ready" });
+    // The opener applied the reader's migration, so the reader applies nothing and the table is there.
+    await expect(read).resolves.toEqual({ applied: [], skipped: ["0001_initial"], backupCreated: false, status: "ready" });
+    await expect(reader.database.get("select name from sqlite_master where type = 'table' and name = 'widgets'")).resolves.toEqual({ name: "widgets" });
+    await opener.release();
+    await reader.release();
+    await opening.closeAll();
+    await reading.closeAll();
   });
 
   // A first project is opened and migrated while another store opens it to read

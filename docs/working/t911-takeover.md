@@ -3,7 +3,7 @@
 Status: Active
 Status detail: Phase 2 under way: dev merged into the branch (t924, t927, t929), conflicts resolved, t911's unfinished durable-settlement gaps being fixed; the lead concludes the merge.
 Created: 2026-11-17
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 Owner: Senior supervisor agent (written by its worker-heavy worker for t911)
 Scope: Taking over Codex's t911 runtime lease isolation in Core: what it set out to do, what is done and unfinished, the dev merge forecast, and the storage layout questions met on the way.
 Paired document: none
@@ -429,3 +429,22 @@ Not re-run after pass 2: the web check (pass 3 changed only a private field in C
 no exported type changed), and the runtime-session, host-resources, trial-ports and conversation tests
 (their files were unchanged after they passed). Core dev's `96b33bbc3` is not in this tree; the lead merges
 it on concluding.
+
+### A reader with pending migrations waits for the runner holding the lock (after the merge was concluded)
+
+`framework/persistence/automation/schema-migrations.ts`: a runner that finds migrations still to apply
+while another runner holds a live lock no longer fails with "already running". It waits until that lock
+ends (its runner finished, ready or failed) or goes stale by the lock's own rule, then checks the ledger
+again from the start. On a new project that is the opener-then-reader race Home hit: the reader usually
+finds the opener has applied its migrations and reads. "Live" is one predicate (`heldByAnother`): migrating,
+holding a token, and taken after the stale line. It is the exact complement of the takeover `acquireLock`
+performs, so a lock is always either waited on or taken over. A lock with no acquisition time used to be
+refused, but the takeover SQL already treated it as stale; now both agree. There is no fixed timeout: the
+wait reads the state every 50 ms and ends only when the lock does, bounded by the lock's own staleness
+(`lockTimeoutMs`, 60 s by default).
+
+Tests: `tests/schema-migrations.test.ts`. The case "refuses an active schema lock" is now "waits on an
+active schema lock and takes it over once it goes stale", driven by the runner's own clock. A new
+two-module case has a reader, in a second module copy, whose set is still pending: it waits while the
+opener holds the lock, then answers ready with the table present. The ready-memo case that expected
+"already running" now waits and then applies.
