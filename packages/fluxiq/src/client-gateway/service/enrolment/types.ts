@@ -5,12 +5,25 @@ import type { ClientGatewayEnrolmentRefusalCode } from "./enrolment-refusal.ts";
  * What an enrolment ticket is minted for: the managed host it enrols, the
  * domain that host's client must declare, whether its profile is thrown away
  * on close, and how long the ticket lives (60 s when omitted).
+ *
+ * `environment` binds the ticket to one dedicated environment of the workspace
+ * whose gateway mints it. Only that workspace's own gateway can redeem it,
+ * because tickets live in the minting gateway alone; the binding is recorded
+ * with the ticket, audited, and reported with its redemption. An environment's
+ * host keeps its profile with the environment, so its profile is `named`.
  */
 export type ClientGatewayHostEnrolmentRequest = {
   hostId: string;
   domainId: string;
   profile: ClientGatewayManagedHost["profile"];
   ttlMs?: number;
+  environment?: ClientGatewayHostEnrolmentEnvironment;
+};
+
+/** The dedicated environment, and the workspace that owns it, an enrolment ticket is bound to. */
+export type ClientGatewayHostEnrolmentEnvironment = {
+  workspaceId: string;
+  environmentId: string;
 };
 
 /**
@@ -27,6 +40,7 @@ export type ClientGatewayHostEnrolmentBinding = {
   hostId: string;
   domainId: string;
   profile: ClientGatewayManagedHost["profile"];
+  environment?: ClientGatewayHostEnrolmentEnvironment;
 };
 
 /** What presenting a ticket came to: the binding it enrols, or the refusal and the host it named when Core knew the ticket. */

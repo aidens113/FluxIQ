@@ -10,3 +10,4 @@ export * from "./commerce/index.ts";
 export * from "./browser-trust/index.ts";
 export * from "./connect/index.ts";
 export * from "./apps/index.ts";
+export * from "./environments/index.ts";

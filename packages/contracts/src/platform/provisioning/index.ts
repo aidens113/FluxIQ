@@ -10,6 +10,7 @@ export * from "./delete-account.ts";
 export * from "./errors.ts";
 export * from "./fields.ts";
 export * from "./get-account.ts";
+export * from "./membership-change.ts";
 export * from "./operations.ts";
 export * from "./response.ts";
 export * from "./rotate-credentials.ts";

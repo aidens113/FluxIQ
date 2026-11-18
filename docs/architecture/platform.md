@@ -610,14 +610,50 @@ other failure propagates as a throw, which the listener answers as
 | `setPassword` | In-process only (the offline command line, the platform-admin, or the provisioner's service identity in-process). The operation is authorised and audited first, so it sets the password through `PlatformIdentityPort.resetPassword` with no recheck of the old credential, and it works after a restart. It then revokes the account's other sessions. An account with two-factor sign-in whose credential is sealed is `two_factor` (409), with nothing changed (see "Two-factor and PIN on a reset"). |
 | `setPolicies` | Replaces a member's attached policies. The identity role is set first, from the new policies, so demoting the last enabled administrator is `last_administrator` before any attachment or membership changes. |
 | `addMember` | Adds an account to an organisation workspace; `already_member` leaves its policies as they were. Needs the `organisation` entitlement, else `entitlement_required`. The identity role is set first, from every active membership plus the new one, so a demotion of the last enabled administrator is `last_administrator` before the membership is written. |
-| `disableAccount`, `enableAccount` | Disabling refuses sign-in and revokes sessions and (through lane D's port) connected clients. Enabling restores sign-in; revoked clients stay revoked. |
-| `deleteAccount` | `immediate`: the identity user is deleted first (so a refusal changes nothing), then its sessions and connected clients are revoked, then IAM attachments, then personal workspaces (data hook, then the row), then the store rows. `scheduled`: identity disabled first (so a refusal changes nothing), then status `deleted`, sessions and clients revoked; asking again returns the same receipt. |
+| `suspendMember`, `resumeMember` | One membership in one shared (organisation or single) workspace; the account, its sign-in and its other memberships are untouched. Suspending needs an active membership (`not_found` otherwise, and for a personal workspace), refuses the workspace's last active administrator (`last_administrator`, decided from that workspace's memberships), and sets the identity role without this workspace first; then the membership becomes `suspended` keeping its policies, they are detached, the person's connected clients bound to that workspace are revoked (`revoked_by_admin`), and their session unlocks in its key custody are dropped. Platform sessions stay: the session's workspace is chosen on every request from active memberships, so the next request lands in another workspace or answers 401. Resuming needs a suspended membership and an account that is not disabled (`disabled`), sets the role first, then reattaches the kept policies. Revoked clients stay revoked. |
+| `removeMember` | Ends an active or suspended membership of a shared workspace (`removed`, no policies), with the same checks, revocations and custody drop as suspending. A personal workspace is `not_found`: its owner leaves by deleting the account. |
+| `disableAccount`, `enableAccount` | Disabling refuses sign-in and revokes sessions and connected clients (`account_disabled`). Enabling restores sign-in; revoked clients stay revoked. |
+| `deleteAccount` | `immediate`: runs the deletion cascade below now. `scheduled`: identity disabled first (so a refusal changes nothing), then status `deleted`, sessions and clients revoked; asking again returns the same receipt. |
 | `rotateCredentials` | By scope: `sessions`, `browsers`, `password` (sends a reset link) or `all`. Reports the counts and `resetSent`. |
 | `getAccount` | By exactly one of `userId`, `email`, `externalId`. Never a hash, a key or a policy's contents. |
 
+**The deletion cascade.** `completeAccountDeletion` is the one hook: `immediate`
+calls it, and so does `runDueDeletions`. Each step can be repeated and is keyed by
+the deletion receipt id:
+
+1. identity access deletes the user (the only refusable step, `last_administrator`,
+   so it comes first and a refusal changes nothing); a deletion not yet recorded is
+   then recorded, due at once, so a failure after this point leaves it for the sweep;
+2. sessions are revoked, then connected clients in every workspace (`account_deleted`);
+3. for each membership, its policies are detached and the person's session unlocks
+   in that workspace's key custody are dropped (`dropWorkspaceCustody`);
+4. billing is closed (`closeBilling`): the commerce service cancels every
+   subscription of the payer that has not ended, with an idempotency key derived
+   from the receipt id, records the ended state (ledger rows, which hold the account
+   id and no email, stay for the retention period), and closes the provider
+   customer. Nothing is billed during the purge that follows. A server that bills
+   nothing makes this a no-op;
+5. environments are purged (`purgeEnvironments`, the account's and its personal
+   workspaces'); until the environment controller is composed into the web server
+   this port is a no-op;
+6. each personal workspace is deleted: `deleteWorkspaceData` (the workspace manager
+   closes it, revokes its custody and removes its root), then its row;
+7. the account row, with its memberships and link tokens.
+
+A step that must wait throws `DeletionPending`: a personal workspace with work in
+flight (`workspaces.busy`), or a payment provider that did not answer
+(`PaymentProviderUnavailableError`). `immediate` then answers `scheduled` with the
+receipt, due at once; a run already going keeps going to its result or its budget
+and its owner can still stop it. Any other failure surfaces, and the deletion stays
+recorded for the sweep.
+
 **Scheduled deletion** waits 7 days. `runDueDeletions(nowMs?)` completes the
-accounts that are due and collects failures into one `AggregateError`, so a failed
-account stays scheduled for the next sweep. Nothing calls it on a timer yet.
+accounts that are due; one that must wait stays scheduled, and failures are
+collected into one `AggregateError`, so a failed account stays scheduled for the
+next sweep. The web server's platform composition runs it every five minutes on
+an unreferenced timer (`server/provisioning-listener/cascade/deletion-sweep.ts`),
+on every profile, logging each failure's class and count only, and stops it before
+the stores close.
 
 **`forbidden_policy`.** Only predefined policies are provisionable. Whether a
 policy "grants `platform:*`" is decided by the evaluator, not by reading
@@ -650,11 +686,27 @@ and needs the `organisation` entitlement.
 `FluxIQAdministratorAccess` gives `admin`, anything else `viewer`. It is refreshed
 when policies change.
 
-**Optional ports.** An absent port does nothing, so the service runs before lanes C
-and D exist: `deleteWorkspaceData(workspaceId)` (lane C; called before a personal
-workspace row is deleted), `onWorkspaceCreated(workspaceId)` (lane C),
-`revokeConnectedClients(userId, reason)` (lane D; returns how many) and
-`entitlements`.
+**Optional ports.** An absent port does nothing: `revokeConnectedClients(userId,
+reason, scope?)` (returns how many; a scope limits it to one workspace's clients),
+`dropWorkspaceCustody(workspaceId, userId)`, `closeBilling(accountId, operationId)`,
+`purgeEnvironments({ accountId, workspaceIds, operationId })`,
+`deleteWorkspaceData(workspaceId)` (called before a personal workspace row is
+deleted), `onWorkspaceCreated(workspaceId)` and `entitlements`. The web server
+composes all but the last two in `server/provisioning-listener/cascade/`:
+connected clients are revoked through the gateway that owns each one (under several
+workspaces, the platform browser-trust authority lists a person's bindings and each
+tenant is held without creating a missing root; under one, the workspace's own
+gateway store), custody through the workspace manager's `dropUserCustody`, billing
+through the commerce service when one is configured, and workspace data through
+the manager's `deleteWorkspace`.
+
+**The accounts panel under several workspaces** changes the membership in the
+caller's workspace only: turning a person off suspends it, turning them on resumes
+it, removing ends it, and a role change is `setPolicies`. An invite is resent, or
+cancelled by deleting its account, only when the account exists for this workspace
+alone; a pending invite of a person who is also in another workspace is cancelled
+by removing the membership here. Turning off or deleting the account itself stays
+with the operator's command line and the account holder.
 
 ## Welcome and reset links
 
@@ -1103,8 +1155,9 @@ never imports `@fluxiq/contracts`).
 - **Routing.** Whatever gates unauthenticated visitors must allow `/welcome`,
   `/welcome/submit`, `/reset`, `/reset/request` and `/reset/submit`. No middleware
   was found at `apps/web/src`, and the existing page gating was not checked.
-- No SMTP sender, no timer calling `runDueDeletions`, and no rate limit or human
-  check on the welcome and reset pages.
+- No SMTP sender, and no rate limit or human check on the welcome and reset pages.
+- **Environments in the deletion cascade.** `purgeEnvironments` is wired as a no-op
+  until the web server composes the environment controller.
 
 ## Known gaps
 

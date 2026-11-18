@@ -1,7 +1,9 @@
 // Barrel for what every provisioning operation shares: the dependencies and
-// context types and their defaults, the typed refusals, the record lifetimes,
+// context types and their defaults, the typed refusals and the deletion
+// step that must wait, the record lifetimes,
 // the password rule, and email delivery that reports rather than throws.
 export * from "./create-provisioning-context.ts";
+export * from "./deletion-pending.ts";
 export * from "./deliver-provisioning-email.ts";
 export * from "./is-username-taken.ts";
 export * from "./is-weak-password.ts";

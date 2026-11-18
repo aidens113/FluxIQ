@@ -66,7 +66,10 @@ export class ClientGatewayHostEnrolment implements ClientGatewayManagedHosts {
   /** Mints the host's one live ticket, revoking any it had. */
   issueHostEnrolment(request: ClientGatewayHostEnrolmentRequest): ClientGatewayHostEnrolmentTicket {
     const minted = this.tickets.issue(request);
-    this.audit.record("enrolment.issued", "An enrolment ticket was minted for a managed host.", { hostId: request.hostId.trim(), domainId: request.domainId.trim(), profile: request.profile, expiresAt: minted.expiresAt });
+    this.audit.record("enrolment.issued", "An enrolment ticket was minted for a managed host.", {
+      hostId: request.hostId.trim(), domainId: request.domainId.trim(), profile: request.profile, expiresAt: minted.expiresAt,
+      ...(request.environment !== undefined ? { workspaceId: request.environment.workspaceId, environmentId: request.environment.environmentId } : {})
+    });
     return minted;
   }
 
@@ -100,6 +103,7 @@ export class ClientGatewayHostEnrolment implements ClientGatewayManagedHosts {
             trustedClientId: trustedClient.trustedClientId,
             managedHostId: binding.hostId,
             profile: binding.profile,
+            ...(binding.environment !== undefined ? { workspaceId: binding.environment.workspaceId, environmentId: binding.environment.environmentId } : {}),
             approvedByUserId: FLUXIQ_MANAGED_HOST_PRINCIPAL,
             ...clientGatewayPeerAuditFields(session.peer)
           })

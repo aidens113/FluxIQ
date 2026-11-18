@@ -4,6 +4,7 @@ import { deleteAccountOperation } from "./delete-account.ts";
 import { disableAccountOperation } from "./disable-account.ts";
 import { enableAccountOperation } from "./enable-account.ts";
 import { getAccountOperation } from "./get-account.ts";
+import { removeMemberOperation, resumeMemberOperation, suspendMemberOperation } from "./membership/index.ts";
 import { rotateCredentialsOperation } from "./rotate-credentials.ts";
 import { sendWelcomeOperation } from "./send-welcome.ts";
 import { setPasswordOperation } from "./set-password.ts";
@@ -17,6 +18,9 @@ export const PROVISIONING_OPERATION_TABLE: Readonly<ProvisioningOperationTable> 
   setPassword: setPasswordOperation,
   setPolicies: setPoliciesOperation,
   addMember: addMemberOperation,
+  suspendMember: suspendMemberOperation,
+  resumeMember: resumeMemberOperation,
+  removeMember: removeMemberOperation,
   disableAccount: disableAccountOperation,
   enableAccount: enableAccountOperation,
   deleteAccount: deleteAccountOperation,
