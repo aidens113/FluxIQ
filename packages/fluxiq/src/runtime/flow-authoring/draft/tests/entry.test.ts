@@ -351,7 +351,7 @@ describe("the attempt a rerun replaced", () => {
       receipt(3, "d6", "d18")
     ];
     const shown = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
-    expect(shown.steps[2]).toEqual({ step: 3, callId: "call.3", actionId: "list", replacedBy: 1, inResult: false });
+    expect(shown.steps[2]).toEqual({ step: 3, actionId: "list", replacedBy: 1, inResult: false, callId: "call.3" });
     expect(shown.steps[0]).toMatchObject({ step: 1, input: { where: "fixed" }, inResult: true });
     expect(shown.instruction).toContain("A step showing replacedBy is the attempt a rerun replaced");
     // Said only where such an attempt is listed.
@@ -494,5 +494,28 @@ describe("a repeat that runs while its last step succeeds, in the draft entry", 
       expect(instruction).toContain("repeat on the read with while");
       expect(instruction).toContain("the Flow keeps each row once");
     }
+  });
+});
+
+describe("the call identity a draft step line shows", () => {
+  const lines = (steps: readonly AutomationStudioFlowDraftStep[]) => value(steps).steps as unknown as Record<string, unknown>[];
+
+  it("shows the step's own callId, also when the step is shown as replaced", () => {
+    const steps = [
+      step(1, "list", { where: "fixed" }, { id: "d18", effect: "observe", proposes: true }),
+      step(2, "list", { where: "old" }, { id: "d6", effect: "observe", proposes: true, disposition: "dropped", replacedBy: "d18", resultCode: "ok", acts: ["a1"] })
+    ];
+    const shown = lines(steps);
+    expect(shown[0]!.callId).toBe("call.1");
+    expect(shown[1]).toMatchObject({ replacedBy: 1, inResult: false, callId: "call.2" });
+  });
+
+  it("never takes the identity from a check or a prior execution", () => {
+    const original = step(1, "press", { target: "original" }, { acts: ["a1"] });
+    const candidate = step(1, "press", { target: "replacement" }, { effectApplied: false, checkedCandidate: { callId: "checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true }, acts: ["a1"] });
+    delete candidate.callId;
+    const shown = lines([candidate])[0]!;
+    expect(shown).not.toHaveProperty("callId");
+    expect(shown).toMatchObject({ checkedCandidate: { callId: "checked" }, priorExecution: { callId: "call.1" } });
   });
 });

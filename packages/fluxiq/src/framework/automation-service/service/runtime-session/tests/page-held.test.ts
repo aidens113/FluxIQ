@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioHostResourcePort } from "../../../../../runtime/automation-host/index.ts";
-import { automationStudioProjectHostLeaseScope } from "../../../../../runtime/project-agents/index.ts";
+import { automationStudioProjectHostLeaseScope, AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/index.ts";
+
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 import { AUTOMATION_STUDIO_PAGE_HELD_MESSAGE, admitAutomationStudioRuntimeSession } from "../admission.ts";
 import { AUTOMATION_STUDIO_PAGE_CHECK_FAILED_MESSAGE, automationStudioPageHeldReader } from "../page-held.ts";
 
@@ -27,11 +29,12 @@ function session(status: AutomationStudioRuntimeSession["status"], metadata: Non
 function setup(options: { hostResources?: AutomationStudioHostResourcePort; sessions?: () => Promise<AutomationStudioRuntimeSession[]> } = {}) {
   const started = session("queued", {});
   const ports = {
+    leaseBinding: LEASE_BINDING,
     admissions: new Set<string>(),
     listRuntimeSessions: vi.fn(options.sessions ?? (async () => [])),
     startRuntimeSession: vi.fn(async () => started)
   };
-  const pageHeld = automationStudioPageHeldReader({ hostResources: options.hostResources, listRuntimeSessions: ports.listRuntimeSessions });
+  const pageHeld = automationStudioPageHeldReader({ hostResources: options.hostResources, leaseBinding: LEASE_BINDING, listRuntimeSessions: ports.listRuntimeSessions });
   return { ports, pageHeld, started, admit: (adaptive: boolean) => admitAutomationStudioRuntimeSession({ ...ports, pageHeld }, "project.one", adaptive) };
 }
 
@@ -40,7 +43,7 @@ describe("a plain run's start while another run holds the page", () => {
   afterEach(() => { while (open.length) open.pop()?.(); });
 
   async function hold(port: AutomationStudioHostResourcePort): Promise<void> {
-    const scope = automationStudioProjectHostLeaseScope(port);
+    const scope = automationStudioProjectHostLeaseScope(port, LEASE_BINDING);
     let release!: () => void;
     const ended = new Promise<void>((resolve) => { release = resolve; });
     let inside!: () => void;
@@ -52,6 +55,17 @@ describe("a plain run's start while another run holds the page", () => {
     });
     await entered;
   }
+
+  it.each(["owner", "domain"] as const)("a foreign %s frame cannot bypass B's held physical port", async (foreign) => {
+    const port = hostOfOne(), access = setup({ hostResources: port });
+    await hold(port);
+    const a = foreign === "owner" ? AutomationStudioHostLeaseAuthority.for({}).forDomain(LEASE_BINDING.domainId) : LEASE_BINDING.owner.forDomain("other.domain");
+    const scopeA = automationStudioProjectHostLeaseScope(hostOfOne(), a);
+    await scopeA.run({ role: "builder", briefId: "a" }, async () => {
+      await expect(access.admit(false)).rejects.toThrow(AUTOMATION_STUDIO_PAGE_HELD_MESSAGE);
+    });
+    expect(access.ports.startRuntimeSession).not.toHaveBeenCalled();
+  });
 
   it("is refused while a lease is held, in the words of a part's refusal, and writes no session", async () => {
     const port = hostOfOne();
@@ -88,7 +102,7 @@ describe("a plain run's start while another run holds the page", () => {
   it("is not refused inside a lease scope: that run holds the page itself", async () => {
     const port = hostOfOne();
     const { admit, started } = setup({ hostResources: port, sessions: async () => [session("running", { partRun: { caller: "build" } })] });
-    const scope = automationStudioProjectHostLeaseScope(port);
+    const scope = automationStudioProjectHostLeaseScope(port, LEASE_BINDING);
     await expect(scope.run({ role: "builder", briefId: "brief.1" }, async () => await admit(false))).resolves.toBe(started);
   });
 

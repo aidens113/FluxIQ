@@ -72,6 +72,10 @@ export class FakeSocket implements FluxIQWebSocketLike {
     this.dispatch("close", { code: 1006, reason: "" });
   }
 
+  reportError(): void {
+    this.dispatch("error", new Error("Synthetic network failure."));
+  }
+
   serverSays<TType extends ClientGatewayServerMessage["type"]>(
     type: TType,
     payload: Extract<ClientGatewayServerMessage, { type: TType }>["payload"]

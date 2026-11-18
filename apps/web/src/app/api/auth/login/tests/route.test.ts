@@ -10,6 +10,7 @@ const fixture = vi.hoisted(() => {
     root: "",
     authenticate: vi.fn(),
     revokeSession: vi.fn(),
+    revokeUserSessions: vi.fn(),
     unlockSession: vi.fn(),
     TotpRequiredError,
   };
@@ -18,10 +19,11 @@ const fixture = vi.hoisted(() => {
 vi.mock("fluxiq", () => ({ DEFAULT_SESSION_TTL_MS: 60_000, TotpRequiredError: fixture.TotpRequiredError }));
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
 vi.mock("../../../../../lib/fluxiq", () => ({
+  getFluxIQWorkspaces: () => ({ tenancy: "single" }),
   getFluxIQ: () => ({
     paths: { fluxiq: fixture.root },
     programs: {
-      identityAccess: { authenticate: fixture.authenticate, revokeSession: fixture.revokeSession },
+      identityAccess: { authenticate: fixture.authenticate, revokeSession: fixture.revokeSession, revokeUserSessions: fixture.revokeUserSessions },
       secretKeys: { unlockSession: fixture.unlockSession },
     },
   }),
@@ -76,6 +78,7 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
     delete process.env.FLUXIQ_PUBLIC_ORIGIN;
     fixture.authenticate.mockReset();
     fixture.revokeSession.mockReset();
+    fixture.revokeUserSessions.mockReset();
     fixture.unlockSession.mockReset();
     fixture.unlockSession.mockResolvedValue({ sessionId: "dummy-session", expiresAtMs: Date.now() + 60_000, unlockedKeyCount: 0 });
   });
@@ -189,12 +192,29 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
     expect(existsSync(path.join(fixture.root, "security", "login-attempts.json"))).toBe(false);
   });
 
-  it("accepts admin/admin on the local profile and flags the credential setup", async () => {
-    fixture.authenticate.mockResolvedValue(successfulLogin("admin"));
+  it("answers admin/admin on the local profile with a setup grant and no session", async () => {
+    fixture.authenticate.mockResolvedValue({ ...successfulLogin("admin"), user: { id: "admin", username: "admin", displayName: "Administrator" } });
     const response = await POST(rawLogin("admin", "admin"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ ok: true, payload: { requiresCredentialSetup: true } });
-    expect(response.headers.get("set-cookie")).toContain("fluxiq_session=dummy-session");
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.join("; ")).not.toContain("fluxiq_session=dummy-session");
+    expect(cookies.find((cookie) => cookie.startsWith("fluxiq_session="))).toMatch(/Max-Age=0/iu);
+    expect(cookies.find((cookie) => cookie.startsWith("fluxiq_credential_setup="))).toMatch(/HttpOnly/iu);
+    // The session identity access minted for the proof is revoked with every other one of the account's.
+    expect(fixture.revokeUserSessions).toHaveBeenCalledWith("admin");
+    expect(fixture.unlockSession).not.toHaveBeenCalled();
+  });
+
+  it("refuses a sign-in that a browser says came from another site, before authenticating", async () => {
+    const response = await POST(new Request("http://127.0.0.1/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "text/plain", origin: "https://evil.example.test", "sec-fetch-site": "cross-site" },
+      body: JSON.stringify({ username: "admin", password: "admin" }),
+    }));
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ ok: false, code: "cross_site_request" });
+    expect(fixture.authenticate).not.toHaveBeenCalled();
   });
 
   it("does not count an authenticator prompt for a correct password against the address", async () => {

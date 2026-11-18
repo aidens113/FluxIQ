@@ -72,7 +72,7 @@ async function road(ending: (attempt: AutomationStudioTaskAttempt) => { attempt:
   };
   const context: AutomationStudioConversationCommandContext = {
     port: automationStudioConversationCommandPort({ registry, actor: ACTOR, scope: {} }),
-    host, projectId: project.id, conversationId: "conversation.1", sessionId: ACTOR.sessionId, keyLocked: false, paired: true, startLocation: "https://library.example/account", answerTurnId: "turn.answer"
+    host, projectId: project.id, conversationId: "conversation.1", sessionId: ACTOR.sessionId, paired: true, startLocation: "https://library.example/account", answerTurnId: "turn.answer"
   };
   return { service, project, asked, turns, context, read, whileWorking, attemptAt };
 }

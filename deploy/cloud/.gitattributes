@@ -1,0 +1,3 @@
+# Terraform embeds bootstrap bytes and release packaging copies Linux scripts.
+# Keep the checkout portable even when the operator uses Windows autocrlf.
+* text eol=lf

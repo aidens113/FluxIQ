@@ -16,6 +16,8 @@ import {
   type SealedCredentialRecord
 } from "./credential-seal.ts";
 import { IdentityAuthorityDelegation } from "./authority/index.ts";
+import { IdentityDirectoryChanges } from "./directory/index.ts";
+import { IdentityFirstRunControl, INVALID_CREDENTIALS } from "./first-run/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
 import { defaultRoles } from "./roles.ts";
@@ -54,14 +56,20 @@ import type {
   VaultStatus
 } from "../types.ts";
 
-const INVALID_CREDENTIALS = "Invalid username or credentials";
-
 export const DEFAULT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export class IdentityAccessService {
   private readonly users = new Map<string, User>();
   /** The person's own preferences, on their User record (`IdentityPersonalPreferences`); others' views of a user leave them out. */
   readonly preferences = new IdentityPersonalPreferences({ users: this.users, ready: () => this.load(), persist: () => this.persist() });
+  /** What an empty store starts with (the temporary admin, or unclaimed for a host's first-run setup), and the store's first-run state. */
+  readonly firstRun = new IdentityFirstRunControl({
+    users: this.users,
+    ready: () => this.load(),
+    loaded: () => this.loading !== undefined,
+    prove: (userId, password) => this.unlockCredential(userId, password),
+    setPassword: (userId, password) => this.setCredentialHash(userId, "passwordHash", password)
+  });
   private readonly roles = new Map<string, Role>();
   private readonly credentials = new Map<string, UserCredential>();
   private readonly credentialMetadata = new Map<string, CredentialMetadata>();
@@ -79,6 +87,8 @@ export class IdentityAccessService {
   private readonly credentialAttempts = new IdentityCredentialAttempts();
   /** Where account holders' role and on/off are held; the `update-user` endpoint asks it first. */
   readonly authority = new IdentityAuthorityDelegation();
+  /** Told when a person, their role or enabled flag, or a role's permissions changed, as each state is stored. */
+  readonly directoryChanges = new IdentityDirectoryChanges();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {
@@ -528,17 +538,13 @@ export class IdentityAccessService {
       for (const id of state.rawSessionRecordIds) await this.repository.delete(id, {});
       for (const record of state.pinVerifierRecords) await this.repository.put(record);
     }
-    if (await this.ensureDefaultAdmin()) {
-      await this.persist();
-    }
+    if (await this.firstRun.seed()) await this.persist();
   }
 
   private async reloadFromStore(): Promise<void> {
     if (!this.repository) return;
     this.applyState(await readStoredState(this.repository));
-    if (await this.ensureDefaultAdmin()) {
-      await this.persist();
-    }
+    if (await this.firstRun.seed()) await this.persist();
   }
 
   /**
@@ -577,6 +583,7 @@ export class IdentityAccessService {
   }
 
   private async persist(): Promise<void> {
+    this.directoryChanges.observe(this.users.values(), this.roles.values());
     if (!this.repository) return;
     const now = Date.now();
     for (const user of this.users.values()) {
@@ -780,21 +787,4 @@ export class IdentityAccessService {
     return credential;
   }
 
-  private async ensureDefaultAdmin(): Promise<boolean> {
-    if (this.users.size > 0) return false;
-    const now = Date.now();
-    const user: User = {
-      id: "admin",
-      username: "admin",
-      displayName: "Administrator",
-      roleId: "admin",
-      enabled: true,
-      totpEnabled: false,
-      createdAtMs: now,
-      updatedAtMs: now
-    };
-    this.users.set(user.id, user);
-    await this.setCredentialHash(user.id, "passwordHash", "admin");
-    return true;
-  }
 }

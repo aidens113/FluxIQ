@@ -37,6 +37,7 @@ import path from "node:path";
 import { iamActionName } from "@fluxiq/contracts/iam";
 import { iamEndpointAccessLevel, iamProgramService } from "../../../../platform/iam/catalog/index.ts";
 import { PanelAssistant, PanelAssistantThreads } from "../../../../runtime/conversations/assistant/index.ts";
+import type { AutomationStudioConversationSignalSink } from "../../../../runtime/conversations/signals/index.ts";
 import type { GlobalProgramApiRegistry, ProgramApiActor, ProgramApiHandler, ProgramEndpointClassification } from "../../../_shared/api.ts";
 import { endpointResource, type ProgramEndpointResource } from "../../../_shared/iam/index.ts";
 import type { Permission } from "../../../identity-access/index.ts";
@@ -50,10 +51,15 @@ const PROGRAM = "automation-studio";
 /** The project id a panel thread reads back with: naming it names no project. */
 const PANEL_PROJECT = "panel";
 
-/** What the endpoints need: the registry, where the service keeps its projects, and what reads a project's attachment (each read on first use). */
+/**
+ * What the endpoints need: the registry, where the service keeps its projects,
+ * what reads a project's attachment (each read on first use), and where a
+ * change to a person's thread is signalled: the service's conversation signals,
+ * so the panel's change stream hears panel threads and project threads alike.
+ */
 export type PanelAssistantApiDependencies = {
   readonly registry: GlobalProgramApiRegistry;
-  readonly service: { readonly projectPaths: { readonly root: string | undefined } } & PanelAssistantProjectReads;
+  readonly service: { readonly projectPaths: { readonly root: string | undefined }; readonly conversations?: { readonly signals: AutomationStudioConversationSignalSink } } & PanelAssistantProjectReads;
 };
 
 /** Registers the endpoints and answers the assistant they serve. */
@@ -67,7 +73,8 @@ export function registerPanelAssistantEndpoints(dependencies: PanelAssistantApiD
       const projectsRoot = service.projectPaths.root;
       if (!projectsRoot) throw new Error("The assistant's conversations need a workspace that keeps its data on disk.");
       // Beside the projects' root, never inside it: no project's id can name a panel database.
-      threads = new PanelAssistantThreads({ rootDir: path.join(path.dirname(projectsRoot), "panel-assistant") });
+      const signals = service.conversations?.signals;
+      threads = new PanelAssistantThreads({ rootDir: path.join(path.dirname(projectsRoot), "panel-assistant"), ...(signals === undefined ? {} : { signals }) });
       return threads;
     }
   });

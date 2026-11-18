@@ -1,5 +1,5 @@
 /**
- * The person a model call is made for: whose unlocked Secret Keys key pays.
+ * The person a model call is made for: whose configured Secret Keys key pays.
  *
  * Not an authorization. A model call made while building, exploring,
  * repairing, verifying, diagnosing or adapting a Flow needs no grant: nothing

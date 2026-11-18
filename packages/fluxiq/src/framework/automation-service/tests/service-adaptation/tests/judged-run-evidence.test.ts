@@ -155,7 +155,7 @@ async function harness(options: { verdict: "yes" | "no"; reAimedFailsOnce?: bool
   services.add(service);
 
   const base = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 };
   const project = await service.createProject({ name: "Judged run evidence", domainId: "example" });
   const created = await service.createFlow({ projectId: project.id, flowId: "flow.judged-run-evidence", name: "Judged run evidence Flow" });
   await service.saveFlowGenerationInstruction({ projectId: project.id, flowId: created.flowId, instruction: "Run the Flow's steps in order and return its result." });

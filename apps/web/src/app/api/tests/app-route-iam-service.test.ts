@@ -93,12 +93,20 @@ describe("app routes on the service profile", () => {
     expect(PEOPLE_AND_ACTIVITY).toHaveLength(9);
   });
 
+  // The reads that hold the selected tenant's authority (`withWorkspaceAccountRead`,
+  // c564c2b3a) refuse a bearer caller by the contract's callers before any lookup,
+  // as a paired client the endpoint is not available to; the others read only the
+  // cookie session, so a bearer alone is no one.
+  const HELD_TENANT_READS = new Set(["GET /api/accounts/members", "GET /api/security/audit"]);
+
   for (const contract of PEOPLE_AND_ACTIVITY) {
     const name = `${contract.method} ${contract.path}${contract.variant === undefined ? "" : ` (${contract.variant})`}`;
     it(`${name}: allows an administrator's policy and refuses a hosted user's, by cookie only`, async () => {
       await expect(call(name, { kind: "cookie", person: "admin" })).resolves.toEqual({ outcome: "allowed" });
       for (const person of ["alice", "bob"] as const) await expect(call(name, { kind: "cookie", person })).resolves.toEqual({ outcome: "forbidden", error: `Not authorized: ${contract.action}` });
-      await expect(call(name, { kind: "token", person: "admin" })).resolves.toEqual({ outcome: "unauthenticated" });
+      await expect(call(name, { kind: "token", person: "admin" })).resolves.toEqual(HELD_TENANT_READS.has(name)
+        ? { outcome: "forbidden", error: "This endpoint is not available to a paired client." }
+        : { outcome: "unauthenticated" });
     });
   }
 
@@ -107,5 +115,12 @@ describe("app routes on the service profile", () => {
       await expect(call(name, { kind: "cookie", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
       await expect(call(name, { kind: "token", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
     }
+  });
+
+  it("gives a user the panel's change stream, which names only what they may read, and a paired client only what the snapshot would", async () => {
+    // The stream is a filtered watch (each event decided as the read it prompts), so a hosted user holds it by cookie;
+    // a bearer is served only the gateway, which the snapshot refuses a user, so it has nothing to hear.
+    await expect(call("GET /api/panel/changes", { kind: "cookie", person: "bob" })).resolves.toEqual({ outcome: "allowed" });
+    await expect(call("GET /api/panel/changes", { kind: "token", person: "bob" })).resolves.toMatchObject({ outcome: "forbidden" });
   });
 });

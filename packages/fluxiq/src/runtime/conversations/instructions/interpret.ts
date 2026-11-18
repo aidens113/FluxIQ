@@ -17,6 +17,7 @@
 //   failed -- Core reads the words itself (`fallback.ts`) and records why, so
 //   the thread can say so in plain English.
 
+import { readModelAccessState, type ModelAccessState } from "@fluxiq/contracts/platform";
 import type { AutomationStudioConversationInterpretation } from "./decision.ts";
 import { automationStudioConversationFallbackDecision } from "./fallback.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
@@ -67,6 +68,8 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
   let correction: string | null = null;
   let problem = "the model did not answer";
   let attempts = 0;
+  // The sender's model access, when the last attempt failed for an access reason (`modelAccessOf`).
+  let access: ModelAccessState | null = null;
   // What the attempts were priced at, summed, and how many were priced; undefined until one is.
   let costUsd: number | undefined;
   let pricedCalls = 0;
@@ -88,17 +91,49 @@ export async function interpretAutomationStudioConversationTurn(input: Automatio
         { instructions, transcript: [...input.transcript], message: input.message, correction },
         { signal, caller: input.caller ?? null, paid }
       ));
+      // The model answered, so an earlier attempt's access failure is no longer the reason.
+      access = null;
       const decision = parseAutomationStudioConversationDecision(raw, input.context);
       if (decision) return { decision, source: "model", modelProblem: null, attempts, ...priced(costUsd, pricedCalls) };
       correction = UNREADABLE;
       problem = "the model's answer could not be read";
     } catch (error) {
-      problem = automationStudioConversationModelProblem(error);
+      access = modelAccessOf(error);
+      problem = access?.message ?? automationStudioConversationModelProblem(error);
+      // No key, a key that cannot be opened or used, or the provider refusing it: the same call meets
+      // the same reason, so it is said now. A provider out of reach is tried again first.
+      if (access && (error as { retryable?: unknown }).retryable !== true) return { ...accessReading(input, access, attempts), ...priced(costUsd, pricedCalls) };
+      // With no usable key the words are still read: a confident match (running a saved Flow,
+      // which needs no model) still acts. Anything else gets the setup message alone, not an
+      // unrelated "could not tell what you wanted" ahead of it.
+      if (keySetupProblem(problem)) {
+        const matched = fallback(input, problem, attempts);
+        return { ...(matched.decision.kind === "reply" ? setupReply(problem, attempts) : matched), ...priced(costUsd, pricedCalls) };
+      }
       if ((error as { retryable?: unknown } | null)?.retryable === false) break;
       await clock.wait(Math.min(limits.backoffMs * 2 ** (attempts - 1), Math.max(0, limits.deadlineMs - (clock.now() - started))));
     }
   }
+  if (access) return { ...accessReading(input, access, attempts), ...priced(costUsd, pricedCalls) };
   return { ...fallback(input, problem, attempts), ...priced(costUsd, pricedCalls) };
+}
+
+/** The model-access state a failed attempt carried (`AutomationStudioModelAccessError.access`), or null. */
+function modelAccessOf(error: unknown): ModelAccessState | null {
+  const carried = (error as { access?: unknown } | null)?.access;
+  return carried === undefined ? null : readModelAccessState(carried);
+}
+
+/**
+ * The reading when the model could not be reached for an access reason. As with a missing key, a
+ * confident word match (running a saved Flow, which needs no model) still acts; anything else gets the
+ * state's own words alone, which name the real reason and what to do.
+ */
+function accessReading(input: AutomationStudioConversationInterpretInput, access: ModelAccessState, attempts: number): AutomationStudioConversationInterpretation {
+  // Said after the action as "(I read your message without the model, because ...)".
+  const matched = fallback(input, `the model could not be used: ${access.message.replace(/\.$/u, "")}`, attempts);
+  if (matched.decision.kind !== "reply") return { ...matched, modelAccess: access };
+  return { decision: { kind: "reply", text: access.message }, source: "closest_match", modelProblem: access.message, keySetup: true, modelAccess: access, attempts };
 }
 
 /**
@@ -139,11 +174,37 @@ export function automationStudioConversationModelProblem(error: unknown): string
   if (/timeout|aborted/u.test(code) || name === "TimeoutError" || name === "AbortError") return "the model did not answer in time";
   if (/rate_limited/u.test(code)) return "the model was too busy to answer";
   if (/balance_exhausted/u.test(code)) return "the model account's balance has run out, so add credit with the model provider and try again";
-  if (/secret_unavailable/u.test(code)) return "your model key is locked on this browser, so open FluxIQ and enter your password once to unlock it and let the model read your messages";
+  if (/secret_unavailable/u.test(code)) return secretProblem(error instanceof Error ? error.message : "");
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
   if (/network|http|redirect/u.test(code)) return "the model could not be reached";
   // Never the code itself: the thread keeps these words, and shows them again (t276).
   return "the model call failed";
+}
+
+/**
+ * Why a model key could not be released, from the words the release gave
+ * (`models/secrets/session-key.ts`; the adapters keep them). No key at all and
+ * a saved key that needs one panel sign-in to be upgraded are different
+ * problems with different fixes, and neither claims a key exists when none does.
+ */
+const NO_KEY = "no model key is set up yet, so add one in Settings, under AI keys";
+const NEEDS_SIGN_IN = "the saved model key needs one sign-in to the panel to upgrade it, then try again";
+
+function secretProblem(message: string): string {
+  if (/no enabled .* key|no configured model key|no model key/iu.test(message)) return NO_KEY;
+  if (/requires recovery|protection key|could not be authenticated/iu.test(message)) return NEEDS_SIGN_IN;
+  return "the model key could not be used, so check the model key in FluxIQ and try again";
+}
+
+const KEY_SETUP_PROBLEMS = [NO_KEY, NEEDS_SIGN_IN];
+
+function keySetupProblem(problem: string): boolean {
+  return KEY_SETUP_PROBLEMS.includes(problem);
+}
+
+/** The person's message was not read at all: the one thing to tell them is how to make the model usable. */
+function setupReply(problem: string, attempts: number): AutomationStudioConversationInterpretation {
+  return { decision: { kind: "reply", text: `${problem.charAt(0).toUpperCase()}${problem.slice(1)}.` }, source: "closest_match", modelProblem: problem, keySetup: true, attempts };
 }
 
 function fallback(input: AutomationStudioConversationInterpretInput, problem: string, attempts: number): AutomationStudioConversationInterpretation {

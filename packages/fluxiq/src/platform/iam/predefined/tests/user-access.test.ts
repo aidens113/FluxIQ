@@ -27,6 +27,15 @@ const PANEL_ASSISTANT_GRANTED = [
   "studio:AnswerPanelAsk"
 ];
 
+describe("FluxIQUserAccess own client credentials", () => {
+  it.each(["gateway:ApprovePairing", "iam:ListApiKeys", "iam:EnrollApiKey", "iam:RevokeApiKey"])("limits %s to the panel person's own user", (action) => {
+    expect(decide(action, ALICE_USER)).toBe("allow");
+    expect(decide(action, BOB_USER)).toBe("deny");
+    expect(decide(action, iamWorkspaceFrn(WS))).toBe("deny");
+    for (const origin of ["extension-chat", "api", "schedule", "cli", "provisioning"] as const) expect(decideFrom(origin, action, ALICE_USER)).toBe("deny");
+  });
+});
+
 describe("FluxIQUserAccess filtered workspace lists", () => {
   it("allows the filtered project list on the workspace FRN, whose items then need OwnData", () => {
     expect(decide("studio:Projects", iamWorkspaceFrn(WS))).toBe("allow");

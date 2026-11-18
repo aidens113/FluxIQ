@@ -24,14 +24,12 @@ async function loadProject(studio: ProgramCommandTransport, projectId: string, s
   return { runs: Array.isArray(runsAnswer.payload?.runs) ? runsAnswer.payload.runs : [], names };
 }
 
-/** Throws when the projects cannot be listed, or when none of them could be read. */
-export async function loadRuns(studio: ProgramCommandTransport, signal: AbortSignal): Promise<HomeRuns> {
-  const projectsAnswer = await studio.get<{ projects?: unknown }>("projects", { signal });
-  if (!projectsAnswer.ok) throw new Error("projects failed");
-  const projectIds = (Array.isArray(projectsAnswer.payload?.projects) ? projectsAnswer.payload.projects : []).flatMap((project) => {
-    const id = textOf(asRecord(project)?.id);
-    return id ? [id] : [];
-  });
+/**
+ * The runs of the given projects: the one in view, or every project of the shared list. Core's run and
+ * Flow reads each take one project, so this costs two requests per project and none to list them.
+ * Throws when none of them could be read.
+ */
+export async function loadRuns(studio: ProgramCommandTransport, projectIds: readonly string[], signal: AbortSignal): Promise<HomeRuns> {
   const loaded = await Promise.all(projectIds.map((projectId) => loadProject(studio, projectId, signal)));
   const read = loaded.flatMap((project) => (project ? [project] : []));
   if (projectIds.length > 0 && read.length === 0) throw new Error("no project could be read");

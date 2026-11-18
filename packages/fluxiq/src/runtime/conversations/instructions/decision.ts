@@ -12,6 +12,8 @@
 // `fallback.ts` builds one from the words alone when no model could be used,
 // and `respond.ts` writes it into the thread.
 
+import type { ModelAccessState } from "@fluxiq/contracts/platform";
+
 /** A Flow in the project, as a person or a model would name it. */
 export type AutomationStudioConversationFlowReference = {
   flowId: string;
@@ -70,6 +72,14 @@ export type AutomationStudioConversationInterpretation = {
   source: AutomationStudioConversationDecisionSource;
   /** Plain English, for the thread: why the model could not decide. Null when it did. */
   modelProblem: string | null;
+  /** True when the model could not be used for want of a key (or one panel sign-in): the reply is the setup message alone. */
+  keySetup?: true;
+  /**
+   * The sender's model access when the model could not be reached for an access reason (no key, a key
+   * that could not be opened or may not be used, the provider refusing the key or out of reach, t924).
+   * The reply is its `message`; a client may show the state beside it.
+   */
+  modelAccess?: ModelAccessState;
   /** Model calls made, including retries. Zero when no model is connected. */
   attempts: number;
   /**

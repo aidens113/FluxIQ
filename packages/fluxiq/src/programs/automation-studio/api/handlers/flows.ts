@@ -3,7 +3,7 @@
 import { createFlowInput, getFlowInput, getFlowMetadataDetailInput, listFlowsInput, updateFlowSettingsInput } from "@fluxiq/contracts/program-api-inputs";
 import { AUTOMATION_STUDIO_ENDPOINTS, type ApplyGraphPatchRequest, type CreateFlowRequest, type FlowIdProjectRequest, type FlowMetadataPageRequest, type FlowProjectRequest, type GraphViewportRequest, type SaveFlowRequest } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioService } from "../../../../framework/automation-service/index.ts";
-import { updateFlowSettingsForRequest, withFlowHumanness, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
+import { automationStudioResultCheckGrantForRequest, updateFlowSettingsForRequest, withFlowHumanness, withFlowSizeSettings, withStoredCheckAuthorization } from "../../../../framework/automation-service/service/flow-settings-requests/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 import { endpointResource, type ProgramResourceRef } from "../../../_shared/iam/index.ts";
 import type { ProgramApiRequest } from "../../../_shared/api.ts";
@@ -148,7 +148,20 @@ export function registerFlowEndpoints(dependencies: AutomationStudioApiDependenc
       const projectId = String(payload.projectId ?? "");
       const flowId = String(payload.flowId ?? payload.flow?.flowId ?? "");
       if (!payload.flow || typeof payload.flow !== "object") return { ok: false, error: "Flow settings are required." };
-      return { ok: true, payload: { flow: await updateFlowSettingsForRequest(service, projectId, flowId, payload) } };
+      // Turning result checking on is granted as this request's own actor -- the
+      // person, or the client paired for them -- never as anyone a body names.
+      let checkAuthorization: ReturnType<typeof automationStudioResultCheckGrantForRequest>;
+      try {
+        checkAuthorization = automationStudioResultCheckGrantForRequest({ value: payload.resultCheckAuthorization, actor: request.actor, trustedClientIdOf: (sessionId) => dependencies.clientGateway?.trustedClientIdOf(sessionId), nowMs: Date.now() });
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+      // The same IAM decision every use of the key is made under, asked now so
+      // a key this person may not use is refused here rather than on each run.
+      if (checkAuthorization && (!request.actor || !(await registry.authorize({ actor: request.actor, action: "secrets:UseKey", permission: "programs.write", resources: { kind: "key", keyId: checkAuthorization.keyId }, programId: "secret-keys" })).allowed)) {
+        return { ok: false, error: "You cannot use that model key, so it cannot pay for this Flow's result checks." };
+      }
+      return { ok: true, payload: { flow: await updateFlowSettingsForRequest(service, projectId, flowId, payload, checkAuthorization) } };
     }
   });
   registry.register({

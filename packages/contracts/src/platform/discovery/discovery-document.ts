@@ -22,8 +22,14 @@ const clientVersion = z.string().regex(/^\d{1,4}\.\d{1,4}\.\d{1,6}$/u);
  * - `gatewayUrl`: `wss:` (or `ws:` on loopback);
  * - `connect`: same-origin paths, except `signUpUrl`, which is absolute
  *   (`https:`, or `http:` on loopback) and comes from the product manifest;
+ * - `connect.flows`: explicit support for each implemented connection flow.
+ *   Missing means legacy/unknown; endpoint URL presence never implies support.
+ *   `gatewayReferencePairing` names the existing tokenless gateway hello and
+ *   local reference approval; it is distinct from typed `referenceCode` flow B.
  * - `protocols.clientGateway`: the gateway protocol versions served;
  * - `minimumClient`: the oldest client version accepted, by client kind.
+ * - `runtime`: optional immutable Core build provenance, omitted when the
+ *   running code has no stamped identity. It does not decide compatibility.
  *
  * Fields a client does not know are dropped, so a later additive field never
  * breaks it; an incompatible change raises `fluxiqDiscoveryVersion`. Under the
@@ -33,6 +39,7 @@ export const fluxiqDiscoveryDocumentSchema = z
   .object({
     fluxiqDiscoveryVersion: z.literal(FLUXIQ_DISCOVERY_VERSION),
     instance: z.object({
+      id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u).optional(),
       name: z.string().min(1).max(100),
       profile: z.enum(FLUXIQ_PROFILES),
       product: z.object({ name: z.string().min(1).max(60), logoUrl: samePath.optional() }).optional()
@@ -44,10 +51,21 @@ export const fluxiqDiscoveryDocumentSchema = z
       tokenUrl: samePath,
       revokeUrl: samePath,
       codeEntryUrl: samePath,
+      flows: z.object({
+        authorizationCodePkce: z.boolean(),
+        referenceCode: z.boolean(),
+        gatewayReferencePairing: z.boolean().optional()
+      }).optional(),
       signUpUrl: z.string().refine((value) => isSecureOrLoopbackUrl(value, "http"), "an https URL, or http on loopback").optional()
     }),
     protocols: z.object({ clientGateway: z.array(protocolVersion).min(1).max(16) }),
-    minimumClient: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u), clientVersion)
+    minimumClient: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,63}$/u), clientVersion),
+    runtime: z.object({
+      schema: z.literal(1),
+      protocol: z.literal("fluxiq.core-runtime-identity.v1"),
+      version: z.string().min(1).max(128),
+      artifactDigest: z.string().regex(/^[a-f0-9]{64}$/u)
+    }).optional()
   })
   .superRefine((document, context) => {
     if (document.instance.profile !== "service") return;

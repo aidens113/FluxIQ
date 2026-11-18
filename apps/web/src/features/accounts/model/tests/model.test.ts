@@ -39,4 +39,17 @@ describe("shapeMembersView", () => {
     const [member] = shapeMembersView({ members: [{ userId: "u1", role: "superuser", state: "weird", source: "elsewhere" }] }).members;
     expect(member).toMatchObject({ role: "other", state: "active", source: "account", self: false });
   });
+
+  it.each([undefined, null, "false", 0, {}, []])("fails closed for a malformed present readOnly value (%j)", readOnly => {
+    const view = shapeMembersView({ readOnly, canRemove: true });
+    expect(view.readOnly).toBe(true);
+    expect(view.canRemove).toBe(false);
+  });
+
+  it("preserves explicit read-only and writable views and compatible legacy absence", () => {
+    expect(shapeMembersView({ readOnly: true, canRemove: true })).toMatchObject({ readOnly: true, canRemove: false });
+    expect(shapeMembersView({ readOnly: false, canRemove: true })).toMatchObject({ readOnly: false, canRemove: true });
+    expect(shapeMembersView({ canRemove: true })).toMatchObject({ readOnly: false, canRemove: true });
+    expect(shapeMembersView(undefined)).toMatchObject({ readOnly: false, canRemove: false, members: [] });
+  });
 });

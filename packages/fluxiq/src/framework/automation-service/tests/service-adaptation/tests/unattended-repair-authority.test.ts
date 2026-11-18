@@ -7,8 +7,8 @@
 // every task kind whether or not a person asked for the run. The shipped host
 // does not do that. `_shared/runtime.ts` binds the session-key resolver
 // (`createAutomationStudioSessionKeyProviderResolver`), which answers
-// `undefined` when the call is made for no caller -- there is no unlocked
-// session whose key could pay. So in the product, as opposed to in that test's
+// `undefined` when the call is made for no caller -- there is nobody whose
+// authority a key use could be made under. So in the product, as opposed to in that test's
 // harness, a run nobody is watching could not obtain a model to *produce* a
 // repair at all.
 //
@@ -78,7 +78,8 @@ const DRIFT: AutomationStudioNodeDefinition = {
 function standingAuthorization(overrides: JsonObject = {}): JsonObject {
   return {
     authorizedByUserId: "user.aiden",
-    unlockSessionId: "session.unlock.1",
+    authorizationId: "result-check:1",
+    grantedThrough: { kind: "person" },
     keyId: "key.deepseek",
     maxTotalCostUsd: 1,
     maxCostUsdPerCall: 0.05,
@@ -189,7 +190,7 @@ async function harness(options: {
     dataDir: tempRoot,
     seedFixture: false,
     // Exactly what `_shared/runtime.ts` binds: nothing without a caller,
-    // because only a caller's unlocked session has a key to pay with.
+    // because a key is used only on a caller's authority.
     llmProviderResolver: (resolverInput) => resolverInput.caller
       ? {
         provider: {

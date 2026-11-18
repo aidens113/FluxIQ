@@ -35,7 +35,7 @@ function contextFor(known: AutomationStudioConversationCommandCallResult | Error
     async pendingAsks() { return []; },
     async getAsk() { return null; }
   };
-  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", keyLocked: false, paired: false, startLocation: "https://elsewhere.example/news", ...extra };
+  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", paired: false, startLocation: "https://elsewhere.example/news", ...extra };
   return { context, calls };
 }
 
@@ -64,16 +64,6 @@ describe("run.execute on a task's Flow in answer-first mode", () => {
     const { context, calls } = contextFor({ ok: true, payload: { flowId: "flow.1" } });
     await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.1" });
     expect(calls.find((call) => call.endpoint === "generate-flow-bootstrap-adaptation")?.payload).toMatchObject({ startLocation: "https://elsewhere.example/news" });
-  });
-
-  it("says the key's setup step and starts nothing when the key cannot be opened", async () => {
-    let told = 0;
-    const { context, calls } = contextFor({ ok: true, payload: { flowId: "flow.1" } }, ANSWERED, { keyNeedsUnlock: true, keyLockReason: "first_unlock", noteKeySetupStepTold: () => { told += 1; } });
-    const outcome = await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.1" });
-    expect(outcome.status).toBe("done");
-    expect(outcome.summary).toContain("Nothing has started and nothing was spent.");
-    expect(told).toBe(1);
-    expect(endpoints(calls)).toEqual(["get-task-known-flow"]);
   });
 
   it("fails only where the attempt's call did, never on the project path", async () => {

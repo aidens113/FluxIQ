@@ -3,7 +3,9 @@
 // project-domain gate, and the JSON writing guard. Moved from `apps/web` so a
 // server without Next.js answers it exactly as the web panel does.
 export * from "./handle-program-request.ts";
+export type { ProgramRouteIdentityAuthority } from "./identity-authority.ts";
 export * from "./paired-client-project-domain.ts";
+export * from "./person-domain-scope.ts";
 export * from "./present-panel-session.ts";
 export * from "./program-json-text.ts";
 export * from "./program-route.ts";

@@ -7,6 +7,10 @@ import { APP_ROUTE_IAM_CONTRACTS, APP_ROUTES_DECIDED_BY_REGISTRY, appRouteIamCon
 const API_ROOT = fileURLToPath(new URL("../../../app/api", import.meta.url));
 // Login and logout stay unauthenticated (lane A); discovery is not an app route of this lane.
 const UNAUTHENTICATED = ["auth", "discovery"];
+// These exact endpoints authenticate their own proof, never a panel cookie or submitted actor.
+// Self-forget only reduces credential authority; it does not require a live content/IAM session.
+// The payment provider's webhook proves itself by the provider's signature over the raw body.
+const PUBLIC_PROOF_ROUTES = new Set(["POST /api/keys/session", "POST /api/connect/token", "POST /api/connect/revoke", "POST /api/client-gateway/forget-pairing", "POST /api/platform/v1/commerce/webhook"]);
 const PERMISSIONS = new Set(["programs.read", "programs.write", "flows.write", "runtime.control", "compute.control", "identity.manage", "data.manage", "secrets.manage", "none"]);
 
 function routeFiles(directory: string, found: string[] = []): string[] {
@@ -25,7 +29,10 @@ function exportedRoutes(): string[] {
     const relative = path.relative(API_ROOT, path.dirname(file)).split(path.sep);
     if (UNAUTHENTICATED.includes(relative[0] ?? "")) continue;
     const route = `/api/${relative.join("/")}`;
-    for (const match of readFileSync(file, "utf8").matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)\b/gu)) routes.push(`${match[1]} ${route}`);
+    for (const match of readFileSync(file, "utf8").matchAll(/export\s+(?:async\s+function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/gu)) {
+      const operation = `${match[1]} ${route}`;
+      if (!PUBLIC_PROOF_ROUTES.has(operation)) routes.push(operation);
+    }
   }
   return routes.sort();
 }
@@ -67,6 +74,20 @@ describe("the app route IAM table", () => {
     expect(appRouteIamContract("POST", "/api/framework/setup", "migrate").action).toBe("ops:MigrateFrameworkStorage");
   });
 
+  it("classifies consent and key management as the signed-in caller's own account", () => {
+    for (const [method, path, action] of [["POST", "/api/connect/authorize", "gateway:ApprovePairing"], ["GET", "/api/keys", "iam:ListApiKeys"], ["POST", "/api/keys", "iam:EnrollApiKey"], ["DELETE", "/api/keys", "iam:RevokeApiKey"]] as const) {
+      const contract = appRouteIamContract(method, path);
+      expect(contract.action).toBe(action);
+      expect(contract.callers).toEqual({ panel: "none" });
+      expect(contract.resource.of({ userId: "forged-body-user" })).toEqual({ kind: "user", self: true });
+    }
+    for (const operation of PUBLIC_PROOF_ROUTES) {
+      const [method, path] = operation.split(" ");
+      expect(method).toBe("POST");
+      expect(["/api/keys/session", "/api/connect/token", "/api/connect/revoke", "/api/client-gateway/forget-pairing", "/api/platform/v1/commerce/webhook"]).toContain(path);
+    }
+  });
+
   it("takes each route's resources from its request, the narrowest it names", () => {
     const of = (method: "GET" | "POST" | "PUT", route: string, input: Record<string, unknown> = {}) => appRouteIamContract(method, route).resource.of(input);
     expect(of("GET", "/api/programs/automation-studio/run-datasets/[projectId]/[runId]/[datasetId]", { projectId: "p", datasetId: "d" })).toEqual({ kind: "project-child", projectId: "p", child: "dataset", childId: "d" });
@@ -77,7 +98,7 @@ describe("the app route IAM table", () => {
     expect(of("POST", context, { activeProjectId: "p", activeFlowId: "f" })).toEqual({ kind: "project-child", projectId: "p", child: "flow", childId: "f" });
     expect(of("POST", context, { activeProjectId: "p", activeFlowId: null })).toEqual({ kind: "project", projectId: "p" });
     expect(of("POST", context, { activeProjectId: null })).toEqual({ kind: "user", self: true });
-    for (const route of ["/api/recordings", "/api/client-gateway/snapshot", "/api/programs", "/api/accounts/members", "/api/security/audit"]) expect(of("GET", route)).toEqual({ kind: "workspace" });
+    for (const route of ["/api/recordings", "/api/client-gateway/snapshot", "/api/panel/changes", "/api/programs", "/api/accounts/members", "/api/security/audit"]) expect(of("GET", route)).toEqual({ kind: "workspace" });
     expect(of("POST", "/api/accounts/invite")).toEqual({ kind: "workspace" });
     for (const variant of ["set-role", "turn-off", "turn-on", "remove", "resend-invite", "revoke-invite"]) {
       expect(appRouteIamContract("POST", "/api/accounts/member", variant).resource.of({ userId: "u1" })).toEqual({ kind: "user", userId: "u1" });

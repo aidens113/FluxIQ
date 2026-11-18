@@ -53,6 +53,8 @@ export type MembersView = {
   assignableRoles: AssignableRole[];
   /** Whether removing a person is available here (one workspace: removing deletes their account). */
   canRemove: boolean;
+  /** A membership read grants no global account mutation authority. Absent on legacy single-root answers. */
+  readOnly?: boolean;
   members: MemberRow[];
 };
 

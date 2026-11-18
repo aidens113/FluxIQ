@@ -8,9 +8,12 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES,
+  CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES,
   CLIENT_GATEWAY_PROTOCOL_VERSION,
   type ClientGatewayActionCommand,
   type ClientGatewayClientHello,
+  type ClientGatewayClientMessage,
+  type ClientGatewayConversationChanged,
   type ClientGatewayHostLease,
   type ClientGatewayManagedHost,
   type ClientGatewayServerMessage,
@@ -99,5 +102,45 @@ describe("managed host enrolment is additive", () => {
     expectTypeOf<ClientGatewaySession["managedHostId"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<ClientGatewayTrustedClient["managedHost"]>().toEqualTypeOf<ClientGatewayManagedHost | undefined>();
     expectTypeOf<ClientGatewayManagedHost["profile"]>().toEqualTypeOf<"fresh" | "named">();
+  });
+});
+
+describe("project focus is additive", () => {
+  const envelope = { id: "m1", protocolVersion: "0.1", timestamp: 1 } as const;
+
+  it("names a project or null on client.focus_project, and the project Core moved to on server.project_focused", () => {
+    const focus: ClientGatewayClientMessage = { ...envelope, type: "client.focus_project", payload: { projectId: "project.1" } };
+    const back: ClientGatewayClientMessage = { ...envelope, type: "client.focus_project", payload: { projectId: null } };
+    const focused: ClientGatewayServerMessage = { ...envelope, correlationId: "m1", type: "server.project_focused", payload: { projectId: "project.1" } };
+    expect([focus.type, back.type, focused.type]).toEqual(["client.focus_project", "client.focus_project", "server.project_focused"]);
+    expectTypeOf<Extract<ClientGatewayClientMessage, { type: "client.focus_project" }>["payload"]>().toEqualTypeOf<{ projectId: string | null }>();
+  });
+
+  it("says, unprompted, which project's access ended, where the session went and why", () => {
+    const ended: ClientGatewayServerMessage = { ...envelope, type: "server.project_access_ended", payload: { projectId: "project.1", currentProjectId: null, message: "No longer readable." } };
+    expect(ended.type).toBe("server.project_access_ended");
+    expectTypeOf<Extract<ClientGatewayServerMessage, { type: "server.project_access_ended" }>["payload"]>().toEqualTypeOf<{ projectId: string; currentProjectId: string | null; message: string }>();
+  });
+
+  it("names four frozen refusal codes under project_focus.", () => {
+    expect(Object.isFrozen(CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES)).toBe(true);
+    expect(CLIENT_GATEWAY_PROJECT_FOCUS_REFUSAL_CODES).toEqual({
+      invalid: "project_focus.invalid",
+      notPaired: "project_focus.not_paired",
+      refused: "project_focus.refused",
+      unavailable: "project_focus.unavailable"
+    });
+  });
+});
+
+describe("conversation push is additive", () => {
+  const envelope = { id: "m1", protocolVersion: "0.1", timestamp: 1 } as const;
+
+  it("says, unprompted, which chat changed and in which project, or null for a panel thread, and nothing it says", () => {
+    const changed: ClientGatewayServerMessage = { ...envelope, type: "server.conversation_changed", payload: { conversationId: "conversation.1", projectId: "project.1" } };
+    const panel: ClientGatewayServerMessage = { ...envelope, type: "server.conversation_changed", payload: { conversationId: "conversation.2", projectId: null } };
+    expect([changed.type, panel.type]).toEqual(["server.conversation_changed", "server.conversation_changed"]);
+    expectTypeOf<Extract<ClientGatewayServerMessage, { type: "server.conversation_changed" }>["payload"]>().toEqualTypeOf<ClientGatewayConversationChanged>();
+    expectTypeOf<ClientGatewayConversationChanged>().toEqualTypeOf<{ conversationId: string; projectId: string | null }>();
   });
 });

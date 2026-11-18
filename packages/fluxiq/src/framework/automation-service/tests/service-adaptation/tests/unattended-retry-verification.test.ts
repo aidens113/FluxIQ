@@ -99,7 +99,8 @@ const SEQUENCE_SKIPS_RUN_ONE = { enabled: true, shape: "fixed_interval", initial
 function standingAuthorization(overrides: JsonObject = {}): JsonObject {
   return {
     authorizedByUserId: "user.aiden",
-    unlockSessionId: "session.unlock.1",
+    authorizationId: "result-check:1",
+    grantedThrough: { kind: "person" },
     keyId: "key.deepseek",
     maxTotalCostUsd: 1,
     maxCostUsdPerCall: 0.05,

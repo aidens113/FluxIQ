@@ -1,3 +1,4 @@
+// @fluxiq-test-group real-sql
 // What a task keeps of the Flows it saved under: the last 20, and a base it cannot read is left off
 // with the rest of the memory standing, since a Flow with none is only ever given one while blank.
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

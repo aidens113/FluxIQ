@@ -25,6 +25,11 @@ export function createChatOwnerContext(transport: ChatTransport, initialKey?: st
   }
   return {
     capture: () => owner,
+    /** A new owner under the same key, for a change the key does not carry (the host's project moved): nothing of the last one stays. */
+    rotate() {
+      owner = make(key);
+      return owner;
+    },
     observe(status: ChatHostStatus) {
       const changed = status.ownerKey !== key;
       const initial = !observed;

@@ -27,14 +27,24 @@ vi.mock("../../context", () => ({
 
 import { AssistantDock } from "../AssistantDock";
 
-async function lastChatProps(projectId: string | undefined) {
-  (globalThis as { window?: unknown }).window = { location: { search: "" } };
+async function render(projectId: string | undefined, search = "?chat=open") {
+  (globalThis as { window?: unknown }).window = { location: { search } };
   shared.projectId = projectId;
   shared.chatProps.length = 0;
+  let renderer!: ReturnType<typeof create>;
   await act(async () => {
-    create(<AssistantDock />);
+    renderer = create(<AssistantDock />);
   });
+  return renderer;
+}
+
+async function lastChatProps(projectId: string | undefined) {
+  await render(projectId);
   return shared.chatProps.at(-1)!;
+}
+
+function pressAsk(renderer: ReturnType<typeof create>) {
+  renderer.root.findByProps({ className: "panel-dock-button" }).props.onClick();
 }
 
 describe("the assistant dock", () => {
@@ -46,6 +56,29 @@ describe("the assistant dock", () => {
 
   it("passes no name with no project open", async () => {
     expect((await lastChatProps(undefined)).projectName).toBeNull();
+  });
+
+  it("does not mount the chat until the dock is first opened, then keeps it mounted when closed", async () => {
+    const renderer = await render(undefined, "");
+    expect(shared.chatProps).toHaveLength(0);
+    await act(async () => pressAsk(renderer));
+    expect(shared.chatProps.length).toBeGreaterThan(0);
+    const mounted = renderer.root.findAll((node) => node.type === "aside").length;
+    await act(async () => pressAsk(renderer));
+    shared.chatProps.length = 0;
+    await act(async () => renderer.update(<AssistantDock />));
+    expect(shared.chatProps.length).toBeGreaterThan(0);
+    expect(mounted).toBe(1);
+  });
+
+  it("mounts the chat at once when the dock is a column beside the page, so it is never an empty column", async () => {
+    const listeners: unknown[] = [];
+    (globalThis as { window?: unknown }).window = { location: { search: "" }, matchMedia: () => ({ matches: true, addEventListener: (_: string, l: unknown) => listeners.push(l), removeEventListener: () => undefined }) };
+    shared.chatProps.length = 0;
+    await act(async () => {
+      create(<AssistantDock />);
+    });
+    expect(shared.chatProps.length).toBeGreaterThan(0);
   });
 
   it("finds the name only for a listed project", () => {

@@ -22,7 +22,7 @@ function waiting(reason: string): TaskState {
     case "interrupted":
       return { ...base, key: "interrupted", words: "Stopped partway. You can carry on." };
     case "model_key_locked":
-      return { ...base, key: "needs_key", words: "Needs your model key unlocked" };
+      return { ...base, key: "needs_key", words: "Model access was unavailable" };
     default:
       return { ...base, key: "waiting", words: "Waiting for you" };
   }

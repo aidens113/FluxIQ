@@ -16,6 +16,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { GlobalProgramApiRegistry } from "../../../../_shared/api.ts";
+import { actor, ADMIN_PERMISSIONS, fixedPolicySource, pinAcceptingIdentityAccess, recordingSink, registerPrefixOwners } from "../../../../_shared/tests/iam-registry-fixtures.ts";
+import { IAM_USER_ACCESS } from "../../../../../platform/iam/predefined/index.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../../../../api-contracts/automation.ts";
 import {
@@ -44,7 +46,7 @@ function conversationApi(overrides: Record<string, unknown> = {}) {
     answerAsk: vi.fn().mockResolvedValue({ askId: "ask.1", status: "answered" }),
     getAttachment: vi.fn().mockResolvedValue({ attachment: { kind: "run", ref: "run.17" }, payload: null }),
     respondToPersonTurn: vi.fn().mockResolvedValue({ turn: { turnId: "turn.1" }, response: { runNow: true }, problem: null }),
-    callerFor: vi.fn((actor: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(actor, () => "session.unlocked")),
+    callerFor: vi.fn((actor: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(actor)),
     getAsk: vi.fn().mockResolvedValue(null),
     getTurn: vi.fn().mockResolvedValue(null),
     pendingAsks: vi.fn().mockResolvedValue([]),
@@ -289,11 +291,11 @@ describe("Automation Studio conversation API", () => {
     });
 
     const request = conversations.respondToPersonTurn.mock.calls[0]?.[0];
-    expect(request.caller).toEqual({ userId: "user.writer", sessionId: "session.unlocked" });
+    expect(request.caller).toEqual({ userId: "user.writer", sessionId: "client-gateway:gateway.7" });
     // The client sent the id alone; the model is shown Core's own descriptor.
     expect(request.capabilities[0].arguments.map((argument: { name: string }) => argument.name)).toEqual(["flowId", "instruction"]);
     expect(request.onScreen).toEqual({ pageUrl: "https://shop.example/kettles?q=blue" });
-    expect(saved).toEqual([{ actor: { ...paired, sessionId: "session.unlocked" }, payload: { projectId: "project.one", flowId: "flow.kettle", authSessionId: "session.unlocked", instruction: "Check prices" } }]);
+    expect(saved).toEqual([{ actor: { ...paired, sessionId: "client-gateway:gateway.7" }, payload: { projectId: "project.one", flowId: "flow.kettle", authSessionId: "client-gateway:gateway.7", instruction: "Check prices" } }]);
     expect(response.payload?.response.execution).toEqual({ capabilityId: "flow.describe", status: "done", summary: "Saved what this Flow should do.", flowId: "flow.kettle" });
     expect(conversations.appendAutomationTurn).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "conversation.one", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.describe" } }));
   });
@@ -399,7 +401,6 @@ describe("Automation Studio conversation API", () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     try {
       const conversations = new AutomationStudioConversations(pool);
-      conversations.bindUnlockedSessionResolver((userId) => (userId === "user.writer" ? "session.unlocked" : null));
       const thread = await conversations.openConversation({ projectId: "project.one", subject: { kind: "flow", id: "flow.kettle" }, title: null });
       const registry = new GlobalProgramApiRegistry();
       registerAutomationStudioConversationEndpoints({
@@ -413,10 +414,48 @@ describe("Automation Studio conversation API", () => {
       await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, scope: { domainId: null }, actor: paired, payload: { projectId: "project.one", conversationId: thread.conversationId, text: "run it", capabilities: [{ id: "run.execute" }] } });
       await automationStudioConversationCommandWork.idle();
 
-      expect(runs).toEqual([{ sessionId: "session.unlocked", payload: { projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } }]);
+      expect(runs).toEqual([{ sessionId: "client-gateway:gateway.7", payload: { projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } }]);
     } finally {
       await pool.closeAll();
       await rm(rootDir, { recursive: true, force: true });
     }
+  });
+});
+
+// One project whose conversations cannot be read no longer fails the list across
+// projects: the rest are listed and it is named with why. It is decided by its
+// project like a thread is, so a caller never learns of a project they may not see.
+describe("Automation Studio conversation list across projects with an unreadable project", () => {
+  function ownedList() {
+    const registry = new GlobalProgramApiRegistry({ identityAccess: pinAcceptingIdentityAccess, iam: { profile: "service", source: fixedPolicySource([IAM_USER_ACCESS]), audit: recordingSink() } });
+    registerPrefixOwners(registry);
+    const listConversations = vi.fn((input: { projectId: string }) => input.projectId.endsWith("-2")
+      ? Promise.reject(new Error("SQLITE_CORRUPT: database disk image is malformed"))
+      : Promise.resolve([{ conversationId: `conversation.${input.projectId}`, projectId: input.projectId }]));
+    const listProjects = vi.fn().mockResolvedValue({ projects: [{ id: "a-1" }, { id: "a-2" }, { id: "b-1" }, { id: "b-2" }] });
+    registerAutomationStudioConversationEndpoints({ registry, runLinks: { usesThread: vi.fn().mockResolvedValue(false) }, service: { assertProjectDomainAccess: vi.fn(), listProjects, listFlows: vi.fn(), getFlowBootstrapAdaptation: vi.fn(), getFlow: vi.fn(), conversations: { listConversations } as unknown as AutomationStudioConversations } });
+    return (userId: string) => registry.call<unknown, { conversations: Array<{ conversationId: string }>; unreadableProjects: Array<{ projectId: string; reason: string }> }>({
+      programId: "automation-studio",
+      endpoint: AUTOMATION_STUDIO_ENDPOINTS.listConversations,
+      scope: { domainId: null },
+      actor: actor(userId, "user", ADMIN_PERMISSIONS),
+      payload: { projectId: null }
+    });
+  }
+
+  it("lists the readable projects and names the unreadable one the caller may see, with its reason", async () => {
+    const response = await ownedList()("alice");
+
+    expect(response.ok).toBe(true);
+    expect(response.payload?.conversations.map((conversation) => conversation.conversationId)).toEqual(["conversation.a-1"]);
+    expect(response.payload?.unreadableProjects).toEqual([{ projectId: "a-2", reason: "SQLITE_CORRUPT: database disk image is malformed" }]);
+  });
+
+  it("never names an unreadable project the caller may not see", async () => {
+    const response = await ownedList()("bob");
+
+    expect(response.payload?.conversations.map((conversation) => conversation.conversationId)).toEqual(["conversation.b-1"]);
+    expect(response.payload?.unreadableProjects).toEqual([{ projectId: "b-2", reason: "SQLITE_CORRUPT: database disk image is malformed" }]);
+    expect(JSON.stringify(response.payload)).not.toContain("a-2");
   });
 });

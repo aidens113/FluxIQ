@@ -15,12 +15,17 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
+import { ClientGatewaySessionMetadataResolver } from "./service/session-metadata/index.ts";
+export type { ClientGatewaySessionMetadata, ClientGatewaySessionMetadataProvider } from "./service/session-metadata/index.ts";
 import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
 import {
   ClientGatewayAccess,
   ClientGatewayActivityPublisher,
   ClientGatewayAuditLog,
+  ClientGatewayChangeFeed,
   ClientGatewayCommands,
+  ClientGatewayConversationChangeDelivery,
   ClientGatewayEventBus,
   ClientGatewayHostEnrolment,
   ClientGatewayHostEnrolmentTickets,
@@ -28,18 +33,24 @@ import {
   ClientGatewayLifecycle,
   ClientGatewayPairingFlow,
   ClientGatewayPairingRegistry,
+  ClientGatewayProjectFocus,
   ClientGatewaySessionRegistry,
   ClientGatewayTraceTap,
   ClientGatewayTransport,
   ClientGatewayCredentialCustodian,
   ClientGatewayTrustedClientRegistry,
   ClientGatewayTrustGrant,
+  ClientGatewayTrustIssuer,
   ClientGatewayViews,
   resolveClientGatewayConfig,
   withoutClientGatewayAddresses
 } from "./service/index.ts";
 
 export type {
+  ClientGatewayChange,
+  ClientGatewayChangeKind,
+  ClientGatewayChangeListener,
+  ClientGatewayChangesPort,
   ClientGatewayCommandClosure,
   ClientGatewayCommandOwnerRef,
   ClientGatewayEnrolmentRefusalCode,
@@ -55,21 +66,30 @@ export type {
   ClientGatewayTraceArtifactIntake,
   ClientGatewayTraceArtifactUpload,
   ClientGatewayTrustedClientStore,
+  ClientGatewayApprovedTrustInput,
+  ClientGatewayIssuedTrust,
+  ClientGatewayTrustAuthority,
   ClientGatewayPeer,
   ClientGatewayPairingLimits,
   ClientGatewayPairingCapacityScope,
+  ClientGatewayProjectFocusAuthority,
+  ClientGatewayProjectFocusPort,
+  ClientGatewayConversationReadAuthority,
+  ClientGatewayConversationPushPort,
   ClientGatewaySecurityEventListener
 } from "./service/index.ts";
 export {
+  CLIENT_GATEWAY_CHANGE_KINDS,
   CLIENT_GATEWAY_ENROLMENT_REFUSALS,
   CLIENT_GATEWAY_TRACE_TAP_STREAMS,
   CLIENT_GATEWAY_SECURITY_EVENT_TYPES,
   CLIENT_GATEWAY_TRANSPORT_EVENT_TYPES,
   ClientGatewayPairingCapacityError,
+  ClientGatewayTrustIssuanceError,
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayChangesPort, ClientGatewayConversationPushPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -94,6 +114,24 @@ export class ClientGatewayService {
   private readonly commands: ClientGatewayCommands;
   private readonly audit: ClientGatewayAuditLog;
   private readonly activity: ClientGatewayActivityPublisher;
+  /** Where the layer owning identity and IAM installs what decides `client.focus_project` (`service/project-focus/`); unset, a focus is refused as unavailable. */
+  readonly projectFocus: ClientGatewayProjectFocusPort;
+  /**
+   * Telling paired clients which chats changed (`server.conversation_changed`,
+   * `service/project-focus/conversation-delivery.ts`): the layer owning
+   * identity and IAM installs what decides which chats a person may read
+   * (`setAuthority`; unset, none is told), and hands it each chat's change
+   * (`publish`). The message skips the outbound queue and is dropped on a
+   * closed socket.
+   */
+  readonly conversationPush: ClientGatewayConversationPushPort;
+  /**
+   * Pairing and client changes, signalled as they happen (`service/change-feed/`):
+   * a change names only its kind and a version, never a code, a credential or
+   * a client, so what changed is read from `snapshot()` under the reader's
+   * own authority.
+   */
+  readonly changes: ClientGatewayChangesPort;
   private readonly trace: ClientGatewayTraceTap;
   private readonly pairings: ClientGatewayPairingRegistry;
   /**
@@ -102,14 +140,17 @@ export class ClientGatewayService {
    * reaches it, so neither a page nor a program can mint a ticket.
    */
   readonly managedHosts: ClientGatewayManagedHosts;
+  /** Server-authorized client consent before a socket exists; never accepts authority from a client message. */
+  readonly trust: ClientGatewayTrustIssuer;
 
   constructor(options: ClientGatewayServiceOptions = {}) {
     const config = resolveClientGatewayConfig(options);
     const audit = new ClientGatewayAuditLog(config.now, config.auditLimit);
     const events = new ClientGatewayEventBus();
     const sessions = new ClientGatewaySessionRegistry(config.now, config.sessionRetention);
+    const changes = new ClientGatewayChangeFeed({ audit, events, sessions });
     // The per-address pairing cap reads the requesting session's peer address, which never leaves the gateway.
-    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null);
+    const pairings = new ClientGatewayPairingRegistry(config, (sessionId) => sessions.get(sessionId)?.peer?.address ?? null, { changed: (kind) => changes.signal(kind) });
     const trustedClients = new ClientGatewayTrustedClientRegistry(config);
     // Routes what the gateway sends and receives into the traces of the episodes that claim it; inert without `options.trace`.
     const trace = new ClientGatewayTraceTap({ source: options.trace, clientIdOf: (sessionId) => sessions.get(sessionId)?.clientId, sessionViewOf: (sessionId) => sessions.get(sessionId) });
@@ -120,17 +161,25 @@ export class ClientGatewayService {
     const facade: ClientGatewayFacadePorts = {
       ready: () => this.ready(),
       disconnect: (sessionId, reason) => this.disconnect(sessionId, reason),
-      revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
+      revokeTrustedClient: (trustedClientId, reason, revokedFor) => this.revokeTrustedClient(trustedClientId, reason, revokedFor)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
+    const sessionMetadata = new ClientGatewaySessionMetadataResolver({ sessions, trustedClients, transport, audit, facade, provider: options.sessionMetadata });
+    this.trust = new ClientGatewayTrustIssuer({ config, trustedClients, authority: options.trustAuthority, sessions, transport, audit, trace, facade, custody });
     // Pairing and enrolment grant trust through this one path.
-    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody });
+    const trustGrant = new ClientGatewayTrustGrant({ sessions, trustedClients, transport, audit, events, trace, facade, custody, sessionMetadata });
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
-    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
+    const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody, sessionMetadata });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease,
+      // A lease target's domain is the server-bound one of the session's active trust record; a revoked or expired trust gives none, so no lease is stamped for it.
+      hostLeaseTarget: (session) => {
+        const trusted = session.trustedClientId ? trustedClients.get(session.trustedClientId) : undefined;
+        return { sessionId: session.sessionId, domainId: trusted && trustedClients.isActive(trusted) ? trusted.domainId : undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) };
+      }, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
+    this.changes = changes;
     this.pairings = pairings;
     this.audit = audit;
     this.transport = transport;
@@ -141,8 +190,13 @@ export class ClientGatewayService {
     this.commands = commands;
     this.trace = trace;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, trace, facade, custody });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, trace, facade });
-    this.activity = new ClientGatewayActivityPublisher(sessions, transport);
+    const projectFocus = new ClientGatewayProjectFocus({ sessions, transport, audit, authority: options.projectFocusAuthority });
+    this.projectFocus = projectFocus;
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, projectFocus, audit, trace, facade });
+    // Activity reaches a person-paired session only while its person may read the project (project-focus/activity-delivery.ts).
+    this.activity = new ClientGatewayActivityPublisher(sessions, transport, projectFocus.activity);
+    // A chat's change reaches a person-paired session only while its person may read that chat (project-focus/conversation-delivery.ts).
+    this.conversationPush = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit, events });
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 
@@ -185,8 +239,9 @@ export class ClientGatewayService {
     return this.pairingFlow.approve(pairingCode, input);
   }
 
-  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
-    return this.access.revokeTrustedClient(trustedClientId, reason);
+  /** Ends a client's trust; `revokedFor` is what the client is told (`ClientGatewayAccess.revokeTrustedClient`), omitted to follow the reason. */
+  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator", revokedFor?: ClientGatewayRevocationReason | null): Promise<boolean> {
+    return revokedFor === undefined ? this.access.revokeTrustedClient(trustedClientId, reason) : this.access.revokeTrustedClient(trustedClientId, reason, revokedFor);
   }
 
   /** Whether this is an active trusted client acting for this person: what a stored holder must be before anything is boxed to it. */
@@ -351,8 +406,13 @@ export class ClientGatewayService {
   /**
    * Pushes `server.activity` to every ready session that advertised the
    * activity capability and is bound to `target.projectId` or to no project.
-   * The message skips the outbound queue and is dropped on a closed socket.
-   * Returns how many sessions it was sent to.
+   * A session a person paired receives it only while that person may read
+   * the project, as the installed focus authority decides; that decision is
+   * reused until the authority is installed again, and losing access to the
+   * session's own project moves it and sends `server.project_access_ended`
+   * (`service/project-focus/activity-delivery.ts`). The message skips the
+   * outbound queue and is dropped on a closed socket. Returns how many
+   * sessions it was sent to, or queued for behind that decision.
    */
   publishActivity(activity: ClientGatewayActivity, target: { projectId: string }): number {
     return this.activity.publish(activity, target);

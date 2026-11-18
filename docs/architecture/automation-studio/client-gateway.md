@@ -313,7 +313,8 @@ server.session_ready
 
 Paired clients can then send generic state updates, snapshots, recording events, action
 results, and errors. FluxIQ can send start/stop recording, capture snapshot,
-set active tab, ping, disconnect, and execute action commands. Every message is
+set active tab, ping, disconnect, revoked (see "Revocation, refused credentials
+and relaunch" below), and execute action commands. Every message is
 versioned JSON with an ID and timestamp; action commands include a command ID
 so results can be correlated.
 
@@ -351,6 +352,8 @@ Automation Studio exposes framework API endpoints for the editor:
 The web shell exposes global client-gateway endpoints:
 
 - `GET /api/client-gateway/snapshot`
+- `GET /api/panel/changes`, the panel's one change stream (Server-Sent
+  Events; see "How the panel hears pairing and client changes" below)
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
@@ -471,6 +474,28 @@ else: the actor comes from the session alone, an `authSessionId` the caller
 names is removed, and a review may not name a `reviewerId`. A token's reach is
 its approver's, in its bound domain, never another person's.
 
+**One person, one set of projects (t915).** The web panel's pages name no
+domain (no `?domainId=`), while a pairing binds the instance's domain
+(`FluxIQ.activeDomainId`). Two rules make them one view:
+
+- A signed-in person's Automation Studio call that names no domain works in
+  the instance's (`server/program-route/person-domain-scope.ts`), so a project,
+  category or recording the panel creates is the domain's, as one the extension
+  creates is, and its Flows can use the domain's nodes. Other programs keep the
+  URL's scope, since they key their own stores by it.
+- On an instance that serves a domain, the project list and the domain gate
+  treat "no domain" and that domain as one view
+  (`framework/automation-service/service/projects/domain-match.ts`,
+  `projectDomainMatches`): the instance's global projects, including every one
+  the panel made before t915, are listed and reachable beside the domain's, and
+  a route that names no domain reaches the domain's projects. A global project
+  stays global (its Flows keep the global scope).
+
+Before this, "no domain" was a partition of its own and each client saw only
+what it had made. Another named domain stays its own surface, IAM still
+decides each project per person, and a hosted tenant's projects live in its
+own instance's store. On an instance that serves no domain nothing changed.
+
 The allowlist lives in `packages/fluxiq/src/server/program-route/program-route.ts`, re-exported by `apps/web/src/lib/program-route.ts`, and four rules
 bound it:
 
@@ -529,10 +554,9 @@ refusal is 403 with a sentence naming the field, never its value:
 - The one exception is the extension's Automations Run (t267). A run may carry
   `runIntent: "explore_and_adapt"`, and no other intent. It may then carry no
   `adaptiveMode`, and it runs under the Flow's own mode, so a saved Flow whose
-  page changed can be repaired. The run handler maps the paired actor to the
-  person's unlocked session (`runtime/conversations/commands/caller.ts`), so
-  their key pays. With no unlocked session the run gets no model at all. A
-  lasting consequence is still asked of the person act by act.
+  page changed can be repaired. The run retains the paired actor and resolves
+  its authenticated trusted client for each model use. Its person's configured
+  key pays subject to current IAM; no live panel unlock is required.
 - Without that intent, a paired token never asks the model into a run. One LLM
   call remains possible: a Flow's standing result check, which the person
   authorized on that Flow in the web panel, runs on a token run as on any other.
@@ -542,7 +566,8 @@ refusal is 403 with a sentence naming the field, never its value:
   `policyOverride`, `reviewerId` or `destination`.
 
 And a token call's answer is projected (`projectPairedClientResponse`): Secret
-Keys' `snapshot` answers `{ keys: [{ kind, provider, enabled }] }`, with no key
+Keys' `snapshot` answers kind/provider/enabled, safe availability and ownership
+metadata, with no unlock ticket or key
 name, id, description, metadata or value.
 
 `remove-recording-entry` (`runtime.control`, `authoring`) takes
@@ -661,9 +686,8 @@ same capabilities. The ids are:
   that automation.
 - **"Run it" is the Automations Run** (`runtime/conversations/commands/run-flow.ts`).
   It asks for `runIntent: "explore_and_adapt"`, so a broken step can be
-  repaired. The command's port calls as the person's unlocked session, so the
-  run endpoint cannot see the pairing. Every chat, paired or not, therefore
-  asks for `resultCheckCallerPays: "repair_checks"` itself. The endpoint
+  repaired. The command retains the authenticated caller and paired permissions.
+  Every chat, paired or not, asks for `resultCheckCallerPays: "repair_checks"` itself. The endpoint
   accepts that one value and refuses any other. The person's key pays only for
   the result checks that judge a repair, as with the extension's Run button
   (MVP item 23), so a run whose steps all succeed makes no model call on it. A
@@ -677,18 +701,16 @@ same capabilities. The ids are:
   said apart, from the endpoint's closed `reauthored` (`applied` once a whole
   re-run with it was judged to answer, `not_applied` otherwise), since a
   re-author is no Flow adaptation.
-- **A paired client spends its person's key.** A `client-gateway:` caller is
-  mapped to that browser's own unlock, which starts locked until the person's
-  password names it and then lasts as long as its credential
-  (`docs/architecture/platform.md`, Model keys; `credentialCustody`). That
-  mapping applies to the chat model and to every registry call a command makes.
-  Permissions stay the paired set. With no unlock, a command that needs the
-  model shows a setup step instead of starting, and a task already running
-  waits for the person. `client.forget_pairing` ends the browser's trust from
-  the browser, when the person presses Forget.
-  - This deliberately changes the rule above that a token never reaches the
-    model. The product direction is that the extension's chat builds and runs
-    automations (2026-09-30, t198).
+- **A paired client spends its person's key within current authority.** A
+  `client-gateway:` caller resolves to that actual ready trusted client. Approval
+  is sufficient: no second password, default key lock, unlock ticket or panel
+  session fallback. Configured keys remain usable after ordinary panel logout,
+  reconnect and restart, including keys configured after approval. Missing model
+  configuration and unavailable legacy ciphertext have distinct setup/recovery
+  messages. Explicit client revocation and current account/IAM checks still deny
+  use. `client.forget_pairing` ends the browser's trust when the person presses
+  Forget. See [Model keys](../platform.md#model-keys) for durable protection and
+  per-use authority.
 
 ## Per-step activity and resolved asks
 
@@ -944,15 +966,15 @@ until a signed-in web-panel user approves the request.
 The `Connected Clients` inner-window view below belonged to the retired Studio workspace; in the new panel, connected clients show on Home and will move to Security. It listed paired
 sessions, starts/stops recordings, queues snapshots, and sends test actions
 using client-declared action capabilities. Pairing itself is globalized at the
-web-panel shell through `/api/client-gateway/snapshot`, so a request can pop up
-from any signed-in page or program instead of requiring Automation Studio to be
-open. Closing or dismissing the pairing modal calls
+web-panel shell through `/api/client-gateway/snapshot`, read when the gateway
+signals a change (below), so a request can pop up from any signed-in page or
+program instead of requiring Automation Studio to be open. Closing or dismissing the pairing modal calls
 `/api/client-gateway/dismiss-pairing` and removes the pending challenge from
 the gateway, so dismissed requests do not reappear after a browser refresh.
 Approving the modal calls `/api/client-gateway/approve-pairing`; the client
 then receives `server.session_ready` with its client credential. Raw
 credentials are never included in session snapshots. The Client Gateway view
-lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. Snapshot polling runs only while the view is active, rejects stale responses, and uses a five-second interval. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
+lists safe trust metadata and lets a signed-in operator revoke access (an authoring call; no PIN). The revoked client is told at once and does not ask to pair again by itself (see "Revocation, refused credentials and relaunch"). The Connected Clients view also exposes Approve and Reject beside every pending reference, using the same global endpoints as the shell modal. The view reads only while it is active, when it becomes active and on each gateway change signal, and rejects stale responses; it reads on no timer. No command asks for a PIN by default: action testing asks for one press to confirm, and only a person who turned a PIN on is asked for it.
 
 Extension/client connection flow:
 
@@ -987,6 +1009,167 @@ pnpm --filter @fluxiq/web mock:client
 
 The mock client will print the reference code it receives and then wait for
 approval from the web panel.
+
+## Revocation, refused credentials and relaunch
+
+A client's saved credential has three ways to end, and the gateway says which,
+so a client never raises a pairing request a person did not ask for (t929).
+
+- **Revoked.** `revokeTrustedClient(trustedClientId, reason, revokedFor)`
+  (`service/access.ts`) ends the trust and records `revokedFor` on it
+  (`ClientGatewayTrustedClient.revokedFor`, a `ClientGatewayRevocationReason`).
+  It is what the client is told.
+  - Each live socket of that trust is sent `server.revoked { reason, message }`,
+    then `server.disconnect`, then closed. The `server.disconnect` is for a
+    client that predates `server.revoked`: without it, such a client sees only
+    the close and reconnects about once a second, because a socket that opens
+    resets its backoff.
+  - A later `client.hello` carrying the revoked credential gets the same two
+    messages and the close, from `handleHello` (`service/lifecycle.ts`,
+    `credentialEnding` in `service/revocation/`). It is audited as
+    `session.credential_revoked`, and no pairing is offered. That covers a
+    browser that was offline when it was revoked, and a revoke that lands while
+    a reconnect is in flight. The client pairs again only when its person asks.
+  - When the caller gives no `revokedFor`, it follows the reason text
+    (`service/revocation/revoked-for.ts`): one of the protocol's reasons passes
+    through, and anything else is `revoked_by_user`. Silence is explicit: a
+    revocation the client is not told about passes `revokedFor: null`. Those
+    revocations are the person's own Forget (`client.forget_pairing`, and
+    `forgetByCredential`), the hosted credential teardown, re-approval of the
+    same client, credential-delivery cleanup, and managed hosts (the engine
+    enrols them again). The live socket of such a trust gets only
+    `server.disconnect`, and a later hello with its credential pairs again.
+- **Reused.** A credential older than the one before (see "Reuse is detected"
+  in `trusted-clients.ts`) revokes its trust with `revokedFor:
+  "credential_reused"`. The live holder is told so. The hello that presented
+  it is offered pairing (`credential: "refused"`), because it may be the real
+  client returning, and a person decides.
+- **Expired or refused.** The client is still asked to pair, and
+  `server.pairing_required` says why: `credential: "expired"` for this client's
+  own credential whose life ran out, and `credential: "refused"` for one the
+  gateway does not accept (unknown, another client's, another domain, or a
+  trust that ended without the client being told). A hello with no credential
+  gets no `credential` field. The `reason` sentence says the same in words.
+
+A relaunched client resumes: its saved credential is current (or the one
+before, within the lost-reply window), so `resumeTrustedSession` rotates it and
+answers `server.session_ready`. It is audited as `session.reconnected`, and no
+pairing is created. Verified live with a headed browser relaunched on the same
+profile (t929).
+
+**Protocol version.** `server.revoked` and `pairing_required.credential` are
+gateway 0.2 vocabulary (`CLIENT_GATEWAY_PROTOCOL_VERSIONS`), additive over 0.1
+within the same major version: a 0.1 peer ignores both. The stamped
+`CLIENT_GATEWAY_PROTOCOL_VERSION` stays `0.1`. It is also the version every
+recorded trace is read under: offline trials refuse a trace recorded under any
+other value (`framework/automation-service/service/offline-trial/reader-contracts.ts`),
+so raising it would refuse every recording made so far. Raising it first needs
+that reader to accept any minor version of the same major. Old clients need no
+capability check, because the trailing `server.disconnect` keeps them from
+looping.
+
+## How the panel hears pairing and client changes
+
+The panel learns of pairing and client changes by push and reads the snapshot
+only when something changed; nothing in it reads the snapshot on a timer (t916).
+Since t920 the push is one topic of the panel's single change stream, which
+also tells the chat when a thread or a project's live activity changed
+([workspace architecture](./workspace.md#how-the-chat-hears-a-turn)).
+
+- **Core.** `ClientGatewayService.changes` (`service/change-feed/`) signals a
+  change as `{ kind, version }`: `pairing.requested`, `pairing.expired`,
+  `pairing.withdrawn`, `pairing.approved`, `pairing.denied`, `pairing.refused`,
+  `client.paired`, `client.revoked`, `client.connected`,
+  `client.disconnected`. It hears the audit's security events (approval,
+  dismissal, withdrawal, refusal, revocation, trust given without pairing), the
+  event bus (a session ready or ended), and the pairing registry, which signals
+  a challenge created and challenges lapsing. The registry waits for the
+  earliest waiting challenge's expiry, so a lapse is signalled when it happens,
+  not when something next reads. Changes in one synchronous turn are one signal
+  (an approval readies its session in the same turn), and a session under a
+  channel scope is never signalled. `version` counts signals since the gateway
+  started.
+- **Route.** `GET /api/panel/changes` (`apps/web/src/app/api/panel/changes/`)
+  streams Server-Sent Events, on Node, dynamic,
+  `cache-control: private, no-store, no-transform` and `x-accel-buffering: no`,
+  with a comment line after 25 s of silence. Its gateway topic sends
+  `event: gateway`, `data: {"version"}`. The topic is included only for a
+  caller the snapshot route would serve (`gateway:Snapshot`, panel and
+  paired-client callers, decided when the stream opens), and that decision is
+  taken again before every look at the caller's view, so a caller who lost it
+  hears nothing more: the stream fails and the browser reopens it without the
+  topic. The stream as a whole is decided by its own IAM row and re-checked
+  around every chunk by `withWorkspaceRouteStream` (see the workspace
+  architecture). A paired client is served this topic alone.
+- **Only the caller's own changes.** The gateway signal is workspace-wide, but
+  an event goes to a caller only when that caller's own view changed. Both the
+  snapshot route and the stream resolve the view with `callerGatewayView`
+  (`api/client-gateway/snapshot/caller-view.ts`: the caller, its visible
+  project, then `callerGatewaySnapshot`'s filtering), so what a caller may read
+  and what it is told changed come from one place. The stream fingerprints that
+  view when it opens, recomputes it on each gateway signal, and sends an event
+  only when the fingerprint differs. A service-profile panel user or a paired
+  browser, whose view holds only its own sessions and trusted clients and no
+  pending pairings, hears nothing when someone else's client pairs, connects or
+  is revoked, or when a pairing is requested; a local or self-hosted panel
+  user's view is the whole snapshot, so pairing requests and approvals reach
+  them. `version` is a per-stream sequence that starts at 1 and counts the
+  events this stream sent; it is neither the gateway's version nor a kind, so
+  it cannot show how much happened to anyone else. Changes found while the
+  reader is not waiting are sent as one event. An event never carries a pairing
+  code, a credential or a client or session identity: the browser reads the
+  snapshot.
+- **Browser.** `features/panel-changes/` holds the page's one `EventSource`
+  (`sharedPanelChanges()`), shared by every reader on the page.
+  `features/client-gateway-changes/` is the gateway's reader on it, shared by
+  the global pairing prompt, Settings > Connect and the Studio clients view. It
+  reads the snapshot each time the stream opens or re-opens (so a change made
+  while it was down is not missed) and once per `gateway` event, never
+  overlapping reads and never losing one.
+  While the stream is down readers show that (`reconnecting`, or `closed` when
+  the browser gave up) instead of reading on an interval; a closed stream opens
+  again when the tab is shown, the network returns, or a reader refreshes. The
+  pairing countdown's one-second tick is local and reads nothing.
+
+## How a paired client hears its chats change
+
+A paired client's chat learns that a thread changed by push, so it no longer
+re-reads its threads every few seconds (t921). The panel's own chat hears the
+same writes through the panel change stream; a paired client hears them on its
+gateway socket as `server.conversation_changed`
+(`ClientGatewayConversationChanged`: the thread's id and project, no content).
+
+- **Source.** Each runtime relays its own thread signals
+  (`AutomationStudioConversations.signals`, fired after each committed write)
+  to its gateway's `conversationPush.publish` (`api/project-focus/conversation-relay.ts`, wired in
+  `programs/_shared/runtime.ts` and removed by `detach`). Signals are per
+  runtime, so another tenant's chats never reach this gateway. A person's panel
+  thread is dropped here: the panel assistant's endpoints refuse the
+  paired-client channel, so no paired client may read one.
+- **Decision.** `ClientGatewayService.conversationPush` takes the conversation
+  read authority, which `installPairedProjectFocus` installs beside the focus
+  authority from the same change watch (`api/project-focus/authority.ts`,
+  `paired-read.ts`). It decides a project's chats as `get-conversation` does
+  for the approving person on the `paired-client` channel: its registered
+  action on `{ kind: "project" }`, after the session-domain check, without an
+  audit row (`decideUnrecorded`).
+- **Delivery.** `service/project-focus/conversation-delivery.ts` sends to every
+  ready person-paired session whose person may read the project, focused there
+  or not, since a paired client reads any project of its domain and the
+  extension's thread list spans every project. Each answer is reused per
+  session and project (`access-decisions.ts`) until the authority is installed
+  again at an IAM store write, an identity change, a registration or a project
+  removal; one asked while access changed is asked again, and one made for
+  whoever the session spoke for before is not reused. Nothing is sent without
+  an authority. An answer that could not be made, or a drain that failed, is
+  not a denial: the extension keeps no timer, so the change stays in the
+  session's lane and is asked again after 1 s, doubling to 30 s, reset once
+  everything waiting is decided, audited once per outage. It is discarded only
+  on a denial or when the session ends or speaks for someone else; a
+  `session.disconnected` or `session.ready` cancels the wait at once. The
+  message skips the
+  outbound queue, is untraced like `server.activity`, and is not replayed: a
+  client reads its chats again on `server.session_ready`.
 
 ## Client half
 

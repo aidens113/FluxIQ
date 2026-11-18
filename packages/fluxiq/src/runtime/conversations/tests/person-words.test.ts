@@ -65,7 +65,7 @@ async function chat(answers: unknown[]) {
   const conversations = new AutomationStudioConversations(pool).bindModel(paraphrasing(answers));
   const { conversationId } = await conversations.openConversation({ projectId: PROJECT, subject: { kind: "project", id: PROJECT }, title: null });
   const fake = fakePort();
-  const context: AutomationStudioConversationCommandContext = { port: fake.port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE };
+  const context: AutomationStudioConversationCommandContext = { port: fake.port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", paired: false, startLocation: PAGE };
   /** One message, as the append-turn handler takes it: read, answered, and the command it chose started. */
   const say = async (text: string) => {
     const answer = await conversations.respondToPersonTurn({ projectId: PROJECT, conversationId, text, actorId: "user.person", capabilities: CAPABILITIES, flows: FLOWS, onScreen: { pageUrl: PAGE }, limits: QUICK });
@@ -204,7 +204,7 @@ describe("a build's instruction is the person's own words", () => {
     const conversations = new AutomationStudioConversations(pool);
     const { conversationId } = await conversations.openConversation({ projectId: PROJECT, subject: { kind: "project", id: PROJECT }, title: null });
     const fake = fakePort();
-    const context: AutomationStudioConversationCommandContext = { port: fake.port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE };
+    const context: AutomationStudioConversationCommandContext = { port: fake.port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", paired: false, startLocation: PAGE };
     const say = async (text: string) => {
       const answer = await conversations.respondToPersonTurn({ projectId: PROJECT, conversationId, text, actorId: "user.person", capabilities: CAPABILITIES, flows: FLOWS, onScreen: { pageUrl: PAGE }, limits: QUICK });
       await startAutomationStudioConversationCommand({ response: answer.response, context });

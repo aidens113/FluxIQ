@@ -64,15 +64,17 @@ exploring calls a model.
   `fluxiq dev` has no flag for one. A model key is an entry of kind `llm` in the engine's Secret
   Keys, stored in its data directory, for the provider Anthropic (Claude) or DeepSeek. Add it in the
   FluxIQ web panel's Secret Keys settings, against the same data directory `fluxiq dev` serves. The
-  key is sealed, and opened for a run only while it is unlocked.
+  key is sealed in the data directory under a per-key data key, which the host's own protection key
+  wraps. A connected client uses the configured key straight away: there is no unlock step, and
+  revoking the client or removing its access (IAM) is what stops it.
 - **Which model.** `FLUXIQ_LLM_DEFAULT_MODEL` names the default model, for either provider, in the
   environment of `fluxiq dev`. It is a model name, never a key. Without it the engine uses its own
   default model. A FluxNode can name another with its `model` option.
 - **If it is missing.** With no enabled model key the engine has no model to call and says so: "No
-  model is available for this. Add or unlock a model key in FluxIQ's settings, then ask again."
-  With a key it cannot open (locked), the run ends `waiting_for_person` and its result says "The
-  model key cannot be opened here, and a person needs to unlock it." Unlock the key, then `resume`
-  with the handle. A run that replays a learned Flow makes no model call and needs no key.
+  model is available for this. Add a model key in FluxIQ's settings, then ask again." A missing
+  key is a setup step, never a lock. A key stored before host protection (a legacy key) needs its
+  owner to sign in to the FluxIQ panel once to finish upgrading it, and a legacy key with no owner
+  has to be added again. A run that replays a learned Flow makes no model call and needs no key.
 
 Never put a key value in your program, your FluxNode, or this repository.
 

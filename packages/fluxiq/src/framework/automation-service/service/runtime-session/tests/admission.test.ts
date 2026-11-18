@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import { admitAutomationStudioRuntimeSession } from "../admission.ts";
-import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
+import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
+
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 
 function session(runId: string, status: AutomationStudioRuntimeSession["status"], adaptiveRuntime: boolean): AutomationStudioRuntimeSession {
   return {
@@ -21,6 +23,7 @@ function session(runId: string, status: AutomationStudioRuntimeSession["status"]
 function ports(sessions: () => Promise<AutomationStudioRuntimeSession[]>) {
   const started = session("run.new", "queued", true);
   return {
+    leaseBinding: LEASE_BINDING,
     admissions: new Set<string>(),
     listRuntimeSessions: vi.fn(sessions),
     startRuntimeSession: vi.fn(async () => started),
@@ -29,10 +32,20 @@ function ports(sessions: () => Promise<AutomationStudioRuntimeSession[]>) {
 }
 
 describe("admitting a run", () => {
+  it.each(["owner", "domain"] as const)("a foreign %s frame cannot bypass this runtime's active-session gate", async (foreign) => {
+    const b = AutomationStudioHostLeaseAuthority.for({}).forDomain("b");
+    const a = foreign === "owner" ? AutomationStudioHostLeaseAuthority.for({}).forDomain("b") : b.owner.forDomain("a");
+    const access = { ...ports(async () => [session("active", "running", true)]), leaseBinding: b };
+    const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 1, acquire: () => ({ resourceKey: "a", epoch: 1, sessionId: "session.a" }), release: () => undefined }), { binding: a });
+    await scope.run({ role: "run", briefId: "a" }, async () => {
+      await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).rejects.toThrow("Only one adaptive runtime run");
+    });
+    expect(access.startRuntimeSession).not.toHaveBeenCalled();
+  });
   it("admits independent leased browsers in one project and retains the unleased project gate", async () => {
     let epoch = 0;
     const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 2,
-      acquire: () => ({ resourceKey: `host-${++epoch}`, sessionId: `session-${epoch}`, epoch }), release: () => undefined }));
+      acquire: () => ({ resourceKey: `host-${++epoch}`, sessionId: `session-${epoch}`, epoch }), release: () => undefined }), { binding: LEASE_BINDING });
     const access = ports(async () => [session("run.active", "running", true)]);
     await Promise.all(["one", "two"].map((briefId) => scope.run({ role: "run", briefId }, async () => {
       await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).resolves.toBe(access.started);
@@ -43,7 +56,7 @@ describe("admitting a run", () => {
 
   it("does not admit a late callback under a released lease", async () => {
     const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 1,
-      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }));
+      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }), { binding: LEASE_BINDING });
     const access = ports(async () => [session("run.active", "running", true)]);
     let resume = (): void => undefined;
     const gate = new Promise<void>((resolve) => { resume = resolve; });
@@ -55,11 +68,21 @@ describe("admitting a run", () => {
 
   it("keeps the project gate for an advisory scope that does not exclude other drivers", async () => {
     const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 1,
-      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }), { strict: false });
+      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }), { strict: false, binding: LEASE_BINDING });
     const access = ports(async () => [session("run.active", "running", true)]);
     await scope.run({ role: "run", briefId: "advisory" }, async () => {
       await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).rejects.toThrow("Only one adaptive runtime run");
     });
+  });
+
+  it("reads the project's sessions under a current strict lease when the caller says its own lease admits nothing", async () => {
+    const scope = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler({ capacity: 1,
+      acquire: () => ({ resourceKey: "host", sessionId: "session", epoch: 1 }), release: () => undefined }));
+    const access = { ...ports(async () => [session("run.active", "running", true)]), ownLeaseAdmits: false };
+    await scope.run({ role: "part-run", briefId: "part" }, async () => {
+      await expect(admitAutomationStudioRuntimeSession(access, "project.one", true)).rejects.toThrow("Only one adaptive runtime run");
+    });
+    expect(access.startRuntimeSession).not.toHaveBeenCalled();
   });
   it("starts a run that is not adaptive, or has no project, without reading the sessions", async () => {
     const access = ports(async () => { throw new Error("not read"); });

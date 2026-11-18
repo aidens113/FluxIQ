@@ -188,7 +188,7 @@ import {
   AutomationStudioProposalApproval,
   clampInteger,
   embedAutomationStudioTaskGraphs, inspectAutomationStudioFlowMigration, type AutomationStudioFlowMigrationInspection, listAutomationStudioProposalSummaries, repairAutomationStudioFlowSummaryMetadataIndex, updateAutomationStudioProject, withAutomationStudioCanonicalFlowHierarchySubflows,
-  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, nodeDefinitionScopeAllows, assertInstructionScopeOwners, subflowMetadataWithParentCategory,
+  canonicalFlowDigest, compareSemanticVersions, countBy, latestByGeneratedAt, nextCategoryOrder, projectDomainMatches, nodeDefinitionScopeAllows, assertInstructionScopeOwners, subflowMetadataWithParentCategory,
   subflowSummaryFromSql,
   type AutomationStudioInstructionSummaryPage,
   canonicalFlowDocument,
@@ -461,7 +461,7 @@ export class AutomationStudioService {
     this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
     this.durableAdaptations = this.projectParts.keepingRepairs(new AutomationStudioDurableAdaptations(this.flows, this.flowWriter, this.flowMutations, this.adaptationPatches, automationStudioFacadePorts(this)), { patches: this.adaptationPatches, flowWriter: this.flowWriter });
-    this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories);
+    this.catalogue = new AutomationStudioCatalogue(this.projectPaths, this.projects, this.indexes, this.flows, this.repositories, () => this.ioRuntime?.domainId ?? null);
     this.summaries = new AutomationStudioSummaryStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowMutations, this.bootstrapAdaptations, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
     this.evidenceMining = new AutomationStudioEvidenceMining(this.recordingDomains, this.recordings, this.repositories, automationStudioFacadePorts(this), (domainId) => this.nativeNodeRuntime?.getTargetHooks(domainId)?.stateElementKindReader);
     this.flowSubflowMigration = new AutomationStudioFlowSubflowMigration(this.flowWriter, automationStudioFacadePorts(this));
@@ -1379,7 +1379,7 @@ export class AutomationStudioService {
 
   async assertProjectDomainAccess(projectId: string, domainId?: string | null): Promise<void> {
     const project = await this.projects.findProjectSummary(projectId);
-    if ((project.domainId ?? null) !== (domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
+    if (!projectDomainMatches(project.domainId, domainId, this.ioRuntime?.domainId ?? null)) throw new Error("Automation Studio project is unavailable in this domain scope.");
   }
 
   async listReusableLlmContexts(input: { projectId: string } & AutomationStudioReusableLlmContextList): Promise<AutomationStudioReusableLlmContextSummary[]> {
@@ -1571,7 +1571,7 @@ export class AutomationStudioService {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           const signal = AbortSignal.any([creation.signal(permissions.signal), personNeeded.signal, ...(this.buildCancellation.signal() ? [this.buildCancellation.signal()!] : [])]);
           const candidateId = `candidate.${randomUUID()}`, trialEnvironment = { ...automationStudioServiceTrialEnvironment(this.trialCollaborators, { projectId, flowId, sourceInstructionIds: resolvedInstructions.instructionIds, startLocation, registry, resolution, observedStateKeys: harnessOptions.observedStateKeys, prepareStart: this.prepareCandidateStart }), exploredToggles: permissions.exploredToggles, exploredInterruptions: permissions.exploredInterruptions, exploredPaces: new AutomationStudioLearnedPaces() }; // The build's trial environment, made by the function the trial-ports seam makes a host's with (`service/trial-ports/environment.ts`); its trials tell the build's toggle record what they pressed, and its interruption record what layers they closed (t799), the one every submission reads (t787: a project build's briefs share it, `service/project-build/brief-ports.ts`).
-          const trials = automationStudioProjectBuildWholeTrials({ candidateId, environment: trialEnvironment, binding: this.llmEvidenceRuntime, judge: { provider: unresolvedProvider.provider, timeoutMs: unresolvedProvider.timeoutMs, instructions, signal }, ledger: projectLedger, phase: repairBrief ? "repair" : "test" }), project = projectLedger ? { buildId, repair: Boolean(repairBrief), ledger: projectLedger, paths: { projects: this.projectPaths, flows: this.flowPaths }, host: this.hostRuntime?.hostResources, hostRuntime: this.hostRuntime, cancellation: this.buildCancellation, flowInputs: parent.interface.inputs, instructions, binding: this.llmEvidenceRuntime, permissions: permissionGround, personAsk, runHarness, trialEnvironment, parts: this.projectParts } : undefined; // The trial runner (t340) and its judge (`service/project-build/whole-trials.ts`): each trial runs the exact submitted candidate once, from its declared start (D1's hook first, when set), in a session of its own under a run's executor options, and the judge, under the build's per-call timeout (t473), sees only that run; the candidate id is minted here because every trial names it. A project build's own ports (`service/project-build/`).
+          const trials = automationStudioProjectBuildWholeTrials({ candidateId, environment: trialEnvironment, binding: this.llmEvidenceRuntime, judge: { provider: unresolvedProvider.provider, timeoutMs: unresolvedProvider.timeoutMs, instructions, signal }, ledger: projectLedger, phase: repairBrief ? "repair" : "test" }), project = projectLedger ? { buildId, repair: Boolean(repairBrief), ledger: projectLedger, paths: { projects: this.projectPaths, flows: this.flowPaths }, host: this.hostRuntime?.hostResources, leaseBinding: this.trialCollaborators.hostLeaseAuthority.forDomain(this.llmEvidenceRuntime.domainId), hostRuntime: this.hostRuntime, cancellation: this.buildCancellation, flowInputs: parent.interface.inputs, instructions, binding: this.llmEvidenceRuntime, permissions: permissionGround, personAsk, runHarness, trialEnvironment, parts: this.projectParts } : undefined; // The trial runner (t340) and its judge (`service/project-build/whole-trials.ts`): each trial runs the exact submitted candidate once, from its declared start (D1's hook first, when set), in a session of its own under a run's executor options, and the judge, under the build's per-call timeout (t473), sees only that run; the candidate id is minted here because every trial names it. A project build's own ports (`service/project-build/`).
           const generated = await (project ? automationStudioEvidenceBuildBound(project.buildId, runAutomationStudioProjectBuild.bind(undefined, project)) : generateAutomationStudioFlowCandidateDraft)({
             ...(candidateSource ? { originalSource: candidateSource } : {}), candidateId, trial: trials.port, ...(siteReset ? { siteReset } : {}), trialSpend: trials.spent, trialRecords: trials.records, maxConsecutiveUnusableDecisions: bootstrapLoopLimits.maxConsecutiveUnusableDecisions, // The legacy round's bound, asked again under the same options (`service/flow-bootstrap-commands/unusable-decisions.ts`, t354).
             submission: { projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, exploredToggles: permissions.exploredToggles, exploredInterruptions: permissions.exploredInterruptions, exploredPaces: trialEnvironment.exploredPaces, instructionText: bootstrapInstructionText, baseDependencyDigest: binding.executionDigest, signal, ...(candidateSource ? { originalSource: candidateSource } : {}), ...(startLocation === undefined ? {} : { startLocation }) },
@@ -2463,7 +2463,7 @@ export class AutomationStudioService {
     const runInterventionMode = requiredCommands ? "no_llm_intervention" : normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
     if (adaptiveRunRequested) startInput.metadata = { ...(startInput.metadata ?? {}), adaptiveRuntime: true, adaptiveMode: runInterventionMode };
-    session = existing ?? await admitAutomationStudioRuntimeSession({ admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), pageHeld: automationStudioPageHeldReader({ hostResources: this.hostRuntime?.hostResources, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId) }), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested); await bindAutomationStudioGatewayTraceRun(session, { inputs: input.inputs, conversations: this.conversations });
+    session = existing ?? await admitAutomationStudioRuntimeSession({ leaseBinding: this.trialCollaborators.hostLeaseBinding(), admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), pageHeld: automationStudioPageHeldReader({ leaseBinding: this.trialCollaborators.hostLeaseBinding(), hostResources: this.hostRuntime?.hostResources, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId) }), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested); await bindAutomationStudioGatewayTraceRun(session, { inputs: input.inputs, conversations: this.conversations });
     const startedAt = Date.now();
     const abortController = new AbortController();
     // What this run's result check came to: set once the adaptation context is resolved below, and read lazily by `resolveProvider` after the run finishes, which is when "is *this* run checked" can be answered at all.
@@ -3755,7 +3755,7 @@ export class AutomationStudioService {
 
   async deleteProject(projectId: string): Promise<{ deletedProjectId: string }> {
     await this.projects.requireProject(projectId);
-    return await this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
+    return await this.projects.removals.run(projectId, () => this.parkedRunExpiry.withProjectRemoval(projectId, async () => {
       if (this.objectStore && this.projects.indexStore) {
         await ProgramJsonStore.transaction(this.projects.indexStore.filePath, async (transaction) => {
           const state = await transaction.read(this.projects.indexStore!.filePath, () => ({ categories: [], projects: [] } as AutomationStudioProjectIndex));
@@ -3774,7 +3774,7 @@ export class AutomationStudioService {
       if (this.projectPaths.root) await removeAutomationStudioProjectFiles({ objectStore: this.objectStore, pool: this.runtimeProjectDatabasePool, projectId, projectDirectory: this.projectPaths.projectDirectory(projectId) });
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
-    });
+    }));
   }
 
   async createProjectCategory(input: { name?: unknown; domainId?: unknown }): Promise<AutomationStudioProjectCategory> {

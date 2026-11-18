@@ -61,7 +61,7 @@ test("a thread is called by Core's title, else a noun for its subject, and an id
   assert.equal(conversationSubjectLabel(summary("a", { title: "0123456789abcdef0123" })), "This Flow");
   assert.equal(conversationSubjectLabel(summary("a", { title: "   " })), "This Flow");
   const nouns = (["project", "flow", "build", "run"] as const).map((kind) => conversationSubjectFallbackLabel(summary("a", { subject: { kind } })));
-  assert.deepEqual(nouns, ["This project", "This Flow", "This Flow build", "This run"]);
+  assert.deepEqual(nouns, ["New chat", "This Flow", "This Flow build", "This run"]);
 });
 
 test("the heading is Core's title, else the project's name with the noun, else all projects", () => {

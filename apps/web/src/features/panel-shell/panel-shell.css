@@ -1,10 +1,16 @@
 /* The panel's frame. Wide: rail | page | assistant, under a top bar.
-   Phone (up to 720px): the rail is a bottom tab bar and the assistant a
-   full-height sheet behind a round button. Nothing here may scroll the page sideways. */
+   Phone (up to 720px): the rail is a bottom tab bar of two rows and the assistant a
+   full-height sheet behind a round button. Nothing here may scroll the page sideways.
+   Sizes that repeat are tokens on `.panel-shell`; spacing and radii are the panel's own tokens. */
 
 .panel-shell {
+  --panel-rail-width: 184px;
+  --panel-dock-width: 360px;
+  --panel-tap: 40px;
+  --panel-tab-bar-height: calc(var(--panel-tap) * 2);
+  --panel-ask-size: 52px;
   display: grid;
-  grid-template-columns: 184px minmax(0, 1fr) 360px;
+  grid-template-columns: var(--panel-rail-width) minmax(0, 1fr) var(--panel-dock-width);
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas: "top top top" "rail page dock";
   height: 100vh;
@@ -19,44 +25,47 @@
   grid-area: top;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-lg);
   min-width: 0;
-  padding: 8px 16px;
+  padding: var(--space-sm) var(--space-lg);
   background: var(--surface);
   border-bottom: 1px solid var(--divider);
 }
 .panel-brand { font-weight: 700; }
-.panel-project { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.panel-project select { min-width: 0; max-width: 240px; min-height: 36px; }
-.panel-topbar-facts { display: flex; align-items: center; gap: 16px; margin-left: auto; white-space: nowrap; }
-.panel-engine { display: inline-flex; align-items: center; gap: 6px; }
-.panel-engine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.panel-project { display: flex; align-items: center; min-width: 0; }
+.panel-project .project-switcher-button { max-width: 240px; min-height: calc(var(--space-xl) + var(--space-sm)); }
+/* The panel's reset caps every element at its parent's width; the sheet floats under the button and sizes itself to the viewport. */
+.panel-project .project-switcher-sheet { max-width: none; }
+.panel-topbar-facts { display: flex; align-items: center; gap: var(--space-lg); margin-left: auto; white-space: nowrap; }
+.panel-engine { display: inline-flex; align-items: center; gap: var(--space-compact); }
+.panel-engine-dot { width: var(--space-sm); height: var(--space-sm); border-radius: var(--radius-pill); background: var(--text-dim); }
 .panel-engine[data-tone="ok"] .panel-engine-dot { background: var(--success); }
 .panel-engine[data-tone="warn"] .panel-engine-dot { background: var(--warning); }
 
 .panel-rail {
   grid-area: rail;
-  padding: 8px;
+  padding: var(--space-sm);
   background: var(--surface);
   border-right: 1px solid var(--divider);
   overflow-y: auto;
 }
-.panel-rail ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.panel-rail ul { display: flex; flex-direction: column; gap: var(--space-xxs); margin: 0; padding: 0; list-style: none; }
 .panel-rail-link {
   display: flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 6px;
+  min-height: var(--panel-tap);
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-medium);
   color: var(--text);
   text-decoration: none;
 }
 .panel-rail-link:hover { background: var(--accent-soft); }
 .panel-rail-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.panel-rail-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+/* The wash is light in the light theme, so the text on it is the accessible accent token, not the bright accent. */
+.panel-rail-link[aria-current="page"] { background: var(--accent-soft); color: var(--accent-text); font-weight: 650; }
 
-.panel-page { grid-area: page; min-width: 0; padding: 24px; overflow: auto; }
-.panel-page h1 { margin: 0 0 8px; }
+.panel-page { grid-area: page; min-width: 0; padding: var(--space-xl); overflow: auto; }
+.panel-page h1 { margin: 0 0 var(--space-sm); }
 
 .panel-dock {
   grid-area: dock;
@@ -67,10 +76,22 @@
   background: var(--surface);
   border-left: 1px solid var(--divider);
 }
-.panel-dock-bar { display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--divider); }
+.panel-dock-bar { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--divider); }
 .panel-dock-where { color: var(--muted); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-dock-body { flex: 1 1 auto; min-height: 0; min-width: 0; }
-.panel-dock-close { display: none; min-height: 36px; }
+.panel-dock-close {
+  display: none;
+  min-height: calc(var(--space-xl) + var(--space-sm));
+  padding: 0 var(--space-md);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.panel-dock-close:hover { background: var(--accent-soft); }
+.panel-dock-close:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .panel-dock-button { display: none; }
 
 @media (max-width: 720px) {
@@ -79,14 +100,25 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
     grid-template-areas: "top" "page" "rail";
   }
-  .panel-topbar { flex-wrap: wrap; gap: 8px; padding: 8px 16px; }
-  .panel-topbar-facts { margin-left: 0; gap: 12px; }
-  .panel-page { padding: 16px; }
+  .panel-topbar { flex-wrap: wrap; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); }
+  .panel-topbar-facts { margin-left: 0; gap: var(--space-md); }
+  /* Room under the last row for the Ask button, so it never covers content. */
+  .panel-page { padding: var(--space-lg) var(--space-lg) calc(var(--panel-ask-size) + var(--space-xl)); }
 
+  /* Eight places do not fit 390px (or 320px) in one row at a readable size: the bar is a grid of four per row, so every place is always visible and a tap away. */
   .panel-rail { border-right: 0; border-top: 1px solid var(--divider); padding: 0; overflow: hidden; }
-  .panel-rail ul { flex-direction: row; gap: 0; }
-  .panel-rail li { flex: 1 1 0; min-width: 0; }
-  .panel-rail-link { justify-content: center; min-height: 48px; padding: 0 2px; border-radius: 0; font-size: 12px; }
+  .panel-rail ul { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+  .panel-rail-link {
+    justify-content: center;
+    min-height: var(--panel-tap);
+    padding: 0 var(--space-xs);
+    border-radius: 0;
+    font-size: var(--font-size-body-small);
+    text-align: center;
+    overflow: hidden;
+  }
+  .panel-rail-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel-rail-link[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--accent-text); }
 
   .panel-dock {
     position: fixed;
@@ -99,14 +131,14 @@
   .panel-dock-close { display: inline-flex; align-items: center; }
   .panel-dock-button {
     position: fixed;
-    right: 16px;
-    bottom: 72px;
+    right: var(--space-lg);
+    bottom: calc(var(--panel-tab-bar-height) + var(--space-lg));
     z-index: 70;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
+    width: var(--panel-ask-size);
+    height: var(--panel-ask-size);
     border: 0;
     border-radius: 50%;
     background: var(--accent);

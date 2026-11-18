@@ -8,26 +8,28 @@ import type { AppRouteActor, AppRouteAuthorizer } from "../../../../lib/app-rout
  *
  * - `provisioning`, `store`: the platform's provisioning service (every change
  *   goes through it, as an in-process caller) and its store (reads);
- * - `workspaceId`: the workspace the caller's session works in;
- * - `tenancy`: `single` (local, self-hosted, and `service` until it is
- *   multi-tenant) or `multi`.
+ * - `workspaceId`: the workspace the caller's session works in, held for the
+ *   request by the route (never named by the request);
+ * - `tenancy`: `single` (local, self-hosted) or `multi` (`service`).
  */
 export type AccountPlatform = {
   provisioning: PlatformProvisioning;
-  store: Pick<PlatformStore, "getAccount" | "getMembership" | "getWorkspace" | "listMembershipsOfWorkspace">;
+  store: Pick<PlatformStore, "getAccount" | "getMembership" | "getWorkspace" | "listMembershipsOfWorkspace" | "listMembershipsOfUser">;
   workspaceId: string;
   tenancy: "single" | "multi";
 };
 
 /**
  * What an `/api/accounts` handler works with, built per request by the route
- * (`accountRouteDepsForRequest`) and passed whole so tests use the real
+ * (`withAccountRouteDeps`) and passed whole so tests use the real
  * services over memory doubles.
  *
  * - `actor`: the signed-in caller, as the app-route IAM decision takes it;
  *   `sessionId` is their panel session, used only to re-prove credentials;
- * - `authorizer`: the registry's `authorize`, which decides and audits;
- * - `identityAccess`: the people list and the credential re-proof;
+ * - `authorizer`: the caller's workspace's registry `authorize`, which
+ *   decides by that workspace's policies and audits;
+ * - `identityAccess`: the identity directory's people list and credential
+ *   re-proof (the platform's, on the primary instance);
  * - `profile`: decides which roles are offered;
  * - `platform`: the rest, resolved after the decision.
  */

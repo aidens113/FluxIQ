@@ -12,8 +12,7 @@
 // concept and no examples about the page. No DOM.
 
 import type { ConversationMode } from "../conversation/index.ts";
-import { modelKeyLockedWords } from "fluxiq/ui";
-import { modelReadinessLockReason, type ModelReadiness } from "../onboarding/index.ts";
+import { modelUnavailableWords, type ModelReadiness } from "../onboarding/index.ts";
 import type { ChatWelcome, ChatWelcomeItem } from "../ports/index.ts";
 import type { ChatTarget } from "../target.ts";
 
@@ -25,7 +24,7 @@ export type EmptyStateModel = {
   title: string;
   line: string;
   starts: readonly EmptyStart[];
-  /** Says FluxIQ needs a model key, or the person's password for it, with Open FluxIQ beside it; null when it does not, or nobody knows. */
+  /** Model configuration feedback; it does not restrict the composer or deterministic work. */
   keyLine: string | null;
   examples: readonly string[];
   /** A host's welcome lines, each with its icon; empty except in a welcome. */
@@ -114,11 +113,10 @@ export function emptyStateModel(
   }
 }
 
-/** The line beside Open FluxIQ: no key, or a key this browser cannot open yet, with why (one action, before any task). */
+/** Missing model setup or a saved-key problem; neither changes client authentication. */
 function keyLineFor(readiness: ModelReadiness): string | null {
   if (readiness === "missing") return MODEL_KEY_LINE;
-  const reason = modelReadinessLockReason(readiness);
-  return reason === null ? null : modelKeyLockedWords(reason);
+  return modelUnavailableWords(readiness);
 }
 
 function quiet(title: string, line: string): EmptyStateModel {

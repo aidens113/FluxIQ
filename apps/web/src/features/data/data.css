@@ -1,6 +1,5 @@
 .data { display: grid; gap: 16px; min-width: 0; align-content: start; }
 .data h1, .data h2 { margin: 0; overflow-wrap: anywhere; }
-.data h1 { font-size: 1.4rem; }
 .data h2 { font-size: 1.1rem; }
 .data-note { margin: 0; opacity: 0.85; }
 .data-error { color: var(--danger); opacity: 1; }
@@ -17,3 +16,15 @@
 .data-detail-head { display: grid; gap: 6px; min-width: 0; }
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .data-button { min-height: 32px; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--divider); border-radius: 6px; background: none; color: inherit; font: inherit; text-decoration: none; cursor: pointer; }
+/* Skeleton and empty states: rows and cards in the shape of the real ones. */
+.data-skeleton ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.data-skeleton-row { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); }
+.data-skeleton-line { height: 12px; border-radius: 6px; background: var(--surface-raised); animation: data-skeleton-pulse 1.2s ease-in-out infinite alternate; }
+.data-skeleton-line[data-size="wide"] { width: 55%; }
+.data-skeleton-line[data-size="narrow"] { width: 30%; }
+@keyframes data-skeleton-pulse { from { opacity: 1; } to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .data-skeleton-line { animation: none; } }
+.data-empty { display: grid; gap: 4px; justify-items: start; padding: 20px 16px; border: 1px dashed var(--edge); border-radius: var(--radius); background: var(--surface); color: var(--muted); }
+.data-empty strong { color: var(--text); }
+.data-empty.data-error strong { color: var(--danger); }
+.data-row { border-radius: var(--radius); background: var(--surface); padding: 12px; }

@@ -31,7 +31,7 @@ function run(id: string, handlers: Record<string, (payload: Record<string, unkno
     }
   };
   const person = personSaid === undefined ? {} : { host: { personWords: async () => ({ text: personSaid, saysWhatToDo: true }) }, answerTurnId: "turn.answer" };
-  const context = { port, host: {}, projectId: "project.plain", conversationId: "conversation.plain", sessionId: "session.person", keyLocked: false, paired: false, ...person } as unknown as AutomationStudioConversationCommandContext;
+  const context = { port, host: {}, projectId: "project.plain", conversationId: "conversation.plain", sessionId: "session.person", paired: false, ...person } as unknown as AutomationStudioConversationCommandContext;
   return { calls, outcome: AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get(id)!.run(context, args) };
 }
 

@@ -11,16 +11,23 @@ import {
   type RevealSecretKeyRequest,
   type RotateSecretKeyRequest,
   type SecretKeyAuthorizationPayload,
-  type UnlockSecretKeysRequest,
   type UpdateSecretKeyRequest
 } from "./contracts.ts";
 import type { SecretKeyActorSession, SecretKeysService } from "../runtime/service.ts";
+import type { SecretKeysSnapshot } from "../types.ts";
+import type { ModelAccessState } from "@fluxiq/contracts/platform";
 import { unofferedKeyRefusal } from "./unoffered-key-refusal.ts";
+import { createSecretKeyManagementProof, type SecretKeyManagementProof } from "../runtime/access/index.ts";
+
+/** Trusted host identity authority; tenant storage never becomes the account authority. */
+export type SecretKeyIdentityAuthority = Pick<IdentityAccessService, "validateSession" | "authorizeSessionCredentials" | "authorizeSessionPasswordPin">;
+type IdentityAuthoritySource = SecretKeyIdentityAuthority | (() => Promise<SecretKeyIdentityAuthority>);
 
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
-// `keySessionOf` names the unlock a caller may use (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
-export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAccessService, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }): void {
+// `keySessionOf` names the session a caller acts under (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
+// `modelAccessOf` is the host's reading of the caller's model access, from the snapshot read for them; it rides on that snapshot as `modelAccess`.
+export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAuthoritySource, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }, modelAccessOf?: (actor: ProgramApiActor, snapshot: SecretKeysSnapshot) => Promise<ModelAccessState>): void {
   // A key's owner is the user that created it (`createdBy`, stamped from the
   // acting user on create), so the service already records it and no separate
   // `recordOwner` is needed. An unknown key, or one with no creator, has no owner.
@@ -35,36 +42,16 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     action: "secrets:Snapshot",
     accessLevel: "Read",
     resource: endpointResource.workspace(),
-    assistant: { input: secretKeysSnapshotInput, summary: "Lists the person's model keys by name and provider, and says which is the default and whether they are unlocked. A key's value is never shown.", phrases: ["list my keys", "which model keys do I have"] },
+    assistant: { input: secretKeysSnapshotInput, summary: "Lists the person's model keys by name and provider, and says which is the default and whether saved keys are available. A key's value is never shown.", phrases: ["list my keys", "which model keys do I have"] },
     list: {
       items: (payload) => (payload as { keys?: readonly unknown[] } | undefined)?.keys ?? [],
       ref: (item) => ({ kind: "key", keyId: (item as { id?: unknown }).id }),
       replace: (payload, kept) => ({ ...(payload as object), keys: kept })
     },
-    handler: async (request) => ({ ok: true, payload: request.actor && keySessionOf ? await service.snapshotFor({ userId: request.actor.userId, ...keySessionOf(request.actor) }) : await service.snapshot() })
-  });
-  registry.register({
-    programId: "secret-keys",
-    endpoint: SECRET_KEYS_ENDPOINTS.unlock,
-    permission: "secrets.manage",
-    classification: "program-gated",
-    action: "secrets:Unlock",
-    accessLevel: "Write",
-    resource: endpointResource.selfUser(),
-    assistant: { hidden: "Takes the person's password and authenticator code, which are never given to the assistant." },
     handler: async (request) => {
-      const payload = request.payload as UnlockSecretKeysRequest | undefined;
-      if (!payload?.authorizationPassword) return { ok: false, error: "Your password is required." };
-      // What sign-in asks, and no more: this is setup, once per browser, and a PIN is for dangerous acts.
-      const authorization = await authorizeSignInProof(identityAccess, payload);
-      if (!authorization.ok) return authorization;
-      const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
-      if (!actorSession) return { ok: false, error: "Sign in to FluxIQ to unlock your model keys." };
-      const named = Array.isArray(payload.clientIds) ? payload.clientIds.filter((id) => typeof id === "string") : [];
-      const lifts = await service.credentialUnlocks.liftable(actorSession.userId, named, typeof payload.unlockTicket === "string" ? payload.unlockTicket : undefined);
-      const { unlockedKeyCount } = await service.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: payload.authorizationPassword, expiresAtMs: actorSession.expiresAtMs, unlockClients: [...lifts], passwordVerified: true });
-      const stillLocked = new Set((await service.credentialUnlocks.lockedClientsFor(actorSession.userId)).map((client) => client.holderId));
-      return { ok: true, payload: { unlockedKeyCount, stillLocked: named.filter((id) => stillLocked.has(id)) } };
+      if (!request.actor || !keySessionOf) return { ok: true, payload: await service.snapshot() };
+      const snapshot = await service.snapshotFor({ userId: request.actor.userId, ...keySessionOf(request.actor) });
+      return { ok: true, payload: modelAccessOf ? { ...snapshot, modelAccess: await modelAccessOf(request.actor, snapshot) } : snapshot };
     }
   });
   registry.register({
@@ -84,7 +71,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       const payload = request.payload as CreateSecretKeyRequest | undefined;
       if (!payload?.name || !payload.value) return { ok: false, error: "name and value are required" };
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
-      const authorization = await authorizeSecretMutation(identityAccess, payload, { requireTotp: false });
+      const authorization = await authorizeSecretMutation(identityAccess, payload, request.actor, { requireTotp: false });
       if (!authorization.ok) return authorization;
       const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
       return { ok: true, payload: await service.createKey({ ...payload, createdBy: request.actor?.userId, actorSession }) };
@@ -103,7 +90,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       const payload = request.payload as UpdateSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
-      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      const authorization = await authorizeSecretMutation(identityAccess, payload, request.actor);
       if (!authorization.ok) return authorization;
       const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
       return { ok: true, payload: await service.updateKey({ ...payload, actorSession }) };
@@ -121,7 +108,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     handler: async (request) => {
       const payload = request.payload as RotateSecretKeyRequest | undefined;
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
-      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      const authorization = await authorizeSecretMutation(identityAccess, payload, request.actor);
       if (!authorization.ok) return authorization;
       const actorSession = await verifiedActorSession(identityAccess, payload, request.actor);
       return { ok: true, payload: await service.rotateKey({ ...payload, actorUserId: request.actor?.userId, actorSession }) };
@@ -139,9 +126,10 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     handler: async (request) => {
       const payload = request.payload as RevealSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
-      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      const authorization = await authorizeSecretMutation(identityAccess, payload, request.actor);
       if (!authorization.ok) return authorization;
-      return { ok: true, payload: await service.revealKey({ ...payload, actorUserId: request.actor?.userId }) };
+      const managementProof = await revealManagementProof(identityAccess, registry, request.actor, payload.id);
+      return { ok: true, payload: await service.revealKey({ ...payload, actorUserId: request.actor?.userId, managementProof }) };
     }
   });
   registry.register({
@@ -156,7 +144,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
     handler: async (request) => {
       const payload = request.payload as DeleteSecretKeyRequest | undefined;
       if (!payload?.id) return { ok: false, error: "id is required" };
-      const authorization = await authorizeSecretMutation(identityAccess, payload);
+      const authorization = await authorizeSecretMutation(identityAccess, payload, request.actor);
       if (!authorization.ok) return authorization;
       return { ok: true, payload: { deleted: await service.deleteKey(payload.id) } };
     }
@@ -254,7 +242,8 @@ async function plainRefusal(run: () => Promise<{ ok: true; payload: unknown }>):
  * caller's, still live, and the caller's user. Its expiry bounds how long the
  * key stays held. Undefined otherwise, and then no session takes the key.
  */
-async function verifiedActorSession(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload, actor: ProgramApiActor | undefined): Promise<SecretKeyActorSession | undefined> {
+async function verifiedActorSession(source: IdentityAuthoritySource | undefined, payload: SecretKeyAuthorizationPayload, actor: ProgramApiActor | undefined): Promise<SecretKeyActorSession | undefined> {
+  const identityAccess = typeof source === "function" ? await source() : source;
   if (!identityAccess || !actor || !payload.authSessionId || payload.authSessionId !== actor.sessionId) return undefined;
   // An unknown or expired session reads as null; a store that cannot be read throws, and the request fails with it.
   const context = await identityAccess.validateSession(payload.authSessionId);
@@ -262,19 +251,28 @@ async function verifiedActorSession(identityAccess: IdentityAccessService | unde
   return { sessionId: context.session.id, userId: context.user.id, expiresAtMs: context.session.expiresAtMs };
 }
 
-async function authorizeSignInProof(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {
-  if (!identityAccess) return { ok: false, requiresRecheck: true, error: "Secret key authorization is unavailable" };
-  try {
-    await identityAccess.authorizeSessionCredentials({ sessionId: payload.authSessionId, password: payload.authorizationPassword, pin: undefined, totp: payload.authorizationTotp, requirePin: false });
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, requiresRecheck: true, error: error instanceof Error ? error.message : String(error) };
-  }
+/** A one-use server capability, separate from model-use grants and never request-controlled. */
+async function revealManagementProof(source: IdentityAuthoritySource | undefined, registry: GlobalProgramApiRegistry, actor: ProgramApiActor | undefined, id: string): Promise<SecretKeyManagementProof> {
+  if (!actor) throw new Error("Secret key management requires authentication.");
+  const { sessionId, userId } = actor;
+  const validate = async () => {
+    const identity = typeof source === "function" ? await source() : source;
+    const current = await identity?.validateSession(sessionId);
+    if (!current || current.user.id !== userId) return false;
+    const decision = await registry.authorize({ actor: { sessionId, userId, roleId: current.role.id, permissions: current.role.permissions }, action: "secrets:RevealKey", permission: "secrets.manage", resources: { kind: "key", keyId: id }, programId: "secret-keys" });
+    return decision.allowed;
+  };
+  if (!await validate()) throw new Error("Secret key management is not authorized.");
+  return createSecretKeyManagementProof({ id, userId, operation: "reveal", expiresAtMs: Date.now() + 10_000, validate });
 }
 
-async function authorizeSecretMutation(identityAccess: IdentityAccessService | undefined, payload: SecretKeyAuthorizationPayload, options: { requireTotp?: boolean } = {}): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {
+async function authorizeSecretMutation(source: IdentityAuthoritySource | undefined, payload: SecretKeyAuthorizationPayload, actor: ProgramApiActor | undefined, options: { requireTotp?: boolean } = {}): Promise<{ ok: true } | { ok: false; error: string; requiresRecheck: true }> {
+  const identityAccess = typeof source === "function" ? await source() : source;
   if (!identityAccess) return { ok: false, requiresRecheck: true, error: "Secret key authorization is unavailable" };
+  if (!actor || !payload.authSessionId || payload.authSessionId !== actor.sessionId) return { ok: false, requiresRecheck: true, error: "Secret key authorization must use the authenticated caller's session." };
   try {
+    const current = await identityAccess.validateSession(payload.authSessionId);
+    if (current?.user.id !== actor.userId) return { ok: false, requiresRecheck: true, error: "Secret key authorization must use the authenticated caller's identity." };
     if (options.requireTotp === false) {
       await identityAccess.authorizeSessionPasswordPin({
         sessionId: payload.authSessionId,

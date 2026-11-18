@@ -180,7 +180,9 @@ const identityAccess = {
 /** Core's registry with the Automation Studio API registered on `service`, and each endpoint's classification. */
 function contractRegistry(service: AutomationStudioService, clientGateway: unknown) {
   const registry = new GlobalProgramApiRegistry({ identityAccess: identityAccess as never });
-  registerAutomationStudioApi(registry, service, identityAccess as never, undefined, clientGateway as never);
+  // Registering also installs the paired-project focus authority on the gateway, so the fake carries the port it installs on.
+  const gateway = { projectFocus: { setAuthority: () => undefined }, ...(clientGateway as object) };
+  registerAutomationStudioApi(registry, service, identityAccess as never, undefined, gateway as never);
   const endpoints = registry.endpoints().filter((entry) => entry.programId === "automation-studio");
   const classifications = new Map(endpoints.map((entry) => [entry.endpoint, entry.classification]));
   return { registry, endpoints, classifications };

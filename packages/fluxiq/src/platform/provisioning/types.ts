@@ -85,12 +85,14 @@ export type PlatformIdentityPort = {
  * `resetUrl`, `expiresInMinutes`.
  */
 export type PlatformEmailMessage = {
+  /** Stable identity of one delivery when supplied by a durable outbox; retries reuse it. */
+  deliveryId?: string;
   template: PanelEmailTemplate;
   to: string;
   variables: Readonly<Record<string, string>>;
 };
 
-/** The `EmailSender` port (`none`, `file`, and a memory double for tests; `smtp` later). A send that fails throws; the caller decides whether that fails the operation. */
+/** Email delivery port (`none`, `file`, `resend`, memory tests). A failed send throws; the caller owns retries and durable delivery. */
 export type EmailSender = {
   readonly kind: string;
   send(message: PlatformEmailMessage): Promise<void>;

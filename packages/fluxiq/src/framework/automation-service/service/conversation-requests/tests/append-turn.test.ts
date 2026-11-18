@@ -23,7 +23,7 @@ type Dependencies = Parameters<typeof appendConversationTurnForRequest>[0];
 type Request = Parameters<typeof appendConversationTurnForRequest>[1];
 type Payload = Parameters<typeof appendConversationTurnForRequest>[3];
 
-const caller = { userId: "user", sessionId: "session", paired: false, keyLocked: false, keyNeedsUnlock: false, keyLockReason: undefined };
+const caller = { userId: "user", sessionId: "session", paired: false };
 
 function harness() {
   const written: unknown[] = [];
@@ -34,7 +34,6 @@ function harness() {
       listProjects: async () => ({ projects: [] }),
       conversations: {
         callerFor: () => caller,
-        noteKeySetupStepTold: () => undefined,
         appendTurn: async (turn: unknown) => {
           written.push(turn);
           return { turnId: "t" };

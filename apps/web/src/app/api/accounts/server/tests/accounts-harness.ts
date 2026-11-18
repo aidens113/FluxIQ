@@ -19,12 +19,12 @@ import type { AccountRouteDeps } from "../route-deps";
 // sender, decided by a real `GlobalProgramApiRegistry`. Every password here is
 // a dummy value, and no token, password or session id is ever printed.
 
-const WEAK_KDF = { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const };
+export const WEAK_KDF = { testOnlyWeakParameters: { N: 2 ** 10, r: 8, p: 1, keyLength: 32 } as const };
 
 export const WORKSPACE_ID = "workspace-main";
 export const DUMMY_PASSWORD = "a dummy password for tests";
 
-class MemoryRecordRepository implements PlatformRecordRepository, IamRecordRepository {
+export class MemoryRecordRepository implements PlatformRecordRepository, IamRecordRepository {
   private readonly rows = new Map<string, IamRecordEnvelope>();
 
   private key(id: string, scope: IamRecordScope = {}): string {

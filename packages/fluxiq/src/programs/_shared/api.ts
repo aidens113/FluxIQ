@@ -298,14 +298,34 @@ export class GlobalProgramApiRegistry {
     return this.decideAuthorization(input);
   }
 
-  // `authorize`, with how the person consented when it decides a press grant's mint.
-  private async decideAuthorization(input: ProgramApiAuthorizeInput, consent?: IamRequestConsent): Promise<ProgramApiAuthorization> {
+  /**
+   * Decides exactly as `authorize` does and records no audit row. For a
+   * holder that reuses the decision until `subscribeDecisionChanges` says it
+   * may have changed, and records itself the events it acts on: the client
+   * gateway delivering a paired client's activity, which decides each
+   * project's stream once rather than on every batch, as `filterProgramList`
+   * decides the items of a list under one row instead of one each. A row per
+   * reuse would only repeat the decision; the event (access ended, or a
+   * check that could not decide) is the holder's to record.
+   */
+  async decideUnrecorded(input: ProgramApiAuthorizeInput): Promise<ProgramApiAuthorization> {
+    return this.decideAuthorization(input, undefined, false);
+  }
+
+  /** Tells `listener` whenever a decision may since have changed (`ProgramIamGate.subscribeChanges`); returns the function that stops it. */
+  subscribeDecisionChanges(listener: () => void): () => void {
+    return this.iam.subscribeChanges(listener);
+  }
+
+  // `authorize`, with how the person consented when it decides a press grant's mint, and whether the decision is recorded.
+  private async decideAuthorization(input: ProgramApiAuthorizeInput, consent?: IamRequestConsent, recorded = true): Promise<ProgramApiAuthorization> {
     const actor = input.actor;
     if (!actor) return { allowed: false, decision: null, response: { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" } };
     try {
       const request = await this.iam.open(actor, input.origin, { action: input.action, permission: input.permission }, undefined, consent);
       const refs = input.resources === undefined ? [{ kind: "workspace" as const }] : refList(input.resources);
-      const decision = request.authorizer.decide(input.action, await this.iam.resources(request, refs, input.programId ?? "~"));
+      const resources = await this.iam.resources(request, refs, input.programId ?? "~");
+      const decision = recorded ? request.authorizer.decide(input.action, resources) : request.authorizer.decideUnrecorded(input.action, resources);
       if (decision.decision === "allow") return { allowed: true, decision };
       return { allowed: false, decision, response: programForbiddenResponse(actor, input.permission, input.action) };
     } catch (error) {

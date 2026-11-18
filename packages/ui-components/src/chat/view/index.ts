@@ -20,7 +20,7 @@ export { FOLLOW_SLACK_PX, isAtBottom, type ScrollMetrics } from "./scroll-follow
 export { createScrollFollower, type ScrollFollower, type ScrollHost } from "./scroll-follower.ts";
 export { createStepMessageView, type StepMessageView } from "./step-message-view.ts";
 export { stepText } from "./step-text.ts";
-export { createThreadHeader, type ThreadHeader, type ThreadHeaderModel } from "./thread-header.ts";
+export { createThreadHeader, type ThreadBar, type ThreadHeader, type ThreadHeaderModel } from "./thread-header.ts";
 export { createThreadView, type ThreadView, type ThreadViewOptions, type TurnControls } from "./thread-view.ts";
 export { createTurnControls, type TurnControlsDeps } from "./turn-controls.ts";
 export { type TurnMeta } from "./turn-meta.ts";

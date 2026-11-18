@@ -1,10 +1,23 @@
 import { randomInt } from "node:crypto";
 import type { ClientGatewayPairingChallenge } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "./config.ts";
+import type { ClientGatewayChangeKind } from "./change-feed/index.ts";
 import { ClientGatewayPairingCapacityError, resolveClientGatewayPairingLimits, type ClientGatewayPairingLimits } from "./security/index.ts";
+import type { ClientGatewayTimer } from "./types.ts";
 
 /** The client address a pending challenge was asked for from: its requesting session's, or null when unknown. */
 export type ClientGatewayPairingAddressLookup = (sessionId: string) => string | null;
+
+/**
+ * What the registry says of its own changes, and the clock its expiry wait
+ * runs on. Only the two changes no other collaborator records as they happen
+ * are told here: a challenge created, and challenges lapsing.
+ */
+export type ClientGatewayPairingRegistryHooks = {
+  changed?: (kind: Extract<ClientGatewayChangeKind, "pairing.requested" | "pairing.expired">) => void;
+  /** Starts the wait for the next waiting challenge to lapse. Unset: a `setTimeout` that never keeps the process alive. */
+  startExpiryTimer?: (delayMs: number, fire: () => void) => ClientGatewayTimer;
+};
 
 /**
  * Owns the pending pairing challenges. Storage, expiry and the pending caps
@@ -18,12 +31,22 @@ export class ClientGatewayPairingRegistry {
   private readonly withdrawn = new Map<string, { reason: string; expiresAt: number }>();
   private readonly config: ClientGatewayConfig;
   private readonly addressOf: ClientGatewayPairingAddressLookup;
+  private readonly changed: ClientGatewayPairingRegistryHooks["changed"];
+  private readonly startExpiryTimer: NonNullable<ClientGatewayPairingRegistryHooks["startExpiryTimer"]>;
   private limits: ClientGatewayPairingLimits;
+  // The wait for the earliest waiting challenge to lapse, and that challenge's expiry.
+  private expiry: { at: number; timer: ClientGatewayTimer } | undefined;
 
-  /** `addressOf` reads a requesting session's client address, for the per-address cap; omitted, none is known. */
-  constructor(config: ClientGatewayConfig, addressOf: ClientGatewayPairingAddressLookup = () => null) {
+  /**
+   * `addressOf` reads a requesting session's client address, for the
+   * per-address cap; omitted, none is known. `hooks` hears the registry's own
+   * changes; omitted, nothing does.
+   */
+  constructor(config: ClientGatewayConfig, addressOf: ClientGatewayPairingAddressLookup = () => null, hooks: ClientGatewayPairingRegistryHooks = {}) {
     this.config = config;
     this.addressOf = addressOf;
+    this.changed = hooks.changed;
+    this.startExpiryTimer = hooks.startExpiryTimer ?? startUnrefTimer;
     this.limits = config.pairingLimits;
   }
 
@@ -72,6 +95,8 @@ export class ClientGatewayPairingRegistry {
       expiresAt: this.config.now() + (input.ttlMs ?? this.config.pairingTtlMs)
     };
     this.pairings.set(pairingCode, pairing);
+    this.waitForExpiry();
+    this.changed?.("pairing.requested");
     return pairing;
   }
 
@@ -91,14 +116,19 @@ export class ClientGatewayPairingRegistry {
     return this.pairings.size;
   }
 
+  /** Drops every waiting challenge past its expiry, and says so once when any lapsed. */
   pruneExpired(): void {
     const now = this.config.now();
+    let lapsed = 0;
     for (const [code, pairing] of this.pairings) {
-      if (pairing.expiresAt < now && !pairing.consumedAt) this.pairings.delete(code);
+      if (pairing.expiresAt >= now || pairing.consumedAt) continue;
+      this.pairings.delete(code);
+      lapsed += 1;
     }
     for (const [code, withdrawal] of this.withdrawn) {
       if (withdrawal.expiresAt < now) this.withdrawn.delete(code);
     }
+    if (lapsed > 0) this.changed?.("pairing.expired");
   }
 
   /**
@@ -128,6 +158,35 @@ export class ClientGatewayPairingRegistry {
     }
   }
 
+  /**
+   * Waits for the earliest waiting challenge to lapse, so its lapse is told
+   * when it happens rather than when something next reads the registry. One
+   * wait at a time: it is moved when an earlier challenge arrives, and on
+   * firing it prunes and waits for the next. A clock that has not moved since
+   * the wait began (a test's stopped clock) cannot have reached the expiry,
+   * so the wait is not started again until the registry is next written.
+   */
+  private waitForExpiry(fired?: { startedAt: number }): void {
+    let next: number | undefined;
+    for (const pairing of this.pairings.values()) {
+      if (!pairing.consumedAt && (next === undefined || pairing.expiresAt < next)) next = pairing.expiresAt;
+    }
+    if (this.expiry !== undefined && this.expiry.at === next) return;
+    this.expiry?.timer.cancel();
+    this.expiry = undefined;
+    const now = this.config.now();
+    if (next === undefined || fired?.startedAt === now) return;
+    const at = next;
+    // pruneExpired drops a challenge once the clock is past its expiry, so the wait ends just after it.
+    const timer = this.startExpiryTimer(Math.max(0, at - now) + 1, () => {
+      if (this.expiry?.timer !== timer) return;
+      this.expiry = undefined;
+      this.pruneExpired();
+      this.waitForExpiry({ startedAt: now });
+    });
+    this.expiry = { at, timer };
+  }
+
   // Six digits from the operating system's cryptographic generator, never one
   // still waiting or recently withdrawn.
   private nextCode(): string {
@@ -137,4 +196,11 @@ export class ClientGatewayPairingRegistry {
     } while (this.pairings.has(code) || this.withdrawn.has(code));
     return code;
   }
+}
+
+/** A wait on the real clock that never keeps the process alive: a lapse no one is left to hear is not worth staying up for. */
+function startUnrefTimer(delayMs: number, fire: () => void): ClientGatewayTimer {
+  const handle = setTimeout(fire, delayMs);
+  handle.unref?.();
+  return { cancel: () => clearTimeout(handle) };
 }

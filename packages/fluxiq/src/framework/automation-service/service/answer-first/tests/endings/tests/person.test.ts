@@ -78,39 +78,6 @@ describe("a permission", () => {
   });
 });
 
-describe("a model key that locks during an attempt", () => {
-  it("shows that it waits on the attempt, and carries on by itself once unlocked", async () => {
-    const hold = held();
-    const listeners = new Set<(state: "started" | "ended", heldMs: number) => void>();
-    let unlock = () => {};
-    const unlocked = new Promise<void>((resolve) => { unlock = resolve; });
-    let waits = 1;
-    const generating = scriptedAttempt({
-      before: hold.before,
-      wrapProvider: (provider) => ({
-        ...provider,
-        observeHolds: (listener) => {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
-        },
-        whenReady: async () => {
-          if (waits-- <= 0) return;
-          listeners.forEach((listener) => listener("started", 0));
-          await unlocked;
-          listeners.forEach((listener) => listener("ended", 5));
-        }
-      }),
-      script: [runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")]
-    }, cleanups);
-    const { service, projectId, flowId } = await hold.ready();
-    await vi.waitFor(async () => expect((await keptAttempt(service, projectId, flowId))?.attempt).toMatchObject({ status: "waiting_for_person", waitingFor: "model_key_locked" }), { timeout: 20_000, interval: 50 });
-    unlock();
-    const attempt = await generating;
-    expect(expectReached(attempt).result?.rows?.totalRows).toBe(3);
-    expect((await keptAttempt(service, projectId, flowId))?.attempt.status).toBe("achieved");
-  });
-});
-
 /** A look that met a check, as the web domain answers it (t885): the person's, standing as a look that proposes nothing. */
 const lookCheck = (call: { toolId: string; value: JsonObject }): AutomationStudioLlmEvidenceToolExecutionResult => ({
   kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "needs_person" }, effectApplied: false, personNeeded: true, resultCode: "web.action.rejected.needs_person",

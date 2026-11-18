@@ -1,0 +1,26 @@
+{
+  "name": "@fluxiq/cloud",
+  "version": "0.1.0",
+  "description": "Build and tear down the whole FluxIQ cloud platform from one config file: fluxiq-cloud up, down, status, smoke and render.",
+  "license": "SEE LICENSE IN LICENSE.md",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "engines": { "node": ">=22" },
+  "bin": { "fluxiq-cloud": "./dist/cli/bin.js" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "examples", "fluxiq-cloud.schema.json", "README.md"],
+  "scripts": {
+    "build": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json --clean && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json",
+    "check": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "cloud": "node --experimental-strip-types --no-warnings src/cli/bin.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

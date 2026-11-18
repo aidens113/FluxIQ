@@ -1,5 +1,5 @@
 import type { ClientGatewayService } from "../../../../../client-gateway/index.ts";
-import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
+import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler, type AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { createFluxNodeManagedHostPort } from "./managed-host-port.ts";
 
 /** The run owns one managed browser until all its work has finished. */
@@ -10,16 +10,16 @@ export class FluxNodeHostPool {
   private readonly running = new Set<Promise<unknown>>();
   private closing: Promise<void> | undefined;
 
-  constructor(private readonly options: { gateway: ClientGatewayService; domainId: string; capacity: number }) {
+  constructor(private readonly options: { gateway: ClientGatewayService; domainId: string; capacity: number; leaseAuthority?: AutomationStudioHostLeaseAuthority }) {
     const scheduler = new AutomationStudioHostResourceScheduler(createFluxNodeManagedHostPort({ sessions: () => options.gateway.snapshot().sessions, domainId: options.domainId, capacity: options.capacity }));
-    this.scope = new AutomationStudioHostLeaseScope(scheduler);
+    this.scope = new AutomationStudioHostLeaseScope(scheduler, options.leaseAuthority ? { binding: options.leaseAuthority.forDomain(options.domainId) } : {});
     this.unsubscribe = options.gateway.onEvent(() => scheduler.retryWaiting());
   }
 
   get domainId(): string { return this.options.domainId; }
 
   run<T>(runId: string, projectId: string, signal: AbortSignal, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
-    const inherited = AutomationStudioHostLeaseScope.current();
+    const inherited = this.scope.binding ? this.scope.binding.current() : AutomationStudioHostLeaseScope.current();
     if (inherited && this.scope.scheduler.isCurrent(inherited)) throw new Error("managed_host.nested_lease: A pipeline controller must not hold a browser while its child calls acquire one.");
     const combined = AbortSignal.any([signal, this.stopping.signal]);
     const running = this.scope.run({ role: "fluxnode-run", briefId: runId }, async (lease) => {

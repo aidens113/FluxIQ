@@ -11,6 +11,8 @@ production plan's "Target Topology", "Gateway Transport Over The Internet",
 Nothing here contains a secret, and nothing you follow it with should put one
 in a file the repository tracks, in an image, or in a log.
 
+To build and tear down the whole service deployment (Core, Caddy, and locally Mailpit and stripe-mock) from one config file, use `fluxiq-cloud` from `packages/cloud`: [Cloud Platform](../architecture/cloud-platform.md).
+
 ## What Runs Where
 
 One container runs Core: the panel and its API on port 3000 and the client
@@ -68,16 +70,19 @@ fails if it compiled Core from source instead of its built `dist`
 every step without caching. `sqlite3` is built for Linux in the same base image
 the runtime uses.
 
-The runtime stage holds only the standalone server, its static files, the
-client gateway bundle and a production install of the `fluxiq` package at
-`/opt/fluxiq-gateway-runtime`, linked beside that bundle (the gateway imports
-`fluxiq` natively, which Next's tracing cannot see). It runs as the `node` user, and `/data` is the only path that user can
+The runtime stage holds only the standalone server, its static files and the
+client gateway bundle. Core is in the standalone output once, at
+`/app/packages/fluxiq`: the panel's server and the gateway bundle both import
+`fluxiq` through Node and resolve that one copy, and the operator command line
+runs from it too. The image build refuses a second copy
+(`deploy/docker/one-core.mjs`), and the panel build refuses traces that would
+leave Core out (`apps/web/scripts/core-trace/`). It runs as the `node` user, and `/data` is the only path that user can
 write. `.dockerignore` keeps `.fluxiq`, every `.env` file, `deploy/env`,
 `deploy/secrets`, `node_modules`, build output, test runs and worktrees out of
 the build context.
 
 For a release, pin the base image by digest
-(`--build-arg NODE_IMAGE=node:22-bookworm-slim@sha256:<digest>`) and Caddy's
+(`--build-arg NODE_IMAGE=node:22-trixie-slim@sha256:<digest>`) and Caddy's
 the same way (`CADDY_IMAGE`).
 
 To check the build before a release, run the smoke test against the image:
@@ -157,10 +162,21 @@ read, and a generated code file is removed.
 
 ### Connect The Extension
 
-In the extension, add the server by its origin (`https://<your host>`). The
-extension reads `https://<your host>/.well-known/fluxiq`, signs in through a
-normal tab, and connects to the gateway over `wss`. If the extension cannot
-connect, check that its origin is in `FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`.
+The hosted connection protocol discovers the server at
+`https://<your host>/.well-known/fluxiq`, obtains consent in a normal tab and
+connects to the gateway over `wss`. Its extension-side initiation and tab
+observer are still being integrated; endpoint discovery alone does not prove
+the installed extension supports this flow. Existing local/self-hosted
+pairing remains available. The extension origin must be admitted by
+`FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS`.
+
+New discovery documents explicitly publish `connect.flows`. Clients may
+start hosted PKCE only when `authorizationCodePkce` is true; it is advertised
+only for service mode with the gateway enabled. `referenceCode` stays false
+until that flow exists. `gatewayReferencePairing` separately advertises the
+existing local/self-hosted gateway pairing when its gateway is enabled; it
+is false for service deployments. A legacy document without these flags is unknown,
+not proof that its listed connection URLs are implemented.
 
 ## Run: Service
 
@@ -181,6 +197,11 @@ source ranges and token file. Running the `service` profile for customers or
 other third parties needs a commercial licence
 ([COMMERCIAL-LICENSING.md](../../COMMERCIAL-LICENSING.md),
 [Licensing](../legal/licensing.md)).
+
+First-time service setup creates an administrator in a new personal
+workspace and retires the default admin login. It grants no primary-workspace
+or platform-wide authority. Operator provisioning remains on the private
+listener below. Self-hosted setup retains its single-workspace owner policy.
 
 ## The Provisioning Listener
 
@@ -225,7 +246,7 @@ through the listener from inside the container:
 
 ```sh
 docker compose -f deploy/compose/service.compose.yml exec fluxiq \
-  node /opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts --help
+  node /app/packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help
 ```
 
 ## Settings Reference
@@ -244,7 +265,10 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 | `FLUXIQ_DRAIN_SECONDS` | `30` off `local` | How long a stopping server lets work finish; keep `stop_grace_period` above it |
 | `FLUXIQ_LOG_FORMAT` | `json` off `local` | `json` or `text` |
 | `FLUXIQ_SETUP_CODE_FILE` | a generated code under `/data` | A file holding the owner setup code |
-| `FLUXIQ_EMAIL_SENDER` | `file` (outbox under `/data`) | `none`, `file` or `file:<dir>` |
+| `FLUXIQ_EMAIL_SENDER` | `file` (outbox under `/data`) | `none`, `file`, `file:<dir>` or `resend` |
+| `FLUXIQ_EMAIL_FROM` | unset | Required verified sender address for `resend` |
+| `FLUXIQ_EMAIL_API_KEY_FILE` | unset | Mounted Resend key file; mutually exclusive with `FLUXIQ_EMAIL_API_KEY` |
+| `FLUXIQ_EMAIL_API_KEY` | unset | Alternative operator environment credential; never commit or expose |
 | `FLUXIQ_INSTANCE_NAME` | `FluxIQ` | The name discovery gives the extension |
 | `FLUXIQ_SIGN_UP_URL` | none | Where the extension sends someone without an account |
 | `FLUXIQ_PANEL_PRESET` | `full` | Which panel screens and Settings tools show: `full`, `data-collection` or `task-automation` (see Customise The Panel) |
@@ -373,6 +397,96 @@ docker run -d --name fluxiq --read-only --tmpfs /tmp --tmpfs /app/apps/web/.next
 
 Publish 3000 and 4777 only to a proxy that terminates TLS and replaces
 `X-Forwarded-For`; without such a proxy, leave `FLUXIQ_TRUST_PROXY` unset.
+
+## SDK Keys
+
+Set `FLUXIQ_INSTANCE_ID` to a stable unique deployment identifier before
+starting a service deployment. Service discovery refuses to publish without
+it; local/self-hosted discovery retains legacy compatibility. Discovery publishes this identifier; signed proofs bind
+to the configured public origin and this identifier. Keep it unchanged
+across restarts and replicas. Changing it invalidates cached proof audiences.
+
+The panel's authenticated `GET/POST/DELETE /api/keys` manages the signed-in
+person's keys in their default workspace. POST accepts only a `publicKey`
+containing canonical base64url Ed25519 SPKI; DELETE accepts only `keyId`.
+Private keys stay with the SDK user. `POST /api/keys/session` exchanges a
+registered key's signed proof for a short bearer session. Registration is
+never implicit in a proof. The service rechecks account/membership eligibility
+and key revocation when authenticating a bearer. Local/self-hosted users
+retain their single-workspace mode without a cloud subscription.
+
+Key authentication is distinct from resource authorization and paid cloud
+admission. These endpoints alone do not enable hosted FluxNode execution.
+The database under `platform/keys.sqlite` stores public keys, token digests
+and replay protection; include it in encrypted backups. Do not log proofs,
+bearers or private key files. A production deployment must complete tenant
+routing and execution acceptance before offering SDK cloud runs.
+
+## Production Email
+
+Select `FLUXIQ_EMAIL_SENDER=resend` explicitly and set `FLUXIQ_EMAIL_FROM`
+to an address on a domain verified with Resend. Supply the API key using a
+read-only mounted file named by `FLUXIQ_EMAIL_API_KEY_FILE`, or the secret
+environment variable `FLUXIQ_EMAIL_API_KEY`, never both. Compose operators
+must add that secret mount; naming a path does not mount it. Local installs
+continue to use the file outbox unless another sender is selected.
+
+The adapter uses Resend's [send-email endpoint](https://resend.com/docs/api-reference/emails/send-email)
+over HTTPS. It refuses redirects and reports failures without including
+provider responses or credentials. A successful response means provider
+acceptance, not confirmed mailbox delivery. Tests simulate the provider;
+production DNS, domain verification and delivery still need operator validation.
+
+Callers may supply a stable `deliveryId` for retries of the same logical
+message. The adapter hashes it into Resend's
+[idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys),
+whose provider retention is 24 hours. New logical messages need new IDs.
+This transport does not provide a durable delivery queue; provisioning's
+existing failure reporting remains in effect, and an outbox dispatcher is
+required before claiming reliable retry delivery.
+
+## Service Workspace Credentials
+
+The web service profile now provisions separate personal workspaces and uses
+one private `platform/browser-trust.sqlite` authority at the platform root.
+Each gateway receives a workspace-scoped store; a stale writer cannot replace
+newer trust or move a credential to another workspace. Local and self-hosted
+profiles retain the existing local trusted-client store. The service does not
+silently fall back to that local file if the platform authority fails, and no
+automatic migration of existing trusted-client JSON files is provided.
+
+Back up this database with the rest of the stopped platform state. It contains
+private credential signing material as well as digests and must never be
+served, logged or committed. A successful credential proof only identifies a
+workspace: callers must still check current account and membership authority.
+
+Core also exposes a durable PKCE authorization-code service. Codes are stored
+only as digests, bound to the approving session, installation and exact
+redirect, and consumed atomically before credential issuance. An uncertain
+issuance result requires fresh consent; replay never mints another credential.
+In service mode, `/connect/authorize` presents authenticated consent and
+`/api/connect/authorize` checks the displayed request, same-origin evidence and
+the person's tenant policy before issuing a code. Public token and revocation
+requests require JSON and `fluxiq-client: browser-extension`; they do not use
+cookie authority. The completion code stays in the URL fragment for the
+extension to observe in its own tab and verify against its original state.
+The extension-side initiation and observer still need integration; the typed
+reference-code fallback is not implemented.
+
+Issuance persists a tenant-bound credential and its custody holder before
+returning it. Approval is sufficient: there is no second model-key unlock.
+Only the exact validated approving session can delegate its own proven material;
+normal use checks the authenticated client and current tenant authority. An account-wide queue enforces the connected-client limit within the
+supported single Core process. Routed WebSockets resolve signed credential
+bindings, recheck account and membership eligibility, and hold a tenant lease
+until the socket closes. Managed hosts require a separate ticket authority
+and are refused by this ordinary-client routing path.
+
+Generic program HTTP routing and primary identity integration with tenant key
+APIs are implemented. Dedicated tenant-sensitive routes, runtime isolation and
+end-to-end extension acceptance remain launch prerequisites. These
+features do not yet enable public customer execution. The deployment remains
+one Core process, not an active-active cluster.
 
 ## Continuous Integration
 

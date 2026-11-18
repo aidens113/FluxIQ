@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../programs/secret-keys/index.ts";
+import { heldSessionPorts } from "./held-session-ports.ts";
 import { releaseAutomationStudioSessionProviderKey } from "../runtime/models/secrets/index.ts";
 import { createAutomationStudioSessionKeyProviderResolver } from "../runtime/llm/index.ts";
 import { automationStudioPanelCommandKeyFromSecretKeys } from "../runtime/llm/deepseek/index.ts";
@@ -18,29 +19,29 @@ function secretKeys(): SecretKeysService {
 }
 
 describe("Claude keys, Flow resolution and panel requests", () => {
-  it("releases an Anthropic key only to its owner's live unlock, resolves every call and refuses provider/model mismatch", async () => {
+  it("releases an Anthropic key only to its owner, resolves every call and refuses provider/model mismatch", async () => {
     const keys = secretKeys();
     const base = { kind: "llm" as const, authorizationPassword: "fake-password", createdBy: "person.one" };
     const claude = await keys.createKey({ ...base, name: "Claude", provider: "Anthropic", metadata: { model: "claude-sonnet-5-5" }, value: "dummy-claude-key" });
     await keys.createKey({ ...base, name: "DeepSeek", provider: "DeepSeek", value: "dummy-deepseek-key" });
     await keys.createKey({ ...base, createdBy: "person.two", name: "Other person's Claude", provider: "anthropic", value: "dummy-other-key" });
     const caller = { userId: "person.one", sessionId: "session.one" };
-    await expect(releaseAutomationStudioSessionProviderKey(keys, caller, { provider: "anthropic" })).rejects.toMatchObject({ code: "secrets.locked" });
+    await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic" })).rejects.toThrow();
     await keys.unlockSession({ ...caller, authorizationPassword: "fake-password", expiresAtMs: Date.now() + 60_000 });
-    expect(await releaseAutomationStudioSessionProviderKey(keys, caller, { provider: "anthropic" })).toBe("dummy-claude-key");
-    await expect(releaseAutomationStudioSessionProviderKey(keys, caller, { provider: "deepseek", flowKeyId: claude.id })).rejects.toThrow(/model key/);
-    await expect(releaseAutomationStudioSessionProviderKey(keys, caller, { provider: "anthropic", model: "claude-haiku-5-5", flowKeyId: claude.id })).rejects.toThrow(/model key/);
+    expect(await releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic" })).toBe("dummy-claude-key");
+    await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "deepseek", flowKeyId: claude.id })).rejects.toThrow(/model key/);
+    await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic", model: "claude-haiku-5-5", flowKeyId: claude.id })).rejects.toThrow(/model key/);
     const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer dummy-claude-key");
       return streamReply();
     });
-    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: keys, fetchImpl: fetchImpl as typeof fetch });
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: heldSessionPorts(keys), fetchImpl: fetchImpl as typeof fetch });
     const resolved = resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: caller.userId, actorSessionId: caller.sessionId }, providerId: "anthropic", modelId: "claude-sonnet-5-5", metadata: { llmSecretKeyId: claude.id } })!;
     expect(resolved.provider.metadata).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5-5" });
     expect(resolved.tokenLimits).toEqual({ maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 });
     await expect(resolved.provider.runTask(request())).resolves.toMatchObject({ response: DIAGNOSIS });
     await keys.revokeSessionUnlock(caller.sessionId, { userId: caller.userId, administrator: false });
-    await expect(resolved.provider.runTask(request())).rejects.toMatchObject({ code: "secrets.locked" });
+    await expect(resolved.provider.runTask(request())).rejects.toBeDefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(() => resolve({ projectId: "project.one", flowId: "flow.one", caller: { actorUserId: caller.userId, actorSessionId: caller.sessionId }, providerId: "deepseek", modelId: "claude-sonnet-5-5" })).toThrow(/does not belong/);
   });
@@ -72,7 +73,7 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "5");
     vi.resetModules();
     const scoped = await import("../runtime/llm/index.ts");
-    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys() });
+    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: heldSessionPorts(secretKeys()) });
     const result = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, providerId: "anthropic", modelId: "claude-sonnet-5-5", metadata: { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 9 } } })!;
     expect(result).toMatchObject({ maxEstimatedCostUsd: 5, maxTotalEstimatedCostUsd: 5, tokenLimits: { maxOutputTokens: 8000 } });
     expect(result.provider.estimateCostUsd!({ inputTokens: 1000, outputTokens: 8000 })).toBeLessThan(0.1);
@@ -83,7 +84,7 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "5");
     vi.resetModules();
     const scoped = await import("../runtime/llm/index.ts");
-    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys() });
+    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: heldSessionPorts(secretKeys()) });
     const input = { projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, providerId: "anthropic", modelId: "claude-sonnet-5-5" };
     expect(resolve(input)).toMatchObject({ maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 0.25 });
     expect(resolve({ ...input, metadata: { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 0.05 } } })).toMatchObject({ maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: 0.05 });
@@ -93,6 +94,6 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     const keys = secretKeys();
     await keys.createKey({ name: "DeepSeek", kind: "llm", provider: "DeepSeek", value: "dummy-deepseek-key", authorizationPassword: "fake-password", createdBy: "person.one" });
     await keys.unlockSession({ userId: "person.one", sessionId: "session.one", authorizationPassword: "fake-password", expiresAtMs: Date.now() + 60_000 });
-    await expect(automationStudioPanelCommandKeyFromSecretKeys(keys, { provider: "anthropic" })({ userId: "person.one", sessionId: "session.one" })).rejects.toThrow(/no enabled Anthropic/);
+    await expect(automationStudioPanelCommandKeyFromSecretKeys(heldSessionPorts(keys), { provider: "anthropic" })({ userId: "person.one", sessionId: "session.one" })).rejects.toThrow(/no enabled Anthropic/);
   });
 });

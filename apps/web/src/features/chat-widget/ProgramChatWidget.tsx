@@ -92,7 +92,11 @@ export function ProgramChatWidget(props: ProgramChatWidgetProps) {
         {...(props.automation ? { automation: props.automation } : {})}
         options={options}
         {...(props.windowed ? { windowed: props.windowed } : {})}
-        onTarget={(target) => { shown.current = target.projectId; }}
+        onTarget={(target) => {
+          shown.current = target.projectId;
+          // Another thread may be another project's: its live activity is read now, not on the next change.
+          transport.activity.followProject();
+        }}
       />
       {request ? <ReauthorizeDialog key={request.title + request.actionLabel} request={request} onClose={() => setRequest(null)} /> : null}
     </>

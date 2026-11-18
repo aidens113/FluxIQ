@@ -8,7 +8,7 @@ describe("isHiddenPanelPath", () => {
   const data = PANEL_PRESETS["data-collection"]!;
 
   it("hides nothing on the full preset", () => {
-    for (const path of ["/", "/flows", "/runs/r1", "/data", "/security/keys", "/settings", "/settings/database-manager"]) expect(isHiddenPanelPath(path, full)).toBe(false);
+    for (const path of ["/", "/projects", "/chats/c1", "/flows", "/runs/r1", "/data", "/security/keys", "/settings", "/settings/database-manager"]) expect(isHiddenPanelPath(path, full)).toBe(false);
   });
 
   it("hides a screen the preset leaves out, and everything under it", () => {

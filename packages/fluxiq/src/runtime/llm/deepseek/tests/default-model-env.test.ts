@@ -15,7 +15,7 @@ import {
 
 const unusedPorts: AutomationStudioSessionKeyPorts = {
   snapshot: async () => ({ keys: [] }),
-  createSessionRevealAuthorization: async () => { throw new Error("This test never releases a key."); },
+  createUseAuthorization: async () => { throw new Error("This test never releases a key."); },
   revealKeyWithAuthorization: async () => { throw new Error("This test never reveals a key."); },
   revokeRevealAuthorization: () => undefined
 };

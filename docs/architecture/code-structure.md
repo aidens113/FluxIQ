@@ -397,6 +397,20 @@ The detailed procedure for each, with the current offenders, is in the
   catalogue and script-format modules may not reach the trace, trace-matcher,
   gateway-trace and offline-trial modules (downstream: the offline-reads,
   snapshot-page and offline-trial-experiment modules).
+- **Letting a server entry reach a client-only module.** `next build` refuses
+  a hook or `createContext` call in a module no `"use client"` boundary
+  covers, while `next dev` compiles a page only when visited, so the fault
+  surfaced late (t915: a route imported a feature barrel that pulled in two
+  hook modules). The `server-client-boundary` rule reads `nextApps`
+  (`{ name, src }`; none, as downstream, makes it inert), takes each server
+  entry (an `app/` page, layout, template, default, not-found, loading or
+  route, the root middleware and instrumentation, any `"use server"` module;
+  a `"use client"` one is skipped) and follows static value imports and
+  re-exports through relative paths, `@/` and barrels, ignoring type-only ones
+  and stopping at a `"use client"` module. A reached module calling a hook
+  (`useX`, `React.useX`) or `createContext` fails with the chain, never
+  baselined. `use()` and `cache` are server safe. Workspace packages,
+  node_modules and dynamic imports are not followed.
 
 ## Worked Example — `framework/persistence/automation/`
 

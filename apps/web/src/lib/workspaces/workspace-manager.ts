@@ -59,9 +59,10 @@ export class FluxIQWorkspaceManager {
   private readonly now: () => number;
   private primaryEntry: OpenWorkspace | null = null;
   private readonly open = new Map<string, OpenWorkspace>();
-  private readonly opening = new Map<string, Promise<OpenWorkspace>>();
+  private readonly opening = new Map<string, Promise<OpenWorkspace | null>>();
   private readonly closing = new Map<string, Promise<void>>();
   private readonly deletions = new Map<string, Promise<void>>();
+  private readonly deletionGenerations = new Map<string, object>();
   private readonly custody = new Map<string, HeldKeys>();
   private readonly sweepTimer: ReturnType<typeof setInterval> | null;
   private closed: Promise<void> | null = null;
@@ -89,7 +90,10 @@ export class FluxIQWorkspaceManager {
   /** Puts a new primary instance in place (a reload); the caller closed the old one. */
   replacePrimary(fluxiq: FluxIQ): void {
     this.assertOpen();
-    if (this.primaryEntry) this.primaryEntry.fluxiq = fluxiq;
+    if (this.primaryEntry) {
+      if (this.primaryEntry.fluxiq !== fluxiq) this.retire(this.primaryEntry);
+      this.primaryEntry.fluxiq = fluxiq;
+    }
     else this.primaryEntry = new OpenWorkspace(this.primaryWorkspaceId, true, fluxiq, null, this.now(), (instance) => this.reportsWork(instance));
   }
 
@@ -122,9 +126,54 @@ export class FluxIQWorkspaceManager {
       if (this.closing.has(workspaceId)) continue;
       const opened = await (this.opening.get(workspaceId) ?? this.startOpening(workspaceId));
       this.assertAvailable(workspaceId);
-      if (this.open.get(workspaceId) === opened && !this.deletions.has(workspaceId)) return this.lease(opened);
+      if (opened && this.open.get(workspaceId) === opened && !this.deletions.has(workspaceId)) return this.lease(opened);
     }
     throw new Error("workspaces.unavailable: the workspace was evicted each time it opened; try again");
+  }
+
+  /** Credential-only cleanup: holds an existing tenant, never creates its missing root. Null means absence, not operational failure. */
+  async acquireExisting(workspaceId: string, input: { exists(): Promise<boolean>; current(): boolean }): Promise<WorkspaceLease | null> {
+    this.assertOpen();
+    if (workspaceId === this.primaryWorkspaceId || this.tenancy !== "multi") return null;
+    const generation = this.deletionGenerations.get(workspaceId);
+    const primary = this.primaryRecord().fluxiq;
+    const current = () => !this.closed && !this.deletions.has(workspaceId)
+      && this.deletionGenerations.get(workspaceId) === generation && this.primaryEntry?.fluxiq === primary && input.current() === true;
+    const assertCurrent = () => {
+      this.assertAvailable(workspaceId);
+      if (!current()) throw new Error("workspaces.existing_changed: existing workspace acquisition is no longer current");
+    };
+    assertCurrent();
+    const present = await input.exists();
+    assertCurrent();
+    if (present !== true) return null;
+    const closing = this.closing.get(workspaceId);
+    if (closing) {
+      await closing;
+      assertCurrent();
+    }
+    let record = this.open.get(workspaceId);
+    if (!record) {
+      if (!this.opening.has(workspaceId) && !this.options.openExistingTenant) throw new Error("workspaces.existing_factory_missing");
+      const opened = await (this.opening.get(workspaceId) ?? this.startOpening(workspaceId, current));
+      assertCurrent();
+      if (!opened) return null;
+      if (this.open.get(workspaceId) !== opened) throw new Error("workspaces.existing_changed: the opened workspace was retired");
+      record = opened;
+    }
+    assertCurrent();
+    const lease = this.lease(record);
+    let retained = false;
+    try {
+      const stillPresent = await input.exists();
+      assertCurrent();
+      if (this.open.get(workspaceId) !== record) throw new Error("workspaces.existing_changed: the held workspace was retired");
+      if (stillPresent !== true) return null;
+      retained = true;
+      return lease;
+    } finally {
+      if (!retained) lease.release();
+    }
   }
 
   /** Runs `work` on the workspace, held for its whole length. */
@@ -166,6 +215,8 @@ export class FluxIQWorkspaceManager {
     if (this.tenancy === "single") return Promise.reject(new Error("workspaces.unknown_workspace: this server holds one workspace"));
     const pending = this.deletions.get(workspaceId);
     if (pending) return pending;
+    // Retained after settlement: an in-flight existence check must see a deletion that already finished, including a refused attempt.
+    this.deletionGenerations.set(workspaceId, {});
     const deletion = this.deleteNow(workspaceId).finally(() => this.deletions.delete(workspaceId));
     this.deletions.set(workspaceId, deletion);
     return deletion;
@@ -204,25 +255,39 @@ export class FluxIQWorkspaceManager {
     };
   }
 
-  private startOpening(workspaceId: string): Promise<OpenWorkspace> {
+  private startOpening(workspaceId: string, beforeOpen?: () => boolean): Promise<OpenWorkspace | null> {
     const heldKeys = this.custody.get(workspaceId) ?? new HeldKeys();
     this.custody.set(workspaceId, heldKeys);
-    const opening = (async () => {
-      const fluxiq = await this.options.createTenant!({ workspaceId, heldKeys, primary: this.primaryRecord().fluxiq });
+    let complete!: (record: OpenWorkspace | null) => void;
+    let fail!: (error: unknown) => void;
+    const opening = new Promise<OpenWorkspace | null>((resolve, reject) => {
+      complete = resolve;
+      fail = reject;
+    });
+    // Install the reservation before invoking any factory, including synchronous/reentrant factory code.
+    this.opening.set(workspaceId, opening);
+    const settled = (record?: OpenWorkspace | null) => {
+      if (this.opening.get(workspaceId) === opening) this.opening.delete(workspaceId);
+      if (!record && !this.open.has(workspaceId) && this.custody.get(workspaceId) === heldKeys && heldKeys.sessionCount() === 0 && heldKeys.authorizationCount() === 0) this.custody.delete(workspaceId);
+    };
+    opening.then(settled, (error: unknown) => {
+      // best-effort: this observer clears bookkeeping and reports safely; the returned opening retains its rejection for its caller.
+      settled();
+      // Empty custody goes with failed/absent construction; existing authority survives eviction until managed deletion/shutdown.
+      if (beforeOpen) this.warn("[FluxIQ] An existing workspace could not be opened.", { code: "workspaces.existing_open_failed" });
+      else this.warn("[FluxIQ] A workspace could not be opened.", { reason: describeError(error) });
+    });
+    void (async () => {
+      if (beforeOpen && beforeOpen() !== true) return null;
+      const input = { workspaceId, heldKeys, primary: this.primaryRecord().fluxiq };
+      const fluxiq = beforeOpen
+        ? await this.options.openExistingTenant!({ ...input, beforeOpen })
+        : await this.options.createTenant!(input);
+      if (!fluxiq) return null;
       const record = new OpenWorkspace(workspaceId, false, fluxiq, heldKeys, this.now(), (instance) => this.reportsWork(instance));
       this.open.set(workspaceId, record);
       return record;
-    })();
-    this.opening.set(workspaceId, opening);
-    const settled = () => {
-      if (this.opening.get(workspaceId) === opening) this.opening.delete(workspaceId);
-    };
-    opening.then(settled, (error: unknown) => {
-      settled();
-      // A custody this create brought in that holds nothing goes with it; one still holding unlocks stays for the next create.
-      if (!this.open.has(workspaceId) && this.custody.get(workspaceId) === heldKeys && heldKeys.sessionCount() === 0 && heldKeys.authorizationCount() === 0) this.custody.delete(workspaceId);
-      this.warn("[FluxIQ] A workspace could not be opened.", { reason: describeError(error) });
-    });
+    })().then(complete, fail);
     return opening;
   }
 
@@ -230,6 +295,7 @@ export class FluxIQWorkspaceManager {
     const { workspaceId } = record;
     if (this.open.get(workspaceId) !== record) return this.closing.get(workspaceId) ?? Promise.resolve();
     this.open.delete(workspaceId);
+    this.retire(record);
     const closing: Promise<void> = record.fluxiq.close({ mode: "evict" }).then(() => {
       if (this.closing.get(workspaceId) === closing) this.closing.delete(workspaceId);
     }, (error: unknown) => {
@@ -266,6 +332,7 @@ export class FluxIQWorkspaceManager {
     try {
       if (record) {
         this.open.delete(workspaceId);
+        this.retire(record);
         const closing = record.fluxiq.close({ mode: "shutdown" });
         this.closing.set(workspaceId, closing);
         await closing;
@@ -286,6 +353,7 @@ export class FluxIQWorkspaceManager {
     const errors: unknown[] = [];
     const tenants = [...this.open.values()];
     this.open.clear();
+    for (const record of tenants) this.retire(record);
     const closed = await Promise.allSettled(tenants.map((record) => record.fluxiq.close({ mode: "shutdown" })));
     for (const result of closed) {
       if (result.status === "rejected") errors.push(result.reason);
@@ -297,6 +365,7 @@ export class FluxIQWorkspaceManager {
     for (const heldKeys of this.custody.values()) heldKeys.revokeAll();
     this.custody.clear();
     if (this.primaryEntry) {
+      this.retire(this.primaryEntry);
       try {
         await this.primaryEntry.fluxiq.close();
       } catch (error) {
@@ -305,6 +374,16 @@ export class FluxIQWorkspaceManager {
     }
     if (errors.length === 1) throw errors[0];
     if (errors.length > 1) throw new AggregateError(errors, "workspaces.close_failed");
+  }
+
+  private retire(record: OpenWorkspace): void {
+    try {
+      this.options.onRetire?.({ workspaceId: record.workspaceId, fluxiq: record.fluxiq });
+    } catch {
+      // Retirement observers cannot prevent storage cleanup. Callers also
+      // guard projections against the manager's current instance identity.
+      this.warn("[FluxIQ] Workspace projection retirement failed.", { code: "workspaces.retirement_failed" });
+    }
   }
 
   private sweepInBackground(): void {

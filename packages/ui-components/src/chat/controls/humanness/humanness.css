@@ -23,3 +23,7 @@
 .humanness-status[data-tone="ok"] { color: var(--success); }
 .humanness-status[data-tone="error"] { color: var(--danger-text); }
 .humanness-inherited[hidden], .humanness-clear[hidden], .humanness-status:empty { display: none; }
+/* The track is drawn from tokens: the browser's own track is near-black in a light theme. */
+.humanness-range { height: 24px; background: transparent; }
+.humanness-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--edge); }
+.humanness-range::-moz-range-track { height: 4px; border-radius: 999px; background: var(--edge); }

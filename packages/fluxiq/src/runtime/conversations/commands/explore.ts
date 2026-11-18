@@ -29,7 +29,6 @@ const TITLE = "Build the Flow by exploring the site";
 
 export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversationCommand = {
   background: true,
-  needsModelKey: true,
   capability: {
     id: "flow.explore",
     title: TITLE,
@@ -51,7 +50,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
   },
   announce: ({ flowName, place }) => automationStudioConversationAnswersFirst() ? automationStudioConversationAttemptAnnounce(place) : `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, ${automationStudioConversationAuthorsCandidates() ? "test-run the whole Flow once from the start, and say here when they are in, or why not" : "and say here when they are in"}.`,
   async run(context, args) {
-    const progress = automationStudioConversationCommandProgress(TITLE, context.keyLockReason);
+    const progress = automationStudioConversationCommandProgress(TITLE);
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow it is about");
     progress.carry({ flowId });

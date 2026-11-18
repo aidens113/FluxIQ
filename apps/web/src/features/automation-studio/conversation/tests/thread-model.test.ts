@@ -1,12 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { automationStudioPanelCommandAnswerNeedsPin } from "fluxiq/automation";
-import {
-  CONVERSATION_POLL_CEILING_MS,
-  CONVERSATION_POLL_FAST_MS,
-  CONVERSATION_POLL_HIDDEN_MS,
-  createBackoffPoller,
-  nextConversationPollDelayMs
-} from "../thread";
 import {
   parseConversation,
   parseConversationTurn,
@@ -114,77 +107,6 @@ describe("conversation transcript", () => {
 });
 
 describe("conversation reachability", () => {
-  it("decays from the fast beat to the ceiling, and snaps back when something is pending", () => {
-    let delay = CONVERSATION_POLL_FAST_MS;
-    const seen: number[] = [];
-    for (let step = 0; step < 8; step += 1) {
-      delay = nextConversationPollDelayMs(delay, "idle");
-      seen.push(delay);
-    }
-    expect(seen[0]).toBe(1_600);
-    expect(seen.at(-1)).toBe(CONVERSATION_POLL_CEILING_MS);
-    expect(nextConversationPollDelayMs(CONVERSATION_POLL_CEILING_MS, "pending")).toBe(CONVERSATION_POLL_FAST_MS);
-    expect(nextConversationPollDelayMs(1_000, "failed")).toBe(1_800);
-  });
-
-  it("slows while hidden, never overlaps two reads, and stops when disposed", async () => {
-    vi.useFakeTimers();
-    try {
-      let hidden = false;
-      let inFlight = 0;
-      let overlaps = 0;
-      let runs = 0;
-      const delays: number[] = [];
-      let resolveRun: null | (() => void) = null;
-      const poller = createBackoffPoller<ReturnType<typeof setTimeout>>({
-        active: () => true,
-        hidden: () => hidden,
-        run: async () => {
-          runs += 1;
-          inFlight += 1;
-          if (inFlight > 1) overlaps += 1;
-          await new Promise<void>((resolve) => { resolveRun = resolve as () => void; });
-          inFlight -= 1;
-          return "idle" as const;
-        },
-        schedule: (callback, delayMs) => {
-          delays.push(delayMs);
-          return setTimeout(callback, delayMs);
-        },
-        cancel: (timer) => clearTimeout(timer)
-      });
-
-      poller.sync();
-      expect(inFlight).toBe(1);
-      poller.sync();
-      expect(overlaps).toBe(0);
-      (resolveRun as null | (() => void))?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(delays.at(-1)).toBe(1_600);
-
-      // Hidden means a slow beat, not no beat. This branch used to re-queue
-      // without ever calling `run`, so a tab in the background made no request
-      // at all and a question raised by a run reached nobody until the person
-      // came back and looked.
-      hidden = true;
-      const readsBefore = runs;
-      await vi.advanceTimersByTimeAsync(1_700);
-      expect(runs).toBe(readsBefore + 1);
-      (resolveRun as null | (() => void))?.();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(delays.at(-1)).toBe(CONVERSATION_POLL_HIDDEN_MS);
-
-      poller.dispose();
-      const scheduled = delays.length;
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(delays.length).toBe(scheduled);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("puts one undismissed question to the person and remembers the dismissals", () => {
     const turns = parseConversationTurns([
       wireTurn({ turnId: "turn.1", ask: wireAsk({ askId: "ask.1" }) }),

@@ -423,13 +423,16 @@ the user who created or last rotated the key. A version 2 seal records
 
 A value is decrypted only with a password or a key derived from one. An explicit
 reveal and a runtime resolver's reveal authorization each take a fresh
-credential recheck, and creating an authorization checks that the password opens
-the key. Login also opens values: `unlockSession` tries every key sealed for
-that user, plus keys with no `sealedByUserId` and version 1 keys, and holds the
-derived keys of those that open for that session. A key keeps unlocking after a
-metadata edit, because its seal is matched to its `lastRotatedAtMs`.
+credential recheck. Model use needs no password: a record also stores
+`hostProtection`, its data key wrapped under the host's protection key, so a
+connected client's authenticated principal opens the key for one call. Login still
+runs `unlockSession`, which now only migrates keys stored before host protection
+(no `hostProtection`): it tries every key sealed for that user, plus keys with no
+`sealedByUserId` and version 1 keys, and wraps the data key of those that open. A
+key stays openable after a metadata edit, because its seal is matched to its
+`lastRotatedAtMs`.
 
-An older seal upgrades itself after a successful unlock or reveal. A version 1
+An older seal upgrades itself after a successful login migration or reveal. A version 1
 seal (`scrypt` at N=2^14, keyed from the salt text) or one below the current
 cost is re-sealed as version 2, once per record, stamped for the user whose
 password opened it, keeping `updatedAtMs` and `lastRotatedAtMs`. The new derived
@@ -529,19 +532,65 @@ the owning record through Database Manager or restore the database from backup.
 ## Storage Migration
 
 Hosts without `config.json` but with legacy `.fluxiq/data`, `databases`, or an
-active-domain-scoped state tree are reported as layout v1. Normal runtime setup
-does not migrate implicitly. Inspect with `fluxiq.inspectStorage()` and apply
-with `await fluxiq.migrateStorage()` (or authenticated `POST
-/api/framework/setup` with `{ "action": "migrate" }`). The web runtime reloads
-its FluxIQ instance after migration so resolved paths switch to v2.
+active-domain-scoped state tree (or any other content) are reported as layout
+v1. Core's `setup()` does not migrate implicitly. Inspect with
+`fluxiq.inspectStorage()` and apply with `await fluxiq.migrateStorage()` (or
+authenticated `POST /api/framework/setup` with `{ "action": "migrate" }`). The
+web runtime reloads its FluxIQ instance after migration so resolved paths
+switch to v2. A host may migrate on its own start: the web-automation
+extension's setup (`domain/src/setup.ts` downstream) inspects the root, calls
+`migrateStorage()` when `migrationRequired` reports a v1 root or an interrupted
+migration, recreates its instance and then runs `setup()`, so a person never
+runs a migration by hand.
 
-Migration uses an exclusive lock and a restartable journal below
-`.fluxiq/.migration/v2`. It stages and verifies databases/documents first,
-rejects divergent stable-ID collisions, archives recognized sources under
-`.fluxiq/legacy/v1-<timestamp>/`, and writes `config.json` last as the v2 commit
-marker. External overrides are inventoried but never moved automatically. An
-incomplete pre-commit migration can be resumed by calling `migrateStorage()`
-again or rolled back with `rollbackStorageMigration()`.
+Migration takes an exclusive lock (`.fluxiq/migration.lock`) and keeps a
+restartable journal below `.fluxiq/.migration/v2`. It judges the layout again
+once the lock is held, so a migration another process finished meanwhile is
+never run a second time over its result. A lock whose holder on the same machine
+has exited is taken over, and of several processes taking over the same stale
+lock at once exactly one wins: the stale lock is removed only by the holder of a
+takeover marker named by that lock's exact content, after reading the lock again
+under the marker, and every claim is written whole before it appears. A lock
+held by a running process, or by any process on another machine, is reported as
+locked.
+
+Each migration runs these stages, journalling each before it starts:
+
+1. **Staging.** Databases and documents are merged into
+   `.fluxiq/.migration/v2/staged`: every legacy `global.sqlite` (unscoped and
+   the active domain's scoped tree), every legacy domain database from both
+   trees, program JSON, and Automation Studio data (staged under
+   `artifacts/automation-studio`). Divergent stable-ID collisions stop it here.
+   Reading a legacy database leaves no sidecar files behind it.
+2. **Collision check.** Before anything moves, every place the cutover will
+   fill is checked. If layout v2 state already occupies one outside a legacy
+   root, the migration stops having moved nothing; it resumes once that path is
+   cleared, or rolls back.
+3. **Archive.** The legacy roots (`config`, `data`, `databases`, `inputs`,
+   `outputs`, `streams`, `domains`, `recordings`, `policies`, and the active
+   domain's scoped tree) move to `.fluxiq/legacy/v1-<timestamp>/`. The archive
+   path and the list of places the cutover will fill are journalled before the
+   first root moves.
+4. **Cutover.** The staged `global.sqlite` moves into the root, and a staged
+   directory's children join the root's directory of the same name.
+5. **Commit.** `config.json` is written last as the v2 commit marker, then
+   `migration-history.json`, and the journal is removed.
+
+A migration never touches state outside the legacy roots. In particular the
+root's own `artifacts/` stays where it is: a v1 runtime kept its store at
+`artifacts/runtime`, and after migration it sits beside the migrated
+`artifacts/automation-studio`. `logs`, `cache`, `security` and `tmp` stay too.
+External overrides are inventoried but never moved automatically.
+
+An interrupted migration (a crash or an error at any stage) leaves the root
+`migration_incomplete`. Calling `migrateStorage()` again resumes from the
+journalled stage; a resumed cutover moves only what is left. Before the commit
+marker, `rollbackStorageMigration()` instead restores the root exactly: it
+removes only the paths the cutover journalled, returns every archived root,
+including those archived by a migration stopped part way through archiving,
+and removes the emptied archive. Once `config.json` exists, only resuming
+finishes the migration. A second `migrateStorage()` on a migrated root rejects
+with "FluxIQ storage already uses layout v2." and changes nothing.
 
 The web panel awaits storage readiness before serving requests. It initializes
 only a genuinely fresh root, serializing concurrent startup through one

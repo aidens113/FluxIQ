@@ -27,7 +27,7 @@ export function listView(model: LibraryListModel, hooks: { open(node: LibraryTre
     root.append(createElement("p", { className: "library-note", attrs: { role: "status" } }, [`${model.problem} `, retry]));
   }
   if (!model.loaded) {
-    if (model.problem === undefined) root.append(createElement("p", { className: "library-quiet", text: model.loading ? "Reading your subflows..." : "" }));
+    if (model.problem === undefined) root.append(createElement("p", { className: "library-quiet", text: "Reading your subflows..." }));
     return root;
   }
   if (model.total === 0) {

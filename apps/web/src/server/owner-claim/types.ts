@@ -4,7 +4,8 @@ import type { FluxIQDeploymentSettings, PlatformProvisioning } from "fluxiq/plat
 // The owner claim's types (hosted production plan, Identity And Sessions:
 // "Owner claim replaces admin/admin"). On `self-hosted` and `service` a
 // one-time setup code unlocks `/setup`, which creates the owner through
-// `platform.provisioning.createAccount` with `FluxIQOwnerFullAccess`.
+// `platform.provisioning.createAccount`: self-hosted gets OwnerFullAccess in
+// its single workspace; service gets AdministratorAccess in a personal one.
 
 /** `<fluxiq>/security/owner-claim.json`: the instance is claimed iff it exists. It holds no secret. */
 export type OwnerClaimMarker = {

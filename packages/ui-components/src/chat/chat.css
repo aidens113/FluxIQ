@@ -14,11 +14,14 @@
 @import "./view/thread-list/thread-list.css";
 /* One task's humanness slider, on its answer card and wherever a host mounts it. */
 @import "./controls/humanness/humanness.css";
+/* The project switcher a host mounts in its own header. */
+@import "../project-switcher/project-switcher.css";
+@import "./view/message.css";
 
 :where(.chat-panel), :where(.chat-panel) *, :where(.chat-panel) *::before, :where(.chat-panel) *::after { box-sizing: border-box; }
 :where(.chat-panel) button, :where(.chat-panel) input, :where(.chat-panel) select, :where(.chat-panel) textarea { font: inherit; }
 :where(.chat-panel) button { cursor: pointer; }
-:where(.chat-panel) button:disabled { cursor: default; opacity: .48; }
+:where(.chat-panel) button:disabled { cursor: default; opacity: .62; }
 :where(.chat-panel) button:focus-visible, :where(.chat-panel) input:focus-visible, :where(.chat-panel) a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 :where(.chat-panel) h1, :where(.chat-panel) h2, :where(.chat-panel) h3, :where(.chat-panel) p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
@@ -32,7 +35,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--surface);
+  background: var(--chat-background, var(--surface));
   color: var(--text);
   font-family: var(--chat-font);
   -webkit-font-smoothing: antialiased;

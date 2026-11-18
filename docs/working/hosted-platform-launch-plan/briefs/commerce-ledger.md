@@ -1,0 +1,12 @@
+# Durable commerce and cloud admission
+- Role/model: heavy worker, gpt-6.1-sol, max.
+- Goal: Implement provider-neutral persistent subscription/entitlement ledger with transactional event deduplication and cloud admission decisions, preserving fully local use. This is not a payment-provider integration.
+- Read: plan Current State and paired product plan commerce/routing sections; reports/access-discovery.md commerce section; code-structure.md; existing SQLite patterns as needed.
+- Own: new packages/fluxiq/src/platform/commerce/** and tests/barrels only; own report. Lead exports top-level later (key worker currently owns platform/index.ts).
+- No existing runtime/automation, keys, platform store/panel, web/deploy/SDK, package metadata/shared docs/git edits.
+- Trusted normalized provider-event API, never public checkout-success as payment proof. Immutable provider+event id, payload identity rejects reuse with changed contents. Atomic dedup+subscription update, persisted restart; out-of-order events cannot reinstate revoked eligibility. Explicit sequence/version contract for upstream adapter, no guessing timestamp total order.
+- Account/customer/subscription linkage immutable or explicit refusal; event cannot switch account. Explicit active/trial/past-due/canceled/incomplete state and paid-through boundary; fail-closed absent/unknown/stale policy. Unit prices/currency integer minor units if represented; no invented prices.
+- Admission combines trusted authorized user/workspace, deployment mode and execution target. Fully local/self-hosted local execution independent of subscription. Any FluxIQ managed-cloud target requires verified cloud account authorization plus paid entitlement; spoofed routing metadata is not authority. Deny missing subscription/entitlement/capability, never automatic switch to another billable target. Dedicated/shared allocation ownership explicit.
+- Keep usage metering/reservations separate unless needed for this unit; don't invent billing provider or claim payment completion. No real provider/model/cloud calls.
+- Tests real SQLite duplicate/reordered/concurrent/reopen transitions, boundary expiry, cross-account denial, local independence and hybrid cloud requires subscription. Use narrow tests only, no whole builds while peers edit.
+- Report: docs/working/hosted-platform-launch-plan/reports/commerce-ledger.md with exact public API/integration needs, checks and required return contract.

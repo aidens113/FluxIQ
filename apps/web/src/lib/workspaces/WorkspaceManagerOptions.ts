@@ -22,7 +22,11 @@ export type WorkspaceManagerOptions = {
   primaryWorkspaceId: string;
   createPrimary(): FluxIQ;
   createTenant?(input: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ }): Promise<FluxIQ>;
+  /** Opens an existing tenant root only, while the manager excludes managed deletion. Never falls back to creation. */
+  openExistingTenant?(input: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ; beforeOpen(): boolean }): Promise<FluxIQ | null>;
   removeTenantRoot?(input: { workspaceId: string; primary: FluxIQ }): Promise<void>;
+  /** Synchronous retirement of instance-bound projections before close/replacement. Never starts work. */
+  onRetire?(input: { workspaceId: string; fluxiq: FluxIQ }): void;
   isBusy?(fluxiq: FluxIQ): boolean;
   idleMs?: number;
   cacheMax?: number;

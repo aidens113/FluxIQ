@@ -18,6 +18,7 @@ import {
   ClientGatewayCommandContext as Context,
   ClientGatewayCommandLedgerController as Rules,
   ClientGatewayCommandOutcome as Outcome,
+  ClientGatewayCommandUnsentRefusal as Unsent,
   type ClientGatewayCommandLedgerPort,
   type ClientGatewayCommandRecord
 } from "../service/command-ledger/index.ts";
@@ -151,7 +152,12 @@ function memory(): { port: ClientGatewayCommandLedgerPort; saved(): ClientGatewa
       if (saved.state !== "committed") saved = { ...saved, state: "unknown", unknownReason: reason };
       return saved;
     },
-    read: async () => saved
+    read: async () => saved,
+    refuseUnsent: async (claim, proof) => {
+      if (!saved || saved.state !== "pending") throw new Error("not pending");
+      saved = { ...saved, state: "refused_unsent", refusal: { ...Unsent.read(proof, claim) } };
+      return saved;
+    }
   };
   return { port, saved: () => saved };
 }

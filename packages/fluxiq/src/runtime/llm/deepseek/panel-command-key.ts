@@ -1,7 +1,7 @@
 // Which key the chat window's model call uses: the sender's own, released to
-// their unlocked session (`session-key.ts`). A person whose keys are locked is
-// told so in the thread instead of their message being read with somebody
-// else's credential.
+// their authenticated principal (`session-key.ts`). A person whose key is not
+// available is told so in the thread instead of their message being read with
+// somebody else's credential.
 
 import type { AutomationStudioConversationCaller } from "../../conversations/index.ts";
 import { releaseAutomationStudioSessionProviderKey, type AutomationStudioSessionKeyPorts } from "../../models/secrets/index.ts";
@@ -11,9 +11,9 @@ export type AutomationStudioPanelCommandKeyPorts = AutomationStudioSessionKeyPor
 
 /**
  * A `resolveKey` for `createAutomationStudioDeepSeekPanelCommandModel`: the
- * newest enabled DeepSeek LLM key, released to the caller's unlocked session.
+ * newest enabled DeepSeek LLM key, released for the caller's authenticated principal.
  * Throws, in words a person can act on, when there is no caller, no such key,
- * or the session has not unlocked it.
+ * or the saved key needs recovery.
  */
 export function automationStudioPanelCommandKeyFromSecretKeys(ports: AutomationStudioPanelCommandKeyPorts, options: { provider?: AutomationStudioLlmProviderId; model?: string } = {}): (caller: AutomationStudioConversationCaller | null) => Promise<string> {
   return async (caller) => {

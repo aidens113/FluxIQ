@@ -15,4 +15,4 @@ export {
   type ConversationInstructionResult,
   type ConversationOnScreen
 } from "./instruction-commands";
-export { getConversationAttachment, type ConversationAttachmentQuery } from "./turn-queries";
+export { getConversationAttachment, listConversations, type ConversationAttachmentQuery } from "./turn-queries";

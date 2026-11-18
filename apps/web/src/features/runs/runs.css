@@ -1,5 +1,5 @@
 .runs { display: grid; gap: 16px; min-width: 0; align-content: start; }
-.runs h1 { margin: 0; overflow-wrap: anywhere; font-size: 1.4rem; }
+.runs h1 { margin: 0; overflow-wrap: anywhere; }
 .runs-crumb { margin: 0; }
 .runs-note { margin: 0; opacity: 0.85; }
 .runs-error { color: var(--danger); opacity: 1; }
@@ -15,3 +15,16 @@
 .runs-state[data-tone="bad"] { color: var(--danger); }
 .runs-state[data-tone="warn"] { color: var(--warning); }
 .runs-detail { min-width: 0; max-width: 100%; overflow-x: auto; }
+
+/* Skeleton and empty states: rows and cards in the shape of the real ones. */
+.runs-skeleton ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.runs-skeleton-row { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--divider); border-radius: var(--radius); background: var(--surface); }
+.runs-skeleton-line { height: 12px; border-radius: 6px; background: var(--surface-raised); animation: runs-skeleton-pulse 1.2s ease-in-out infinite alternate; }
+.runs-skeleton-line[data-size="wide"] { width: 55%; }
+.runs-skeleton-line[data-size="narrow"] { width: 30%; }
+@keyframes runs-skeleton-pulse { from { opacity: 1; } to { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .runs-skeleton-line { animation: none; } }
+.runs-empty { display: grid; gap: 4px; justify-items: start; padding: 20px 16px; border: 1px dashed var(--edge); border-radius: var(--radius); background: var(--surface); color: var(--muted); }
+.runs-empty strong { color: var(--text); }
+.runs-empty.runs-error strong { color: var(--danger); }
+.runs-row { border-radius: var(--radius); background: var(--surface); padding: 12px; }

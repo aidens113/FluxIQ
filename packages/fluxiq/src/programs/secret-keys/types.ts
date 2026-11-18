@@ -1,6 +1,7 @@
 import type { JsonObject } from "../../core/index.ts";
-import type { ModelKeyLockReason } from "@fluxiq/contracts/automation";
 import type { ScryptParameters } from "../_shared/password-kdf/index.ts";
+import type { ModelAccessState, ModelKeyAvailability } from "@fluxiq/contracts/platform";
+import type { SecretKeyProtectedDataKey } from "../../platform/custody/protection/index.ts";
 
 export type SecretKeyKind = "llm" | "custom";
 
@@ -33,7 +34,12 @@ export type SecretKeyRecord = SecretKeySummary & {
    * first unlock or reveal it opens for; abort removes it.
    */
   pendingSealed?: EncryptedSecretValueRecordV2 | undefined;
+  hostProtection?: SecretKeyHostCustody | undefined;
+  pendingHostProtection?: SecretKeyHostCustody | undefined;
 };
+
+/** A ciphertext recovery key bound to its proven owner and exact value seal. */
+export type SecretKeyHostCustody = { ownerUserId: string; sealDigest: string; sealed: SecretKeyProtectedDataKey };
 
 /**
  * A version 1 seal: scrypt at Node's default cost (N=2^14), recording no
@@ -154,15 +160,24 @@ export type AssistantModelChoice =
   | { ok: true; keyId: string; keyName: string; provider?: string | undefined; model?: string | undefined; ownerId?: string | undefined; chosenForWorkspace: boolean; offeredByHolder: boolean }
   | { ok: false; reason: string };
 
+/** Why a holder was locked, recorded in the credential-unlock store only. Not user-facing wording. */
+export type SecretKeyLockReason = "first_unlock" | "signed_out" | "administrator" | "sessions_ended" | "password_changed" | "password_reset" | "unknown";
+
 export type SecretKeysSnapshot = {
   /**
    * `unlocked` and `heldByYou` are said only on a snapshot read for a caller,
    * and only of that caller's own keys. `offeredToWorkspace`: its holder offered
    * it to the workspace (said of every model key).
    */
-  keys: Array<SecretKeySummary & { unlocked?: boolean; lockedBecause?: ModelKeyLockReason; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
+  keys: Array<SecretKeySummary & { availability?: ModelKeyAvailability; unlocked?: boolean; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
   /** Which key is the default, and the assistant's choice. */
   modelSettings?: ModelKeySettingsView;
+  /**
+   * The caller's model access: whether their chats and Flows can reach a model
+   * now, and the one reason when not (t924). Said only on a snapshot read for a
+   * caller, when the host binds it.
+   */
+  modelAccess?: ModelAccessState;
 };
 
 /**
@@ -231,8 +246,8 @@ export type SecretKeyCredentialUnlockRecord = SecretKeyCredentialUnlockGeneratio
   /** When it last spoke, for the person choosing which browser to unlock. Not secret; at most a day out while it stays connected. */
   lastUsedAtMs?: number | undefined;
   lockedAtMs?: number | undefined;
-  /** Why it locked, in the words a person is told (`modelKeyLockedWords`). */
-  lockReason?: ModelKeyLockReason | undefined;
+  /** Why it locked: kept for the unlock store's own records; never shown as a prompt. */
+  lockReason?: SecretKeyLockReason | undefined;
   updatedAtMs: number;
 };
 

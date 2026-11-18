@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayCommandLedgerController as Controller, clientGatewayCommandResultDigest, type ClientGatewayCommandClaim, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../unsent-refusal.ts";
 
 function claim(): ClientGatewayCommandClaim {
   const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
@@ -15,7 +16,8 @@ function port(): ClientGatewayCommandLedgerPort {
     claim: vi.fn(async input => { const sendAllowed = record === null; record ??= { claim: input, claimedAt: 50, state: "pending", receipt: null, committedAt: null, unknownReason: null }; return { sendAllowed, record }; }),
     commitReceipt: vi.fn(async (input, result) => record = { claim: input, claimedAt: 50, state: "committed", receipt: result, committedAt: 101, unknownReason: null }),
     markUnknown: vi.fn(async (input, reason) => record = { claim: input, claimedAt: 50, state: "unknown", receipt: null, committedAt: null, unknownReason: reason }),
-    read: vi.fn(async () => record)
+    read: vi.fn(async () => record),
+    refuseUnsent: vi.fn(async (input, proof) => record = { claim: input, claimedAt: 50, state: "refused_unsent", receipt: null, committedAt: null, unknownReason: null, refusal: { ...Unsent.read(proof, input) } })
   };
 }
 describe("durable gateway command controller infrastructure", () => {
@@ -42,12 +44,42 @@ describe("durable gateway command controller infrastructure", () => {
     await expect(new Controller(ledger).dispatch(claim(), send)).rejects.toThrow("claim failed"); expect(send).not.toHaveBeenCalled();
     const second = port(), original = second.claim;
     second.claim = async input => { const record = await original(input); abort.abort(); return record; };
-    expect(await new Controller(second).dispatch(claim(), send, abort.signal)).toEqual({ status: "outcome_unknown" }); expect(send).not.toHaveBeenCalled();
+    expect(await new Controller(second).dispatch(claim(), send, abort.signal)).toMatchObject({ status: "refused_unsent", refusal: { code: "cancelled_before_send" } }); expect(send).not.toHaveBeenCalled();
+    expect(second.markUnknown).not.toHaveBeenCalled();
   });
   it("uncertain send leaves unknown and blocks later retry", async () => {
     const ledger = port(), send = vi.fn(async () => { throw new Error("possibly delivered"); }), controller = new Controller(ledger);
     expect(await controller.dispatch(claim(), send)).toEqual({ status: "outcome_unknown" });
     expect(await controller.dispatch(claim(), send)).toEqual({ status: "outcome_unknown" }); expect(send).toHaveBeenCalledTimes(1);
+  });
+  it("settles only a live claim-bound pretransport refusal and never resends its command id", async () => {
+    const ledger = port(), input = claim(), controller = new Controller(ledger);
+    const send = vi.fn(async () => { throw Unsent.create(input, "host_lease.stale", 75); });
+    expect(await controller.dispatch(input, send)).toEqual({ status: "refused_unsent", refusal: { code: "host_lease.stale", refusedAt: 75 } });
+    expect(await controller.dispatch(input, send)).toEqual({ status: "refused_unsent", refusal: { code: "host_lease.stale", refusedAt: 75 } });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(ledger.commitReceipt).not.toHaveBeenCalled();
+    expect(ledger.markUnknown).not.toHaveBeenCalled();
+    expect((await ledger.read(input))?.receipt).toBeNull();
+  });
+  it("never classifies matching error text or a copied proof as known-unsent", async () => {
+    const input = claim();
+    for (const forged of [new Error("durable_command.refused_unsent"), Object.create(Unsent.prototype), { ...Unsent.create(input, "host_lease.stale") }]) {
+      const ledger = port();
+      expect(await new Controller(ledger).dispatch(input, async () => { throw forged; })).toEqual({ status: "outcome_unknown" });
+      expect(ledger.refuseUnsent).not.toHaveBeenCalled();
+    }
+  });
+  it("retains the live refusal on failed settlement without turning pending into certainty on replay", async () => {
+    const ledger = port(), input = claim(), proof = Unsent.create(input, "host_lease.stale");
+    ledger.refuseUnsent = vi.fn(async () => { throw new Error("storage unavailable"); });
+    await expect(new Controller(ledger).dispatch(input, async () => { throw proof; })).rejects.toBe(proof);
+    expect(Unsent.isSettlementFailure(proof)).toBe(true);
+    expect((await ledger.read(input))?.state).toBe("pending");
+    expect(ledger.markUnknown).not.toHaveBeenCalled();
+    const send = vi.fn();
+    expect(await new Controller(ledger).dispatch(input, send)).toEqual({ status: "outcome_unknown" });
+    expect(send).not.toHaveBeenCalled();
   });
   it("reconciles lost receipt commit acknowledgement before returning actual live result", async () => {
     const ledger = port(), original = ledger.commitReceipt;

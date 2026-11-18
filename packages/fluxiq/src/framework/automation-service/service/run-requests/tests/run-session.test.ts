@@ -24,7 +24,7 @@ function harness(caller: Partial<Caller> = {}) {
     conversations: {
       callerFor: (actor: { userId: string; sessionId: string }) => {
         asked.push(actor);
-        return { userId: actor.userId, sessionId: actor.sessionId, preferredSessionId: null, paired: false, keyLocked: false, keyNeedsUnlock: false, keyLockReason: null, ...caller };
+        return { userId: actor.userId, sessionId: actor.sessionId, preferredSessionId: actor.sessionId, paired: false, ...caller };
       }
     } as unknown as Service["conversations"],
     getFlowRunDetail: async () => null,
@@ -87,12 +87,6 @@ describe("whose key a run request's run pays and acts with", () => {
     expect(h.inputs[0]).toEqual({ projectId: "p", flowId: "f", llmExecution: { actorUserId: "user.real", actorSessionId: "session.unlocked", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
   });
 
-  it("runs keyless when the caller has nothing unlocked, rather than with the body's", async () => {
-    const h = harness({ paired: true, keyLocked: true });
-    await h.run({ projectId: "p", flowId: "f", runIntent: "explore_and_adapt", llmExecution: OTHER }, { userId: "user.real", sessionId: "client-gateway:1" });
-    expect(h.inputs).toEqual([{ projectId: "p", flowId: "f" }]);
-  });
-
   it("drops every field the run's input does not take from a body", async () => {
     const h = harness();
     await h.run({ projectId: "p", flowId: "f", caller: { actorUserId: "user.other" }, actor: { userId: "user.other" }, metadata: { llmGate: {} }, scope: { domainId: "d" } }, REAL);
@@ -135,11 +129,11 @@ describe("a run request's own fields", () => {
 });
 
 describe("the person a run is for", () => {
-  it("is the signed-in caller, whether or not a run intent or an unlocked key comes with it", async () => {
-    const locked = harness({ keyLocked: true });
-    await locked.run({ projectId: "p", flowId: "f" }, REAL);
-    await locked.run({ projectId: "p", flowId: "f", runIntent: "explore_and_adapt" }, REAL);
-    expect(locked.people).toEqual(["user.real", "user.real"]);
+  it("is the signed-in caller, whether or not a run intent comes with it", async () => {
+    const h = harness();
+    await h.run({ projectId: "p", flowId: "f" }, REAL);
+    await h.run({ projectId: "p", flowId: "f", runIntent: "explore_and_adapt" }, REAL);
+    expect(h.people).toEqual(["user.real", "user.real"]);
   });
 
   it("is never a person the body names, and is absent with no signed-in caller", async () => {

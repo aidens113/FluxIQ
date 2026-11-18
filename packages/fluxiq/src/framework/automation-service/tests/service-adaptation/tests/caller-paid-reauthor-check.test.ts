@@ -145,7 +145,7 @@ it("judges a re-authored Flow's re-run with the caller's key, after the standing
   const project = await service.createProject({ name: "Caller-paid re-author check", domainId: "example" });
   const flow = await service.createFlow({ projectId: project.id, flowId: "flow.caller-paid-reauthor", name: "Caller-paid re-author Flow" });
   const training = adaptiveTrainingMetadata();
-  const authorization = { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
+  const authorization = { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 24 * 60 * 60 * 1000 };
   await service.saveFlow({
     projectId: project.id,
     flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...training, trainingModeSettings: { ...(training.trainingModeSettings as JsonObject), resultCheck: { schedule: { enabled: true, shape: "every_run", initialRunCount: 3, interval: 5, decay: 5 }, authorization } } } }

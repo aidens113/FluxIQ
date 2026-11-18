@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { automationStudioViewIds, createAutomationStudioViewInstances } from "../../views";
 
@@ -33,23 +33,26 @@ describe("the conversation is an overlay, not one view among twelve", () => {
   });
 });
 
-describe("a turn reaches the person without a push channel", () => {
-  it("reads on the hidden beat instead of standing still", () => {
-    // The one thing in the feature that has to be right. The hidden branch
-    // used to re-queue without calling `run`, so a backgrounded tab made no
-    // request at all; measured in a browser, twelve seconds of a hidden tab
-    // produced zero reads and a question raised by a run reached nobody.
-    const poller = source("../thread/poller.ts");
-    expect(poller).not.toMatch(/if \(options\.hidden\(\)\) \{\s*queue\(/u);
-    expect(poller).toContain("const hidden = options.hidden();");
-    expect(poller).toContain("delayMs = hidden ? CONVERSATION_POLL_HIDDEN_MS");
+describe("a turn reaches the person by push", () => {
+  it("is told by the page's one change stream, and reads on no timer", () => {
+    // A turn a run writes, and the activity of the work behind it, reach the
+    // chat from `GET /api/panel/changes` (t920). The adaptive poll that stood
+    // in for a push channel is gone, and nothing in the thread, the chat's
+    // change feed or its activity port sets a timer of its own to read.
+    expect(existsSync(new URL("../thread/poller.ts", import.meta.url))).toBe(false);
+    for (const path of ["../../../chat-widget/transport/changes-port.ts", "../../../chat-widget/activity/activity-port.ts"]) {
+      const text = source(path);
+      expect(text).toContain("sharedPanelChanges()");
+      expect(text).not.toMatch(/setTimeout|setInterval|createBackoffPoller/u);
+    }
   });
 
   it("mounts pairing approval globally, and no second prompt for a waiting question", () => {
     // The assistant dock is on every panel page and shows a waiting question
     // itself, so the modal that stood in for it outside the Studio is gone.
+    // Approval asks for no second code since t914 (79f175d2a), so it takes no props.
     const layout = source("../../../../app/layout.tsx");
-    expect(layout).toContain("<GlobalClientGatewayPairing asksTotp={auth?.user.totpEnabled === true} />");
+    expect(layout).toContain("<GlobalClientGatewayPairing />");
     expect(layout).not.toContain("GlobalConversationPrompt");
   });
 

@@ -1,0 +1,9 @@
+# Background browser-session PKCE attempt storage
+Owner: Senior supervisor (root), same t914 unit; no worker edits these paths.
+Own downstream background/authentication-attempts/** only; consume frozen PKCE store/parser public exports and AuthenticationTabs ready/sessionIdentity.
+No change to protocol/auth-tab/credentials implementations, composition, manifests, global storage elsewhere, dist or runtime browser state.
+Implement browser session area only, lazy default resolution, TRUSTED_CONTEXTS where available, no local/sync/in-memory fallback. One background-owned queue keyed by actual area serializes loads/CAS across adapter instances; do not claim cross-process/native storage CAS.
+Authoritative identity is registry ready/sessionIdentity, never caller marker. Recheck around every storage await; loading/failed/changed identity refuses. Empty current session persists revision0/null. Valid previous-session envelope is durably replaced with current empty envelope; corrupt data refuses rather than silently erases.
+Public parser validates and detaches loaded/new records. CAS matches current session+revision, increments safely and persists before true. Wrong expected identity/revision returns false; invalid data/storage failures fixed errors without values. No automatic retry after ambiguous write failure.
+Tests use isolated injected area and session view: two competing adapters one winner, restart durable revision, stale session and changing identity around awaits, failed/missing storage/access, malformed/foreign-envelope/extra-secret state, immutable snapshots, write-after-commit rejection, no revision overflow, no fallback.
+Coordinate source freeze before extension filtered compile consumers, run unique filtered label plus scoped types and structure. No browser/server/provider/build/full-suite action. Protocol remains unactivated; capture/content/tab adapter privacy is separate required work.

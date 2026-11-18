@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IamDecisionAuditFilter } from "../../audit/index.ts";
-import { IamAuthorizer } from "../index.ts";
+import { IamAuthorizer, IamRequestAuthorizer } from "../index.ts";
+import * as evaluation from "../../evaluate/index.ts";
 import { RecordingSink } from "./recording-sink.ts";
 import { FakePolicySource, WORKSPACE, context, policy, policySet, principal } from "./authorize-fakes.ts";
 
@@ -21,6 +22,24 @@ function setup(identity: ReturnType<typeof policy>[]) {
 }
 
 describe("IamRequestAuthorizer", () => {
+  it("marks an evaluation failure unavailable without changing ordinary denial", () => {
+    const sink = new RecordingSink();
+    const actor = principal();
+    const ctx = context();
+    const compiled = evaluation.compileIamPolicySet(policySet([]), actor, ctx.workspaceId);
+    const request = new IamRequestAuthorizer(compiled, actor, ctx, sink, "failed-evaluation");
+    const evaluate = vi.spyOn(evaluation, "evaluateIamRequest").mockImplementationOnce(() => { throw new Error("private-evaluator-detail"); });
+    try {
+      const failed = request.decide(LIST, [scope]);
+      expect(failed).toMatchObject({ decision: "deny", failure: "policy_unavailable", fullAccess: false });
+      expect(JSON.stringify(failed)).not.toContain("private-evaluator-detail");
+      expect(request.decide(LIST, [scope])).not.toHaveProperty("failure");
+      expect(sink.records).toHaveLength(2);
+    } finally {
+      evaluate.mockRestore();
+    }
+  });
+
   it("compiles once and shares one request id across decisions", async () => {
     const { authorizer, sink, source } = setup([narrow]);
     const request = await authorizer.forRequest(principal(), context());

@@ -1,3 +1,5 @@
+import { AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 // P6 (t769, B10, B15): offline-first trials wired into the build's own ports. A
 // project build's partial-trial port carries the factory's `offlineFirst` (a
 // kept answer reaches `weighed`, its judge spend joins the port's), and so
@@ -54,10 +56,10 @@ async function installed(install = true, script: ReadScript = GONE) {
 function subflowTrials(h: OfflineHarness, proposals = new AutomationStudioProjectBuildProposals(), phase?: "repair" | "test") {
   const { judge: _judge, predecessorProposals: _predecessors, ...environment } = subflowHarness(h).ports;
   const trials = automationStudioProjectBuildSubflowTrials({
-    ref: REF, environment: environment as unknown as AutomationStudioProjectBuildTrialEnvironment, binding: BINDING,
+    ref: REF, environment: Object.assign(environment, { leaseBinding: LEASE_BINDING }) as unknown as AutomationStudioProjectBuildTrialEnvironment, binding: BINDING,
     judge: { provider: mockProvider(async () => judgeReply("no", SAID)) }, records, proposals, leases: { assertCurrent: () => undefined }, running: () => true, ...(phase ? { phase } : {})
   });
-  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })));
+  const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: LEASE_BINDING });
   /** Work under the brief's lease, as the dispatcher runs a brief's gate. */
   const held = async <T>(work: () => Promise<T>): Promise<T> => await leases.run({ role: "subflow_builder", briefId: SCOPE.briefId }, work);
   const live = async (proposal: ReturnType<typeof subflowOf>) => await held(async () => await trials.port(subflowRequestFor(proposal)));

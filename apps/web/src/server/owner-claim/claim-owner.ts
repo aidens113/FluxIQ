@@ -7,7 +7,7 @@ import { retireDefaultAdmin } from "./retire-default-admin";
 import type { OwnerClaimDeps, OwnerClaimForm, OwnerClaimMarker, OwnerClaimOutcome, OwnerClaimRefusalCode } from "./types";
 import { writePrivateFile } from "./write-private-file";
 
-/** The owner claim is an in-process caller: the only one that may attach `FluxIQOwnerFullAccess` (single tenancy, never over HTTP). */
+/** Private setup authority; the profile determines the bounded account policy it requests. */
 const OWNER_CLAIM_CALLER: PlatformProvisioningCaller = { kind: "in-process", actorUserId: null, transport: "in-process" };
 
 /**
@@ -28,7 +28,8 @@ let queue: Promise<unknown> = Promise.resolve();
  * marker inside, so two valid submissions cannot make two owners.
  *
  * In order: `createAccount` in-process with `FluxIQOwnerFullAccess` in the
- * single workspace (`"new"` is the one workspace under single tenancy),
+ * single workspace, or `FluxIQAdministratorAccess` in a new personal workspace
+ * under service. A service account never gets primary or platform authority.
  * `setPassword` (so a replayed account takes this attempt's password), the
  * default `admin` retired (`retireDefaultAdmin`), the marker written, and a
  * generated code file removed (never the operator's `FLUXIQ_SETUP_CODE_FILE`).
@@ -55,7 +56,7 @@ async function claimExclusively(form: OwnerClaimForm, deps: OwnerClaimDeps): Pro
   try {
     const created = await deps.provisioning.run(
       "createAccount",
-      { requestId: CREATE_REQUEST_ID, email: form.username, displayName: form.displayName, password: form.password, policies: ["FluxIQOwnerFullAccess"], workspace: "new" },
+      { requestId: CREATE_REQUEST_ID, email: form.username, displayName: form.displayName, password: form.password, policies: [deps.settings.profile === "service" ? "FluxIQAdministratorAccess" : "FluxIQOwnerFullAccess"], workspace: "new" },
       OWNER_CLAIM_CALLER
     );
     if (!created.ok) return refusal(created.error.code, created.error.issues, log);

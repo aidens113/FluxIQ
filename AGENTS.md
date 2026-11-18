@@ -194,6 +194,15 @@ not yet fixable, report it plainly instead of shipping a cap.
 
 ## Code Structure
 
+**Authenticated clients are usable by default (user, 2026-11-14).** Once a
+client is authenticated/approved, do not put it behind a default key or
+connection lock, first-unlock ticket, or second password/PIN ceremony.
+Implement this in backend access and clients together, including reconnects;
+hiding a locked UI is not a fix. Retain tenant/IAM isolation and actual
+credential revocation. Missing provider-key configuration is a configuration
+issue, not a locked authenticated connection. This supersedes earlier
+locked-by-default recommendations in hosted-platform and custody plans.
+
 Full methodology: [code structure](docs/architecture/code-structure.md).
 The binding rules:
 

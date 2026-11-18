@@ -67,6 +67,34 @@ export class SecretKeyStore {
     this.records.set(record.id, record);
   }
 
+  /** Writes a complete seal/protection pair before publishing it in memory. */
+  commit(record: SecretKeyRecord, expected: SecretKeyRecord | undefined): Promise<boolean> {
+    return this.writes.enqueue(record.id, async () => {
+      if (this.records.get(record.id) !== expected) return false;
+      if (this.repository) {
+        try {
+          await this.repository.put(createRecord({ id: record.id, kind: this.kind, data: record as unknown as JsonObject }));
+        } catch (error) {
+          // A driver may reject after committing. Reconcile before serving from this cache again.
+          try {
+            const stored = await this.repository.get(record.id, {});
+            if (this.records.get(record.id) === expected) {
+              if (stored && isSecretKeyRecord(stored.data, this.sealer)) this.records.set(record.id, stored.data);
+              else this.records.delete(record.id);
+            }
+          } catch (readError) {
+            if (this.records.get(record.id) === expected) this.records.delete(record.id);
+            throw new AggregateError([error, readError], "Secret key write outcome could not be reconciled.");
+          }
+          throw error;
+        }
+      }
+      if (this.records.get(record.id) !== expected) return false;
+      this.records.set(record.id, record);
+      return true;
+    });
+  }
+
   /** Queues a write of the record's in-memory state; skipped if the record is gone when the write runs. */
   persist(id: string): Promise<void> {
     const repository = this.repository;

@@ -30,7 +30,7 @@ test("each state is one plain phrase, a tick only for a confirmed result, and ne
   assert.equal(words.working!.words, "Working");
   assert.equal(words.waiting!.words, "Needs your answer");
   assert.equal(words.interrupted!.words, "Stopped partway. You can carry on.");
-  assert.equal(words.keyLocked!.words, "Needs your model key unlocked");
+  assert.equal(words.keyLocked!.words, "Model access was unavailable");
   assert.equal(words.budgetOut!.words, "Ran out of budget");
   assert.equal(words.stopped!.words, "You stopped it");
   assert.equal(words.unconfirmed!.words, "Finished, not confirmed");
@@ -53,7 +53,8 @@ test("a reason this screen does not know is a plain wait, and read as a string",
   assert.equal(ownWaitingWords("something_new")?.headline, "Waiting for you");
   assert.equal(ownWaitingWords("permission"), undefined);
   assert.equal(ownWaitingWords("interrupted")?.headline, "Stopped partway");
-  assert.match(ownWaitingWords("model_key_locked")!.lead, /Unlock it/u);
+  assert.match(ownWaitingWords("model_key_locked")!.lead, /current model configuration/u);
+  assert.doesNotMatch(ownWaitingWords("model_key_locked")!.lead, /unlock|password|PIN/iu);
 });
 
 test("a row says the person's words, the state, the time, how long and what it cost, and the saved line", () => {

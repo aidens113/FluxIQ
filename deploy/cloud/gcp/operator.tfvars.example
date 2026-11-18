@@ -1,0 +1,13 @@
+name          = "fluxiq-platform"
+project       = "replace-with-project-id"
+region        = "us-west1"
+zone          = "us-west1-a"
+machine_type  = "e2-standard-2" # Illustrative only: choose capacity and check availability/pricing.
+ubuntu_image  = "projects/ubuntu-os-cloud/global/images/ubuntu-2404-noble-amd64-vREPLACE_WITH_IMAGE_VERSION"
+data_size_gb  = 40
+config_secret_name    = "fluxiq-runtime"
+config_secret_version = "1"
+release = {
+  url    = "https://releases.example.org/fluxiq/core-release.tar.gz"
+  sha256 = "REPLACE_WITH_VERIFIED_ARCHIVE_SHA256"
+}

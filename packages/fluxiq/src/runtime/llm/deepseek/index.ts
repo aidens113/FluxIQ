@@ -64,8 +64,6 @@ export { automationStudioDeepSeekRequestShape, type AutomationStudioDeepSeekRequ
 // thread, answered with one decision.
 export { automationStudioDeepSeekPanelCommandBody, createAutomationStudioDeepSeekPanelCommandModel, type AutomationStudioDeepSeekPanelCommandOptions } from "./panel-command.ts";
 export { automationStudioPanelCommandKeyFromSecretKeys, type AutomationStudioPanelCommandKeyPorts } from "./panel-command-key.ts";
-// A person's own key, released to their unlocked session for one call: the
+// A person's own key, released to their authenticated principal for one call: the
 // rule the chat window and every Flow model call share (`session-key.ts`).
 export { releaseAutomationStudioSessionDeepSeekKey, type AutomationStudioSessionKeyOptions, type AutomationStudioSessionKeyPorts } from "./session-key.ts";
-// The one typed error a locked key raises on every release path (`secrets-locked-error.ts`).
-export { AutomationStudioSecretsLockedError } from "../../models/secrets/index.ts";

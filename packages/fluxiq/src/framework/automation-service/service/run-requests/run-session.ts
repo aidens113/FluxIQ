@@ -1,5 +1,5 @@
 // What `run-runtime-session` does with a request: reads what the caller asked
-// the run to be, runs it as whoever's unlocked key pays, and answers with the
+// the run to be, runs it as whoever's configured key pays, and answers with the
 // run's session and what its stored detail says came of it.
 
 import { humannessSchema } from "@fluxiq/contracts/automation";
@@ -42,12 +42,12 @@ export async function runRuntimeSessionForRequest(
   // How human the person wants the run to act (the chat's "Run it", the panel's Run): refused unless a whole number from 0 to 100.
   if (requestedHumanness !== undefined && !humannessSchema.safeParse(requestedHumanness).success) return { ok: false, error: "The run's humanness must be a whole number from 0 to 100." };
   // A caller may ask to pay for fewer of its run's result checks, never more: the chat's "Run it" for a
-  // paired client calls as the person's unlocked session, so it says itself what the paired rule below says.
+  // paired client calls under its own session, so it says itself what the paired rule below says.
   if (requestedCallerPays !== undefined && requestedCallerPays !== "repair_checks") return { ok: false, error: "A run can only ask to pay for the result checks that judge a repair." };
   // Every intent a runtime session runs under, named in one place, so
   // `explore_and_adapt` is reachable from a failed run rather than being a
   // capability nothing could ask for. The intent says what the run is for;
-  // the signed-in actor is whose unlocked key pays for its model calls.
+  // the signed-in actor is whose configured key pays for its model calls.
   let llmExecution: AutomationStudioRuntimeSessionLlm | undefined;
   let pairedCaller = false;
   if (requestedIntent !== undefined) {
@@ -55,20 +55,12 @@ export async function runRuntimeSessionForRequest(
     if (!intent) return { ok: false, error: "The run intent is not one Core supports." };
     if (!request.actor) return { ok: false, error: "A run the model takes part in needs a signed-in person." };
     // A paired client -- the extension's Automations Run -- calls as
-    // `client-gateway:<id>`, a session Secret Keys never releases a key to,
-    // so its model always ran keyless. It is mapped to the approving
-    // person's unlocked session the way a chat turn is
-    // (`runtime/conversations/commands/caller.ts`): whose key pays changes,
-    // never what may be done. With no unlocked session the Flow runs
-    // deterministically, exactly as it did before, rather than being
-    // refused. A person's own session passes through unchanged.
-    // `actorSessionId` is the session each model call tries first, not the
-    // one that pays for the whole run: every call resolves the person's live
-    // unlock again (`runtime/llm/session-key-provider.ts`), so a sign-out of
-    // that session mid-run falls back to another unlock of theirs, and with
-    // none the call fails with `secrets.locked`.
+    // `client-gateway:<id>`. Each model call is authorized for that
+    // authenticated principal (`runtime/llm/session-key-provider.ts`), so a
+    // connected client uses the configured key and a missing key is a setup
+    // step, never an unlock.
     const caller = service.conversations.callerFor(request.actor);
-    if (!caller.keyLocked) llmExecution = { actorUserId: caller.userId, actorSessionId: caller.preferredSessionId ?? caller.sessionId, intent };
+    llmExecution = { actorUserId: caller.userId, actorSessionId: caller.preferredSessionId, intent };
     pairedCaller = caller.paired;
   }
   // What the person allowed the run's actions to do. Absent is nothing; a

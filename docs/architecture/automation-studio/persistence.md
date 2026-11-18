@@ -267,7 +267,7 @@ user's sessions and revokes every other holder, including an outstanding reveal
 authorization. The production web owner closes the old framework instance on
 reload and closes the active instance on SIGINT/SIGTERM, which drains Secret
 Keys authorizations. A process restart therefore invalidates every outstanding
-reveal authorization and session unlock.
+reveal authorization and the held-key cache.
 
 Neither cache owns Flow, run, recording, instruction, adaptation, or State
 truth. Warm mounted views may preserve local component state during a session,

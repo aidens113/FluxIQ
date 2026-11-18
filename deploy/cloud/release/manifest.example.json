@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "release": "replace-with-release-id",
+  "profile": "service",
+  "platform": "linux/amd64",
+  "coreImage": "ghcr.io/your-organization/fluxiq-core@sha256:REPLACE_WITH_64_LOWERCASE_HEX_DIGEST",
+  "caddyImage": "caddy@sha256:REPLACE_WITH_64_LOWERCASE_HEX_DIGEST"
+}

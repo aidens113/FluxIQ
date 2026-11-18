@@ -2,7 +2,7 @@
 // Pages publish it; the assistant dock sends it with every message so
 // "rename this" means the Flow on screen.
 
-export const PANEL_PAGES = ["home", "flows", "runs", "data", "security", "settings"] as const;
+export const PANEL_PAGES = ["home", "projects", "flows", "runs", "data", "chats", "security", "settings"] as const;
 
 export type PanelPage = (typeof PANEL_PAGES)[number];
 

@@ -193,7 +193,7 @@ describe("AutomationStudioService recording persistence", () => {
     // A repaired run is checked because it repaired itself; a clean run is not checked before the fifth.
     const resultCheck = {
       schedule: { enabled: true, shape: "fixed_interval", initialRunCount: 0, interval: 5, decay: 5 },
-      authorization: { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 }
+      authorization: { authorizedByUserId: "user.aiden", authorizationId: "result-check:1", grantedThrough: { kind: "person" }, keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 }
     };
     await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...base, trainingModeSettings: { ...(base.trainingModeSettings as JsonObject), resultCheck } } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {

@@ -49,7 +49,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     try { key = await raceAutomationStudioProviderSignal(Promise.resolve().then(() => input.resolveKey(controller.signal)), controller.signal); }
     catch (error) {
       if (controller.signal.aborted) throw signalFailure(input.signal, timedOut);
-      throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured Anthropic key could not be released.");
+      throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", error instanceof Error && error.message ? error.message : "The configured Anthropic key could not be released.");
     }
     if (!key || typeof key !== "string" || !key.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured Anthropic key could not be released.");
     if (input.body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");

@@ -33,11 +33,11 @@ export function RemoveKeyConfirm(props: { keyName: string; onRemove(proof?: Remo
   return (
     <div role="group" aria-label={`Remove ${props.keyName}`} className="settings-remove">
       <p>Remove the key &ldquo;{props.keyName}&rdquo;? FluxIQ forgets it for good. If it was your default, the next key you have turned on takes over.</p>
-      {ask === "pin" ? <label>Your PIN<input inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))} autoComplete="off" /></label> : null}
-      {ask === "password" ? <label>Your password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label> : null}
+      {ask === "pin" ? <label className="field"><span className="field-label">Your PIN</span><input inputMode="numeric" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))} autoComplete="off" /></label> : null}
+      {ask === "password" ? <label className="field"><span className="field-label">Your password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label> : null}
       {message ? <p role="alert">{message}</p> : null}
-      <button type="button" disabled={pending || (ask === "pin" && pin.length < 4) || (ask === "password" && !password)} onClick={() => void press()}>{pending ? "Removing..." : "Remove key"}</button>
-      <button type="button" disabled={pending} onClick={props.onCancel}>Keep it</button>
+      <button type="button" className="button danger" disabled={pending || (ask === "pin" && pin.length < 4) || (ask === "password" && !password)} onClick={() => void press()}>{pending ? "Removing..." : "Remove key"}</button>
+      <button type="button" className="button" disabled={pending} onClick={props.onCancel}>Keep it</button>
     </div>
   );
 }

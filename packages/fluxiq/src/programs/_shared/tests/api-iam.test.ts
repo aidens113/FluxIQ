@@ -101,8 +101,8 @@ describe("local and self-hosted decide exactly as the permission check did", () 
 
   it("gives the administrator the full-access fast path, so a list is one decision", async () => {
     const gate = new ProgramIamGate({}, () => [], new Map());
-    expect((await gate.open(actor("admin.one", "admin", ADMIN_PERMISSIONS))).compiled.fullAccess).toBe(true);
-    expect((await gate.open(actor("viewer.one", "viewer", VIEWER_PERMISSIONS))).compiled.fullAccess).toBe(false);
+    expect((await gate.open(actor("admin.one", "admin", ADMIN_PERMISSIONS))).compiled?.fullAccess).toBe(true);
+    expect((await gate.open(actor("viewer.one", "viewer", VIEWER_PERMISSIONS))).compiled?.fullAccess).toBe(false);
     const audit = recordingSink();
     const built = registry({ audit }, projects);
     const response = await call(built, "projects", actor("admin.one", "admin", ADMIN_PERMISSIONS));
@@ -172,7 +172,7 @@ describe("service narrows a user to their own resources", () => {
     built.registerResourceOwners("project", { ownerOf });
     await expect(call(built, "projects", alice)).resolves.toMatchObject({ payload: { projects: [{ id: "a-1" }, { id: "b-1" }, { id: "x-1" }, {}] } });
     const gate = new ProgramIamGate({ profile: "service", source: fixedPolicySource([IAM_OWNER_FULL_ACCESS]) }, () => [], new Map());
-    expect((await gate.open(alice)).compiled.fullAccess).toBe(false);
+    expect((await gate.open(alice)).compiled?.fullAccess).toBe(false);
   });
 
   it("refuses everything without a policy source or when the source fails", async () => {
@@ -214,5 +214,26 @@ describe("authorize, for app routes", () => {
     await expect(built.authorize({ actor: bob, action: "studio:ExportProject", permission: "programs.read", resources: { kind: "project", projectId: "b-1" } })).resolves.toMatchObject({ allowed: true });
     await expect(built.authorize({ actor: bob, action: "studio:ExportProject", permission: "programs.read", resources: [{ kind: "project", projectId: "b-1" }, { kind: "project", projectId: "a-1" }] })).resolves.toMatchObject({ allowed: false });
     await expect(built.authorize({ actor: bob, action: "ops:Restart", permission: "runtime.control", resources: { kind: "program" }, programId: "runtime" })).resolves.toMatchObject({ allowed: false });
+  });
+});
+
+describe("registry authority availability", () => {
+  it("preserves unavailable policy source failures without relabelling an empty policy set", async () => {
+    let unavailable = true;
+    const built = registry({ profile: "service", workspaceId: "ws", source: {
+      resolvePolicySet: async () => {
+        if (unavailable) throw new Error("private-policy-storage-detail");
+        return { identity: [], guardrails: [], sessions: [], boundary: null };
+      },
+      getRole: async () => null
+    } });
+    const input = { actor: actor("alice", "user", VIEWER_PERMISSIONS), action: "studio:ListPrograms", permission: "programs.read" as const };
+    const failed = await built.authorize(input);
+    expect(failed).toMatchObject({ allowed: false, decision: { decision: "deny", failure: "policy_unavailable" } });
+    expect(JSON.stringify(failed)).not.toContain("private-policy-storage-detail");
+    unavailable = false;
+    const denied = await built.authorize(input);
+    expect(denied.allowed).toBe(false);
+    expect(denied.decision).not.toHaveProperty("failure");
   });
 });

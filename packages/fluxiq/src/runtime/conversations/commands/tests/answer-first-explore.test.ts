@@ -27,7 +27,7 @@ function contextFor(answer: AutomationStudioConversationCommandCallResult) {
     async pendingAsks() { return []; },
     async getAsk() { return null; }
   };
-  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", keyLocked: false, paired: false, startLocation: "https://library.example/account" };
+  const context: AutomationStudioConversationCommandContext = { port, host, projectId: "project.1", conversationId: "conversation.1", sessionId: "session.person", paired: false, startLocation: "https://library.example/account" };
   return { context, calls };
 }
 

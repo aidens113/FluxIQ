@@ -21,8 +21,11 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
       }
     });
     const pairing: string[] = [];
+    let paired!: () => void;
+    const pairingReceived = new Promise<void>((resolve) => { paired = resolve; });
     client.on("pairing_required", (event) => {
       pairing.push(event.message.payload.referenceCode ?? "");
+      paired();
     });
 
     await client.connect();
@@ -33,6 +36,7 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     });
 
     sockets[0]!.receive(serverMessage("server.pairing_required", { reason: "Approve in FluxIQ.", referenceCode: "ABCD" }));
+    await pairingReceived;
     expect(pairing).toEqual(["ABCD"]);
   });
 
@@ -58,10 +62,19 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     });
     await client.connect();
 
-    sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.1" }, { sessionId: "session.1" }));
+    async function accept(token: string) {
+      await new Promise<void>((resolve) => {
+        const off = client.on("session_ready", () => {
+          off();
+          resolve();
+        });
+        sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token }, { sessionId: "session.1" }));
+      });
+    }
+    await accept("token.1");
     expect(storedToken).toBe("token.1");
     expect(client.currentSessionId).toBe("session.1");
-    sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.2" }, { sessionId: "session.1" }));
+    await accept("token.2");
     expect(storedToken).toBe("token.2");
 
     await client.sendRecordingEvent({
@@ -90,8 +103,11 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
     });
     const phases: string[] = [];
     const other: string[] = [];
+    let active!: () => void;
+    const activityReceived = new Promise<void>((resolve) => { active = resolve; });
     client.on("activity", (event) => {
       phases.push(`${event.message.payload.phase}:${event.message.payload.sequence}`);
+      active();
     });
     client.on("execute_action", () => {
       other.push("execute_action");
@@ -106,7 +122,7 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
       label: "Deciding the next step",
       at: "2026-09-29T00:00:00.000Z"
     }));
-
+    await activityReceived;
     expect(phases).toEqual(["thinking:4"]);
     expect(other).toEqual([]);
   });
@@ -125,7 +141,13 @@ describe("FluxIQClientGatewayWebSocketClient", () => {
       now: () => 500
     });
     await client.connect();
-    sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.1" }, { sessionId: "session.1" }));
+    await new Promise<void>((resolve) => {
+      const off = client.on("session_ready", () => {
+        off();
+        resolve();
+      });
+      sockets[0]!.receive(serverMessage("server.session_ready", { sessionId: "session.1", token: "token.1" }, { sessionId: "session.1" }));
+    });
 
     await client.createRecording({
       projectId: "project.1",
