@@ -26,10 +26,10 @@ export type ActivitySource = {
 };
 
 /**
- * The audit route's dependencies, built per request (`auditRouteDepsForRequest`)
- * and passed whole so tests use the real registry over memory doubles. The
- * workspace and the audit are resolved only after the decision allowed the
- * call, so a refused caller never opens them.
+ * What `readActivity` decides and reads with, passed whole so tests use the
+ * real registry over memory doubles. The workspace and the audit are
+ * resolved only after the decision allowed the call, so a refused caller
+ * never opens them. The route itself reads through `withWorkspaceAccountRead`.
  */
 export type AuditRouteDeps = {
   actor: AppRouteActor;

@@ -6,6 +6,7 @@ import { accountRouteContract } from "./contract-for";
 import type { AccountsResponse } from "./accounts-response";
 import { assignableRoles } from "./assignable-roles";
 import { authorizeAccountRoute } from "./authorize-account-route";
+import { belongsElsewhere } from "./belongs-elsewhere";
 import { isPendingInvite } from "./is-pending-invite";
 import { provisioningRefusal } from "./provisioning-refusal";
 import { recheckProof } from "./recheck-proof";
@@ -14,6 +15,13 @@ import { revokeInvite } from "./revoke-invite";
 import { throttleResend } from "./throttle-resend";
 
 const ACTIONS: readonly MemberChangeAction[] = ["set-role", "turn-off", "turn-on", "remove", "resend-invite", "revoke-invite"];
+
+/**
+ * The changes made to the person's account rather than to their membership
+ * here: turning sign-in off or on, sending or cancelling the account's
+ * invite, and deleting it. They reach every workspace the account is in.
+ */
+const ACCOUNT_WIDE: ReadonlySet<MemberChangeAction> = new Set(["turn-off", "turn-on", "remove", "resend-invite", "revoke-invite"]);
 
 /** Resending a link moves no authority; every other change does, so it re-proves the caller first. */
 const WITHOUT_PROOF: ReadonlySet<MemberChangeAction> = new Set(["resend-invite"]);
@@ -31,6 +39,9 @@ const DONE: AccountsResponse = { status: 200, body: { ok: true } };
  *    end their own access from this screen, whatever a policy says);
  * 4. the person has an account and an active membership in this workspace;
  *    an owner's access is not changed here (the owner is claimed at setup);
+ *    with several workspaces, a change to the account itself (`ACCOUNT_WIDE`)
+ *    is refused when the person is also in another workspace, which this
+ *    workspace's administrator does not govern;
  * 5. the caller re-proves their credentials, except to resend an invite,
  *    which is rate limited instead (`throttleResend`, by administrator and
  *    person);
@@ -60,6 +71,9 @@ export async function changeMember(deps: AccountRouteDeps, body: Record<string, 
   const role = assignableRoles(deps.profile).find((candidate) => candidate === body.role);
   if (action === "set-role" && role === undefined) return refuseAccounts(400, "invalid_input", "Choose a role this workspace offers.");
   if (action === "remove" && platform.tenancy !== "single") return refuseAccounts(501, "not_available", "Removing a person from one of several workspaces is not available yet.");
+  if (platform.tenancy !== "single" && ACCOUNT_WIDE.has(action) && await belongsElsewhere(platform, userId)) {
+    return refuseAccounts(409, "shared_account", "This person also belongs to another workspace, so their account cannot be changed from here.");
+  }
   if (action === "resend-invite" || action === "revoke-invite") {
     const user = (await deps.identityAccess.snapshot()).users.find((candidate) => candidate.id === userId);
     if (!isPendingInvite(account, user)) return refuseAccounts(409, "not_invited", "This person has already accepted their invite.");
