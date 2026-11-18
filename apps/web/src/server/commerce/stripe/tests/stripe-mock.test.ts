@@ -37,4 +37,9 @@ describe.skipIf(mockUrl === null)("StripePaymentProvider against stripe-mock", (
     // stripe-mock answers with its fixture subscription, whose metadata names no account.
     await expect(provider.getSubscription("sub_123")).rejects.toThrow(/names no FluxIQ account/u);
   });
+
+  it("cancels a subscription and closes a customer with an idempotency key, through the official SDK", async () => {
+    await expect(provider.cancelSubscription("sub_123", { idempotencyKey: "receipt-mock:cancel:sub_123" })).resolves.toBeUndefined();
+    await expect(provider.closeCustomer("cus_123", { idempotencyKey: "receipt-mock:close:cus_123" })).resolves.toBeUndefined();
+  });
 });

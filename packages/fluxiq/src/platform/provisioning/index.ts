@@ -5,6 +5,7 @@
 // through `createPlatformProvisioning`.
 export * from "./cli/index.ts";
 export type * from "./context/index.ts";
+export { DeletionPending } from "./context/index.ts";
 export * from "./email/index.ts";
 export * from "./service/index.ts";
 export type * from "./types.ts";
