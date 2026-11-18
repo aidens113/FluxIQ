@@ -1,3 +1,4 @@
+import { grantInForceUntil, subscriptionBillingState } from "../model/index.ts";
 import type { CommerceAllocationClass, CommerceEntitlementGrant, CommerceSubscriptionRecord } from "../model/index.ts";
 import type {
   CloudAdmissionOptions,
@@ -71,20 +72,26 @@ export class CloudAdmissionService<Actor> {
     if (subscriptions.length === 0) return { allowed: false, reason: "subscription-required" };
     for (const subscription of subscriptions) {
       if (!eligible(subscription, authority.accountId, nowMs, this.policy)) continue;
-      const grant = subscription.entitlements.find((entry) => matches(entry, key, allocation, request.capability, target, nowMs));
-      if (grant === undefined) continue;
-      return {
-        ...binding,
-        allowed: true,
-        source: "commerce",
-        allocation,
-        policyId: this.policy.id,
-        entitlementKey: key,
-        providerId: subscription.providerId,
-        subscriptionId: subscription.subscriptionId,
-        subscriptionVersion: subscription.version,
-        validUntilMs: Math.min(subscription.paidThroughMs!, grant.validUntilMs, subscription.verifiedAtMs + this.policy.maxVerificationAgeMs)
-      };
+      // The same billing state the account's entitlement reports: only active and past-due inside grace admit.
+      const billing = subscriptionBillingState(subscription, nowMs, { allowTrial: this.policy.allowTrial, graceMs: this.policy.graceMs, retentionMs: 0 });
+      if (billing.admitsUntilMs === null || billing.admitsUntilMs <= nowMs) continue;
+      for (const grant of subscription.entitlements) {
+        if (!matches(grant, key, allocation, request.capability, target)) continue;
+        const grantUntil = grantInForceUntil(grant, nowMs, billing.grantExtensionMs);
+        if (grantUntil === null) continue;
+        return {
+          ...binding,
+          allowed: true,
+          source: "commerce",
+          allocation,
+          policyId: this.policy.id,
+          entitlementKey: key,
+          providerId: subscription.providerId,
+          subscriptionId: subscription.subscriptionId,
+          subscriptionVersion: subscription.version,
+          validUntilMs: Math.min(billing.admitsUntilMs, grantUntil, subscription.verifiedAtMs + this.policy.maxVerificationAgeMs)
+        };
+      }
     }
     return { allowed: false, reason: "entitlement-required" };
   }
@@ -95,18 +102,14 @@ function eligible(subscription: CommerceSubscriptionRecord, accountId: string, n
     && identifier(subscription.providerId)
     && identifier(subscription.subscriptionId)
     && Number.isSafeInteger(subscription.version) && subscription.version > 0
-    && (subscription.status === "active" || (subscription.status === "trial" && policy.allowTrial))
-    && Number.isSafeInteger(subscription.paidThroughMs) && subscription.paidThroughMs! > nowMs
     && Number.isSafeInteger(subscription.verifiedAtMs) && subscription.verifiedAtMs >= 0
     && subscription.verifiedAtMs <= nowMs
     && nowMs - subscription.verifiedAtMs < policy.maxVerificationAgeMs;
 }
 
-function matches(grant: CommerceEntitlementGrant, key: string, allocation: CommerceAllocationClass, capability: string, target: CommerceExecutionTarget, nowMs: number): boolean {
+function matches(grant: CommerceEntitlementGrant, key: string, allocation: CommerceAllocationClass, capability: string, target: CommerceExecutionTarget): boolean {
   return grant.key === key && grant.allocation === allocation
     && grant.capabilities.includes(capability)
-    && Number.isSafeInteger(grant.validFromMs) && grant.validFromMs >= 0 && grant.validFromMs <= nowMs
-    && Number.isSafeInteger(grant.validUntilMs) && grant.validUntilMs > nowMs
     && (target.kind === "customer-owned" || grant.regions.includes(target.region))
     && (allocation !== "dedicated" || grant.resourceIds.includes(target.targetId));
 }
@@ -139,7 +142,8 @@ function copyAuthority(value: CommerceExecutionAuthority): CommerceExecutionAuth
 
 function copyPolicy(value: CommerceAdmissionPolicy | undefined): CommerceAdmissionPolicy | null {
   if (value === undefined) return null;
-  if (!identifier(value.id) || !Number.isSafeInteger(value.maxVerificationAgeMs) || value.maxVerificationAgeMs < 1 || typeof value.allowTrial !== "boolean") {
+  if (!identifier(value.id) || !Number.isSafeInteger(value.maxVerificationAgeMs) || value.maxVerificationAgeMs < 1 || typeof value.allowTrial !== "boolean"
+    || !Number.isSafeInteger(value.graceMs) || value.graceMs < 0) {
     throw new TypeError("Invalid commerce admission policy");
   }
   if (![value.entitlementKeys?.control, value.entitlementKeys?.shared, value.entitlementKeys?.dedicated].every(identifier)) {
@@ -149,6 +153,7 @@ function copyPolicy(value: CommerceAdmissionPolicy | undefined): CommerceAdmissi
     id: value.id,
     maxVerificationAgeMs: value.maxVerificationAgeMs,
     allowTrial: value.allowTrial,
+    graceMs: value.graceMs,
     entitlementKeys: {
       control: value.entitlementKeys.control,
       shared: value.entitlementKeys.shared,

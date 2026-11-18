@@ -120,9 +120,37 @@ it("denies missing policy or ledger while preserving the explicit cloud target",
   expect(authorize.mock.calls.map(([value]) => value.targetId)).toEqual(["pool-a", "pool-a"]);
 });
 
-it.each<CommerceSubscriptionSnapshot["status"]>(["trial", "past-due", "canceled", "incomplete"])("denies %s without a qualifying explicit policy/grant", async (status) => {
-  const { service } = await setup({ status });
+it.each<Partial<CommerceSubscriptionSnapshot>>([
+  { status: "trial" },
+  { status: "past-due", paidThroughMs: 1_800 },
+  { status: "unpaid" },
+  { status: "paused" },
+  { status: "canceled" },
+  { status: "incomplete" }
+])("denies %j without a qualifying explicit policy/grant or grace", async (changes) => {
+  const { service } = await setup(changes);
   expect(await service().admit(request)).toEqual({ allowed: false, reason: "entitlement-required" });
+});
+
+it("admits past-due only inside the policy's grace, bounded by the grace end", async () => {
+  const { service, state } = await setup({ status: "past-due", paidThroughMs: 1_800, entitlements: [grant({ validUntilMs: 1_800 })] });
+  const admission = service({ policy: policy({ graceMs: 400, maxVerificationAgeMs: 5_000 }) });
+  expect(await admission.admit(request)).toMatchObject({ allowed: true, source: "commerce", validUntilMs: 2_200 });
+  state.nowMs = 2_200;
+  expect(await admission.admit(request)).toEqual({ allowed: false, reason: "entitlement-required" });
+});
+
+it("admits a scheduled cancel through the paid period, then refuses new work", async () => {
+  const { service, state } = await setup({ cancelAtPeriodEnd: true });
+  const admission = service();
+  expect(await admission.admit(request)).toMatchObject({ allowed: true, source: "commerce" });
+  state.nowMs = 5_000;
+  expect(await admission.admit(request)).toEqual({ allowed: false, reason: "entitlement-required" });
+});
+
+it("refuses a negative grace in the policy", async () => {
+  const { service } = await setup();
+  expect(() => service({ policy: policy({ graceMs: -1 }) })).toThrow(TypeError);
 });
 
 it("permits an explicit trial only within both subscription and grant boundaries", async () => {

@@ -22,6 +22,8 @@ export function event(eventId: string, version = 1, overrides: Partial<CommerceS
     version,
     status: "active",
     paidThroughMs: 5_000,
+    cancelAtPeriodEnd: false,
+    endedAtMs: null,
     verifiedAtMs: 1_500,
     entitlements: [grant()]
   };
@@ -39,6 +41,7 @@ export function policy(overrides: Partial<CommerceAdmissionPolicy> = {}): Commer
     id: "policy-1",
     maxVerificationAgeMs: 1_000,
     allowTrial: false,
+    graceMs: 0,
     entitlementKeys: { control: "cloud.control", shared: "cloud.shared", dedicated: "cloud.dedicated" }
   };
   return { ...base, ...overrides };
