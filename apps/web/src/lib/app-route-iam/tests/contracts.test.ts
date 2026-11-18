@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IAM_APP_ROUTE_ACTIONS } from "fluxiq/platform";
 import { describe, expect, it } from "vitest";
-import { APP_ROUTE_IAM_CONTRACTS, APP_ROUTES_DECIDED_BY_REGISTRY, appRouteIamContract } from "..";
+import { APP_ROUTE_IAM_CONTRACTS, APP_ROUTE_PAIRED_CLIENT_PERMISSIONS, APP_ROUTES_DECIDED_BY_REGISTRY, appRouteIamContract } from "..";
 
 const API_ROOT = fileURLToPath(new URL("../../../app/api", import.meta.url));
 // Login and logout stay unauthenticated (lane A); discovery is not an app route of this lane.
@@ -67,6 +67,18 @@ describe("the app route IAM table", () => {
         expect(PERMISSIONS.has(permission)).toBe(true);
       }
     }
+  });
+
+  it("lets a paired client reach no route that asks for a secret or identity permission or action", () => {
+    const paired = APP_ROUTE_IAM_CONTRACTS.filter((contract) => "paired-client" in contract.callers);
+    expect(paired.length).toBeGreaterThan(0);
+    for (const contract of paired) {
+      const permission = contract.callers["paired-client"];
+      expect([contract.path, permission === "none" || APP_ROUTE_PAIRED_CLIENT_PERMISSIONS.includes(permission!)]).toEqual([contract.path, true]);
+      expect([contract.path, /^(secrets|iam):/u.test(contract.action)]).toEqual([contract.path, false]);
+    }
+    expect(APP_ROUTE_PAIRED_CLIENT_PERMISSIONS).not.toContain("secrets.manage");
+    expect(APP_ROUTE_PAIRED_CLIENT_PERMISSIONS).not.toContain("identity.manage");
   });
 
   it("throws for a route that is not classified", () => {
