@@ -3,10 +3,11 @@ import path from "node:path";
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/auth";
 import { getFluxIQ } from "../../../../lib/fluxiq";
 import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/login-attempts";
-import { sessionCookieOptions } from "../../../../lib/session-cookie";
+import { FLUXIQ_SESSION_COOKIE, sessionCookieOptions } from "../../../../lib/session-cookie";
+import { isCrossSiteRequest } from "../../../welcome/server";
+import { beginCredentialSetup, credentialSetupCookies, isTemporaryCredential } from "../temporary-credential";
 
 const ATTEMPT_WINDOW_MS = 10 * 60 * 1000;
 const LOCKOUT_MS = 60 * 1000;
@@ -53,6 +54,12 @@ function panelAttempts(): DurableLoginAttemptTracker {
 }
 
 export async function POST(request: Request) {
+  // A page on another site can post here without a preflight (a text/plain
+  // form whose body is JSON); the middleware's guard covers only requests that
+  // already carry a session, so this route refuses one itself.
+  if (isCrossSiteRequest(request)) {
+    return NextResponse.json({ ok: false, code: "cross_site_request", error: "Sign in from the FluxIQ panel itself." }, { status: 403 });
+  }
   const payload = (await request.json().catch(() => undefined)) as
     | {
         username?: string;
@@ -105,6 +112,11 @@ export async function POST(request: Request) {
       ...(payload.totp ? { totp: payload.totp } : {}),
       ttlMs: DEFAULT_SESSION_TTL_MS,
     });
+    if (isTemporaryCredential(result.user.id, payload.password)) {
+      await usernameAttempts().clear(attemptKey);
+      // The temporary credential opens setup only: its session is revoked and no session cookie is set.
+      return await beginCredentialSetup(request, result, fluxiq.programs.identityAccess);
+    }
     try {
       await restoreLoginKeys(fluxiq, {
         sessionId: result.session.id,
@@ -125,11 +137,11 @@ export async function POST(request: Request) {
         user: result.user,
         role: result.role,
         expiresAtMs: result.session.expiresAtMs,
-        requiresCredentialSetup: result.user.username === "admin" && payload.password === "admin",
+        requiresCredentialSetup: false,
       },
     });
     response.cookies.set(FLUXIQ_SESSION_COOKIE, result.session.id, sessionCookieOptions(Math.floor(DEFAULT_SESSION_TTL_MS / 1000)));
-    return response;
+    return credentialSetupCookies.clear(response);
   } catch (error) {
     const failed = await usernameAttempts().registerFailure(attemptKey);
     // An authenticator prompt answers a correct password rather than a guess, so

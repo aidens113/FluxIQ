@@ -106,6 +106,20 @@ describe("teardown through the real gateway and SQLite trust owner", () => {
     expect((await f.repository.lookupCredential(own)).status).toBe("inactive");
   });
 
+  it("revokes a client's own credential without telling it it was revoked: its live socket only disconnects", async () => {
+    const f = await fixture();
+    const own = await f.pair("extension-one", false);
+    const sessionId = f.gateway.snapshot().sessions.find(session => session.clientId === "extension-one")?.sessionId ?? "";
+    const revoke = vi.spyOn(f.gateway, "revokeTrustedClient");
+    expect(await forgetClientCredential(own)).toBe(true);
+    // Silence is explicit, never read from the reason's text.
+    expect(revoke.mock.calls[0]?.[2]).toBeNull();
+    const types = f.gateway.outbound(sessionId).map(message => message.type);
+    expect(types).toContain("server.disconnect");
+    expect(types).not.toContain("server.revoked");
+    expect(f.gateway.snapshot().trustedClients.find(client => client.clientId === "extension-one")).not.toHaveProperty("revokedFor");
+  });
+
   it("retries required session cleanup using proved revoked trust after a post-save send failure", async () => {
     const f = await fixture();
     const own = await f.pair("extension-one", false);

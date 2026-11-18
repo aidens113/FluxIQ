@@ -19,8 +19,8 @@ const GENERATED_CODE_BYTES = 20;
  * - Otherwise: `<fluxiq>/security/setup-code`, kept across restarts while it
  *   holds a usable code, else a new 160-bit code written mode 0600.
  *
- * On `local` it does nothing: the first loopback start keeps today's
- * admin/admin and has no setup code.
+ * On `local` it does nothing: `prepareLocalFirstRun` (`local/`) prints
+ * that profile's one-time setup link instead.
  */
 export async function prepareOwnerClaim(input: PrepareOwnerClaimInput): Promise<PrepareOwnerClaimResult> {
   const paths = ownerClaimPaths(input.fluxiqDir);

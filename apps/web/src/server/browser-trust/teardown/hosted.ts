@@ -29,7 +29,8 @@ export async function forgetHostedCredential(runtime: CredentialTeardownRuntime,
   }
   try {
     assertCredentialTeardownCurrent(runtime);
-    const result = await lease.fluxiq.programs.clientGateway.revokeTrustedClient(binding.trustedClientId, "The client revoked its own credential.");
+    // The client asked for this, so it is not told it was revoked (`revokedFor: null`): its socket only disconnects.
+    const result = await lease.fluxiq.programs.clientGateway.revokeTrustedClient(binding.trustedClientId, "The client revoked its own credential.", null);
     if (typeof result !== "boolean") throw new Error("Credential teardown result is invalid.");
     return result;
   } finally {
