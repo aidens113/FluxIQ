@@ -51,3 +51,6 @@
 /* In the empty chat the card stands where the key line did, centred under the starts. */
 .chat-key-card { box-sizing: border-box; width: 100%; max-width: 420px; margin-top: 4px; text-align: left; }
 .chat-key-card[hidden] { display: none; }
+
+/* The chat's bar that holds the compact card above the composer, in the composer's column. */
+.chat-key-bar { max-width: var(--chat-column); margin: 0 auto 8px; }

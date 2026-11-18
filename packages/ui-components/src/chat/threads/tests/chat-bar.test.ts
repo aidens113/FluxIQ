@@ -194,3 +194,13 @@ test("a host's own activity feed is heard and read, and the chat starts none of 
   assert.equal(ownReads, 0);
   assert.equal(ownSubscribes, 0);
 });
+
+test("a chat titled with its own first message does not show that message again above it", async () => {
+  const core = threadsCore([inProject("alpha", { title: "a1 turn 1", updatedAt: 500 }, "a1")]);
+  await mounted(core.transport({ actions: true }), { threads: {} }, async (_chat, root) => {
+    await settle();
+    await settle();
+    assert.equal(root.byClass("chat-bar-title-text")[0]!.textContent, "", "the title repeats the first message, so it is not drawn");
+    assert.ok(root.textContent.includes("a1 turn 1"), "the message itself is shown");
+  });
+});

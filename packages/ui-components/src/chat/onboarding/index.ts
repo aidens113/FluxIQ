@@ -4,3 +4,4 @@
 export { readModelReadiness, type ModelReadiness } from "./model-readiness.ts";
 export { modelUnavailableWords } from "./model-unavailable-words.ts";
 export { modelAccessFromReadiness } from "./access-from-readiness.ts";
+export { createComposerKeyBar, type ComposerKeyBar } from "./composer-key-bar.ts";

@@ -86,8 +86,8 @@ import { createHoldControl, createStopControl } from "./controls/index.ts";
 import { createChatOwnerContext, type ChatOwner } from "./owner-context.ts";
 import type { ChatHostStatus, ChatOpenControl, ChatRunPort, ChatTransport } from "./ports/index.ts";
 import { readBeatMs } from "./read-beat.ts";
-import { createChatThreads, type ChatThreads } from "./threads/index.ts";
-import { readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
+import { createChatThreads, firstPersonMessage, type ChatThreads } from "./threads/index.ts";
+import { createComposerKeyBar, readModelReadiness, type ModelReadiness } from "./onboarding/index.ts";
 import { activityForTarget, buildChatStream, CHAT_STEP_MESSAGE_LIMIT, createTurnClock, followedRunTarget, threadKey, type QuestionTarget } from "./stream/index.ts";
 import type { ChatTarget } from "./target.ts";
 import { CHAT_PROJECT_NAVIGATION, createProjectDraftOwner } from "./project-navigation/index.ts";
@@ -149,6 +149,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
       target: () => shownTarget,
       open: (next) => open(next),
       busy: () => controller.state().sending,
+      firstMessage: () => firstPersonMessage(controller.state()),
       changed: () => {
         void controller.refresh();
         renderAll();
@@ -236,7 +237,13 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     controls: [hold.element, stop.element],
     onAction: () => { if (owner.current() && actionsAllowed() && answerIn !== null) open(answerIn); }
   });
-  const dock = createElement("div", { className: "chat-dock" }, [header.element, composer.element]);
+  // The key's state above the composer once the chat has turns, in the key card's words (`onboarding/composer-key-bar.ts`).
+  const keyBar = transport.modelKeys === undefined ? undefined : createComposerKeyBar(transport.modelKeys, (action) => {
+    if (!(owner.current() && actionsAllowed())) return;
+    if (options.onModelKeyAction) options.onModelKeyAction(action);
+    else keyOpener?.element.click();
+  });
+  const dock = createElement("div", { className: "chat-dock" }, keyBar === undefined ? [header.element, composer.element] : [header.element, keyBar.element, composer.element]);
   const fallbackWords = options.fallback ?? { title: "Talk to FluxIQ in the FluxIQ window.", line: "This browser can't hold the conversation here. Open FluxIQ from the top of this panel." };
   const fallback = createElement("div", { className: "chat-fallback", hidden: true }, [
     createElement("p", { className: "chat-empty-title", text: fallbackWords.title }),
@@ -523,6 +530,7 @@ export function createChatWidget(transport: ChatTransport, options: ChatWidgetOp
     composer.setUnavailable(threads?.unavailable());
     composer.render(state);
     threads?.render(state.conversationId);
+    keyBar?.update(state.turns);
     earlier?.update(state.earlierTurns === true, state.earlierCount);
     if (shownTarget.projectId !== undefined) {
       element.setAttribute(CHAT_PROJECT_NAVIGATION.projectAttribute, state.projectId ?? shownTarget.projectId);

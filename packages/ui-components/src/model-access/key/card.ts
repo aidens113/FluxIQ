@@ -26,6 +26,8 @@ export type ModelKeyCardOptions = {
   variant: "full" | "compact";
   providers: readonly ModelKeyProvider[];
   onAction(action: ModelKeyHostAction): void;
+  /** Hears each state the card reads (null: not known yet), so a host can show the card only when it matters. */
+  onState?(state: ModelAccessState | null): void;
 };
 
 /** The mounted card. */
@@ -162,6 +164,7 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
       note = "";
     } else note = state === null ? COULD_NOT_READ : "";
     draw();
+    options.onState?.(state);
   }
 
   action.addEventListener("click", () => {
