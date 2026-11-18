@@ -5,6 +5,10 @@
 #   FLUXIQ_SITE_ADDRESS  the panel's host name, e.g. fluxiq.example.org
 #                        (the host of FLUXIQ_PUBLIC_ORIGIN)
 #   ACME_EMAIL           the address the certificate authority writes to
+#   FLUXIQ_SITE_TLS      optional: a whole `tls` directive for the site.
+#                        Unset, Caddy gets a public certificate by ACME.
+#                        `tls internal` uses Caddy's own local authority
+#                        (a local rehearsal, docs/architecture/cloud-platform.md).
 #
 # Validate a copy with `caddy validate --config Caddyfile --adapter caddyfile`
 # (docs/operations/self-hosting.md).
@@ -23,6 +27,10 @@
 }
 
 {$FLUXIQ_SITE_ADDRESS} {
+	# Empty unless FLUXIQ_SITE_TLS is set. Caddy substitutes it before parsing,
+	# so it can hold a whole directive such as `tls internal`.
+	{$FLUXIQ_SITE_TLS}
+
 	# The client gateway: the extension connects to wss://<site>/client. Caddy
 	# terminates TLS and passes the WebSocket upgrade through to the gateway's
 	# plain ws listener; the gateway checks Origin itself. No stream timeout is
