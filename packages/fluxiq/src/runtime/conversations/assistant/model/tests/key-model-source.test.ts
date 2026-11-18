@@ -42,6 +42,24 @@ describe("panelAssistantKeyModelSource", () => {
     const headers = new Headers(fetchImpl.mock.calls[0]![1]!.headers);
     expect(headers.get("authorization")).toBe("Bearer dummy-value-of-key.chosen");
   });
+
+  it("asks Secret Keys for the sender's key by who sends, before and at the release", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("{}", { status: 500 }));
+    const asked: string[] = [];
+    const source = panelAssistantKeyModelSource({
+      resolveAssistant: async (userId) => {
+        asked.push(userId);
+        return { ok: true, keyId: "key.chosen", keyName: "Own key", provider: "anthropic", ownerId: userId };
+      },
+      keyPorts: ports(), fetchImpl
+    });
+    const choice = await source(CALLER);
+    if (!choice.ok) throw new Error(choice.reason);
+    await expect(choice.model.decide({ instructions: "x", transcript: [{ author: "person", text: "hi" }] }, { signal: new AbortController().signal, caller: CALLER })).rejects.toBeDefined();
+    expect(new Set(asked)).toEqual(new Set([CALLER.userId]));
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(new Headers(fetchImpl.mock.calls[0]![1]!.headers).get("authorization")).toBe("Bearer dummy-value-of-key.chosen");
+  });
 });
 
 describe("panelAssistantKeyModelSource on another person's key", () => {

@@ -29,6 +29,7 @@ import {
   ClientGatewayEventBus,
   ClientGatewayHostEnrolment,
   ClientGatewayHostEnrolmentTickets,
+  ClientGatewayModelAccessDelivery,
   ClientGatewayInbound,
   ClientGatewayLifecycle,
   ClientGatewayPairingFlow,
@@ -89,7 +90,7 @@ export {
   FLUXIQ_MANAGED_HOST_PRINCIPAL
 } from "./service/index.ts";
 
-import type { ClientGatewayChangesPort, ClientGatewayConversationPushPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
+import type { ClientGatewayChangesPort, ClientGatewayConversationPushPort, ClientGatewayFacadePorts, ClientGatewayProjectFocusPort, ClientGatewayItemKind, ClientGatewayManagedHosts, ClientGatewayLateActionResultListener, ClientGatewayModelAccessPushPort, ClientGatewayPairingLimits, ClientGatewayPeer, ClientGatewaySecurityEventListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage, ClientGatewayTraceArtifactIntake, ClientGatewayTraceArtifactUpload } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -125,6 +126,15 @@ export class ClientGatewayService {
    * closed socket.
    */
   readonly conversationPush: ClientGatewayConversationPushPort;
+  /**
+   * Telling paired clients their person's model access changed
+   * (`server.model_access_changed`, `service/model-access/`): the layer owning
+   * keys, identity and IAM installs what works out a person's state
+   * (`setAuthority`; unset, none is told) and says when it may have changed
+   * (`publish`). Each session is sent a state only when it differs from the
+   * last one sent to it; skips the outbound queue, dropped on a closed socket.
+   */
+  readonly modelAccessPush: ClientGatewayModelAccessPushPort;
   /**
    * Pairing and client changes, signalled as they happen (`service/change-feed/`):
    * a change names only its kind and a version, never a code, a credential or
@@ -171,7 +181,12 @@ export class ClientGatewayService {
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody, sessionMetadata });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease,
+      // A lease target's domain is the server-bound one of the session's active trust record; a revoked or expired trust gives none, so no lease is stamped for it.
+      hostLeaseTarget: (session) => {
+        const trusted = session.trustedClientId ? trustedClients.get(session.trustedClientId) : undefined;
+        return { sessionId: session.sessionId, domainId: trusted && trustedClients.isActive(trusted) ? trusted.domainId : undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) };
+      }, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
     this.changes = changes;
@@ -192,6 +207,8 @@ export class ClientGatewayService {
     this.activity = new ClientGatewayActivityPublisher(sessions, transport, projectFocus.activity);
     // A chat's change reaches a person-paired session only while its person may read that chat (project-focus/conversation-delivery.ts).
     this.conversationPush = new ClientGatewayConversationChangeDelivery({ sessions, transport, audit, events });
+    // A person's model access reaches only their own person-paired sessions, and only when it changed (model-access/delivery.ts).
+    this.modelAccessPush = new ClientGatewayModelAccessDelivery({ sessions, transport, audit, events });
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit, channelScope: options.channelScope });
   }
 

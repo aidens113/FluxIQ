@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import { createRecord, type Repository } from "../../../database-manager/index.ts";
-import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockBox, SecretKeyCredentialUnlockGeneration, SecretKeyCredentialUnlockRecord, SecretKeyRecord, SecretKeyLockedClient, SecretKeyLockReason, SecretKeySessionEnd, SecretKeyUnlockPersonRecord } from "../../types.ts";
+import type { SecretKeyCredentialHolder, SecretKeyCredentialUnlockBox, SecretKeyCredentialUnlockGeneration, SecretKeyCredentialUnlockRecord, SecretKeyRecord, SecretKeyLockReason, SecretKeySessionEnd, SecretKeyUnlockPersonRecord } from "../../types.ts";
 import type { HeldKeys, HeldSessionUnlock } from "../held-keys.ts";
 import type { SecretKeyStore } from "../key-store.ts";
 import { RecordWriteQueue } from "../record-write-queue.ts";
@@ -21,9 +21,6 @@ export type SecretKeyProvedKeys = ReadonlyMap<string, { keyUpdatedAtMs: number; 
  * alone proves nothing, because anyone who can write the store could add one.
  */
 export type SecretKeyHolderVouch = (record: Pick<SecretKeyCredentialUnlockRecord, "holderId" | "holderKind" | "userId">) => boolean | Promise<boolean>;
-
-/** What a proof reaches. `lift` names the locked clients the person chose; nothing else that is locked is touched. `passwordVerified` says the caller checked it, so a lift stands even with no key to box yet. */
-type ProofReach = { lift?: ReadonlySet<string> | undefined; passwordVerified?: boolean | undefined };
 
 /** A generation a credential opened, and its private key. Whoever holds `privateKeyDer` zeroes it. */
 type OpenedGeneration = { generation: "current" | "pending"; boxes: Readonly<Record<string, SecretKeyCredentialUnlockBox>>; privateKeyDer: Buffer };
@@ -103,11 +100,6 @@ export class CredentialUnlocks {
   /** Connects the host's answer about which holders are real. The host builds this service before the things it asks. */
   bindVouch(vouch: SecretKeyHolderVouch): void {
     this.vouch = vouch;
-  }
-
-  /** @deprecated Use enrollCredential; independent authentication has no initial lock. */
-  async enrollLockedCredential(holder: SecretKeyAuthenticatedCredentialHolder, credential: string): Promise<void> {
-    return this.enrollCredential(holder, credential);
   }
 
   /** A validated independent principal; exact approving-session custody may delegate. */
@@ -415,7 +407,7 @@ export class CredentialUnlocks {
    * host vouches for, and placed in the memory of those connected. No separate
    * per-client password ceremony is required.
    */
-  async personProved(userId: string, keys: SecretKeyProvedKeys, reach: ProofReach = {}): Promise<void> {
+  async personProved(userId: string, keys: SecretKeyProvedKeys): Promise<void> {
     await this.load();
     // A password that opened nothing proved nothing, unless the caller checked it and the person has nothing it should have opened.
     const vouched = await this.vouchedHolders(userId);
@@ -471,26 +463,6 @@ export class CredentialUnlocks {
       changed.push(record.id);
     }
     await Promise.all(changed.map((id) => this.persist(id)));
-  }
-
-  /** @deprecated No-op compatibility; unlock tickets are no longer issued. */
-  unlockTicketFor(holderId: string): string | undefined {
-    void holderId;
-    return undefined;
-  }
-
-  /** @deprecated No-op compatibility; authenticated holders have no lift operation. */
-  async liftable(userId: string, clientIds: readonly string[], ticket: string | undefined): Promise<Set<string>> {
-    void userId;
-    void clientIds;
-    void ticket;
-    return new Set();
-  }
-
-  /** @deprecated No-op compatibility; returns no client unlock choices. */
-  async lockedClientsFor(userId: string): Promise<SecretKeyLockedClient[]> {
-    void userId;
-    return [];
   }
 
   /** Forgets who is connected, for a shutdown. */

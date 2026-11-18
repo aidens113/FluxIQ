@@ -18,5 +18,7 @@ export type ClientTrustRepository = {
   lookupCredential(token: string, options?: { request?: boolean }): Promise<ClientTrustCredentialProof>;
   /** Current ordinary clients across all workspaces. A trusted issuer may exclude its own replacement installation. */
   countActiveForUser(userId: string, replacement?: { workspaceId: string; clientId: string; clientInstallId: string }): Promise<number>;
+  /** The same current ordinary clients as their routing bindings (never a credential), so each can be revoked in its own workspace. */
+  listActiveForUser(userId: string): Promise<ClientTrustBinding[]>;
   close(): Promise<void>;
 };

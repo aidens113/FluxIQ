@@ -4,7 +4,7 @@ import { SecretKeysService } from "../service.ts";
 import { secretKeySessionDigest } from "../unlocks/index.ts";
 import type { SecretKeyUsePrincipal } from "../access/index.ts";
 import type { SecretKeyRecord } from "../../types.ts";
-import { createMemoryRepository, legacyV1Record, serviceRecord, WEAK_SCRYPT_PARAMETERS } from "./secret-key-fixtures.ts";
+import { createMemoryRepository, createPasswordSealedKey, legacyV1Record, serviceRecord, WEAK_SCRYPT_PARAMETERS } from "./secret-key-fixtures.ts";
 
 const NOW = 1_000_000;
 const principal: SecretKeyUsePrincipal = { kind: "client", userId: "alice", trustedClientId: "client.one" };
@@ -27,8 +27,11 @@ function fixture() {
     services.push(service);
     return service;
   }
-  const add = (service: SecretKeysService, value = "synthetic-provider-value") => service.createKey({ name: "Model", kind: "llm", provider: "anthropic", value, authorizationPassword: "synthetic-password", createdBy: "alice", nowMs: NOW });
-  return { keys, holders, active, protector, create, add };
+  // A key saved now: host-sealed (version 3), with no password.
+  const add = (service: SecretKeysService, value = "synthetic-provider-value") => service.createKey({ name: "Model", kind: "llm", provider: "anthropic", value, createdBy: "alice", nowMs: NOW });
+  // A key saved before t928, sealed under Alice's password: what session and client custody, credential changes and sign-in repair still serve.
+  const addPasswordSealed = (service: SecretKeysService, value = "synthetic-provider-value") => createPasswordSealedKey(service, { name: "Model", kind: "llm", provider: "anthropic", value, authorizationPassword: "synthetic-password", createdBy: "alice", nowMs: NOW });
+  return { keys, holders, active, protector, create, add, addPasswordSealed };
 }
 
 async function use(service: SecretKeysService, id: string, actor = principal): Promise<string> {
@@ -63,10 +66,10 @@ describe("authenticated model-key access", () => {
     await expect(use(f.create(), key.id)).resolves.toBe("synthetic-provider-value");
   });
 
-  it("delegates exact own-session custody and leaves the independently enrolled client usable after logout", async () => {
+  it("delegates exact own-session custody of an old-format key and leaves the independently enrolled client usable after logout", async () => {
     const f = fixture();
     const service = f.create();
-    const key = await f.add(service);
+    const key = await f.addPasswordSealed(service);
     await service.unlockSession({ sessionId: "panel.one", userId: "alice", authorizationPassword: "synthetic-password", expiresAtMs: NOW + 60_000 });
     const holder = { holderKind: "paired-client" as const, holderId: "paired-client:client.one", userId: "alice", expiresAtMs: NOW + 60_000, approvingSessionDigest: secretKeySessionDigest("panel.one") };
     await service.credentialUnlocks.enrollCredential(holder, "synthetic-token", { delegateFrom: { userId: "alice", sessionId: "panel.one" } });
@@ -94,7 +97,7 @@ describe("authenticated model-key access", () => {
   it("reports unavailable saved ciphertext without creating a first-unlock state", async () => {
     const f = fixture();
     const legacy = f.create({ protection: null });
-    const key = await f.add(legacy);
+    const key = await f.addPasswordSealed(legacy);
     legacy.close();
     const service = f.create();
     const snapshot = await service.snapshotFor({ userId: "alice", sessionId: null });
@@ -127,10 +130,10 @@ describe("authenticated model-key access", () => {
     expect((await missing.snapshotFor({ userId: "alice", sessionId: null })).keys[0]?.availability).toEqual({ state: "unavailable", code: "host_protection_unavailable" });
   });
 
-  it("keeps a prepared new-password seal paired with recovery material across restart", async () => {
+  it("keeps a prepared new-password seal of an old-format key paired with recovery material across restart", async () => {
     const f = fixture();
     const service = f.create();
-    const key = await f.add(service);
+    const key = await f.addPasswordSealed(service);
     await service.prepareCredentialChange({ userId: "alice", currentPassword: "synthetic-password", nextPassword: "synthetic-next" });
     expect(f.keys.stored(key.id)?.pendingHostProtection).toBeDefined();
     service.close();
@@ -155,10 +158,10 @@ describe("authenticated model-key access", () => {
     await expect(Promise.all(Array.from({ length: 8 }, () => use(service, key.id)))).resolves.toEqual(Array(8).fill("synthetic-provider-value"));
   });
 
-  it("repairs an inaccessible old-master wrap from a legitimate normal password proof", async () => {
+  it("repairs an old-format key's inaccessible old-master wrap from a legitimate normal password proof", async () => {
     const f = fixture();
     const first = f.create();
-    const key = await f.add(first);
+    const key = await f.addPasswordSealed(first);
     first.close();
     const current = new AesGcmSecretKeyHostProtection(({ keyId }) => !keyId || keyId === "master.two" ? { keyId: "master.two", key: Buffer.alloc(32, 22) } : undefined);
     const service = f.create({ protection: current });
@@ -169,10 +172,25 @@ describe("authenticated model-key access", () => {
     await expect(use(f.create({ protection: current }), key.id)).resolves.toBe("synthetic-provider-value");
   });
 
+  it("says a host-sealed key under a lost master is unavailable, and no password sign-in can open it: its owner saves the value again", async () => {
+    const f = fixture();
+    const first = f.create();
+    const key = await f.add(first);
+    first.close();
+    const current = new AesGcmSecretKeyHostProtection(({ keyId }) => !keyId || keyId === "master.two" ? { keyId: "master.two", key: Buffer.alloc(32, 22) } : undefined);
+    const service = f.create({ protection: current });
+    await expect(use(service, key.id)).rejects.toMatchObject({ code: "host_protection_unavailable" });
+    await service.unlockSession({ sessionId: "normal-login", userId: "alice", authorizationPassword: "synthetic-password", expiresAtMs: NOW + 60_000 });
+    expect(f.keys.stored(key.id)?.hostProtection?.sealed.keyId).toBe("master.one");
+    expect((await service.snapshotFor({ userId: "alice", sessionId: "normal-login" })).keys[0]?.availability).toEqual({ state: "unavailable", code: "host_protection_unavailable" });
+    await service.rotateKey({ id: key.id, value: "synthetic-saved-again", actorUserId: "alice", nowMs: NOW });
+    await expect(use(service, key.id)).resolves.toBe("synthetic-saved-again");
+  });
+
   it("rejects another same-user panel's material when it was not the approving session", async () => {
     const f = fixture();
     const service = f.create();
-    await f.add(service);
+    await f.addPasswordSealed(service);
     await service.unlockSession({ sessionId: "actual", userId: "alice", authorizationPassword: "synthetic-password", expiresAtMs: NOW + 60_000 });
     await service.unlockSession({ sessionId: "convenient", userId: "alice", authorizationPassword: "synthetic-password", expiresAtMs: NOW + 60_000 });
     const holder = { holderKind: "paired-client" as const, holderId: "paired-client:client.one", userId: "alice", expiresAtMs: NOW + 60_000, approvingSessionDigest: secretKeySessionDigest("actual") };
@@ -185,7 +203,7 @@ describe("authenticated model-key access", () => {
   it("does not hold a delegated key if the credential-envelope persistence fails", async () => {
     const f = fixture();
     const service = f.create();
-    const key = await f.add(service);
+    const key = await f.addPasswordSealed(service);
     await service.unlockSession({ sessionId: "actual", userId: "alice", authorizationPassword: "synthetic-password", expiresAtMs: NOW + 60_000 });
     const holder = { holderKind: "paired-client" as const, holderId: "paired-client:client.one", userId: "alice", expiresAtMs: NOW + 60_000, approvingSessionDigest: secretKeySessionDigest("actual") };
     f.holders.repository.put = async () => { throw new Error("synthetic-holder-write"); };
@@ -204,7 +222,7 @@ describe("authenticated model-key access", () => {
       await put(record);
       throw new Error("synthetic-after-commit");
     };
-    await expect(service.rotateKey({ id: key.id, value: "synthetic-new-value", authorizationPassword: "synthetic-password", actorUserId: "alice", nowMs: NOW })).rejects.toThrow("synthetic-after-commit");
+    await expect(service.rotateKey({ id: key.id, value: "synthetic-new-value", actorUserId: "alice", nowMs: NOW })).rejects.toThrow("synthetic-after-commit");
     f.keys.repository.put = put;
     await expect(use(service, key.id)).resolves.toBe("synthetic-new-value");
   });

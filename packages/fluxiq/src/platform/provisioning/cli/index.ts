@@ -5,6 +5,7 @@
 export { accountsArgvOffline } from "./argv-offline.ts";
 export { AccountsTransportError } from "./transport-error.ts";
 export { accountsUsage } from "./usage.ts";
+export { claimOfflineAccountsDataRoot } from "./claim-offline-data-root.ts";
 export { httpAccountsTransport, type HttpAccountsTransportOptions } from "./http-accounts-transport.ts";
 export { inProcessAccountsTransport } from "./in-process-accounts-transport.ts";
 export { runAccountsCommand } from "./run-accounts-command.ts";

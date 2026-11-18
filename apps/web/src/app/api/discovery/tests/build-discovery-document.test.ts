@@ -83,10 +83,17 @@ describe("service discovery instance identity", () => {
     expect(buildDiscoveryDocument({ FLUXIQ_PROFILE: "service", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com", FLUXIQ_CLIENT_GATEWAY_ENABLED: "false" })).toEqual({ ok: false, fields: ["instance.id"] });
   });
 
-  it.each(["local", "self-hosted"])("allows %s discovery to omit instance identity", (profile) => {
-    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: profile, FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com" });
+  it("advertises the same derived identity key sessions use on the local profile", () => {
+    const env = { FLUXIQ_PROFILE: "local", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com" };
+    const built = buildDiscoveryDocument(env);
+    if (!built.ok) throw new Error("Local discovery refused a derived instance identity.");
+    expect(built.document).toMatchObject({ instance: { id: expect.stringMatching(/^local-[0-9a-f]{16}$/u) } });
+  });
+
+  it("lets self-hosted discovery omit instance identity", () => {
+    const built = buildDiscoveryDocument({ FLUXIQ_PROFILE: "self-hosted", FLUXIQ_PUBLIC_ORIGIN: "https://app.example.com" });
     expect(built.ok).toBe(true);
-    if (!built.ok) throw new Error("Non-service discovery refused an optional instance identity.");
+    if (!built.ok) throw new Error("Self-hosted discovery refused an optional instance identity.");
     expect(built.document).not.toHaveProperty("instance.id");
   });
 

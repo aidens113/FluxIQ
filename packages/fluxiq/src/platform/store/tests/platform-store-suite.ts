@@ -144,6 +144,14 @@ export function runPlatformStoreSuite(name: string, create: () => PlatformStore)
       expect(await store.deleteMembership("w1", "u1")).toBe(false);
       expect(await store.getMembership("w1", "u1")).toBeNull();
     });
+
+    it("keeps a suspended membership's status and policies, so resuming can restore them", async () => {
+      const store = create();
+      await store.putMembership({ ...membership("w1", "u1"), status: "suspended", policies: ["FluxIQUserAccess"] });
+      expect(await store.getMembership("w1", "u1")).toMatchObject({ status: "suspended", policies: ["FluxIQUserAccess"] });
+      expect((await store.listMembershipsOfUser("u1")).map((m) => m.status)).toEqual(["suspended"]);
+      expect((await store.listMembershipsOfWorkspace("w1")).map((m) => m.status)).toEqual(["suspended"]);
+    });
   });
 
   describe(`${name}: link tokens`, () => {

@@ -23,6 +23,7 @@ describe("resolveFluxIQDeploymentSettings defaults", () => {
       drainSeconds: 0,
       session: { name: "fluxiq_session", secure: false },
       setupCodeFile: null,
+      signup: "off",
       logFormat: "text"
     });
   });

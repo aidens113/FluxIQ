@@ -11,6 +11,8 @@ production plan's "Target Topology", "Gateway Transport Over The Internet",
 Nothing here contains a secret, and nothing you follow it with should put one
 in a file the repository tracks, in an image, or in a log.
 
+To build and tear down the whole service deployment (Core, Caddy, and locally Mailpit and stripe-mock) from one config file, use `fluxiq-cloud` from `packages/cloud`: [Cloud Platform](../architecture/cloud-platform.md).
+
 ## What Runs Where
 
 One container runs Core: the panel and its API on port 3000 and the client
@@ -68,16 +70,19 @@ fails if it compiled Core from source instead of its built `dist`
 every step without caching. `sqlite3` is built for Linux in the same base image
 the runtime uses.
 
-The runtime stage holds only the standalone server, its static files, the
-client gateway bundle and a production install of the `fluxiq` package at
-`/opt/fluxiq-gateway-runtime`, linked beside that bundle (the gateway imports
-`fluxiq` natively, which Next's tracing cannot see). It runs as the `node` user, and `/data` is the only path that user can
+The runtime stage holds only the standalone server, its static files and the
+client gateway bundle. Core is in the standalone output once, at
+`/app/packages/fluxiq`: the panel's server and the gateway bundle both import
+`fluxiq` through Node and resolve that one copy, and the operator command line
+runs from it too. The image build refuses a second copy
+(`deploy/docker/one-core.mjs`), and the panel build refuses traces that would
+leave Core out (`apps/web/scripts/core-trace/`). It runs as the `node` user, and `/data` is the only path that user can
 write. `.dockerignore` keeps `.fluxiq`, every `.env` file, `deploy/env`,
 `deploy/secrets`, `node_modules`, build output, test runs and worktrees out of
 the build context.
 
 For a release, pin the base image by digest
-(`--build-arg NODE_IMAGE=node:22-bookworm-slim@sha256:<digest>`) and Caddy's
+(`--build-arg NODE_IMAGE=node:22-trixie-slim@sha256:<digest>`) and Caddy's
 the same way (`CADDY_IMAGE`).
 
 To check the build before a release, run the smoke test against the image:
@@ -193,9 +198,12 @@ other third parties needs a commercial licence
 ([COMMERCIAL-LICENSING.md](../../COMMERCIAL-LICENSING.md),
 [Licensing](../legal/licensing.md)).
 
-First-time service setup creates an administrator in a new personal
-workspace and retires the default admin login. It grants no primary-workspace
-or platform-wide authority. Operator provisioning remains on the private
+A new install has no login at all until its owner is claimed: the web panel
+starts every identity store empty, tenant workspaces included, and the one-time
+setup code is the only way in. First-time service setup creates an
+administrator in a new personal workspace. An install created before this
+still holds the old `admin`/`admin` login until setup retires it. Setup grants
+no primary-workspace or platform-wide authority. Operator provisioning remains on the private
 listener below. Self-hosted setup retains its single-workspace owner policy.
 
 ## The Provisioning Listener
@@ -237,12 +245,55 @@ network and has no route to the listener.
 remove the old line and restart again.
 
 **From the command line.** The operator command runs the same operations
-through the listener from inside the container:
+through the listener from inside the container. Without the listener variables
+it would open the data itself, which is refused while the server runs ("One
+Server Per Data Volume" below):
 
 ```sh
 docker compose -f deploy/compose/service.compose.yml exec fluxiq \
-  node /opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts --help
+  node /app/packages/fluxiq/dist/platform/provisioning/cli/main.js accounts --help
 ```
+
+## The Sign-Up Page
+
+Core can take sign-ups itself at `<origin>/signup`, so a website only links
+there instead of running a backend on the provisioning network. It is off by
+default. `FLUXIQ_SIGNUP=open` turns it on, and only on the `service` profile,
+where each sign-up gets its own personal workspace. On `local` and
+`self-hosted` it stays off whatever the value, because a sign-up there would
+join the one shared workspace. Any value other than `off` or `open` refuses
+to start. While it is off, `/signup` and `/signup/submit` answer 404.
+
+The page asks for an email, a display name and acceptance of the terms. It
+calls the same provisioning service as the listener, inside the server, not
+over the listener's port. The new account is pending: it has no password and
+an unverified email, it administers a new personal workspace
+(`FluxIQAdministratorAccess`), and the terms version the person accepted is
+recorded on it. Core then sends the welcome email through the configured
+sender (`FLUXIQ_EMAIL_SENDER`). The link opens `/welcome`, which verifies the
+address, sets the password and signs the person in. It lasts 24 hours.
+
+The answer is always "check your email", whether or not the address is
+already in use, so the page cannot be used to find out who has an account. An
+address that already has an account gets no second account. If its password
+is set, it gets "you already have an account" with the sign-in and reset
+links. If it was never activated, it gets a fresh welcome link.
+
+Abuse controls:
+
+- A post from another site is refused, by the same rule as the welcome and
+  setup forms.
+- Each normalised email may sign up at most 3 times per 15 minutes, so no one
+  can flood an inbox.
+- Each client address may sign up at most 10 times per 10 minutes. This limit
+  needs `FLUXIQ_TRUST_PROXY=true` (the compose files set it), because the
+  client address comes from the proxy.
+- The counters are kept in memory for each server process.
+
+The terms version shown is a constant in the web app
+(`apps/web/src/app/signup/server/signupTermsVersion.ts`). Bump it when the
+terms change. A form still showing the old version is then refused and asks
+the person to reload.
 
 ## Settings Reference
 
@@ -266,6 +317,7 @@ environment. The resolver is `packages/fluxiq/src/platform/profile/resolve/`.
 | `FLUXIQ_EMAIL_API_KEY` | unset | Alternative operator environment credential; never commit or expose |
 | `FLUXIQ_INSTANCE_NAME` | `FluxIQ` | The name discovery gives the extension |
 | `FLUXIQ_SIGN_UP_URL` | none | Where the extension sends someone without an account |
+| `FLUXIQ_SIGNUP` | `off` | `open` serves Core's own sign-up page at `/signup` (`service` only; see The Sign-Up Page) |
 | `FLUXIQ_PANEL_PRESET` | `full` | Which panel screens and Settings tools show: `full`, `data-collection` or `task-automation` (see Customise The Panel) |
 | `FLUXIQ_WORKSPACE_IDLE_MS`, `FLUXIQ_WORKSPACE_CACHE_MAX` | 15 minutes, 100 | How long and how many workspaces stay loaded (`service`) |
 | `FLUXIQ_CLIENT_GATEWAY_*` limits | 16 MiB frames, hello within 10 s, 50 messages/s, bursts of 200 off `local` | Gateway limits; see the resolver |
@@ -332,6 +384,79 @@ query strings.
 On `docker compose stop` or a deploy, Core receives SIGTERM, reports not
 ready, drains the gateway's connections for up to `FLUXIQ_DRAIN_SECONDS`, and
 exits. The compose files allow 45 seconds before Docker kills it.
+
+## One Server Per Data Volume
+
+Only one process serves a data root at a time: the web panel, `fluxiq dev`, or
+the `accounts` command in offline mode while it runs. Each keeps a live view of
+the data in memory (chats, permissions, paired clients), so a second process
+writing the same volume would leave the first serving stale state. Scaling the
+`fluxiq` service beyond one replica on one volume is therefore refused, not
+supported.
+
+**The claim.** Before it opens any storage, the server creates
+`/data/.fluxiq.owner` (beside `.fluxiq`, never inside it). The file records an
+opaque token, which server holds the root, its process id and start time, its
+host and when it started. While it serves, the server touches the file every 5
+seconds. On a clean stop (`docker compose stop`, a deploy) it removes the file.
+
+**A second server is refused.** It exits with code 1 and a message naming the
+holder, for example:
+
+```text
+Cannot start the web panel: the FluxIQ data at /data is already being served by fluxiq dev (process 41 on 3f2c9a1b7d10, since 2026-11-18T09:41:59.909Z).
+Only one process may serve a data root at a time, because each keeps its own live view of the data and would not see the other's changes.
+Stop that process first, or give this one a different data directory.
+```
+
+A refused panel stops; it never keeps listening half-started. The same holds
+for any other startup failure, which is printed as `The FluxIQ web panel could
+not start: <reason>` followed by its details.
+
+**A crashed server's claim is taken back.** A server that was killed (or whose
+container crashed) leaves the file behind. The next server reclaims it on its
+own:
+
+- On the same host, it checks the recorded process: if that process is gone, or
+  its id now belongs to a process started later, the claim is taken over at
+  once.
+- From another host or container (a container recreated after a crash has a new
+  hostname and no machine id), or when the process cannot be checked, the new
+  server watches the file for 20 seconds. If nobody touched it, the claim was
+  abandoned and is taken over; if it is still being renewed, the holder is alive
+  and the new server is refused ("It kept renewing its claim while this process
+  watched..."). Only a change of the file's time is observed, so clocks that
+  disagree between hosts do not matter.
+
+So an upgrade, a restart and a crash followed by `docker compose up` all start
+without anyone deleting a file; at worst the new container waits 20 seconds.
+The same applies to a restored backup that happened to contain a stale claim.
+
+**A frozen holder steps down.** If a server is paused for longer than 20 seconds
+(a suspended VM, a debugger) and another server takes the root in that time, the
+first one finds its token gone at its next renewal and exits:
+
+```text
+FluxIQ stopped the web panel: another process has taken over the FluxIQ data at /data.
+This process stopped renewing its claim for longer than 20 seconds (it was paused or frozen), so the claim counted as abandoned.
+It exits so that only one process serves the data.
+```
+
+**Offline accounts.** `accounts` without the provisioning listener opens the
+data itself, so it holds the claim for the length of its command. While a server
+serves the volume it is refused and says how to use the live server instead:
+
+```text
+Offline mode refused: the FluxIQ data at /data is being served by the web panel (process 1 on 3f2c9a1b7d10, since 2026-11-18T08:24:37.268Z).
+An offline change would not reach that server, which keeps acting on the accounts and permissions it last read.
+Run the command against the live server instead: leave out --offline and set FLUXIQ_PROVISIONING_LISTEN (host:port) and FLUXIQ_PROVISIONING_TOKEN_FILE to that server's private provisioning listener.
+If the server has no provisioning listener (`fluxiq dev` has none), stop it and run the command again.
+```
+
+On the self-hosted profile, which has no listener, stop `fluxiq` first, run
+the command in a one-off container (`docker compose run --rm fluxiq node
+/opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts ...`),
+then start `fluxiq` again.
 
 ## Backups
 

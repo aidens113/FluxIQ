@@ -4,16 +4,25 @@ import { automationStudioPageLimit } from "../../../persistence/automation/index
 import { requestedStatus, requestedSubject } from "./requested-fields.ts";
 import type { AutomationStudioConversationRequestService } from "./types.ts";
 
+/** A project whose conversations could not be read, named by id with why, so a list across projects shows the rest. */
+export type AutomationStudioUnreadableConversationProject = { projectId: string; reason: string };
+
+/** What a conversation list answers: the threads read, and every project that could not be read. */
+export type AutomationStudioConversationListing = {
+  conversations: AutomationStudioConversation[];
+  unreadableProjects: AutomationStudioUnreadableConversationProject[];
+};
+
 export async function listConversationsForRequest(
   service: AutomationStudioConversationRequestService,
   domainId: string | null | undefined,
   payload: Partial<ConversationListRequest>
-): Promise<AutomationStudioConversation[]> {
+): Promise<AutomationStudioConversationListing> {
   const narrow = { subject: requestedSubject(payload.subjectKind, payload.subjectId), status: requestedStatus(payload.status), limit: payload.limit };
   if (payload.projectId !== null && payload.projectId !== undefined) {
     const projectId = String(payload.projectId);
     await service.assertProjectDomainAccess(projectId, domainId);
-    return service.conversations.listConversations({ projectId, ...narrow });
+    return { conversations: await service.conversations.listConversations({ projectId, ...narrow }), unreadableProjects: [] };
   }
   // Across every project the caller can see. `listProjects` is the same
   // entitlement the `projects` endpoint grants for this domain scope, so
@@ -23,9 +32,16 @@ export async function listConversationsForRequest(
   const { projects } = await service.listProjects(domainId);
   const limit = automationStudioPageLimit(payload.limit);
   const found: AutomationStudioConversation[] = [];
+  const unreadableProjects: AutomationStudioUnreadableConversationProject[] = [];
   for (const project of projects) {
     if (found.length >= limit) break;
-    found.push(...await service.conversations.listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
+    try {
+      found.push(...await service.conversations.listConversations({ projectId: project.id, ...narrow, limit: limit - found.length }));
+    } catch (error) {
+      // Each project is read on its own: one whose store cannot be read is named with its reason, and the
+      // others are still listed, so the caller never loses every thread to one project nor reads a short list as whole.
+      unreadableProjects.push({ projectId: project.id, reason: error instanceof Error ? error.message : String(error) });
+    }
   }
-  return found.slice(0, limit);
+  return { conversations: found.slice(0, limit), unreadableProjects };
 }

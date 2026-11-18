@@ -1,7 +1,7 @@
 import type { ClientGatewayChangeListener, ClientGatewayChangesPort } from "fluxiq/client-gateway";
 import { describe, expect, it } from "vitest";
 import { PanelChangeStream } from "../panel-change-stream";
-import { gatewayChangeTopic, type PanelChangeSink, type PanelChangeTopic } from "../topics";
+import { gatewayChangeTopic, modelAccessChangeTopic, panelModelAccessSource, type PanelChangeSink, type PanelChangeTopic } from "../topics";
 
 function port() {
   const listeners = new Set<ClientGatewayChangeListener>();
@@ -245,5 +245,75 @@ describe("PanelChangeStream with several topics", () => {
     await stream.next();
     await stream.return();
     expect(threads.topic.stopped).toBe(true);
+  });
+});
+
+/** A model-access source a test signals, counting who listens. */
+function modelAccessSource() {
+  const listeners = new Set<() => void>();
+  const source = {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    }
+  };
+  const signal = () => {
+    for (const listener of [...listeners]) listener();
+  };
+  return { source, signal, listeners };
+}
+
+describe("PanelChangeStream with the model-access topic", () => {
+  it("sends `model-access` with the stream's version alone each time the runtime signals", async () => {
+    const { source, signal } = modelAccessSource();
+    const stream = new PanelChangeStream([modelAccessChangeTopic(source)], { timers: manualTimers().timers });
+    await stream.next();
+    const pending = stream.next();
+    signal();
+    expect((await pending).value).toBe('event: model-access\ndata: {"version":1}\n\n');
+    const next = stream.next();
+    signal();
+    expect((await next).value).toBe('event: model-access\ndata: {"version":2}\n\n');
+  });
+
+  it("coalesces a burst of signals into one event until it is sent, in order with the other topics", async () => {
+    const { source, signal } = modelAccessSource();
+    const { changes, signal: gatewaySignal } = port();
+    const { state, view } = viewOf(0);
+    const stream = new PanelChangeStream([gatewayChangeTopic(changes, view), modelAccessChangeTopic(source)], { timers: manualTimers().timers });
+    await stream.next();
+    await looked(state, 1);
+    signal();
+    signal();
+    state.value = 1;
+    gatewaySignal();
+    await looked(state, 2);
+    signal();
+    expect((await stream.next()).value).toBe('event: model-access\ndata: {"version":1}\n\n');
+    expect((await stream.next()).value).toBe('event: gateway\ndata: {"version":2}\n\n');
+    const pending = stream.next();
+    signal();
+    expect((await pending).value).toBe('event: model-access\ndata: {"version":3}\n\n');
+  });
+
+  it("stops listening when the stream ends", async () => {
+    const { source, listeners } = modelAccessSource();
+    const stream = new PanelChangeStream([modelAccessChangeTopic(source)], { timers: manualTimers().timers });
+    expect(listeners.size).toBe(1);
+    await stream.return();
+    expect(listeners.size).toBe(0);
+  });
+
+  it("reads the program runtime's own `modelAccessChanges` and nothing else, and none when it is absent or not a source", () => {
+    const { source, listeners } = modelAccessSource();
+    const read = panelModelAccessSource({ modelAccessChanges: source });
+    expect(read).toBeDefined();
+    const stop = read!.subscribe(() => undefined);
+    expect(listeners.size).toBe(1);
+    stop();
+    expect(listeners.size).toBe(0);
+    for (const runtime of [{}, { modelAccessChanges: null }, { modelAccessChanges: {} }, { modelAccessChanges: { subscribe: "no" } }]) expect(panelModelAccessSource(runtime)).toBeUndefined();
   });
 });

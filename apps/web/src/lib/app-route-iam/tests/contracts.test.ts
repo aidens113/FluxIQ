@@ -9,7 +9,8 @@ const API_ROOT = fileURLToPath(new URL("../../../app/api", import.meta.url));
 const UNAUTHENTICATED = ["auth", "discovery"];
 // These exact endpoints authenticate their own proof, never a panel cookie or submitted actor.
 // Self-forget only reduces credential authority; it does not require a live content/IAM session.
-const PUBLIC_PROOF_ROUTES = new Set(["POST /api/keys/session", "POST /api/connect/token", "POST /api/connect/revoke", "POST /api/client-gateway/forget-pairing"]);
+// The payment provider's webhook proves itself by the provider's signature over the raw body.
+const PUBLIC_PROOF_ROUTES = new Set(["POST /api/keys/session", "POST /api/connect/token", "POST /api/connect/revoke", "POST /api/client-gateway/forget-pairing", "POST /api/platform/v1/commerce/webhook"]);
 const PERMISSIONS = new Set(["programs.read", "programs.write", "flows.write", "runtime.control", "compute.control", "identity.manage", "data.manage", "secrets.manage", "none"]);
 
 function routeFiles(directory: string, found: string[] = []): string[] {
@@ -83,7 +84,7 @@ describe("the app route IAM table", () => {
     for (const operation of PUBLIC_PROOF_ROUTES) {
       const [method, path] = operation.split(" ");
       expect(method).toBe("POST");
-      expect(["/api/keys/session", "/api/connect/token", "/api/connect/revoke", "/api/client-gateway/forget-pairing"]).toContain(path);
+      expect(["/api/keys/session", "/api/connect/token", "/api/connect/revoke", "/api/client-gateway/forget-pairing", "/api/platform/v1/commerce/webhook"]).toContain(path);
     }
   });
 

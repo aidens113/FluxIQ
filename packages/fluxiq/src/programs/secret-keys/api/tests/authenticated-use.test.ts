@@ -43,9 +43,10 @@ async function primaryAndTenant() {
     return primary;
   }, actor => ({ sessionId: actor.sessionId }));
   const actor = (login: typeof alice): ProgramApiActor => ({ sessionId: login.session.id, userId: login.user.id, roleId: login.role.id, permissions: login.role.permissions });
-  const create = (login: typeof alice, proofSession = login.session.id, password = "synthetic-alice") => registry.call({
+  // Saving a key takes no password, PIN or session proof (t928): IAM and the authenticated actor alone decide.
+  const create = (login: typeof alice, extra: Record<string, unknown> = {}) => registry.call({
     programId: "secret-keys", endpoint: "create-key", scope: {}, actor: actor(login),
-    payload: { name: "Tenant model", kind: "llm", provider: "anthropic", value: "synthetic-tenant-value", authSessionId: proofSession, authorizationPassword: password }
+    payload: { name: "Tenant model", kind: "llm", provider: "anthropic", value: "synthetic-tenant-value", ...extra }
   });
   function pauseNextOpen() {
     let begin = () => {};
@@ -70,20 +71,23 @@ describe("primary identity with isolated tenant key storage", () => {
     const id = (created.payload as { id: string }).id;
     expect(f.repository.stored(id)?.createdBy).toBe(f.alice.user.id);
     expect(f.repository.stored(id)?.hostProtection).toBeDefined();
-    expect(f.resolved()).toBeGreaterThan(0);
+    expect(f.repository.stored(id)?.sealed.version).toBe(3);
     const authorization = await f.service.access.createUseAuthorization({ id, principal: { kind: "session", userId: f.alice.user.id, sessionId: f.alice.session.id } });
     await expect(f.service.revealKeyWithAuthorization({ id, authorizationId: authorization.authorizationId })).resolves.toMatchObject({ value: "synthetic-tenant-value" });
     await expect(f.service.access.createUseAuthorization({ id, principal: { kind: "session", userId: f.bob.user.id, sessionId: f.bob.session.id } })).rejects.toThrow("not authorized");
   });
 
-  it("rejects another actor's proof even when its password is correct", async () => {
+  it("gives a saved key to the authenticated caller only, whatever session or password the payload names", async () => {
     const f = await primaryAndTenant();
-    expect(await f.create(f.bob, f.alice.session.id, "synthetic-alice")).toMatchObject({ ok: false, requiresRecheck: true });
-    expect((await f.service.snapshot()).keys).toEqual([]);
-    // Naming Alice while presenting Bob's actual session must also fail.
-    const forged = await f.registry.call({ programId: "secret-keys", endpoint: "create-key", scope: {}, actor: { sessionId: f.bob.session.id, userId: f.alice.user.id, roleId: f.bob.role.id, permissions: f.bob.role.permissions }, payload: { name: "Forged", value: "synthetic", authSessionId: f.bob.session.id, authorizationPassword: "synthetic-bob" } });
-    expect(forged).toMatchObject({ ok: false, requiresRecheck: true });
-    expect((await f.service.snapshot()).keys).toEqual([]);
+    const created = await f.create(f.bob, { authSessionId: f.alice.session.id, authorizationPassword: "synthetic-alice", createdBy: f.alice.user.id });
+    expect(created.ok, created.error).toBe(true);
+    const id = (created.payload as { id: string }).id;
+    expect(f.repository.stored(id)?.createdBy).toBe(f.bob.user.id);
+    await expect(f.service.access.createUseAuthorization({ id, principal: { kind: "session", userId: f.alice.user.id, sessionId: f.alice.session.id } })).rejects.toThrow("not authorized");
+    // Showing a value still needs the caller's own session and password: Bob presenting Alice's is refused.
+    const shown = await f.registry.call({ programId: "secret-keys", endpoint: "reveal-key", scope: {}, actor: { sessionId: f.bob.session.id, userId: f.bob.user.id, roleId: f.bob.role.id, permissions: f.bob.role.permissions }, payload: { id, authSessionId: f.alice.session.id, authorizationPassword: "synthetic-alice" } });
+    expect(shown).toMatchObject({ ok: false, requiresRecheck: true });
+    expect(JSON.stringify(shown)).not.toContain("synthetic-tenant-value");
   });
 
   it("does not accept an identity authority in request data and refuses the retired unlock endpoint", async () => {

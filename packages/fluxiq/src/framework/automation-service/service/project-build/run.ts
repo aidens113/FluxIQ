@@ -260,7 +260,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   const { binding } = project;
   let running = true;
   const judge = { provider: draft.harness.provider, timeoutMs: draft.harness.timeoutMs, signal: draft.loop.signal };
-  const subflowTrials = automationStudioProjectBuildSubflowTrials({ ref, environment: project.trialEnvironment, binding, judge, records, proposals, leases: automationStudioProjectHostLeaseScope(host).scheduler, running: () => running, phase: project.repair ? "repair" : "test" });
+  const subflowTrials = automationStudioProjectBuildSubflowTrials({ ref, environment: project.trialEnvironment, binding, judge, records, proposals, leases: automationStudioProjectHostLeaseScope(host, project.leaseBinding).scheduler, running: () => running, phase: project.repair ? "repair" : "test" });
   const decisions = new AutomationStudioProjectBuildDecisions(draft, () => [draft.trialSpend?.(), subflowTrials.spent()]);
   const acts = AutomationStudioProjectBuildActsRecord.of(project.ledger);
   acts.bind(records, ref);
@@ -270,7 +270,7 @@ export async function runAutomationStudioProjectBuild(project: AutomationStudioP
   AutomationStudioProjectBuildTaskChecklist.bind(project.trialEnvironment, { records, ref });
   const accounting = () => decisions.accounting();
   const dispatch = createAutomationStudioProjectDispatcher({
-    record: { store: records, ref }, purse, cancellation: project.cancellation, host, ledger: project.ledger,
+    record: { store: records, ref }, purse, cancellation: project.cancellation, host, leaseBinding: project.leaseBinding, ledger: project.ledger,
     ports: automationStudioProjectBuildBriefPorts({ project, draft, decisions, subflowTrial: subflowTrials.port, proposals, accounting, acts }),
     maxCalls: automationStudioProjectBuildBriefCalls,
     // A single-subflow brief's trials, which never reach the scoped trial port, are the proposals' too (t679).

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../service.ts";
-import { WEAK_SCRYPT_PARAMETERS } from "./secret-key-fixtures.ts";
+import { WEAK_SCRYPT_PARAMETERS, createPasswordSealedKey } from "./secret-key-fixtures.ts";
 
 const weakKdf = { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
 const PASSWORD = "dummy-password";
@@ -11,7 +11,7 @@ afterEach(() => vi.useRealTimers());
 
 async function serviceWithKey(): Promise<SecretKeysService> {
   const service = new SecretKeysService({ now: () => NOW, passwordKdf: weakKdf });
-  await service.createKey({ name: "DeepSeek", value: "provider-secret", authorizationPassword: PASSWORD, nowMs: NOW });
+  await createPasswordSealedKey(service, { name: "DeepSeek", value: "provider-secret", authorizationPassword: PASSWORD, nowMs: NOW });
   return service;
 }
 

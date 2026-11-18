@@ -1,6 +1,13 @@
-import type { IamAuditRecord } from "fluxiq/platform";
+import type { IamAuditOutcome, IamAuditRecord } from "fluxiq/platform";
 import type { ActivityEntry } from "../../../../features/security/activity/model";
 import { frnScope } from "./frn-scope";
+
+/**
+ * An entry as the route sends it: the shared entry plus, only when the
+ * endpoint opted in to an outcome row, whether the act then succeeded or
+ * failed and, on failure, its closed error kind (never a message).
+ */
+export type JoinedActivityEntry = ActivityEntry & { result?: "succeeded" | "failed"; errorKind?: string };
 
 type NameOf = (userId: string) => Promise<string | null>;
 
@@ -37,7 +44,7 @@ async function resourceLabel(resource: string, nameOf: NameOf): Promise<string> 
  * request id, deciding statement, address prefix, origin, who acted on the
  * person's behalf and how they consented never leave the server.
  */
-export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf): Promise<ActivityEntry> {
+export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf, outcome?: IamAuditOutcome): Promise<JoinedActivityEntry> {
   const hidden = record.hidden;
   return {
     at: record.time * 1000,
@@ -45,6 +52,7 @@ export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf)
     action: record.action,
     outcome: record.decision === "allow" ? "allowed" : "denied",
     resources: await Promise.all(record.resources.map((resource) => resourceLabel(resource, nameOf))),
-    ...(typeof hidden === "number" && Number.isSafeInteger(hidden) && hidden > 0 ? { hidden } : {})
+    ...(typeof hidden === "number" && Number.isSafeInteger(hidden) && hidden > 0 ? { hidden } : {}),
+    ...(outcome === undefined ? {} : outcome.result === "succeeded" ? { result: "succeeded" as const } : { result: "failed" as const, errorKind: String(outcome.errorKind) })
   };
 }

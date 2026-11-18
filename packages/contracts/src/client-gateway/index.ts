@@ -2,6 +2,7 @@
 export * from "./action/index.ts";
 export * from "./activity/index.ts";
 export * from "./message/index.ts";
+export * from "./model-access/index.ts";
 export * from "./project-focus/index.ts";
 export * from "./protocol/index.ts";
 export * from "./reconcile/index.ts";

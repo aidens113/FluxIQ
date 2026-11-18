@@ -694,7 +694,8 @@ async function scalarCount(sql: AutomationStudioSqlExecutor, query: string): Pro
 
 async function mutationCounters(sql: AutomationStudioSqlExecutor): Promise<{ changeFeed: number; migrationJobs: number; mutationRecords: number }> {
   return {
-    changeFeed: await scalarCount(sql, "select count(*) as count from change_feed"),
+    // The last sequence ever written, not a row count: retention deletes old rows without writing.
+    changeFeed: await scalarCount(sql, "select coalesce((select seq from sqlite_sequence where name = 'change_feed'), 0) as count"),
     migrationJobs: await scalarCount(sql, "select count(*) as count from migration_jobs"),
     mutationRecords: await scalarCount(sql, "select count(*) as count from mutation_records")
   };

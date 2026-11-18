@@ -12,7 +12,7 @@ describe("GET /api/discovery", () => {
     expect(response.headers.get("cache-control")).toBe("public, max-age=300");
     const document = await response.json();
     expect(parseFluxIQDiscoveryDocument(document, document.origin).success).toBe(true);
-    expect(document.instance).toEqual({ name: "FluxIQ", profile: "local" });
+    expect(document.instance).toMatchObject({ name: "FluxIQ", profile: "local", id: expect.stringMatching(/^local-[0-9a-f]{16}$/u) });
     expect(document.minimumClient).toEqual({ "browser-extension": "0.1.0" });
     expect(document.connect.signUpUrl).toBeUndefined();
     expect(document.connect.flows).toEqual({ authorizationCodePkce: false, referenceCode: false, gatewayReferencePairing: true });

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayActionCommand, type ClientGatewayHostLease, type ClientGatewayServiceOptions } from "../../../index.ts";
 import type { ClientGatewayHostLeaseSource } from "../../host-lease/index.ts";
 import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
+import { ClientGatewayCommandUnsentRefusal as Unsent } from "../unsent-refusal.ts";
 
 const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
 const lease: ClientGatewayHostLease = { resourceKey: "resource-1", epoch: 5, holder: { role: "builder", briefId: "brief.a" } };
@@ -26,7 +27,12 @@ function memory(): ClientGatewayCommandLedgerPort {
       saved = { ...saved!, state: "unknown", unknownReason: reason };
       return saved;
     }),
-    read: vi.fn(async () => saved)
+    read: vi.fn(async () => saved),
+    refuseUnsent: vi.fn(async (claim, proof) => {
+      if (!saved || saved.state !== "pending") throw new Error("not pending");
+      saved = { ...saved, state: "refused_unsent", refusal: { ...Unsent.read(proof, claim) } };
+      return saved;
+    })
   };
 }
 

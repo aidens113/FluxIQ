@@ -1,5 +1,5 @@
 import { createHostSecretKeyProtection } from "../../platform/custody/keyring/index.ts";
-import { authenticatedModelKeyPorts, localSecretKeyUseAuthority, type SecretKeyPrincipalAuthority } from "./key-access/index.ts";
+import { authenticatedModelKeyPorts, callerModelKeyChoices, localSecretKeyUseAuthority, type SecretKeyPrincipalAuthority } from "./key-access/index.ts";
 import type { SecretKeyHostProtection, SecretKeyUseAuthority } from "../secret-keys/index.ts";
 import path from "node:path";
 import { PAIRED_CLIENT_HOLDER_PREFIX } from "@fluxiq/contracts/platform";
@@ -14,7 +14,7 @@ import { panelAssistantOf } from "../automation-studio/api/panel-assistant/index
 import { installPairedProjectFocus, relayOwnProjectActivity, relayProjectConversationChanges } from "../automation-studio/api/project-focus/index.ts";
 import { panelAssistantFixtureHostModelSource, panelAssistantKeyModelSource } from "../../runtime/conversations/assistant/index.ts";
 import { createAutomationStudioCallerKeyChatModel } from "../../runtime/llm/caller-key-chat/index.ts";
-import { AutomationStudioModelAccessLedger, automationStudioModelAccessState, chooseAutomationStudioCallerModelKey, type AutomationStudioPreferredModelKey } from "../../runtime/models/secrets/index.ts";
+import { AutomationStudioModelAccessLedger, automationStudioModelAccessState, checkAutomationStudioModelKey, chooseAutomationStudioCallerModelKey } from "../../runtime/models/secrets/index.ts";
 import { AutomationStudioChannelScope } from "../../framework/automation-service/environment/index.ts";
 import { automationStudioClientGatewayTraceEnabled } from "../../runtime/recording/gateway-trace/index.ts";
 import { AutomationStudioGatewayTraceServicePools, createAutomationStudioGatewayTraceHost } from "../../runtime/recording/gateway-trace/wiring/index.ts";
@@ -33,9 +33,11 @@ import { type HeldKeys, registerSecretKeysApi, secretKeyPairedHolderId, secretKe
 import { resolveFluxIQProfile } from "../../platform/profile/index.ts";
 import { GlobalProgramApiRegistry } from "./api.ts";
 import { registerPressGrantApi } from "./press-grant/index.ts";
+import { installModelAccessPush, modelAccessLedgerStore, type GlobalProgramModelAccessChanges } from "./model-access/index.ts";
 import { registerGlobalDocumentationGenerators } from "./docs-generators.ts";
 import type { ProgramApiIamOptions } from "./iam/index.ts";
 import { ProgramJsonStore, programDataFile } from "../../framework/persistence/program-state/storage.ts";
+import { AutomationStudioHostLeaseAuthority } from "../../runtime/project-agents/host-resources/index.ts";
 
 export type GlobalProgramRuntime = {
   api: GlobalProgramApiRegistry;
@@ -51,14 +53,24 @@ export type GlobalProgramRuntime = {
   productionRunner: ProductionRunnerService;
   runtime: RuntimeService;
   secretKeys: SecretKeysService;
+  /** Says "a person's model access may have changed", naming nothing; the panel's change stream reads it from here (t928). */
+  modelAccessChanges: GlobalProgramModelAccessChanges;
   /**
    * Removes what this runtime attached to process-wide or longer-lived state
    * (its activity-hub subscription, and the IAM, identity and catalogue change
    * listeners of its paired project authority, the host's identity among
    * them), so a closed instance is not kept reachable or fed another
-   * workspace's events. Idempotent; `FluxIQ.close()` calls it (t808).
+   * workspace's events, and ends the model-access ledger's use of its store,
+   * so no read or write of it starts once the instance is closing (t928).
+   * Idempotent; `FluxIQ.close()` calls it (t808).
    */
   detach(): void;
+  /**
+   * Settles once every store read or write this runtime started has ended; none
+   * starts after `detach`. `FluxIQ.close()` awaits it before closing program
+   * state's connections, so no write lands on a closed store (t928).
+   */
+  settled(): Promise<void>;
   /** What keeps this runtime busy now, read without touching storage or starting anything; a workspace manager never evicts a busy one (t813). */
   activity(): GlobalProgramRuntimeActivity;
 };
@@ -193,7 +205,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     // The run a command is sent from, so a result that comes after Core stopped waiting is put on that run (C8).
     commandOwner: automationStudioActivityRunScope,
     // The host lease a command is sent under, stamped on it; a stale or foreign one is refused unsent (automation-project-agents-plan).
-    hostLease: AutomationStudioHostLeaseScope.gatewaySource,
+    hostLease: AutomationStudioHostLeaseAuthority.for(automationStudio).gatewaySource,
     // The channel scope a command is sent and a session list read from: an offline run's work sees and reaches only its own sessions, and live work never sees those (traces and offline trials, P1). No scope is entered yet, so every caller is live.
     channelScope: AutomationStudioChannelScope.gatewaySource,
     // The trace the dispatching async context records into: what the gateway sends and receives for a build, trial or run goes into that episode's trace (traces and offline trials, P2, D8). Passed only when tracing is on.
@@ -293,15 +305,20 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     return trustedClientId ? { holderId: secretKeyPairedHolderId(trustedClientId) } : {};
   };
   const sessionKeyPorts = authenticatedModelKeyPorts(secretKeys, clientGateway);
-  // The key a person's model call uses decides its provider and model (t924): the workspace's Settings
-  // choice when it may serve them, else their own newest model key. The chat, a Flow call naming no
-  // provider and the model-access state all choose through `chooseAutomationStudioCallerModelKey`.
-  const preferredModelKey = async (): Promise<AutomationStudioPreferredModelKey | undefined> => {
-    const choice = await secretKeys.modelKeys.resolveAssistant();
-    return choice.ok ? { keyId: choice.keyId, model: choice.model, ownerId: choice.ownerId, chosenForWorkspace: choice.chosenForWorkspace, offeredByHolder: choice.offeredByHolder } : undefined;
+  // The key a person's model call uses decides its provider and model (t924): their own saved choice, then
+  // the workspace's Settings choice when it may serve them, else their own newest model key (t928). The chat,
+  // a Flow call naming no provider, the model-access state and the panel assistant all choose through
+  // `chooseAutomationStudioCallerModelKey`, fed per caller by `callerModelKeyChoices`.
+  const keyChoices = callerModelKeyChoices({ keys: secretKeys, ports: sessionKeyPorts });
+  // How the last model call or free check on each key went, for the model-access state clients read; this instance's
+  // own, kept beside its other program state so a refused or empty key still reads that way after a restart (t928).
+  // It reads that state only when model access is first asked or an outcome first noted, and `detach` closes it.
+  const modelAccessLedger = new AutomationStudioModelAccessLedger(Date.now, paths ? modelAccessLedgerStore(paths.data) : undefined);
+  // A person's model access from the keys a snapshot read for them, once the stored outcomes are read back.
+  const modelAccessOf = async (userId: string, snapshot: Pick<Parameters<typeof automationStudioModelAccessState>[0], "keys">) => {
+    await modelAccessLedger.whenLoaded();
+    return automationStudioModelAccessState({ keys: snapshot.keys, userId, preferred: await keyChoices.preferred(), ownKeyId: await keyChoices.ownKeyId(userId), ledger: modelAccessLedger });
   };
-  // How the last model call on each key went, for the model-access state clients read; this instance's own.
-  const modelAccessLedger = new AutomationStudioModelAccessLedger();
   const resolveSessionProvider = modelProvidersEnabled ? createAutomationStudioSessionKeyProviderResolver({
     ports: sessionKeyPorts,
     flowSecretKeyId: ({ projectId, flowId }) => flowSecretKeyId(automationStudio, projectId, flowId)
@@ -310,26 +327,34 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     const flow = await automationStudio.getFlow(request.projectId, request.flowId);
     const metadata = { ...flow.metadata, ...request.metadata };
     const key = typeof metadata.llmSecretKeyId === "string" ? await secretKeys.getKeySummary(metadata.llmSecretKeyId) : undefined;
-    let providerId = request.providerId ?? (typeof metadata.llmProvider === "string" ? metadata.llmProvider : undefined)
+    // `host` is the stored choice of no provider in particular (every new Flow carries it), as the resolver reads it,
+    // so it names none here either; read as a provider, it kept every such Flow from the person's own key (t928).
+    const namedProvider = (value: unknown): string | undefined => typeof value === "string" && value && value !== "host" ? value : undefined;
+    let providerId = namedProvider(request.providerId) ?? namedProvider(metadata.llmProvider)
       ?? (key ? automationStudioSessionKeyProvider(key) : undefined);
     let modelId = request.modelId ?? (typeof metadata.llmModel === "string" ? metadata.llmModel : undefined)
       ?? (typeof key?.metadata?.model === "string" && key.metadata.model ? key.metadata.model : undefined);
     // A Flow that names neither uses the provider and model of the key the person's calls use, not the
-    // process-wide default model's provider, which would look only for a key of that provider (t924).
+    // process-wide default model's provider, which would look only for a key of that provider (t924). That key
+    // may be one another person lent the workspace (t928); it is released as its holder's, and Secret Keys
+    // checks both consents (chosen for the workspace, offered by its holder) on each release.
+    let lentKey: { keyId: string; ownerUserId: string } | undefined;
     if (!providerId && !modelId && request.caller) {
-      const choice = chooseAutomationStudioCallerModelKey({ keys: (await sessionKeyPorts.snapshot()).keys, userId: request.caller.actorUserId, preferred: await preferredModelKey() });
-      if (choice.ok && !choice.keyOwnerUserId) {
+      const userId = request.caller.actorUserId;
+      const choice = chooseAutomationStudioCallerModelKey({ keys: (await sessionKeyPorts.snapshot()).keys, userId, preferred: await keyChoices.preferred(), ownKeyId: await keyChoices.ownKeyId(userId) });
+      if (choice.ok) {
         providerId = choice.provider;
         modelId = choice.model;
+        if (choice.keyOwnerUserId) lentKey = { keyId: choice.key.id, ownerUserId: choice.keyOwnerUserId };
       }
     }
-    return resolveSessionProvider({ ...request, metadata, ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}) });
+    return resolveSessionProvider({ ...request, metadata, ...(lentKey ? { lentKey } : {}), ...(providerId ? { providerId } : {}), ...(modelId ? { modelId } : {}) });
   });
   // A chat reads each message with the provider of the key the sender's call uses, chosen per call and
   // released to the sender's authenticated principal. It was bound to the default model's provider at
   // startup, so a saved Anthropic key was never looked at and every chat said no key existed (t924).
   if (modelProvidersEnabled) automationStudio.conversations.bindModel(createAutomationStudioCallerKeyChatModel({
-    ports: sessionKeyPorts, preferred: preferredModelKey, ledger: modelAccessLedger
+    ports: sessionKeyPorts, preferred: keyChoices.preferred, ownKeyId: keyChoices.ownKeyId, ledger: modelAccessLedger
   }));
   const productionRunner = new ProductionRunnerService(undefined, storageOptions);
   const runtime = new RuntimeService(paths ? { store: new FileRuntimeStore({ rootDir: path.join(paths.artifacts ?? path.join(paths.fluxiq, "artifacts"), "runtime") }) } : {});
@@ -390,13 +415,14 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     signals: automationStudio.conversations.signals,
     publish: (change) => { clientGateway.conversationPush.publish(change); }
   });
-  // The panel-wide assistant answers with the key chosen in Settings (by default
-  // the first key entered), released per call to the signed-in person, and
+  // The panel-wide assistant answers each person with the key their calls use
+  // (their own saved choice, else the key chosen in Settings, by default the
+  // first key entered), released per call to the signed-in person, and
   // spends within the per-message allowance set beside it. On the e2e fixture
   // host alone (its marker file AND FLUXIQ_E2E_SCRIPTED_ASSISTANT) it replays a
   // script instead; anywhere else the key binding stands.
   if (modelProvidersEnabled) {
-    const keyModelSource = panelAssistantKeyModelSource({ resolveAssistant: () => secretKeys.modelKeys.resolveAssistant(), keyPorts: sessionKeyPorts });
+    const keyModelSource = panelAssistantKeyModelSource({ resolveAssistant: keyChoices.assistantKeyFor, keyPorts: sessionKeyPorts });
     panelAssistantOf(api)?.bindModelSource(panelAssistantFixtureHostModelSource({ rootDir: paths?.root, env: process.env, fallback: keyModelSource }))
       .bindSettings({ allowanceUsd: () => secretKeys.modelKeys.assistantAllowance(), setAllowanceUsd: (usd) => secretKeys.modelKeys.setAssistantAllowance(usd) });
   }
@@ -410,7 +436,24 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   registerSecretKeysApi(api, secretKeys, options.secretKeyIdentityAuthority ?? identityAccess, (actor) => ({
     sessionId: actor.sessionId.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX) ? pairedUnlockOf(actor.userId, actor.sessionId) : secretKeys.holdingSession(actor.sessionId, actor.userId) ?? secretKeys.unlockedSessionFor(actor.userId),
     ...holderOf(actor.sessionId)
-  }), async (actor, snapshot) => automationStudioModelAccessState({ keys: snapshot.keys, userId: actor.userId, preferred: await preferredModelKey(), ledger: modelAccessLedger }));
+  }), async (actor, snapshot) => await modelAccessOf(actor.userId, snapshot), modelProvidersEnabled ? async ({ id, provider, value, lastRotatedAtMs }) => {
+    // The free check of a saved key (t928): the provider says whether it takes the key, with no model call, and
+    // that is the key's last outcome, under the value version the state reads, until a call says otherwise.
+    modelAccessLedger.noteCheck({ id, updatedAtMs: lastRotatedAtMs, lastRotatedAtMs }, await checkAutomationStudioModelKey({ provider, value }));
+  } : undefined);
+  // A person's model access reaches their paired clients (`server.model_access_changed`) and the panel's change
+  // stream (`modelAccessChanges`) when it may have changed, with no timer: a committed key or choice change, a
+  // key's last-call or check outcome, an IAM decision change, or a change of people. A session's person is told
+  // only while enabled with a role, read where the paired program route reads them; all of it goes with `detach`.
+  const modelAccessPush = installModelAccessPush({
+    gateway: clientGateway.modelAccessPush,
+    sources: [{ subscribe: (listener) => secretKeys.onModelKeysChanged(listener) }, modelAccessLedger, { subscribe: (listener) => api.subscribeDecisionChanges(listener) }],
+    identity: options.secretKeyIdentityAuthority ?? (async () => identityAccess),
+    stateOf: async ({ sessionId, userId }) => {
+      const actorSessionId = `${AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX}${sessionId}`;
+      return await modelAccessOf(userId, await secretKeys.snapshotFor({ userId, sessionId: pairedUnlockOf(userId, actorSessionId), ...holderOf(actorSessionId) }));
+    }
+  });
   registerProductionRunnerApi(api, productionRunner);
   registerRuntimeApi(api, runtime);
 
@@ -439,11 +482,16 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
     productionRunner,
     runtime,
     secretKeys,
+    modelAccessChanges: modelAccessPush.changes,
     detach: () => {
       stopActivity();
       stopProjectFocus();
       stopConversationPush();
+      modelAccessPush.stop();
+      // No read or write of the ledger's store starts from here; its promise settles when one already running ends.
+      void modelAccessLedger.close();
     },
+    settled: () => modelAccessLedger.close(),
     activity: () => ({
       openProjectDatabases: AutomationStudioGatewayTraceServicePools.of(automationStudio)?.stats().openProjects ?? 0,
       backgroundTasksRunning: backgroundTasks.activity().running,

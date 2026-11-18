@@ -2,12 +2,14 @@ import { FLUXNODE_API_BASE_PATH } from "@fluxiq/contracts/fluxnode";
 import { mkdir } from "node:fs/promises";
 import type { FluxIQ } from "../../framework/index.ts";
 import type { FluxNodeService } from "../../framework/automation-service/service/fluxnode/index.ts";
+import { claimFluxIQDataRoot } from "../data-root-owner/index.ts";
 import { initializeFluxIQServerStorage, startHeadlessServer, type HeadlessServerHandle } from "../headless/index.ts";
 import { loadFluxIQHostRegistration, resolveFluxIQHostModulePath } from "../host-module/index.ts";
 import type { DevArguments } from "./dev-arguments.ts";
 import { openHostInstance } from "./open-host-instance.ts";
 import { loadManagedHostLauncher, startManagedHosts, type FluxIQHostLauncher } from "../managed-hosts/index.ts";
 import { FluxNodeHostPool } from "../../framework/automation-service/service/fluxnode/hosts/index.ts";
+import { AutomationStudioHostLeaseAuthority } from "../../runtime/project-agents/host-resources/index.ts";
 
 /**
  * The seam for the FluxNode runner: given the opened instance (storage ready), builds the
@@ -29,7 +31,8 @@ export type DevServer = { server: HeadlessServerHandle; stop(): Promise<void> };
  * `fluxiq dev`: opens the instance at the data directory with the host module
  * `FLUXIQ_HOST_MODULE` names, readies its storage, and serves it headless on
  * 127.0.0.1. Prints the gateway and API addresses; `stop` closes the listeners
- * and the instance.
+ * and the instance. It first claims the data directory, so it refuses
+ * (`FluxIQDataRootHeldError`) while the web panel or another `fluxiq dev` serves it.
  */
 export async function runDev(args: DevArguments, print: (line: string) => void = console.log, options: RunDevOptions = {}): Promise<DevServer> {
   options.signal?.throwIfAborted();
@@ -40,7 +43,17 @@ export async function runDev(args: DevArguments, print: (line: string) => void =
   const host = hostPath ? { path: hostPath, register: await loadFluxIQHostRegistration(hostPath) } : null;
   // The gateway tells a pairing client where to connect from this (`programs/_shared/runtime.ts`), as the web panel sets it.
   if (args.gatewayPort !== 0) process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= `ws://127.0.0.1:${args.gatewayPort}/client`;
-  const fluxiq = await openHostInstance(args.dataDir, host);
+  const claim = await claimFluxIQDataRoot(args.dataDir, {
+    role: "fluxiq dev",
+    onWaiting: (owner, waitMs) => print(`Checking whether ${owner ? `${owner.role} (process ${owner.pid} on ${owner.hostname})` : "the server recorded for this data directory"} is still running (up to ${Math.round(waitMs / 1000)} seconds)...`)
+  });
+  let fluxiq: FluxIQ;
+  try {
+    fluxiq = await openHostInstance(args.dataDir, host);
+  } catch (error) {
+    await claim.release();
+    throw error;
+  }
   let server: HeadlessServerHandle | undefined;
   let managed: Awaited<ReturnType<typeof startManagedHosts>> | undefined;
   let pool: FluxNodeHostPool | undefined;
@@ -51,13 +64,15 @@ export async function runDev(args: DevArguments, print: (line: string) => void =
     const closed = await Promise.allSettled([pool?.close(), managed?.close()]);
     const listeners = await Promise.allSettled([server?.close()]);
     const instance = await Promise.allSettled([fluxiq.close()]);
-    const failures = [...drained, ...closed, ...listeners, ...instance].filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
+    // Given up only once the instance is closed, so the next server never opens it while this one still writes.
+    const owner = instance[0].status === "fulfilled" ? await Promise.allSettled([claim.release()]) : [];
+    const failures = [...drained, ...closed, ...listeners, ...instance, ...owner].filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
     if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Some engine resources could not close cleanly.");
   })();
   try {
     await initializeFluxIQServerStorage(fluxiq);
     if (count > 0 && !fluxiq.activeDomainId) throw new Error("Managed browsers require an active domain from FLUXIQ_HOST_MODULE.");
-    pool = count > 0 ? new FluxNodeHostPool({ gateway: fluxiq.programs.clientGateway, domainId: fluxiq.activeDomainId!, capacity: count }) : undefined;
+    pool = count > 0 ? new FluxNodeHostPool({ gateway: fluxiq.programs.clientGateway, domainId: fluxiq.activeDomainId!, capacity: count, leaseAuthority: AutomationStudioHostLeaseAuthority.for(fluxiq.programs.automationStudio) }) : undefined;
     fluxNodes = options.createFluxNodes ? await options.createFluxNodes(fluxiq, pool) : undefined;
     server = await startHeadlessServer({ fluxiq, apiPort: args.apiPort, gatewayPort: args.gatewayPort, ...(fluxNodes ? { fluxNodes } : {}) });
     if (launcher) managed = await startManagedHosts({ gateway: fluxiq.programs.clientGateway, launcher, count, domainId: fluxiq.activeDomainId!,

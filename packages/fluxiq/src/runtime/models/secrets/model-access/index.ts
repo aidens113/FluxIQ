@@ -2,3 +2,4 @@
 export * from "./state.ts";
 export * from "./ledger.ts";
 export * from "./error.ts";
+export * from "./check-key.ts";

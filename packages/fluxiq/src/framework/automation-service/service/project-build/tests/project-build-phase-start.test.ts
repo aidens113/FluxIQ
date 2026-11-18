@@ -1,3 +1,5 @@
+import { AutomationStudioHostLeaseAuthority } from "../../../../../runtime/project-agents/host-resources/index.ts";
+const LEASE_BINDING = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
 // Every phase of a project build through the build's one start (`../phase-start.ts`, t593), on one stub site, with and
 // without a deployment start hook. The site is the A8 bigbox shape: an earlier phase left one act of this build in place
 // (act-1, a lasting "Add") and one press that declared nothing lasting but had an effect (act-2, possibly lasting), and the
@@ -73,6 +75,7 @@ function site(options: { hook: boolean }) {
   const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, PRESS, GO]);
   const { judge: _judge, predecessorProposals: _predecessors, ...ports } = f.ports;
   const environment: AutomationStudioProjectBuildTrialEnvironment = {
+    leaseBinding: LEASE_BINDING,
     ...ports,
     registry,
     startLocation: START,
@@ -197,13 +200,13 @@ describe("every phase of a project build starts from the build's one start", () 
       const proposal: AutomationStudioSubflowProposal = { ...run.f.request().proposal, scope: { buildId: "build.1", briefId: "brief.add", planDigest: "plan.1", subflowKey: "add" } };
       stampParts(run.ledger, proposal.subflows);
       const trials = automationStudioProjectBuildSubflowTrials({
-        ref: { projectId: "project", flowId: "parent", buildId: "build.1" }, environment: run.environment, binding, judge: { provider: yes() },
+        ref: { projectId: "project", flowId: "parent", buildId: "build.1" }, environment: Object.assign(run.environment, { leaseBinding: LEASE_BINDING }), binding, judge: { provider: yes() },
         records: { read: async () => RECORD }, proposals: run.proposals, leases: { assertCurrent: () => undefined }, running: () => true
       });
       const own = run.ledger.forBrief("brief.add");
       // The builder's gate holds the build's one reset (`./brief-ports.ts`).
       const gate = new AutomationStudioSubflowTrialGate({ scope, latest: () => structuredClone(proposal), port: trials.port, reset: run.start.reset(own, () => ({ compare: nothingDiffers, compareAt: nothingDiffers })) });
-      const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })));
+      const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 1 })), { binding: LEASE_BINDING });
       const test = async () => (await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async () => await gate.test({ revision: proposal.revision, digest: proposal.digest }))).evidence as JsonObject;
       const evidence = await test();
       // (b) without a hook: the trial runs with this build's act on the site, said under startedWith (t775).
@@ -222,7 +225,7 @@ describe("every phase of a project build starts from the build's one start", () 
     it(`the whole trial of the assembled Flow ${hook ? "with" : "with no"} start hook`, async () => {
       const run = site({ hook });
       const candidate = assembled(run.registry, run.f.ports.resolution, run.ledger);
-      const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: run.environment, binding, judge: { provider: yes(), instructions: [] }, ledger: run.ledger });
+      const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: Object.assign(run.environment, { leaseBinding: LEASE_BINDING }), binding, judge: { provider: yes(), instructions: [] }, ledger: run.ledger });
       // The build's one reset as the supervisor asks it with no look (`project-agents/supervisor/whole-trial.ts`): no brief of its own.
       const reset = run.start.reset(undefined, () => ({ compare: async () => ({ moved: false }) }));
       const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => structuredClone(candidate), trial: { candidateId: "candidate.1", port: trials.port }, reset });
@@ -280,6 +283,7 @@ describe("the judged whole run, read through Core's own look (t775 D5)", () => {
     } as unknown as AutomationStudioLlmEvidenceRuntimeBinding;
     // Each press the whole run makes adds one to the row.
     const environment: AutomationStudioProjectBuildTrialEnvironment = {
+    leaseBinding: LEASE_BINDING,
       ...run.environment,
       graphOptions: (input) => {
         const options = run.environment.graphOptions(input);
@@ -300,7 +304,7 @@ describe("the judged whole run, read through Core's own look (t775 D5)", () => {
     // The list was read at 9 after the build's earlier add; a trial since made that read stale.
     for (const owner of new Set(run.ledger.snapshot().acts.map((act) => act.owner))) run.ledger.forBrief(owner).observed(site_.read(), false);
     run.ledger.forBrief("brief.earlier").trialRan([], "trial.earlier");
-    const look = AutomationStudioProjectBuildPhaseStart.look({ binding: site_.bound, environment: run.environment, ledger: run.ledger, liveCheck: { settleMs: 0 } });
+    const look = AutomationStudioProjectBuildPhaseStart.look({ binding: site_.bound, environment: Object.assign(run.environment, { leaseBinding: LEASE_BINDING }), ledger: run.ledger, liveCheck: { settleMs: 0 } });
     expect(look).toBeDefined();
     const trials = automationStudioProjectBuildWholeTrials({ candidateId: "candidate.1", environment: site_.environment, binding: site_.bound, judge: { provider: site_.provider, instructions: [] }, ledger: run.ledger });
     // The supervisor's reset as `project-agents/supervisor/whole-trial.ts` makes it: no brief of its own, never back to the start, Core's own look.
@@ -339,9 +343,9 @@ describe("the judged whole run, read through Core's own look (t775 D5)", () => {
     const site_ = reading(run);
     const { startLocation: _startLocation, ...unlocated } = run.environment;
     expect(AutomationStudioProjectBuildPhaseStart.look({ binding: site_.bound, environment: unlocated, ledger: run.ledger })).toBeUndefined();
-    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: { ...site_.bound, runsNodes: {} }, environment: run.environment, ledger: run.ledger })).toBeUndefined();
+    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: { ...site_.bound, runsNodes: {} }, environment: Object.assign(run.environment, { leaseBinding: LEASE_BINDING }), ledger: run.ledger })).toBeUndefined();
     const { startState: _startState, ...unread } = site_.bound;
-    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: unread, environment: run.environment, ledger: run.ledger })).toBeUndefined();
+    expect(AutomationStudioProjectBuildPhaseStart.look({ binding: unread, environment: Object.assign(run.environment, { leaseBinding: LEASE_BINDING }), ledger: run.ledger })).toBeUndefined();
   });
 });
 

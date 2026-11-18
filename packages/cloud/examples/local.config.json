@@ -1,0 +1,42 @@
+{
+  "$schema": "../fluxiq-cloud.schema.json",
+  "project": "fluxiq-local",
+  "profile": "local",
+  "mode": "service",
+  "driver": "local-docker",
+  "source": { "root": "../../.." },
+  "domain": "app.fluxiq.localhost",
+  "ports": { "http": 80, "https": 443 },
+  "tls": { "mode": "internal", "email": "operator@fluxiq.localhost", "trustLocalCa": false },
+  "instance": { "id": "fluxiq-local", "name": "FluxIQ (local rehearsal)" },
+  "signup": "off",
+  "gateway": { "allowedOrigins": ["chrome-extension://abcdefghijklmnopabcdefghijklmnop", "moz-extension://*"] },
+  "provisioning": { "subnet": "172.31.250.0/24", "address": "172.31.250.10" },
+  "email": { "from": "FluxIQ <accounts@fluxiq.localhost>", "smtp": "smtp://mailpit:1025" },
+  "payments": { "apiBase": "http://stripe-mock:12111" },
+  "billing": {
+    "provider": "stripe",
+    "allowTrial": false,
+    "graceMs": 259200000,
+    "retentionMs": 2592000000,
+    "refreshAfterMs": 3600000,
+    "plans": {
+      "browser": {
+        "priceId": "price_dedicated_browser_monthly",
+        "unit": "dedicated-browser",
+        "grants": [{ "key": "cloud.dedicated", "allocation": "dedicated", "capabilities": ["execute"], "regions": ["local"] }]
+      },
+      "seat": {
+        "priceId": "price_team_seat_monthly",
+        "unit": "seat",
+        "grants": [{ "key": "cloud.shared", "allocation": "shared", "capabilities": ["execute"], "regions": ["local"] }]
+      },
+      "shared": {
+        "priceId": "price_shared_monthly",
+        "unit": "flat",
+        "grants": [{ "key": "cloud.shared", "allocation": "shared", "capabilities": ["execute"], "regions": ["local"] }]
+      }
+    }
+  },
+  "sinks": { "mail": true, "payments": true, "mailUiPort": 8025 }
+}

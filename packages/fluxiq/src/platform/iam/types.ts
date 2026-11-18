@@ -165,7 +165,16 @@ export type IamAuditRecord = {
    * integer. That row names the list's action and scope, not the hidden items.
    */
   hidden?: number;
+  /** Present only on the outcome row of an endpoint that opted in (`IamAuditOutcome`); the decision row never has it. */
+  outcome?: IamAuditOutcome;
 };
+
+/**
+ * What an opted-in endpoint's handler did, recorded as one more row under the
+ * decision's `requestId`. `errorKind` is a closed code (`[a-z][a-z0-9_.]*`),
+ * never an error's text and never anything from the payload.
+ */
+export type IamAuditOutcome = { result: "succeeded" } | { result: "failed"; errorKind: string };
 
 /** Where decisions and IAM changes are recorded. `record` never awaits storage; `flush` drains the buffer. */
 export type IamAuditSink = {

@@ -47,6 +47,15 @@ describe("scoped authoritative browser trust persistence", () => {
     expect(await f.repository.countActiveForUser("user.synthetic", { workspaceId: "workspace.first", clientId: "extension.same-client-id", clientInstallId: "installation-one" })).toBe(1);
     expect(await f.repository.countActiveForUser("user.synthetic", { workspaceId: "workspace.first", clientId: "extension.same-client-id", clientInstallId: "different-installation" })).toBe(2);
     expect(await f.repository.countActiveForUser("different-user")).toBe(1);
+    // The same clients, listed as bindings in their own workspaces: what account deletion and a suspended membership revoke.
+    expect((await f.repository.listActiveForUser("user.synthetic")).map((binding) => [binding.workspaceId, binding.trustedClientId])).toEqual([
+      ["workspace.first", "active-first"],
+      ["workspace.second", "active-second"]
+    ]);
+    expect(await f.repository.listActiveForUser("different-user")).toEqual([
+      { workspaceId: "workspace.first", trustedClientId: "other-user", approvedByUserId: "different-user", clientId: "extension.same-client-id", clientType: "extension", domainId: null }
+    ]);
+    expect(await f.repository.listActiveForUser("nobody")).toEqual([]);
   });
 
   it("keeps installation and approving-session bindings immutable and rejects raw-session metadata", async () => {

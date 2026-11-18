@@ -111,7 +111,7 @@ describe("real project SQL command receipt infrastructure", () => {
     await store.claim(claim()); await store.commitReceipt(claim(), receipt()); const lease = await pool.acquire("project.1");
     try { await lease.database.run("delete from gateway_command_receipts"); await expect(store.read(claim())).rejects.toThrow("missing_historical_join"); } finally { await lease.release(); }
   }));
-  it("adds only0027 to fully migrated existing project without changing legacy rows/version/files", async () => {
+  it("adds ordered command migrations without changing legacy rows/version/files", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "gateway-ledger-existing-")), pool = new AutomationStudioProjectDatabasePool({ rootDir: root });
     try {
       const resource = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.1" });
@@ -124,7 +124,7 @@ describe("real project SQL command receipt infrastructure", () => {
         const store = await Store.open({ pool, projectId: "project.1" });
         try {
           await store.claim(claim()); const after = await lease.database.all<{ migration_id: string }>("select migration_id,checksum from automation_schema_migrations order by migration_id");
-          expect(after.filter(row => row.migration_id !== "0027_gateway_command_receipts_v1")).toEqual(before); expect(after).toHaveLength(before.length + 1); expect(await lease.database.get("pragma user_version")).toEqual({ user_version: 42 });
+          expect(after.filter(row => !["0027_gateway_command_receipts_v1", "0038_gateway_command_unsent_refusals_v1"].includes(row.migration_id))).toEqual(before); expect(after).toHaveLength(before.length + 2); expect(await lease.database.get("pragma user_version")).toEqual({ user_version: 42 });
           expect(await lease.database.all("select * from flows")).toEqual(flows); expect(await readFile(legacy)).toEqual(bytes);
         } finally { await store.close(); }
       } finally { await lease.release(); }

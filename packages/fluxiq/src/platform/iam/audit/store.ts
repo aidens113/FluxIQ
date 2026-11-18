@@ -1,5 +1,5 @@
 import type { FluxIQRequestOrigin } from "@fluxiq/contracts/iam";
-import type { IamAuditRecord, IamRequestConsent, IamRequestVia } from "../types.ts";
+import type { IamAuditOutcome, IamAuditRecord, IamRequestConsent, IamRequestVia } from "../types.ts";
 import { IamAuditDatabase } from "./database.ts";
 import { IamAuditDictionary } from "./dictionary.ts";
 import type { IamAuditQuery } from "./query.ts";
@@ -199,6 +199,7 @@ export class IamAuditStore {
       ipPrefix: row.ip === null ? null : dict.valueOf(row.ip),
       ...(origin.via === undefined ? {} : { via: origin.via }),
       ...(origin.consent === undefined ? {} : { consent: origin.consent }),
+      ...(origin.outcome === undefined ? {} : { outcome: origin.outcome }),
       ...(hidden === null ? {} : { hidden })
     };
   }
@@ -258,15 +259,27 @@ function decodeMatched(text: string): IamAuditRecord["matched"] {
   return { policy: text.slice(0, separator), sid: text.slice(separator + 1) };
 }
 
-function encodeOrigin(record: Pick<IamAuditRecord, "origin" | "via" | "consent">): string {
+function encodeOutcome(outcome: IamAuditOutcome): string {
+  return outcome.result === "succeeded" ? "ok" : `fail:${outcome.errorKind}`;
+}
+
+function decodeOutcome(text: string): IamAuditOutcome | undefined {
+  if (text === "ok") return { result: "succeeded" };
+  return text.startsWith("fail:") ? { result: "failed", errorKind: text.slice(5) } : undefined;
+}
+
+function encodeOrigin(record: Pick<IamAuditRecord, "origin" | "via" | "consent" | "outcome">): string {
+  if (record.outcome !== undefined) return [record.origin, record.via ?? "", record.consent ?? "", encodeOutcome(record.outcome)].join(SID_SEPARATOR);
   if (record.consent !== undefined) return [record.origin, record.via ?? "", record.consent].join(SID_SEPARATOR);
   return record.via === undefined ? record.origin : `${record.origin}${SID_SEPARATOR}${record.via}`;
 }
 
-function decodeOrigin(text: string): { origin: FluxIQRequestOrigin; via?: IamRequestVia; consent?: IamRequestConsent } {
-  const [origin = "", via = "", consent = ""] = text.split(SID_SEPARATOR);
+function decodeOrigin(text: string): { origin: FluxIQRequestOrigin; via?: IamRequestVia; consent?: IamRequestConsent; outcome?: IamAuditOutcome } {
+  const [origin = "", via = "", consent = "", outcomeText = ""] = text.split(SID_SEPARATOR);
+  const outcome = decodeOutcome(outcomeText);
   return {
     origin: origin as FluxIQRequestOrigin,
+    ...(outcome === undefined ? {} : { outcome }),
     ...(via === "" ? {} : { via: via as IamRequestVia }),
     ...(consent === "" ? {} : { consent: consent as IamRequestConsent })
   };

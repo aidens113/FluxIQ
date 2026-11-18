@@ -3,7 +3,7 @@ import type { automationStudioFlowBootstrapActionPermissions } from "../../../..
 import type { AutomationStudioSiteResetProjectLedger } from "../../../../runtime/flow-authoring/bootstrap/site-reset/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../../../../runtime/llm/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../runtime/automation-parking/index.ts";
-import type { AutomationStudioHostResourcePort } from "../../../../runtime/project-agents/index.ts";
+import type { AutomationStudioHostResourcePort, AutomationStudioHostLeaseBinding } from "../../../../runtime/project-agents/index.ts";
 import type { startAutomationStudioBuildRouting } from "../../route-state/index.ts";
 import type { AutomationStudioBuildCancellation } from "../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
@@ -36,6 +36,7 @@ export type AutomationStudioProjectBuildPorts = {
   ledger: AutomationStudioSiteResetProjectLedger;
   paths: { projects: AutomationStudioProjectPaths; flows: AutomationStudioFlowPaths };
   host: AutomationStudioHostResourcePort | undefined;
+  leaseBinding?: AutomationStudioHostLeaseBinding | undefined;
   hostRuntime: Parameters<typeof startAutomationStudioBuildRouting>[0]["hostRuntime"];
   cancellation: AutomationStudioBuildCancellation;
   flowInputs: readonly AutomationStudioFlowPort[];
