@@ -2,15 +2,25 @@ import type { ClientGatewayClientHello } from "fluxiq/client-gateway";
 import type { ClientTrustBinding, ClientTrustRepository } from "fluxiq/platform";
 import type { WorkspaceLease } from "../../lib/workspaces";
 
-/** Proof selects a route; live authority must approve it before and after opening tenant storage. */
+type Route = { gateway: WorkspaceLease["fluxiq"]["programs"]["clientGateway"]; release(): void };
+
+/**
+ * Proof selects a route; live authority must approve it before and after
+ * opening tenant storage. A hello presenting an enrolment ticket routes by
+ * the ticket alone (`enrolment`), whatever token it also carries, and without
+ * an enrolment route it routes nowhere.
+ */
 export async function resolveTrustedClientRoute(input: { hello: ClientGatewayClientHello; signal: AbortSignal }, deps: {
   repository: Pick<ClientTrustRepository, "lookupCredential">;
   primaryWorkspaceId: string;
   authorize(binding: ClientTrustBinding): Promise<boolean>;
   acquire(workspaceId: string): Promise<WorkspaceLease>;
-}): Promise<{ gateway: WorkspaceLease["fluxiq"]["programs"]["clientGateway"]; release(): void } | null> {
+  enrolment?(input: { ticket: string; signal: AbortSignal }): Promise<Route | null>;
+}): Promise<Route | null> {
   const { hello, signal } = input;
-  if (signal.aborted || !hello.token || hello.enrolmentTicket) return null;
+  if (signal.aborted) return null;
+  if (hello.enrolmentTicket !== undefined) return deps.enrolment && hello.enrolmentTicket ? deps.enrolment({ ticket: hello.enrolmentTicket, signal }) : null;
+  if (!hello.token) return null;
   const proof = await deps.repository.lookupCredential(hello.token);
   if (signal.aborted || proof.status === "invalid" || proof.status === "inactive") return null;
   const binding = proof.binding;
