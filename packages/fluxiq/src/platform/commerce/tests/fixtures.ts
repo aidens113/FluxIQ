@@ -1,4 +1,4 @@
-import type { CommerceEntitlementGrant, CommerceSubscriptionSnapshot, VerifiedCommerceEvent } from "../model/index.ts";
+import type { CommerceCheckoutRecord, CommerceEntitlementGrant, CommerceSubscriptionSnapshot, VerifiedCommerceEvent } from "../model/index.ts";
 import type { CommerceAdmissionPolicy, CommerceExecutionAuthority } from "../runtime/index.ts";
 
 export function grant(overrides: Partial<CommerceEntitlementGrant> = {}): CommerceEntitlementGrant {
@@ -10,6 +10,23 @@ export function grant(overrides: Partial<CommerceEntitlementGrant> = {}): Commer
     resourceIds: [],
     validFromMs: 1_000,
     validUntilMs: 5_000
+  };
+  return { ...base, ...overrides };
+}
+
+/** A checkout as recorded when it was created: not completed, not expired. */
+export function checkout(overrides: Partial<CommerceCheckoutRecord> = {}): CommerceCheckoutRecord {
+  const base: CommerceCheckoutRecord = {
+    accountId: "account-a",
+    providerId: "fixture-provider",
+    checkoutId: "cs-1",
+    planId: "plan-a",
+    customerId: null,
+    createdAtMs: 1_000,
+    expiresAtMs: 3_000,
+    subscriptionId: null,
+    completedAtMs: null,
+    expiredAtMs: null
   };
   return { ...base, ...overrides };
 }

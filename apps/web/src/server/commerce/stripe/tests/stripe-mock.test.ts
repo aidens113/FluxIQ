@@ -6,7 +6,7 @@ import { StripePaymentProvider } from "..";
 // after `docker run --rm -d -p 12111:12111 stripe/stripe-mock`. Without the
 // setting it is skipped; with it and no mock answering, it fails saying so.
 const mockUrl = process.env.FLUXIQ_STRIPE_MOCK_URL?.trim() || null;
-const plans = { shared: { priceId: "price_1", unit: "flat" as const, grants: [{ key: "cloud.shared", allocation: "shared" as const, capabilities: ["execute"], regions: ["region-a"] }] } };
+const plans = { shared: { name: "Shared", lines: [{ priceId: "price_1", unit: "flat" as const, quantity: 1, grants: [{ key: "cloud.shared", allocation: "shared" as const, capabilities: ["execute"], regions: ["region-a"] }] }] } };
 
 describe.skipIf(mockUrl === null)("StripePaymentProvider against stripe-mock", () => {
   let provider: StripePaymentProvider;
@@ -19,23 +19,29 @@ describe.skipIf(mockUrl === null)("StripePaymentProvider against stripe-mock", (
     } catch (error) {
       throw new Error(`stripe-mock not reachable at ${url.origin} (${error instanceof Error ? error.message : String(error)})`);
     }
-    provider = new StripePaymentProvider({ secretKey: "sk_test_123", webhookSecret: "whsec_unused_here", plans, apiBaseUrl: url.origin });
+    provider = new StripePaymentProvider({ secretKey: "sk_test_123", webhookSecret: "whsec_unused_here", plans, apiBaseUrl: url.origin, checkoutLifetimeMs: 3_600_000 });
   });
 
   it("creates a subscription checkout through the official SDK", async () => {
     const checkout = await provider.createCheckout({ accountId: "account-a", planId: "shared", successUrl: "https://example.invalid/ok", cancelUrl: "https://example.invalid/no", customerId: "cus_123" });
     expect(checkout.checkoutId).toMatch(/^cs_/u);
     expect(checkout.url).toMatch(/^https:\/\//u);
-    expect(Number.isSafeInteger(checkout.expiresAtMs)).toBe(true);
+    // stripe-mock reflects the expiry FluxIQ asks for, so the recorded checkout expires in the future.
+    expect(checkout.expiresAtMs).toBeGreaterThan(Date.now());
+  });
+
+  it("expires a checkout session", async () => {
+    expect(await provider.expireCheckout("cs_123")).toBe("expired");
   });
 
   it("opens a billing portal session for a customer", async () => {
     expect((await provider.createPortal({ accountId: "account-a", customerId: "cus_123", returnUrl: "https://example.invalid/back" })).url).toMatch(/^https:\/\//u);
   });
 
-  it("retrieves a subscription and refuses one that names no FluxIQ account", async () => {
-    // stripe-mock answers with its fixture subscription, whose metadata names no account.
-    await expect(provider.getSubscription("sub_123")).rejects.toThrow(/names no FluxIQ account/u);
+  it("retrieves a subscription whose metadata names no account (stripe-mock's fixture)", async () => {
+    const fetched = await provider.getSubscription("sub_123");
+    expect(fetched?.subscription.accountId).toBeNull();
+    expect(fetched?.subscription.customerId).toMatch(/^cus_/u);
   });
 
   it("cancels a subscription and closes a customer with an idempotency key, through the official SDK", async () => {

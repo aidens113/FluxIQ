@@ -66,9 +66,13 @@ function resolveBilling(value: CloudConfigFile): CloudBilling | null {
     retentionMs: billing.retentionMs,
     refreshAfterMs: billing.refreshAfterMs,
     maxVerificationAgeMs: billing.maxVerificationAgeMs ?? null,
+    checkoutLifetimeMs: billing.checkoutLifetimeMs ?? null,
+    region: billing.region ?? null,
     plans: Object.fromEntries(Object.entries(billing.plans).map(([id, plan]) => [id, {
+      name: plan.name ?? null,
       priceId: plan.priceId,
       unit: plan.unit ?? "flat",
+      quantity: plan.quantity ?? 1,
       grants: plan.grants.map((grant) => ({ key: grant.key, allocation: grant.allocation, capabilities: [...grant.capabilities], regions: [...(grant.regions ?? [])] }))
     }]))
   };

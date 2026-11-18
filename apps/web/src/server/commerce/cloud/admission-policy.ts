@@ -21,7 +21,7 @@ export function cloudAdmissionPolicy(config: CommerceConfig): CommerceAdmissionP
   const keys: Record<string, string> = {};
   for (const allocation of ALLOCATIONS) {
     const granted = new Set<string>();
-    for (const plan of Object.values(config.plans)) for (const grant of plan.grants) if (grant.allocation === allocation) granted.add(grant.key);
+    for (const plan of Object.values(config.plans)) for (const line of plan.lines) for (const grant of line.grants) if (grant.allocation === allocation) granted.add(grant.key);
     if (granted.size > 1) throw new Error(`commerce.configuration: plans grant ${allocation} under more than one key (${[...granted].join(", ")}); admission needs one.`);
     keys[allocation] = [...granted][0] ?? `cloud.${allocation}`;
   }

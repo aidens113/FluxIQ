@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createGlobalProgramRuntime } from "../../../../programs/_shared/runtime.ts";
 import {
+  IAM_APP_ROUTE_ACTIONS,
   generateIamActionCatalog,
   iamActionsWithPermission,
   iamDestructiveActions,
@@ -18,7 +19,7 @@ const destructivePath = new URL("../generated/destructive-actions.generated.ts",
 
 describe("live program registry", () => {
   const endpoints = createGlobalProgramRuntime().api.endpoints();
-  const generation = generateIamActionCatalog(endpoints);
+  const generation = generateIamActionCatalog(endpoints, IAM_APP_ROUTE_ACTIONS);
   const readOnlyActions = iamActionsWithPermission(endpoints, "programs.read");
   const destructiveActions = iamDestructiveActions(endpoints);
   const catalogModule = renderIamActionCatalogModule(generation.catalog);
@@ -34,7 +35,7 @@ describe("live program registry", () => {
     const report = { registrations: endpoints.length, actions: generation.catalog.length, shared: generation.sharedActions, undeclared: generation.undeclaredResources.length, readOnly: readOnlyActions.length, destructive: destructiveActions.length, counts };
     console.info(JSON.stringify(report));
     const merged = generation.sharedActions.reduce((sum, item) => sum + item.sources.length - 1, 0);
-    expect(generation.catalog.length + merged).toBe(endpoints.length);
+    expect(generation.catalog.length + merged).toBe(endpoints.length + IAM_APP_ROUTE_ACTIONS.length);
   });
 
   it("keeps the generated action lists current", () => {

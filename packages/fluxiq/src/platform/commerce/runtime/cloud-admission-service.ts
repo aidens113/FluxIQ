@@ -11,7 +11,10 @@ import type {
 } from "./types.ts";
 
 /**
- * Checks authorized target eligibility without choosing another target. Call
+ * Checks authorized target eligibility without choosing another target. A
+ * dedicated target is admitted by a grant that names it, or by counted grants
+ * (`quantity`) while the account holds fewer dedicated targets than their sum
+ * (`holdings`; a target it already holds is always admitted again). Call
  * again at dispatch/resume before new allocation. Existing run/stop/read/export
  * policy, reservations, metering and provider provisioning are separate owners.
  * Resolver/storage errors propagate: an outage cannot yield an allowed result.
@@ -22,12 +25,14 @@ export class CloudAdmissionService<Actor> {
   private readonly deploymentMode: CommerceDeploymentMode;
   private readonly authorize: CloudAdmissionOptions<Actor>["authorize"];
   private readonly ledger: CloudAdmissionOptions<Actor>["ledger"];
+  private readonly holdings: CloudAdmissionOptions<Actor>["holdings"];
 
   constructor(options: CloudAdmissionOptions<Actor>) {
     if (!["local", "self-hosted", "service"].includes(options.deploymentMode)) throw new TypeError("Invalid commerce deployment mode");
     this.deploymentMode = options.deploymentMode;
     this.authorize = options.authorize;
     this.ledger = options.ledger;
+    this.holdings = options.holdings;
     this.policy = copyPolicy(options.policy);
     this.now = options.now ?? Date.now;
   }
@@ -70,6 +75,9 @@ export class CloudAdmissionService<Actor> {
     const nowMs = this.now();
     if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new TypeError("Invalid commerce clock");
     if (subscriptions.length === 0) return { allowed: false, reason: "subscription-required" };
+    // Counted dedicated grants add up across subscriptions; the first one in force names the decision's subscription.
+    let limit = 0;
+    let counted: { subscription: CommerceSubscriptionRecord; validUntilMs: number } | null = null;
     for (const subscription of subscriptions) {
       if (!eligible(subscription, authority.accountId, nowMs, this.policy)) continue;
       // The same billing state the account's entitlement reports: only active and past-due inside grace admit.
@@ -79,22 +87,44 @@ export class CloudAdmissionService<Actor> {
         if (!matches(grant, key, allocation, request.capability, target)) continue;
         const grantUntil = grantInForceUntil(grant, nowMs, billing.grantExtensionMs);
         if (grantUntil === null) continue;
-        return {
-          ...binding,
-          allowed: true,
-          source: "commerce",
-          allocation,
-          policyId: this.policy.id,
-          entitlementKey: key,
-          providerId: subscription.providerId,
-          subscriptionId: subscription.subscriptionId,
-          subscriptionVersion: subscription.version,
-          validUntilMs: Math.min(billing.admitsUntilMs, grantUntil, subscription.verifiedAtMs + this.policy.maxVerificationAgeMs)
-        };
+        const validUntilMs = Math.min(billing.admitsUntilMs, grantUntil, subscription.verifiedAtMs + this.policy.maxVerificationAgeMs);
+        if (isCounted(grant)) {
+          limit += grant.quantity as number;
+          counted ??= { subscription, validUntilMs };
+          continue;
+        }
+        return this.allowed(binding, allocation, key, subscription, validUntilMs);
       }
+    }
+    if (counted !== null) {
+      if (this.holdings === undefined) return { allowed: false, reason: "commerce-policy-unavailable" };
+      if (!await this.holdings.claim({ accountId: authority.accountId, targetId: target.targetId, limit })) return { allowed: false, reason: "entitlement-exhausted" };
+      return this.allowed(binding, allocation, key, counted.subscription, counted.validUntilMs);
     }
     return { allowed: false, reason: "entitlement-required" };
   }
+
+  private allowed(binding: AdmissionBinding, allocation: CommerceAllocationClass, key: string, subscription: CommerceSubscriptionRecord, validUntilMs: number): CommerceAdmissionDecision {
+    return {
+      ...binding,
+      allowed: true,
+      source: "commerce",
+      allocation,
+      policyId: (this.policy as CommerceAdmissionPolicy).id,
+      entitlementKey: key,
+      providerId: subscription.providerId,
+      subscriptionId: subscription.subscriptionId,
+      subscriptionVersion: subscription.version,
+      validUntilMs
+    };
+  }
+}
+
+type AdmissionBinding = { principalId: string; accountId: string; workspaceId: string; targetId: string; capability: string };
+
+/** A dedicated grant that counts its targets instead of naming them. */
+function isCounted(grant: CommerceEntitlementGrant): boolean {
+  return grant.allocation === "dedicated" && grant.resourceIds.length === 0 && Number.isSafeInteger(grant.quantity) && (grant.quantity as number) >= 1;
 }
 
 function eligible(subscription: CommerceSubscriptionRecord, accountId: string, nowMs: number, policy: CommerceAdmissionPolicy): boolean {
@@ -111,7 +141,7 @@ function matches(grant: CommerceEntitlementGrant, key: string, allocation: Comme
   return grant.key === key && grant.allocation === allocation
     && grant.capabilities.includes(capability)
     && (target.kind === "customer-owned" || grant.regions.includes(target.region))
-    && (allocation !== "dedicated" || grant.resourceIds.includes(target.targetId));
+    && (allocation !== "dedicated" || isCounted(grant) || grant.resourceIds.includes(target.targetId));
 }
 
 function copyAuthority(value: CommerceExecutionAuthority): CommerceExecutionAuthority {

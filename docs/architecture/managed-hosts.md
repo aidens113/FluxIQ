@@ -49,6 +49,21 @@ person's project. Upload intake is shared with the web panel. Person and cookie
 authorization remain in the Next adapters; managed uploads recheck token, lease
 and IAM after the asynchronous body read and before writing.
 
+## Dedicated environments of the hosted service
+
+On the hosted service a paying customer's dedicated browser is an environment
+([dedicated browser environments](./dedicated-browser-environments.md)) whose
+runner is a managed host of that customer's own tenant gateway, never of the
+`fluxiq dev --browsers` pool. Its enrolment ticket is minted by its tenant's
+gateway for the environment's workspace and id, and its trust routes only while
+the environment is recorded as owned by that workspace and desired `running`.
+What may allocate one is commerce, not the pool: the controller asks cloud
+admission, which admits a new environment only while the account holds fewer
+dedicated browsers than its paid plan's counted grants allow. A lapsed plan
+refuses new ones and stops none. The web server composes this
+(`getHostedEnvironmentController`) only when it bills; local and self-hosted
+servers keep the pool described above.
+
 ## Selection and lifecycle
 
 Every leaf's action and evidence read uses its leased session. A leased run never

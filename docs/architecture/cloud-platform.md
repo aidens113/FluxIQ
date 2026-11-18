@@ -86,8 +86,27 @@ for the whole plan); the Stripe item quantity is the count. The hosted offer
 is a `browser` plan, a `seat` plan and a `flat` plan, as the examples show.
 `unit` is rendered into `env/commerce.json` and read by
 `apps/web/src/server/commerce/config.ts`; a `dedicated-browser` plan must
-include a dedicated grant. Core does not yet turn a quantity into a count of
-grants (see Limits).
+include a dedicated grant.
+
+Quantities are counts. A plan's grants carry a `quantity`; Checkout sells
+each line item with its quantity, and the subscription's grants keep it. Cloud
+admission (`CloudAdmissionService`, still the one admission authority) counts
+the dedicated browsers an account already holds and admits a new one only
+while that count is below the grants' quantity: a `dedicated-browser` item
+bought with quantity two admits two environments, and the third is refused
+with `entitlement-exhausted`. A lapse refuses new environments and never stops a
+running one. Changing a price, a plan or a quantity is a config change.
+
+The paying account is resolved from FluxIQ's own records, never from the
+provider's echo alone: starting a Checkout records the account, plan and
+customer, and the webhook binds the subscription to the account through that
+record. The subscription's `fluxiq_account_id` metadata is set and
+cross-checked; metadata naming another account is refused
+(`account-mismatch`), and a subscription no checkout binds is recorded as
+nothing (`unbound`). Starting a new Checkout, or closing the account, expires
+the account's open one. Buying (`iam:StartCheckout`) is open to a workspace's
+administrators and owners; the plan page is `/plans`, which answers 404 while
+the server bills nothing.
 
 ## What `up` Does
 
@@ -182,12 +201,23 @@ The machine store is never touched.
 6. The billing webhook, posted without cookie or Origin to
    `/api/platform/v1/commerce/webhook` over TLS, three ways: a test event
    signed with the generated secret that names no subscription is accepted
-   and ignored; one that names a subscription makes billing fetch it from
-   stripe-mock, which answers with its fixture (it names no FluxIQ account),
-   so the delivery answers 500 `commerce.failed` and Core's log says exactly
-   that; the first body signed with another secret is refused with 400.
-7. `down --keep-data`, `up`, and both accounts sign in again, still isolated.
-8. A final `down`; no labelled container, network, volume or image is left.
+   and ignored; one that names stripe-mock's subscription makes billing fetch
+   it, but no checkout FluxIQ recorded binds it to an account, so nothing is
+   recorded and the delivery answers 200 `unbound`; the first body signed
+   with another secret is refused with 400.
+7. The checkout journey: the first account reads the plans and starts a
+   Checkout of the plan that sells dedicated browsers (the panel answers the
+   Checkout URL; the account reads `checkout-pending`); Stripe's signed
+   `checkout.session.completed` binds the subscription to that account
+   through FluxIQ's checkout record and writes a ledger version; the same
+   delivery again is a duplicate, and a signed subscription update writes the
+   next version; the second account, which bought nothing, reads no plan and
+   no dedicated browser. stripe-mock's only subscription fixture is set to end
+   in 2000, so the recorded subscription reads `ended` and grants nothing: the
+   smoke proves account resolution and the ledger write, not a paid grant (see
+   Limits).
+8. `down --keep-data`, `up`, and both accounts sign in again, still isolated.
+9. A final `down`; no labelled container, network, volume or image is left.
 
 A self-hosted server's smoke is shorter: `/api/health` and `/api/ready` over
 TLS; discovery names the `self-hosted` profile and the wss gateway; the
@@ -218,15 +248,26 @@ a config naming one is refused by every command except `render`.
   named by `FLUXIQ_COMMERCE_CONFIG_FILE` (the one file Core's billing reads,
   `apps/web/src/server/commerce/config.ts`); its secret paths are the volume's
   `stripe_secret_key` and `stripe_webhook_secret`. Without `billing` nothing
-  is rendered and the server bills nothing. stripe-mock's subscription fixture
-  names no FluxIQ account, so no ledger version can be written through it;
-  the smoke asserts the provider call and its refusal instead (The Smoke,
-  step 6). A real Stripe subscription carries `fluxiq_account_id`.
-- Per-unit checkout: `createCheckout` still sells one of each price
-  (`quantity: 1`), and a subscription's grants do not yet carry a count from
-  the item quantity. Turning `dedicated-browser` and `seat` quantities into
-  that many dedicated browsers and seats needs the platform commerce model
-  (`CommerceEntitlementGrant`) to carry a quantity: the later checkout unit.
+  is rendered and the server bills nothing.
+- A paid grant cannot be produced locally through stripe-mock: its only
+  subscription fixture ended in 2000, so the checkout journey proves account
+  resolution and the ledger write but not admission. A grant admitting a
+  dedicated browser is proven in-process over real parts
+  (`apps/web/src/server/environments/hosted/tests/hosted-admission.test.ts`:
+  no grant refused, a grant admitted, N browsers admit N and refuse the next,
+  a lapse refuses new and keeps running ones). An environments API route and
+  the `docker` driver, with a smoke journey on a `fake`-provider billing
+  config, come next.
+- Seats are carried as grant quantities and shown on `/plans`, but no seat
+  limit is enforced on invitations yet; a plan combining dedicated browsers
+  and seats works in Core's commerce file but the cloud config sells one price
+  per plan. Both come with the billing-admin role.
+- The count of dedicated browsers an account holds is kept and checked in the
+  serving process. That is sound because one data root has exactly one
+  serving process (t931's data-root owner file, `packages/fluxiq/src/server/data-root-owner`): a
+  second process cannot serve the same root, so it cannot admit against a
+  stale count. Serving one root from several processes would need an atomic
+  count in the environment store.
 - The image build sets `NODE_OPTIONS=--max-old-space-size=3584` for the
   `pnpm build` step only (`deploy/docker/Dockerfile`): `next build`'s type
   check needs more heap than Node's default inside a 4 GB build VM. Type
