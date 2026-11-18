@@ -30,7 +30,13 @@ import type { AppRouteIamContract, AppRouteResource, AppRouteResourceInput } fro
 //   (`frn:fluxiq:iam:<ws>:user/<id>`). On `service` only
 //   `FluxIQAdministratorAccess` and `FluxIQOwnerFullAccess` grant them;
 // - reading the workspace's activity (the IAM audit) is `identity.manage` on
-//   the workspace too: who did what is the administrators' to read.
+//   the workspace too: who did what is the administrators' to read;
+// - the hosted plans (`/api/platform/v1/commerce/checkout`): reading the
+//   workspace's billing and starting a Checkout act on the workspace, under
+//   `iam` (the account's own administration, which `FluxIQServiceGuardrail`
+//   leaves to the workspace's policies, unlike `platform`). They check only
+//   authentication before IAM, so on `service` the caller's policies decide:
+//   administrators and owners, not ordinary members.
 
 const FRAMEWORK_PROGRAM_ID = "framework";
 
@@ -118,5 +124,7 @@ export const APP_ROUTE_IAM_CONTRACTS: readonly AppRouteIamContract[] = Object.fr
   memberChange("remove", "iam:RemoveMember"),
   memberChange("resend-invite", "iam:ResendInvite"),
   memberChange("revoke-invite", "iam:RevokeInvite"),
-  { path: "/api/security/audit", method: "GET", action: "iam:ListAuditEvents", callers: { panel: "identity.manage" }, resource: workspace }
+  { path: "/api/security/audit", method: "GET", action: "iam:ListAuditEvents", callers: { panel: "identity.manage" }, resource: workspace },
+  { path: "/api/platform/v1/commerce/checkout", method: "GET", action: "iam:GetBillingStatus", callers: { panel: "none" }, resource: workspace },
+  { path: "/api/platform/v1/commerce/checkout", method: "POST", action: "iam:StartCheckout", callers: { panel: "none" }, resource: workspace }
 ] satisfies AppRouteIamContract[]);

@@ -10,4 +10,5 @@ export * from "./run/index.ts";
 export * from "./secret-file.ts";
 export * from "./sign-stripe-webhook.ts";
 export type * from "./smoke-step.ts";
+export * from "./stripe-mock-fixture.ts";
 export * from "./smoke-scripts.ts";
