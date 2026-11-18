@@ -42,6 +42,8 @@ export function subscription(accountId: string, entitlements: readonly CommerceE
     version: 1,
     status: "active",
     paidThroughMs: 5_000,
+    cancelAtPeriodEnd: false,
+    endedAtMs: null,
     verifiedAtMs: 1_500,
     entitlements: [...entitlements]
   };
@@ -97,6 +99,7 @@ export async function harness(options: { rootDir?: string; driver?: FakeEnvironm
       id: "policy-1",
       maxVerificationAgeMs: 1_000,
       allowTrial: false,
+      graceMs: 0,
       entitlementKeys: { control: "cloud.control", shared: "cloud.shared", dedicated: "cloud.dedicated" }
     },
     now: () => 2_000
