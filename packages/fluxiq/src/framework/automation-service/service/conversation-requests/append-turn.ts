@@ -3,7 +3,10 @@ import {
   automationStudioConversationCommandVocabulary,
   automationStudioConversationKnownTask,
   startAutomationStudioConversationCommand,
-  type AutomationStudioConversationFlowReference
+  type AutomationStudioConversationCommandExecution,
+  type AutomationStudioConversationFlowReference,
+  type AutomationStudioConversationResponse,
+  type AutomationStudioConversationTurn
 } from "../../../../runtime/conversations/index.ts";
 import { parseAutomationStudioPanelCapabilities } from "../../panel-capabilities/index.ts";
 import { commandContext } from "./command-context.ts";
@@ -11,12 +14,22 @@ import { requestedOnScreen } from "./on-screen.ts";
 import { requestedAttachment, requestedHumanness } from "./requested-fields.ts";
 import type { AutomationStudioConversationRequest, AutomationStudioConversationRequestDependencies, AutomationStudioConversationRequestService } from "./types.ts";
 
+/**
+ * What `append-turn` answers: the stored turn, and for an instruction the reading, what came of it
+ * and any problem. Named rather than inferred, so the published declaration refers to the reading's
+ * types by name instead of inlining them (an inlined `modelAccess` reached for the contracts
+ * package by a workspace path, which the declaration gate refuses).
+ */
+export type AutomationStudioConversationAppendTurnAnswer =
+  | { turn: AutomationStudioConversationTurn; response: (AutomationStudioConversationResponse & { execution: AutomationStudioConversationCommandExecution | null }) | null; problem: string | null }
+  | { turn: AutomationStudioConversationTurn };
+
 export async function appendConversationTurnForRequest(
   dependencies: AutomationStudioConversationRequestDependencies,
   request: AutomationStudioConversationRequest,
   projectId: string,
   payload: Partial<ConversationTurnAppendRequest>
-) {
+): Promise<AutomationStudioConversationAppendTurnAnswer> {
   const { service } = dependencies;
   // Refused before anything is written, like any other field the request names wrongly.
   const humanness = requestedHumanness(payload.humanness);

@@ -1,4 +1,4 @@
-import { readModelKeyAvailability } from "@fluxiq/contracts/platform";
+import { pairedClientModelAccessState, readModelAccessState, readModelKeyAvailability } from "@fluxiq/contracts/platform";
 
 const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
 
@@ -593,9 +593,12 @@ export function projectPairedClientResponse(programId: string, endpoint: string,
   const keys = payloadRecord(response.payload)?.keys;
   // No snapshot list means readiness is unknown, not that no key exists.
   if (!Array.isArray(keys)) return { ...response, payload: {} };
+  // The person's own model access (t924), rebuilt field by field and without the key's id, as the keys are; one that does not read is left out, never shown as ready.
+  const modelAccess = readModelAccessState(payloadRecord(response.payload)?.modelAccess);
   return {
     ...response,
     payload: {
+      ...(modelAccess ? { modelAccess: pairedClientModelAccessState(modelAccess) } : {}),
       keys: keys.map((key) => {
           const summary = payloadRecord(key) ?? {};
           return {

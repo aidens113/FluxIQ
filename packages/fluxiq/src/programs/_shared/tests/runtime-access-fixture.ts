@@ -27,8 +27,9 @@ export class RuntimeAccessFixture {
     return new RuntimeAccessFixture(await mkdtemp(path.join(os.tmpdir(), "fluxiq-runtime-access-")));
   }
 
-  boot(): GlobalProgramRuntime {
-    const runtime = createGlobalProgramRuntime(pathsAt(this.root), { modelProvidersEnabled: false, iam: { profile: "local" } });
+  /** `modelProvidersEnabled` wires the host's real chat and Flow model paths; their provider calls go to whatever `fetch` the test stubs. */
+  boot(options: { modelProvidersEnabled?: boolean } = {}): GlobalProgramRuntime {
+    const runtime = createGlobalProgramRuntime(pathsAt(this.root), { modelProvidersEnabled: options.modelProvidersEnabled === true, iam: { profile: "local" } });
     this.open.add(runtime);
     return runtime;
   }
@@ -120,6 +121,8 @@ function pathsAt(root: string): FluxIQHostPaths {
   return {
     root, fluxiq, config: path.join(fluxiq, "config.json"), data: path.join(fluxiq, "data"), databases: path.join(fluxiq, "databases"),
     inputs: path.join(fluxiq, "inputs"), outputs: path.join(fluxiq, "outputs"), streams: path.join(fluxiq, "streams"), domains: path.join(fluxiq, "domains"),
-    domainPrograms: path.join(fluxiq, "domain-programs"), domainInputs: path.join(fluxiq, "domain-inputs"), domainOutputs: path.join(fluxiq, "domain-outputs")
+    domainPrograms: path.join(fluxiq, "domain-programs"), domainInputs: path.join(fluxiq, "domain-inputs"), domainOutputs: path.join(fluxiq, "domain-outputs"),
+    // Where projects and their chats live, so a runtime booted here can hold a conversation.
+    recordings: path.join(fluxiq, "artifacts", "automation-studio")
   } as FluxIQHostPaths;
 }

@@ -9,8 +9,15 @@ vi.mock("../../../framework/automation-service/public/index.ts", async (importOr
     AutomationStudioService: class extends original.AutomationStudioService {
       constructor(...args: ConstructorParameters<typeof original.AutomationStudioService>) { calls.construct(args[0]); super(...args); }
     },
-    createAutomationStudioSessionKeyProviderResolver: (...args: Parameters<typeof original.createAutomationStudioSessionKeyProviderResolver>) => { calls.execution(); return original.createAutomationStudioSessionKeyProviderResolver(...args); },
-    createAutomationStudioDeepSeekPanelCommandModel: (...args: Parameters<typeof original.createAutomationStudioDeepSeekPanelCommandModel>) => { calls.chat(); return original.createAutomationStudioDeepSeekPanelCommandModel(...args); }
+    createAutomationStudioSessionKeyProviderResolver: (...args: Parameters<typeof original.createAutomationStudioSessionKeyProviderResolver>) => { calls.execution(); return original.createAutomationStudioSessionKeyProviderResolver(...args); }
+  };
+});
+// The chat's model chooses the sender's key, and so its provider, on every call (t924).
+vi.mock("../../../runtime/llm/caller-key-chat/index.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../runtime/llm/caller-key-chat/index.ts")>();
+  return {
+    ...original,
+    createAutomationStudioCallerKeyChatModel: (...args: Parameters<typeof original.createAutomationStudioCallerKeyChatModel>) => { calls.chat(); return original.createAutomationStudioCallerKeyChatModel(...args); }
   };
 });
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });

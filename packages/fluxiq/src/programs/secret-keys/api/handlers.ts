@@ -14,6 +14,8 @@ import {
   type UpdateSecretKeyRequest
 } from "./contracts.ts";
 import type { SecretKeyActorSession, SecretKeysService } from "../runtime/service.ts";
+import type { SecretKeysSnapshot } from "../types.ts";
+import type { ModelAccessState } from "@fluxiq/contracts/platform";
 import { unofferedKeyRefusal } from "./unoffered-key-refusal.ts";
 import { createSecretKeyManagementProof, type SecretKeyManagementProof } from "../runtime/access/index.ts";
 
@@ -24,7 +26,8 @@ type IdentityAuthoritySource = SecretKeyIdentityAuthority | (() => Promise<Secre
 // The acting user's id, never the payload, names whose password seals a value:
 // it becomes the seal's `sealedByUserId` on create, rotate, and an upgrading reveal.
 // `keySessionOf` names the session a caller acts under (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
-export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAuthoritySource, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }): void {
+// `modelAccessOf` is the host's reading of the caller's model access, from the snapshot read for them; it rides on that snapshot as `modelAccess`.
+export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAuthoritySource, keySessionOf?: (actor: ProgramApiActor) => { sessionId: string | null; holderId?: string | undefined }, modelAccessOf?: (actor: ProgramApiActor, snapshot: SecretKeysSnapshot) => Promise<ModelAccessState>): void {
   // A key's owner is the user that created it (`createdBy`, stamped from the
   // acting user on create), so the service already records it and no separate
   // `recordOwner` is needed. An unknown key, or one with no creator, has no owner.
@@ -45,7 +48,11 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       ref: (item) => ({ kind: "key", keyId: (item as { id?: unknown }).id }),
       replace: (payload, kept) => ({ ...(payload as object), keys: kept })
     },
-    handler: async (request) => ({ ok: true, payload: request.actor && keySessionOf ? await service.snapshotFor({ userId: request.actor.userId, ...keySessionOf(request.actor) }) : await service.snapshot() })
+    handler: async (request) => {
+      if (!request.actor || !keySessionOf) return { ok: true, payload: await service.snapshot() };
+      const snapshot = await service.snapshotFor({ userId: request.actor.userId, ...keySessionOf(request.actor) });
+      return { ok: true, payload: modelAccessOf ? { ...snapshot, modelAccess: await modelAccessOf(request.actor, snapshot) } : snapshot };
+    }
   });
   registry.register({
     programId: "secret-keys",
