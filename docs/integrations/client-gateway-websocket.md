@@ -256,8 +256,8 @@ Always replace the locally saved token with `payload.token`, including after a
 successful reconnect. FluxIQ consumes and rotates the credential on every
 reconnect, so the previous value stops working. Disconnecting ends the socket
 session but does not remove client trust. Trust survives a FluxIQ restart,
-expires after 30 days by default, and can be revoked from Automation Studio's
-Client Gateway view. A client that relaunches resumes with its saved credential:
+expires after 30 days by default, and can be revoked in the panel under
+Security > Devices and apps. A client that relaunches resumes with its saved credential:
 no new approval is asked for.
 
 When a credential ends, the gateway says how:
