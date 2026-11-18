@@ -6,7 +6,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, FLUXIQ_MANAGED_HOST_PRINCIPAL } from "fluxiq/client-gateway";
 import type { ClientGatewayClientHello } from "fluxiq/client-gateway";
 import {
@@ -69,11 +69,15 @@ async function world(options: { ttlMs?: number } = {}) {
   directories.push(directory);
   const repository = createSqliteClientTrustRepository({ filePath: path.join(directory, "trust.sqlite") });
   closers.push(() => repository.close());
-  const store = new SQLiteEnvironmentStore({ rootDir: path.join(directory, "environments") });
-  const routes = new EnvironmentEnrolmentRoutes();
+  // One clock for every part that reads time, so a test can move it and nothing reads the machine's.
+  const clock = { at: Date.now() };
+  const now = (): number => clock.at;
+  const store = new SQLiteEnvironmentStore({ rootDir: path.join(directory, "environments"), now });
+  const routes = new EnvironmentEnrolmentRoutes({ now });
   const gateways = new Map<string, ClientGatewayService>();
   for (const workspaceId of [PRIMARY, "tenant-a", "tenant-b"]) {
     const gateway = new ClientGatewayService({
+      now,
       trustedClientStore: repository.scopedStore(workspaceId),
       trustAuthority: {
         validateApproval: async ({ userId, approvingSessionDigest }) => ({ userId, approvingSessionDigest, maxActiveClients: 10 }),
@@ -109,7 +113,11 @@ async function world(options: { ttlMs?: number } = {}) {
     authorize: async (binding) => binding.managedHost !== undefined && await environmentAuthority(binding),
     enrolment: (input) => resolveEnvironmentEnrolmentRoute(input, { routes, store, primaryWorkspaceId: PRIMARY, acquire })
   });
-  return { repository, store, routes, gateways, leases, acquire, driver, controller, environmentAuthority, route, gateway: (id: string) => gateways.get(id)! };
+  return {
+    repository, store, routes, gateways, leases, acquire, driver, controller, environmentAuthority, route,
+    gateway: (id: string) => gateways.get(id)!,
+    advance: (ms: number) => { clock.at += ms; }
+  };
 }
 
 let helloCount = 0;
@@ -213,24 +221,19 @@ describe("tenant-bound enrolment of a dedicated environment's client", () => {
   });
 
   it("refuses an expired ticket at the router and at its tenant", async () => {
-    const w = await world({ ttlMs: 20 });
-    // Only the clock is controlled: an ended ticket is remembered for one more
-    // lifetime (to say why it is refused), so the check must land between its
-    // expiry (20 ms) and its forgetting (40 ms), whatever the machine's speed.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      await w.controller.create({ actor: actorA, workspaceId: "tenant-a", environmentId: "env-a", operationId: "op-create" });
-      const ticket = w.driver.tickets.get("env-a")!;
-      vi.setSystemTime(Date.now() + 30);
-      expect(await w.route(runnerHello(ticket))).toBeNull();
-      const late = await connect(w.gateway("tenant-a"), runnerHello(ticket));
-      expect(late.error).toBe("enrolment.expired");
-      expect(managedTrusts(w.gateway("tenant-a"))).toHaveLength(0);
-      // The expired route let go of its tenant.
-      expect(w.leases.held).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+    // A long lifetime, so no real timer can end the route first; the world's
+    // clock then moves past expiry but stays inside the second lifetime in which
+    // an ended ticket is remembered, so the tenant says why it was refused.
+    const w = await world({ ttlMs: 60_000 });
+    await w.controller.create({ actor: actorA, workspaceId: "tenant-a", environmentId: "env-a", operationId: "op-create" });
+    const ticket = w.driver.tickets.get("env-a")!;
+    w.advance(60_000);
+    expect(await w.route(runnerHello(ticket))).toBeNull();
+    const late = await connect(w.gateway("tenant-a"), runnerHello(ticket));
+    expect(late.error).toBe("enrolment.expired");
+    expect(managedTrusts(w.gateway("tenant-a"))).toHaveLength(0);
+    // The expired route let go of its tenant.
+    expect(w.leases.held).toBe(0);
   });
 
   it("revokes the client's binding when its environment is stopped or deleted, and enrols afresh on start", async () => {
