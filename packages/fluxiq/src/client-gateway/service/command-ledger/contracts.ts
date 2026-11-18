@@ -27,10 +27,12 @@ export type ClientGatewayCommandUnknownReason = "send_uncertain" | "receipt_comm
 export type ClientGatewayCommandRecord = {
   claim: ClientGatewayCommandClaim;
   claimedAt: number;
-  state: "pending" | "unknown" | "committed";
+  state: "pending" | "unknown" | "committed" | "refused_unsent";
   unknownReason: ClientGatewayCommandUnknownReason | null;
   receipt: ClientGatewayCommandReceipt | null;
   committedAt: number | null;
+  /** Server admission outcome, never a client receipt. Absent on historical record shapes. */
+  refusal?: { code: string; refusedAt: number };
 };
 /** Trusted server adapter only. Client/model metadata never implements this port. */
 export interface ClientGatewayCommandLedgerPort {
@@ -38,15 +40,19 @@ export interface ClientGatewayCommandLedgerPort {
   commitReceipt(claim: ClientGatewayCommandClaim, receipt: ClientGatewayCommandReceipt): Promise<ClientGatewayCommandRecord>;
   markUnknown(claim: ClientGatewayCommandClaim, reason: ClientGatewayCommandUnknownReason): Promise<ClientGatewayCommandRecord>;
   read(claim: ClientGatewayCommandClaim): Promise<ClientGatewayCommandRecord | null>;
+  /** Requires the original live pretransport proof, or reconciliation of an already stored refusal. */
+  refuseUnsent?(claim: ClientGatewayCommandClaim, proof: import("./unsent-refusal.ts").ClientGatewayCommandUnsentRefusal): Promise<ClientGatewayCommandRecord>;
 }
 export type ClientGatewayDurableDispatchResult<TResult> =
   | { status: "completed"; result: TResult; receipt: ClientGatewayCommandReceipt }
   | { status: "result_unavailable"; receipt: ClientGatewayCommandReceipt }
+  | { status: "refused_unsent"; refusal: { code: string; refusedAt: number } }
   | { status: "outcome_unknown" };
 
 export type ClientGatewayCommandOutcomeObserver = {
   completed(proof: object): Promise<void>;
   uncertain(context: import("./context.ts").ClientGatewayCommandContext, disposition: string): Promise<void>;
+  unsent?(context: import("./context.ts").ClientGatewayCommandContext, claim: ClientGatewayCommandClaim, proof: import("./unsent-refusal.ts").ClientGatewayCommandUnsentRefusal): Promise<void>;
 };
 export type ClientGatewayCommandCompletion = {
   readonly context: import("./context.ts").ClientGatewayCommandContext;

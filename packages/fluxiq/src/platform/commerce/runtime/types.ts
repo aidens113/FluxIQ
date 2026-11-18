@@ -40,6 +40,11 @@ export type CommerceAdmissionPolicy = {
   id: string;
   maxVerificationAgeMs: number;
   allowTrial: boolean;
+  /**
+   * How long after paid coverage ended unpaid new work is still admitted
+   * (past-due inside grace); 0 admits none. Running work is never stopped here.
+   */
+  graceMs: number;
   entitlementKeys: Record<CommerceAllocationClass, string>;
 };
 

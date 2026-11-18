@@ -21,6 +21,8 @@ import { ClientGatewayCommandReconciler, clientGatewayReconciledResult } from ".
 import { clientGatewayHostLeaseRefusal, clientGatewayHostLeaseStamp, type ClientGatewayHostLeaseRefusalCode } from "./host-lease/index.ts";
 import { clientGatewayChannelScopeAdmission, clientGatewayChannelScopeRefusal, ClientGatewayChannelScopeRefusedError, type ClientGatewayChannelScopeRefusalCode } from "./channel-scope/index.ts";
 import type { InternalSession } from "./types.ts";
+import type { ClientGatewayHostLeaseTarget } from "./host-lease/index.ts";
+import { ClientGatewayHostLeaseAdmissionRefusal as AdmissionRefusal } from "./host-lease/index.ts";
 import type { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 
 /** What became of a client's action result. `late`: it answered a command Core no longer awaited, and went to the run's evidence. */
@@ -35,6 +37,7 @@ type CommandCollaborators = {
   resolveCommandLedger?: ClientGatewayServiceOptions["resolveCommandLedger"];
   commandOwner?: ClientGatewayServiceOptions["commandOwner"];
   hostLease?: ClientGatewayServiceOptions["hostLease"];
+  hostLeaseTarget?: (session: InternalSession) => ClientGatewayHostLeaseTarget;
   channelScope?: ClientGatewayServiceOptions["channelScope"];
   trace: ClientGatewayTraceTap;
 };
@@ -50,6 +53,7 @@ export class ClientGatewayCommands {
   private readonly reconciler: ClientGatewayCommandReconciler;
   private readonly commandOwner: ClientGatewayServiceOptions["commandOwner"];
   private readonly hostLease: ClientGatewayServiceOptions["hostLease"];
+  private readonly hostLeaseTarget: (session: InternalSession) => ClientGatewayHostLeaseTarget;
   private readonly channelScope: ClientGatewayServiceOptions["channelScope"];
   private closed = false;
   private readonly config: ClientGatewayConfig;
@@ -69,6 +73,7 @@ export class ClientGatewayCommands {
     this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
     this.commandOwner = collaborators.commandOwner;
     this.hostLease = collaborators.hostLease;
+    this.hostLeaseTarget = collaborators.hostLeaseTarget ?? ((session) => ({ sessionId: session.sessionId, domainId: undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) }));
     this.channelScope = collaborators.channelScope;
   }
 
@@ -112,7 +117,8 @@ export class ClientGatewayCommands {
     const crossing = this.channelCrossing(session);
     if (crossing) return this.refuseForChannel({ sessionId, session, commandId, command: input, code: crossing });
     // The lease of the scope dispatching it (`./host-lease/`); a stale or foreign one is refused here, unsent.
-    const leased = clientGatewayHostLeaseStamp(input, this.hostLease, sessionId);
+    const destination = this.hostLeaseTarget(session);
+    const leased = clientGatewayHostLeaseStamp(input, this.hostLease, destination);
     if (leased.refused) return this.refuseForLease({ sessionId, session, commandId, command: input, code: leased.refused });
     const command = leased.command;
     const owner = this.readOwner();
@@ -126,11 +132,44 @@ export class ClientGatewayCommands {
     // A command sent inside a scope with its own timers waits on them, as does its reconcile question (`./channel-scope/source.ts`).
     const timers = this.scopeTimers();
     const startTimer = timers ?? this.config.startTimer;
+    let invoked = false, expired = false;
+    let timeout: ReturnType<ClientGatewayTimerSource> | undefined;
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
-      const timeout = startTimer({ kind: "answer", commandId }, waitMs, () => void this.answerNeverCame(commandId, waitMs, timers));
-      this.pending.set(commandId, { sessionId, resolve, timeout });
+      this.pending.set(commandId, { sessionId, resolve, timeout: { cancel: () => timeout?.cancel() } });
     });
-    void this.transport.send(sessionId, message);
+    void this.transport.send(sessionId, message, {
+      prepare: () => { timeout = startTimer({ kind: "answer", commandId }, waitMs, () => {
+        if (!invoked) expired = true;
+        else void this.answerNeverCame(commandId, waitMs, timers);
+      }); },
+      admit: (current) => {
+        if (!current) throw new AdmissionRefusal("session_unavailable");
+        if (expired) throw new AdmissionRefusal("timeout_before_send");
+        const target = this.hostLeaseTarget(current);
+        if (target.domainId !== destination.domainId || target.channelScope !== destination.channelScope) throw new AdmissionRefusal("host_lease.holder_mismatch");
+        const final = clientGatewayHostLeaseStamp(command, this.hostLease, target);
+        if (final.refused) throw new AdmissionRefusal(final.refused);
+        if (JSON.stringify(final.command.lease) !== JSON.stringify(command.lease)) throw new AdmissionRefusal("host_lease.holder_mismatch");
+        if (this.channelCrossing(current)) throw new AdmissionRefusal("host_lease.holder_mismatch");
+      },
+      invoking: () => { invoked = true; },
+      refuse: (error) => { invoked = false;
+        if (AdmissionRefusal.code(error)) throw error;
+        throw new AdmissionRefusal("preparation_failed"); }
+    }).catch((error) => {
+      // best-effort: after socket invocation the pending answer/reconcile timer still owns the unresolved effect; only private unsent preparation proofs settle here.
+      const code = invoked ? undefined : AdmissionRefusal.code(error);
+      if (!code) return; // A socket invocation may have acted; its answer/reconcile timer still owns that outcome.
+      const pending = this.pending.get(commandId);
+      if (!pending) return;
+      this.pending.delete(commandId);
+      pending.timeout.cancel();
+      this.history.closed(commandId, "settled");
+      const failure = code.startsWith("host_lease.") ? clientGatewayHostLeaseRefusal(commandId, code as ClientGatewayHostLeaseRefusalCode)
+        : { commandId, status: "failed" as const, failure: { category: "action_failed" as const, code: `client_gateway.${code}`, retryable: true, stage: "dispatch" as const, effect: "unacted" as const } };
+      pending.resolve(failure);
+      this.trace.synthesized(commandId, "server.execute_action", { outcome: "refused_unsent", code, sessionId });
+    });
     this.audit.record("command.dispatched", "Action command dispatched to client.", { sessionId, commandId, actionType: command.actionType });
     return { commandId, message, result };
   }

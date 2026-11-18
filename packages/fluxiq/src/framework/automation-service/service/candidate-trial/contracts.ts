@@ -107,6 +107,7 @@ export type AutomationStudioCandidateTrialUnjudged = {
 
 /** What a trial reaches outside itself. Every read is the trial's own: nothing here sees the build's exploration. */
 export type AutomationStudioCandidateTrialPorts = {
+  leaseBinding?: import("../../../../runtime/project-agents/host-resources/index.ts").AutomationStudioHostLeaseBinding | undefined;
   projectId: string;
   flowId: string;
   sourceInstructionIds: readonly string[];

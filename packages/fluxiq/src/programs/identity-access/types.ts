@@ -192,6 +192,16 @@ export type IdentityAuthorityOwner = {
   holdsAuthorityOf(userId: string): Promise<boolean>;
 };
 
+/**
+ * What an empty store starts with: `temporary-admin`, the default admin on the
+ * password `admin` (the library's default); or `unclaimed`, no account until
+ * a first-run setup creates the owner (`IdentityAccessService.firstRun.startUnclaimed`).
+ */
+export type IdentityFirstRun = "temporary-admin" | "unclaimed";
+
+/** What a store holds at a first run: no account, the default admin still on its temporary password, or an owner. */
+export type IdentityFirstRunState = "unclaimed" | "temporary-admin" | "claimed";
+
 export type IdentityAccessServiceOptions = {
   repository?: Repository | undefined;
   roles?: Role[] | undefined;

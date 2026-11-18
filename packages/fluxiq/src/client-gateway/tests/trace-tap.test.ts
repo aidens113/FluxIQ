@@ -12,7 +12,7 @@ import {
   type ClientGatewayServerMessage,
   type ClientGatewayTraceSink
 } from "../index.ts";
-import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, ClientGatewayCommandOutcome, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../service/command-ledger/index.ts";
+import { ClientGatewayCommandContext, ClientGatewayCommandLedgerController, ClientGatewayCommandOutcome, ClientGatewayCommandUnsentRefusal, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../service/command-ledger/index.ts";
 import { clientMessage, ofKind, openTrace, pairClient, traceScope, waitFor } from "./trace-tap-support.ts";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -339,7 +339,12 @@ function memoryLedger(): { port: ClientGatewayCommandLedgerPort; saved(): Client
       if (saved.state !== "committed") saved = { ...saved, state: "unknown", unknownReason: reason };
       return saved;
     },
-    read: async () => saved
+    read: async () => saved,
+    refuseUnsent: async (claim, proof) => {
+      if (!saved || saved.state !== "pending") throw new Error("not pending");
+      saved = { ...saved, state: "refused_unsent", refusal: { ...ClientGatewayCommandUnsentRefusal.read(proof, claim) } };
+      return saved;
+    }
   };
   return { port, saved: () => saved };
 }

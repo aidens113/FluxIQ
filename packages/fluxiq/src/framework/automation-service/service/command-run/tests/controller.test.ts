@@ -159,7 +159,9 @@ describe("actual stored root session closed command run scope", () => {
     vi.spyOn(Store.prototype, "claimForRun").mockImplementation(async function (this: Store, claim, admission) { entered(); await held; return original.call(this, claim, admission); });
     const pending = controller.claim(scope, input); await started; let ended = false; const closing = controller.close().then(() => { ended = true; });
     expect(() => controller.claim(scope, input)).toThrow("closed"); await Promise.resolve(); expect(ended).toBe(false); release();
-    await expect(pending).rejects.toThrow(); await closing; expect(ended).toBe(true);
+    // Claimed but never sent: settled as refused before sending (t911), so nothing is left uncertain and nothing is sent.
+    await expect(pending).resolves.toMatchObject({ sendAllowed: false, record: { state: "refused_unsent", refusal: { code: "cancelled_before_send" } } });
+    await closing; expect(ended).toBe(true);
   }));
   it("close waits pending open and closes rejected lease without registering a scope", async () => fixture(async (controller, _fluxiq, owner) => {
     const original = Store.open; let release!: () => void, entered!: () => void; const held = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; }); const closed = vi.fn();

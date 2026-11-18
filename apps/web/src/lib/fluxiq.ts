@@ -117,6 +117,10 @@ export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
       return prepareOwnerClaim({ settings, fluxiqDir: primaryOf(state).paths.fluxiq });
     }
   });
+  if (settings.profile === "local") {
+    const { prepareLocalFirstRun } = await import("../server/owner-claim");
+    await prepareLocalFirstRun({ identity: primaryOf(state).programs.identityAccess, origin: settings.publicOrigin, log: (line) => logger.info(line) });
+  }
   await startSharedProvisioningListener(state, settings, logger);
   return primaryOf(state);
 }
@@ -315,6 +319,8 @@ function createWebRuntimeState(): WebRuntimeState {
   const opened = (workspaceId: string, fluxiq: FluxIQ): FluxIQ => {
     decisions.learn(fluxiq.programs.api);
     fluxiq.programs.identityAccess.authority.holdElsewhere(accountAuthority);
+    // A local panel's empty store gets no account anyone knows the password of: the printed setup link creates the owner.
+    if (profile === "local") fluxiq.programs.identityAccess.firstRun.startUnclaimed();
     const owner = presentations.bind({ workspaceId, instance: fluxiq, profile, runtimeId: `${runtimeId}.${++generation}`, isCurrent: () => !state.closePromise && workspaces.get(workspaceId)?.fluxiq === fluxiq });
     fluxiq.programs.automationStudioClientGateway.setClientRecordingContextProvider(owner.recordingContextProvider);
     return fluxiq;

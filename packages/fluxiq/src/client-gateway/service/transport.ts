@@ -4,6 +4,7 @@ import type { ClientGatewayServerMessage, ClientGatewaySession, ClientGatewaySoc
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import { ClientGatewayTraceTap } from "./trace-tap/index.ts";
 import type { ClientGatewayIdKind } from "./types.ts";
+import type { InternalSession } from "./types.ts";
 
 /** Builds server messages and delivers them to a session's socket and queue. */
 export class ClientGatewayTransport {
@@ -39,19 +40,76 @@ export class ClientGatewayTransport {
     } as Extract<ClientGatewayServerMessage, { type: TType }>;
   }
 
-  async send(sessionId: string, message: ClientGatewayServerMessage): Promise<void> {
-    const session = this.sessions.require(sessionId);
-    this.trace.outboundMessage(sessionId, message);
-    session.outbound.push(message);
-    await session.socket?.send(JSON.stringify(message));
+  async send(sessionId: string, message: ClientGatewayServerMessage, hooks?: {
+    admit(session: InternalSession | null): void;
+    prepare(): void;
+    invoking(): void;
+    refuse(error: unknown): never;
+  }): Promise<void> {
+    let session: InternalSession, raw: string, queued: InternalSession | undefined;
+    const ready = (): InternalSession => {
+      try { return this.sessions.requireReady(sessionId); }
+      catch (error) { hooks?.admit(null);
+        throw error; }
+    };
+    try {
+      session = this.sessions.require(sessionId);
+      this.trace.outboundMessage(sessionId, message);
+      hooks?.prepare();
+      raw = JSON.stringify(message);
+      if (hooks) { session = ready();
+        hooks.admit(session);
+        session = ready(); }
+      session.outbound.push(message);
+      queued = session;
+      hooks?.invoking();
+    } catch (error) {
+      if (queued) { const index = queued.outbound.lastIndexOf(message);
+        if (index >= 0) queued.outbound.splice(index, 1); }
+      hooks?.refuse(error);
+      throw error;
+    }
+    await session.socket?.send(raw);
   }
   /** Durable admission: a real ready owner/socket is required before any enqueue or send. */
-  async sendChecked(sessionId: string, clientId: string, message: ClientGatewayServerMessage): Promise<void> {
-    const session = this.sessions.requireReady(sessionId);
-    if (session.clientId !== clientId || !session.socket) throw new Error("durable_command.socket_unavailable");
-    this.trace.outboundMessage(sessionId, message);
-    session.outbound.push(message);
-    await session.socket.send(JSON.stringify(message));
+  async sendChecked(sessionId: string, clientId: string, message: ClientGatewayServerMessage, hooks?: {
+    admit(session: InternalSession | null): void;
+    prepare(): void;
+    invoking(): void;
+    refuse(error: unknown): never;
+  }): Promise<void> {
+    const ready = (): InternalSession => {
+      try { return this.sessions.requireReady(sessionId); }
+      catch (error) { hooks?.admit(null);
+        throw error; }
+    };
+    let session: InternalSession, raw: string, queued: InternalSession | undefined;
+    try {
+      session = ready();
+      hooks?.admit(session);
+      session = ready();
+      if (session.clientId !== clientId || !session.socket) throw new Error("durable_command.socket_unavailable");
+      this.trace.outboundMessage(sessionId, message);
+      hooks?.prepare();
+      raw = JSON.stringify(message);
+      // Trace sinks and injected timers can synchronously release/revoke/Stop.
+      // Re-resolve after all that preparation, before any executable queue entry.
+      session = ready();
+      hooks?.admit(session);
+      session = ready();
+      if (session.clientId !== clientId || !session.socket) throw new Error("durable_command.socket_unavailable");
+      session.outbound.push(message);
+      queued = session;
+      hooks?.invoking();
+    } catch (error) {
+      if (queued) { const index = queued.outbound.lastIndexOf(message);
+        if (index >= 0) queued.outbound.splice(index, 1); }
+      hooks?.refuse(error);
+      throw error;
+    }
+    // A socket may have acted before throwing/rejecting. Only this invocation
+    // crosses the uncertainty boundary; preparation failures above never do.
+    await session.socket!.send(raw);
   }
 
   /**

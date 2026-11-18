@@ -15,6 +15,7 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import type { ClientGatewayRevocationReason } from "@fluxiq/contracts/platform";
 import { ClientGatewaySessionMetadataResolver } from "./service/session-metadata/index.ts";
 export type { ClientGatewaySessionMetadata, ClientGatewaySessionMetadataProvider } from "./service/session-metadata/index.ts";
 import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
@@ -160,7 +161,7 @@ export class ClientGatewayService {
     const facade: ClientGatewayFacadePorts = {
       ready: () => this.ready(),
       disconnect: (sessionId, reason) => this.disconnect(sessionId, reason),
-      revokeTrustedClient: (trustedClientId, reason) => this.revokeTrustedClient(trustedClientId, reason)
+      revokeTrustedClient: (trustedClientId, reason, revokedFor) => this.revokeTrustedClient(trustedClientId, reason, revokedFor)
     };
     const custody = new ClientGatewayCredentialCustodian(options.credentialCustody, audit);
     const sessionMetadata = new ClientGatewaySessionMetadataResolver({ sessions, trustedClients, transport, audit, facade, provider: options.sessionMetadata });
@@ -170,7 +171,12 @@ export class ClientGatewayService {
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, transport, audit, facade, trustGrant });
     const enrolment = new ClientGatewayHostEnrolment({ tickets: new ClientGatewayHostEnrolmentTickets(config.now), sessions, trustedClients, transport, audit, trustGrant, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, enrolment, trace, facade, custody, sessionMetadata });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease, channelScope: options.channelScope, trace });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner, hostLease: options.hostLease,
+      // A lease target's domain is the server-bound one of the session's active trust record; a revoked or expired trust gives none, so no lease is stamped for it.
+      hostLeaseTarget: (session) => {
+        const trusted = session.trustedClientId ? trustedClients.get(session.trustedClientId) : undefined;
+        return { sessionId: session.sessionId, domainId: trusted && trustedClients.isActive(trusted) ? trusted.domainId : undefined, ...(session.channelScope !== undefined ? { channelScope: session.channelScope } : {}) };
+      }, channelScope: options.channelScope, trace });
 
     this.trustedClients = trustedClients;
     this.changes = changes;
@@ -233,8 +239,9 @@ export class ClientGatewayService {
     return this.pairingFlow.approve(pairingCode, input);
   }
 
-  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator"): Promise<boolean> {
-    return this.access.revokeTrustedClient(trustedClientId, reason);
+  /** Ends a client's trust; `revokedFor` is what the client is told (`ClientGatewayAccess.revokeTrustedClient`), omitted to follow the reason. */
+  async revokeTrustedClient(trustedClientId: string, reason = "revoked by operator", revokedFor?: ClientGatewayRevocationReason | null): Promise<boolean> {
+    return revokedFor === undefined ? this.access.revokeTrustedClient(trustedClientId, reason) : this.access.revokeTrustedClient(trustedClientId, reason, revokedFor);
   }
 
   /** Whether this is an active trusted client acting for this person: what a stored holder must be before anything is boxed to it. */

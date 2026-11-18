@@ -9,12 +9,15 @@
 # are runtime settings, never build arguments, so nothing private is baked in.
 # docs/operations/self-hosting.md is the operator's guide.
 #
-# Release builds pin NODE_IMAGE to a digest (node:22-bookworm-slim@sha256:...),
+# Release builds pin NODE_IMAGE to a digest (node:22-trixie-slim@sha256:...),
 # as the hosted production plan's supply-chain row requires; the default tag is
 # for local builds. Both stages use the same image, so the native sqlite3 the
 # build stage compiles or downloads matches the runtime's libc and architecture.
+# Debian 13 (trixie, glibc 2.41), not 12 (bookworm, glibc 2.36): sqlite3 6's
+# prebuilt Linux binary needs glibc 2.38, installs on bookworm without
+# complaint, and fails to load at `next build` ("GLIBC_2.38 not found").
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:22-trixie-slim
 ARG PNPM_VERSION=9.15.0
 
 # --- build: the whole workspace, built as CI builds it ----------------------
@@ -35,6 +38,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 COPY apps/web/package.json ./apps/web/
+COPY packages/cloud/package.json ./packages/cloud/
 COPY packages/client-gateway-websocket/package.json ./packages/client-gateway-websocket/
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/fluxiq/package.json ./packages/fluxiq/

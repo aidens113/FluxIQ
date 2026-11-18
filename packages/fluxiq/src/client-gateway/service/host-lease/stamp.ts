@@ -1,6 +1,9 @@
 import { CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES, type ClientGatewayActionCommand, type ClientGatewayHostLease } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayHostLeaseRefusalCode } from "./refusal.ts";
 import type { ClientGatewayHostLeaseSource } from "./source.ts";
+import type { ClientGatewayHostLeaseTarget } from "./target.ts";
+import type { ClientGatewayHostLeaseTargetSource } from "./target-source.ts";
+import { clientGatewayHostLeaseForTarget } from "./adapter.ts";
 
 /** A command to send -- the caller's own object when no lease is in force, else a copy carrying the scope's lease -- or why it may not be sent. */
 export type ClientGatewayHostLeaseStamp =
@@ -20,7 +23,9 @@ export type ClientGatewayHostLeaseStamp =
  * - with no lease in scope otherwise, the caller's command is returned as it
  *   came, so its payload is what it was before leases existed.
  */
-export function clientGatewayHostLeaseStamp(command: ClientGatewayActionCommand, source: ClientGatewayHostLeaseSource | undefined, sessionId: string): ClientGatewayHostLeaseStamp {
+export function clientGatewayHostLeaseStamp(command: ClientGatewayActionCommand, suppliedSource: ClientGatewayHostLeaseSource | ClientGatewayHostLeaseTargetSource | undefined, target: ClientGatewayHostLeaseTarget | string): ClientGatewayHostLeaseStamp {
+  const destination = typeof target === "string" ? { sessionId: target, domainId: undefined } : target;
+  const source = clientGatewayHostLeaseForTarget(suppliedSource, destination);
   const supplied = command.lease;
   const scoped = source?.current();
   if (supplied !== undefined && (!scoped || !sameLease(supplied, scoped))) return { refused: CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES.holderMismatch };
@@ -28,7 +33,7 @@ export function clientGatewayHostLeaseStamp(command: ClientGatewayActionCommand,
     if (!source!.isCurrent(scoped)) return { refused: CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES.stale };
     return { command: { ...command, lease: wireLease(scoped) } };
   }
-  if (source?.requiresLease(sessionId)) return { refused: CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES.missing };
+  if (source?.requiresLease(destination.sessionId)) return { refused: CLIENT_GATEWAY_HOST_LEASE_REFUSAL_CODES.missing };
   return { command };
 }
 
