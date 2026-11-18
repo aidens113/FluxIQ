@@ -1,6 +1,7 @@
 // Barrel for the client gateway client identity, hello, capabilities, sessions, pairing and trusted clients, and the session-level notices.
 export * from "./capability.ts";
 export * from "./client-type.ts";
+export * from "./credential-refusal.ts";
 export * from "./going-away-notice.ts";
 export * from "./hello-metadata.ts";
 export * from "./hello.ts";

@@ -21,7 +21,8 @@ describe("cleanup after durable revocation", () => {
     const forgotten = vi.fn(async () => undefined);
     const socket = {
       send: async (text: string) => {
-        if (failDisconnect && JSON.parse(text).type === "server.disconnect") {
+        // An operator's revoke tells the client (`server.revoked`); a forget the client asked for only disconnects it.
+        if (failDisconnect && ["server.disconnect", "server.revoked"].includes(JSON.parse(text).type)) {
           failDisconnect = false;
           throw new Error("synthetic socket failure");
         }

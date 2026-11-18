@@ -2,8 +2,11 @@
 // "Owner claim replaces admin/admin"): the start-up preparation of the setup
 // code, its check, the claimed marker, and the claim itself. `/setup` and its
 // submit route (`app/setup/`) are the only callers besides `lib/fluxiq.ts`.
+// `local/` is the same claim on the local profile: a printed one-time link
+// instead of a code file, and no email or platform services.
 export { claimOwner } from "./claim-owner";
 export { isOwnerClaimOpen } from "./is-owner-claim-open";
+export { claimLocalOwner, localSetupCode, prepareLocalFirstRun, type LocalClaimIdentity, type LocalClaimOutcome, type LocalFirstRun, type LocalOwnerForm, type LocalSetupCodeCheck } from "./local";
 export { ownerClaimPaths } from "./owner-claim-paths";
 export { prepareOwnerClaim } from "./prepare-owner-claim";
 export { readConfiguredSetupCode, readGeneratedSetupCode, readOwnerClaimMarker, readSetupCode } from "./read";

@@ -33,6 +33,8 @@ export type FluxIQMigrationJournal = {
   updatedAt: number;
   legacyRoots: string[];
   archiveRoot?: string;
+  /** The paths the cutover fills from staging, journaled before anything moves, so a rollback removes exactly these and never state the root already held. */
+  promoted?: string[];
 };
 
 const LEGACY_ROOT_NAMES = ["config", "data", "databases", "inputs", "outputs", "streams", "domains", "recordings", "policies"];
