@@ -10,7 +10,7 @@ export type AutomationStudioModelAccessLedgerKey = { id: string; updatedAtMs: nu
 /** One recorded outcome. `version` is the value's version, so a rename keeps a refusal and a replace clears it. Never a key value. */
 export type AutomationStudioModelAccessLedgerEntry = { keyId: string; version: number; outcome: ModelAccessCallOutcome; atMs: number; message?: string | undefined };
 
-/** Where the host keeps the entries between restarts. `read` is called once on load, `write` only when an outcome or version changes. */
+/** Where the host keeps the entries between restarts. `read` is called once, when the ledger is first asked or first notes a change; `write` only when an outcome or version changes, and neither after the ledger's `close`. */
 export type AutomationStudioModelAccessLedgerPersistence = {
   read(): Promise<unknown>;
   write(entries: AutomationStudioModelAccessLedgerEntry[]): Promise<void>;
@@ -23,18 +23,40 @@ export function automationStudioModelAccessKeyVersion(key: AutomationStudioModel
   return key.lastRotatedAtMs ?? key.updatedAtMs;
 }
 
+/**
+ * How the last call or check on each key went. With `persistence`, the
+ * entries are read back once, when the ledger is first asked (`whenLoaded`)
+ * or first notes a change, never as it is made: an instance that never reads
+ * or records model access never opens its store. Every read and write of the
+ * store is the ledger's own and ends with it: `close` starts no more, and
+ * settles once those already running have (t928: a read started as the
+ * instance was made outlived the instance's close and held its database open).
+ */
 export class AutomationStudioModelAccessLedger {
   private readonly entries = new Map<string, AutomationStudioModelAccessLedgerEntry>();
   private readonly listeners = new Set<() => void>();
-  private readonly loading: Promise<void>;
+  /** Every read or write of the store not yet settled; none of them rejects. */
+  private readonly running = new Set<Promise<void>>();
+  private loading: Promise<void> | undefined;
+  private closed = false;
 
-  constructor(private readonly now: () => number = Date.now, private readonly persistence?: AutomationStudioModelAccessLedgerPersistence) {
-    this.loading = this.load();
+  constructor(private readonly now: () => number = Date.now, private readonly persistence?: AutomationStudioModelAccessLedgerPersistence) {}
+
+  /** Settles once the persisted entries have been read (never rejects), reading them at the first call; an outcome noted meanwhile wins over an older persisted one. Once closed it reads nothing. */
+  whenLoaded(): Promise<void> {
+    this.loading ??= this.closed ? Promise.resolve() : this.track(this.load());
+    return this.loading;
   }
 
-  /** Settles once the persisted entries have been read (never rejects); an outcome noted meanwhile wins over an older persisted one. */
-  whenLoaded(): Promise<void> {
-    return this.loading;
+  /**
+   * Ends the ledger's use of its store: no read or write starts after this
+   * call, and the promise settles (never rejects) once every one already
+   * running has. Outcomes noted afterwards are still read in memory. Safe to
+   * call again.
+   */
+  close(): Promise<void> {
+    this.closed = true;
+    return Promise.all([...this.running]).then(() => undefined);
   }
 
   /** `message` is a failure's own words, kept so the state says what the chat said. */
@@ -77,9 +99,26 @@ export class AutomationStudioModelAccessLedger {
     for (const listener of [...this.listeners]) {
       try { listener(); } catch { /* best-effort: one listener must not stop the others */ }
     }
-    if (!this.persistence) return;
-    // A write that fails leaves the in-memory reading, which is all a restart-less host needs.
-    void this.loading.then(() => this.persistence!.write([...this.entries.values()])).catch(/* best-effort: the reading only reports and never blocks a call */ () => undefined);
+    const persistence = this.persistence;
+    if (!persistence || this.closed) return;
+    // Written behind the read, so the stored entries are merged in first. Whether to write is decided as it starts,
+    // so none starts after close.
+    const writing = this.whenLoaded().then(async () => {
+      if (!this.closed) await persistence.write([...this.entries.values()]);
+    });
+    // A write that fails leaves the in-memory reading, which is all a restart-less host needs, and is said with its
+    // error's kind only (a store's words can carry anything): the reading only reports and never blocks a call.
+    void this.track(writing).catch((error: unknown) => {
+      console.warn(`The model-access ledger could not keep a key's last outcome (${error instanceof Error ? error.name : "non_error"}).`);
+    });
+  }
+
+  /** `work`, kept among the store's running reads and writes until it settles, however it settles; what `close` waits for. */
+  private track(work: Promise<void>): Promise<void> {
+    const ended = work.then(() => undefined, () => undefined);
+    this.running.add(ended);
+    void ended.then(() => { this.running.delete(ended); });
+    return work;
   }
 
   private async load(): Promise<void> {

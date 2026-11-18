@@ -59,6 +59,71 @@ describe("the model-access ledger", () => {
     expect(store.writes).toBe(1);
   });
 
+  it("reads its store only once model access is asked or an outcome is noted, never as it is made", async () => {
+    const { port } = memory([{ keyId: "k1", version: 5, outcome: "no_credit", atMs: 3 }]);
+    const read = vi.fn(port.read);
+    const asked = new AutomationStudioModelAccessLedger(() => 1, { read, write: port.write });
+    await flush();
+    expect(read).not.toHaveBeenCalled();
+    await asked.whenLoaded();
+    await asked.whenLoaded();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(asked.lastCall(key)).toEqual({ outcome: "no_credit", atMs: 3 });
+
+    // A noted outcome reads the store first, keeps the newer outcome over the stored one and writes both back.
+    const { store, port: other } = memory([{ keyId: "k1", version: 5, outcome: "no_credit", atMs: 3 }, { keyId: "k9", version: 1, outcome: "answered", atMs: 2 }]);
+    const noted = new AutomationStudioModelAccessLedger(() => 8, other);
+    noted.note(key, "answered");
+    await noted.whenLoaded();
+    await flush();
+    expect(noted.lastCall(key)).toEqual({ outcome: "answered", atMs: 8 });
+    expect((store.value as AutomationStudioModelAccessLedgerEntry[]).map((entry) => [entry.keyId, entry.outcome])).toEqual([["k1", "answered"], ["k9", "answered"]]);
+  });
+
+  it("starts no read or write once closed, and its close settles only when the work already running has", async () => {
+    let releaseWrite!: () => void;
+    const write = vi.fn(() => new Promise<void>((resolve) => { releaseWrite = resolve; }));
+    const running = new AutomationStudioModelAccessLedger(() => 4, { read: async () => [], write });
+    await running.whenLoaded();
+    running.note(key, "provider_refused");
+    await flush();
+    expect(write).toHaveBeenCalledTimes(1);
+    let closed = false;
+    const closing = running.close().then(() => { closed = true; });
+    running.note({ id: "k2", updatedAtMs: 1 }, "no_credit");
+    await flush();
+    expect(closed).toBe(false);
+    releaseWrite();
+    await closing;
+    expect(closed).toBe(true);
+    expect(write).toHaveBeenCalledTimes(1);
+    // The outcomes still read in memory; only the store is left alone.
+    expect(running.lastCall({ id: "k2", updatedAtMs: 1 })).toEqual({ outcome: "no_credit", atMs: 4 });
+
+    // A write waiting on a read still running is dropped when the ledger closes, and the close waits for the read.
+    let releaseRead!: (value: unknown) => void;
+    const laterWrite = vi.fn(async () => undefined);
+    const reading = new AutomationStudioModelAccessLedger(() => 5, { read: () => new Promise((resolve) => { releaseRead = resolve; }), write: laterWrite });
+    reading.note(key, "answered");
+    let readingClosed = false;
+    const readingClose = reading.close().then(() => { readingClosed = true; });
+    await flush();
+    expect(readingClosed).toBe(false);
+    releaseRead([]);
+    await readingClose;
+    expect(laterWrite).not.toHaveBeenCalled();
+
+    // Closed before anything was asked, it never opens its store at all.
+    const idleRead = vi.fn(async () => []);
+    const idle = new AutomationStudioModelAccessLedger(() => 6, { read: idleRead, write: laterWrite });
+    await idle.close();
+    await idle.whenLoaded();
+    idle.note(key, "answered");
+    await flush();
+    expect(idleRead).not.toHaveBeenCalled();
+    expect(laterWrite).not.toHaveBeenCalled();
+  });
+
   it("starts empty from an unreadable or malformed store and keeps working when a write fails", async () => {
     const broken = new AutomationStudioModelAccessLedger(() => 1, { read: async () => { throw new Error("disk"); }, write: async () => { throw new Error("disk"); } });
     await broken.whenLoaded();

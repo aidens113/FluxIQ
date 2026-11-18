@@ -38,15 +38,18 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 // - **Nothing destructive, ever.** The route also refuses a token call to any
 //   endpoint the registry classifies as other than `read` or `authoring`, so an
 //   entry added here by mistake still cannot reach a delete, a payment or a
-//   program-gated credential check. Deleting and moving money keep asking the
-//   person, and the token is never a way round that. Answering an ask is
-//   `authoring`: it is how a person answers a question in their own thread, and
-//   the act it answers is still gated where it happens. The one exception is
-//   named, not classified: the person's own model key, saved, replaced or
-//   removed (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`), which the registry files
-//   as `program-gated` although its handlers check no credential, so IAM alone
+//   program-gated credential check: a token reaches no delete and no payment
+//   through this route. Answering an ask is `authoring`: it is how a person
+//   answers a question in their own thread, and the act it answers is still
+//   gated where it happens. The one exception is named, not classified: the
+//   person's own model key, saved, replaced or removed
+//   (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`), which the registry files as
+//   `program-gated` although its handlers check no credential, so IAM alone
 //   decides it (t928; user, 2026-11-14 and 2026-11-16: a connected client has
 //   model access with no unlock, password or PIN, and IAM still applies).
+//   Removing it asks nothing further: the person pressing Remove in their own
+//   settings is the confirmation, IAM decides whether they may, and only the
+//   key their own calls use, which they added, can be removed this way.
 // - **Only the permissions these endpoints need.** The actor carries the
 //   approving person's role permissions intersected with the five the
 //   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
@@ -185,8 +188,11 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "snapshot",
     // The person's own model key from the extension's settings (t928), under `secrets.manage` on the workspace, decided by IAM
     // alone: see `PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`. Narrowed to the fields each handler reads, and answered with the
-    // person's model access alone, never a key id. Every other key write -- create, update, rotate and delete-key, the
-    // default key, the assistant's model, offering a key to others, and revealing one -- stays the signed-in person's.
+    // person's model access alone, never a key id. A save changes only the key the person's own calls use, never the
+    // workspace's assistant key or model; the one exception is a workspace with no assistant key at all, where the first
+    // saved key becomes it, so a person alone saves and talks at once. Every other key write -- create, update, rotate
+    // and delete-key, the default key, the assistant's model, offering a key to others, and revealing one -- stays the
+    // signed-in person's.
     "save-model-key",
     "replace-model-key",
     "remove-model-key",

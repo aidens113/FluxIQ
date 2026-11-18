@@ -26,6 +26,8 @@ export function automationStudioModelAccessState(input: {
   keys: readonly (AutomationStudioSessionKeySummary & { availability?: ModelKeyAvailability | null | undefined })[];
   userId: string;
   preferred?: AutomationStudioPreferredModelKey | undefined;
+  /** The key this person chose for their own calls, if any (`chooseAutomationStudioCallerModelKey`'s `ownKeyId`). */
+  ownKeyId?: string | undefined;
   ledger: AutomationStudioModelAccessLedger;
 }): ModelAccessState {
   const choice = chooseAutomationStudioCallerModelKey(input);

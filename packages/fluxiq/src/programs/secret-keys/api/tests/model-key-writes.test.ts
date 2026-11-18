@@ -7,17 +7,23 @@
 // - each answer is the caller's model access after the change, without a key
 //   id for a paired client, and never the value;
 // - the host's free check runs on each new value of a model key;
-// - only the caller's own in-use key is replaced or removed.
+// - only the caller's own in-use key is replaced or removed;
+// - a save changes only the saver's own calls: the workspace's assistant key and
+//   model stay as chosen, except that the first key saved into a workspace with
+//   no assistant key becomes it, and removing the workspace's key leaves the
+//   others with no key, never another person's (F1).
 //
-// The host's model-access reading is a stand-in that chooses as the host does:
-// the workspace's choice when it may serve the caller, else their own newest
-// key. Dummy values only; the store is in memory.
+// The host's model-access reading chooses through the host's own chooser
+// (`chooseAutomationStudioCallerModelKey`, fed the person's own choice and the
+// workspace's), and words the answer simply. Dummy values only; the store is in
+// memory.
 
 import { describe, expect, it } from "vitest";
 import type { ModelAccessState } from "@fluxiq/contracts/platform";
 import { adminRole, viewerRole } from "../../../identity-access/index.ts";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramApiResponse } from "../../../_shared/api.ts";
 import { actor, PAIRED_PERMISSIONS } from "../../../_shared/tests/iam-registry-fixtures.ts";
+import { chooseAutomationStudioCallerModelKey } from "../../../../runtime/models/secrets/index.ts";
 import { SecretKeysService } from "../../runtime/service.ts";
 import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, hostProtectionOptions } from "../../runtime/tests/secret-key-fixtures.ts";
 import type { SecretKeysSnapshot } from "../../types.ts";
@@ -33,26 +39,29 @@ const browser = { ...actor("alice", "admin", [...PAIRED_PERMISSIONS, "secrets.ma
 const narrowBrowser = { ...actor("alice", "admin", PAIRED_PERMISSIONS, "paired-client"), sessionId: "client-gateway:alice-narrow" };
 const viewer = actor("victor", "viewer", viewerRole.permissions);
 const bob = actor("bob", "admin", adminRole.permissions);
+const bobsBrowser = { ...actor("bob", "admin", [...PAIRED_PERMISSIONS, "secrets.manage"], "paired-client"), sessionId: "client-gateway:bob-browser" };
+const mia = actor("mia", "member", PAIRED_PERMISSIONS);
 
 function workspace() {
   const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS }, ...hostProtectionOptions() });
   const registry = new GlobalProgramApiRegistry({ iam: { profile: "local" } });
   const checked: Array<Parameters<SecretKeySavedKeyCheck>[0]> = [];
   const modelAccessOf = async (caller: ProgramApiActor, snapshot: SecretKeysSnapshot): Promise<ModelAccessState> => {
-    const choice = await service.modelKeys.resolveAssistant();
-    const usable = snapshot.keys.filter((key) => key.kind === "llm" && key.enabled);
-    const preferred = choice.ok ? usable.find((key) => key.id === choice.keyId && (key.createdBy === caller.userId || (choice.chosenForWorkspace && choice.offeredByHolder))) : undefined;
-    const key = preferred ?? usable.find((candidate) => candidate.createdBy === caller.userId);
-    if (!key) return { status: "no_key", message: "Add a model key.", key: null, lastCall: null };
-    const provider = key.provider?.toLowerCase() === "deepseek" ? "deepseek" : "anthropic";
-    return { status: "ready", message: `Chats use the key “${key.name}”.`, key: { id: key.id, name: key.name, provider, model: `${provider}-default` }, lastCall: null };
+    const workspace = await service.modelKeys.resolveAssistant();
+    const preferred = workspace.ok ? { keyId: workspace.keyId, model: workspace.model, ownerId: workspace.ownerId, chosenForWorkspace: workspace.chosenForWorkspace, offeredByHolder: workspace.offeredByHolder } : undefined;
+    const choice = chooseAutomationStudioCallerModelKey({ keys: snapshot.keys, userId: caller.userId, preferred, ownKeyId: await service.modelKeys.personKeyId(caller.userId) });
+    if (!choice.ok) return { status: choice.status, message: choice.status === "no_key" ? "Add a model key." : choice.message, key: null, lastCall: null };
+    const key = choice.key;
+    return { status: "ready", message: `Chats use the key “${key.name}”.`, key: { id: key.id, name: key.name ?? key.id, provider: choice.provider, model: `${choice.provider}-default` }, lastCall: null };
   };
+  /** What a person's calls use now, as the host reads it (key id included). */
+  const accessOf = async (caller: ProgramApiActor) => await modelAccessOf(caller, await service.snapshotFor({ userId: caller.userId, sessionId: null }));
   registerSecretKeysApi(registry, service, undefined, () => ({ sessionId: null }), modelAccessOf, async (key) => {
     checked.push(key);
   });
   const call = (endpoint: string, caller: ProgramApiActor, payload: Record<string, unknown> = {}) =>
     registry.call({ programId: "secret-keys", endpoint, scope: {}, actor: caller, payload }) as Promise<ProgramApiResponse<any>>;
-  return { service, call, checked };
+  return { service, call, checked, accessOf };
 }
 
 describe("the key a person's chats use, written from a client with no password", () => {
@@ -107,13 +116,17 @@ describe("the key a person's chats use, written from a client with no password",
     service.close();
   });
 
-  it("makes the caller's chats use the key they just saved, when another key was in use", async () => {
+  it("makes a person's first save, alone in the workspace, its key at once, and a later save theirs alone", async () => {
     const { service, call } = workspace();
-    await call("save-model-key", panel, { provider: "anthropic", value: VALUE, name: "First" });
+    const first = await call("save-model-key", panel, { provider: "anthropic", value: VALUE, name: "First" });
+    expect(first.payload.modelAccess).toMatchObject({ status: "ready", key: { name: "First", provider: "anthropic" } });
+    const firstId = (await service.snapshot()).keys.find((key) => key.name === "First")!.id;
+    expect(await service.modelKeys.read()).toMatchObject({ assistantKeyId: firstId, assistantKeyChosen: true });
+
     const second = await call("save-model-key", panel, { provider: "deepseek", value: DEEPSEEK, name: "Second" });
     expect(second.payload.modelAccess.key).toMatchObject({ name: "Second", provider: "deepseek" });
-    const secondId = (await service.snapshot()).keys.find((key) => key.name === "Second")!.id;
-    expect(await service.modelKeys.read()).toMatchObject({ assistantKeyId: secondId, assistantKeyChosen: true });
+    // The caller's own calls use the key they just saved; the workspace's key stays the one it had.
+    expect(await service.modelKeys.read()).toMatchObject({ assistantKeyId: firstId, assistantKeyChosen: true });
     service.close();
   });
 
@@ -141,6 +154,66 @@ describe("the key a person's chats use, written from a client with no password",
     expect(await call("save-model-key", browser, { provider: "anthropic" })).toEqual({ ok: false, error: "value is required" });
     expect(await call("replace-model-key", browser, {})).toEqual({ ok: false, error: "value is required" });
     expect((await service.snapshot()).keys).toEqual([]);
+    service.close();
+  });
+});
+
+describe("one person's key write never moves another person's key (F1)", () => {
+  /** Alice saved the workspace's first key, chose its model and offered it: Mia, with no key of her own, chats on it. */
+  async function team() {
+    const setup = workspace();
+    expect((await setup.call("save-model-key", panel, { provider: "anthropic", value: VALUE, name: "Team" })).ok).toBe(true);
+    const teamKey = (await setup.service.snapshot()).keys[0]!;
+    await setup.service.modelKeys.setAssistant({ keyId: teamKey.id, model: "claude-haiku-5-5", chosenBy: "alice" });
+    await setup.service.modelKeys.setOffered(teamKey.id, true, "alice");
+    expect(await setup.accessOf(mia)).toMatchObject({ status: "ready", key: { id: teamKey.id } });
+    return { ...setup, teamKey, workspaceBefore: await setup.service.modelKeys.read() };
+  }
+
+  it("leaves the workspace's key and model alone when another administrator saves, from the panel or a paired client, and the member keeps working", async () => {
+    const { service, call, accessOf, teamKey, workspaceBefore } = await team();
+    for (const [caller, name] of [[bob, "Bob's panel key"], [bobsBrowser, "Bob's browser key"]] as const) {
+      const saved = await call("save-model-key", caller, { provider: "deepseek", value: DEEPSEEK, name });
+      expect(saved.ok, saved.error).toBe(true);
+      expect(saved.payload.modelAccess).toMatchObject({ status: "ready", key: { name, provider: "deepseek" } });
+      expect(await service.modelKeys.read(), name).toEqual(workspaceBefore);
+      expect(await service.modelKeys.resolveAssistant()).toMatchObject({ ok: true, keyId: teamKey.id, model: "claude-haiku-5-5", chosenForWorkspace: true, offeredByHolder: true });
+      expect(await accessOf(mia), name).toMatchObject({ status: "ready", key: { id: teamKey.id } });
+      expect(await accessOf(panel), name).toMatchObject({ status: "ready", key: { id: teamKey.id } });
+      expect(await accessOf(bob), name).toMatchObject({ status: "ready", key: { name, provider: "deepseek" } });
+    }
+    service.close();
+  });
+
+  it("replaces and removes a person's own key without touching anyone else's choice", async () => {
+    const { service, call, accessOf, teamKey, workspaceBefore } = await team();
+    await call("save-model-key", bob, { provider: "deepseek", value: DEEPSEEK, name: "Bob's" });
+    const bobsKey = (await service.snapshot()).keys.find((key) => key.name === "Bob's")!;
+
+    expect(await call("replace-model-key", bob, { value: NEXT })).toMatchObject({ ok: true, payload: { modelAccess: { key: { id: bobsKey.id } } } });
+    expect(await service.modelKeys.read()).toEqual(workspaceBefore);
+    expect(await accessOf(mia)).toMatchObject({ status: "ready", key: { id: teamKey.id } });
+
+    // Bob's own key goes: his calls fall back to the workspace's lent key, and nobody else's change.
+    expect(await call("remove-model-key", bob)).toMatchObject({ ok: true, payload: { modelAccess: { status: "ready", key: { id: teamKey.id } } } });
+    expect(await service.modelKeys.read()).toEqual(workspaceBefore);
+    expect(await service.modelKeys.personKeyId("alice")).toBe(teamKey.id);
+    expect(await accessOf(mia)).toMatchObject({ status: "ready", key: { id: teamKey.id } });
+    service.close();
+  });
+
+  it("leaves the others with no key when the workspace's key is removed, never another person's key", async () => {
+    const { service, call, accessOf } = await team();
+    await call("save-model-key", bob, { provider: "deepseek", value: DEEPSEEK, name: "Bob's" });
+    const bobsKey = (await service.snapshot()).keys.find((key) => key.name === "Bob's")!;
+    // Bob offers his key too, but nobody chose it for the workspace.
+    await service.modelKeys.setOffered(bobsKey.id, true, "bob");
+
+    expect(await call("remove-model-key", panel)).toMatchObject({ ok: true, payload: { modelAccess: { status: "no_key" } } });
+    expect(await service.modelKeys.resolveAssistant()).toMatchObject({ ok: false });
+    expect(await accessOf(mia)).toEqual({ status: "no_key", message: "Add a model key.", key: null, lastCall: null });
+    expect(await accessOf(panel)).toMatchObject({ status: "no_key" });
+    expect(await accessOf(bob)).toMatchObject({ status: "ready", key: { id: bobsKey.id } });
     service.close();
   });
 });

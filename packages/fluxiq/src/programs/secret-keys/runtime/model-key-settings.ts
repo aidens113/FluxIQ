@@ -2,10 +2,12 @@ import type { JsonObject } from "../../../core/index.ts";
 import { createRecord, type Repository } from "../../database-manager/index.ts";
 import type { AssistantModelChoice, ModelKeySettingsRecord, ModelKeySettingsView, SecretKeyOffer, SecretKeyRecord } from "../types.ts";
 import type { SecretKeyStore } from "./key-store.ts";
+import { PersonKeyChoices } from "./person-key-choices.ts";
 import { RecordWriteQueue } from "./record-write-queue.ts";
 
 const SETTINGS_ID = "secret-keys:model-settings";
 const MAX_MODEL_ID_LENGTH = 200;
+const NO_WORKSPACE_KEY = "No model key is chosen for this workspace's messages, so add your own key in Settings, under AI keys, or ask an owner or administrator to choose one.";
 
 /** Why the default key stopped being one, in the words of the notice. */
 export type DefaultKeyLoss = {
@@ -26,8 +28,15 @@ export type DefaultKeyLoss = {
  * assistant message only when both hold: an owner or administrator chose it as
  * the workspace's key (`setDefault`, `setAssistant`, both decided on the
  * workspace), and its holder offered it to the workspace (`setOffered`, their
- * own act, for their own key). Adding a key, even the workspace's first, does
- * neither.
+ * own act, for their own key). Adding a key does neither.
+ *
+ * Saving a model key (`keySavedBy`) is a person's own choice for their own
+ * calls, kept per person, and never moves the workspace's key or model. The
+ * one exception is a workspace with no assistant key at all, where the first
+ * saved key becomes it, so a person alone saves and talks with no other step.
+ * When the workspace's chosen key is lost, the workspace has none
+ * (`noAssistantKey`) until an owner or administrator chooses again; the
+ * default key does not silently stand in.
  */
 export class ModelKeySettings {
   private record: ModelKeySettingsRecord | undefined;
@@ -77,7 +86,7 @@ export class ModelKeySettings {
 
   view(): ModelKeySettingsView {
     const notice = this.record?.defaultNotice;
-    const effective = this.assistantKey() ?? this.defaultKey();
+    const effective = workspaceKeyOf(this.record, this.assistantKey(), this.defaultKey());
     return {
       defaultKeyId: this.defaultKey()?.id ?? null,
       ...(notice ? { defaultNotice: notice } : {}),
@@ -115,10 +124,41 @@ export class ModelKeySettings {
    */
   async resolveAssistant(): Promise<AssistantModelChoice> {
     await this.load();
-    const key = this.assistantKey() ?? this.defaultKey();
-    if (!key) return { ok: false, reason: "Add a model key in Settings to use the assistant." };
+    const key = workspaceKeyOf(this.record, this.assistantKey(), this.defaultKey());
+    if (!key) return { ok: false, reason: this.modelKeys().length > 0 ? NO_WORKSPACE_KEY : "Add a model key in Settings to use the assistant." };
     const model = this.assistantModelFor(key);
     return { ok: true, keyId: key.id, keyName: key.name, ...(key.provider ? { provider: key.provider } : {}), ...(model ? { model } : {}), ...(key.createdBy ? { ownerId: key.createdBy } : {}), chosenForWorkspace: this.chosenForWorkspace(key), offeredByHolder: this.isOffered(key) };
+  }
+
+  /** The key `userId` chose for their own calls (`keySavedBy`), while it is still their own model key; undefined otherwise. */
+  async personKeyId(userId: string): Promise<string | undefined> {
+    await this.load();
+    return PersonKeyChoices.keyOf(this.record?.personKeyChoices, userId, (id) => this.modelKeys().find((key) => key.id === id))?.id;
+  }
+
+  /**
+   * After `userId` saved `keyId`, a model key of their own: it becomes what
+   * their own calls use, and nobody else's. The workspace's assistant key and
+   * model are left as they are, unless the workspace has no assistant key at
+   * all (none chosen, and no other model key standing as the default, or the
+   * chosen one was lost): then this first saved key becomes it, chosen by
+   * them. The check and the write happen together, so two first saves at once
+   * never both take the workspace. Says whether it became the workspace's key.
+   */
+  async keySavedBy(keyId: string, userId: string): Promise<{ workspaceKey: boolean }> {
+    await this.load();
+    const key = this.store.get(keyId);
+    const refusal = refusalFor(key, "be used for your calls");
+    if (refusal) throw new Error(refusal);
+    if (key?.createdBy !== userId) throw new Error("Only the person who added a key can choose it for their own calls.");
+    const workspaceKey = !hasWorkspaceKeyBesides(this.record, this.assistantKey(), this.modelKeys(), keyId);
+    this.update({
+      personKeyChoices: PersonKeyChoices.chosen(this.record?.personKeyChoices, userId, keyId, this.now()),
+      ...(workspaceKey ? { assistantKeyId: keyId, assistantChosenBy: userId, assistantModel: undefined, assistantModelProvider: undefined, noAssistantKey: undefined } : {})
+    });
+    await this.persist();
+    this.onChanged?.();
+    return { workspaceKey };
   }
 
   /** Whether the key's holder offered it to the workspace, and the offer still stands. A key nobody is stamped on has no holder to offer it. */
@@ -167,7 +207,7 @@ export class ModelKeySettings {
     await this.load();
     const refusal = refusalFor(this.store.get(id), "use as the default");
     if (refusal) throw new Error(refusal);
-    this.update({ defaultKeyId: id, defaultChosenBy: chosenBy, defaultNotice: undefined });
+    this.update({ defaultKeyId: id, defaultChosenBy: chosenBy, defaultNotice: undefined, noAssistantKey: undefined });
     await this.persist();
     this.onChanged?.();
     return this.view();
@@ -193,7 +233,7 @@ export class ModelKeySettings {
     const key = chosen ?? this.defaultKey();
     if (model !== undefined && !key) throw new Error("Add a model key in Settings before choosing a model.");
     const pinsDefault = keyId === undefined && key !== undefined && input.chosenBy !== undefined && !(this.record?.defaultKeyId === key.id && this.record.defaultChosenBy !== undefined);
-    this.update({ assistantKeyId: keyId, assistantChosenBy: input.chosenBy, assistantModel: model, assistantModelProvider: model === undefined ? undefined : providerOf(key), ...(pinsDefault ? { defaultKeyId: key.id, defaultChosenBy: input.chosenBy } : {}) });
+    this.update({ assistantKeyId: keyId, assistantChosenBy: input.chosenBy, assistantModel: model, assistantModelProvider: model === undefined ? undefined : providerOf(key), noAssistantKey: undefined, ...(pinsDefault ? { defaultKeyId: key.id, defaultChosenBy: input.chosenBy } : {}) });
     await this.persist();
     this.onChanged?.();
     return this.view();
@@ -214,12 +254,19 @@ export class ModelKeySettings {
   /**
    * After a key stopped being a model key, whether disabled, edited or deleted:
    * a default that was lost passes to the next enabled key, oldest first, with a
-   * notice; an assistant choice that pointed at it goes back to "the default";
-   * its holder's offer goes, so turning it back on shares nothing until they
-   * offer it again.
+   * notice, chosen by nobody; an assistant choice of it that nobody made goes
+   * back to "the default"; its holder's offer goes, so turning it back on
+   * shares nothing until they offer it again; a person's own choice of it goes,
+   * and that person's calls fall back as if they had never chosen. When it was
+   * the key the workspace chose (for the assistant, or as the default the
+   * assistant used), the workspace is left with no assistant key
+   * (`noAssistantKey`): those who relied on it read "no key", and are never
+   * moved onto another person's key, even one chosen as the default and
+   * offered, until an owner or administrator chooses again.
    */
   async keyLost(loss: DefaultKeyLoss): Promise<void> {
     const patch: Partial<ModelKeySettingsRecord> = {};
+    if (wasChosenWorkspaceKey(this.record, this.assistantKey(), loss)) patch.noAssistantKey = true;
     if (loss.wasDefault) {
       const next = this.modelKeys().find((key) => key.id !== loss.id);
       patch.defaultKeyId = next?.id;
@@ -238,6 +285,7 @@ export class ModelKeySettings {
       const kept = offers.filter((offer) => offer.keyId !== loss.id);
       patch.keyOffers = kept.length > 0 ? kept : undefined;
     }
+    if (PersonKeyChoices.names(this.record?.personKeyChoices, loss.id)) patch.personKeyChoices = PersonKeyChoices.withoutKey(this.record?.personKeyChoices, loss.id);
     if (Object.keys(patch).length === 0) return;
     this.update(patch);
     await this.persist();
@@ -300,6 +348,29 @@ export class ModelKeySettings {
     const row = this.store.otherRow(SETTINGS_ID);
     if (isSettingsRecord(row)) this.record = row;
   }
+}
+
+/** The key the workspace's assistant uses: the chosen one, else the default, unless the chosen one was lost and nobody chose again. */
+function workspaceKeyOf(record: ModelKeySettingsRecord | undefined, assistant: SecretKeyRecord | undefined, defaultKey: SecretKeyRecord | undefined): SecretKeyRecord | undefined {
+  return assistant ?? (record?.noAssistantKey ? undefined : defaultKey);
+}
+
+/** Whether the workspace has an assistant key other than `keyId`: a chosen one, or another model key standing as the default. */
+function hasWorkspaceKeyBesides(record: ModelKeySettingsRecord | undefined, assistant: SecretKeyRecord | undefined, modelKeys: readonly SecretKeyRecord[], keyId: string): boolean {
+  if (assistant) return assistant.id !== keyId;
+  return !record?.noAssistantKey && modelKeys.some((key) => key.id !== keyId);
+}
+
+/**
+ * Whether a lost key was the one the workspace chose and the assistant used:
+ * an assistant key someone chose, or, with no assistant key standing, a
+ * default an owner or administrator chose. A key nobody chose served nobody
+ * else. Read before the loss is written, while the record still names it.
+ */
+function wasChosenWorkspaceKey(record: ModelKeySettingsRecord | undefined, assistant: SecretKeyRecord | undefined, loss: DefaultKeyLoss): boolean {
+  if (!record || record.noAssistantKey) return false;
+  if (record.assistantKeyId === loss.id) return record.assistantChosenBy !== undefined;
+  return assistant === undefined && loss.wasDefault && record.defaultKeyId === loss.id && record.defaultChosenBy !== undefined;
 }
 
 function providerOf(key: SecretKeyRecord | undefined): string {

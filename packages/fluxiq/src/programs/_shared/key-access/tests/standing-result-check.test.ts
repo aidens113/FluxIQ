@@ -109,4 +109,20 @@ describe("a Flow's result check, with nobody signed in to unlock anything", () =
     await expect(check(runtime, scope)).rejects.toThrow("not authorized");
     expect(runtime.secretKeys.activeSessionUnlockCount()).toBe(0);
   });
+
+  it("keeps getting the workspace's lent key after another administrator saves a key of their own (F1)", async () => {
+    const { runtime, login, scope } = await workspace();
+    const lent = await runtime.secretKeys.createKey({ name: "Lent", kind: "llm", provider: "Anthropic", value: LENT_VALUE, createdBy: "user.lender" });
+    await runtime.secretKeys.modelKeys.setAssistant({ keyId: lent.id, chosenBy: login.user.id });
+    await runtime.secretKeys.modelKeys.setOffered(lent.id, true, "user.lender");
+    await grant(runtime, login, scope, lent.id);
+    expect(await check(runtime, scope)).toBe(LENT_VALUE);
+
+    await runtime.identityAccess.upsertUser({ id: "user.second", username: "second", displayName: "Second", roleId: "admin", password: "dummy-second-password" });
+    const second = await runtime.identityAccess.authenticate({ username: "second", password: "dummy-second-password" });
+    const saved = await runtime.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor: actorFor(second), payload: { provider: "anthropic", value: OWN_VALUE, name: "Second's" } });
+    expect(saved.error).toBeUndefined();
+    expect(await runtime.secretKeys.modelKeys.resolveAssistant()).toMatchObject({ ok: true, keyId: lent.id, chosenForWorkspace: true, offeredByHolder: true });
+    expect(await check(runtime, scope)).toBe(LENT_VALUE);
+  });
 });

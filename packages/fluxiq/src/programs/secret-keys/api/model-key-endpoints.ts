@@ -33,6 +33,13 @@ type Refusal = { ok: false; error: string };
  * client with nothing but IAM (`secrets.manage`, Write, on the workspace). No
  * password, PIN or authenticator code is asked for. Each answers the caller's
  * model access read after the change; never the value.
+ *
+ * Each changes only the caller's own calls. Saving is their own choice of key
+ * (`ModelKeySettings.keySavedBy`), never the workspace's assistant key or model,
+ * except that the first key saved into a workspace with no assistant key
+ * becomes it. Replacing keeps the key's id, so nobody's choice moves; removing
+ * drops the caller's own choice, and if it was the workspace's chosen key the
+ * workspace is left with none rather than moved onto another person's key.
  */
 export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistry, service: SecretKeysService, ports: ModelKeyWritePorts): void {
   const access = (actor: ProgramApiActor, answer: boolean) => {
@@ -74,8 +81,10 @@ export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistr
         // One change notice, given once the free check is recorded: no client reads the new key as ready before the check says.
         await service.holdingModelKeysNotice(async () => {
           const key = await service.createKey({ name: input.name ?? provider.defaultName, value: input.value, kind: "llm", provider: provider.stored, createdBy: actor.userId });
-          // The caller's chats use the key they just saved: chosen as the assistant's key unless it already is the one they use.
-          if ((await access(actor, false)).key?.id !== key.id) await service.modelKeys.setAssistant({ keyId: key.id, chosenBy: actor.userId });
+          // The caller's own calls use the key they just saved, and nobody else's change: the workspace's assistant key
+          // and model stay as an owner or administrator chose them. Only a workspace with no assistant key at all takes
+          // this first saved key as its own, so a person alone saves and talks with no other step.
+          await service.modelKeys.keySavedBy(key.id, actor.userId);
           await checkSavedModelKey(ports.checkSavedKey, key, input.value);
         });
         return answered(actor);

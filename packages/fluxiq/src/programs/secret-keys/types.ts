@@ -118,10 +118,26 @@ export type ModelKeySettingsRecord = {
   defaultChosenBy?: string | undefined;
   /** Said when the default changed on its own, until the person picks a default. */
   defaultNotice?: { message: string; atMs: number } | undefined;
-  /** The key the assistant uses; absent means "the default key". */
+  /** The key the assistant uses; absent means "the default key", unless `noAssistantKey` says the workspace has none. */
   assistantKeyId?: string | undefined;
   /** Who chose the assistant's key (or chose "the default key" for it). Cleared when that key stops being a model key. */
   assistantChosenBy?: string | undefined;
+  /**
+   * Set when the workspace's chosen key stopped being a model key (removed,
+   * turned off or changed): the workspace then has no assistant key, and the
+   * default key does not stand in for it, so nobody who relied on the lost key
+   * is moved onto another person's key unless an owner or administrator
+   * chooses it. Cleared by `set-assistant-model`, `set-default-key`, or the
+   * first model key saved into a workspace that has no assistant key.
+   */
+  noAssistantKey?: true | undefined;
+  /**
+   * Each person's own choice of the key their own calls use: set when they
+   * save a model key (`save-model-key`), for their own key and no other, and
+   * dropped when that key stops being a model key. It changes nothing for
+   * anyone else, and for that person it comes before the workspace's key.
+   */
+  personKeyChoices?: SecretKeyPersonChoice[] | undefined;
   /**
    * The keys their holders offered to the workspace: each holder's own act
    * (`offer-key`), for their own key and no other. Without one a key never
@@ -141,6 +157,9 @@ export type ModelKeySettingsRecord = {
 
 /** A holder's offer of their own key to the workspace: the key, who offered it (its holder then), and when. */
 export type SecretKeyOffer = { keyId: string; holderId: string; atMs: number };
+
+/** A person's choice of their own key for their own calls: who, which key (always theirs), and when. */
+export type SecretKeyPersonChoice = { userId: string; keyId: string; atMs: number };
 
 /** The model-key choices as a client shows them: no ids of values, only which key. */
 export type ModelKeySettingsView = {

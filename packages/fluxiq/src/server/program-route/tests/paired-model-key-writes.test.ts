@@ -132,6 +132,38 @@ describe("a paired client and its person's own model key, through the program ro
     expect((await runtime.secretKeys.snapshot()).keys.map((stored) => stored.id)).toEqual([key.id]);
   });
 
+  it("lets another administrator's token save only their own key: the workspace's key and model stay, and a member keeps chatting on the lent key", async () => {
+    // Admin A saves the workspace's first key from the panel, chooses its model and offers it to the workspace.
+    const adminA = await fixture.signIn(runtime);
+    expect((await send("save-model-key", { provider: "anthropic", value: "dummy-team-value", name: "Team" }, { cookie: adminA.session.id })).status).toBe(200);
+    const [team] = (await runtime.secretKeys.snapshot()).keys;
+    expect(team).toMatchObject({ name: "Team", createdBy: adminA.user.id });
+    await runtime.secretKeys.modelKeys.setAssistant({ keyId: team!.id, model: "claude-haiku-5-5", chosenBy: adminA.user.id });
+    await runtime.secretKeys.modelKeys.setOffered(team!.id, true, adminA.user.id);
+    const workspaceBefore = await runtime.secretKeys.modelKeys.read();
+    const { login: memberLogin } = await member();
+    const memberAccess = async () => (await send("snapshot", {}, { cookie: memberLogin.session.id })).body.payload?.modelAccess;
+    expect(await memberAccess()).toMatchObject({ status: "ready", key: { id: team!.id } });
+
+    // Admin B, another administrator, saves a key of their own through their paired client's token.
+    await runtime.identityAccess.upsertUser({ username: "second-admin", displayName: "Second admin", roleId: adminA.role.id, password: "second-admin-password" });
+    const adminB = await fixture.signIn(runtime, "second-admin", "second-admin-password");
+    const clientB = await fixture.pair(runtime, adminB);
+    const saved = await send("save-model-key", { provider: "deepseek", value: "dummy-second-admin-value", name: "Second admin's" }, { token: clientB.token });
+    expect(saved.status, saved.body.error).toBe(200);
+    expect(saved.body.payload.modelAccess).toMatchObject({ status: "ready", key: { name: "Second admin's", provider: "deepseek" } });
+
+    expect(await runtime.secretKeys.modelKeys.read()).toEqual(workspaceBefore);
+    expect(await runtime.secretKeys.modelKeys.resolveAssistant()).toMatchObject({ ok: true, keyId: team!.id, model: "claude-haiku-5-5", chosenForWorkspace: true, offeredByHolder: true });
+    expect(await memberAccess()).toMatchObject({ status: "ready", key: { id: team!.id } });
+    expect((await send("snapshot", {}, { cookie: adminA.session.id })).body.payload.modelAccess).toMatchObject({ status: "ready", key: { id: team!.id } });
+
+    // Admin B removes their own key through the token: still nobody else's choice moves.
+    expect((await send("remove-model-key", {}, { token: clientB.token })).status).toBe(200);
+    expect(await runtime.secretKeys.modelKeys.read()).toEqual(workspaceBefore);
+    expect(await memberAccess()).toMatchObject({ status: "ready", key: { id: team!.id } });
+  });
+
   it("leaves the panel's own route as it was: the signed-in person saves and removes with the key's id in the answer", async () => {
     const admin = await fixture.signIn(runtime);
     const cookie = { cookie: admin.session.id };

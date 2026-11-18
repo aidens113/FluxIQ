@@ -59,6 +59,24 @@ describe("the chat model chooses the sender's key, and so its provider, per call
     expect(ledger.lastCall(deepseek)?.outcome).toBe("answered");
   });
 
+  it("uses the sender's own saved key ahead of the workspace's choice, asked for that sender", async () => {
+    const answered = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{\"reply\":\"hi\"}" }, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } }));
+    const asked: string[] = [];
+    const ledger = new AutomationStudioModelAccessLedger();
+    const model = createAutomationStudioCallerKeyChatModel({
+      ports: ports([anthropic, deepseek]), ledger, fetchImpl: answered as unknown as typeof fetch,
+      preferred: async () => ({ keyId: "claude" }),
+      ownKeyId: async (userId) => {
+        asked.push(userId);
+        return "deep";
+      }
+    });
+    await expect(model.decide(request, { signal: new AbortController().signal, caller })).resolves.toBe("{\"reply\":\"hi\"}");
+    expect(asked).toEqual(["u1"]);
+    expect(String((answered.mock.calls[0] as unknown[] | undefined)?.[0])).toMatch(/deepseek/u);
+    expect(ledger.lastCall(deepseek)?.outcome).toBe("answered");
+  });
+
   it("says a key this server cannot open, without calling a provider", async () => {
     const fetchImpl = vi.fn();
     const { error } = await decide([anthropic], fetchImpl as unknown as typeof fetch, { refuseRelease: Object.assign(new Error("sealed"), { code: "ciphertext_invalid" }) }) as { error: AutomationStudioModelAccessError };

@@ -41,10 +41,13 @@ const NOT_OFFERED = "The model key chosen for this workspace has not been offere
 /**
  * The key `userId`'s call uses, in this order:
  *
- * 1. The workspace's Settings choice, when it is theirs, a legacy key nobody is
+ * 1. Their own choice (`ownKeyId`, the key they last saved for their own
+ *    calls), while it is still their own enabled model key. It comes ahead of
+ *    the workspace's key, and is nobody else's choice.
+ * 2. The workspace's Settings choice, when it is theirs, a legacy key nobody is
  *    stamped on, or another person's key both chosen for the workspace and
  *    offered by its holder (exactly the panel assistant's consent rule).
- * 2. Otherwise their own newest enabled model key of any provider Core calls,
+ * 3. Otherwise their own newest enabled model key of any provider Core calls,
  *    then a legacy key nobody is stamped on.
  *
  * `keys` are Secret Keys' list, most recently changed first. Says `no_key` only
@@ -55,8 +58,13 @@ export function chooseAutomationStudioCallerModelKey(input: {
   keys: readonly AutomationStudioSessionKeySummary[];
   userId: string;
   preferred?: AutomationStudioPreferredModelKey | undefined;
+  /** The key this person chose for their own calls (Secret Keys' `personKeyId`), if any; only ever their own. */
+  ownKeyId?: string | undefined;
 }): AutomationStudioCallerModelKeyChoice {
   const usable = input.keys.filter((key) => key.enabled && automationStudioSessionKeyProvider(key) !== undefined);
+  const ownChoice = input.ownKeyId === undefined ? undefined : usable.find((key) => key.id === input.ownKeyId && key.createdBy === input.userId);
+  // The workspace's model goes with its key, so it follows only when the person's own choice is that same key.
+  if (ownChoice) return chosen(ownChoice, input.preferred?.keyId === ownChoice.id ? input.preferred.model : undefined);
   let refusal: string | undefined;
   const preferred = input.preferred ? usable.find((key) => key.id === input.preferred!.keyId) : undefined;
   if (preferred && input.preferred) {
