@@ -75,7 +75,7 @@ type Envelope = { payload: ClientGatewayTracePayloadInput; redactions: readonly 
 /** Results and reconcile answers belong to the trace their command was sent from. */
 const ROUTED_BY_COMMAND: ReadonlySet<string> = new Set(["client.action_result", "client.reconcile_result"]);
 /** Display-only, and nothing answers it (D1): never recorded. */
-const UNTRACED_OUTBOUND: ReadonlySet<string> = new Set(["server.activity", "server.conversation_changed"]);
+const UNTRACED_OUTBOUND: ReadonlySet<string> = new Set(["server.activity", "server.conversation_changed", "server.model_access_changed"]);
 const NO_REDACTIONS: readonly ClientGatewayTraceRedaction[] = Object.freeze([]);
 const NO_DELIVERY: ClientGatewayTraceDelivery = Object.freeze({ result: null, event: null });
 

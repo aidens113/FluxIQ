@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HeldKeys } from "../held-keys.ts";
 import { SecretKeysService, type SecretKeysCloseMode } from "../service.ts";
-import { claimThroughSession, createDeriveProbe, createMemoryRepository, heldSessionKey, WEAK_SCRYPT_PARAMETERS } from "./secret-key-fixtures.ts";
+import { claimThroughSession, createDeriveProbe, createMemoryRepository, heldSessionKey, WEAK_SCRYPT_PARAMETERS, createPasswordSealedKey, rotatePasswordSealedKey } from "./secret-key-fixtures.ts";
 
 // Key custody outside the instance: a `SecretKeysService` given a `HeldKeys`
 // leaves it alone when evicted, so a workspace manager can drop an idle instance
@@ -28,7 +28,7 @@ function isZeroed(buffer: Buffer): boolean {
 async function unlockedService(options: { heldKeys?: HeldKeys; repository?: ReturnType<typeof createMemoryRepository> } = {}) {
   const repository = options.repository ?? createMemoryRepository();
   const service = new SecretKeysService({ repository: repository.repository, now: () => NOW, passwordKdf: weakKdf, ...(options.heldKeys ? { heldKeys: options.heldKeys } : {}) });
-  const key = await service.createKey({ name: "Provider", value: VALUE, authorizationPassword: PASSWORD, createdBy: USER, nowMs: NOW });
+  const key = await createPasswordSealedKey(service, { name: "Provider", value: VALUE, authorizationPassword: PASSWORD, createdBy: USER, nowMs: NOW });
   await service.unlockSession({ sessionId: SESSION, userId: USER, authorizationPassword: PASSWORD, expiresAtMs: NOW + 60_000, nowMs: NOW });
   const held = heldSessionKey(service, SESSION, key.id);
   if (!held) throw new Error("the unlock holds no key");
@@ -100,7 +100,7 @@ describe("SecretKeysService.close and an injected HeldKeys", () => {
     first.service.close({ mode: "evict" });
     const second = new SecretKeysService({ repository: first.repository.repository, now: () => NOW, passwordKdf: weakKdf, heldKeys });
     expect(second.unlockedSessionFor(USER)).toBe(SESSION);
-    await second.rotateKey({ id: first.keyId, value: "dummy-next-value", authorizationPassword: PASSWORD, actorUserId: USER, nowMs: NOW + 10 });
+    await rotatePasswordSealedKey(second, { id: first.keyId, value: "dummy-next-value", authorizationPassword: PASSWORD, actorUserId: USER, nowMs: NOW + 10 });
     expect(isZeroed(first.held)).toBe(true);
     expect(second.unlockedSessionFor(USER)).toBeNull();
     second.close();
@@ -138,7 +138,7 @@ describe("expiry timers", () => {
   /** Unlocks a session and draws both kinds of reveal authorization, keeping only weak references to the service and to each input that carried a password. */
   async function unlockAndDrop(heldKeys: HeldKeys | undefined, mode: SecretKeysCloseMode | "none"): Promise<Array<WeakRef<object>>> {
     const service = new SecretKeysService({ now: () => Date.now(), passwordKdf: weakKdf, ...(heldKeys ? { heldKeys } : {}) });
-    const key = await service.createKey({ name: "Provider", value: VALUE, authorizationPassword: PASSWORD, createdBy: USER });
+    const key = await createPasswordSealedKey(service, { name: "Provider", value: VALUE, authorizationPassword: PASSWORD, createdBy: USER });
     const unlockInput = { sessionId: SESSION, userId: USER, authorizationPassword: PASSWORD, expiresAtMs: Date.now() + 12 * 60 * 60 * 1000 };
     await service.unlockSession(unlockInput);
     const revealInput = { id: key.id, authorizationPassword: PASSWORD, ttlMs: 300_000 };

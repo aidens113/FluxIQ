@@ -41,6 +41,16 @@ describe("the chat model chooses the sender's key, and so its provider, per call
     expect(ledger.lastCall(anthropic)?.outcome).toBe("provider_refused");
   });
 
+  it("records a balance refusal as no credit, not a refused key", async () => {
+    const empty = vi.fn(async () => new Response(JSON.stringify({ error: { message: "Insufficient Balance" } }), { status: 402, headers: { "content-type": "application/json" } }));
+    const { error, ledger } = await decide([deepseek], empty as unknown as typeof fetch) as { error: AutomationStudioModelAccessError; ledger: AutomationStudioModelAccessLedger };
+    expect(error.access).toMatchObject({ status: "no_credit", message: expect.stringMatching(/says the account behind Deep has no credit left/u), lastCall: { outcome: "no_credit" } });
+    expect(ledger.lastCall(deepseek)?.outcome).toBe("no_credit");
+    const low = vi.fn(async () => new Response(JSON.stringify({ error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }), { status: 400, headers: { "content-type": "application/json" } }));
+    const second = await decide([anthropic], low as unknown as typeof fetch) as { error: AutomationStudioModelAccessError };
+    expect(second.error.access.status).toBe("no_credit");
+  });
+
   it("sends with a saved DeepSeek key to DeepSeek and notes an answer", async () => {
     const answered = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "{\"reply\":\"hi\"}" }, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } }));
     const { answer, ledger } = await decide([deepseek], answered as unknown as typeof fetch) as { answer: unknown; ledger: AutomationStudioModelAccessLedger };

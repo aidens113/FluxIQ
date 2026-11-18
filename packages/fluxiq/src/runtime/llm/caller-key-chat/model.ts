@@ -84,9 +84,8 @@ export function createAutomationStudioCallerKeyChatModel(options: AutomationStud
         if (releaseFailure !== undefined) throw new AutomationStudioModelAccessError(releaseAccess(releaseFailure, key), { cause: releaseFailure });
         const outcome = automationStudioModelAccessOutcomeOf(error);
         if (!outcome) throw error;
-        const balance = (error as { code?: unknown }).code === "llm.provider_balance_exhausted";
         const message = outcome === "provider_unreachable" ? automationStudioModelAccessUnreachableMessage(choice.provider)
-          : balance ? automationStudioModelAccessBalanceMessage(choice.provider) : automationStudioModelAccessRefusedMessage(choice.provider);
+          : outcome === "no_credit" ? automationStudioModelAccessBalanceMessage(choice.provider, key.name) : automationStudioModelAccessRefusedMessage(choice.provider);
         const lastCall = options.ledger.note(choice.key, outcome, message);
         // Out of reach may pass; a refused key is refused again.
         throw new AutomationStudioModelAccessError({ status: outcome, message, key, lastCall }, { retryable: outcome === "provider_unreachable", cause: error });

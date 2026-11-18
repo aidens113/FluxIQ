@@ -15,7 +15,9 @@ import {
   legacyV1Record,
   serviceRecord,
   waitUntil,
-  type MemoryRepository
+  type MemoryRepository,
+  createPasswordSealedKey,
+  rotatePasswordSealedKey
 } from "./secret-key-fixtures.ts";
 
 const CURRENT = "dummy-current-password";
@@ -70,8 +72,8 @@ describe("SecretKeysService credential change", () => {
   it("writes each re-sealed copy beside the current seal at prepare, and promotes it at commit", async () => {
     const store = createMemoryRepository([legacyV1Record({ id: "secret:legacy", value: "legacy-value", password: CURRENT })]);
     const service = reader(store);
-    const own = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
-    const other = await service.createKey({ name: "Other", value: "other-value", authorizationPassword: CURRENT, createdBy: "user.two" });
+    const own = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const other = await createPasswordSealedKey(service, { name: "Other", value: "other-value", authorizationPassword: CURRENT, createdBy: "user.two" });
     const otherText = store.storedText(other.id);
     const ownSealed = store.stored(own.id)?.sealed;
 
@@ -103,7 +105,7 @@ describe("SecretKeysService credential change", () => {
     const store = createMemoryRepository([legacyV1Record({ id: "secret:legacy", value: "legacy-value", password: CURRENT })]);
     let failWrites = false;
     const service = serviceOver(failingWrites(store, () => failWrites));
-    const own = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const own = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
     const change = await service.prepareCredentialChange(changeForUserOne);
 
     // The caller has written the new credential; the commit's own write fails.
@@ -127,7 +129,7 @@ describe("SecretKeysService credential change", () => {
   it("leaves the old password working when the credential write fails after prepare, even if abort never runs", async () => {
     const store = createMemoryRepository();
     const service = reader(store);
-    const key = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
     await service.prepareCredentialChange(changeForUserOne);
     // The credential write fails and the process stops before it can abort.
     service.close();
@@ -144,7 +146,7 @@ describe("SecretKeysService credential change", () => {
   it("aborting removes the pending seals, zeroes the prepared keys, and leaves the old seal working", async () => {
     const store = createMemoryRepository();
     const service = reader(store);
-    const key = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
     const sealed = store.stored(key.id)?.sealed;
 
     const change = await service.prepareCredentialChange(changeForUserOne);
@@ -163,7 +165,7 @@ describe("SecretKeysService credential change", () => {
 
   it("keeps the user's session keys and revokes every other holder at commit", async () => {
     const service = new SecretKeysService({ now: () => 5000, passwordKdf: weakKdf });
-    const shared = await service.createKey({ name: "Unstamped", value: "shared-value", authorizationPassword: CURRENT });
+    const shared = await createPasswordSealedKey(service, { name: "Unstamped", value: "shared-value", authorizationPassword: CURRENT });
     await service.unlockSession({ sessionId: "session.one", userId: "user.one", authorizationPassword: CURRENT, expiresAtMs: 1_000_000 });
     await service.unlockSession({ sessionId: "session.two", userId: "user.two", authorizationPassword: CURRENT, expiresAtMs: 1_000_000 });
     const heldByOne = heldSessionKey(service, "session.one", shared.id);
@@ -184,10 +186,10 @@ describe("SecretKeysService credential change", () => {
 
   it("keeps a rotation that lands between prepare and commit, and drops the stale pending seal", async () => {
     const service = new SecretKeysService({ passwordKdf: weakKdf });
-    const key = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one", nowMs: 1000 });
+    const key = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one", nowMs: 1000 });
     const change = await service.prepareCredentialChange(changeForUserOne);
 
-    await service.rotateKey({ id: key.id, value: "rotated-value", authorizationPassword: CURRENT, actorUserId: "user.one", nowMs: 2000 });
+    await rotatePasswordSealedKey(service, { id: key.id, value: "rotated-value", authorizationPassword: CURRENT, actorUserId: "user.one", nowMs: 2000 });
 
     expect(serviceRecord(service, key.id)?.pendingSealed).toBeUndefined();
     await expect(service.commitCredentialChange(change.changeId)).resolves.toMatchObject({ resealedKeyCount: 0 });
@@ -221,8 +223,8 @@ describe("SecretKeysService credential change", () => {
       return key;
     };
     const service = new SecretKeysService({ passwordKdf: { derive, testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS } });
-    const first = await service.createKey({ name: "First", value: "first-value", authorizationPassword: CURRENT, createdBy: "user.one" });
-    const second = await service.createKey({ name: "Second", value: "second-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const first = await createPasswordSealedKey(service, { name: "First", value: "first-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const second = await createPasswordSealedKey(service, { name: "Second", value: "second-value", authorizationPassword: CURRENT, createdBy: "user.one" });
     const sealed = serviceRecord(service, first.id)?.sealed;
 
     await expect(service.prepareCredentialChange(changeForUserOne)).rejects.toThrow("dummy derivation failure");
@@ -239,7 +241,7 @@ describe("SecretKeysService credential change", () => {
     const store = createMemoryRepository();
     let failWrites = false;
     const service = serviceOver(failingWrites(store, () => failWrites));
-    const key = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
 
     failWrites = true;
     await expect(service.prepareCredentialChange(changeForUserOne)).rejects.toThrow("dummy write failure");
@@ -254,7 +256,7 @@ describe("SecretKeysService credential change", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const store = createMemoryRepository();
     const service = reader(store);
-    const key = await service.createKey({ name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
+    const key = await createPasswordSealedKey(service, { name: "Own", value: "own-value", authorizationPassword: CURRENT, createdBy: "user.one" });
     const change = await service.prepareCredentialChange(changeForUserOne);
     const prepared = preparedKeys(service, change.changeId);
 

@@ -2,7 +2,7 @@
 // default, what happens when it goes, what the resolver names. Dummy values only.
 import { describe, expect, it } from "vitest";
 import { SecretKeysService } from "../service.ts";
-import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository } from "./secret-key-fixtures.ts";
+import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, createPasswordSealedKey } from "./secret-key-fixtures.ts";
 
 const PASSWORD = "dummy-password";
 const weakKdf = { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS };
@@ -11,7 +11,7 @@ function workspace(repository = createMemoryRepository().repository) {
   const service = new SecretKeysService({ repository, passwordKdf: weakKdf });
   let at = 1000;
   const add = (name: string, extra: { provider?: string; kind?: "llm" | "custom"; enabled?: boolean } = {}) =>
-    service.createKey({ name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider: extra.provider ?? "alpha", ...(extra.kind ? { kind: extra.kind } : {}), ...(extra.enabled === undefined ? {} : { enabled: extra.enabled }), nowMs: (at += 10) });
+    createPasswordSealedKey(service, { name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider: extra.provider ?? "alpha", ...(extra.kind ? { kind: extra.kind } : {}), ...(extra.enabled === undefined ? {} : { enabled: extra.enabled }), nowMs: (at += 10) });
   return { service, add, repository };
 }
 
@@ -101,7 +101,7 @@ describe("the default model key", () => {
   it("reads the oldest model key as the default in a store that has keys and no settings", async () => {
     const legacy = createMemoryRepository();
     const old = new SecretKeysService({ repository: legacy.repository, passwordKdf: weakKdf });
-    const key = await old.createKey({ name: "Old", value: "dummy-old", authorizationPassword: PASSWORD, nowMs: 1 });
+    const key = await createPasswordSealedKey(old, { name: "Old", value: "dummy-old", authorizationPassword: PASSWORD, nowMs: 1 });
     legacy.replace("secret-keys:model-settings", { recordType: "other" });
     const reopened = new SecretKeysService({ repository: legacy.repository, passwordKdf: weakKdf });
     expect((await reopened.modelKeys.read()).defaultKeyId).toBe(key.id);
@@ -187,7 +187,7 @@ describe("the workspace's key: no key is shared automatically; it needs an owner
     const { service, repository } = workspace();
     let at = 5000;
     const add = (name: string, createdBy: string, provider = "Anthropic") =>
-      service.createKey({ name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider, createdBy, nowMs: (at += 10) });
+      createPasswordSealedKey(service, { name, value: `dummy-${name}`, authorizationPassword: PASSWORD, provider, createdBy, nowMs: (at += 10) });
     const shared = async () => {
       const choice = await service.modelKeys.resolveAssistant();
       return choice.ok ? { keyId: choice.keyId, ownerId: choice.ownerId, chosen: choice.chosenForWorkspace, offered: choice.offeredByHolder } : choice;
@@ -222,9 +222,9 @@ describe("the workspace's key: no key is shared automatically; it needs an owner
 
   it("refuses an offer of a key that is missing, turned off, or not a model key, and of a key nobody is stamped on", async () => {
     const { service, add } = people();
-    const off = await service.createKey({ name: "Off", value: "dummy-off", authorizationPassword: PASSWORD, provider: "Anthropic", createdBy: "member", enabled: false });
-    const custom = await service.createKey({ name: "Webhook", value: "dummy-webhook", authorizationPassword: PASSWORD, kind: "custom", createdBy: "member" });
-    const legacy = await service.createKey({ name: "Legacy", value: "dummy-legacy", authorizationPassword: PASSWORD, provider: "Anthropic" });
+    const off = await createPasswordSealedKey(service, { name: "Off", value: "dummy-off", authorizationPassword: PASSWORD, provider: "Anthropic", createdBy: "member", enabled: false });
+    const custom = await createPasswordSealedKey(service, { name: "Webhook", value: "dummy-webhook", authorizationPassword: PASSWORD, kind: "custom", createdBy: "member" });
+    const legacy = await createPasswordSealedKey(service, { name: "Legacy", value: "dummy-legacy", authorizationPassword: PASSWORD, provider: "Anthropic" });
     await add("Mine", "member");
     await expect(service.modelKeys.setOffered("secret:missing", true, "member")).rejects.toThrow("That key does not exist.");
     await expect(service.modelKeys.setOffered(off.id, true, "member")).rejects.toThrow("That key is turned off, so it cannot be offered to the workspace. Turn it on first.");

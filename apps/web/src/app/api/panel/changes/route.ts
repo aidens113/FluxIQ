@@ -6,7 +6,7 @@ import { GatewaySnapshotRefusal, snapshotCaller } from "../../client-gateway/sna
 import { callerGatewayView } from "../../client-gateway/snapshot/caller-view";
 import { panelChangeReads } from "./caller-reads";
 import { PanelChangeStream } from "./panel-change-stream";
-import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, type PanelChangeTopic } from "./topics";
+import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, modelAccessChangeTopic, panelModelAccessSource, type PanelChangeTopic } from "./topics";
 
 // The panel's one push channel: each page holds one stream, and it tells the
 // page when something it shows is worth reading again, so nothing in the
@@ -24,6 +24,12 @@ import { activityChangeTopic, conversationChangeTopic, gatewayChangeTopic, type 
 //   read, has new live activity; read `get-activity` again. The activity hub
 //   is process-wide, so another workspace's project is never named, whatever
 //   the caller's policy grants.
+// - `model-access`: someone's model access in this workspace may have changed
+//   (a key added, removed, chosen or refused); read the Secret Keys snapshot
+//   again, which answers the caller's own `modelAccess`. It names nothing, and
+//   comes from the workspace's own runtime (`programs.modelAccessChanges`), never a
+//   module-level hub: the panel server bundles Core more than once, so a hub
+//   imported here is not the object the runtime signals.
 //
 // Authorized for the stream as a watch over the conversations the caller may
 // read (`studio:ListConversations` on the workspace, the filtered list a
@@ -73,6 +79,9 @@ export async function GET(request: Request) {
       const reads = panelChangeReads({ owner: selected, caller, domainId: programDomainScope(request.url).domainId });
       topics.push(conversationChangeTopic(selected.fluxiq.programs.automationStudio.conversations.signals, reads.conversation));
       topics.push(activityChangeTopic(automationStudioActivityHub, reads.activity));
+      // The workspace runtime's own signal (`programs.modelAccessChanges`); an object without one streams the other topics.
+      const modelAccess = panelModelAccessSource(selected.fluxiq.programs);
+      if (modelAccess) topics.push(modelAccessChangeTopic(modelAccess));
       // The decisions stop listening for IAM changes when the stream ends.
       topics.push({ start: () => reads.stop });
     }

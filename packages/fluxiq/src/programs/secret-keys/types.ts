@@ -42,7 +42,7 @@ export type SecretKeyRecord = SecretKeySummary & {
 export type SecretKeyHostCustody = { ownerUserId: string; sealDigest: string; sealed: SecretKeyProtectedDataKey };
 
 /**
- * A version 1 seal: scrypt at Node's default cost (N=2^14), recording no
+ * A version 1 seal (under a password, before t928): scrypt at Node's default cost (N=2^14), recording no
  * parameters, with the base64url salt text itself as the scrypt salt. Still
  * read; never written. It is re-sealed as version 2 at its next successful
  * unlock or reveal.
@@ -76,7 +76,25 @@ export type EncryptedSecretValueRecordV2 = {
   ciphertext: string;
 };
 
-export type EncryptedSecretValueRecord = EncryptedSecretValueRecordV1 | EncryptedSecretValueRecordV2;
+/**
+ * A version 3 seal (t928): AES-256-GCM under a random data key that no password
+ * derives. The key is kept only as the record's `hostProtection`, wrapped for
+ * the key's owner, so the server opens it for its owner with host protection
+ * alone; no sign-in, password or PIN is needed to use it. Every saved and
+ * replaced value is written this way. Never a pending seal.
+ */
+export type EncryptedSecretValueRecordV3 = {
+  version: 3;
+  algorithm: "aes-256-gcm";
+  iv: string;
+  tag: string;
+  ciphertext: string;
+};
+
+/** The seals a password opens: written before t928, still read, upgraded and re-sealed at a credential change. */
+export type PasswordSealedSecretValueRecord = EncryptedSecretValueRecordV1 | EncryptedSecretValueRecordV2;
+
+export type EncryptedSecretValueRecord = PasswordSealedSecretValueRecord | EncryptedSecretValueRecordV3;
 
 /**
  * Which model key is the workspace's default, and what the panel assistant uses.
@@ -260,16 +278,6 @@ export type SecretKeyUnlockPersonRecord = {
   firstUnlockToldAtMs?: number | undefined;
   /** When their password was last reset without the old one: keys sealed before it no longer open. */
   passwordResetAtMs?: number | undefined;
-};
-
-/** A locked paired client as its person chooses among them. */
-export type SecretKeyLockedClient = {
-  holderId: string;
-  label: string;
-  pairedAtMs?: number;
-  lastUsedAtMs?: number;
-  /** No proof has ever reached this browser: its unlock starts from the browser itself, never from a list. */
-  neverUnlocked?: boolean;
 };
 
 /**

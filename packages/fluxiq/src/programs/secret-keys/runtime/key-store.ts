@@ -57,9 +57,9 @@ export class SecretKeyStore {
     return [...this.records.values()];
   }
 
-  /** The records a user's password may open: version 1 seals, unstamped version 2 seals, and version 2 seals stamped for this user. */
+  /** The records a user's password may open: version 1 seals, unstamped version 2 seals, and version 2 seals stamped for this user. Never a version 3 seal, which no password opens. */
   sealedFor(userId: string): SecretKeyRecord[] {
-    return this.list().filter(({ sealed }) => sealed.version === 1 || sealed.sealedByUserId === undefined || sealed.sealedByUserId === userId);
+    return this.list().filter(({ sealed }) => sealed.version === 1 || (sealed.version === 2 && (sealed.sealedByUserId === undefined || sealed.sealedByUserId === userId)));
   }
 
   /** Replaces a record in memory; `persist` writes it. */

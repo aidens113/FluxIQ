@@ -36,13 +36,16 @@ export class ModelKeySettings {
   private readonly kind: string;
   private readonly store: SecretKeyStore;
   private readonly now: () => number;
+  /** Told after a person's own choice here is written (offer, default, assistant, allowance). `ensureDefault` and `keyLost` follow a key change, which its caller announces. */
+  private readonly onChanged: (() => void) | undefined;
   private loading: Promise<void> | undefined;
 
-  constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; now: () => number }) {
+  constructor(options: { repository: Repository | undefined; kind: string; store: SecretKeyStore; now: () => number; onChanged?: (() => void) | undefined }) {
     this.repository = options.repository;
     this.kind = options.kind;
     this.store = options.store;
     this.now = options.now;
+    this.onChanged = options.onChanged;
   }
 
   /** An enabled key of kind `llm`: the only kind that can be the default or run the assistant. */
@@ -99,6 +102,7 @@ export class ModelKeySettings {
     if (usd !== undefined && (!Number.isFinite(usd) || usd < 0)) throw new Error("A spending allowance is a number of dollars, zero or more.");
     this.update({ assistantAllowanceUsd: usd });
     await this.persist();
+    this.onChanged?.();
     return this.record?.assistantAllowanceUsd;
   }
 
@@ -150,6 +154,7 @@ export class ModelKeySettings {
     const offers: SecretKeyOffer[] = offered ? [...others, { keyId: id, holderId, atMs: this.now() }] : others;
     this.update({ keyOffers: offers.length > 0 ? offers : undefined });
     await this.persist();
+    this.onChanged?.();
     return { keyId: id, offered };
   }
 
@@ -164,6 +169,7 @@ export class ModelKeySettings {
     if (refusal) throw new Error(refusal);
     this.update({ defaultKeyId: id, defaultChosenBy: chosenBy, defaultNotice: undefined });
     await this.persist();
+    this.onChanged?.();
     return this.view();
   }
 
@@ -189,6 +195,7 @@ export class ModelKeySettings {
     const pinsDefault = keyId === undefined && key !== undefined && input.chosenBy !== undefined && !(this.record?.defaultKeyId === key.id && this.record.defaultChosenBy !== undefined);
     this.update({ assistantKeyId: keyId, assistantChosenBy: input.chosenBy, assistantModel: model, assistantModelProvider: model === undefined ? undefined : providerOf(key), ...(pinsDefault ? { defaultKeyId: key.id, defaultChosenBy: input.chosenBy } : {}) });
     await this.persist();
+    this.onChanged?.();
     return this.view();
   }
 

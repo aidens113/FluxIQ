@@ -5136,19 +5136,31 @@
       "name": "secret-keys__create-key",
       "programId": "secret-keys",
       "endpoint": "create-key",
-      "reason": "Takes a key's value and the person's password, which are never given to the assistant."
+      "reason": "Takes a key's value, which is never given to the assistant."
     },
     {
       "name": "secret-keys__delete-key",
       "programId": "secret-keys",
       "endpoint": "delete-key",
-      "reason": "Needs the person's password to delete a key, which is never given to the assistant."
+      "reason": "A person removes their keys themselves in Settings; the assistant never does it for them."
     },
     {
       "name": "secret-keys__offer-key",
       "programId": "secret-keys",
       "endpoint": "offer-key",
       "reason": "Lets a person's own key pay for other people's messages, so the person decides it themselves in Settings; the assistant never does it for them."
+    },
+    {
+      "name": "secret-keys__remove-model-key",
+      "programId": "secret-keys",
+      "endpoint": "remove-model-key",
+      "reason": "A person removes their own model key themselves; the assistant never does it for them."
+    },
+    {
+      "name": "secret-keys__replace-model-key",
+      "programId": "secret-keys",
+      "endpoint": "replace-model-key",
+      "reason": "Takes a new key value, which is never given to the assistant."
     },
     {
       "name": "secret-keys__reveal-key",
@@ -5160,13 +5172,19 @@
       "name": "secret-keys__rotate-key",
       "programId": "secret-keys",
       "endpoint": "rotate-key",
-      "reason": "Takes a new key value and the person's password, which are never given to the assistant."
+      "reason": "Takes a new key value, which is never given to the assistant."
+    },
+    {
+      "name": "secret-keys__save-model-key",
+      "programId": "secret-keys",
+      "endpoint": "save-model-key",
+      "reason": "Takes a key's value, which is never given to the assistant."
     },
     {
       "name": "secret-keys__update-key",
       "programId": "secret-keys",
       "endpoint": "update-key",
-      "reason": "Needs the person's password to rename or change a key, which is never given to the assistant."
+      "reason": "A person renames or changes their keys themselves in Settings; the assistant never does it for them."
     }
   ]
 }

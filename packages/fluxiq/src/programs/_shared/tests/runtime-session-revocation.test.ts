@@ -5,6 +5,7 @@
 // own unlock. In memory, at the production derivation cost. "admin" is the
 // bootstrap administrator's default password; every other secret is a dummy.
 
+import { createPasswordSealedKey } from "../../secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { describe, expect, it } from "vitest";
 import { createGlobalProgramRuntime } from "../../index.ts";
 import type { ProgramApiActor } from "../api.ts";
@@ -24,8 +25,8 @@ describe("global runtime session-revocation wiring", () => {
       const admin = await identityAccess.authenticate({ username: "admin", password: BOOTSTRAP_PASSWORD });
       await identityAccess.upsertUser({ id: "user.viewer", username: "viewer", displayName: "Viewer", roleId: "viewer", password: VIEWER_PASSWORD });
       const viewer = await identityAccess.authenticate({ username: "viewer", password: VIEWER_PASSWORD });
-      await secretKeys.createKey({ name: "Provider", value: "dummy-provider-secret-value", authorizationPassword: VIEWER_PASSWORD, createdBy: "user.viewer" });
-      await secretKeys.createKey({ name: "Admin provider", value: "dummy-admin-secret-value", authorizationPassword: BOOTSTRAP_PASSWORD, createdBy: admin.user.id });
+      await createPasswordSealedKey(secretKeys, { name: "Provider", value: "dummy-provider-secret-value", authorizationPassword: VIEWER_PASSWORD, createdBy: "user.viewer" });
+      await createPasswordSealedKey(secretKeys, { name: "Admin provider", value: "dummy-admin-secret-value", authorizationPassword: BOOTSTRAP_PASSWORD, createdBy: admin.user.id });
       await secretKeys.unlockSession({ sessionId: viewer.session.id, userId: "user.viewer", authorizationPassword: VIEWER_PASSWORD, expiresAtMs: viewer.session.expiresAtMs });
       await secretKeys.unlockSession({ sessionId: admin.session.id, userId: admin.user.id, authorizationPassword: BOOTSTRAP_PASSWORD, expiresAtMs: admin.session.expiresAtMs });
       expect(secretKeys.unlockedSessionFor("user.viewer")).toBe(viewer.session.id);

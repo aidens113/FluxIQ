@@ -52,8 +52,7 @@ export class RuntimeAccessFixture {
   async createKey(runtime: GlobalProgramRuntime, login: Login, password = RUNTIME_PASSWORD) {
     return await runtime.secretKeys.createKey({
       name: "Model", kind: "llm", provider: "Anthropic", value: RUNTIME_KEY_VALUE,
-      authorizationPassword: password, createdBy: login.user.id,
-      actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs }
+      createdBy: login.user.id
     });
   }
 
