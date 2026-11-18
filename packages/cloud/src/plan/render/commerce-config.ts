@@ -24,7 +24,15 @@ export function renderCommerceConfig(config: CloudConfig): string | null {
     retentionMs: billing.retentionMs,
     refreshAfterMs: billing.refreshAfterMs,
     ...(billing.maxVerificationAgeMs === null ? {} : { maxVerificationAgeMs: billing.maxVerificationAgeMs }),
-    plans: billing.plans,
+    ...(billing.checkoutLifetimeMs === null ? {} : { checkoutLifetimeMs: billing.checkoutLifetimeMs }),
+    ...(billing.region === null ? {} : { region: billing.region }),
+    plans: Object.fromEntries(Object.entries(billing.plans).map(([id, plan]) => [id, {
+      ...(plan.name === null ? {} : { name: plan.name }),
+      priceId: plan.priceId,
+      unit: plan.unit,
+      quantity: plan.quantity,
+      grants: plan.grants
+    }])),
     ...(stripe ? { secretKeyFile: "/run/secrets/stripe_secret_key" } : {}),
     webhookSecretFile: "/run/secrets/stripe_webhook_secret",
     ...(stripe && apiBase !== STRIPE_API ? { apiBaseUrl: apiBase } : {})

@@ -7,5 +7,6 @@ export type {
   CommerceAdmissionRequest,
   CommerceDeploymentMode,
   CommerceExecutionAuthority,
-  CommerceExecutionTarget
+  CommerceExecutionTarget,
+  CommerceHoldings
 } from "./types.ts";

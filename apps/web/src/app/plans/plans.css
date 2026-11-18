@@ -1,0 +1,21 @@
+.plans-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plans-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #d4d4d8);
+  border-radius: 8px;
+}
+
+.plans-option p {
+  margin: 4px 0 0;
+}

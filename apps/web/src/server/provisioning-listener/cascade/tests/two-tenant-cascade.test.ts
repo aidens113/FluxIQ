@@ -29,7 +29,7 @@ import { startDeletionSweep } from "../deletion-sweep";
 // workspace manager with tenant roots on disk, the browser-trust authority and
 // each workspace's real client gateway, and commerce billing over a ledger
 // with the fake payment provider. Only the environment controller is a
-// recorder (it is not composed into the web server yet). Synthetic people and
+// recorder here (the web server's environments purge is purge-environments.ts, tested beside it). Synthetic people and
 // credentials only; nothing leaves the machine.
 
 const PRIMARY = "workspace-main";
@@ -37,6 +37,15 @@ const ORG_B = "org-b";
 const SECRET = "whsec_fake_local_test_secret";
 const FIXTURE: PlatformProvisioningCaller = { kind: "in-process", actorUserId: null, transport: "in-process" };
 const cleanups: Array<() => Promise<void>> = [];
+
+/** The person pays through a checkout: billing records it, the provider completes it, and the signed completion binds the subscription to the person. */
+async function subscribe(w: { person: string; billing: CommerceBillingService; provider: FakePaymentProvider }): Promise<void> {
+  const checkout = await w.billing.createCheckout({ accountId: w.person, planId: "browser", successUrl: "https://app.example.test/plans?checkout=success", cancelUrl: "https://app.example.test/plans?checkout=cancel" });
+  w.provider.completeCheckout(checkout.checkoutId);
+  w.provider.putSubscription({ accountId: w.person, customerId: "customer-person", subscriptionId: "sub-person", status: "active", paidThroughMs: 50_000, cancelAtPeriodEnd: false, endedAtMs: null, verifiedAtMs: 0, entitlements: [] });
+  const { rawBody, signature } = w.provider.signedEvent({ id: `evt-${checkout.checkoutId}`, type: "checkout.session.completed", subscriptionId: "sub-person", checkout: { checkoutId: checkout.checkoutId, outcome: "completed" } });
+  await w.billing.ingestWebhook(rawBody, signature);
+}
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -177,8 +186,7 @@ describe("account disable and delete, composed", () => {
     const inPersonal = await w.pair(w.personal, w.person, "personal");
     const inB = await w.pair(ORG_B, w.person, "org-b");
     const othersInB = await w.pair(ORG_B, w.memberB.userId, "member-b");
-    w.provider.putSubscription({ accountId: w.person, customerId: "customer-person", subscriptionId: "sub-person", status: "active", paidThroughMs: 50_000, cancelAtPeriodEnd: false, endedAtMs: null, verifiedAtMs: 0, entitlements: [] });
-    await w.billing.reconcileSubscription("sub-person");
+    await subscribe(w);
     expect(existsSync(w.tenantRoot(w.personal))).toBe(true);
 
     const answer = await w.run("deleteAccount", { userId: w.person, mode: "immediate" });
@@ -227,8 +235,7 @@ describe("account disable and delete, composed", () => {
 
   it("answers scheduled through a payment provider outage, and the retry completes it with one cancellation", async () => {
     const w = await world();
-    w.provider.putSubscription({ accountId: w.person, customerId: "customer-person", subscriptionId: "sub-person", status: "active", paidThroughMs: 50_000, cancelAtPeriodEnd: false, endedAtMs: null, verifiedAtMs: 0, entitlements: [] });
-    await w.billing.reconcileSubscription("sub-person");
+    await subscribe(w);
     w.provider.unavailable = true;
     const answer = await w.run("deleteAccount", { userId: w.person, mode: "immediate" });
     if (!answer.ok) throw new Error("expected an answer");

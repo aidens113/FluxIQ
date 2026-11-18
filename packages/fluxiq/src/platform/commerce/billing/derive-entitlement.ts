@@ -29,7 +29,7 @@ export function deriveCommerceEntitlement(input: {
   const { accountId, nowMs, policy } = input;
   const subscriptions = input.subscriptions.filter((subscription) => subscription.accountId === accountId);
   const billed = subscriptions.map((subscription) => ({ subscription, billing: subscriptionBillingState(subscription, nowMs, policy) }));
-  const pendingCheckout = input.checkouts.some((checkout) => checkout.accountId === accountId && checkout.createdAtMs <= nowMs && nowMs < checkout.expiresAtMs);
+  const pendingCheckout = input.checkouts.some((checkout) => checkout.accountId === accountId && checkoutOpen(checkout, nowMs));
   const states = new Set<CommerceBillingState>(billed.map(({ billing }) => billing.state));
   if (pendingCheckout) states.add("checkout-pending");
   const state = PRECEDENCE.find((candidate) => states.has(candidate)) ?? "none";
@@ -45,6 +45,11 @@ export function deriveCommerceEntitlement(input: {
   if (state === "ended") entitlement.retentionEndsAt = latest(billed.filter(({ billing }) => billing.state === "ended").map(({ billing }) => billing.retentionEndsAt));
   entitlement.revision = revisionOf(entitlement, subscriptions, input.checkouts.filter((checkout) => checkout.accountId === accountId));
   return entitlement;
+}
+
+/** Open: started, not completed, not expired by FluxIQ, and before the provider's own expiry. */
+function checkoutOpen(checkout: CommerceCheckoutRecord, nowMs: number): boolean {
+  return checkout.completedAtMs === null && checkout.expiredAtMs === null && checkout.createdAtMs <= nowMs && nowMs < checkout.expiresAtMs;
 }
 
 function admits(billing: CommerceSubscriptionBillingState, nowMs: number): boolean {
@@ -66,6 +71,7 @@ function copyGrant(grant: CommerceEntitlementGrant): CommerceEntitlementGrant {
     capabilities: [...grant.capabilities],
     regions: [...grant.regions],
     resourceIds: [...grant.resourceIds],
+    ...(grant.quantity === undefined ? {} : { quantity: grant.quantity }),
     validFromMs: grant.validFromMs,
     validUntilMs: grant.validUntilMs
   };
@@ -86,7 +92,7 @@ function revisionOf(entitlement: CommerceEntitlement, subscriptions: readonly Co
     subscriptions: subscriptions
       .map((subscription) => [subscription.providerId, subscription.subscriptionId, subscription.customerId, subscription.status, subscription.paidThroughMs, subscription.cancelAtPeriodEnd, subscription.endedAtMs, subscription.entitlements])
       .sort(compareJson),
-    checkouts: checkouts.map((checkout) => [checkout.providerId, checkout.checkoutId, checkout.expiresAtMs]).sort(compareJson)
+    checkouts: checkouts.map((checkout) => [checkout.providerId, checkout.checkoutId, checkout.expiresAtMs, checkout.completedAtMs, checkout.expiredAtMs]).sort(compareJson)
   };
   return createHash("sha256").update(JSON.stringify(facts), "utf8").digest("hex").slice(0, 32);
 }

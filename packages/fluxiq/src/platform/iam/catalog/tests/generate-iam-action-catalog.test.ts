@@ -35,6 +35,14 @@ describe("generateIamActionCatalog", () => {
     expect(() => generateIamActionCatalog(many)).toThrow(IamCatalogSourceLimitError);
   });
 
+  it("lists a registered app route's action as its own entry with a route source, in action order", () => {
+    const route = { action: "iam:StartCheckout", method: "POST" as const, path: "/api/platform/v1/commerce/checkout", accessLevel: "Write" as const, destructive: false, description: "Starts a checkout." };
+    const { catalog } = generateIamActionCatalog([reg("identity-access", "update-user", "authoring", "identity.manage"), reg("runtime", "status")], [route]);
+    expect(catalog.map((entry) => entry.action)).toEqual(["iam:StartCheckout", "iam:UpdateUser", "ops:Status"]);
+    expect(catalog[0]).toEqual({ action: "iam:StartCheckout", accessLevel: "Write", resourceTypes: ["*"], sources: [{ kind: "route", method: "POST", path: "/api/platform/v1/commerce/checkout" }], destructive: false, description: "Starts a checkout." });
+    expect(() => generateIamActionCatalog([reg("identity-access", "start-checkout")], [route])).toThrow(/already declared/u);
+  });
+
   it("throws when a shared action disagrees", () => {
     expect(() => generateIamActionCatalog([reg("runtime", "snapshot"), reg("docs", "snapshot", "destructive")])).toThrow(/disagree/u);
   });

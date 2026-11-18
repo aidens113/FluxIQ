@@ -29,9 +29,11 @@
     "refreshAfterMs": 3600000,
     "plans": {
       "browser": {
+        "name": "Dedicated browser",
         "priceId": "price_dedicated_browser_monthly",
         "unit": "dedicated-browser",
-        "grants": [{ "key": "cloud.dedicated", "allocation": "dedicated", "capabilities": ["execute"], "regions": ["region-a"] }]
+        "quantity": 1,
+        "grants": [{ "key": "cloud.dedicated", "allocation": "dedicated", "capabilities": ["execute", "environment.dedicated"], "regions": ["region-a"] }]
       },
       "seat": {
         "priceId": "price_team_seat_monthly",

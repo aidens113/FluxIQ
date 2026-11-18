@@ -2,6 +2,8 @@ import { DeletionPending, PaymentProviderUnavailableError } from "fluxiq/platfor
 import type { CommerceBillingService, PlatformServicesOptions, PlatformStore } from "fluxiq/platform";
 import type { FluxIQ } from "fluxiq";
 import type { FluxIQWorkspaceManager } from "../../../lib/workspaces";
+import { purgeEnvironments } from "./purge-environments";
+import type { EnvironmentPurgeSources } from "./purge-environments";
 import { createConnectedClientRevoker } from "./revoke-connected-clients";
 import type { ConnectedClientRevokerDeps } from "./revoke-connected-clients";
 
@@ -19,8 +21,9 @@ export type CascadePorts = Required<Pick<PlatformServicesOptions, CascadePortNam
  * - `store`: the platform store (an existing workspace has a row);
  * - `listActiveForUser`: the browser-trust authority's bindings of a person;
  * - `billing`: the commerce billing service, or null when nothing is billed;
- * - `purgeEnvironments`: the environments step; until the environment
- *   controller is composed into the web server it is a no-op.
+ * - `purgeEnvironments`: the environments step; by default the hosted
+ *   environment controller's account and workspace purges
+ *   (`purgeEnvironments`), a no-op when this server bills nothing.
  */
 export type CascadePortSources = {
   primary: FluxIQ;
@@ -78,7 +81,7 @@ export function composeCascadePorts(sources: CascadePortSources): CascadePorts {
         throw error;
       }
     },
-    purgeEnvironments: sources.purgeEnvironments ?? (async () => undefined),
+    purgeEnvironments: sources.purgeEnvironments ?? purgeEnvironments(hostedEnvironments(sources)),
     deleteWorkspaceData: async (workspaceId) => {
       const manager = sources.manager();
       if (manager.tenancy !== "multi") return;
@@ -89,6 +92,19 @@ export function composeCascadePorts(sources: CascadePortSources): CascadePorts {
         throw error;
       }
     }
+  };
+}
+
+/**
+ * The hosted controller and the environment records under this primary's
+ * root. Hosted environments exist only where something is billed, so the
+ * billing source answers first and a server that bills nothing never loads
+ * or composes the controller.
+ */
+function hostedEnvironments(sources: CascadePortSources): EnvironmentPurgeSources {
+  return {
+    controller: async () => (await sources.billing()) === null ? null : (await import("../../environments/hosted")).getHostedEnvironmentController(),
+    records: async () => (await import("../../environments")).getEnvironmentStore(sources.primary.paths.fluxiq)
   };
 }
 

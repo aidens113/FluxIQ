@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CommerceBillingPolicy, CommerceCheckoutRecord, CommerceSubscriptionRecord, CommerceSubscriptionSnapshot } from "../../model/index.ts";
-import { event, grant } from "../../tests/fixtures.ts";
+import { checkout as recorded, event, grant } from "../../tests/fixtures.ts";
 import { deriveCommerceEntitlement } from "../index.ts";
 
 const policy: CommerceBillingPolicy = { allowTrial: false, graceMs: 1_000, retentionMs: 10_000 };
@@ -23,14 +23,27 @@ it("reports past-due with the latest grace end when nothing is fully paid", () =
 
 it("ranks a scheduled cancel above suspension, a new checkout above an ended subscription", () => {
   expect(derive([record("s", { status: "unpaid" }), record("c", { cancelAtPeriodEnd: true })])).toMatchObject({ state: "cancel-at-period-end", grants: [grant()] });
-  const checkout: CommerceCheckoutRecord = { accountId: "account-a", providerId: "fixture-provider", checkoutId: "cs-1", createdAtMs: 1_000, expiresAtMs: 3_000 };
+  const checkout = recorded();
   expect(derive([record("e", { status: "canceled", endedAtMs: 1_000 })], [checkout])).toMatchObject({ state: "checkout-pending", grants: [] });
   expect(derive([record("e", { status: "canceled", endedAtMs: 1_000 })], [checkout], 3_000)).toMatchObject({ state: "ended", retentionEndsAt: 11_000 });
 });
 
+it("counts a checkout pending only while it is open: not completed, not expired by FluxIQ, before its expiry", () => {
+  const ended = record("e", { status: "canceled", endedAtMs: 1_000 });
+  expect(derive([ended], [recorded()])).toMatchObject({ state: "checkout-pending" });
+  expect(derive([ended], [recorded({ subscriptionId: "sub-1", completedAtMs: 1_500 })])).toMatchObject({ state: "ended" });
+  expect(derive([ended], [recorded({ expiredAtMs: 1_500 })])).toMatchObject({ state: "ended" });
+  expect(derive([], [recorded({ expiredAtMs: 1_500 })]).revision).not.toBe(derive([], [recorded()]).revision);
+});
+
+it("copies a counted grant's quantity into the entitlement", () => {
+  const browsers = grant({ key: "cloud.dedicated", allocation: "dedicated", quantity: 2 });
+  expect(derive([record("paid", { entitlements: [browsers] })]).grants).toEqual([browsers]);
+});
+
 it("ignores another account's subscriptions and checkouts", () => {
   const foreign = record("foreign", { accountId: "account-b" });
-  const checkout: CommerceCheckoutRecord = { accountId: "account-b", providerId: "fixture-provider", checkoutId: "cs-9", createdAtMs: 1_000, expiresAtMs: 3_000 };
+  const checkout = recorded({ accountId: "account-b", checkoutId: "cs-9" });
   expect(derive([foreign], [checkout])).toMatchObject({ accountId: "account-a", state: "none", grants: [] });
 });
 
