@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../core/index.ts";
 import type { ScryptParameters } from "../_shared/password-kdf/index.ts";
-import type { ModelKeyAvailability } from "@fluxiq/contracts/platform";
+import type { ModelAccessState, ModelKeyAvailability } from "@fluxiq/contracts/platform";
 import type { SecretKeyProtectedDataKey } from "../../platform/custody/protection/index.ts";
 
 export type SecretKeyKind = "llm" | "custom";
@@ -172,6 +172,12 @@ export type SecretKeysSnapshot = {
   keys: Array<SecretKeySummary & { availability?: ModelKeyAvailability; unlocked?: boolean; offeredToWorkspace?: boolean; heldByYou?: boolean }>;
   /** Which key is the default, and the assistant's choice. */
   modelSettings?: ModelKeySettingsView;
+  /**
+   * The caller's model access: whether their chats and Flows can reach a model
+   * now, and the one reason when not (t924). Said only on a snapshot read for a
+   * caller, when the host binds it.
+   */
+  modelAccess?: ModelAccessState;
 };
 
 /**
