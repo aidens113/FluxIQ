@@ -1,35 +1,41 @@
-// Writes the package through which the panel's Node server loads Core once.
+// Writes the package that lets Turbopack leave Core to Node.
 //
 // `fluxiq` reaches `apps/web` as a pnpm workspace link, whose real path is
 // `packages/fluxiq`, outside any `node_modules`. Turbopack externalizes a
 // package only when its resolved file lies under a `node_modules` directory
 // (its `ExternalCjsModulesResolvePlugin` matches `**/node_modules/**`), so
 // `serverExternalPackages: ["fluxiq"]` is silently ignored and Core is bundled
-// into each server graph. This bridge is a real package under a
-// `node_modules`: one module per Core entry point, each only `export * from`
+// into each server graph, once per graph. This bridge is a real package under
+// a `node_modules`, one module per Core entry point, each re-exporting by name
 // the matching file of Core's real directory. `next.config.ts` aliases every
-// `fluxiq` entry point to it and names it in `serverExternalPackages`, so the
-// Node server imports the bridge, and through it Core's real files, with
-// Node's own loader: one copy, keyed by Core's real path, which the
-// extension's host module (also loaded by Node) shares. A browser or edge
-// bundle bundles the re-export through to Core; the bridge declares no side
-// effects, so those bundles still shake out what they do not use.
+// `fluxiq` entry point to it and names it in `serverExternalPackages`; the
+// resolved file then satisfies Turbopack's condition, and Turbopack emits the
+// external under the request as written (`fluxiq/server`). At run time Node
+// imports `fluxiq/...` itself, through `apps/web/node_modules/fluxiq`, once,
+// keyed by Core's real path, which the extension's host module shares; the
+// server's traces follow the same link into Core's `dist`, so a standalone
+// output carries Core (`scripts/core-trace/` checks it). A browser or edge
+// bundle bundles the bridge's named re-exports through to Core and keeps only
+// the names it uses.
 //
-// It is written to the `node_modules` of the directory holding both `apps/web`
-// and Core (the workspace root), because Turbopack resolves an alias target
-// from the importing file: `packages/ui-components`, which imports Core, finds
-// it there as `apps/web` does, and so does Node from `.next/server`.
+// It is written to the `node_modules` of Core's pnpm workspace root (the
+// directory holding `pnpm-workspace.yaml` above Core), because Turbopack
+// resolves an alias target from the importing file: `apps/web` and
+// `packages/ui-components` both find it there. A web directory outside that
+// workspace is refused, rather than writing the bridge into whatever
+// directory the two happen to share.
 //
 // The bridge is generated, never committed (`node_modules` is ignored), and
-// rewritten whenever `next.config.ts` loads (build, dev and start), from the
-// Core package `apps/web` resolves. Synchronous: `next.config.ts` calls it
-// while Next loads the config. Next compiles that file to CommonJS, so this
-// module uses neither top-level await nor `import.meta`.
+// brought up to date whenever `next.config.ts` loads (build, dev and start),
+// from the Core package `apps/web` resolves. Synchronous: `next.config.ts`
+// calls it while Next loads the config. Next compiles that file to CommonJS,
+// so this module uses neither top-level await nor `import.meta`.
 
-import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { coreEntryNames } from "./core-entry-names.mjs";
 
-/** The bridge's package name: Node resolves this bare name from the server's chunks. */
+/** The bridge's package name. */
 export const CORE_BRIDGE_PACKAGE = "fluxiq-node-bridge";
 
 /**
@@ -42,7 +48,12 @@ export function writeCoreBridge(webDirectory) {
   const core = realpathSync(path.join(webDirectory, "node_modules", "fluxiq"));
   const corePackage = JSON.parse(readFileSync(path.join(core, "package.json"), "utf8"));
   if (!corePackage.exports || typeof corePackage.exports !== "object") throw new Error("Core bridge: Core's package.json declares no exports.");
-  const bridge = path.join(commonAncestor(realpathSync(webDirectory), core), "node_modules", CORE_BRIDGE_PACKAGE);
+  const workspace = workspaceRoot(core);
+  const web = realpathSync(webDirectory);
+  if (!inside(web, workspace)) throw new Error(`Core bridge: ${web} is outside Core's workspace (${workspace}), so the panel and Core's other packages could not both resolve the bridge. Build the panel from inside the workspace (FLUXIQ_CORE_WEB_BUILD_CACHE pointing outside it is not supported).`);
+  const bridge = path.join(workspace, "node_modules", CORE_BRIDGE_PACKAGE);
+  /** @type {Map<string, Set<string>>} */
+  const names = new Map();
   /** @type {Map<string, string>} each bridge file and its text */
   const files = new Map();
   /** @type {Record<string, string>} */
@@ -54,9 +65,12 @@ export function writeCoreBridge(webDirectory) {
     if (typeof target !== "string" || !target.endsWith(".js") || key.includes("*")) continue;
     const sub = key === "." ? "" : key.slice(2);
     const file = path.join(bridge, sub === "" ? "index.js" : `${sub}.js`);
-    let relative = path.relative(path.dirname(file), path.join(core, target)).split(path.sep).join("/");
+    const coreFile = path.join(core, target);
+    let relative = path.relative(path.dirname(file), coreFile).split(path.sep).join("/");
     if (!relative.startsWith(".")) relative = `./${relative}`;
-    files.set(file, `// Generated by apps/web/scripts/core-bridge: Core's ${sub === "" ? "fluxiq" : `fluxiq/${sub}`}, loaded by Node.\nexport * from ${JSON.stringify(relative)};\n`);
+    const exported = coreEntryNames(coreFile, names);
+    const statement = exported.length === 0 ? "export {};" : `export { ${exported.join(", ")} } from ${JSON.stringify(relative)};`;
+    files.set(file, `// Generated by apps/web/scripts/core-bridge: Core's ${sub === "" ? "fluxiq" : `fluxiq/${sub}`}.\n${statement}\n`);
     exportsMap[key] = `./${path.relative(bridge, file).split(path.sep).join("/")}`;
     aliases[sub === "" ? "fluxiq" : `fluxiq/${sub}`] = sub === "" ? CORE_BRIDGE_PACKAGE : `${CORE_BRIDGE_PACKAGE}/${sub}`;
   }
@@ -68,11 +82,24 @@ export function writeCoreBridge(webDirectory) {
   return { name: CORE_BRIDGE_PACKAGE, directory: bridge, aliases };
 }
 
+/** The nearest directory above Core holding `pnpm-workspace.yaml`. */
+function workspaceRoot(core) {
+  for (let directory = path.dirname(core); ; directory = path.dirname(directory)) {
+    if (existsSync(path.join(directory, "pnpm-workspace.yaml"))) return directory;
+    if (path.dirname(directory) === directory) throw new Error(`Core bridge: no pnpm-workspace.yaml above Core (${core}).`);
+  }
+}
+
+function inside(child, parent) {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 /**
  * Makes the bridge directory hold exactly `files`, writing only what changed
  * and removing only what is no longer wanted. Next loads `next.config.ts` in
  * several processes (the build, its workers, `next start`), so a bridge is
- * never deleted and rewritten under a server that is importing from it.
+ * never deleted and rewritten under a build that is resolving through it.
  */
 function synchronize(bridge, files) {
   for (const [file, text] of files) {
@@ -90,13 +117,4 @@ function synchronize(bridge, files) {
     const target = path.join(entry.parentPath ?? entry.path, entry.name);
     if (entry.isFile() && !files.has(target)) rmSync(target, { force: true });
   }
-}
-
-function commonAncestor(a, b) {
-  const left = path.resolve(a).split(path.sep);
-  const right = path.resolve(b).split(path.sep);
-  let shared = 0;
-  while (shared < left.length && shared < right.length && left[shared].toLowerCase() === right[shared].toLowerCase()) shared += 1;
-  if (shared === 0) throw new Error(`Core bridge: ${a} and Core (${b}) share no directory to hold the bridge.`);
-  return left.slice(0, shared).join(path.sep) || path.sep;
 }

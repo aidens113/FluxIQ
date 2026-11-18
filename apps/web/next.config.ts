@@ -2,6 +2,7 @@ import path from "node:path";
 import type { NextConfig } from "next";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
 import { writeCoreBridge } from "./scripts/core-bridge/index.mjs";
+import { assertCoreTraced } from "./scripts/core-trace/index.mjs";
 import { assertOneCoreGraph } from "./scripts/one-core-graph/index.mjs";
 
 /**
@@ -19,12 +20,14 @@ import { assertOneCoreGraph } from "./scripts/one-core-graph/index.mjs";
  * file is under `node_modules`, and `fluxiq` is a pnpm workspace link to
  * `packages/fluxiq`, so it is silently bundled. `writeCoreBridge`
  * (`scripts/core-bridge/`) writes a real package under the workspace root's
- * `node_modules` that re-exports each Core entry point from Core's real
- * files. Every `fluxiq` import is aliased to it, and it is external, so Node
- * imports it, and Core through it, once by Core's real path. Instrumentation,
- * routes, pages and the extension's host module (which imports `fluxiq`
- * through Node) share that one graph. A browser or edge bundle (middleware)
- * bundles the re-export through to Core, as before.
+ * `node_modules` that re-exports each Core entry point by name. Every `fluxiq`
+ * import is aliased to it and it is external, so Turbopack leaves the import
+ * to Node under the request as written (`fluxiq/server`), and Node loads Core
+ * once by its real path through `node_modules/fluxiq`. Instrumentation,
+ * routes, pages, the client gateway's native server and the extension's host
+ * module (both load `fluxiq` through Node) share that one graph. A browser or
+ * edge bundle (middleware) bundles the bridge's named re-exports through to
+ * Core and keeps only what it uses.
  *
  * The alias wins over the source `paths` of `tsconfig.json`, so `next dev`
  * also runs Core's `dist`: an edit to Core's source shows after Core's
@@ -32,9 +35,11 @@ import { assertOneCoreGraph } from "./scripts/one-core-graph/index.mjs";
  * in dev too, whose split state (the database write locks among it) was the
  * same bug. A production build type-checks with `tsconfig.build.json`, which
  * has no source aliases. `web:build` refuses an output that embeds Core's
- * unstamped runtime identity (`scripts/web-build/identity/`), and after each
+ * unstamped runtime identity (`scripts/web-build/identity/`). After each
  * production compile `assertOneCoreGraph` (`scripts/one-core-graph/`) fails
- * the build if any Core module is still bundled more than once.
+ * the build if any Core module is still bundled more than once, and
+ * `assertCoreTraced` (`scripts/core-trace/`) if the server's traces, which a
+ * standalone output copies, lack what Node needs to load Core.
  */
 export default function nextConfig(phase: string): NextConfig {
   // Next compiles this file as CommonJS from `apps/web`, so `__dirname` is `apps/web`.
@@ -46,6 +51,9 @@ export default function nextConfig(phase: string): NextConfig {
       async runAfterProductionCompile({ distDir, projectDir }) {
         const { files, bundled } = await assertOneCoreGraph({ distDirectory: distDir, coreDirectory: path.join(projectDir, "node_modules", "fluxiq") });
         console.log(`One Core graph: ${files} Node server files bundle ${bundled} Core module(s), none more than once.`);
+        const gateway = path.join(projectDir, ".server-runtime", "client-gateway-server.mjs");
+        const { requests, traced } = await assertCoreTraced({ distDirectory: distDir, webDirectory: projectDir, modules: [gateway] });
+        console.log(`Core trace: the Node server's ${traced} traced files carry all ${requests} Core entry points it imports through Node.`);
       }
     },
     // No page of the panel may be framed: a page on another local port counts

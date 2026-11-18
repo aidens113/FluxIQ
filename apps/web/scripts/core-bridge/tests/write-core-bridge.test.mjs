@@ -24,6 +24,7 @@ beforeEach(async () => {
   root = realpathSync(await mkdtemp(path.join(os.tmpdir(), "core-bridge-")));
   web = path.join(root, "apps", "web");
   core = path.join(root, "packages", "fluxiq");
+  await write(path.join(root, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n  - packages/*\n");
   await write(path.join(core, "package.json"), JSON.stringify({
     name: "fluxiq",
     version: "9.9.9",
@@ -48,7 +49,7 @@ afterEach(async () => {
 });
 
 describe("writeCoreBridge", () => {
-  it("writes the bridge at the workspace root, where apps/web, every package and the server's chunks all resolve it", () => {
+  it("writes the bridge at Core's workspace root, where apps/web and every package resolve it", () => {
     expect(writeCoreBridge(web)).toEqual({
       name: CORE_BRIDGE_PACKAGE,
       directory: path.join(root, "node_modules", CORE_BRIDGE_PACKAGE),
@@ -60,11 +61,12 @@ describe("writeCoreBridge", () => {
     });
   });
 
-  it("re-exports Core's real files, so every entry point and a direct import of Core share one module state", async () => {
+  it("re-exports each entry point's names from Core's real files, so every entry shares one module state", async () => {
     const { directory } = writeCoreBridge(web);
     const manifest = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"));
     expect(manifest).toMatchObject({ name: CORE_BRIDGE_PACKAGE, version: "9.9.9", type: "module", sideEffects: false, exports: { ".": "./index.js", "./automation": "./automation.js", "./automation/nodes": "./automation/nodes.js" } });
-    expect(await readFile(path.join(directory, "automation", "nodes.js"), "utf8")).toContain('export * from "../../../packages/fluxiq/dist/automation/nodes/index.js";');
+    expect(await readFile(path.join(directory, "index.js"), "utf8")).toContain('export { hub, top } from "../../packages/fluxiq/dist/index.js";');
+    expect(await readFile(path.join(directory, "automation", "nodes.js"), "utf8")).toContain('export { nodesHub } from "../../../packages/fluxiq/dist/automation/nodes/index.js";');
     // Node's own loader decides module identity (Vitest's does not), so a plain `node` process imports
     // the bridge's entries beside `fluxiq` as another Node importer (the extension's host module) reaches it.
     const probe = path.join(web, "identity-probe.mjs");
@@ -78,6 +80,31 @@ describe("writeCoreBridge", () => {
     ].join("\n"));
     const { stdout } = await run(process.execPath, [probe], { cwd: web });
     expect(JSON.parse(stdout)).toEqual({ top: 1, root: true, automation: true, nodes: true });
+  });
+
+  it("names what `export *` chains bring in, `export * as` namespaces and a default, without a star's default", async () => {
+    await write(path.join(core, "dist", "deep.js"), "export function deep() {}\nexport default 1;\nexport class Deeper {}\n");
+    await write(path.join(core, "dist", "middle.js"), "export * from \"./deep.js\";\nexport let middle = 2;\nexport * as space from \"./hub.js\";\n");
+    await write(path.join(core, "dist", "index.js"), "export * from \"./middle.js\";\nexport { hub as renamed } from \"./hub.js\";\nexport default function main() {}\n");
+    const { directory } = writeCoreBridge(web);
+    expect(await readFile(path.join(directory, "index.js"), "utf8")).toContain("export { Deeper, deep, default, middle, renamed, space } from");
+  });
+
+  it("refuses a destructured export it cannot name exactly", async () => {
+    await write(path.join(core, "dist", "index.js"), "export const { a, b } = { a: 1, b: 2 };\n");
+    expect(() => writeCoreBridge(web)).toThrow(/destructured declaration/u);
+  });
+
+  it("refuses a web directory outside Core's workspace instead of writing the bridge into a shared parent", async () => {
+    const outsideRoot = realpathSync(await mkdtemp(path.join(os.tmpdir(), "core-bridge-outside-")));
+    const outside = path.join(outsideRoot, "apps", "web");
+    try {
+      await mkdir(path.join(outside, "node_modules"), { recursive: true });
+      await symlink(core, path.join(outside, "node_modules", "fluxiq"), "junction");
+      expect(() => writeCoreBridge(outside)).toThrow(/outside Core's workspace/u);
+    } finally {
+      await rm(outsideRoot, { recursive: true, force: true });
+    }
   });
 
   it("replaces a bridge left by an older Core, dropping entries Core no longer has", async () => {
