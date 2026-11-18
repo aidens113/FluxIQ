@@ -1,10 +1,10 @@
-import { accountRouteDepsForRequest, inviteMember, readAccountsBody, toAccountsHttp } from "../server";
+import { inviteMember, readAccountsBody, toAccountsHttp, withAccountRouteDeps } from "../server";
 
-/** Invites a person by email with a role; the welcome link goes to their inbox only. */
+/** Invites a person by email with a role into the caller's workspace; the welcome link goes to their inbox only. */
 export async function POST(request: Request) {
-  const deps = await accountRouteDepsForRequest();
-  if ("status" in deps) return toAccountsHttp(deps);
-  const read = await readAccountsBody(request);
-  if (!read.ok) return toAccountsHttp(read.refusal);
-  return toAccountsHttp(await inviteMember(deps, read.body));
+  return toAccountsHttp(await withAccountRouteDeps(async (deps) => {
+    const read = await readAccountsBody(request);
+    if (!read.ok) return read.refusal;
+    return inviteMember(deps, read.body);
+  }));
 }
