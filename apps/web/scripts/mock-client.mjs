@@ -25,15 +25,24 @@ socket.addEventListener("open", () => {
   });
 });
 
+// A session credential is never printed: it would land in shell history,
+// terminal scrollback and logs, where anyone who reads them could act as this
+// client. Logged payloads show that a token was present, never its value.
+function withoutSecrets(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(withoutSecrets);
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, /token|secret|credential|password/i.test(key) ? "[redacted]" : withoutSecrets(entry)]));
+}
+
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(String(event.data));
-  console.log("[mock-client] received", message.type, message.payload);
+  console.log("[mock-client] received", message.type, withoutSecrets(message.payload));
   if (message.type === "server.pairing_required") {
     console.log(`[mock-client] waiting for web-panel approval, reference ${message.payload.referenceCode ?? "unknown"}`);
   }
   if (message.type === "server.session_ready") {
     sessionToken = message.payload.token;
-    console.log(`[mock-client] session token ${sessionToken}`);
+    console.log("[mock-client] session ready; its credential is kept in memory and never printed");
     sendStateUpdate();
   }
   if (message.type === "server.capture_snapshot") {
