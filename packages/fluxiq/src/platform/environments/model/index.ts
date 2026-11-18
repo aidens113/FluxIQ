@@ -12,6 +12,7 @@ export type {
   EnvironmentRecord,
   EnvironmentStore
 } from "./types.ts";
+export { ENVIRONMENT_ID_PATTERN } from "./environment-id-pattern.ts";
 export { EnvironmentRefusal } from "./environment-refusal.ts";
 export type { EnvironmentRefusalCode } from "./environment-refusal.ts";
 export { planEnvironmentIntent } from "./plan-environment-intent.ts";
