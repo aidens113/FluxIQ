@@ -8,8 +8,15 @@ export type CommerceGrantTemplate = {
   regions: readonly string[];
 };
 
-/** An operator-configured plan: the provider price it is sold as and what it grants. */
-export type CommercePlan = { priceId: string; grants: readonly CommerceGrantTemplate[] };
+/**
+ * What one price of a plan counts: a dedicated browser each, a seat each, or
+ * nothing (a flat price for the whole plan). The provider's item quantity is
+ * the count. Prices are the operator's configuration, never code.
+ */
+export type CommercePlanUnit = "dedicated-browser" | "seat" | "flat";
+
+/** An operator-configured plan: the provider price it is sold as, what that price counts, and what it grants. */
+export type CommercePlan = { priceId: string; unit: CommercePlanUnit; grants: readonly CommerceGrantTemplate[] };
 
 export type CommercePlanCatalog = Readonly<Record<string, CommercePlan>>;
 
@@ -24,6 +31,13 @@ export type CommerceConfig = {
   graceMs: number;
   retentionMs: number;
   refreshAfterMs: number;
+  /**
+   * How old a verification cloud admission still trusts. Always exceeds
+   * refreshAfterMs (the file is refused otherwise); twice refreshAfterMs when
+   * the file names none, so a subscription reconciled within one interval of
+   * falling due is never refused for age in between.
+   */
+  maxVerificationAgeMs: number;
   plans: CommercePlanCatalog;
   /** File holding the provider's API secret key (stripe only). */
   secretKeyFile: string | null;

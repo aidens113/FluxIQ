@@ -2,12 +2,15 @@ import type { CloudConfig } from "../../config/index.ts";
 import { toEnvFile } from "./to-env-file.ts";
 
 /**
- * env/service.env: Core's and Caddy's settings (the env_file of both
- * services). It names secret files by their mount path and holds no secret.
- * The settings the compose file fixes (profile, data root, proxy trust, the
- * provisioning listener) are not repeated here.
+ * env/service.env or env/self-hosted.env: Core's and Caddy's settings (the
+ * env_file of both services). It names secret files by their mount path and
+ * holds no secret. The settings the compose file fixes (profile, data root,
+ * proxy trust, the provisioning listener) are not repeated here. A service
+ * also sets FLUXIQ_SIGNUP (off or open: whether anyone may create their own
+ * account); a self-hosted server names its setup code file, which the base
+ * compose file does not.
  */
-export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtpPasswordSecret: string | null): string {
+export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtpPasswordSecret: string | null, commerceConfigFile: string | null): string {
   const values: [string, string][] = [
     ["FLUXIQ_PUBLIC_ORIGIN", publicOrigin],
     ["FLUXIQ_INSTANCE_ID", config.instance.id],
@@ -16,10 +19,11 @@ export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtp
     ["FLUXIQ_SITE_TLS", config.tls.mode === "internal" ? "tls internal" : `tls ${config.tls.email}`],
     ["FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS", config.gateway.allowedOrigins.join(",")],
     ["FLUXIQ_EMAIL_SENDER", config.email.smtp],
-    ["FLUXIQ_EMAIL_FROM", config.email.from],
-    ["FLUXIQ_STRIPE_API_BASE", config.payments.apiBase],
-    ["FLUXIQ_STRIPE_SECRET_KEY_FILE", "/run/secrets/stripe_secret_key"]
+    ["FLUXIQ_EMAIL_FROM", config.email.from]
   ];
+  if (config.mode === "service") values.push(["FLUXIQ_SIGNUP", config.signup]);
+  else values.push(["FLUXIQ_SETUP_CODE_FILE", "/run/secrets/setup_code"]);
+  if (commerceConfigFile !== null) values.push(["FLUXIQ_COMMERCE_CONFIG_FILE", commerceConfigFile]);
   if (config.instance.name !== null) values.push(["FLUXIQ_INSTANCE_NAME", config.instance.name]);
   if (config.signUpUrl !== null) values.push(["FLUXIQ_SIGN_UP_URL", config.signUpUrl]);
   if (config.email.username !== null && smtpPasswordSecret !== null) {

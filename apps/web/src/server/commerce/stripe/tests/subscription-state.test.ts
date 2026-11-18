@@ -4,8 +4,8 @@ import { stripeSubscriptionState } from "..";
 import type { CommercePlanCatalog } from "../../types";
 
 const plans: CommercePlanCatalog = {
-  shared: { priceId: "price_shared", grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["region-a"] }] },
-  dedicated: { priceId: "price_dedicated", grants: [{ key: "cloud.dedicated", allocation: "dedicated", capabilities: ["execute"], regions: ["region-a"] }] }
+  shared: { priceId: "price_shared", unit: "flat" as const, grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["region-a"] }] },
+  dedicated: { priceId: "price_dedicated", unit: "dedicated-browser" as const, grants: [{ key: "cloud.dedicated", allocation: "dedicated", capabilities: ["execute"], regions: ["region-a"] }] }
 };
 const sharedItem = { price: { id: "price_shared" }, current_period_start: 1_000, current_period_end: 2_000, metadata: {} };
 

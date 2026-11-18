@@ -1,4 +1,4 @@
-import type { CloudConfigIssue } from "./types.ts";
+import type { CloudConfigIssue } from "../types.ts";
 
 /** The JSON Schema keywords the config schema uses; anything else is not read. */
 export type SchemaNode = {
@@ -13,7 +13,8 @@ export type SchemaNode = {
   readonly items?: SchemaNode;
   readonly required?: readonly string[];
   readonly properties?: Readonly<Record<string, SchemaNode>>;
-  readonly additionalProperties?: boolean;
+  /** false refuses unknown names; a node checks every unknown name's value against it. */
+  readonly additionalProperties?: boolean | SchemaNode;
   readonly description?: string;
 };
 
@@ -50,6 +51,7 @@ function checkObject(value: unknown, schema: SchemaNode, path: string): CloudCon
     const property = Object.hasOwn(properties, name) ? properties[name] : undefined;
     if (property === undefined) {
       if (schema.additionalProperties === false) issues.push({ path: join(path, name), message: `is not a known setting${suggestion(name, Object.keys(properties))}` });
+      else if (typeof schema.additionalProperties === "object") issues.push(...checkAgainstSchema(child, schema.additionalProperties, join(path, name)));
       continue;
     }
     issues.push(...checkAgainstSchema(child, property, join(path, name)));
