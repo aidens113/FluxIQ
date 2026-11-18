@@ -5,5 +5,5 @@
     "rewriteRelativeImportExtensions": false,
     "tsBuildInfoFile": "tsconfig.runtime-imports.tsbuildinfo"
   },
-  "include": ["src/platform/panel/host-modules/import-host-module.ts"]
+  "include": ["src/platform/panel/host-modules/import-host-module.ts", "src/server/managed-hosts/load-launcher.ts"]
 }

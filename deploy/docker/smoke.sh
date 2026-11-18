@@ -128,7 +128,7 @@ upgrade="$(curl --silent --http1.1 --max-time 10 --output /dev/null --write-out 
 echo "Gateway refused a foreign Origin (${upgrade})"
 
 if [ "$profile" = "service" ]; then
-  cli=(docker exec "$name" node /opt/fluxiq-gateway-runtime/dist/platform/provisioning/cli/main.js accounts)
+  cli=(docker exec "$name" node /app/packages/fluxiq/dist/platform/provisioning/cli/main.js accounts)
   "${cli[@]}" createAccount --email smoke@example.org --display-name "Image smoke" --policy FluxIQUserAccess --workspace new >/dev/null \
     || fail "createAccount over the provisioning listener failed"
   "${cli[@]}" getAccount --email smoke@example.org >/dev/null \
