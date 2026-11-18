@@ -70,4 +70,26 @@ describe("authoritative client workspace selection", () => {
     await expect(resolveTrustedClientRoute({ hello, signal: new AbortController().signal }, deps)).rejects.toThrow("authority unavailable");
     expect(release).toHaveBeenCalledOnce();
   });
+
 });
+
+describe("enrolment ticket routing", () => {
+  const ticketHello = { enrolmentTicket: "fxet_synthetic", clientId: "runner", clientType: "extension" as const, metadata: { domainId: "test-domain" } };
+  it("routes a ticket only through the enrolment authority, never through credential proof, even beside a token", async () => {
+    const route = { gateway, release };
+    const enrolment = vi.fn(async () => route);
+    const signal = new AbortController().signal;
+    expect(await resolveTrustedClientRoute({ hello: { ...ticketHello, token: "synthetic-proof" }, signal }, { ...deps, enrolment })).toBe(route);
+    expect(enrolment).toHaveBeenCalledWith({ ticket: "fxet_synthetic", signal });
+    expect(lookupCredential).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
+  });
+  it("routes a ticket nowhere without an enrolment authority, or when it is empty", async () => {
+    const enrolment = vi.fn(async () => ({ gateway, release }));
+    expect(await resolveTrustedClientRoute({ hello: ticketHello, signal: new AbortController().signal }, deps)).toBeNull();
+    expect(await resolveTrustedClientRoute({ hello: { ...ticketHello, enrolmentTicket: "" }, signal: new AbortController().signal }, { ...deps, enrolment })).toBeNull();
+    expect(enrolment).not.toHaveBeenCalled();
+    expect(lookupCredential).not.toHaveBeenCalled();
+  });
+});
+
