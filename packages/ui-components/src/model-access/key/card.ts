@@ -63,6 +63,7 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
   let confirm: ModelKeyRemove | null = null;
   let reads = 0;
   let gone = false;
+  let unsubscribe: (() => void) | undefined;
 
   const words = () => (state === null ? null : modelAccessWords(state));
   const keyName = (): string | undefined => (state !== null && "keyName" in state ? state.keyName : undefined);
@@ -212,6 +213,16 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     draw();
   });
 
+  // A pushed state is drawn at once and supersedes a read still in flight; `null` reads again.
+  unsubscribe = port.subscribe?.((pushed) => {
+    if (gone) return;
+    if (pushed === null) return void refresh();
+    reads += 1;
+    state = pushed;
+    note = "";
+    draw();
+    options.onState?.(state);
+  });
   draw();
   void refresh();
   return {
@@ -219,6 +230,7 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     refresh,
     destroy() {
       gone = true;
+      unsubscribe?.();
       form?.clear();
       element.remove();
     }

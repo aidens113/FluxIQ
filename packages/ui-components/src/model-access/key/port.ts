@@ -20,6 +20,8 @@ export type ModelKeysPort = {
   remove(keyId: string, password?: string): Promise<ModelKeysResult>;
   /** Asks the provider whether it accepts the key. Absent: the new state is read as it stands. */
   check?(keyId: string): Promise<ModelKeysResult>;
+  /** Hears the key change as the host is told of it: a state is drawn at once, `null` means "changed, read again". Returns the unsubscribe. Absent: the card only reads when asked. */
+  subscribe?(listener: (state: ModelAccessState | null) => void): () => void;
   /** The host needs the account password for a change, until a backend task removes it. */
   readonly requiresPassword: boolean;
   /** False where the client cannot yet write a key: the form shows, and Save sends the person to FluxIQ. */

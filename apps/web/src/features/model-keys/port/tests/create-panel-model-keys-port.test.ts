@@ -3,6 +3,7 @@ import { fake, withFakeDocument } from "@fluxiq/ui-components/testing";
 import { describe, expect, it, vi } from "vitest";
 import type { ProgramCommandTransport } from "../../../automation-studio/data/program-transport";
 import type { ApiResponse } from "../../../programs/program-api";
+import { PanelChangeConnection, type PanelChangeEventStream, type PanelChangeEventType } from "../../../panel-changes";
 import { createPanelModelKeysPort } from "../create-panel-model-keys-port";
 
 type Call = { method: "get" | "post"; endpoint: string; payload?: unknown };
@@ -31,6 +32,7 @@ const SNAPSHOTS = {
   noKey: { status: "no_key", message: "Add an AI key.", key: null, lastCall: null },
   cantOpen: { status: "key_unopenable", message: "Cannot open.", key, lastCall: null, unopenableCode: "ciphertext_invalid" },
   notAccepted: { status: "provider_refused", message: "Refused.", key, lastCall: { outcome: "provider_refused", atMs: 6 } },
+  noCredit: { status: "no_credit", message: "No credit.", key, lastCall: { outcome: "no_credit", atMs: 8 } },
   unreachable: { status: "provider_unreachable", message: "Unreachable.", key, lastCall: { outcome: "provider_unreachable", atMs: 7 } }
 };
 const reading = (modelAccess: unknown) => transport(() => ({ ok: true, payload: { keys: [], modelAccess } }));
@@ -41,6 +43,7 @@ describe("the panel's key port, reading state from the snapshot", () => {
     ["no key", SNAPSHOTS.noKey, "no-key", "No key"],
     ["can't open", SNAPSHOTS.cantOpen, "cant-open", "Can't open"],
     ["not accepted", SNAPSHOTS.notAccepted, "not-accepted", "Not accepted"],
+    ["no credit", SNAPSHOTS.noCredit, "no-credit", "No credit"],
     ["unreachable", SNAPSHOTS.unreachable, "unreachable", "Can't reach Anthropic"],
     ["an old FluxIQ, with no state", undefined, "update-fluxiq", "Update FluxIQ"]
   ])("shows %s", async (_name, modelAccess, kind, badge) => {
@@ -153,5 +156,61 @@ describe("the shared card over the panel's port", () => {
         card.destroy();
       }
     });
+  });
+});
+
+/** The page's change connection over a stream the test drives. */
+function pushed() {
+  const handlers: Array<{ type: PanelChangeEventType; call: (event: { data?: unknown }) => void }> = [];
+  let opened = 0;
+  const stream: PanelChangeEventStream = {
+    readyState: 1,
+    onopen: null,
+    onerror: null,
+    addEventListener: (type, call) => void handlers.push({ type, call }),
+    close: () => undefined
+  };
+  const connection = new PanelChangeConnection({ openStream: () => stream, onWake: () => () => undefined });
+  return {
+    connection,
+    open: () => {
+      opened += 1;
+      stream.onopen?.(new Event("open"));
+    },
+    send: (type: PanelChangeEventType, data: unknown) => handlers.filter((handler) => handler.type === type).forEach((handler) => handler.call({ data: JSON.stringify(data) })),
+    opens: () => opened
+  };
+}
+
+describe("the panel's key port, hearing the key's pushed state", () => {
+  it("tells subscribers and onChange listeners to read again on a model-access event, and not on others", () => {
+    const wire = pushed();
+    const port = createPanelModelKeysPort(reading(undefined).secretKeys, () => wire.connection);
+    const subscribed = vi.fn();
+    const changed = vi.fn();
+    const stopSubscribe = port.subscribe(subscribed);
+    const stopChange = port.onChange(changed);
+    wire.open();
+    expect(subscribed).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    wire.send("gateway", { version: 1 });
+    wire.send("model-access", { version: 2 });
+    expect(subscribed.mock.calls).toEqual([[null]]);
+    expect(changed).toHaveBeenCalledTimes(1);
+    stopSubscribe();
+    stopChange();
+    wire.send("model-access", { version: 3 });
+    expect(subscribed).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads again after the stream re-opens, since a change may have been missed", () => {
+    const wire = pushed();
+    const port = createPanelModelKeysPort(reading(undefined).secretKeys, () => wire.connection);
+    const subscribed = vi.fn();
+    port.subscribe(subscribed);
+    wire.open();
+    wire.open();
+    expect(subscribed.mock.calls).toEqual([[null]]);
   });
 });

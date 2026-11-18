@@ -4,11 +4,11 @@ import type { CoreModelAccess } from "@fluxiq/ui-components";
 // `readModelAccessState` in `@fluxiq/contracts/platform`, which this app does not depend on, so the same
 // checks are restated here). A value that contradicts itself reads as null, which the card shows as "Update FluxIQ".
 
-const STATUSES: readonly string[] = ["ready", "no_key", "key_unopenable", "not_permitted", "provider_refused", "provider_unreachable"];
+const STATUSES: readonly string[] = ["ready", "no_key", "key_unopenable", "not_permitted", "provider_refused", "no_credit", "provider_unreachable"];
 const PROVIDERS: readonly string[] = ["anthropic", "deepseek"];
-const OUTCOMES: readonly string[] = ["answered", "provider_refused", "provider_unreachable"];
+const OUTCOMES: readonly string[] = ["answered", "provider_refused", "no_credit", "provider_unreachable"];
 const CODES: readonly string[] = ["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid"];
-const NEEDS_KEY: readonly string[] = ["ready", "key_unopenable", "provider_refused", "provider_unreachable"];
+const NEEDS_KEY: readonly string[] = ["ready", "key_unopenable", "provider_refused", "no_credit", "provider_unreachable"];
 const MAX_MESSAGE = 600;
 
 const recordOf = (value: unknown): Record<string, unknown> | undefined =>
@@ -29,7 +29,7 @@ function readLastCall(value: unknown): CoreModelAccess["lastCall"] | undefined {
   const { outcome, atMs } = record;
   if (typeof outcome !== "string" || !OUTCOMES.includes(outcome)) return undefined;
   if (typeof atMs !== "number" || !Number.isFinite(atMs) || atMs < 0) return undefined;
-  return { outcome: outcome as "answered" | "provider_refused" | "provider_unreachable", atMs };
+  return { outcome: outcome as NonNullable<CoreModelAccess["lastCall"]>["outcome"], atMs };
 }
 
 /** The state Core sent, or null when it is absent or not one. */
@@ -45,7 +45,7 @@ export function readCoreModelAccess(value: unknown): CoreModelAccess | null {
   if (status === "no_key" && key) return null;
   const lastCall = record.lastCall === null ? null : readLastCall(record.lastCall);
   if (lastCall === undefined) return null;
-  if ((status === "provider_refused" || status === "provider_unreachable") && lastCall?.outcome !== status) return null;
+  if ((status === "provider_refused" || status === "no_credit" || status === "provider_unreachable") && lastCall?.outcome !== status) return null;
   const code = record.unopenableCode;
   const typed = status as CoreModelAccess["status"];
   if (status === "key_unopenable") {

@@ -39,6 +39,20 @@ const NOUN_AFTER = new Set(["secrets:CreateKey", "secrets:UpdateKey", "secrets:R
  */
 const MAY_FAIL_AFTER_ALLOWED = new Set(["secrets:CreateKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey", "secrets:OfferKey", "secrets:SetDefaultKey"]);
 
+/** A closed error code a key write can fail with, in words that finish "because ...". Unknown codes are not shown. */
+const FAILURE_WORDS: Readonly<Record<string, string>> = {
+  provider_refused: "the provider did not accept the key",
+  no_credit: "the provider says the account has no credit",
+  provider_unreachable: "the provider could not be reached",
+  no_key: "there was no key to change",
+  key_unopenable: "the saved key could not be opened",
+  not_permitted: "this person may not use that key",
+  "authorization.forbidden": "the password or permission was not accepted"
+};
+
+/** The key writes that record an outcome row, whose failure reads "could not ...". */
+const KEY_WRITES = new Set(["secrets:CreateKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey"]);
+
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
@@ -56,6 +70,10 @@ export function activitySentence(entry: ActivityEntry): string {
   const subject = entry.resources.map(resourceWords)[0];
   const tail = NOUN_AFTER.has(entry.action) ? ` ${subject?.startsWith("the key ") ? subject : "a key"}` : "";
   const unsure = allowed && phrase !== undefined && entry.result === undefined && MAY_FAIL_AFTER_ALLOWED.has(entry.action);
+  if (allowed && phrase !== undefined && entry.result === "failed" && KEY_WRITES.has(entry.action)) {
+    const why = entry.errorKind === undefined ? undefined : FAILURE_WORDS[entry.errorKind];
+    return `${entry.who} could not ${phrase.tried}${tail}${why === undefined ? "" : ` because ${why}`}.`;
+  }
   if (allowed && phrase !== undefined && (entry.result === "failed" || unsure)) return `${entry.who} tried to ${phrase.tried}${tail}${entry.result === "failed" ? ", but it did not work" : ""}.`;
   const lead = allowed ? verb : phrase === undefined ? `was not allowed to ${verb}` : `tried to ${verb}`;
   return `${entry.who} ${lead}${tail}.`;

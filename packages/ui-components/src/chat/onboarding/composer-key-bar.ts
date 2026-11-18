@@ -1,7 +1,8 @@
 // The AI key's state above the composer, in the key card's own words and with its one action, once the chat
 // has turns: an empty chat shows the card in its welcome instead. It is drawn only while the key is not
 // ready, so a working key adds nothing. A reply, or a message that did not send, may come from a key that
-// stopped working, so the key is read again after each new reply and each failed send (there is no push).
+// stopped working, so the key is read again after each new reply and each failed send; a port that pushes the key's
+// state (`subscribe`) moves the bar at once, with no read.
 
 import { createModelKeyCard, defaultModelKeyProviders, type ModelAccessState, type ModelKeyHostAction, type ModelKeysPort } from "../../model-access/index.ts";
 import { createElement } from "../../dom/index.ts";

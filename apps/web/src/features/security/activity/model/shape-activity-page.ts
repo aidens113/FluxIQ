@@ -1,5 +1,8 @@
 import type { ActivityEntry, ActivityPage } from "./types";
 
+/** The closed code an operation fails with: lower-case words joined by `_` or `.`. */
+const ERROR_KIND = /^[a-z][a-z0-9_.]{0,99}$/u;
+
 function entryOf(value: unknown): ActivityEntry | null {
   if (value === null || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
@@ -8,8 +11,9 @@ function entryOf(value: unknown): ActivityEntry | null {
   if (row.outcome !== "allowed" && row.outcome !== "denied") return null;
   const resources = Array.isArray(row.resources) ? row.resources.filter((item): item is string => typeof item === "string") : [];
   const result = row.result === "succeeded" || row.result === "failed" ? row.result : undefined;
+  const errorKind = result === "failed" && typeof row.errorKind === "string" && ERROR_KIND.test(row.errorKind) ? row.errorKind : undefined;
   const hidden = typeof row.hidden === "number" && Number.isSafeInteger(row.hidden) && row.hidden > 0 ? row.hidden : undefined;
-  return { at: row.at, who: row.who, action: row.action, outcome: row.outcome, ...(result === undefined ? {} : { result }), resources, ...(hidden === undefined ? {} : { hidden }) };
+  return { at: row.at, who: row.who, action: row.action, outcome: row.outcome, ...(result === undefined ? {} : { result }), ...(errorKind === undefined ? {} : { errorKind }), resources, ...(hidden === undefined ? {} : { hidden }) };
 }
 
 /**

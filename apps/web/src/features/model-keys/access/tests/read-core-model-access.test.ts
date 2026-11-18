@@ -11,6 +11,15 @@ describe("reading Core's model-access state from the snapshot", () => {
     expect(readCoreModelAccess({ status: "key_unopenable", message: "x", key, lastCall: null, unopenableCode: "host_protection_unavailable" })?.unopenableCode).toBe("host_protection_unavailable");
   });
 
+  it("reads no_credit with its key and a no_credit last call, and refuses it without them", () => {
+    const noCredit = { status: "no_credit", message: "No credit left.", key, lastCall: { outcome: "no_credit", atMs: 9 } };
+    expect(readCoreModelAccess(noCredit)).toEqual(noCredit);
+    expect(readCoreModelAccess({ ...noCredit, key: null })).toBeNull();
+    expect(readCoreModelAccess({ ...noCredit, lastCall: null })).toBeNull();
+    expect(readCoreModelAccess({ ...noCredit, lastCall: { outcome: "provider_refused", atMs: 9 } })).toBeNull();
+    expect(readCoreModelAccess({ ...ready, lastCall: { outcome: "no_credit", atMs: 9 } })?.lastCall?.outcome).toBe("no_credit");
+  });
+
   it.each([
     ["nothing", undefined],
     ["a string", "ready"],

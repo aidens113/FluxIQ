@@ -68,6 +68,7 @@ const STATES: ReadonlyArray<ModelAccessState> = [
   { kind: "cant-open", keyName: "Work key" },
   { kind: "not-accepted", provider: "DeepSeek", keyName: "Home key" },
   { kind: "unreachable", provider: "Anthropic" },
+  { kind: "no-credit", provider: "Anthropic", keyName: "Work key" },
   { kind: "update-fluxiq" }
 ];
 
@@ -113,7 +114,7 @@ test("Change model and How to update go to the host; the other three open the fo
   await withFakeDocument(async () => {
     const pairs: Array<[ModelAccessState, ModelKeyHostAction]> = [
       [STATES[0]!, "change-model"],
-      [STATES[5]!, "how-to-update"]
+      [STATES.find((state) => state.kind === "update-fluxiq")!, "how-to-update"]
     ];
     for (const [state, expected] of pairs) {
       const { root, actions } = mount(port(state).value);
@@ -315,5 +316,48 @@ test("a failed read of the state says so plainly, and destroy stops the card dra
     assert.equal(one(root, "model-key-line").textContent, "Couldn't check your AI key just now.");
     card.destroy();
     await card.refresh();
+  });
+});
+
+test("a pushed state is drawn at once with no read; null reads again; destroy unsubscribes", async () => {
+  await withFakeDocument(async () => {
+    let reads = 0;
+    let push: ((state: ModelAccessState | null) => void) | undefined;
+    let unsubscribed = 0;
+    const { value } = port({ kind: "no-key" });
+    const heard: Array<ModelAccessState | null> = [];
+    const watched: ModelKeysPort = {
+      ...value,
+      readState: async () => {
+        reads += 1;
+        return value.readState();
+      },
+      subscribe: (listener) => {
+        push = listener;
+        return () => {
+          unsubscribed += 1;
+        };
+      }
+    };
+    const card = createModelKeyCard({ port: watched, variant: "compact", providers: defaultModelKeyProviders, onAction: () => undefined, onState: (state) => heard.push(state) });
+    const root = fake(card.element);
+    await settle();
+    assert.equal(reads, 1);
+    assert.equal(one(root, "model-key-badge").textContent, "No key");
+    push!({ kind: "no-credit", provider: "Anthropic", keyName: "Work key" });
+    assert.equal(reads, 1, "a pushed state needs no read");
+    assert.equal(one(root, "model-key-badge").textContent, "No credit");
+    assert.equal(one(root, "model-key-action").textContent, "Replace key");
+    assert.deepEqual(heard.at(-1), { kind: "no-credit", provider: "Anthropic", keyName: "Work key" });
+    push!({ kind: "ready", provider: "Anthropic", keyName: "Work key" });
+    assert.equal(one(root, "model-key-badge").textContent, "Ready");
+    push!(null);
+    await settle();
+    assert.equal(reads, 2, "null reads again");
+    assert.equal(one(root, "model-key-badge").textContent, "No key", "the read answer is drawn");
+    card.destroy();
+    assert.equal(unsubscribed, 1);
+    push!({ kind: "ready", provider: "Anthropic", keyName: "Work key" });
+    assert.equal(heard.at(-1)?.kind, "no-key", "a destroyed card hears nothing");
   });
 });

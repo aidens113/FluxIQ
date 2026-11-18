@@ -7,12 +7,15 @@ const key = { id: "k1", name: "Work key", provider: "anthropic", model: "claude-
 const core = (status: CoreModelAccess["status"], extra: Partial<CoreModelAccess> = {}): CoreModelAccess => ({ status, message: "Core says so.", key, lastCall: null, ...extra });
 
 describe("modelAccessFromCore", () => {
-  it("maps each Core status onto one of the six card states", () => {
+  it("maps each Core status onto one of the seven card states", () => {
     expect(modelAccessFromCore(core("ready"))).toEqual({ kind: "ready", provider: "Anthropic", keyName: "Work key" });
     expect(modelAccessFromCore(core("no_key", { key: null }))).toEqual({ kind: "no-key" });
     expect(modelAccessFromCore(core("key_unopenable", { unopenableCode: "ciphertext_invalid" }))).toEqual({ kind: "cant-open", keyName: "Work key", message: "Core says so." });
     expect(modelAccessFromCore(core("provider_refused"))).toEqual({ kind: "not-accepted", provider: "Anthropic", keyName: "Work key" });
     expect(modelAccessFromCore(core("provider_unreachable", { key: { ...key, provider: "deepseek" } }))).toEqual({ kind: "unreachable", provider: "DeepSeek" });
+  });
+  it("maps an empty provider balance to no credit", () => {
+    expect(modelAccessFromCore(core("no_credit"))).toEqual({ kind: "no-credit", provider: "Anthropic", keyName: "Work key" });
   });
   it("shows a key this person may not use as no key, with Core's words and an own-key action", () => {
     const state = modelAccessFromCore(core("not_permitted"));

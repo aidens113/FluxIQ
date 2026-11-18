@@ -1,4 +1,4 @@
-// The six model-access states: each one's badge, sentence and single action, word for word.
+// The seven model-access states: each one's badge, sentence and single action, word for word.
 
 import assert from "node:assert/strict";
 import { test } from "vitest";
@@ -10,6 +10,7 @@ const CASES: ReadonlyArray<[ModelAccessState, string, string, string, string]> =
   [{ kind: "cant-open", keyName: "Work key" }, "Can't open", "FluxIQ saved Work key but can't read it any more. Paste it again to keep going.", "paste-again", "Paste it again"],
   [{ kind: "not-accepted", provider: "DeepSeek", keyName: "Home key" }, "Not accepted", "DeepSeek did not accept Home key. Check that it was copied in full.", "replace-key", "Replace key"],
   [{ kind: "unreachable", provider: "Anthropic" }, "Can't reach Anthropic", "FluxIQ couldn't reach Anthropic just now. It tries again on your next message.", "try-now", "Try now"],
+  [{ kind: "no-credit", provider: "Anthropic", keyName: "Work key" }, "No credit", "Anthropic says the account behind Work key has no credit left. Add credit with Anthropic, or replace the key.", "replace-key", "Replace key"],
   [{ kind: "update-fluxiq" }, "Update FluxIQ", "This FluxIQ is too old to use your AI key. Update it.", "how-to-update", "How to update"]
 ];
 

@@ -120,8 +120,37 @@ describe("loadActivity", () => {
   });
 
   it("keeps only the fields it knows from an answer", async () => {
-    stub(200, { ok: true, payload: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r", 7], requestId: "dummy-request", ipPrefix: "203.0.113.0/24" }, { at: "bad" }], next: "" } });
+    stub(200, { ok: true, payload: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r", 7], ipPrefix: "203.0.113.0/24" }, { at: "bad" }], next: "" } });
     expect(await loadActivity(null)).toEqual({ state: "ready", data: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r"] }], next: null } });
+  });
+});
+
+describe("a key change's outcome, joined by the server onto its own entry", () => {
+  const entry = (action: string, extra: Partial<ActivityEntry> = {}): ActivityEntry => ({ at: NOW, who: "Ada", action, outcome: "allowed", resources: [], ...extra });
+
+  it("says a key was added, replaced or removed only when its entry says succeeded", () => {
+    expect([entry("secrets:CreateKey", { result: "succeeded" }), entry("secrets:RotateKey", { result: "succeeded" }), entry("secrets:DeleteKey", { result: "succeeded" })].map(activitySentence))
+      .toEqual(["Ada added a key.", "Ada replaced a key.", "Ada removed a key."]);
+  });
+
+  it("says a failed one could not be done, with the closed code in words where known", () => {
+    expect(activitySentence(entry("secrets:CreateKey", { result: "failed", errorKind: "provider_refused" }))).toBe("Ada could not add a key because the provider did not accept the key.");
+    expect(activitySentence(entry("secrets:RotateKey", { result: "failed", errorKind: "no_credit" }))).toBe("Ada could not replace a key because the provider says the account has no credit.");
+    expect(activitySentence(entry("secrets:DeleteKey", { result: "failed", errorKind: "something_new" }))).toBe("Ada could not remove a key.");
+  });
+
+  it("keeps 'tried to' for an entry with no outcome, and a denied request never reads as done", () => {
+    expect(activitySentence(entry("secrets:CreateKey"))).toBe("Ada tried to add a key.");
+    expect(activitySentence(entry("secrets:CreateKey", { outcome: "denied" }))).toBe("Ada tried to add a key.");
+  });
+
+  it("reads result and errorKind from an answer, drops a malformed code, and keeps no request id", () => {
+    const page = shapeActivityPage({ entries: [
+      { at: 1, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "failed", errorKind: "no_credit", requestId: "r1", resources: [] },
+      { at: 2, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "failed", errorKind: "Bad Code!", resources: [] }
+    ] });
+    expect(page.entries.map((one) => [one.result, one.errorKind])).toEqual([["failed", "no_credit"], ["failed", undefined]]);
+    expect(JSON.stringify(page)).not.toContain("r1");
   });
 });
 
@@ -142,7 +171,7 @@ describe("activity in plain words", () => {
   it("says a key was added only when the save is known to have worked (journey 10)", () => {
     const line = (result?: "succeeded" | "failed") => activitySentence({ at: NOW, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", ...(result ? { result } : {}), resources: [] });
     expect(line("succeeded")).toBe("Ada added a key.");
-    expect(line("failed")).toBe("Ada tried to add a key, but it did not work.");
+    expect(line("failed")).toBe("Ada could not add a key.");
     // The permission check passing says nothing about the save: never "added" from the authorization alone.
     expect(line()).toBe("Ada tried to add a key.");
     expect(line()).not.toContain("added");

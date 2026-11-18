@@ -31,6 +31,8 @@ export function modelAccessWords(state: ModelAccessState, nowMs: number = Date.n
       return { badge: "Can't open", tone: "bad", sentence: state.message ?? `FluxIQ saved ${state.keyName} but can't read it any more. Paste it again to keep going.`, action: { id: "paste-again", label: "Paste it again" } };
     case "not-accepted":
       return { badge: "Not accepted", tone: "bad", sentence: `${state.provider} did not accept ${state.keyName}. Check that it was copied in full.`, action: { id: "replace-key", label: "Replace key" } };
+    case "no-credit":
+      return { badge: "No credit", tone: "bad", sentence: `${state.provider} says the account behind ${state.keyName} has no credit left. Add credit with ${state.provider}, or replace the key.`, action: { id: "replace-key", label: "Replace key" } };
     case "unreachable":
       return { badge: `Can't reach ${state.provider}`, tone: "neutral", sentence: `FluxIQ couldn't reach ${state.provider} just now. It tries again on your next message.`, action: { id: "try-now", label: "Try now" } };
     case "update-fluxiq":

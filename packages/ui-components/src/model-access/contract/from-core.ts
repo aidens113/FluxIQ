@@ -1,4 +1,4 @@
-// Core's model-access state as one of the card's six states. A missing or unreadable state (`null`) means this
+// Core's model-access state as one of the card's seven states. A missing or unreadable state (`null`) means this
 // FluxIQ is older than the contract, so the person is told to update it. "Not permitted" has no state of its
 // own: it looks like "no key", with Core's sentence and an action to add one's own key.
 
@@ -28,6 +28,8 @@ export function modelAccessFromCore(access: CoreModelAccess | null | undefined):
       return message ? { kind: "no-key", message, actionLabel: "Add your own key" } : { kind: "no-key", actionLabel: "Add your own key" };
     case "provider_refused":
       return { kind: "not-accepted", provider, keyName };
+    case "no_credit":
+      return { kind: "no-credit", provider, keyName };
     case "provider_unreachable":
       return { kind: "unreachable", provider };
     default:

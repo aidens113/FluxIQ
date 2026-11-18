@@ -69,3 +69,24 @@ test("the key is read again after a new reply and after a failed send, not on th
     assert.equal(keys.reads(), opening + 3, "a failed send reads the key again");
   });
 });
+
+test("a pushed key state shows or hides the bar at once, with no read", async () => {
+  await withFakeDocument(async () => {
+    const keys = port([{ kind: "ready", provider: "Anthropic", keyName: "Work key" }]);
+    let push: ((state: ModelAccessState | null) => void) | undefined;
+    const bar = createComposerKeyBar({ ...keys.value, subscribe: (listener) => ((push = listener), () => undefined) }, () => undefined);
+    bar.update([]);
+    await settle();
+    bar.update([turn("p1", "person"), turn("a1", "automation")]);
+    await settle();
+    const reads = keys.reads();
+    assert.equal(bar.element.hidden, true);
+    const empty: ModelAccessState = { kind: "no-credit", provider: "Anthropic", keyName: "Work key" };
+    push!(empty);
+    assert.equal(bar.element.hidden, false);
+    assert.ok(fake(bar.element).textContent.includes(modelAccessWords(empty).sentence));
+    push!({ kind: "ready", provider: "Anthropic", keyName: "Work key" });
+    assert.equal(bar.element.hidden, true);
+    assert.equal(keys.reads(), reads, "no read followed a push");
+  });
+});
