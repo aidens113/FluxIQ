@@ -32,13 +32,18 @@
   min-width: 0;
 }
 
-.field > :is(input, select, textarea),
+.field > :is(input, textarea),
 .combobox-input-wrap,
 .button,
 .icon-button,
-.segmented-control button,
-.pagination select {
+.segmented-control button {
   min-height: 34px;
+}
+
+/* One height for every select, whatever holds it (the base rule in 01-tokens-and-reset.css). */
+.field > select,
+.pagination select {
+  min-height: var(--select-height);
 }
 
 .icon-button {

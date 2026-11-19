@@ -19,7 +19,6 @@ function port(states: ModelAccessState[]) {
     save: async () => ({ ok: true }),
     replace: async () => ({ ok: true }),
     remove: async () => ({ ok: true }),
-    requiresPassword: false,
     canWrite: true
   };
   return { value, reads: () => reads };

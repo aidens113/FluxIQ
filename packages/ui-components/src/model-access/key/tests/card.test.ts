@@ -1,5 +1,5 @@
 // The key card: each state's words and action, the form, save -> checking -> new state in place, a client that
-// cannot write yet, a host that needs the password, Remove, and that a pasted key is never left in the DOM.
+// cannot write yet, Add another key, Cancel, no password anywhere, Remove, and that a pasted key is never left in the DOM.
 
 import assert from "node:assert/strict";
 import { test } from "vitest";
@@ -27,7 +27,6 @@ function port(initial: ModelAccessState, extra: Partial<ModelKeysPort> & { after
   const { after, keyId, hold, ...overrides } = extra;
   const next: ModelAccessState = after ?? { kind: "ready", provider: "Anthropic", keyName: "Anthropic key" };
   const value: ModelKeysPort = {
-    requiresPassword: false,
     canWrite: true,
     readState: async () => ({ ok: true, state, ...(keyId === undefined ? {} : { keyId }) }),
     save: async (request) => {
@@ -36,14 +35,14 @@ function port(initial: ModelAccessState, extra: Partial<ModelKeysPort> & { after
       state = next;
       return { ok: true, keyId: "k1" };
     },
-    replace: async (id, key, password) => {
-      calls.replaced.push([id, key, password]);
+    replace: async (id, key) => {
+      calls.replaced.push([id, key]);
       await hold;
       state = next;
       return { ok: true };
     },
-    remove: async (id, password) => {
-      calls.removed.push([id, password]);
+    remove: async (id) => {
+      calls.removed.push([id]);
       state = { kind: "no-key" };
       return { ok: true };
     },
@@ -148,7 +147,7 @@ test("the add form: Anthropic first and default, DeepSeek, a masked key with its
     provider.dispatch("change");
     assert.equal(one(root, "model-key-link").getAttribute("href"), "https://platform.deepseek.com/api_keys");
     assert.equal(field(root, "name").getAttribute("placeholder"), "DeepSeek key");
-    assert.equal(field(root, "password"), undefined, "no password field unless the host needs one");
+    assert.equal(field(root, "password"), undefined, "no password field");
     assert.equal(one(root, "model-key-save").textContent, "Save and check");
   });
 });
@@ -224,7 +223,7 @@ test("Paste it again replaces the saved key by its id, with the key field alone"
     one(root, "model-key-save").dispatch("click");
     await settle();
     await settle();
-    assert.deepEqual(calls.replaced, [["k9", "fresh", undefined]]);
+    assert.deepEqual(calls.replaced, [["k9", "fresh"]]);
     assert.equal(one(root, "model-key-line").textContent, "Anthropic is ready, using Work key.");
   });
 });
@@ -245,22 +244,49 @@ test("where the client cannot write yet the form shows, Save says to add it in F
   });
 });
 
-test("a host that needs the account password shows the field and sends it with the key", async () => {
+test("a key needs no password: the form has no password field and Save sends only the key", async () => {
   await withFakeDocument(async () => {
-    const { value, calls } = port({ kind: "no-key" }, { requiresPassword: true });
+    const { value, calls } = port({ kind: "no-key" });
     const { root } = mount(value);
     await settle();
     one(root, "model-key-action").dispatch("click");
-    assert.ok(field(root, "password"));
+    assert.equal(field(root, "password"), undefined);
     field(root, "key").value = "abc";
     one(root, "model-key-save").dispatch("click");
     await settle();
-    assert.equal(one(root, "model-key-problem").textContent, "Enter your FluxIQ password.");
+    assert.deepEqual(calls.saved, [{ provider: "anthropic", name: "Anthropic key", value: "abc" }]);
+  });
+});
+
+test("the full card adds another key through its own form while a key is saved; Cancel closes the form", async () => {
+  await withFakeDocument(async () => {
+    const ready: ModelAccessState = { kind: "ready", provider: "Anthropic", keyName: "Work key" };
+    const compact = mount(port(ready, { keyId: "k1" }).value, "compact");
+    await settle();
+    assert.equal(one(compact.root, "model-key-add-another").hidden, true, "the compact card offers no second key");
+    const none = mount(port({ kind: "no-key" }).value, "full");
+    await settle();
+    assert.equal(one(none.root, "model-key-add-another").hidden, true, "with no key the one action already adds");
+    const { value, calls } = port(ready, { keyId: "k1" });
+    const { root } = mount(value, "full");
+    await settle();
+    const another = one(root, "model-key-add-another");
+    assert.equal(another.hidden, false);
+    assert.equal(another.textContent, "Add another key");
+    another.dispatch("click");
+    assert.equal(root.byClass("model-key-form").length, 1);
+    assert.equal(one(root, "model-key-add-another").hidden, true, "hidden while the form is open");
+    one(root, "model-key-keep").dispatch("click");
+    assert.equal(root.byClass("model-key-form").length, 0, "Cancel closes the form");
     assert.deepEqual(calls.saved, []);
-    field(root, "password").value = "hunter2";
+    one(root, "model-key-add-another").dispatch("click");
+    field(root, "name").value = "Home key";
+    field(root, "key").value = "sk-two";
     one(root, "model-key-save").dispatch("click");
     await settle();
-    assert.deepEqual(calls.saved, [{ provider: "anthropic", name: "Anthropic key", value: "abc", password: "hunter2" }]);
+    await settle();
+    assert.deepEqual(calls.saved, [{ provider: "anthropic", name: "Home key", value: "sk-two" }]);
+    assert.equal(root.byClass("model-key-form").length, 0);
   });
 });
 
@@ -304,7 +330,7 @@ test("the full card removes a key after one inline confirm; the compact card off
     one(root, "model-key-remove-confirm").dispatch("click");
     await settle();
     await settle();
-    assert.deepEqual(calls.removed, [["k1", undefined]]);
+    assert.deepEqual(calls.removed, [["k1"]], "one press removes it, with no password");
     assert.equal(one(root, "model-key-badge").textContent, "No key");
   });
 });

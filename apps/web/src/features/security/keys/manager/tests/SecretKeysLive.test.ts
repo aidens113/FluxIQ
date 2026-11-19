@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SecretKeySummary } from "fluxiq/secret-keys";
-import { canSubmitAuth, filterSecretKeys } from "../SecretKeysLive";
+import { filterSecretKeys } from "../SecretKeysLive";
 
 const keys: SecretKeySummary[] = [
   { id: "site", name: "Shop login", kind: "custom", provider: "Example Shop", scope: "flow", scopeRef: "billing", description: "", enabled: true, createdAtMs: 1, updatedAtMs: 2, lastRotatedAtMs: 2 },
@@ -26,12 +26,9 @@ describe("SecretKeysLive view model", () => {
     expect(source()).toContain('label="Project"');
   });
 
-  it("asks only for the password to add something, and adds the two-step code only where it is turned on", () => {
-    const user = { id: "admin", username: "admin", displayName: "Admin", roleId: "admin", permissions: [], pinConfigured: undefined, totpEnabled: true };
-    const auth = { password: "password", totp: "" };
-    expect(canSubmitAuth(auth, user, false)).toBe(true);
-    expect(canSubmitAuth(auth, user)).toBe(false);
-    expect(canSubmitAuth({ ...auth, totp: "123456" }, user)).toBe(true);
+  it("asks for no password or two-step code to add, update, replace or remove", () => {
+    const text = withoutComments(source());
+    expect(text).not.toMatch(/authorizationPassword|authorizationTotp|AuthorizationFields|canSubmitAuth|Your password/u);
   });
 
   it("routes create, update, replace and remove through the operation gate, and has no reveal", () => {

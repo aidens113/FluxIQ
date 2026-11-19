@@ -3,10 +3,11 @@
 //   [Ready]  Anthropic is ready, using Work key.                       [Change model]
 //
 // It shows the key's state (`modelAccessWords`) with one action. Add a key, Paste it again and Replace key open
-// an inline form (`model-key-form.ts`); "Save and check" moves the card to checking and then to the new state,
+// an inline form (`model-key-form.ts`); the full card also offers "Add another key" while a key is saved, which
+// opens the same form; "Save and check" moves the card to checking and then to the new state,
 // in place. Remove is one inline confirm (`model-key-remove.ts`). Change model, Try now, How to update and the
 // host's own "Open FluxIQ" go to `onAction`. The card reads and writes only through the `ModelKeysPort`; a
-// pasted value is cleared from the form once it is sent and is never kept, logged or drawn.
+// pasted value is cleared from the form once it is sent and is never kept, logged or drawn. A key needs no password.
 
 import { createElement } from "../../dom/index.ts";
 import { MODEL_ACCESS_CHECKING, modelAccessWords } from "../words.ts";
@@ -48,11 +49,12 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
   const badge = createElement("span", { className: "model-key-badge", hidden: true });
   const line = createElement("p", { className: "model-key-line", attrs: { role: "status" } });
   const action = createElement("button", { className: "model-key-action", attrs: { type: "button" }, hidden: true });
+  const addAnother = createElement("button", { className: "model-key-add-another", text: "Add another key", attrs: { type: "button" }, hidden: true });
   const removeLink = createElement("button", { className: "model-key-remove-link", text: "Remove", attrs: { type: "button" }, hidden: true });
   const slot = createElement("div", { className: "model-key-slot" });
   const element = createElement("div", { className: "model-key-card", attrs: { "data-variant": options.variant, "data-state": "checking" } }, [
     createElement("div", { className: "model-key-head" }, [badge, line]),
-    createElement("div", { className: "model-key-buttons" }, [action, removeLink]),
+    createElement("div", { className: "model-key-buttons" }, [action, addAnother, removeLink]),
     slot
   ]);
   let state: ModelAccessState | null = null;
@@ -85,13 +87,25 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     action.hidden = !(idle && shown !== null);
     if (shown !== null) action.textContent = shown.action.label;
     removeLink.hidden = !(idle && options.variant === "full" && keyId !== undefined && keyName() !== undefined);
+    addAnother.hidden = !(idle && options.variant === "full" && keyId !== undefined && state !== null && state.kind !== "no-key");
     if (confirm === null && form === null && slot.childNodes.length > 0) slot.replaceChildren();
   }
 
   function open(mode: "add" | "replace"): void {
     confirm = null;
-    form = createModelKeyForm({ providers: options.providers, mode, requiresPassword: port.requiresPassword, onSave: () => void save(mode) });
+    form = createModelKeyForm({
+      providers: options.providers,
+      mode,
+      onSave: () => void save(mode),
+      ...(options.variant === "full" ? { onCancel: closeForm } : {})
+    });
     slot.replaceChildren(form.element);
+    draw();
+  }
+
+  function closeForm(): void {
+    form?.clear();
+    form = null;
     draw();
   }
 
@@ -106,7 +120,6 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     if (current === null) return;
     const values = current.values();
     if (values.value === "") return current.problem("Paste your key first.");
-    if (port.requiresPassword && values.password === "") return current.problem("Enter your FluxIQ password.");
     if (!port.canWrite) {
       current.problem(ADD_IN_FLUXIQ);
       return offerOpen();
@@ -117,12 +130,11 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
     const provider = mode === "replace" ? (state !== null && "provider" in state ? state.provider : "") : values.provider.name;
     checking = provider === "" ? MODEL_ACCESS_CHECKING : `Checking with ${provider}...`;
     draw();
-    const password = port.requiresPassword ? values.password : undefined;
     let saved: Awaited<ReturnType<ModelKeysPort["save"]>>;
     try {
       saved = mode === "replace" && keyId !== undefined
-        ? await port.replace(keyId, values.value, password)
-        : await port.save({ provider: values.provider.id, name: values.name === "" ? `${values.provider.name} key` : values.name, value: values.value, ...(password === undefined ? {} : { password }) });
+        ? await port.replace(keyId, values.value)
+        : await port.save({ provider: values.provider.id, name: values.name === "" ? `${values.provider.name} key` : values.name, value: values.value });
     } catch {
       saved = { ok: false, message: FAILED };
     }
@@ -179,24 +191,23 @@ export function createModelKeyCard(options: ModelKeyCardOptions): ModelKeyCard {
       default: return options.onAction(shown.action.id);
     }
   });
+  addAnother.addEventListener("click", () => open("add"));
   removeLink.addEventListener("click", () => {
     const name = keyName();
     const id = keyId;
     if (name === undefined || id === undefined) return;
     const asking: ModelKeyRemove = createModelKeyRemove({
       keyName: name,
-      requiresPassword: port.requiresPassword,
       onKeep: () => {
         confirm = null;
         draw();
       },
-      onRemove: async (password) => {
-        if (port.requiresPassword && password === "") return asking.problem("Enter your FluxIQ password.");
+      onRemove: async () => {
         asking.problem("");
         asking.busy(true);
         let removed: Awaited<ReturnType<ModelKeysPort["remove"]>>;
         try {
-          removed = await port.remove(id, port.requiresPassword ? password : undefined);
+          removed = await port.remove(id);
         } catch {
           removed = { ok: false, message: FAILED };
         }

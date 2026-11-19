@@ -15,7 +15,7 @@ export function AppearanceSection() {
       <p>System follows your device and is the default. The choice stays in this browser.</p>
       <fieldset className="settings-appearance" aria-labelledby="settings-appearance">
         {themeChoices.map((option) => (
-          <label key={option.value} className="settings-appearance-choice">
+          <label key={option.value} className="settings-appearance-choice" data-checked={choice === option.value}>
             <input
               type="radio"
               name="settings-theme"

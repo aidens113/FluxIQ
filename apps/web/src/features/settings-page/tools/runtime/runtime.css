@@ -1,6 +1,6 @@
 /* Runtime tool: the section switcher, search and filter, the inventory rows and the page footer. */
 .runtime-note { margin: 0; color: var(--muted); font-size: var(--font-size-compact); overflow-wrap: anywhere; }
-.runtime-sections { display: flex; flex-wrap: nowrap; overflow-x: auto; width: fit-content; max-width: 100%; }
+.runtime-sections { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; }
 .runtime-toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: var(--space-md); max-width: 36rem; }
 .runtime-table-wrap { overflow-x: auto; max-width: 100%; }
 .runtime-table { min-width: 0; }
@@ -12,3 +12,4 @@
 .runtime-footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); }
 .runtime-footer > span { margin-right: auto; color: var(--muted); font-size: var(--font-size-compact); }
 .runtime-sections button { flex: none; white-space: nowrap; }
+.runtime-footer .button { white-space: nowrap; }

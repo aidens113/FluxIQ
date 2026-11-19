@@ -21,14 +21,14 @@
   background: var(--accent); color: var(--accent-ink); font: inherit; font-size: 13px; font-weight: 650;
 }
 .model-key-action:hover:not(:disabled), .model-key-save:hover:not(:disabled), .model-key-remove-confirm:hover:not(:disabled) { background: var(--accent-hover); }
-.model-key-keep, .model-key-open, .model-key-remove-link {
+.model-key-keep, .model-key-open, .model-key-remove-link, .model-key-add-another {
   min-height: 32px; padding: 4px 12px; cursor: pointer; border: 1px solid var(--divider); border-radius: 999px;
   background: var(--surface); color: var(--text); font: inherit; font-size: 13px;
 }
-.model-key-keep:hover:not(:disabled), .model-key-open:hover:not(:disabled), .model-key-remove-link:hover:not(:disabled) { border-color: var(--accent-edge); background: var(--hover); }
+.model-key-keep:hover:not(:disabled), .model-key-open:hover:not(:disabled), .model-key-remove-link:hover:not(:disabled), .model-key-add-another:hover:not(:disabled) { border-color: var(--accent-edge); background: var(--hover); }
 .model-key-action:disabled, .model-key-save:disabled, .model-key-remove-confirm:disabled, .model-key-keep:disabled { cursor: default; opacity: 0.6; }
 .model-key-action:focus-visible, .model-key-save:focus-visible, .model-key-keep:focus-visible, .model-key-open:focus-visible,
-.model-key-remove-link:focus-visible, .model-key-remove-confirm:focus-visible, .model-key-input:focus-visible, .model-key-link:focus-visible {
+.model-key-remove-link:focus-visible, .model-key-add-another:focus-visible, .model-key-remove-confirm:focus-visible, .model-key-input:focus-visible, .model-key-link:focus-visible {
   outline: var(--focus-width) solid var(--focus); outline-offset: 2px;
 }
 .model-key-slot { display: grid; gap: 8px; min-width: 0; }

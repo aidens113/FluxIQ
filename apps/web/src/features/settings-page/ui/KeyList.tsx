@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { KeyRow } from "../model";
 
 /**
@@ -19,18 +20,23 @@ export function KeyList(props: {
   onRemove(keyId: string): void;
 }) {
   const { onOffer, onDefault } = props;
+  const legendId = useId();
   if (props.rows.length === 0) return null;
   return (
-    <fieldset className="settings-keys">
-      <legend>{onDefault ? "Your AI keys. The default key is the one the assistant and new Flows use." : "Your AI keys."}</legend>
+    <div className="settings-keys" role="group" aria-labelledby={legendId}>
+      <p id={legendId} className="settings-keys-legend">{onDefault ? "Your AI keys. The default key is the one the assistant and new Flows use." : "Your AI keys."}</p>
       <ul>
         {props.rows.map((row) => (
           <li key={row.id} data-selected={row.id === props.selectedId} data-default={row.isDefault}>
             <div className="settings-key-main">
               <button type="button" className="settings-key-name" aria-pressed={row.id === props.selectedId} onClick={() => props.onSelect(row.id)}>{row.name}</button>
-              <span className="settings-key-facts">{row.provider} · {row.status === "On" ? "Turned on" : "Turned off"}{row.lastUsed ? ` · last used ${row.lastUsed}` : ""}</span>
+              <span className="settings-key-facts">
+                {row.provider}
+                <span className="settings-key-state" data-state={row.status === "On" ? "on" : "off"}>{row.status === "On" ? "Turned on" : "Turned off"}</span>
+                {row.lastUsed ? <span>last used {row.lastUsed}</span> : null}
+              </span>
             </div>
-            <div className="settings-key-options">
+            <div className="settings-key-options" hidden={!(onDefault || row.isDefault || (onOffer && (row.heldByYou || row.offered)))}>
               {onDefault ? (
                 <label className="settings-key-default">
                   <input type="radio" name="default-key" checked={row.isDefault} disabled={props.busy || row.status === "Off"} onChange={() => onDefault(row.id)} aria-label={`Make ${row.name} the default key`} />
@@ -51,6 +57,6 @@ export function KeyList(props: {
           </li>
         ))}
       </ul>
-    </fieldset>
+    </div>
   );
 }

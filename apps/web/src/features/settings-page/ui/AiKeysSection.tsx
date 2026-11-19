@@ -4,19 +4,20 @@ import { useEffect, useState } from "react";
 import type { ModelKeyHostAction } from "@fluxiq/ui-components";
 import { ModelKeyCardView, type PanelModelKeysPort } from "../../model-keys";
 import type { SettingsData } from "../data";
-import { keyRows, type KeyRow, type NewKeyForm } from "../model";
-import { AddKeyForm } from "./AddKeyForm";
+import { keyRows, type KeyRow } from "../model";
 import { KeyList } from "./KeyList";
 import { RemoveKeyConfirm } from "./RemoveKeyConfirm";
 import { ReplaceKeyForm } from "./ReplaceKeyForm";
+import { useLiveDefaultNotice } from "./use-live-default-notice";
 
 const when = (ms: number) => new Date(ms).toLocaleString();
 const UPDATE_NOTE = "Ask whoever runs this FluxIQ to update it, then open it again.";
 
 /**
- * Settings > AI keys (`#ai-keys`): the shared key card with Core's real state, then the person's keys. `port` is
- * the one the card works through; `sharing` is whether the workspace has more than one person, which is the only
- * time "Offer to the workspace" and the workspace's key are shown.
+ * Settings > AI keys (`#ai-keys`): one box holding the shared key card with Core's real state, its notes, and the
+ * person's keys. Every key is added through the card ("Add a key", then "Add another key"), never a second form.
+ * `port` is the one the card works through; `sharing` is whether the workspace has more than one person, which is
+ * the only time "Offer to the workspace" and the workspace's key are shown.
  */
 export function AiKeysSection(props: { data: SettingsData; port: PanelModelKeysPort; sharing: boolean; selectedId: string; onSelect(keyId: string): void }) {
   const { data, port } = props;
@@ -49,14 +50,6 @@ export function AiKeysSection(props: { data: SettingsData; port: PanelModelKeysP
     setRemoving(change === "remove" ? keyId : "");
     setReplacing(change === "replace" ? keyId : "");
   }
-  async function addKey(form: NewKeyForm): Promise<string> {
-    const failure = await data.addKey(form);
-    if (!failure) {
-      setStatus(`Added ${form.name.trim()}.`);
-      port.notify();
-    }
-    return failure;
-  }
   function onCardAction(action: ModelKeyHostAction) {
     if (action === "change-model") {
       const target = document.getElementById("assistant-model");
@@ -65,64 +58,61 @@ export function AiKeysSection(props: { data: SettingsData; port: PanelModelKeysP
     } else if (action === "try-now") port.notify();
     else if (action === "how-to-update") setStatus(UPDATE_NOTE);
   }
+  const notice = useLiveDefaultNotice(data.choices.defaultNotice, data.keys, data.choices.defaultKeyId);
   return (
     <section id="ai-keys" aria-labelledby="settings-ai-keys">
       <h2 id="settings-ai-keys">AI keys</h2>
       <p>FluxIQ uses an AI key to understand and build what you ask. It keeps the key and never shows it again.</p>
-      <ModelKeyCardView port={port} variant="full" onAction={onCardAction} />
-      {data.choices.defaultNotice ? <p role="status" className="settings-notice">{data.choices.defaultNotice.message}</p> : null}
-      {choosesDefault ? null : <p>This workspace&rsquo;s owner chooses its default key.</p>}
-      {props.sharing ? <p>Your keys pay only for your own messages. Offer one to the workspace to let it pay for other people&rsquo;s too, once an owner or administrator chooses it as the workspace&rsquo;s key.</p> : null}
-      <KeyList
-        rows={rows}
-        selectedId={props.selectedId}
-        busy={busy}
-        onSelect={props.onSelect}
-        onDefault={choosesDefault ? (id) => void makeDefault(id) : undefined}
-        onOffer={props.sharing ? (id, offered) => void offer(id, offered) : undefined}
-        onReplace={(id) => startChange("replace", id)}
-        onRemove={(id) => startChange("remove", id)}
-      />
-      {props.sharing && choosesDefault ? <WorkspaceKeyLine data={data} rows={rows} busy={busy} onChoose={(id) => void makeDefault(id, "Chosen as the workspace’s key.")} /> : null}
-      {replaceTarget ? (
-        <ReplaceKeyForm
-          key={replaceTarget.id}
-          keyName={replaceTarget.name}
-          onReplace={async (value, password) => {
-            const failure = await data.replace(replaceTarget.id, value, password);
-            if (!failure) {
-              setStatus(`Replaced ${replaceTarget.name}.`);
-              port.notify();
-            }
-            return failure;
-          }}
-          onDone={() => setReplacing("")}
-          onCancel={() => setReplacing("")}
+      <div className="settings-keybox">
+        <ModelKeyCardView port={port} variant="full" onAction={onCardAction} />
+        {notice ? <p role="status" className="settings-keybox-note" data-tone="warn">{notice}</p> : null}
+        {choosesDefault ? null : <p className="settings-keybox-note">This workspace&rsquo;s owner chooses its default key.</p>}
+        {props.sharing ? <p className="settings-keybox-note">Your keys pay only for your own messages. Offer one to the workspace to let it pay for other people&rsquo;s too, once an owner or administrator chooses it as the workspace&rsquo;s key.</p> : null}
+        <KeyList
+          rows={rows}
+          selectedId={props.selectedId}
+          busy={busy}
+          onSelect={props.onSelect}
+          onDefault={choosesDefault ? (id) => void makeDefault(id) : undefined}
+          onOffer={props.sharing ? (id, offered) => void offer(id, offered) : undefined}
+          onReplace={(id) => startChange("replace", id)}
+          onRemove={(id) => startChange("remove", id)}
         />
-      ) : null}
-      {removeTarget ? (
-        <RemoveKeyConfirm
-          key={removeTarget.id}
-          keyName={removeTarget.name}
-          onCancel={() => setRemoving("")}
-          onRemove={async (password) => {
-            const outcome = await data.remove(removeTarget.id, password);
-            if (outcome.kind === "removed") {
-              setRemoving("");
-              setStatus(`Removed ${removeTarget.name}.`);
-              port.notify();
-            }
-            return outcome;
-          }}
-        />
-      ) : null}
-      <p role="status">{status}</p>
-      {rows.length > 0 ? (
-        <details className="settings-add-another">
-          <summary>Add another key</summary>
-          <AddKeyForm onAdd={addKey} />
-        </details>
-      ) : null}
+        {props.sharing && choosesDefault ? <WorkspaceKeyLine data={data} rows={rows} busy={busy} onChoose={(id) => void makeDefault(id, "Chosen as the workspace’s key.")} /> : null}
+        {replaceTarget ? (
+          <ReplaceKeyForm
+            key={replaceTarget.id}
+            keyName={replaceTarget.name}
+            onReplace={async (value) => {
+              const failure = await data.replace(replaceTarget.id, value);
+              if (!failure) {
+                setStatus(`Replaced ${replaceTarget.name}.`);
+                port.notify();
+              }
+              return failure;
+            }}
+            onDone={() => setReplacing("")}
+            onCancel={() => setReplacing("")}
+          />
+        ) : null}
+        {removeTarget ? (
+          <RemoveKeyConfirm
+            key={removeTarget.id}
+            keyName={removeTarget.name}
+            onCancel={() => setRemoving("")}
+            onRemove={async () => {
+              const outcome = await data.remove(removeTarget.id);
+              if (outcome.kind === "removed") {
+                setRemoving("");
+                setStatus(`Removed ${removeTarget.name}.`);
+                port.notify();
+              }
+              return outcome;
+            }}
+          />
+        ) : null}
+      </div>
+      <p role="status" className="settings-saved">{status}</p>
     </section>
   );
 }

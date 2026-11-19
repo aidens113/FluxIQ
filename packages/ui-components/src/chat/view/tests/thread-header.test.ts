@@ -121,7 +121,6 @@ test("the empty chat draws the key card in place of the key line when the host h
   await withFakeDocument(async () => {
     let reads = 0;
     const port = {
-      requiresPassword: false,
       canWrite: true,
       readState: async () => {
         reads += 1;
@@ -152,7 +151,6 @@ test("the empty chat draws the key card in place of the key line when the host h
 test("the key card sits above the welcome lines, so a short dock never leaves its button below the fold, and there is one card", async () => {
   await withFakeDocument(async () => {
     const port = {
-      requiresPassword: false,
       canWrite: true,
       readState: async () => ({ ok: true as const, state: { kind: "no-key" as const } }),
       save: async () => ({ ok: true as const }),

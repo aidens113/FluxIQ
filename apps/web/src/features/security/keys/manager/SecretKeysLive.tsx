@@ -8,14 +8,14 @@ import { DataTable, EmptyState, Field, KeyValue, LoadingState, Menu, Modal, Pane
 import type { CurrentUser } from "../../../programs/types";
 import { OperationBusyBoundary, useOperationLock } from "../../../programs/use-operation-lock";
 import { reconcileVisibleSelection } from "../../../programs/selection";
-import { digits, formatTime } from "../../../programs/format";
+import { formatTime } from "../../../programs/format";
 import { KeyAvailability } from "../KeyAvailability";
 import { shapeKeyRow } from "../../model";
 import { useSecretScopeCatalog } from "./scope-catalog";
 
 // The logins and keys a Flow uses on other sites and services. A person's AI key is added in Settings, under AI
-// keys, so this list never shows one. A saved value is never shown again: it is replaced, not revealed. The
-// password is asked in the same dialog as the change, and a two-step code only when the person turned that on.
+// keys, so this list never shows one. A saved value is never shown again: it is replaced, not revealed. A change
+// asks for no password or code: it is one press, and the engine decides whether this person may.
 
 type SecretForm = {
   name: string;
@@ -28,12 +28,10 @@ type SecretForm = {
   enabled: boolean;
 };
 
-type AuthForm = {
-  password: string;
-  totp: string;
-};
+/** A dialog that carries nothing but its identity: which one is open. */
+type NoDraft = Record<never, never>;
 
-const emptyAuth: AuthForm = { password: "", totp: "" };
+const noDraft: NoDraft = {};
 const emptySecretForm: SecretForm = {
   name: "",
   value: "",
@@ -79,11 +77,11 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
   const [query, setQuery] = useState("");
   const [enabledFilter, setEnabledFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [createForm, setCreateForm] = useState<SecretForm>(emptySecretForm);
-  const createDialog = useSecretDialog<AuthForm>(current, revision, canOpen);
-  const editDialog = useSecretDialog<{ key: SecretKeySummary; form: SecretForm; auth: AuthForm }>(current, revision, canOpen);
-  const replaceDialog = useSecretDialog<{ key: SecretKeySummary; value: string; auth: AuthForm }>(current, revision, canOpen);
-  const removeDialog = useSecretDialog<{ key: SecretKeySummary; auth: AuthForm }>(current, revision, canOpen);
-  const createAuthorization = createDialog.value;
+  const createDialog = useSecretDialog<NoDraft>(current, revision, canOpen);
+  const editDialog = useSecretDialog<{ key: SecretKeySummary; form: SecretForm }>(current, revision, canOpen);
+  const replaceDialog = useSecretDialog<{ key: SecretKeySummary; value: string }>(current, revision, canOpen);
+  const removeDialog = useSecretDialog<{ key: SecretKeySummary }>(current, revision, canOpen);
+  const createDraft = createDialog.value;
   const exists = (draft: { key: SecretKeySummary } | null) => Boolean(draft && confirmedKeys.current.some(key => key.id === draft.key.id));
   const edit = exists(editDialog.value) ? editDialog.value : null;
   const replace = exists(replaceDialog.value) ? replaceDialog.value : null;
@@ -128,7 +126,7 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
       read.current = null;
     };
   }, [refresh]);
-  const scopeCatalog = useSecretScopeCatalog({ api: automationApi, active: createOpen || Boolean(edit), epoch: createOpen || createAuthorization ? "create:" + wizard.current : "edit:" + (edit?.dialogEpoch ?? "closed"), isOwner: current });
+  const scopeCatalog = useSecretScopeCatalog({ api: automationApi, active: createOpen || Boolean(edit), epoch: createOpen || createDraft ? "create:" + wizard.current : "edit:" + (edit?.dialogEpoch ?? "closed"), isOwner: current });
   const loadScopeProject = scopeCatalog.loadProject;
 
   // An AI key is managed in Settings, so only the logins and keys for Flows are listed here.
@@ -166,10 +164,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
     });
   }
   async function createKey() {
-    if (!createAuthorization || !createDialog.sameDraft(createAuthorization) || !canPrepareSecret(createForm) || !canSubmitAuth(createAuthorization, currentUser, false)) return;
-    const draft = createAuthorization;
+    if (!createDraft || !createDialog.sameDraft(createDraft) || !canPrepareSecret(createForm)) return;
+    const draft = createDraft;
     await mutate("create-key", () => createDialog.current(draft), async () => {
-      const result = await api.post("create-key", { ...formPayload(createForm), ...authPayload(draft) });
+      const result = await api.post("create-key", formPayload(createForm));
       if (!current() || !createDialog.current(draft)) return;
       setStatus(result.ok ? "Saved." : "That did not save. Try again.");
       if (result.ok) {
@@ -182,10 +180,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
     });
   }
   async function saveEdit() {
-    if (!edit || !editDialog.sameDraft(edit) || !canSubmitAuth(edit.auth, currentUser)) return;
+    if (!edit || !editDialog.sameDraft(edit)) return;
     const draft = edit, valid = () => editDialog.current(draft) && knownKey(draft.key);
     await mutate("update-key", valid, async () => {
-      const result = await api.post("update-key", { id: draft.key.id, ...formPayload({ ...draft.form, value: "" }, false), ...authPayload(draft.auth) });
+      const result = await api.post("update-key", { id: draft.key.id, ...formPayload({ ...draft.form, value: "" }, false) });
       if (!current() || !valid()) return;
       setStatus(result.ok ? "Details updated." : "That did not save. Try again.");
       if (result.ok) {
@@ -195,10 +193,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
     });
   }
   async function replaceKey() {
-    if (!replace || !replaceDialog.sameDraft(replace) || !replace.value || !canSubmitAuth(replace.auth, currentUser)) return;
+    if (!replace || !replaceDialog.sameDraft(replace) || !replace.value) return;
     const draft = replace, valid = () => replaceDialog.current(draft) && knownKey(draft.key);
     await mutate("rotate-key", valid, async () => {
-      const result = await api.post("rotate-key", { id: draft.key.id, value: draft.value, ...authPayload(draft.auth) });
+      const result = await api.post("rotate-key", { id: draft.key.id, value: draft.value });
       if (!current() || !valid()) return;
       setStatus(result.ok ? "Replaced." : "That could not be replaced. Try again.");
       if (result.ok) {
@@ -208,10 +206,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
     });
   }
   async function deleteKey() {
-    if (!remove || !removeDialog.sameDraft(remove) || !canSubmitAuth(remove.auth, currentUser)) return;
+    if (!remove || !removeDialog.sameDraft(remove)) return;
     const draft = remove, valid = () => removeDialog.current(draft) && knownKey(draft.key);
     await mutate("delete-key", valid, async () => {
-      const result = await api.post("delete-key", { id: draft.key.id, ...authPayload(draft.auth) });
+      const result = await api.post("delete-key", { id: draft.key.id });
       if (!current() || !valid()) return;
       setStatus(result.ok ? "Removed." : "That could not be removed. Try again.");
       if (result.ok) {
@@ -229,7 +227,7 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
       <header className="program-inner-header"><div><strong>Saved logins and keys for Flows</strong><span>What your Flows use to sign in to other sites and services. FluxIQ keeps each one and never shows it again.</span></div><div className="inline-actions"><StatusText value={operation.activeOperation ? "Working on it…" : status} /><button className="button" disabled={operation.busy || reading} onClick={() => void refresh()} type="button"><RefreshCcw size={14} aria-hidden />Refresh</button><button className="button button-primary" disabled={operation.busy} onClick={() => { if (current() && canOpen()) {
         wizard.current++;
         setCreateOpen(true);
-        createDialog.open(emptyAuth);
+        createDialog.open(noDraft);
       } }} type="button"><KeyRound size={14} aria-hidden />Add login or key</button></div></header>
       {status ? <p role="status" aria-live="polite">{status}</p> : null}
       {readError ? <VisualAlert tone="warning" title="Could not refresh" message={readError} /> : null}
@@ -247,17 +245,17 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
               { id: "edit", label: "Edit details", icon: <Pencil size={14} aria-hidden />, onSelect: () => {
                 if (!current() || !knownKey(key) || !canOpen()) return;
                 setSelectedId(key.id);
-                editDialog.open({ key, form: formFromKey(key), auth: emptyAuth });
+                editDialog.open({ key, form: formFromKey(key) });
               } },
               { id: "replace", label: "Replace", icon: <RefreshCcw size={14} aria-hidden />, onSelect: () => {
                 if (!current() || !knownKey(key) || !canOpen()) return;
                 setSelectedId(key.id);
-                replaceDialog.open({ key, value: "", auth: emptyAuth });
+                replaceDialog.open({ key, value: "" });
               } },
               { id: "remove", label: "Remove", icon: <Trash2 size={14} aria-hidden />, danger: true, onSelect: () => {
                 if (!current() || !knownKey(key) || !canOpen()) return;
                 setSelectedId(key.id);
-                removeDialog.open({ key, auth: emptyAuth });
+                removeDialog.open({ key });
               } }
             ]} />
           ])} empty={keys.length ? "Nothing matches these filters." : "No saved logins or keys yet. Your AI key is added in Settings, under AI keys."} />
@@ -265,10 +263,10 @@ function SecretWorkspace({ api, automationApi, currentUser, isOwner }: { api: Re
         <Panel title="Details">{selected ? <div className="secret-key-detail"><div className="secret-key-detail-heading"><span className="program-icon"><KeyRound size={18} aria-hidden /></span><span><strong>{selected.name}</strong><small>{selected.provider || "Not named"}</small></span><StatusBadge value={selected.enabled ? "Turned on" : "Turned off"} /></div><KeyValue rows={[["Service", selected.provider || "-"], ["Where it's used", selected.scopeRef ? SCOPE_WORDS[selected.scope] + ": " + selected.scopeRef : SCOPE_WORDS[selected.scope]], ["Description", selected.description || "-"], ["Added", formatTime(selected.createdAtMs)], ["Last replaced", formatTime(selected.lastRotatedAtMs)]]} /></div> : <EmptyState compact title="Nothing chosen" description="Choose a saved login or key to see its details." />}</Panel>
       </div>
 
-      {createAuthorization ? <Modal title="Add a login or key" description="Save a login or key your Flows use on another site or service. FluxIQ keeps it and never shows it again." onClose={() => { if (createDialog.current(createAuthorization)) closeWizard(); }}><SecretFormFields form={createForm} includeValue scopeOptions={scopeOptionsFor(createForm.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onCatalogRetry={() => void scopeCatalog.retryCatalog()} onProjectRetry={() => void scopeCatalog.retryProject()} onChange={form => { if (current() && wizard.current === wizardEpoch) setCreateForm(form); }} /><AuthorizationFields auth={createAuthorization} currentUser={currentUser} requireTotp={false} onChange={createDialog.change} /><div className="modal-actions"><button className="button" onClick={() => closeWizard()} type="button">Cancel</button><button className="button button-primary" disabled={!canPrepareSecret(createForm) || !canSubmitAuth(createAuthorization, currentUser, false)} onClick={() => void createKey()} type="button">Save</button></div></Modal> : null}
-      {edit ? <Modal title="Edit details" description="Change how this is named and where it is used. Its saved value stays as it is." onClose={() => editDialog.close()}><div className="secret-key-editor modal-secret-editor"><SecretFormFields form={edit.form} scopeOptions={scopeOptionsFor(edit.form.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onCatalogRetry={() => void scopeCatalog.retryCatalog()} onProjectRetry={() => void scopeCatalog.retryProject()} onChange={(form) => editDialog.change({ ...edit, form })} /><AuthorizationFields auth={edit.auth} currentUser={currentUser} onChange={(auth) => editDialog.change({ ...edit, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => editDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!canSubmitAuth(edit.auth, currentUser) || !edit.form.name.trim()} onClick={() => void saveEdit()} type="button">Save changes</button></div></Modal> : null}
-      {replace ? <Modal title="Replace login or key" description={"Give " + replace.key.name + " a new value. Its name and where it is used stay as they are."} onClose={() => replaceDialog.close()}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Takes effect at once" message="New runs use the replacement straight away. A run already under way may still use the old one." /><Field label="New value" required><input autoComplete="new-password" data-autofocus type="password" value={replace.value} onChange={(event) => replaceDialog.change({ ...replace, value: event.target.value })} /></Field><AuthorizationFields auth={replace.auth} currentUser={currentUser} onChange={(auth) => replaceDialog.change({ ...replace, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => replaceDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!replace.value || !canSubmitAuth(replace.auth, currentUser)} onClick={() => void replaceKey()} type="button">Save new value</button></div></Modal> : null}
-      {remove ? <Modal title="Remove login or key" description={"Remove " + remove.key.name + " for good. FluxIQ forgets it."} onClose={() => removeDialog.close()}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Flows that use it" message="Flows that use this will no longer be able to find it." /><AuthorizationFields auth={remove.auth} currentUser={currentUser} onChange={(auth) => removeDialog.change({ ...remove, auth })} /></div><div className="modal-actions"><button className="button" onClick={() => removeDialog.close()} type="button">Cancel</button><button className="button button-danger" disabled={!canSubmitAuth(remove.auth, currentUser)} onClick={() => void deleteKey()} type="button">Remove for good</button></div></Modal> : null}
+      {createDraft ? <Modal title="Add a login or key" description="Save a login or key your Flows use on another site or service. FluxIQ keeps it and never shows it again." onClose={() => { if (createDialog.current(createDraft)) closeWizard(); }}><SecretFormFields form={createForm} includeValue scopeOptions={scopeOptionsFor(createForm.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onCatalogRetry={() => void scopeCatalog.retryCatalog()} onProjectRetry={() => void scopeCatalog.retryProject()} onChange={form => { if (current() && wizard.current === wizardEpoch) setCreateForm(form); }} /><div className="modal-actions"><button className="button" onClick={() => closeWizard()} type="button">Cancel</button><button className="button button-primary" disabled={!canPrepareSecret(createForm)} onClick={() => void createKey()} type="button">Save</button></div></Modal> : null}
+      {edit ? <Modal title="Edit details" description="Change how this is named and where it is used. Its saved value stays as it is." onClose={() => editDialog.close()}><div className="secret-key-editor modal-secret-editor"><SecretFormFields form={edit.form} scopeOptions={scopeOptionsFor(edit.form.scope)} scopeCatalog={scopeCatalog} onProjectChange={(projectId) => void loadScopeProject(projectId)} onCatalogRetry={() => void scopeCatalog.retryCatalog()} onProjectRetry={() => void scopeCatalog.retryProject()} onChange={(form) => editDialog.change({ ...edit, form })} /></div><div className="modal-actions"><button className="button" onClick={() => editDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!edit.form.name.trim()} onClick={() => void saveEdit()} type="button">Save changes</button></div></Modal> : null}
+      {replace ? <Modal title="Replace login or key" description={"Give " + replace.key.name + " a new value. Its name and where it is used stay as they are."} onClose={() => replaceDialog.close()}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Takes effect at once" message="New runs use the replacement straight away. A run already under way may still use the old one." /><Field label="New value" required><input autoComplete="new-password" data-autofocus type="password" value={replace.value} onChange={(event) => replaceDialog.change({ ...replace, value: event.target.value })} /></Field></div><div className="modal-actions"><button className="button" onClick={() => replaceDialog.close()} type="button">Cancel</button><button className="button button-primary" disabled={!replace.value} onClick={() => void replaceKey()} type="button">Save new value</button></div></Modal> : null}
+      {remove ? <Modal title="Remove login or key" description={"Remove " + remove.key.name + " for good. FluxIQ forgets it."} onClose={() => removeDialog.close()}><div className="secret-modal-stack"><VisualAlert tone="warning" title="Flows that use it" message="Flows that use this will no longer be able to find it." /></div><div className="modal-actions"><button className="button" onClick={() => removeDialog.close()} type="button">Cancel</button><button className="button button-danger" onClick={() => void deleteKey()} type="button">Remove for good</button></div></Modal> : null}
     </section></OperationBusyBoundary>
   );
 }
@@ -332,20 +330,6 @@ function SecretFormFields(props: { form: SecretForm; includeValue?: boolean; sco
   );
 }
 
-function AuthorizationFields(props: { auth: AuthForm; currentUser: CurrentUser; requireTotp?: boolean; onChange(auth: AuthForm): void }) {
-  const { auth, currentUser, onChange } = props;
-  const requireTotp = props.requireTotp ?? true;
-  return (
-    <div className="secret-auth-card">
-      <div className="secret-auth-heading"><strong>Confirm it is you</strong><span>{requireTotp && currentUser.totpEnabled ? "Your password and your two-step code." : "Your password."}</span></div>
-      <div className="field-row dense-fields secret-auth-fields">
-        <Field label="Your password"><input type="password" value={auth.password} onChange={(event) => onChange({ ...auth, password: event.target.value })} /></Field>
-        {currentUser.totpEnabled && requireTotp ? <Field label="Your two-step code"><input inputMode="numeric" value={auth.totp} onChange={(event) => onChange({ ...auth, totp: digits(event.target.value).slice(0, 6) })} /></Field> : null}
-      </div>
-    </div>
-  );
-}
-
 function formFromKey(key: SecretKeySummary): SecretForm {
   return {
     name: key.name,
@@ -373,19 +357,8 @@ function formPayload(form: SecretForm, includeValue = true): JsonObject {
   };
 }
 
-function authPayload(auth: AuthForm): JsonObject {
-  return {
-    authorizationPassword: auth.password,
-    ...(auth.totp ? { authorizationTotp: auth.totp } : {})
-  };
-}
-
 function canPrepareSecret(form: SecretForm): boolean {
   return Boolean(form.name.trim() && form.value);
-}
-
-export function canSubmitAuth(auth: AuthForm, currentUser: CurrentUser, requireTotp = true): boolean {
-  return Boolean(auth.password && (!requireTotp || !currentUser.totpEnabled || auth.totp.length === 6));
 }
 
 const SCOPE_NAMES: Record<SecretForm["scope"], string> = { global: "everywhere", domain: "website", flow: "flow", custom: "something else" };

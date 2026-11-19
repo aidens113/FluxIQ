@@ -70,7 +70,6 @@ for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "upda
  it("keeps acknowledged " + endpoint + " visible through follow-up read failure and retries reads only", async () => {
   await mount();
    await open(choice!);
-   fill("Your password", "synthetic-proof");
    if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
   apis.secret.get.mockResolvedValueOnce({ ok: false, error: "synthetic private metadata detail" });
    await act(async () => button(submit!).props.onClick());
@@ -80,8 +79,8 @@ for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "upda
    expect(text()).not.toContain("synthetic private metadata detail");
   expect(apis.secret.post).toHaveBeenCalledTimes(1);
    expect(apis.secret.post.mock.calls[0]?.[0]).toBe(endpoint);
-   expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ id: "key", authorizationPassword: "synthetic-proof" });
-   expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+   expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ id: "key" });
+   expect(JSON.stringify(apis.secret.post.mock.calls[0]?.[1])).not.toMatch(/authorization/u);
   if (endpoint === "update-key") expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("value");
   await act(async () => button("Try again").props.onClick());
    expect(apis.secret.post).toHaveBeenCalledTimes(1);
@@ -90,13 +89,12 @@ for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "upda
  it("refused " + endpoint + " preserves current draft for explicit retry", async () => {
   await mount();
    await open(choice!);
-   fill("Your password", "synthetic-proof");
    if (endpoint === "update-key") fill("Name", "Current edited name");
    if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
   apis.secret.post.mockResolvedValueOnce({ ok: false, error: "synthetic private refusal" });
    await act(async () => button(submit!).props.onClick());
    expect(text()).not.toContain("synthetic private refusal");
-   expect(button(submit!).props.disabled).toBe(false);
+   expect(button(submit!).props.disabled).toBeFalsy();
   if (endpoint === "update-key") expect(field("Name").findByType("input").props.value).toBe("Current edited name");
    if (endpoint === "rotate-key") expect(field("New value").findByType("input").props.value).toBe("synthetic-new-value");
   await act(async () => button(submit!).props.onClick());
@@ -105,7 +103,6 @@ for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "upda
  it("old actor callback cannot issue captured " + endpoint, async () => {
   await mount();
    await open(choice!);
-   fill("Your password", "synthetic-proof");
    if (endpoint === "rotate-key") fill("New value", "synthetic-new-value");
    const submitOld = button(submit!).props.onClick;
   await act(async () => view.update(<SecretKeysLive currentUser={{ ...user, id: "other" }} />));
@@ -113,32 +110,28 @@ for (const [choice, submit, endpoint] of [["Edit details", "Save changes", "upda
    expect(apis.secret.post).not.toHaveBeenCalled();
  });
 }
-it("asks for the two-step code on a change only where the person turned it on", async () => {
+it("a change asks for no password or two-step code, even for a person who turned two-step on", async () => {
   await mount({ ...user, totpEnabled: true });
   await open("Remove");
-  fill("Your password", "synthetic-proof");
-  expect(button("Remove for good").props.disabled).toBe(true);
-  fill("Your two-step code", "123456");
-  expect(button("Remove for good").props.disabled).toBe(false);
+  expect(view.root.findAll(n => n.props.label === "Your password" || n.props.label === "Your two-step code")).toHaveLength(0);
+  expect(view.root.findAllByType("input").filter(input => input.props.type === "password")).toHaveLength(0);
+  expect(button("Remove for good").props.disabled).toBeFalsy();
   await act(async () => button("Remove for good").props.onClick());
-  expect(apis.secret.post.mock.calls[0]?.[1]).toMatchObject({ id: "key", authorizationPassword: "synthetic-proof", authorizationTotp: "123456" });
-  expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+  expect(apis.secret.post.mock.calls[0]).toEqual(["delete-key", { id: "key" }]);
 });
-it("adding takes the password in the same dialog, sends one call, and never a type, a PIN or a two-step code", async () => {
+it("adding asks for no password, sends one call, and never a type, a PIN or a two-step code", async () => {
   await mount({ ...user, totpEnabled: true });
   await open("Add login or key");
   expect(view.root.findAll(n => n.props.label === "Type")).toHaveLength(0);
   fill("Name", "New synthetic key");
   fill("Login or key", "synthetic-new-value");
-  fill("Your password", "synthetic-proof");
-  expect(view.root.findAll(n => n.props.label === "Your two-step code")).toHaveLength(0);
-  expect(button("Save").props.disabled).toBe(false);
+  expect(view.root.findAll(n => n.props.label === "Your password" || n.props.label === "Your two-step code")).toHaveLength(0);
+  expect(button("Save").props.disabled).toBeFalsy();
   apis.secret.get.mockResolvedValueOnce({ ok: false });
   await act(async () => button("Save").props.onClick());
   expect(apis.secret.post).toHaveBeenCalledTimes(1);
-  expect(apis.secret.post).toHaveBeenCalledWith("create-key", expect.objectContaining({ name: "New synthetic key", value: "synthetic-new-value", kind: "custom", authorizationPassword: "synthetic-proof" }));
-  expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationTotp");
-  expect(apis.secret.post.mock.calls[0]?.[1]).not.toHaveProperty("authorizationPin");
+  expect(apis.secret.post).toHaveBeenCalledWith("create-key", expect.objectContaining({ name: "New synthetic key", value: "synthetic-new-value", kind: "custom" }));
+  expect(JSON.stringify(apis.secret.post.mock.calls[0]?.[1])).not.toMatch(/authorization/u);
   expect(view.root.findAll(n => n.props.role === "status" && label(n) === "Saved.")).toHaveLength(1);
   await act(async () => button("Try again").props.onClick());
   expect(apis.secret.post).toHaveBeenCalledTimes(1);
@@ -164,19 +157,17 @@ it("unexpected update rejection releases original gate and retains the draft", a
   await mount();
   await open("Edit details");
   fill("Name", "Current edited name");
-  fill("Your password", "synthetic-proof");
   apis.secret.post.mockRejectedValueOnce(Error("synthetic private detail"));
   await act(async () => button("Save changes").props.onClick());
   expect(text()).not.toContain("synthetic private detail");
   expect(field("Name").findByType("input").props.value).toBe("Current edited name");
-  expect(button("Save changes").props.disabled).toBe(false);
+  expect(button("Save changes").props.disabled).toBeFalsy();
   await act(async () => button("Save changes").props.onClick());
   expect(apis.secret.post).toHaveBeenCalledTimes(2);
 });
 it("operation gate still synchronously prevents duplicate privileged writes", async () => {
   await mount();
   await open("Remove");
-  fill("Your password", "synthetic-proof");
   const pending = deferred();
   apis.secret.post.mockReturnValueOnce(pending.promise);
   const submit = button("Remove for good").props.onClick;
@@ -254,7 +245,6 @@ it("old authorization dismiss cannot close a newer same-kind edit", async () => 
 it("pending update result cannot overwrite a replacement actor or trigger old follow-up read", async () => {
  await mount();
   await open("Edit details");
-  fill("Your password", "synthetic-proof");
   const pending = deferred(), old = apis.secret;
   old.post.mockReturnValueOnce(pending.promise);
   act(() => button("Save changes").props.onClick());
@@ -268,7 +258,6 @@ it("pending update result cannot overwrite a replacement actor or trigger old fo
 it("confirmed removal invalidates an open editor instead of leaving a silently inert submit", async () => {
   await mount();
   await open("Edit details");
-  fill("Your password", "synthetic-proof");
   apis.secret.get.mockResolvedValue({ ok: true, payload: { keys: [] } });
   await act(async () => button("Refresh").props.onClick());
   expect(view.root.findAll(n => n.props["data-modal"] === "Edit details")).toHaveLength(0);

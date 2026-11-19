@@ -85,42 +85,42 @@ describe("the panel's key port, reading state from the snapshot", () => {
     expect(calls.filter((call) => call.endpoint === "snapshot")).toHaveLength(1);
   });
 
-  it("asks no password, can write, and has no PIN anywhere", () => {
+  it("can write, and has no password or PIN anywhere", () => {
     const port = createPanelModelKeysPort(reading(undefined).secretKeys);
-    expect(port.requiresPassword).toBe(false);
+    expect(JSON.stringify(Object.keys(port))).not.toMatch(/password/iu);
     expect(port.canWrite).toBe(true);
     expect(JSON.stringify(Object.keys(port))).not.toMatch(/pin/iu);
   });
 });
 
 describe("the panel's key port, changing keys", () => {
-  it("saves in one create-key call with the password in it and the provider named, never a PIN", async () => {
+  it("saves in one create-key call with the provider named, with no password and never a PIN", async () => {
     const { secretKeys, calls } = transport(() => ({ ok: true, payload: { id: "new-key" } }));
-    const result = await createPanelModelKeysPort(secretKeys).save({ provider: "anthropic", name: "Work", value: "sk-new", password: "pw" });
+    const result = await createPanelModelKeysPort(secretKeys).save({ provider: "anthropic", name: "Work", value: "sk-new" });
     expect(result).toEqual({ ok: true, keyId: "new-key" });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ method: "post", endpoint: "create-key", payload: { name: "Work", value: "sk-new", kind: "llm", provider: "Anthropic", enabled: true, authorizationPassword: "pw" } });
-    expect(JSON.stringify(calls)).not.toMatch(/pin/iu);
+    expect(calls[0]).toMatchObject({ method: "post", endpoint: "create-key", payload: { name: "Work", value: "sk-new", kind: "llm", provider: "Anthropic", enabled: true } });
+    expect(JSON.stringify(calls)).not.toMatch(/pin|password/iu);
   });
 
   it("replaces in one rotate-key call", async () => {
     const { secretKeys, calls } = transport(() => ({ ok: true }));
-    expect(await createPanelModelKeysPort(secretKeys).replace("k1", "sk-new", "pw")).toEqual({ ok: true });
-    expect(calls).toEqual([{ method: "post", endpoint: "rotate-key", payload: { id: "k1", value: "sk-new", authorizationPassword: "pw" } }]);
+    expect(await createPanelModelKeysPort(secretKeys).replace("k1", "sk-new")).toEqual({ ok: true });
+    expect(calls).toEqual([{ method: "post", endpoint: "rotate-key", payload: { id: "k1", value: "sk-new" } }]);
   });
 
-  it("removes in ONE delete-key call with the password, with no press grant minted first and no PIN", async () => {
+  it("removes in ONE delete-key call with no password, no press grant minted first and no PIN", async () => {
     const { secretKeys, calls } = transport(() => ({ ok: true }));
-    expect(await createPanelModelKeysPort(secretKeys).remove("k1", "pw")).toEqual({ ok: true });
-    expect(calls).toEqual([{ method: "post", endpoint: "delete-key", payload: { id: "k1", authorizationPassword: "pw" } }]);
+    expect(await createPanelModelKeysPort(secretKeys).remove("k1")).toEqual({ ok: true });
+    expect(calls).toEqual([{ method: "post", endpoint: "delete-key", payload: { id: "k1" } }]);
     expect(JSON.stringify(calls)).not.toMatch(/mint-press-grant|identity-access|pin/iu);
   });
 
   it("says the engine's own sentence when a change is refused, and does not call again", async () => {
-    const { secretKeys, calls } = transport(() => ({ ok: false, error: "That password is not right.", requiresRecheck: true }));
+    const { secretKeys, calls } = transport(() => ({ ok: false, error: "That key is not yours to change." }));
     const port = createPanelModelKeysPort(secretKeys);
-    expect(await port.remove("k1", "bad")).toEqual({ ok: false, message: "That password is not right." });
-    expect(await port.replace("k1", "sk", "bad")).toEqual({ ok: false, message: "That password is not right." });
+    expect(await port.remove("k1")).toEqual({ ok: false, message: "That key is not yours to change." });
+    expect(await port.replace("k1", "sk")).toEqual({ ok: false, message: "That key is not yours to change." });
     expect(calls).toHaveLength(2);
   });
 
@@ -130,9 +130,9 @@ describe("the panel's key port, changing keys", () => {
     const port = createPanelModelKeysPort(secretKeys);
     const heard = vi.fn();
     const stop = port.onChange(heard);
-    await port.remove("k1", "pw");
+    await port.remove("k1");
     worked = false;
-    await port.remove("k1", "pw");
+    await port.remove("k1");
     expect(heard).toHaveBeenCalledTimes(1);
     port.notify();
     expect(heard).toHaveBeenCalledTimes(2);

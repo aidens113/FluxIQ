@@ -73,7 +73,7 @@
 }
 
 .pagination-size select {
-  min-height: var(--control-height-compact);
+  min-height: var(--select-height);
   border: var(--border-width) solid var(--edge);
   border-radius: var(--radius-control);
   background: var(--surface);

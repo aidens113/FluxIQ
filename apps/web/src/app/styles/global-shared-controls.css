@@ -365,3 +365,47 @@
   }
 
 }
+
+/* The one disclosure: a details element whose summary ends in a chevron that points down while it is closed and up
+   while it is open, never the browser's own triangle. Add the `disclosure` class to the details element. */
+.disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-height: var(--control-height-default);
+  cursor: pointer;
+  list-style: none;
+  font-weight: var(--font-weight-semibold);
+}
+
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin: -3px 3px 0 0;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+
+.disclosure[open] > summary::after {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+.disclosure > summary:hover::after {
+  border-color: var(--text);
+}
+
+.disclosure > summary:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}

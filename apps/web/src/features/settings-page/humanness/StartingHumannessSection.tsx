@@ -33,7 +33,8 @@ function StartingControl(props: { port: SettingsPort; value: number | null }) {
     if (!host) return;
     const control = createHumannessControl({
       level: props.value === null ? { starting: 0 } : { own: props.value, starting: 0 },
-      label: "Starting humanness",
+      // The section already says "Starting humanness"; the slider names what it sets, so the title is not said twice.
+      label: "Level",
       settleMs: 300,
       commit: async (humanness) => {
         const failure = await saveStartingHumanness(port.current, humanness);

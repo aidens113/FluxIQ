@@ -89,7 +89,7 @@ export function AutomationProjectBrowser(props: AutomationProjectBrowserProps) {
         </p>
       ) : null}
       <div className="automation-project-sections">
-        {!props.loaded ? <LoadingState detail="Reading your projects…" label="Loading projects…" /> : null}
+        {!props.loaded ? <LoadingState detail="Reading your projectsâ€¦" label="Loading projectsâ€¦" /> : null}
         {props.loaded && !props.status && !props.projects.length && !props.categories.length ? (
           <EmptyState
             action={<Button onClick={() => props.onCreateProject()} variant="primary"><Plus size={14} aria-hidden />Create project</Button>}

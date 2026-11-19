@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { allowanceWords } from "../allowance-words";
 import { parseAllowance } from "../allowance-input";
-import { EMPTY_NEW_KEY, canSaveNewKey, newKeyPayload } from "../new-key";
 
 describe("the allowance a person types", () => {
   it("reads dollars, with or without the sign", () => {
@@ -18,16 +17,3 @@ describe("the allowance a person types", () => {
     expect(allowanceWords(0.5)).toBe("$0.50");
   });
 });
-
-describe("adding a key", () => {
-  const filled = { ...EMPTY_NEW_KEY, name: " Work ", value: "sk-secret", password: "pw" };
-  it("needs a name, the value and the password", () => {
-    expect(canSaveNewKey(EMPTY_NEW_KEY)).toBe(false);
-    expect(canSaveNewKey(filled)).toBe(true);
-  });
-  it("sends the existing create-key shape: a global, enabled model key with the password in the same call, and no PIN", () => {
-    expect(newKeyPayload(filled)).toEqual({ name: "Work", value: "sk-secret", kind: "llm", provider: "Anthropic", scope: "global", scopeRef: "", description: "", metadata: {}, enabled: true, authorizationPassword: "pw" });
-    expect(newKeyPayload(filled)).not.toHaveProperty("authorizationPin");
-  });
-});
-

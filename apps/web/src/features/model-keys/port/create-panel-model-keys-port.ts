@@ -21,8 +21,8 @@ const COULD_NOT_READ = "Couldn't check your AI key just now.";
 /**
  * The key card's port over the Secret Keys program. The state is the `modelAccess` of its snapshot (Core's own
  * reading, mapped by `modelAccessFromCore`); the key's pushed `model-access` event (the page's change stream) tells `subscribe` and `onChange` listeners to read again. A key is saved, replaced
- * and removed in ONE call each, with no password or PIN (Core's secret-keys answers a signed-in person; the
- * key-backend task removes the old password requirement there): no press grant is minted first and no error text
+ * and removed in ONE call each, with no password or PIN (Core's secret-keys answers a signed-in person and IAM
+ * decides): no press grant is minted first and no error text
  * is matched. A create or rotate answer that carries the checked `modelAccess` is shown as it is, without a
  * second read.
  */
@@ -41,12 +41,10 @@ export function createPanelModelKeysPort(secretKeys: ProgramCommandTransport, ch
       }
     });
   };
-  const password = (value: string | undefined) => (value ? { authorizationPassword: value } : {});
   // The checked state a write answered with, shown by the next read instead of asking again.
   let answered: CoreModelAccess | null = null;
   const keep = (payload: { modelAccess?: unknown } | undefined) => { answered = readCoreModelAccess(payload?.modelAccess); };
   return {
-    requiresPassword: false,
     canWrite: true,
     onChange(listener) {
       listeners.add(listener);
@@ -79,8 +77,7 @@ export function createPanelModelKeysPort(secretKeys: ProgramCommandTransport, ch
         scopeRef: "",
         description: "",
         metadata: {},
-        enabled: true,
-        ...password(request.password)
+        enabled: true
       });
       if (!response.ok) return { ok: false, message: keyFailure(response) };
       keep(response.payload);
@@ -88,15 +85,15 @@ export function createPanelModelKeysPort(secretKeys: ProgramCommandTransport, ch
       const id = response.payload?.id;
       return { ok: true, ...(typeof id === "string" && id ? { keyId: id } : {}) };
     },
-    async replace(keyId, value, accountPassword) {
-      const response = await secretKeys.post<{ modelAccess?: unknown }>("rotate-key", { id: keyId, value, ...password(accountPassword) });
+    async replace(keyId, value) {
+      const response = await secretKeys.post<{ modelAccess?: unknown }>("rotate-key", { id: keyId, value });
       if (!response.ok) return { ok: false, message: keyFailure(response) };
       keep(response.payload);
       notify();
       return { ok: true };
     },
-    async remove(keyId, accountPassword) {
-      const response = await secretKeys.post("delete-key", { id: keyId, ...password(accountPassword) });
+    async remove(keyId) {
+      const response = await secretKeys.post("delete-key", { id: keyId });
       if (!response.ok) return { ok: false, message: keyFailure(response) };
       notify();
       return { ok: true };

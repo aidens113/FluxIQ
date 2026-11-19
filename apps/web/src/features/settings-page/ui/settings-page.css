@@ -4,31 +4,88 @@
 .settings-reserve { min-height: var(--settings-late-height, 26rem); padding-top: var(--space-4); border-top: 1px solid var(--divider); color: var(--muted); }
 .settings-page section, .settings-page details { min-width: 0; }
 .settings-page section[id] { scroll-margin-top: var(--space-lg, 20px); }
-.settings-page form, .settings-add-key, .settings-remove, .settings-replace { display: grid; gap: var(--space-2); max-width: 100%; }
+.settings-page form, .settings-remove, .settings-replace { display: grid; gap: var(--space-2); max-width: 100%; }
 .settings-page label { display: grid; gap: var(--space-1); min-width: 0; }
-/* Text boxes and lists are tall enough to touch; a radio or a checkbox keeps its own small size. */
-.settings-page input:not([type="radio"]):not([type="checkbox"]), .settings-page select { min-width: 0; max-width: 100%; min-height: var(--control-height-default, 36px); }
-.settings-page input[type="radio"], .settings-page input[type="checkbox"] { width: 1rem; height: 1rem; min-height: 0; margin: 0; flex: none; accent-color: var(--accent, currentColor); }
-.settings-keys { border: 0; padding: 0; margin: 0; min-width: 0; }
-.settings-keys legend { padding: 0; color: var(--muted); font-size: var(--font-size-compact, 0.9rem); }
-.settings-keys ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: var(--space-2); }
-.settings-keys li { display: grid; gap: var(--space-2); padding: var(--space-sm, 8px) var(--space-md, 12px); border: 1px solid var(--divider); border-radius: var(--radius-control, 8px); min-width: 0; }
-.settings-keys li[data-selected="true"] { border-color: var(--focus); }
-.settings-key-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
-.settings-key-name { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: var(--font-weight-semibold, 600); text-align: left; cursor: pointer; min-height: 0; overflow-wrap: anywhere; }
-.settings-key-facts { color: var(--muted); font-size: var(--font-size-compact, 0.9rem); overflow-wrap: anywhere; }
-.settings-key-options { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
-.settings-key-default, .settings-key-offer { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: var(--font-size-compact, 0.9rem); }
-.settings-key-buttons, .settings-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm, 8px); }
+/* Text boxes, lists and buttons share one height, so a row of them lines up; a radio or a checkbox is drawn below. */
+.settings-page input:not([type="radio"]):not([type="checkbox"]):not([type="range"]) { min-width: 0; max-width: 100%; min-height: var(--control-height-default, 36px); }
+.settings-page select { min-width: 0; max-width: 100%; min-height: var(--select-height, 36px); }
+.settings-page button, .settings-page .button { min-height: var(--control-height-default, 36px); }
+
+/* Radios and checkboxes are drawn from tokens, like the extension's: a mark a person can hit, with the label beside it. */
+.settings-page input[type="radio"], .settings-page input[type="checkbox"] {
+  -webkit-appearance: none; appearance: none; flex: none; box-sizing: border-box; width: 18px; height: 18px; min-height: 0; margin: 0;
+  border: 1.5px solid var(--edge); background: var(--surface-muted); cursor: pointer;
+}
+.settings-page input[type="checkbox"] { border-radius: 5px; }
+.settings-page input[type="radio"] { border-radius: 50%; }
+.settings-page input[type="radio"]:checked { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 38%, transparent 42%), var(--surface-muted); }
+.settings-page input[type="checkbox"]:checked {
+  border-color: var(--accent); background-color: var(--accent); background-repeat: no-repeat; background-position: center; background-size: 12px 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.3l2.4 2.4 5-5.4' fill='none' stroke='%230c0d0f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.settings-page input[type="radio"]:disabled, .settings-page input[type="checkbox"]:disabled { cursor: default; opacity: 0.48; }
+.settings-page input[type="radio"]:hover:not(:disabled), .settings-page input[type="checkbox"]:hover:not(:disabled) { border-color: var(--accent-edge); }
+
+/* One box for the AI key: the card, its notes and the keys read as one section, divided by hairlines. */
+.settings-keybox { display: grid; min-width: 0; border: 1px solid var(--divider); border-radius: var(--radius-panel, 8px); background: var(--surface); overflow: hidden; }
+.settings-keybox > * { min-width: 0; margin: 0; }
+.settings-keybox > * + * { border-top: 1px solid var(--divider); }
+.settings-keybox > .model-key-card[data-variant="full"] { border: 0; border-radius: 0; background: transparent; }
+.settings-page .settings-keybox > :is(p, .settings-replace, .settings-remove) { padding: var(--space-sm) var(--space-lg); }
+.settings-page .settings-keybox-note { color: var(--muted); font-size: var(--font-size-compact); }
+.settings-page .settings-keybox-note[data-tone="warn"] { color: var(--warning-text); background: var(--warning-soft); }
+.settings-page .settings-keybox > :is(.settings-replace, .settings-remove) { background: var(--surface-muted); padding-block: var(--space-md); }
+.settings-keys-legend { margin: 0; padding: var(--space-sm) var(--space-lg) 0; color: var(--muted); font-size: var(--font-size-compact); }
+.settings-keys ul { list-style: none; margin: 0; padding: 0; display: grid; }
+/* A key row: its name and facts, its buttons at the end, its choices underneath. At phone width they stack and nothing wraps mid-word. */
+.settings-keys li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "main buttons" "options options";
+  align-items: center; gap: var(--space-xs) var(--space-md); min-width: 0; padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--divider);
+}
+.settings-keys li:first-child { border-top: 0; }
+.settings-keys li[data-selected="true"] { box-shadow: inset 3px 0 0 var(--accent); }
+.settings-key-main { grid-area: main; display: grid; gap: var(--space-xxs, 2px); min-width: 0; }
+.settings-key-name { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-weight: var(--font-weight-semibold, 600); text-align: left; cursor: pointer; min-height: 0; overflow-wrap: anywhere; justify-self: start; }
+.settings-key-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-sm); color: var(--muted); font-size: var(--font-size-compact, 0.9rem); overflow-wrap: anywhere; }
+.settings-key-state { padding: 0 var(--space-sm); border: 1px solid var(--divider); border-radius: var(--radius-pill, 999px); white-space: nowrap; }
+.settings-key-state[data-state="on"] { color: var(--success); border-color: var(--success); }
+.settings-key-options { grid-area: options; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-lg); }
+.settings-key-options[hidden] { display: none; }
+.settings-page .settings-key-default, .settings-page .settings-key-offer { display: inline-flex; flex-direction: row; align-items: center; gap: var(--space-compact, 6px); font-size: var(--font-size-compact, 0.9rem); }
+.settings-key-buttons { grid-area: buttons; display: flex; gap: var(--space-sm, 8px); justify-self: end; }
+.settings-key-buttons .button { white-space: nowrap; }
+.settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm, 8px); }
+.settings-actions .button { white-space: nowrap; }
+@media (max-width: 520px) {
+  .settings-keys li { grid-template-columns: minmax(0, 1fr); grid-template-areas: "main" "options" "buttons"; }
+  .settings-key-buttons { justify-self: start; }
+}
 .settings-assistant-row { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; }
-.settings-notice { padding: 8px; border: 1px solid var(--warning); border-radius: 8px; }
+.settings-page .settings-workspace-key { padding: var(--space-sm) var(--space-lg); }
 .settings-advanced ul { padding-left: 20px; overflow-wrap: anywhere; }
-.settings-page button { min-height: var(--control-height-default, 36px); }
 .settings-page .settings-key-name { min-height: 0; }
-.settings-add-another > summary { cursor: pointer; }
-.settings-add-another[open] > summary { margin-bottom: var(--space-sm, 8px); }
-.settings-appearance { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
-.settings-appearance-choice { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
+
+/* A line that says "Saved." keeps its room whether or not it says anything, so saving never pushes the rest down. */
+.settings-page .settings-saved { min-height: 1.5em; margin: var(--space-xs) 0 0; color: var(--muted); font-size: var(--font-size-compact); }
+
+/* Spending per message: the box and the two buttons sit on one line, the same height, and wrap together on a phone. */
+.settings-page .settings-allowance-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-md); }
+.settings-allowance-form .field { flex: 1 1 10rem; max-width: 16rem; }
+
+/* Appearance: three choices as framed chips with a drawn radio, like the extension's. */
+.settings-appearance { display: flex; flex-wrap: wrap; gap: var(--space-sm); border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-page .settings-appearance-choice {
+  display: inline-flex; flex-direction: row; align-items: center; gap: var(--space-sm); min-height: var(--control-height-default, 32px); padding: 0 var(--space-md);
+  border: 1px solid var(--divider); border-radius: var(--radius-panel, 8px); cursor: pointer;
+}
+.settings-page .settings-appearance-choice[data-checked="true"] { border-color: var(--accent-edge); background: var(--accent-wash); color: var(--accent-text); }
+.settings-page .settings-appearance-choice:focus-within { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; }
+
+/* The starting-humanness slider: the level beside its name, a helper line at body size, and the status line kept in place. */
+.settings-page .humanness { max-width: 32rem; }
+.settings-page .humanness-head { justify-content: flex-start; gap: var(--space-md); }
+.settings-page :is(.humanness-explain, .humanness-inherited, .humanness-status, .humanness-ends) { font-size: var(--font-size-body-small, 13px); }
+.settings-page .humanness-status { display: block; min-height: 1.45em; }
 
 /* Sections read as one family: a hairline between them, the same heading rhythm, the same muted notes. */
 .settings-page > section, .settings-page > details { padding-top: var(--space-lg, 20px); border-top: 1px solid var(--divider); }
@@ -36,8 +93,7 @@
 .settings-page h2, .settings-page h3 { margin: 0; }
 .settings-page h3 { font-size: var(--font-size-body, 1rem); }
 .settings-page section > p { margin: var(--space-xs, 4px) 0 0; }
-.settings-page section > .panel-model-key-card { margin: var(--space-sm, 8px) 0; }
+.settings-page section > .settings-keybox { margin: var(--space-sm, 8px) 0; }
 .settings-muted { color: var(--muted); font-size: var(--font-size-compact); overflow-wrap: anywhere; }
 .settings-problem { color: var(--danger); margin: 0; }
 .settings-page .field { max-width: 32rem; }
-.settings-page .button { min-height: var(--control-height-default, 36px); }

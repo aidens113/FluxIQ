@@ -11,7 +11,7 @@ const refused = async () => "That did not work. Try again.";
 
 /** What the section reads; the actions refuse, since a render never calls them. */
 function data(keys: SettingsKey[], choices: SettingsModelChoices): SettingsData {
-  return { loading: false, loadError: "", keys, choices, allowance: null, setDefault: refused, saveAssistant: refused, saveAllowance: refused, addKey: refused, replace: refused, remove: async () => ({ kind: "refused", message: "" }), reload: async () => undefined } as unknown as SettingsData;
+  return { loading: false, loadError: "", keys, choices, allowance: null, setDefault: refused, saveAssistant: refused, saveAllowance: refused, replace: refused, remove: async () => ({ kind: "refused", message: "" }), reload: async () => undefined } as unknown as SettingsData;
 }
 const port = { onChange: () => () => undefined, notify: () => undefined } as unknown as PanelModelKeysPort;
 const render = (keys: SettingsKey[], choices: SettingsModelChoices, sharing = true) => renderToStaticMarkup(createElement(AiKeysSection, { data: data(keys, choices), port, sharing, selectedId: "", onSelect: () => undefined }));
@@ -105,9 +105,33 @@ describe("AiKeysSection", () => {
   it("is the AI keys anchor, says the honest line, and shows no Reveal", () => {
     const html = render(MINE, choices({ mayChoose: true }));
     expect(html).toContain("id=\"ai-keys\"");
-    expect(html).toContain("FluxIQ keeps the key and never shows it again.");
+    expect(html).toContain("It keeps the key and never shows it again.");
     expect(html).not.toMatch(/reveal|sealed|shown to nobody/iu);
     expect(html).not.toMatch(/\bPIN\b/u);
+  });
+
+  it("holds the card, its notes and the keys in one box, and adds keys only through the card", () => {
+    const html = render(MINE, choices({ mayChoose: true }));
+    const box = html.slice(html.indexOf('class="settings-keybox"'));
+    expect(box).toContain("settings-keys");
+    expect(box.indexOf("settings-keys")).toBeLessThan(box.indexOf("</section>"));
+    // One way to add a key: the old second form and its disclosure are gone.
+    expect(html).not.toContain("settings-add-another");
+    expect(html).not.toContain("<summary>Add another key</summary>");
+    expect(html).not.toMatch(/Save key|Name<\/span>/u);
+  });
+
+  it("asks for no password on any key form", () => {
+    expect(render(MINE, choices({ mayChoose: true }))).not.toMatch(/password/iu);
+    const sources = ["AiKeysSection.tsx", "KeyList.tsx", "ReplaceKeyForm.tsx", "RemoveKeyConfirm.tsx"].map((name) => readFileSync(new URL(`../${name}`, import.meta.url), "utf8")).join(" ");
+    expect(sources).not.toMatch(/authorizationPassword|Your password|type="password" value=\{password/u);
+  });
+
+  it("says the lost-default note only while it is true", () => {
+    const note = { message: "Your default key was removed, and there is no other model key. Add one in Settings.", atMs: 100 };
+    expect(render([], choices({ defaultKeyId: null, defaultNotice: note }))).toContain("Your default key was removed");
+    const added: SettingsKey[] = [{ ...MINE[0]!, createdAtMs: 500 }];
+    expect(render(added, choices({ defaultNotice: note }))).not.toContain("Your default key was removed");
   });
 
   it("styles its radios and checkboxes by class, never as the 36px text boxes", () => {

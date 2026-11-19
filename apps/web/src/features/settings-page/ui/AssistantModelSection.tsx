@@ -46,7 +46,7 @@ export function AssistantModelSection(props: { data: SettingsData }) {
         </div>
       )}
       <p>The key says who you pay and whose account the assistant uses. The model is the AI that answers; the usual model is a good choice unless you want a cheaper or a stronger one. Your Flows pick their own model and are not changed here.</p>
-      <p role="status">{status}</p>
+      <p role="status" className="settings-saved">{status}</p>
     </section>
   );
 }
