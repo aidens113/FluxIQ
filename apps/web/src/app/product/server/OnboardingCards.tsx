@@ -1,11 +1,18 @@
 import { getPlatformRegistry, panelOnboardingCards } from "fluxiq/platform/panel";
-import { getFluxIQ } from "../../../lib/fluxiq";
+import { cookies } from "next/headers";
+import { workspaceFluxIQ } from "../../../lib/workspaces";
 import { ensurePlatformModulesLoaded } from "./ensure-platform-modules-loaded";
 
 /** Whether the workspace holds any model key; the secret-keys snapshot is redacted metadata only. */
 async function hasModelKey(): Promise<boolean> {
   try {
-    return ((await getFluxIQ().programs.secretKeys.snapshot()).keys?.length ?? 0) > 0;
+    const lease = await workspaceFluxIQ({ cookies: await cookies() });
+    if (!lease) return true;
+    try {
+      return ((await lease.fluxiq.programs.secretKeys.snapshot()).keys?.length ?? 0) > 0;
+    } finally {
+      lease.release();
+    }
   } catch {
     return true;
   }

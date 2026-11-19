@@ -48,12 +48,35 @@ export type CommerceAdmissionPolicy = {
   entitlementKeys: Record<CommerceAllocationClass, string>;
 };
 
+/**
+ * What an account holds of a counted allocation: the dedicated targets it
+ * runs or keeps allocated now. The engine that allocates them implements it
+ * (for dedicated environments, the environment store).
+ */
+export interface CommerceHoldings {
+  /**
+   * Answers true and counts `targetId` as held by the account when it is
+   * already held, or when the account holds fewer than `limit` targets;
+   * false otherwise. Atomic with every other claim, so two concurrent claims
+   * cannot both take the last unit; a claimed target stays counted until the
+   * allocation it was claimed for is recorded or refused.
+   */
+  claim(request: { accountId: string; targetId: string; limit: number }): Promise<boolean>;
+}
+
 export type CloudAdmissionOptions<Actor> = {
   deploymentMode: CommerceDeploymentMode;
   /** Must check the actor's current identity, workspace, action and target IAM. */
   authorize(request: CommerceAdmissionRequest<Actor>): Promise<CommerceExecutionAuthority | null>;
   ledger?: Pick<CommerceLedger, "listSubscriptions">;
   policy?: CommerceAdmissionPolicy;
+  /**
+   * Counts dedicated targets against counted grants (a grant with a
+   * `quantity` and no `resourceIds`). Without it a counted grant admits
+   * nothing (`commerce-policy-unavailable`): a count no one keeps is never
+   * taken as unlimited.
+   */
+  holdings?: CommerceHoldings;
   now?: () => number;
 };
 
@@ -65,7 +88,8 @@ export type CommerceAdmissionDenial =
   | "cloud-account-required"
   | "commerce-policy-unavailable"
   | "subscription-required"
-  | "entitlement-required";
+  | "entitlement-required"
+  | "entitlement-exhausted";
 
 type AdmissionBinding = {
   principalId: string;

@@ -33,8 +33,18 @@ const invalidSnapshots: Partial<CommerceSubscriptionSnapshot>[] = [
   { entitlements: [grant({ capabilities: ["execute", "execute"] })] },
   { entitlements: [grant({ resourceIds: ["unowned"] })] },
   { entitlements: [grant({ allocation: "dedicated", resourceIds: [] })] },
-  { entitlements: [grant({ regions: [] })] }
+  { entitlements: [grant({ regions: [] })] },
+  { entitlements: [grant({ allocation: "dedicated", resourceIds: ["box-1"], quantity: 1 })] },
+  { entitlements: [grant({ allocation: "dedicated", quantity: 0 })] },
+  { entitlements: [grant({ quantity: 1.5 })] }
 ];
+
+it("accepts a counted dedicated grant and a seat count, keeping the quantity", () => {
+  const counted = grant({ allocation: "dedicated", quantity: 3 });
+  const seats = grant({ quantity: 5 });
+  expect(validateCommerceEvent(event("counted", 1, { entitlements: [counted, seats] })).subscription.entitlements).toEqual([counted, seats]);
+  expect(validateCommerceEvent(event("named", 1, { entitlements: [grant({ allocation: "dedicated", resourceIds: ["box-1"] })] })).subscription.entitlements[0]).not.toHaveProperty("quantity");
+});
 
 it.each(invalidSnapshots)("rejects malformed snapshot %j", (changes) => {
   expect(() => validateCommerceEvent(event("malformed", 1, changes))).toThrow(TypeError);

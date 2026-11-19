@@ -1,13 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ keys: [] as unknown[], fail: false }));
+const state = vi.hoisted(() => ({ keys: [] as unknown[], fail: false, released: 0 }));
 async function snapshot() {
   if (state.fail) throw new Error("locked");
   return { keys: state.keys };
 }
-vi.mock("../../../lib/fluxiq", () => ({
-  getFluxIQ: () => ({ programs: { secretKeys: { snapshot } } })
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "dummy-session" }) }) }));
+vi.mock("../../../lib/workspaces", () => ({
+  workspaceFluxIQ: async () => ({ workspaceId: "workspace-main", fluxiq: { programs: { secretKeys: { snapshot } } }, release: () => { state.released += 1; } })
 }));
 import { OnboardingCards } from "../server";
 import { FULL_PRODUCT, registerProduct, resetPanelProductState } from "./support";
@@ -15,6 +16,7 @@ import { FULL_PRODUCT, registerProduct, resetPanelProductState } from "./support
 beforeEach(() => {
   state.keys = [];
   state.fail = false;
+  state.released = 0;
 });
 afterEach(resetPanelProductState);
 const render = async () => renderToStaticMarkup(await OnboardingCards());
@@ -31,6 +33,7 @@ describe("onboarding cards", () => {
     expect(html).toContain('href="https://example.test/store" rel="noopener noreferrer" target="_blank">Chrome Web Store</a>');
     expect(html).toContain("Add your model key");
     expect(html).toContain('href="/security/keys"');
+    expect(state.released).toBe(1);
   });
 
   it("hide the key card once a key exists", async () => {
@@ -51,5 +54,6 @@ describe("onboarding cards", () => {
     registerProduct(FULL_PRODUCT);
     state.fail = true;
     expect(await render()).not.toContain("Add your model key");
+    expect(state.released).toBe(1);
   });
 });

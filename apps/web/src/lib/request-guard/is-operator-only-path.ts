@@ -1,7 +1,8 @@
 const OPERATOR_ONLY_PATHS = new Set([
   "/api/programs/deployment-sync/sync",
   "/api/programs/deployment-sync/rollback",
-  "/api/programs/database-manager/run-migration"
+  "/api/programs/database-manager/run-migration",
+  "/api/framework/setup"
 ]);
 
 /** True for the endpoints that run with no credential recheck and are command-line only on a public server. */

@@ -199,7 +199,7 @@ test("the production web build resolves Core's packages from their stamped dist,
 
 test("web:build ends with the runtime identity check, whose modules are inside its fingerprint", () => {
   const step = resolveStep("web:build", { env: {} });
-  assert.match(STEPS["web:build"].command, / && next build --turbopack && node \.\.\/\.\.\/scripts\/web-build\/identity\/check-web-build\.mjs$/u);
+  assert.match(STEPS["web:build"].command, / && node scripts\/next-build\/run-next-build\.mjs && node \.\.\/\.\.\/scripts\/web-build\/identity\/check-web-build\.mjs$/u);
   for (const file of ["check-web-build.mjs", "assert-stamped-identity.mjs", "index.mjs"]) {
     assert.ok(coversPath(path.join(REPOSITORY_ROOT, "scripts", "web-build", "identity", file), step), `${file} is not fingerprinted`);
   }

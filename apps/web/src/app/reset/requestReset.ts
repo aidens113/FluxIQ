@@ -7,8 +7,9 @@ import type { ResetDeps } from "./ResetDeps";
  * has an account, so the page cannot be used to find out who is registered.
  */
 export async function requestReset(request: Request, deps: ResetDeps): Promise<AccountLinkResponse> {
-  const body = await readJsonObject(request);
-  if ("status" in body) return body as AccountLinkResponse;
+  const read = await readJsonObject(request);
+  if (!read.ok) return read.response;
+  const body = read.value;
   if (typeof body.email !== "string") return refuse(400, "bad_request");
   await deps.links.requestReset({ email: body.email });
   return { status: 200, body: { ok: true } };

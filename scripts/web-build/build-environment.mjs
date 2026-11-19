@@ -5,8 +5,11 @@
 // request arrives, so `next start` supplies its own values to the same build.
 // What else to drop from the caller's environment is the caller's choice: the
 // key fingerprints `NODE_ENV` and every `NEXT_*` variable, as `web:build` does.
+// `NODE_OPTIONS` carries the build heap Next's type-check worker needs, the same
+// value `pnpm --filter @fluxiq/web build` gives it (apps/web/scripts/next-build).
 
 import path from "node:path";
+import { buildNodeOptions } from "../../apps/web/scripts/next-build/index.mjs";
 
 /**
  * @param {NodeJS.ProcessEnv} base
@@ -22,6 +25,7 @@ export function isolatedBuildEnvironment(base, fluxiqRoot) {
     FLUXIQ_HOST_ROOT: fluxiqRoot,
     FLUXIQ_DATA_DIR: storage,
     FLUXIQ_DATABASES_DIR: storage,
-    FLUXIQ_CLIENT_GATEWAY_ENABLED: "false"
+    FLUXIQ_CLIENT_GATEWAY_ENABLED: "false",
+    NODE_OPTIONS: buildNodeOptions(base.NODE_OPTIONS)
   };
 }

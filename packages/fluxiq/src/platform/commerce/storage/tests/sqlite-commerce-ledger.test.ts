@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { SQLiteRepository } from "../../../../framework/persistence/repository/sqlite-repository.ts";
 import { CommerceConflictError } from "../../model/index.ts";
-import { event } from "../../tests/fixtures.ts";
+import { checkout as recorded, event } from "../../tests/fixtures.ts";
 import { SQLiteCommerceLedger } from "../index.ts";
 
 const roots: string[] = [];
@@ -145,7 +145,7 @@ it("lists one provider's subscriptions for reconciliation and keeps providers ap
 
 it("records checkouts idempotently per account, refuses a changed one and survives reopen", async () => {
   const { store, rootDir } = await ledger();
-  const checkout = { accountId: "account-a", providerId: "fixture-provider", checkoutId: "cs-1", createdAtMs: 1_000, expiresAtMs: 2_000 };
+  const checkout = recorded({ expiresAtMs: 2_000 });
   await store.recordCheckout(checkout);
   await store.recordCheckout({ ...checkout });
   await expect(store.recordCheckout({ ...checkout, expiresAtMs: 9_000 })).rejects.toMatchObject({ code: "checkout-reused" });
@@ -153,4 +153,40 @@ it("records checkouts idempotently per account, refuses a changed one and surviv
   const reopened = new SQLiteCommerceLedger({ rootDir });
   expect(await reopened.listCheckouts("account-a")).toEqual([checkout]);
   expect(await reopened.listCheckouts("account-b")).toEqual([]);
+  expect(await reopened.getCheckout("fixture-provider", "cs-1")).toEqual(checkout);
+  expect(await reopened.getCheckout("fixture-provider", "cs-unknown")).toBeNull();
+  // A checkout id is one account's: another account cannot record it, and a checkout is recorded as created.
+  await expect(store.recordCheckout({ ...checkout, accountId: "account-b" })).rejects.toMatchObject({ code: "checkout-reused" });
+  await expect(store.recordCheckout(recorded({ checkoutId: "cs-3", subscriptionId: "sub-1", completedAtMs: 1_500 }))).rejects.toBeInstanceOf(TypeError);
+});
+
+it("completes a checkout once, binding its subscription to the checkout's account and to no other", async () => {
+  const { store } = await ledger();
+  await store.recordCheckout(recorded());
+  await store.recordCheckout(recorded({ accountId: "account-b", checkoutId: "cs-b" }));
+  expect(await store.subscriptionAccount("fixture-provider", "subscription-a")).toBeNull();
+  const completion = { providerId: "fixture-provider", checkoutId: "cs-1", subscriptionId: "subscription-a", completedAtMs: 1_500 };
+  expect(await store.completeCheckout(completion)).toMatchObject({ subscriptionId: "subscription-a", completedAtMs: 1_500, expiredAtMs: null });
+  expect(await store.completeCheckout({ ...completion, completedAtMs: 1_900 })).toMatchObject({ completedAtMs: 1_500 });
+  expect(await store.subscriptionAccount("fixture-provider", "subscription-a")).toBe("account-a");
+  await expect(store.completeCheckout({ ...completion, subscriptionId: "subscription-z" })).rejects.toMatchObject({ code: "checkout-reused" });
+  await expect(store.completeCheckout({ ...completion, checkoutId: "cs-b" })).rejects.toMatchObject({ code: "subscription-rebound" });
+  expect(await store.completeCheckout({ ...completion, checkoutId: "cs-unknown" })).toBeNull();
+  // A snapshot naming another account than the binding is refused.
+  await expect(store.applyVerifiedEvent(event("forged", 1, { accountId: "account-b", customerId: "customer-b" }))).rejects.toMatchObject({ code: "subscription-rebound" });
+  expect(await store.applyVerifiedEvent(event("bound", 1))).toMatchObject({ outcome: "applied" });
+  expect(await store.customerAccount("fixture-provider", "customer-a")).toBe("account-a");
+  expect(await store.customerAccount("fixture-provider", "customer-z")).toBeNull();
+});
+
+it("expires an open checkout, leaves a completed one, and lets a completion outrank an expiry", async () => {
+  const { store } = await ledger();
+  await store.recordCheckout(recorded());
+  await store.recordCheckout(recorded({ checkoutId: "cs-2" }));
+  expect(await store.expireCheckout("fixture-provider", "cs-1", 1_200)).toMatchObject({ expiredAtMs: 1_200 });
+  expect(await store.expireCheckout("fixture-provider", "cs-1", 1_300)).toMatchObject({ expiredAtMs: 1_200 });
+  await store.completeCheckout({ providerId: "fixture-provider", checkoutId: "cs-2", subscriptionId: "subscription-a", completedAtMs: 1_400 });
+  expect(await store.expireCheckout("fixture-provider", "cs-2", 1_500)).toMatchObject({ completedAtMs: 1_400, expiredAtMs: null });
+  expect(await store.completeCheckout({ providerId: "fixture-provider", checkoutId: "cs-1", subscriptionId: "subscription-b", completedAtMs: 1_600 })).toMatchObject({ completedAtMs: 1_600, expiredAtMs: null });
+  expect(await store.expireCheckout("fixture-provider", "cs-unknown", 1_500)).toBeNull();
 });

@@ -3,7 +3,7 @@ import path from "node:path";
 import { DEFAULT_SESSION_TTL_MS, TotpRequiredError } from "fluxiq";
 import { NextResponse } from "next/server";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { getFluxIQ } from "../../../../lib/fluxiq";
+import { platformScope } from "../../../../lib/platform";
 import { DurableLoginAttemptTracker, loginClientAddress } from "../../../../lib/login-attempts";
 import { FLUXIQ_SESSION_COOKIE, sessionCookieOptions } from "../../../../lib/session-cookie";
 import { isCrossSiteRequest } from "../../../welcome/server";
@@ -30,7 +30,7 @@ const trackers = new Map<string, DurableLoginAttemptTracker>();
 function attemptTracker(fileName: string, maxAttempts: number): DurableLoginAttemptTracker {
   let tracker = trackers.get(fileName);
   if (!tracker) {
-    tracker = new DurableLoginAttemptTracker(path.join(getFluxIQ().paths.fluxiq, "security", fileName), {
+    tracker = new DurableLoginAttemptTracker(path.join(platformScope().fluxiqDir, "security", fileName), {
       windowMs: ATTEMPT_WINDOW_MS,
       lockoutMs: LOCKOUT_MS,
       maxAttempts,
@@ -105,8 +105,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const fluxiq = getFluxIQ();
-    const result = await fluxiq.programs.identityAccess.authenticate({
+    const { identityAccess } = platformScope();
+    const result = await identityAccess.authenticate({
       username: payload.username,
       password: payload.password,
       ...(payload.totp ? { totp: payload.totp } : {}),
@@ -115,10 +115,10 @@ export async function POST(request: Request) {
     if (isTemporaryCredential(result.user.id, payload.password)) {
       await usernameAttempts().clear(attemptKey);
       // The temporary credential opens setup only: its session is revoked and no session cookie is set.
-      return await beginCredentialSetup(request, result, fluxiq.programs.identityAccess);
+      return await beginCredentialSetup(request, result, identityAccess);
     }
     try {
-      await restoreLoginKeys(fluxiq, {
+      await restoreLoginKeys({
         sessionId: result.session.id,
         userId: result.user.id,
         authorizationPassword: payload.password,

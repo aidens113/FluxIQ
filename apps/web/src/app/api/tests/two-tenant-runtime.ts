@@ -1,10 +1,10 @@
 import { GlobalProgramApiRegistry, IdentityAccessService } from "fluxiq";
 import { createPlatformServices, MemoryEmailSender, MemoryIamAuditSink, type PlatformProvisioningCaller, type PlatformServices } from "fluxiq/platform";
 import { vi } from "vitest";
-import { FLUXIQ_SESSION_COOKIE } from "../../../../lib/session-cookie";
-import { serviceWorkspaceIam } from "../../../../lib/workspaces";
-import { memoryAudit } from "../../security/server/tests/audit-harness";
-import { DUMMY_PASSWORD, MemoryRecordRepository, WEAK_KDF } from "../server/tests/accounts-harness";
+import { FLUXIQ_SESSION_COOKIE } from "../../../lib/session-cookie";
+import { serviceWorkspaceIam } from "../../../lib/workspaces";
+import { memoryAudit } from "../security/server/tests/audit-harness";
+import { DUMMY_PASSWORD, MemoryRecordRepository, WEAK_KDF } from "../accounts/server/tests/accounts-harness";
 
 // Test support for the accounts and activity routes on the hosted `service`
 // profile with two tenant workspaces. Everything that decides is real: the
@@ -21,7 +21,7 @@ export const TENANT_A = "tenant-a";
 export const TENANT_B = "tenant-b";
 
 export type Person = { userId: string; sessionId: string };
-type Instance = { programs: Record<string, unknown> };
+type Instance = { paths?: unknown; programs: Record<string, unknown> };
 
 function primaryApi() {
   return { authorize: vi.fn(async () => { throw new Error("The primary instance's IAM decided a workspace call"); }) };
@@ -34,6 +34,12 @@ export const twoTenants = {
   decisions: new MemoryIamAuditSink(),
   email: new MemoryEmailSender(),
   primary: { programs: {} } as Instance,
+  /** Calls to the primary's reload, which a refused framework setup must never make. */
+  reload: vi.fn(async () => undefined),
+  /** What the primary instance was asked for; a workspace call must leave it empty. */
+  primaryTouched: [] as string[],
+  /** Paired-client tokens the fixture's browser-trust route resolves, each to its tenant and gateway session. */
+  pairedTokens: new Map<string, { workspaceId: string; session: Record<string, unknown> }>(),
   primaryApi: primaryApi(),
   instances: new Map<string, Instance>(),
   /** Leases taken and not yet released, by workspace. */
@@ -108,22 +114,42 @@ export async function resetTwoTenants() {
     entitlements: { organisation: true }
   });
   twoTenants.primaryApi = primaryApi();
-  twoTenants.primary = { programs: {
+  twoTenants.primaryTouched = [];
+  twoTenants.reload.mockClear();
+  const refuseOnPrimary = (name: string) => vi.fn(async () => {
+    twoTenants.primaryTouched.push(name);
+    throw new Error(`The primary instance's ${name} was used for a workspace call`);
+  });
+  twoTenants.primary = { paths: { fluxiq: "platform-root/.fluxiq" }, programs: {
     identityAccess: twoTenants.identity,
     api: twoTenants.primaryApi,
-    secretKeys: { credentialUnlocks: { presentPanelSession: async () => undefined } }
-  } };
+    get secretKeys() {
+      twoTenants.primaryTouched.push("secretKeys");
+      return { credentialUnlocks: { presentPanelSession: refuseOnPrimary("secretKeys.presentPanelSession") }, unlockSession: refuseOnPrimary("secretKeys.unlockSession") };
+    },
+    clientGateway: { approvePairing: refuseOnPrimary("clientGateway.approvePairing"), dismissPairing: refuseOnPrimary("clientGateway.dismissPairing"), ready: async () => undefined, authorizeToken: refuseOnPrimary("clientGateway.authorizeToken") }
+  } } as Instance;
   twoTenants.instances = new Map([[PRIMARY, twoTenants.primary]]);
   for (const workspaceId of [TENANT_A, TENANT_B]) {
     await twoTenants.services.store.putWorkspace({ workspaceId, kind: "organisation", ownerUserId: null, createdAtMs: 1 });
     const iam = serviceWorkspaceIam(workspaceId, { platformServices: async () => twoTenants.services, audit: twoTenants.decisions });
-    twoTenants.instances.set(workspaceId, { programs: { api: new GlobalProgramApiRegistry({ iam }) } });
+    twoTenants.instances.set(workspaceId, { programs: {
+      api: new GlobalProgramApiRegistry({ iam }),
+      secretKeys: { unlockSession: vi.fn(async () => undefined), snapshot: async () => ({ keys: [] }) },
+      clientGateway: {
+        approvePairing: vi.fn(async (code: string) => ({ id: `${workspaceId}:${code}` })),
+        dismissPairing: vi.fn(() => true),
+        ready: async () => undefined,
+        authorizeToken: vi.fn(async (token: string) => twoTenants.pairedTokens.get(token)?.workspaceId === workspaceId ? twoTenants.pairedTokens.get(token)!.session : null)
+      }
+    } });
   }
   twoTenants.manager.tenancy = "multi";
   twoTenants.manager.acquire.mockClear();
   twoTenants.held = new Map();
   twoTenants.acquired = [];
   twoTenants.cookie = undefined;
+  twoTenants.pairedTokens = new Map();
   const adminA = await person("admin-a@example.test", TENANT_A, "FluxIQAdministratorAccess");
   const memberA = await person("member-a@example.test", TENANT_A, "FluxIQUserAccess");
   const shared = await person("shared@example.test", TENANT_A, "FluxIQUserAccess");
@@ -155,7 +181,8 @@ export function fluxiqModuleMock() {
     getFluxIQ: () => twoTenants.primary,
     getFluxIQWorkspaces: () => twoTenants.manager,
     getFluxIQWebRuntimeStatus: () => { throw new Error("Not used under multi tenancy"); },
-    isCurrentFluxIQPrimary: (instance: unknown) => instance === twoTenants.primary
+    isCurrentFluxIQPrimary: (instance: unknown) => instance === twoTenants.primary,
+    reloadFluxIQWebInstance: twoTenants.reload
   };
 }
 

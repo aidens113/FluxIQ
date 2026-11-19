@@ -46,7 +46,7 @@ function deps(env: Record<string, string> = {}, tracker = attempts()) {
     fluxiqDir: instance.fluxiqDir,
     provisioning: instance.services.provisioning,
     identityAccess: instance.fluxiq.programs.identityAccess,
-    secretKeys: instance.fluxiq.programs.secretKeys,
+    restoreKeys: async () => undefined,
     attempts: tracker,
     log: (line: string) => lines.push(line)
   };
@@ -91,6 +91,19 @@ describe("submitOwnerClaim", () => {
     expect(again).toEqual({ status: 404, body: { ok: false, code: "not_found" } });
     await expect(readFile(ownerClaimPaths(instance.fluxiqDir).generatedCode, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     expectNothingLeaked([answer, again], [code, PASSWORD]);
+  });
+
+  it("signs the owner in even when the key restore fails, logging only the error class", { timeout: 90_000 }, async () => {
+    const code = await generatedCode();
+    const restoreKeys = vi.fn().mockRejectedValue(new TypeError("restore failed with a-private-detail"));
+    const answer = await submitOwnerClaim(post(form(code)), { ...deps(), restoreKeys });
+    expect(answer.status).toBe(200);
+    expect(answer.session).toBeDefined();
+    expect(restoreKeys).toHaveBeenCalledWith(expect.objectContaining({ sessionId: answer.session?.id, authorizationPassword: PASSWORD }));
+    expect((await instance.fluxiq.programs.identityAccess.validateSession(answer.session?.id))?.user.username).toBe("owner@example.test");
+    const logged = lines.join(String.fromCharCode(10));
+    expect(logged).toContain("TypeError");
+    expect(logged).not.toContain("a-private-detail");
   });
 
   it("refuses a wrong code, then throttles every attempt including the right code", { timeout: 90_000 }, async () => {

@@ -2,6 +2,7 @@ import { iamActionCatalogSchema, iamActionName, type IamActionCatalogEntry } fro
 import { iamEndpointAccessLevel } from "./endpoint-access-level.ts";
 import type { IamCatalogGeneration } from "./catalog-generation.ts";
 import type { IamEndpointRegistration } from "./endpoint-registration.ts";
+import type { IamRouteRegistration } from "./route-registration.ts";
 import { IamCatalogSourceLimitError } from "./catalog-source-limit-error.ts";
 import { iamProgramService } from "./program-service.ts";
 
@@ -14,12 +15,15 @@ function compare(a: string, b: string): number {
 }
 
 /**
- * Generates the IAM action catalog from the program API registrations. Several
- * endpoints with the same action merge into one entry listing every
- * registration as a source (ordered by programId, then endpoint) when their access level and destructive flag agree, otherwise it
- * throws. The result is validated with `iamActionCatalogSchema`.
+ * Generates the IAM action catalog from the program API registrations and the
+ * registered app routes (`IAM_APP_ROUTE_ACTIONS`). Several endpoints with the
+ * same action merge into one entry listing every registration as a source
+ * (ordered by programId, then endpoint) when their access level and
+ * destructive flag agree, otherwise it throws. An app route's action is its
+ * own entry with a `route` source; one an endpoint already declares throws.
+ * The result is validated with `iamActionCatalogSchema`.
  */
-export function generateIamActionCatalog(endpoints: readonly IamEndpointRegistration[]): IamCatalogGeneration {
+export function generateIamActionCatalog(endpoints: readonly IamEndpointRegistration[], routes: readonly IamRouteRegistration[] = []): IamCatalogGeneration {
   const groups = new Map<string, IamEndpointRegistration[]>();
   for (const registration of endpoints) {
     const action = iamActionName(iamProgramService(registration.programId), registration.endpoint);
@@ -55,6 +59,18 @@ export function generateIamActionCatalog(endpoints: readonly IamEndpointRegistra
       description: `Calls the ${first.endpoint} endpoint of the ${first.programId} program${others} (${accessLevel} access).`
     });
   }
+  for (const route of routes) {
+    if (catalog.some((entry) => entry.action === route.action)) throw new Error(`Action ${route.action} of app route ${route.method} ${route.path} is already declared`);
+    catalog.push({
+      action: route.action,
+      accessLevel: route.accessLevel,
+      resourceTypes: ["*"],
+      sources: [{ kind: "route", method: route.method, path: route.path }],
+      destructive: route.destructive,
+      description: route.description
+    });
+  }
+  catalog.sort((a, b) => compare(a.action, b.action));
   const parsed = iamActionCatalogSchema.safeParse(catalog);
   if (!parsed.success) throw new Error(`Generated IAM action catalog is invalid: ${parsed.error.message}`);
   return { catalog: parsed.data, sharedActions, undeclaredResources };

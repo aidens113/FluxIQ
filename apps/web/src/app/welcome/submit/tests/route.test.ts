@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const submitWelcome = vi.hoisted(() => vi.fn());
-vi.mock("../../../../lib/fluxiq", () => ({ getFluxIQ: () => ({ programs: { identityAccess: {}, secretKeys: {} } }) }));
+vi.mock("../../../../lib/platform", () => ({ platformScope: () => ({ identityAccess: {} }) }));
+vi.mock("../../../../server/connect", () => ({ restoreLoginKeys: async () => undefined }));
 vi.mock("../../../../server/provisioning-listener", () => ({ getPlatformServices: async () => ({ links: {}, provisioning: {} }) }));
 vi.mock("../../server", () => ({ submitWelcome, toAccountLinkHttp: () => new Response("{}", { status: 200 }) }));
 

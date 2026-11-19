@@ -2,8 +2,12 @@ import path from "node:path";
 import { CloudAdmissionService, CommerceBillingService, FakePaymentProvider, SQLiteCommerceLedger } from "fluxiq/platform";
 import type { PaymentProvider } from "fluxiq/platform";
 import { getFluxIQAfterReload } from "../../lib/fluxiq";
+import { hostedCloudAuthorizer, platformWorkspaces } from "../environments/authority";
+import { getEnvironmentStore } from "../environments";
+import { getEnvironmentHoldings } from "../environments/holdings";
 import { cloudAdmissionPolicy } from "./cloud/admission-policy";
 import { delegatingCloudAuthorizer } from "./cloud/delegating-authorizer";
+import { setCloudAuthorizer } from "./cloud/set-authorizer";
 import { commerceCompositions as compositions } from "./compositions";
 import type { CommerceComposition } from "./compositions";
 import { commerceConfig } from "./config";
@@ -16,7 +20,10 @@ import type { CommerceConfig } from "./types";
  * file: the billing service and cloud admission over ONE ledger and ONE
  * configuration, or null when this server bills nothing. The ledger lives at
  * `<FluxIQ root>/platform/commerce`; secrets are read from the files the
- * configuration names. While composed it reconciles every subscription whose
+ * configuration names. Admission counts dedicated browsers against the
+ * root's environment holdings (what each account's environments hold), and
+ * composing installs the hosted IAM resolver (`setCloudAuthorizer`). While
+ * composed it reconciles every subscription whose
  * verification is due, so cloud admission's freshness check holds between
  * webhooks.
  */
@@ -46,7 +53,9 @@ async function compose(root: string): Promise<CommerceComposition> {
     policy: { allowTrial: config.allowTrial, graceMs: config.graceMs, retentionMs: config.retentionMs },
     refreshAfterMs: config.refreshAfterMs
   });
-  const admission = new CloudAdmissionService<unknown>({ deploymentMode: "service", authorize: delegatingCloudAuthorizer, ledger, policy });
+  const admission = new CloudAdmissionService<unknown>({ deploymentMode: "service", authorize: delegatingCloudAuthorizer, ledger, policy, holdings: getEnvironmentHoldings(root) });
+  // The hosted IAM resolver for dedicated environments; with no plan granting one there is no region, and admission refuses them all.
+  if (config.region !== null) setCloudAuthorizer(hostedCloudAuthorizer({ workspaces: platformWorkspaces, environments: getEnvironmentStore(root), region: config.region }));
   let running = false;
   const reconcile = async () => {
     if (running) return;
@@ -68,11 +77,12 @@ async function compose(root: string): Promise<CommerceComposition> {
 
 async function provider(config: CommerceConfig): Promise<PaymentProvider> {
   const webhookSecret = await readSecretFile(config.webhookSecretFile, "webhook secret");
-  if (config.provider === "fake") return new FakePaymentProvider({ webhookSecret });
+  if (config.provider === "fake") return new FakePaymentProvider({ webhookSecret, checkoutLifetimeMs: config.checkoutLifetimeMs });
   return new StripePaymentProvider({
     secretKey: await readSecretFile(config.secretKeyFile!, "Stripe secret key"),
     webhookSecret,
     plans: config.plans,
-    apiBaseUrl: config.apiBaseUrl
+    apiBaseUrl: config.apiBaseUrl,
+    checkoutLifetimeMs: config.checkoutLifetimeMs
   });
 }

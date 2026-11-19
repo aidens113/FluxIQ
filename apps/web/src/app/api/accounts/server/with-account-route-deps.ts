@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { panelRouteActor } from "../../../../lib/app-route-iam";
 import { requireFluxIQUser } from "../../../../lib/auth";
-import { getFluxIQ, getFluxIQWorkspaces } from "../../../../lib/fluxiq";
+import { getFluxIQWorkspaces } from "../../../../lib/fluxiq";
+import { platformScope } from "../../../../lib/platform";
 import { workspaceFluxIQ, type WorkspaceLease } from "../../../../lib/workspaces";
 import type { AccountsResponse } from "./accounts-response";
 import { refuseAccounts } from "./refuse-accounts";
@@ -40,7 +41,7 @@ export async function withAccountRouteDeps(work: (deps: AccountRouteDeps) => Pro
       actor: { ...panelRouteActor(auth), userId: auth.user.id },
       sessionId: auth.session.id,
       authorizer: lease.fluxiq.programs.api,
-      identityAccess: getFluxIQ().programs.identityAccess,
+      identityAccess: platformScope().identityAccess,
       profile: resolveFluxIQDeploymentSettings(process.env).profile,
       platform: () => accountPlatform(lease)
     };

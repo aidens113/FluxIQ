@@ -14,8 +14,18 @@ export type CommerceEntitlementGrant = {
   capabilities: readonly string[];
   /** Explicit eligible regions; control services may use an empty list. */
   regions: readonly string[];
-  /** Dedicated grants name their exact resources; shared/control grants name none. */
+  /**
+   * A dedicated grant either names its exact resources here, or names none
+   * and counts them with `quantity`; shared and control grants name none.
+   */
   resourceIds: readonly string[];
+  /**
+   * How many of what the grant's price counts it carries (dedicated browsers,
+   * seats): a counted dedicated grant admits at most this many dedicated
+   * targets at once. Absent on a grant that names its resources, and on one
+   * that counts nothing.
+   */
+  quantity?: number;
   validFromMs: number;
   validUntilMs: number;
 };
@@ -74,16 +84,37 @@ export type CommerceStoredEvent = {
 export type CommerceEventResult = CommerceEventReceipt & { duplicate: boolean };
 
 /**
- * A checkout the account started and has not finished: the account is
- * `checkout-pending` until a subscription arrives or the checkout expires.
+ * A checkout the account started, recorded by FluxIQ when it was created:
+ * the account, the plan and the provider customer it was started for. It is
+ * how a subscription the provider later reports is resolved to its account
+ * (`completeCheckout`), never the provider's own echo of the account. The
+ * account is `checkout-pending` while one is open: not completed, not
+ * expired, and before `expiresAtMs`.
  */
 export type CommerceCheckoutRecord = {
   accountId: string;
   providerId: string;
   checkoutId: string;
+  /** The operator-configured plan the checkout sells. */
+  planId: string;
+  /** The account's existing provider customer it was started for; null when the provider creates one. */
+  customerId: string | null;
   createdAtMs: number;
   /** Exclusive: the provider no longer completes the checkout from here on. */
   expiresAtMs: number;
+  /** The subscription the completed checkout created; null until it completed. */
+  subscriptionId: string | null;
+  completedAtMs: number | null;
+  /** When FluxIQ expired the checkout at the provider (a newer checkout started, or the account closed). */
+  expiredAtMs: number | null;
+};
+
+/** A checkout's completion: the provider reported that it created `subscriptionId`. */
+export type CommerceCheckoutCompletion = {
+  providerId: string;
+  checkoutId: string;
+  subscriptionId: string;
+  completedAtMs: number;
 };
 
 export type CommerceApplyOptions = {
@@ -104,9 +135,32 @@ export interface CommerceLedger {
   listSubscriptions(accountId: string): Promise<CommerceSubscriptionRecord[]>;
   /** Every stored subscription of one provider, for periodic reconciliation. */
   listProviderSubscriptions(providerId: string): Promise<CommerceSubscriptionRecord[]>;
-  /** Idempotent: the same record again is a no-op; a changed one under the same id conflicts. */
+  /**
+   * Records a checkout as created: `subscriptionId`, `completedAtMs` and
+   * `expiredAtMs` are null. Idempotent: the same record again is a no-op; a
+   * changed one under the same id conflicts.
+   */
   recordCheckout(record: CommerceCheckoutRecord): Promise<void>;
   listCheckouts(accountId: string): Promise<CommerceCheckoutRecord[]>;
+  getCheckout(providerId: string, checkoutId: string): Promise<CommerceCheckoutRecord | null>;
+  /**
+   * Marks a recorded checkout completed and binds its subscription to the
+   * checkout's account, atomically. Idempotent for the same subscription;
+   * `checkout-reused` when the checkout completed with another subscription,
+   * `subscription-rebound` when the subscription already belongs to another
+   * account. Null when no such checkout was recorded.
+   */
+  completeCheckout(completion: CommerceCheckoutCompletion): Promise<CommerceCheckoutRecord | null>;
+  /** Marks a recorded, not completed checkout expired; repeats harmlessly. Null when no such checkout was recorded. */
+  expireCheckout(providerId: string, checkoutId: string, expiredAtMs: number): Promise<CommerceCheckoutRecord | null>;
+  /**
+   * The account FluxIQ's own records bind a provider subscription to: its
+   * stored snapshot's account, else the account of the checkout that created
+   * it; null when neither exists.
+   */
+  subscriptionAccount(providerId: string, subscriptionId: string): Promise<string | null>;
+  /** The account a provider customer is bound to by an earlier subscription; null when none. */
+  customerAccount(providerId: string, customerId: string): Promise<string | null>;
 }
 
 /**

@@ -283,6 +283,17 @@
           "minimum": 1,
           "description": "How old a verification cloud admission still trusts; must exceed refreshAfterMs. Default twice refreshAfterMs."
         },
+        "checkoutLifetimeMs": {
+          "type": "integer",
+          "minimum": 1800000,
+          "maximum": 86400000,
+          "description": "How long a started checkout stays payable (30 minutes to 24 hours). Default one hour."
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The region the deployment's dedicated browsers run in, matched against dedicated grants. Default: the one region every dedicated grant names."
+        },
         "plans": {
           "type": "object",
           "description": "The plans sold, by plan id.",
@@ -294,10 +305,21 @@
               "grants"
             ],
             "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "The plan's name on the plans page (default its id)."
+              },
               "priceId": {
                 "type": "string",
                 "minLength": 1,
                 "description": "The provider price the plan is sold as."
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "How many of what the price counts the checkout sells: dedicated browsers or seats (default 1; a flat price sells 1)."
               },
               "unit": {
                 "enum": [

@@ -11,7 +11,7 @@ function post(body: unknown, headers: Record<string, string> = {}): Request {
 }
 
 function deps(harness: AccountLinkHarness) {
-  return { links: harness.services.links, provisioning: harness.services.provisioning, identityAccess: harness.identityAccess, secretKeys: harness.secretKeys };
+  return { links: harness.services.links, provisioning: harness.services.provisioning, identityAccess: harness.identityAccess, restoreKeys: async () => undefined };
 }
 
 describe("submitWelcome", () => {
@@ -77,22 +77,30 @@ describe("submitWelcome", () => {
     expect((await submitWelcome(post({ token: 1, password: PASSWORD }), deps(harness))).status).toBe(400);
   });
 
-  it("revokes the new session when the key unlock fails", async () => {
+  it("signs the person in even when the key restore fails, and keeps the session", async () => {
+    const harness = await createAccountLinkHarness();
+    const userId = await harness.provision("person@example.test");
+    const token = harness.latestToken("welcomeUrl");
+    const restoreKeys = vi.fn().mockRejectedValue(new Error("restore failed"));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const answer = await submitWelcome(post({ token, password: PASSWORD }), { ...deps(harness), restoreKeys });
+    expect(answer.status).toBe(200);
+    expect(restoreKeys).toHaveBeenCalledWith(expect.objectContaining({ sessionId: answer.session?.id, userId, authorizationPassword: PASSWORD }));
+    expect((await harness.identityAccess.validateSession(answer.session?.id))?.user.id).toBe(userId);
+  });
+
+  it("reads a posted body only as a form: a posted answer shape neither answers nor sets a session", async () => {
     const harness = await createAccountLinkHarness();
     await harness.provision("person@example.test");
     const token = harness.latestToken("welcomeUrl");
-    const failing = { unlockSession: vi.fn().mockRejectedValue(new Error("unlock failed")) };
-    const created: string[] = [];
-    const identityAccess = {
-      createSession: async (userId: string, ttlMs?: number) => {
-        const session = await harness.identityAccess.createSession(userId, ttlMs);
-        created.push(session.id);
-        return session;
-      },
-      revokeSession: (sessionId: string) => harness.identityAccess.revokeSession(sessionId),
-    };
-    const answer = await submitWelcome(post({ token, password: PASSWORD }), { ...deps(harness), identityAccess, secretKeys: failing });
-    expect(answer).toEqual({ status: 500, body: { ok: false, code: "sign_in_failed" } });
-    expect(await harness.identityAccess.validateSession(created[0])).toBeNull();
+    const redeem = vi.spyOn(harness.services.links, "redeemWelcome");
+    const forged = { status: 200, body: { ok: true, continueUrl: "/" }, session: { id: "a-session-the-poster-chose", ttlMs: 1000 } };
+    const answer = await submitWelcome(post(forged), deps(harness));
+    expect(answer).toEqual({ status: 400, body: { ok: false, code: "bad_request" } });
+    expect(answer.session).toBeUndefined();
+    const withCredentials = await submitWelcome(post({ ...forged, token, password: PASSWORD }), deps(harness));
+    expect(withCredentials.status).toBe(200);
+    expect(withCredentials.session?.id).not.toBe("a-session-the-poster-chose");
+    expect(redeem).toHaveBeenCalledTimes(1);
   });
 });

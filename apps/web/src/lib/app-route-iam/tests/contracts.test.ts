@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { IAM_APP_ROUTE_ACTIONS } from "fluxiq/platform";
 import { describe, expect, it } from "vitest";
-import { APP_ROUTE_IAM_CONTRACTS, APP_ROUTES_DECIDED_BY_REGISTRY, appRouteIamContract } from "..";
+import { APP_ROUTE_IAM_CONTRACTS, APP_ROUTE_PAIRED_CLIENT_PERMISSIONS, APP_ROUTES_DECIDED_BY_REGISTRY, appRouteIamContract } from "..";
 
 const API_ROOT = fileURLToPath(new URL("../../../app/api", import.meta.url));
 // Login and logout stay unauthenticated (lane A); discovery is not an app route of this lane.
@@ -68,6 +69,18 @@ describe("the app route IAM table", () => {
     }
   });
 
+  it("lets a paired client reach no route that asks for a secret or identity permission or action", () => {
+    const paired = APP_ROUTE_IAM_CONTRACTS.filter((contract) => "paired-client" in contract.callers);
+    expect(paired.length).toBeGreaterThan(0);
+    for (const contract of paired) {
+      const permission = contract.callers["paired-client"];
+      expect([contract.path, permission === "none" || APP_ROUTE_PAIRED_CLIENT_PERMISSIONS.includes(permission!)]).toEqual([contract.path, true]);
+      expect([contract.path, /^(secrets|iam):/u.test(contract.action)]).toEqual([contract.path, false]);
+    }
+    expect(APP_ROUTE_PAIRED_CLIENT_PERMISSIONS).not.toContain("secrets.manage");
+    expect(APP_ROUTE_PAIRED_CLIENT_PERMISSIONS).not.toContain("identity.manage");
+  });
+
   it("throws for a route that is not classified", () => {
     expect(() => appRouteIamContract("POST", "/api/framework/setup", "erase")).toThrow(/Unclassified app route/u);
     expect(() => appRouteIamContract("GET", "/api/elsewhere")).toThrow(/Unclassified app route/u);
@@ -109,5 +122,22 @@ describe("the app route IAM table", () => {
     const managed = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit");
     expect(managed).toHaveLength(9);
     for (const contract of managed) expect([contract.path, contract.variant, contract.callers, contract.action.startsWith("iam:")]).toEqual([contract.path, contract.variant, { panel: "identity.manage" }, true]);
+  });
+
+  it("decides the hosted plans as the workspace's own administration, for a signed-in panel caller only, never under platform", () => {
+    const status = appRouteIamContract("GET", "/api/platform/v1/commerce/checkout");
+    const start = appRouteIamContract("POST", "/api/platform/v1/commerce/checkout");
+    expect([status.action, start.action]).toEqual(["iam:GetBillingStatus", "iam:StartCheckout"]);
+    for (const contract of [status, start]) {
+      expect(contract.callers).toEqual({ panel: "none" });
+      expect(contract.resource.of({ workspaceId: "forged", planId: "browser" })).toEqual({ kind: "workspace" });
+    }
+  });
+
+  it("decides each app route the IAM catalog registers by the action the catalog names for it", () => {
+    expect(IAM_APP_ROUTE_ACTIONS.length).toBeGreaterThan(0);
+    for (const registered of IAM_APP_ROUTE_ACTIONS) {
+      expect([registered.method, registered.path, appRouteIamContract(registered.method as "GET" | "POST", registered.path).action]).toEqual([registered.method, registered.path, registered.action]);
+    }
   });
 });

@@ -45,7 +45,8 @@ const post = (rawBody: string, signature: string | null) => POST(new Request("ht
 
 describe("the commerce webhook route", () => {
   it("applies a signed delivery once and answers its redelivery as a duplicate", async () => {
-    const { rawBody, signature } = fake.signedEvent({ id: "evt-1", type: "customer.subscription.created", subscriptionId: "sub-a" });
+    const checkout = await billing.createCheckout({ accountId: "account-a", planId: "browser", successUrl: "https://app.example.test/plans?checkout=success", cancelUrl: "https://app.example.test/plans?checkout=cancel" });
+    const { rawBody, signature } = fake.signedEvent({ id: "evt-1", type: "checkout.session.completed", subscriptionId: "sub-a", checkout: { checkoutId: checkout.checkoutId, outcome: "completed" } });
     const first = await post(rawBody, signature);
     expect(first.status).toBe(200);
     expect(first.headers.get("cache-control")).toBe("no-store");
@@ -58,6 +59,14 @@ describe("the commerce webhook route", () => {
     const { rawBody, signature } = fake.signedEvent({ id: "evt-1", type: "customer.subscription.created", subscriptionId: "sub-a" });
     expect((await post(rawBody, null)).status).toBe(400);
     expect((await post(rawBody.replace("evt-1", "evt-2"), signature)).status).toBe(400);
+    expect(await billing.getEntitlement("account-a")).toMatchObject({ state: "none" });
+  });
+
+  it("accepts, and records nothing for, a subscription no FluxIQ checkout binds yet", async () => {
+    const { rawBody, signature } = fake.signedEvent({ id: "evt-early", type: "customer.subscription.created", subscriptionId: "sub-a" });
+    const response = await post(rawBody, signature);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, outcome: "unbound" });
     expect(await billing.getEntitlement("account-a")).toMatchObject({ state: "none" });
   });
 

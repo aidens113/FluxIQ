@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { DriverContext, PlatformDriver } from "../../drivers/index.ts";
 import type { CloudPlan } from "../../plan/index.ts";
-import { checkRestart, checkTeardown, checkWebhook } from "../check/index.ts";
+import { checkCheckoutJourney, checkRestart, checkTeardown, checkWebhook } from "../check/index.ts";
 import { ensureUp } from "../ensure-up.ts";
 import { expectStatus } from "../expect-status.ts";
 import { waitForMailText } from "../mailpit-inbox.ts";
@@ -33,7 +33,9 @@ type ProvisionAnswer = { status: number; body: { ok?: boolean; result?: { status
  * network; their welcome emails are read from Mailpit; both set a password
  * and sign in over TLS pinned to the exported certificate; each sees only
  * itself in its own workspace; the payments API answers; the billing webhook
- * is checked three ways (checkWebhook); the stack goes down with its data
+ * is checked three ways (checkWebhook); the first account pays through a
+ * Checkout and the signed completion records its subscription through
+ * FluxIQ's checkout record (checkCheckoutJourney); the stack goes down with its data
  * kept and comes back with both accounts still signing in; and a final
  * `down` leaves no labelled container, network, volume or image. Any failed
  * check throws with what it observed; the stack is then left up for a look,
@@ -80,7 +82,10 @@ export async function runServiceSmoke(plan: CloudPlan, driver: PlatformDriver, c
     pass("payments", `${payments.apiBase} answered a customer list with the deployment's key, from the edge network`);
   }
 
-  if (plan.config.billing !== null && plan.config.sinks.payments) pass("webhook", await checkWebhook(https, plan, context));
+  if (plan.config.billing !== null && plan.config.sinks.payments) {
+    pass("webhook", await checkWebhook(https, plan));
+    pass("checkout", await checkCheckoutJourney(https, plan, accounts.map((account) => account.session)));
+  }
 
   await checkRestart(plan, driver, context);
   await signInBoth(https, accounts);
