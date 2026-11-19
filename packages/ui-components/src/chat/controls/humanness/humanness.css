@@ -5,8 +5,9 @@
 
 .humanness { display: grid; gap: 6px; min-width: 0; color: var(--text); font-size: 13px; line-height: 1.45; }
 .humanness-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.humanness-label { font-weight: 650; }
-.humanness-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent-text); }
+.humanness-label { min-width: 0; font-weight: 650; }
+/* Wide enough for 100 at any value, so the label beside it never rewraps when the value gains a digit. */
+.humanness-value { flex: none; min-width: 3ch; text-align: end; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent-text); }
 .humanness[data-state="inherited"] .humanness-value { color: var(--muted); }
 .humanness-range { width: 100%; min-height: 24px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .humanness-range:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; border-radius: 4px; }
