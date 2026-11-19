@@ -34,8 +34,8 @@ function unreadFields(endpoint: string): string[] {
 describe("the chat transport against Core's real handlers", () => {
   it("lists, opens, sends into, and reads the project's thread, and Core reads every field sent", async () => {
     const none = await transport.conversation.listThreads({ subjectKind: "project", status: "open", limit: 1 });
-    // Core lists every project the person can read, and names any it could not read on its own (none here).
     expect(none).toEqual({ ok: true, value: { conversations: [], unreadableProjects: [] } });
+    // A list always says which projects it could not read; none here, so a short list is a whole one.
 
     const sent = await transport.conversation.send({ text: "What can you do here?", conversationId: undefined, projectId: undefined, subjectKind: "project", title: "Chat" });
     if (!sent.ok) throw new Error(`the send failed: ${sent.sentence}`);

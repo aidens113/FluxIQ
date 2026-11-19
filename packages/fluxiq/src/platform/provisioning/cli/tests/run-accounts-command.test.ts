@@ -1,4 +1,4 @@
-import type { PlatformProvisioningResponse } from "@fluxiq/contracts/platform";
+import { PLATFORM_PROVISIONING_OPERATIONS, type PlatformProvisioningResponse } from "@fluxiq/contracts/platform";
 import { describe, expect, it } from "vitest";
 import { runAccountsCommand, type AccountsCommandTransport } from "../index.ts";
 import { cliTestIo } from "./cli-test-io.ts";
@@ -46,6 +46,29 @@ describe("accounts flag parsing", () => {
     await runAccountsCommand(["accounts", "setPolicies", "--user-id", "u1", "--workspace", "w2", "--policy", "P"], cliTestIo(), transport);
     expect(calls.map((call) => call.input.workspaceId)).toEqual(["w1", "w2"]);
     expect(calls[0]?.input).not.toHaveProperty("workspace");
+  });
+
+  it("passes the workspace id to suspendMember, resumeMember and removeMember, by --workspace or --workspace-id", async () => {
+    const { calls, transport } = recordingTransport();
+    const io = cliTestIo();
+    expect(await runAccountsCommand(["accounts", "suspendMember", "--user-id", "u1", "--workspace", "w1", "--reason", "left the team"], io, transport)).toBe(0);
+    expect(await runAccountsCommand(["accounts", "resumeMember", "--user-id", "u1", "--workspace", "w1", "--reason", "back"], io, transport)).toBe(0);
+    expect(await runAccountsCommand(["accounts", "removeMember", "--user-id", "u1", "--workspace-id", "w2"], io, transport)).toBe(0);
+    expect(calls.map((call) => call.operation)).toEqual(["suspendMember", "resumeMember", "removeMember"]);
+    expect(calls[0]?.input).toEqual({ userId: "u1", workspaceId: "w1", reason: "left the team", requestId: expect.any(String) });
+    expect(calls[1]?.input).toEqual({ userId: "u1", workspaceId: "w1", reason: "back", requestId: expect.any(String) });
+    expect(calls[2]?.input).toEqual({ userId: "u1", workspaceId: "w2", requestId: expect.any(String) });
+    // Each input is one its operation's own contract accepts: the strict schemas refuse a stray `workspace`.
+    for (const call of calls) {
+      expect(PLATFORM_PROVISIONING_OPERATIONS[call.operation as "suspendMember" | "removeMember"].input.safeParse(call.input).success).toBe(true);
+    }
+  });
+
+  it("keeps --workspace as the workspace (new or an id) for createAccount", async () => {
+    const { calls, transport } = recordingTransport();
+    await runAccountsCommand(["accounts", "createAccount", "--email", "a@b.co", "--display-name", "A", "--policy", "P", "--workspace", "w1"], cliTestIo(), transport);
+    expect(calls[0]?.input).toMatchObject({ workspace: "w1" });
+    expect(calls[0]?.input).not.toHaveProperty("workspaceId");
   });
 
   it("maps scope and mode", async () => {
