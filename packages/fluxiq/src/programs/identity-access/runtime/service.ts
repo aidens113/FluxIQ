@@ -16,7 +16,7 @@ import {
   type SealedCredentialRecord
 } from "./credential-seal.ts";
 import { IdentityAuthorityDelegation } from "./authority/index.ts";
-import { IdentityDirectoryChanges } from "./directory/index.ts";
+import { IdentityDirectoryChanges, IdentityDirectoryDelegation } from "./directory/index.ts";
 import { IdentityFirstRunControl, INVALID_CREDENTIALS } from "./first-run/index.ts";
 import { holdCredentialKey } from "./hold-credential-key.ts";
 import { IdentityLastAdministratorError } from "./last-administrator-error.ts";
@@ -89,6 +89,8 @@ export class IdentityAccessService {
   readonly authority = new IdentityAuthorityDelegation();
   /** Told when a person, their role or enabled flag, or a role's permissions changed, as each state is stored. */
   readonly directoryChanges = new IdentityDirectoryChanges();
+  /** Where this instance's people sign in when a host hands that to another store (a hosted tenant: the platform directory); the self-service endpoints act there. */
+  readonly directory = new IdentityDirectoryDelegation();
   private loading: Promise<void> | undefined;
 
   constructor(options: IdentityAccessServiceOptions = {}) {

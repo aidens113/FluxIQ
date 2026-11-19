@@ -24,9 +24,11 @@ describe("predefined policies", () => {
     for (const policy of IAM_PREDEFINED_POLICY_DEFINITIONS) {
       const parsed = parseIamPolicyDocument(JSON.parse(JSON.stringify(policy.document)), policy.kind);
       expect(parsed.success, `${policy.name}: ${parsed.success ? "" : JSON.stringify(parsed.error.issues)}`).toBe(true);
-      expect(policy.version).toBe("v1");
-      expect(policy.document.Id).toBe(`${policy.name}.v1`);
+      expect(policy.version).toMatch(/^v[1-9]\d*$/u);
+      expect(policy.document.Id).toBe(`${policy.name}.${policy.version}`);
     }
+    // v2 added DenyLocalIdentityAdministration: accounts come only from provisioning.
+    expect(IAM_PREDEFINED_POLICY_DEFINITIONS.find((policy) => policy.name === "FluxIQServiceGuardrail")?.version).toBe("v2");
   });
 
   it("are frozen to the leaves", () => {
