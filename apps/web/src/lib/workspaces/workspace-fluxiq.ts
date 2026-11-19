@@ -9,7 +9,8 @@ import type { WorkspaceRequestSource } from "./session-id-of";
  * held for this caller, or null when the request carries no live session.
  * Release the lease when the request is done; until then the workspace is not
  * evicted. Under `single` it is always the primary instance, as `getFluxIQ()`
- * returns.
+ * returns. Platform-scope code (identity, sessions, login attempts) uses
+ * `platformScope()` from `lib/platform` instead.
  */
 export async function workspaceFluxIQ(source: WorkspaceRequestSource): Promise<WorkspaceLease | null> {
   const sessionId = sessionIdOf(source, FLUXIQ_SESSION_COOKIE);

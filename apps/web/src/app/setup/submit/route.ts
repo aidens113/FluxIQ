@@ -1,22 +1,20 @@
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { getFluxIQ } from "../../../lib/fluxiq";
+import { platformScope } from "../../../lib/platform";
 import { restoreLoginKeys } from "../../../server/connect";
 import { getPlatformServices } from "../../../server/provisioning-listener";
 import { setupAttempts, submitLocalOwnerClaim, submitOwnerClaim, toSetupHttp } from "../server";
 
 export async function POST(request: Request) {
   const settings = resolveFluxIQDeploymentSettings(process.env);
-  const fluxiq = getFluxIQ();
-  const { identityAccess, secretKeys } = fluxiq.programs;
-  const fluxiqDir = fluxiq.paths.fluxiq;
+  const { identityAccess, fluxiqDir } = platformScope();
   // `local` claims through identity access alone: no platform services, no email.
   if (settings.profile === "local") {
     return toSetupHttp(await submitLocalOwnerClaim(request, {
       identity: identityAccess,
-      restoreKeys: (input) => restoreLoginKeys(fluxiq, input),
+      restoreKeys: restoreLoginKeys,
       attempts: setupAttempts(fluxiqDir)
     }));
   }
   const services = await getPlatformServices();
-  return toSetupHttp(await submitOwnerClaim(request, { settings, fluxiqDir, provisioning: services.provisioning, identityAccess, secretKeys, attempts: setupAttempts(fluxiqDir) }));
+  return toSetupHttp(await submitOwnerClaim(request, { settings, fluxiqDir, provisioning: services.provisioning, identityAccess, restoreKeys: restoreLoginKeys, attempts: setupAttempts(fluxiqDir) }));
 }

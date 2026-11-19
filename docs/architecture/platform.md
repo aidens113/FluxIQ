@@ -892,11 +892,43 @@ work, flushes the decision audit and closes its SQLite handle.
 
 `apps/web/src/lib/workspaces/` owns the web server's instances. `local` and
 `self-hosted` keep the primary alone; `service` creates tenants on demand under
-layout v3. `getFluxIQ()` still returns the synchronous primary. `workspaceFluxIQ`
-validates the primary's session and leases the caller's workspace; on `service`
-it chooses their oldest active membership, breaking a creation-time tie by
-workspace id. Repository listing order never selects a workspace. Provisioning
-and existing callers remain single-workspace until lanes C2 and C3 migrate them.
+layout v3. `getFluxIQ()` still returns the synchronous primary, but no page or
+route under `apps/web/src/app`, and not `lib/auth.ts`, may import it. Two scopes
+replace it, and a test (`lib/platform/tests/scope-boundary.test.ts`) fails when an
+app file imports `getFluxIQ` or `getFluxIQAfterReload` from `lib/fluxiq`.
+
+- **Platform scope** (identity, sessions, login attempts, the owner claim,
+  platform audit) goes through `platformScope()` in `lib/platform/`: a frozen
+  `{ identityAccess, fluxiqDir, tenancy }`, never the instance, so code holding it
+  cannot reach the primary's keys, gateway, API or paths. `lib/auth.ts` validates
+  the session there, and presents the person's stored credentials only under
+  `single` tenancy (`presentSingleTenantPanelSession`), where the primary is their
+  workspace. No unlock step stands between a signed-in person and model access;
+  under `multi` the program route and sign-in restore keys in the session's own
+  workspace.
+- **Workspace scope** (pairing approve and dismiss, a paired browser's first
+  project, framework setup, onboarding) acts on the signed-in person's workspace
+  through `workspaceRouteContext` or `workspaceFluxIQ`. `workspaceFluxIQ`
+  validates the primary's session and leases the caller's workspace; on `service`
+  it chooses their oldest active membership, breaking a creation-time tie by
+  workspace id. Repository listing order never selects a workspace.
+
+Sign-in, the welcome link and the owner claim restore saved keys through
+`restoreLoginKeys(input)`, which resolves the session's workspace and leases it
+under `multi`. That step is best effort: a failure there is logged by class and
+never revokes the session or answers a sign-in failure. A tenant's held keys are
+dropped when the platform identity revokes the session (sign-out), by a single
+subscription per identity and custody made in `createTenantFluxIQ`.
+
+`/api/framework/setup` is operator-only: the request guard answers 403
+`operator_only` on every public profile, and under `multi` the route refuses in
+code too, before reading its body, because the primary's root there holds every
+tenant's workspace. Under `single` it acts on the one workspace and releases its
+lease before a migrate or rollback reloads the primary.
+
+The welcome and reset routes read a posted body only as a form (`FormRead`: a
+tagged result of the parsed value or a refusal), so no posted field can pass for a
+ready-made answer.
 
 Tenant construction is shared per workspace id. Leases and the runtime's
 `activity()` counts pin an instance: open project databases, admitted background

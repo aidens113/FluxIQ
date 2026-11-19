@@ -1,43 +1,66 @@
 import { NextResponse } from "next/server";
-import { requireFluxIQUser } from "../../../../lib/auth";
-import { getFluxIQ, reloadFluxIQWebInstance } from "../../../../lib/fluxiq";
-import { authorizeAppRoute, panelRouteActor } from "../../../../lib/app-route-iam";
+import { reloadFluxIQWebInstance } from "../../../../lib/fluxiq";
 import { operationalRouteContract } from "../../../../lib/operational-route-contract";
+import { platformScope } from "../../../../lib/platform";
+import { workspaceRouteContext } from "../../../../lib/workspaces/routes";
 
-export async function GET() {
-  const auth = await requireFluxIQUser();
-  if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+/**
+ * Framework setup acts on the one data root of a single-workspace server, so
+ * it is the operator's: the request guard refuses it on every public profile,
+ * and under multi-tenancy the root also holds every tenant's workspace, so the
+ * route refuses in code too, before reading the body.
+ */
+function operatorOnly(): NextResponse | null {
+  if (platformScope().tenancy !== "multi") return null;
+  return NextResponse.json({ ok: false, code: "operator_only", error: "Framework setup is run by the operator, not through this server." }, { status: 403, headers: { "cache-control": "no-store" } });
+}
+
+function refused(refusal: { status: number; error: string }): NextResponse {
+  return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
+}
+
+export async function GET(request: Request) {
+  const blocked = operatorOnly();
+  if (blocked) return blocked;
   const contract = operationalRouteContract("GET", "/api/framework/setup");
-  const fluxiq = getFluxIQ();
-  const refusal = await authorizeAppRoute(fluxiq.programs.api, contract.iam, "panel", panelRouteActor(auth));
-  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
-  return NextResponse.json({
-    ok: true,
-    paths: fluxiq.paths,
-    storage: fluxiq.inspectStorage(),
-    domains: fluxiq.domains.summaries()
-  });
+  const selected = await workspaceRouteContext(request, contract.iam);
+  if (!selected.ok) return refused(selected);
+  const owner = selected.context;
+  try {
+    return NextResponse.json({
+      ok: true,
+      paths: owner.fluxiq.paths,
+      storage: owner.fluxiq.inspectStorage(),
+      domains: owner.fluxiq.domains.summaries()
+    });
+  } finally {
+    owner.release();
+  }
 }
 
 export async function POST(request: Request) {
-  const auth = await requireFluxIQUser();
-  if (!auth) return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
-  const body = await request.json().catch(() => ({})) as { action?: unknown };
+  const blocked = operatorOnly();
+  if (blocked) return blocked;
+  const body = await request.clone().json().catch(() => ({})) as { action?: unknown };
   const action = typeof body.action === "string" ? body.action : "setup";
   let contract;
   try { contract = operationalRouteContract("POST", "/api/framework/setup", action); }
   catch { return NextResponse.json({ ok: false, error: "Unsupported framework setup action" }, { status: 400 }); }
-  const fluxiq = getFluxIQ();
-  const refusal = await authorizeAppRoute(fluxiq.programs.api, contract.iam, "panel", panelRouteActor(auth));
-  if (refusal) return NextResponse.json({ ok: false, error: refusal.error }, { status: refusal.status });
-  const result = body.action === "migrate"
-    ? await fluxiq.migrateStorage()
-    : body.action === "rollback-migration"
-      ? await fluxiq.rollbackStorageMigration()
-      : await fluxiq.setup();
-  if (body.action === "migrate" || body.action === "rollback-migration") await reloadFluxIQWebInstance();
-  return NextResponse.json({
-    ok: true,
-    ...result
-  });
+  const selected = await workspaceRouteContext(request, contract.iam);
+  if (!selected.ok) return refused(selected);
+  const owner = selected.context;
+  const reloads = body.action === "migrate" || body.action === "rollback-migration";
+  let result;
+  try {
+    result = body.action === "migrate"
+      ? await owner.fluxiq.migrateStorage()
+      : body.action === "rollback-migration"
+        ? await owner.fluxiq.rollbackStorageMigration()
+        : await owner.fluxiq.setup();
+  } finally {
+    // A reload closes the primary, so the lease is released first.
+    owner.release();
+  }
+  if (reloads) await reloadFluxIQWebInstance();
+  return NextResponse.json({ ok: true, ...result });
 }

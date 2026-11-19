@@ -6,23 +6,23 @@ import type { WelcomeDeps } from "./WelcomeDeps";
 
 /**
  * Redeems a welcome link and signs the person in: sets the password, mints a
- * session, unlocks the account's keys for it (the session is revoked if that
- * fails, as the sign-in route does) and records the sign-in. Answers a code
+ * session, restores the account's saved keys in its workspace (best effort: a
+ * failure there never ends the sign-in) and records the sign-in. Answers a code
  * only on refusal, and never the token or the password.
  */
 export async function submitWelcome(request: Request, deps: WelcomeDeps): Promise<AccountLinkResponse> {
-  const input = await readTokenAndPassword(request);
-  if ("status" in input) return input;
+  const read = await readTokenAndPassword(request);
+  if (!read.ok) return read.response;
+  const input = read.value;
   const redeemed = await deps.links.redeemWelcome(input);
   if (!redeemed.ok) return refuse(redeemed.code === "disabled" || redeemed.code === "two_factor" ? 403 : 400, redeemed.code);
   const { userId, continueUrl } = redeemed.redemption;
   const session = await deps.identityAccess.createSession(userId, DEFAULT_SESSION_TTL_MS);
   try {
-    await deps.secretKeys.unlockSession({ sessionId: session.id, userId, authorizationPassword: input.password, expiresAtMs: session.expiresAtMs });
+    await deps.restoreKeys({ sessionId: session.id, userId, authorizationPassword: input.password, expiresAtMs: session.expiresAtMs });
   } catch {
-    await deps.identityAccess.revokeSession(session.id);
-    // The password is set and the link is spent: the person can sign in at "/".
-    return refuse(500, "sign_in_failed");
+    // Best effort and in the session's own workspace: a saved-key recovery problem is reported by key availability and never ends the sign-in.
+    console.warn("Saved model keys could not be migrated after the welcome sign-in; inspect key availability and host protection.");
   }
   await deps.provisioning.recordSignIn(userId);
   return { status: 200, body: { ok: true, continueUrl: continueUrl ?? "/" }, session: { id: session.id, ttlMs: DEFAULT_SESSION_TTL_MS } };

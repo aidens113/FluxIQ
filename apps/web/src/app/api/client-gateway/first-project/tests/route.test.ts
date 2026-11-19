@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({
   asked: [] as Array<Record<string, unknown>>,
-  refusal: null as { error: string; status: number } | null,
-  session: { sessionId: "gateway-1", operatorUserId: "user.one", metadata: { domainId: "example" } } as Record<string, unknown> | null
+  refusal: null as { ok: false; error: string; status: number } | null,
+  released: 0
 }));
 
 vi.mock("fluxiq/automation-studio", () => ({
@@ -12,22 +12,13 @@ vi.mock("fluxiq/automation-studio", () => ({
     return "project-own";
   }
 }));
-vi.mock("../../../../../lib/auth", () => ({ requireFluxIQUser: async () => null }));
-vi.mock("../../../../../lib/app-route-iam", () => ({
-  appRouteIamContract: () => ({}),
-  authorizeAppRoute: async () => fixture.refusal,
-  panelRouteActor: () => ({}),
-  pairedClientRouteActor: async (_identity: unknown, session: { operatorUserId: string }) => ({ userId: session.operatorUserId, sessionId: "client-gateway:gateway-1", roleId: "operator", permissions: ["programs.read"] })
-}));
-vi.mock("../../../../../lib/fluxiq", () => ({
-  getFluxIQWebRuntimeStatus: () => ({ automationStudio: { activeProjectId: null } }),
-  getFluxIQ: () => ({
-    programs: {
-      api: "the registry",
-      identityAccess: {},
-      clientGateway: { ready: async () => undefined, authorizeToken: async () => fixture.session, snapshot: () => ({ sessions: [] }) }
-    }
-  })
+vi.mock("../../../../../lib/workspaces/routes", () => ({
+  workspaceRouteContext: async () => fixture.refusal ?? { ok: true, context: {
+    fluxiq: { programs: { api: "the registry" } },
+    caller: { actor: { userId: "user.one", sessionId: "client-gateway:gateway-1" } },
+    binding: { channel: "paired-client", domainId: "example" },
+    release: () => { fixture.released += 1; }
+  } }
 }));
 
 import { NextRequest } from "next/server";
@@ -41,26 +32,22 @@ describe("POST /api/client-gateway/first-project", () => {
   beforeEach(() => {
     fixture.asked = [];
     fixture.refusal = null;
-    fixture.session = { sessionId: "gateway-1", operatorUserId: "user.one", metadata: { domainId: "example" } };
+    fixture.released = 0;
   });
 
-  it("refuses with no credential, and with one that speaks for nobody, and makes nothing", async () => {
+  it("makes nothing for a caller the workspace route does not admit", async () => {
+    fixture.refusal = { ok: false, error: "Authentication required", status: 401 };
     expect((await ask()).status).toBe(401);
-    fixture.session = null;
-    expect((await ask("Bearer dummy-credential")).status).toBe(401);
-    expect(fixture.asked).toEqual([]);
-  });
-
-  it("makes nothing when the route is refused", async () => {
-    fixture.refusal = { error: "Not allowed", status: 403 };
+    fixture.refusal = { ok: false, error: "Not allowed", status: 403 };
     expect((await ask("Bearer dummy-credential")).status).toBe(403);
     expect(fixture.asked).toEqual([]);
   });
 
-  it("asks through the registry, as this person, in their browser's domain, and may make one", async () => {
+  it("asks through the held workspace's registry, as this person, in their browser's domain, and releases it", async () => {
     const response = await ask("Bearer dummy-credential");
     await expect(response.json()).resolves.toEqual({ ok: true, payload: { projectId: "project-own" } });
     expect(fixture.asked).toHaveLength(1);
     expect(fixture.asked[0]).toMatchObject({ registry: "the registry", actor: { userId: "user.one" }, domainId: "example", create: true });
+    expect(fixture.released).toBe(1);
   });
 });

@@ -6,6 +6,8 @@ describe("isOperatorOnlyPath", () => {
     expect(isOperatorOnlyPath("/api/programs/deployment-sync/sync")).toBe(true);
     expect(isOperatorOnlyPath("/api/programs/deployment-sync/rollback/")).toBe(true);
     expect(isOperatorOnlyPath("/api/programs/database-manager/run-migration")).toBe(true);
+    expect(isOperatorOnlyPath("/api/framework/setup")).toBe(true);
+    expect(isOperatorOnlyPath("/api/framework/io")).toBe(false);
     expect(isOperatorOnlyPath("/api/programs/deployment-sync/status")).toBe(false);
     expect(isOperatorOnlyPath("/welcome")).toBe(false);
   });
