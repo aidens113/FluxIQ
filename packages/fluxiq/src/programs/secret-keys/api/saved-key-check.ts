@@ -1,26 +1,22 @@
-import type { SecretKeySummary } from "../types.ts";
 import type { SaveModelKeyProvider } from "./contracts.ts";
-import { secretKeyModelProvider } from "./model-key-provider.ts";
 
 /**
- * The host's free provider check of a model key just saved or replaced, so the
- * caller's model access says at once whether the provider takes it. Handed the
- * value only for that check; it never answers, logs or stores it.
+ * What the provider said of a model key's value, by its free check: it
+ * answered, it refused the key (`provider_refused`), the account behind it has
+ * no credit (`no_credit`), or it could not be reached (`provider_unreachable`).
+ * `message` is the check's own sentence, never built from the value.
  */
-export type SecretKeySavedKeyCheck = (key: { id: string; provider: SaveModelKeyProvider; value: string; lastRotatedAtMs: number }) => Promise<void>;
+export type SecretKeyCheckVerdict = { outcome: "answered" | "provider_refused" | "no_credit" | "provider_unreachable"; message?: string | undefined };
 
 /**
- * Runs the host's check on a model key that now holds `value`, when the host
- * binds one and the key is a model key. The key is saved either way, so a
- * check that fails is logged by its error's name only and the caller's model
- * access, read next, says what is known.
+ * The host's free provider check of a model key's value, in two steps so a key
+ * the provider refuses is never stored (t950): `probe` asks the provider about
+ * the value before anything is saved, and `record` keeps that verdict as the
+ * stored key's last outcome, under the version it was saved at, once it is.
+ * Handed the value only for the probe; it never answers, logs or stores it.
+ * `checkModelKeyBeforeSaving` (`./check-before-saving.ts`) runs both.
  */
-export async function checkSavedModelKey(check: SecretKeySavedKeyCheck | undefined, key: SecretKeySummary, value: string): Promise<void> {
-  const provider = check ? secretKeyModelProvider(key) : undefined;
-  if (!check || !provider) return;
-  try {
-    await check({ id: key.id, provider, value, lastRotatedAtMs: key.lastRotatedAtMs });
-  } catch (error) {
-    console.warn(`The provider check of a saved model key failed (${error instanceof Error ? error.name : "non_error"}).`);
-  }
-}
+export type SecretKeySavedKeyCheck = {
+  probe(input: { provider: SaveModelKeyProvider; value: string }): Promise<SecretKeyCheckVerdict>;
+  record(key: { id: string; lastRotatedAtMs: number }, verdict: SecretKeyCheckVerdict): void;
+};

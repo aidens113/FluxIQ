@@ -1,3 +1,4 @@
+import { modelAccessRecipientAllowed } from "./recipient-decision.ts";
 import type { ModelAccessPush, ModelAccessPushDependencies, ModelAccessPushIdentity } from "./types.ts";
 
 /**
@@ -8,12 +9,18 @@ import type { ModelAccessPush, ModelAccessPushDependencies, ModelAccessPushIdent
  * last sent, and every listener on `changes` (the panel's change stream) is
  * told to read the Secret Keys snapshot again.
  *
- * The gateway's authority answers a session's person only while that person
- * is enabled and has a role, read as the paired program route reads them;
- * otherwise null, so nothing is sent. The identity's directory changes are
- * watched as soon as it is first read, so a person being disabled or
- * re-enabled is a change too. `stop` removes every subscription, the
- * authority and the listeners.
+ * The gateway's authority answers a session's person only when the Secret
+ * Keys snapshot would answer that session's own call: the same IAM decision
+ * of the snapshot's registered action, for the same paired-client actor, made
+ * per recipient each time the state is worked out
+ * (`modelAccessRecipientAllowed`, t950 F4). Otherwise null, so nothing is
+ * sent, and a decision that could not be made throws, which the gateway reads
+ * as "could not be read". The push and the snapshot therefore never disagree,
+ * whether the person is allowed, denied by a policy, or narrowed as a paired
+ * browser. The identity's directory changes are watched as soon as it is
+ * first read, so a person being disabled or re-enabled is a change too; IAM
+ * decision changes come in as a source. `stop` removes every subscription,
+ * the authority and the listeners.
  */
 export function installModelAccessPush(dependencies: ModelAccessPushDependencies): ModelAccessPush {
   const listeners = new Set<() => void>();
@@ -43,9 +50,7 @@ export function installModelAccessPush(dependencies: ModelAccessPushDependencies
   dependencies.gateway.setAuthority(async ({ sessionId, userId }) => {
     const identity = await dependencies.identity();
     watch(identity);
-    const directory = await identity.snapshot();
-    const person = directory.users.find((user) => user.id === userId);
-    if (!person?.enabled || !directory.roles.some((role) => role.id === person.roleId)) return null;
+    if (!await modelAccessRecipientAllowed(dependencies.registry, await identity.snapshot(), { sessionId, userId })) return null;
     return await dependencies.stateOf({ sessionId, userId });
   });
   // Watched from the start too, so a directory change before any session read is heard.

@@ -45,7 +45,8 @@ const mia = actor("mia", "member", PAIRED_PERMISSIONS);
 function workspace() {
   const service = new SecretKeysService({ repository: createMemoryRepository().repository, passwordKdf: { testOnlyWeakParameters: WEAK_SCRYPT_PARAMETERS }, ...hostProtectionOptions() });
   const registry = new GlobalProgramApiRegistry({ iam: { profile: "local" } });
-  const checked: Array<Parameters<SecretKeySavedKeyCheck>[0]> = [];
+  /** Each value the provider was asked about, with the stored key it was then recorded on (t950: asked before storing). */
+  const checked: Array<{ provider: string; value: string; id?: string; lastRotatedAtMs?: number }> = [];
   const modelAccessOf = async (caller: ProgramApiActor, snapshot: SecretKeysSnapshot): Promise<ModelAccessState> => {
     const workspace = await service.modelKeys.resolveAssistant();
     const preferred = workspace.ok ? { keyId: workspace.keyId, model: workspace.model, ownerId: workspace.ownerId, chosenForWorkspace: workspace.chosenForWorkspace, offeredByHolder: workspace.offeredByHolder } : undefined;
@@ -56,9 +57,14 @@ function workspace() {
   };
   /** What a person's calls use now, as the host reads it (key id included). */
   const accessOf = async (caller: ProgramApiActor) => await modelAccessOf(caller, await service.snapshotFor({ userId: caller.userId, sessionId: null }));
-  registerSecretKeysApi(registry, service, undefined, () => ({ sessionId: null }), modelAccessOf, async (key) => {
-    checked.push(key);
-  });
+  const check: SecretKeySavedKeyCheck = {
+    probe: async ({ provider, value }) => {
+      checked.push({ provider, value });
+      return { outcome: "answered" };
+    },
+    record: (key) => { Object.assign(checked[checked.length - 1]!, key); }
+  };
+  registerSecretKeysApi(registry, service, undefined, () => ({ sessionId: null }), modelAccessOf, check);
   const call = (endpoint: string, caller: ProgramApiActor, payload: Record<string, unknown> = {}) =>
     registry.call({ programId: "secret-keys", endpoint, scope: {}, actor: caller, payload }) as Promise<ProgramApiResponse<any>>;
   return { service, call, checked, accessOf };
