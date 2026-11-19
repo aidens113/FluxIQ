@@ -19,6 +19,7 @@ import { IdentityAuthorityManagedError, IdentityAuthorityUncheckedError } from "
 import type { IdentityAccessService } from "../runtime/service.ts";
 import { IdentityUsernameTakenError } from "../runtime/username-taken-error.ts";
 import { IdentityUsernameRecaseError, usernameKey } from "../runtime/usernames/index.ts";
+import { ownSnapshot, SELF_SERVICE_REFUSALS, sessionOwner, signInStoreFor } from "./self-service/index.ts";
 
 /**
  * The refusal an endpoint returns when the calling session has not just
@@ -178,11 +179,14 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     assistant: { input: identityAccessSnapshotInput, summary: "Lists the people, their roles and the sign-in sessions.", phrases: ["who has access", "show sign-in sessions", "list the people"] },
     // Each person is marked with whether `update-user` would refuse their
     // sign-in name, role and on/off, so a client never offers a change that
-    // will be refused.
-    handler: async () => ({
-      ok: true,
-      payload: await service.authority.listing(await service.snapshot())
-    })
+    // will be refused. Where people sign in through another directory, the
+    // listing is the caller's own (`ownSnapshot`).
+    handler: async (request) => {
+      const directory = await service.directory.elsewhere();
+      if (directory !== null && !request.actor) return SELF_SERVICE_REFUSALS.authenticationRequired;
+      const snapshot = directory === null ? await service.snapshot() : await ownSnapshot(service, directory, request.actor!);
+      return { ok: true, payload: await service.authority.listing(snapshot) };
+    }
   });
   registry.register({
     programId: "identity-access",
@@ -305,11 +309,13 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
+      const signIn = await signInStoreFor(service, request.actor, payload.userId);
+      if (!signIn.ok) return signIn;
       // Enrollment hands out the authenticator secret for the named account and
       // replaces any pending one, so it is gated exactly as disabling is.
-      const refusal = await recheckCredentials(service, payload);
+      const refusal = await recheckCredentials(signIn.store, payload);
       if (refusal) return refusal;
-      return { ok: true, payload: await service.beginTotp(payload.userId) };
+      return { ok: true, payload: await signIn.store.beginTotp(payload.userId) };
     }
   });
   registry.register({
@@ -324,12 +330,14 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     handler: async (request) => {
       const payload = request.payload as TotpConfirmRequest | undefined;
       if (!payload?.userId || !payload.code) return { ok: false, error: "userId and code are required" };
+      const signIn = await signInStoreFor(service, request.actor, payload.userId);
+      if (!signIn.ok) return signIn;
       // Confirming overwrites the live authenticator secret, which is what
       // disabling does and more: the account keeps two-factor authentication
       // while the factor has moved to whoever ran the enrollment.
-      const refusal = await recheckCredentials(service, payload);
+      const refusal = await recheckCredentials(signIn.store, payload);
       if (refusal) return refusal;
-      return { ok: true, payload: await service.confirmTotp(payload.userId, payload.code) };
+      return { ok: true, payload: await signIn.store.confirmTotp(payload.userId, payload.code) };
     }
   });
   registry.register({
@@ -344,9 +352,11 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     handler: async (request) => {
       const payload = request.payload as ({ userId?: string } & CredentialRecheck) | undefined;
       if (!payload?.userId) return { ok: false, error: "userId is required" };
-      const refusal = await recheckCredentials(service, payload);
+      const signIn = await signInStoreFor(service, request.actor, payload.userId);
+      if (!signIn.ok) return signIn;
+      const refusal = await recheckCredentials(signIn.store, payload);
       if (refusal) return refusal;
-      return { ok: true, payload: await service.disableTotp(payload.userId) };
+      return { ok: true, payload: await signIn.store.disableTotp(payload.userId) };
     }
   });
   registry.register({
@@ -375,7 +385,11 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
     classification: "authoring",
     action: "iam:RevokeSession",
     accessLevel: "Write",
-    resource: endpointResource.workspace(),
+    // The caller's own user: a person may sign their own sessions out (the
+    // user-level policies grant it on their own user), and an administrator,
+    // who holds `iam:*`, any session. Local and self-hosted installs decide by
+    // `identity.manage`, as before.
+    resource: endpointResource.selfUser(),
     assistant: { input: revokeIdentitySessionInput, summary: "Signs one sign-in session out, by the digest the sessions list shows.", phrases: ["sign this session out", "end this sign-in session"], target: { sessionDigest: "sign-in session" } },
     handler: async (request) => {
       const payload = request.payload as RevokeSessionRequest | undefined;
@@ -388,6 +402,17 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       // (`identity.manage`), so the digest the snapshot lists is enough and no
       // raw id has to leave the server. The service tells its listeners the
       // raw id and the revoker, so the session's Secret Keys unlock is dropped.
+      //
+      // Where people sign in through another directory, the session is there,
+      // and only the caller's own is revoked, by them as themselves: a role in
+      // this workspace is no authority over a sign-in that belongs to their
+      // account (and may serve another workspace).
+      const signIn = await signInStoreFor(service, request.actor);
+      if (!signIn.ok) return signIn;
+      if (signIn.delegated) {
+        if (await sessionOwner(signIn.store, { sessionId, sessionDigest }) !== signIn.actor.userId) return SELF_SERVICE_REFUSALS.directorySelfOnly;
+        return { ok: true, payload: { revoked: await signIn.store.revokeSession(sessionId ?? { digest: sessionDigest ?? "" }, { userId: signIn.actor.userId, administrator: false }) } };
+      }
       const revoker = { userId: request.actor?.userId ?? null, administrator: request.actor?.permissions.includes("identity.manage") === true };
       return { ok: true, payload: { revoked: await service.revokeSession(sessionId ?? { digest: sessionDigest ?? "" }, revoker) } };
     }
@@ -442,7 +467,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       if (!actor) return { ok: false, error: "Authentication is required for this program operation.", errorCode: "authorization.required" };
       const read = readSelfOnlyPayload(request.payload, actor.sessionId, [], SELF_ONLY);
       if (!read.ok) return read;
-      const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.startingHumanness(actor.userId) };
+      const signIn = await signInStoreFor(service, actor);
+      if (!signIn.ok) return signIn;
+      const payload: MyPreferencesResponse = { startingHumanness: await signIn.store.preferences.startingHumanness(actor.userId) };
       return { ok: true, payload };
     }
   });
@@ -465,7 +492,9 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       if (!Object.hasOwn(read.body, "startingHumanness")) return STARTING_HUMANNESS_INVALID;
       const value = read.body.startingHumanness;
       if (value !== null && !humannessSchema.safeParse(value).success) return STARTING_HUMANNESS_INVALID;
-      const payload: MyPreferencesResponse = { startingHumanness: await service.preferences.setStartingHumanness(actor.userId, value as number | null) };
+      const signIn = await signInStoreFor(service, actor);
+      if (!signIn.ok) return signIn;
+      const payload: MyPreferencesResponse = { startingHumanness: await signIn.store.preferences.setStartingHumanness(actor.userId, value as number | null) };
       return { ok: true, payload };
     }
   });
@@ -495,9 +524,11 @@ export function registerIdentityAccessApi(registry: GlobalProgramApiRegistry, se
       const read = readSelfOnlyPayload(request.payload, actor.sessionId, ["username"], RECASE_SELF_ONLY);
       if (!read.ok) return read;
       const username = read.body.username;
-      const stored = (await service.snapshot()).users.find((user) => user.id === actor.userId);
+      const signIn = await signInStoreFor(service, actor);
+      if (!signIn.ok) return signIn;
+      const stored = (await signIn.store.snapshot()).users.find((user) => user.id === actor.userId);
       if (typeof username !== "string" || !stored || usernameKey(username) !== usernameKey(stored.username)) return RECASE_NOT_CASE_ONLY;
-      return written(() => service.updateUser({ id: actor.userId, username }, "recase"));
+      return written(() => signIn.store.updateUser({ id: actor.userId, username }, "recase"));
     }
   });
 }

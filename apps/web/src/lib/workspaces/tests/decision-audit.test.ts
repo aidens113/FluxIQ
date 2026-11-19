@@ -48,7 +48,10 @@ describe("a workspace's persisted route decisions", () => {
     it(`${profile}: an allowed write and a refused read and write persist; an allowed read does not`, async () => {
       const { registry, call, rows } = await workspace(profile);
 
-      expect((await call("update-user", ADMIN, { id: "person.one", displayName: "Renamed" })).ok).toBe(true);
+      // Under `service` the guardrail (v2) refuses local identity administration, an administrator's included:
+      // people there are the platform directory's. The invite below is the allowed write that persists.
+      const hosted = profile === "service";
+      expect((await call("update-user", ADMIN, { id: "person.one", displayName: "Renamed" })).ok).toBe(!hosted);
       expect((await call("snapshot", VIEWER)).ok).toBe(true);
       expect((await call("snapshot", NOBODY)).ok).toBe(false);
       expect((await call("update-user", VIEWER, { id: "person.one", displayName: "Renamed again" })).ok).toBe(false);
@@ -57,7 +60,7 @@ describe("a workspace's persisted route decisions", () => {
       expect((await registry.authorize({ actor: ADMIN, action: "iam:InviteMember", permission: "identity.manage" })).allowed).toBe(true);
 
       expect(rows()).toEqual([
-        "allow iam:UpdateUser admin.one",
+        `${hosted ? "deny" : "allow"} iam:UpdateUser admin.one`,
         "deny iam:Snapshot nobody.one",
         "deny iam:UpdateUser viewer.one",
         "allow iam:InviteMember admin.one"
