@@ -9,6 +9,7 @@ import { adminRole, viewerRole } from "../../identity-access/index.ts";
 import type { Permission } from "../../identity-access/index.ts";
 import { GlobalProgramApiRegistry, type ProgramApiActor, type ProgramApiEndpointSummary, type ProgramApiHandler, type ProgramApiResponse } from "../api.ts";
 import type { ProgramApiIamOptions, ProgramOwnedResourceKind } from "../iam/index.ts";
+import { PAIRED_CLIENT_PERMISSIONS } from "../paired-client/index.ts";
 
 /** The PIN every fixture payload carries, which `pinAcceptingIdentityAccess` accepts. */
 export const FIXTURE_PIN = "123456";
@@ -55,8 +56,8 @@ export function actor(userId: string, roleId: string, permissions: readonly Perm
   return { sessionId: `session-${userId}`, userId, roleId, permissions: [...permissions], ...(channel === undefined ? {} : { channel }) };
 }
 
-/** The permissions a paired client keeps (apps/web `PAIRED_CLIENT_PERMISSIONS`). */
-export const PAIRED_PERMISSIONS: readonly Permission[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
+/** The permissions a paired client keeps on any call: the one shared set (`programs/_shared/paired-client`). */
+export const PAIRED_PERMISSIONS: readonly Permission[] = PAIRED_CLIENT_PERMISSIONS;
 
 export const ADMIN_PERMISSIONS: readonly Permission[] = adminRole.permissions;
 export const VIEWER_PERMISSIONS: readonly Permission[] = viewerRole.permissions;

@@ -3,6 +3,7 @@ import type { AutomationStudioResultCheckGrantor } from "../../../runtime/result
 import type { IdentityAccessService } from "../../identity-access/index.ts";
 import type { SecretKeysService, SecretKeyUseAuthority, SecretKeyUsePrincipal } from "../../secret-keys/index.ts";
 import type { GlobalProgramApiRegistry, ProgramApiActor } from "../api.ts";
+import { PAIRED_CLIENT_PERMISSIONS } from "../paired-client/index.ts";
 
 export type SecretKeyPrincipalAuthority = (principal: SecretKeyUsePrincipal) => Promise<{ actor: ProgramApiActor; expiresAtMs: number } | null>;
 
@@ -15,8 +16,6 @@ type StandingPrincipal = Extract<SecretKeyUsePrincipal, { kind: "standing" }>;
  */
 export type SecretKeyStandingGrantResolver = (principal: StandingPrincipal) => Promise<{ grantedThrough: AutomationStudioResultCheckGrantor; keyId: string; expiresAtMs: number } | null>;
 
-/** What a paired client's actor may do, as `server/program-route` narrows it. */
-const PAIRED_CLIENT_PERMISSIONS = ["programs.read", "programs.write", "runtime.control", "flows.write"];
 
 /** How long one decision for a principal with no session of its own stands. The use it authorizes is claimed at once. */
 const UNSESSIONED_DECISION_MS = 10_000;
