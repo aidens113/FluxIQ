@@ -44,6 +44,12 @@ export class FakeDocker implements CommandRunner {
     if (verb === "network") return this.network(rest);
     if (verb === "volume") return this.volume(rest);
     if (verb === "compose") return this.compose(rest);
+    if (verb === "build") {
+      // The runner image: tagged and labelled as built.
+      this.images.set(rest[rest.indexOf("--tag") + 1] ?? "", parseLabels(rest));
+      return ok("");
+    }
+    if (verb === "run" && rest[rest.indexOf("--entrypoint") + 1] === "stat") return ok("0");
     if (verb === "run") return this.oneShot(rest, request.input ?? "");
     return fail(`fake docker does not know ${verb}`);
   }

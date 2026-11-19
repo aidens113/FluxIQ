@@ -10,7 +10,7 @@ import { toEnvFile } from "./to-env-file.ts";
  * account); a self-hosted server names its setup code file, which the base
  * compose file does not.
  */
-export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtpPasswordSecret: string | null, commerceConfigFile: string | null): string {
+export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtpPasswordSecret: string | null, commerceConfigFile: string | null, environments: { image: string; network: string; authorityFile: string | null } | null = null): string {
   const values: [string, string][] = [
     ["FLUXIQ_PUBLIC_ORIGIN", publicOrigin],
     ["FLUXIQ_INSTANCE_ID", config.instance.id],
@@ -24,6 +24,21 @@ export function renderServiceEnv(config: CloudConfig, publicOrigin: string, smtp
   if (config.mode === "service") values.push(["FLUXIQ_SIGNUP", config.signup]);
   else values.push(["FLUXIQ_SETUP_CODE_FILE", "/run/secrets/setup_code"]);
   if (commerceConfigFile !== null) values.push(["FLUXIQ_COMMERCE_CONFIG_FILE", commerceConfigFile]);
+  if (environments !== null && config.environments !== null) {
+    values.push(
+      ["FLUXIQ_ENVIRONMENT_DRIVER", "docker"],
+      ["FLUXIQ_ENVIRONMENT_DOCKER_PROJECT", config.project],
+      ["FLUXIQ_ENVIRONMENT_DOCKER_IMAGE", environments.image],
+      ["FLUXIQ_ENVIRONMENT_DOCKER_NETWORK", environments.network],
+      ["FLUXIQ_ENVIRONMENT_CLIENT_DOMAIN", config.environments.clientDomain],
+      ["FLUXIQ_ENVIRONMENT_RUNNER_MEMORY", config.environments.limits.memory],
+      ["FLUXIQ_ENVIRONMENT_RUNNER_CPUS", config.environments.limits.cpus],
+      ["FLUXIQ_ENVIRONMENT_RUNNER_PIDS", String(config.environments.limits.pids)]
+    );
+    // A rehearsal's .localhost name is this machine's: runners reach it where the host serves it, through the public origin.
+    if (config.domain.endsWith(".localhost")) values.push(["FLUXIQ_ENVIRONMENT_RUNNER_RESOLVE_TO", "host.docker.internal"]);
+    if (environments.authorityFile !== null) values.push(["FLUXIQ_ENVIRONMENT_RUNNER_AUTHORITY_FILE", environments.authorityFile]);
+  }
   if (config.instance.name !== null) values.push(["FLUXIQ_INSTANCE_NAME", config.instance.name]);
   if (config.signUpUrl !== null) values.push(["FLUXIQ_SIGN_UP_URL", config.signUpUrl]);
   if (config.email.username !== null && smtpPasswordSecret !== null) {

@@ -25,6 +25,11 @@ import { GET as readStateAsset, PUT as writeStateAsset } from "../programs/autom
 import { GET as programDirectory } from "../programs/route";
 import { GET as listRecordings } from "../recordings/route";
 import { GET as readAudit } from "../security/audit/route";
+import { GET as billingStatus, POST as startCheckout } from "../platform/v1/commerce/checkout/route";
+import { GET as listEnvironments, POST as createEnvironment } from "../platform/v1/environments/route";
+import { DELETE as deleteEnvironment } from "../platform/v1/environments/[environmentId]/route";
+import { POST as startEnvironment } from "../platform/v1/environments/[environmentId]/start/route";
+import { POST as stopEnvironment } from "../platform/v1/environments/[environmentId]/stop/route";
 import { fixture, FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
 
 /** The project-scoped calls name this project; `a-` projects are alice's, `b-` bob's. */
@@ -32,6 +37,8 @@ export type RouteProject = { projectId: string };
 
 type RouteCall = (caller: RouteCaller, target: RouteProject) => Promise<Response>;
 
+/** The environment the per-environment routes name. */
+const ENVIRONMENT = { params: Promise.resolve({ environmentId: "env-fixture" }) };
 const PNG = new Uint8Array([137, 80, 78, 71]);
 const HTML = new TextEncoder().encode("<!doctype html><p>snapshot</p>");
 /** A dummy password: the fixture accepts any re-proof. */
@@ -103,6 +110,13 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "POST /api/accounts/member (remove)": memberChange("remove"),
   "POST /api/accounts/member (resend-invite)": memberChange("resend-invite"),
   "POST /api/accounts/member (revoke-invite)": memberChange("revoke-invite"),
-  "GET /api/security/audit": (caller) => readAudit(routeRequest(caller, "/api/security/audit"))
+  "GET /api/security/audit": (caller) => readAudit(routeRequest(caller, "/api/security/audit")),
+  "GET /api/platform/v1/commerce/checkout": (caller) => billingStatus(routeRequest(caller, "/api/platform/v1/commerce/checkout")),
+  "POST /api/platform/v1/commerce/checkout": (caller) => startCheckout(routeRequest(caller, "/api/platform/v1/commerce/checkout", { method: "POST", json: { planId: "browser" } })),
+  "GET /api/platform/v1/environments": (caller) => listEnvironments(routeRequest(caller, "/api/platform/v1/environments")),
+  "POST /api/platform/v1/environments": (caller) => createEnvironment(routeRequest(caller, "/api/platform/v1/environments", { method: "POST", json: { operationId: "fixture-create" } })),
+  "POST /api/platform/v1/environments/[environmentId]/start": (caller) => startEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture/start", { method: "POST", json: { operationId: "fixture-start" } }), ENVIRONMENT),
+  "POST /api/platform/v1/environments/[environmentId]/stop": (caller) => stopEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture/stop", { method: "POST", json: { operationId: "fixture-stop" } }), ENVIRONMENT),
+  "DELETE /api/platform/v1/environments/[environmentId]": (caller) => deleteEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture?operationId=fixture-delete", { method: "DELETE" }), ENVIRONMENT)
 };
 

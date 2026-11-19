@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { DriverContext, PlatformDriver } from "../../drivers/index.ts";
 import type { CloudPlan } from "../../plan/index.ts";
-import { checkCheckoutJourney, checkRestart, checkTeardown, checkWebhook } from "../check/index.ts";
+import { checkAccountPurge, checkCheckoutJourney, checkEnvironmentJourney, checkRestart, checkTeardown, checkWebhook } from "../check/index.ts";
 import { ensureUp } from "../ensure-up.ts";
 import { expectStatus } from "../expect-status.ts";
 import { waitForMailText } from "../mailpit-inbox.ts";
@@ -12,7 +12,7 @@ import { secretFile } from "../secret-file.ts";
 import type { SmokeStep } from "../smoke-step.ts";
 import { SMOKE_SCRIPTS } from "../smoke-scripts.ts";
 
-type Account = { email: string; secret: string; session: string[] };
+type Account = { email: string; secret: string; session: string[]; userId: string };
 
 /**
  * The JSON body of the panel's sign-in posts (`/welcome/submit`,
@@ -55,7 +55,7 @@ export async function runServiceSmoke(plan: CloudPlan, driver: PlatformDriver, c
   pass("tls", `${plan.publicOrigin}/api/health answered 200 with the certificate pinned to the exported local root`);
 
   const run = randomBytes(4).toString("hex");
-  const accounts: Account[] = ["a", "b"].map((name) => ({ email: `smoke-${run}-${name}@example.test`, secret: randomBytes(18).toString("base64url"), session: [] }));
+  const accounts: Account[] = ["a", "b"].map((name) => ({ email: `smoke-${run}-${name}@example.test`, secret: randomBytes(18).toString("base64url"), session: [], userId: "" }));
   await provision(plan, context, accounts);
   pass("sign-up", `created ${accounts.map((account) => account.email).join(" and ")} through the provisioning listener from a one-shot container on ${plan.networks.provisioning}`);
 
@@ -82,7 +82,10 @@ export async function runServiceSmoke(plan: CloudPlan, driver: PlatformDriver, c
     pass("payments", `${payments.apiBase} answered a customer list with the deployment's key, from the edge network`);
   }
 
-  if (plan.config.billing !== null && plan.config.sinks.payments) {
+  const environments = plan.config.billing?.provider === "fake" && plan.environments !== null;
+  if (environments) {
+    pass("environments", await checkEnvironmentJourney(https, plan, context, accounts.map((account) => account.session)));
+  } else if (plan.config.billing !== null && plan.config.sinks.payments) {
     pass("webhook", await checkWebhook(https, plan));
     pass("checkout", await checkCheckoutJourney(https, plan, accounts.map((account) => account.session)));
   }
@@ -92,11 +95,17 @@ export async function runServiceSmoke(plan: CloudPlan, driver: PlatformDriver, c
   await expectIsolated(https, accounts);
   pass("restart", "after down (data kept) and up, both accounts sign in and are still isolated");
 
+  if (environments) {
+    const [payer] = accounts;
+    if (payer === undefined) throw new Error("No account to delete.");
+    pass("purge", await checkAccountPurge(https, plan, context, payer.session, () => deleteAccount(plan, context, payer)));
+  }
+
   pass("teardown", `the final down left nothing labelled ${plan.project} (${await checkTeardown(plan, driver, context)})`);
   return steps;
 }
 
-async function provision(plan: CloudPlan, context: DriverContext, accounts: readonly Account[]): Promise<void> {
+async function provision(plan: CloudPlan, context: DriverContext, accounts: Account[]): Promise<void> {
   if (plan.networks.provisioning === null) throw new Error("This deployment has no provisioning network.");
   const token = (await readFile(secretFile(plan, "provisioning_token"), "utf8")).split(/\r?\n/u)[0]?.trim() ?? "";
   const calls = accounts.map((account, index) => ({
@@ -105,10 +114,21 @@ async function provision(plan: CloudPlan, context: DriverContext, accounts: read
   }));
   const answers = await runOneShot(context.runner, { project: plan.project, image: plan.coreImage, network: plan.networks.provisioning, script: SMOKE_SCRIPTS.provision, input: { address: plan.config.provisioning.address, token, calls } }) as ProvisionAnswer[];
   answers.forEach((answer, index) => {
-    if (answer.status !== 200 || answer.body?.ok !== true || answer.body.result?.status !== "created") {
+    if (answer.status !== 200 || answer.body?.ok !== true || answer.body.result?.status !== "created" || typeof answer.body.result.userId !== "string") {
       throw new Error(`createAccount for ${accounts[index]?.email} answered ${answer.status} ${JSON.stringify(answer.body?.error ?? answer.body?.result ?? null)}.`);
     }
+    accounts[index]!.userId = answer.body.result.userId;
   });
+}
+
+/** Deletes an account at once through the provisioning listener, as the sign-up site's backend would; answers the receipt's status. */
+async function deleteAccount(plan: CloudPlan, context: DriverContext, account: Account): Promise<string> {
+  if (plan.networks.provisioning === null) throw new Error("This deployment has no provisioning network.");
+  const token = (await readFile(secretFile(plan, "provisioning_token"), "utf8")).split(/\r?\n/u)[0]?.trim() ?? "";
+  const calls = [{ operation: "deleteAccount", body: { requestId: `smoke-delete-${account.userId}`, userId: account.userId, mode: "immediate" } }];
+  const [answer] = await runOneShot(context.runner, { project: plan.project, image: plan.coreImage, network: plan.networks.provisioning, script: SMOKE_SCRIPTS.provision, input: { address: plan.config.provisioning.address, token, calls } }) as ProvisionAnswer[];
+  if (answer?.status !== 200 || answer.body?.ok !== true) throw new Error(`deleteAccount for ${account.email} answered ${answer?.status} ${JSON.stringify(answer?.body?.error ?? null)}.`);
+  return answer.body.result?.status ?? "answered";
 }
 
 async function signInBoth(https: ReturnType<typeof pinnedHttps>, accounts: Account[]): Promise<void> {

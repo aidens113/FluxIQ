@@ -92,7 +92,18 @@ export type CloudConfigFile = {
   billing?: CloudBillingFile;
   sinks?: { mail?: boolean; payments?: boolean; mailUiPort?: number };
   secrets?: { dir?: string };
-  images?: { core?: string; caddy?: string; mailpit?: string; stripeMock?: string };
+  /** Dedicated browsers on a local rehearsal: a service on the local profile with a dedicated grant. */
+  environments?: { runner: { context: string; dockerfile?: string; domain?: string }; limits?: { memory?: string; cpus?: string; pids?: number } };
+  images?: { core?: string; runner?: string; caddy?: string; mailpit?: string; stripeMock?: string };
+};
+
+/** Dedicated browsers, resolved: the runner image's build context and Dockerfile, and each runner's limits. */
+export type CloudEnvironments = {
+  runnerContext: string;
+  runnerDockerfile: string;
+  /** The domain the runner's client declares at the gateway. */
+  clientDomain: string;
+  limits: { memory: string; cpus: string; pids: number };
 };
 
 /** A validated config with every default applied and every path absolute (forward slashes). */
@@ -119,7 +130,9 @@ export type CloudConfig = {
   billing: CloudBilling | null;
   sinks: { mail: boolean; payments: boolean; mailUiPort: number };
   secretsDir: string;
-  images: { core: string; caddy: string; mailpit: string; stripeMock: string };
+  /** Null when the deployment runs no dedicated browsers. */
+  environments: CloudEnvironments | null;
+  images: { core: string; runner: string; caddy: string; mailpit: string; stripeMock: string };
 };
 
 /** One problem with a config: where it is (`email.smtp`) and what is wrong. */

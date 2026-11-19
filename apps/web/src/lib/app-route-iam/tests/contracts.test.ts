@@ -134,10 +134,25 @@ describe("the app route IAM table", () => {
     }
   });
 
+  it("decides the hosted dedicated browsers as the workspace's own administration, for a signed-in panel caller only, never under platform", () => {
+    const routes = [
+      ["GET", "/api/platform/v1/environments", "iam:ListEnvironments"],
+      ["POST", "/api/platform/v1/environments", "iam:CreateEnvironment"],
+      ["POST", "/api/platform/v1/environments/[environmentId]/start", "iam:StartEnvironment"],
+      ["POST", "/api/platform/v1/environments/[environmentId]/stop", "iam:StopEnvironment"],
+      ["DELETE", "/api/platform/v1/environments/[environmentId]", "iam:DeleteEnvironment"]
+    ] as const;
+    for (const [method, route, action] of routes) {
+      const contract = appRouteIamContract(method, route);
+      expect([route, contract.action, contract.callers]).toEqual([route, action, { panel: "none" }]);
+      expect(contract.resource.of({ workspaceId: "forged", environmentId: "env-1" })).toEqual({ kind: "workspace" });
+    }
+  });
+
   it("decides each app route the IAM catalog registers by the action the catalog names for it", () => {
     expect(IAM_APP_ROUTE_ACTIONS.length).toBeGreaterThan(0);
     for (const registered of IAM_APP_ROUTE_ACTIONS) {
-      expect([registered.method, registered.path, appRouteIamContract(registered.method as "GET" | "POST", registered.path).action]).toEqual([registered.method, registered.path, registered.action]);
+      expect([registered.method, registered.path, appRouteIamContract(registered.method as "GET" | "POST" | "DELETE", registered.path).action]).toEqual([registered.method, registered.path, registered.action]);
     }
   });
 });

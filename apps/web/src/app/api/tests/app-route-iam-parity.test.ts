@@ -32,6 +32,7 @@ const CALLERS: readonly RouteCaller[] = [
 
 const COOKIE_ONLY_READ: Row = ["allowed", "allowed", "unauthenticated", "unauthenticated"];
 const SELECTED_PANEL_READ: Row = ["allowed", "allowed", "forbidden: This endpoint is not available to a paired client.", "forbidden: This endpoint is not available to a paired client."];
+const NOT_BILLED: Row = ["unavailable", "unavailable", "unavailable", "unavailable"];
 const needs = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, "unauthenticated", "unauthenticated"];
 const selectedNeeds = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, SELECTED_PANEL_READ[2], SELECTED_PANEL_READ[3]];
 
@@ -71,7 +72,15 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/accounts/member (remove)": needs("identity.manage"),
   "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
   "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
-  "GET /api/security/audit": selectedNeeds("identity.manage")
+  "GET /api/security/audit": selectedNeeds("identity.manage"),
+  // The hosted plans and dedicated browsers: a server that bills nothing answers 404 before any decision.
+  "GET /api/platform/v1/commerce/checkout": NOT_BILLED,
+  "POST /api/platform/v1/commerce/checkout": NOT_BILLED,
+  "GET /api/platform/v1/environments": NOT_BILLED,
+  "POST /api/platform/v1/environments": NOT_BILLED,
+  "POST /api/platform/v1/environments/[environmentId]/start": NOT_BILLED,
+  "POST /api/platform/v1/environments/[environmentId]/stop": NOT_BILLED,
+  "DELETE /api/platform/v1/environments/[environmentId]": NOT_BILLED
 };
 
 const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);

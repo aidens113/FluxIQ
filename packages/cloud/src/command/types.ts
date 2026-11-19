@@ -5,6 +5,8 @@ export type CommandRequest = {
   input?: string;
   /** Show the command's output live (builds, compose up); it is still collected. */
   echo?: boolean;
+  /** Variables added to the program's environment (Compose interpolation values); never a secret. */
+  env?: Readonly<Record<string, string>>;
 };
 
 /** What a command answered. A program that could not be started answers code 127. */

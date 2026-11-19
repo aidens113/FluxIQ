@@ -27,9 +27,11 @@ process.stdout.write(JSON.stringify(Object.keys(files).sort()));
  * project label when absent (one of another project's is refused). The
  * contents travel on the container's standard input, never in an argument,
  * and the container has no network and only the capability to change owners.
- * Run on every `up`, so a rotated file reaches Core on the next start.
+ * Run on every `up`, so a rotated file reaches Core on the next start;
+ * `extra` adds files known only once the stack runs (the local root its
+ * dedicated browsers trust).
  */
-export async function syncSecretsVolume(docker: DockerCli, plan: CloudPlan): Promise<void> {
+export async function syncSecretsVolume(docker: DockerCli, plan: CloudPlan, extra: Readonly<Record<string, string>> = {}): Promise<void> {
   const owner = await docker.labelOf("volume", plan.secretsVolume);
   if (owner !== null && owner !== plan.project) throw new Error(`A volume named ${plan.secretsVolume} exists and is not this deployment's; remove or rename it, or choose another project name.`);
   if (owner === null) await docker.must(["volume", "create", "--label", `${CLOUD_PROJECT_LABEL}=${plan.project}`, "--label", "com.fluxiq.cloud.role=secrets", plan.secretsVolume], "Creating the secrets volume");
@@ -41,6 +43,10 @@ export async function syncSecretsVolume(docker: DockerCli, plan: CloudPlan): Pro
   for (const rendered of plan.renderedFiles) {
     if (!/^[a-z][a-z_]*$/u.test(rendered.name) || Object.hasOwn(files, rendered.name)) throw new Error(`${rendered.name} is not a usable file name in the secrets volume.`);
     files[rendered.name] = rendered.content;
+  }
+  for (const [name, content] of Object.entries(extra)) {
+    if (!/^[a-z][a-z_]*$/u.test(name) || Object.hasOwn(files, name)) throw new Error(`${name} is not a usable file name in the secrets volume.`);
+    files[name] = content;
   }
   const written = await docker.must([
     "run", "--rm", "--interactive", "--network", "none",

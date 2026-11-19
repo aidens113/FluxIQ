@@ -19,6 +19,13 @@
 
 ARG NODE_IMAGE=node:22-trixie-slim
 ARG PNPM_VERSION=9.15.0
+# The Docker command line, for the docker driver of a hosted rehearsal's
+# dedicated browsers (one runner container per environment). It is only a
+# client: the engine's socket is given to Core only by a deployment with
+# dedicated browsers (fluxiq-cloud's override), never by default.
+ARG DOCKER_CLI_IMAGE=docker:28-cli
+
+FROM ${DOCKER_CLI_IMAGE} AS docker-cli
 
 # --- build: the whole workspace, built as CI builds it ----------------------
 FROM ${NODE_IMAGE} AS build
@@ -90,6 +97,7 @@ COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build /app/apps/web/.server-runtime ./apps/web/.server-runtime
 COPY deploy/docker/healthcheck.mjs ./deploy/healthcheck.mjs
 COPY deploy/docker/one-core.mjs ./deploy/one-core.mjs
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 # One copy of Core in the server process. The panel imports Core through Node
 # (apps/web/scripts/core-bridge), and the client gateway bundle, loaded by a
 # native import at runtime with `fluxiq` external, resolves `fluxiq/server` up
