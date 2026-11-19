@@ -6,18 +6,22 @@ const fixture = vi.hoisted(() => ({
   approvePairing: async (_code: string, _input: { approvedByUserId: string }): Promise<unknown> => null,
   authorizeSessionCredentials: async (_input: Record<string, unknown>): Promise<unknown> => ({}),
   unlockSession: async (_input: Record<string, unknown>): Promise<unknown> => ({}),
-  stillLocked: [] as string[]
+  stillLocked: [] as string[],
+  released: 0
 }));
 
-vi.mock("../../../../../lib/auth", () => ({
-  requireFluxIQUser: async () => ({ session: { id: "session.web", expiresAtMs: 5_000 }, user: { id: "user.web" }, role: { id: "role.web", permissions: ["runtime.control"] } })
+// The route acts on the workspace its caller's session works in; the context carries that instance.
+vi.mock("../../../../../lib/workspaces/routes", () => ({
+  workspaceRouteContext: async () => ({
+    ok: true,
+    context: {
+      fluxiq: { programs: { clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } },
+      caller: { actor: { userId: "user.web" } },
+      binding: { sessionId: "session.web" },
+      release: () => { fixture.released += 1; }
+    }
+  })
 }));
-// A real registry on the local profile decides the route, as live.
-vi.mock("../../../../../lib/fluxiq", async () => {
-  const { GlobalProgramApiRegistry } = await import("fluxiq");
-  const api = new GlobalProgramApiRegistry();
-  return { getFluxIQ: () => ({ programs: { api, identityAccess: { authorizeSessionCredentials: (input: Record<string, unknown>) => fixture.authorizeSessionCredentials(input) }, secretKeys: { unlockSession: (input: Record<string, unknown>) => fixture.unlockSession(input), credentialUnlocks: { lockedClientsFor: async () => fixture.stillLocked.map((holderId) => ({ holderId, label: "Chrome" })) } }, clientGateway: { approvePairing: (code: string, input: { approvedByUserId: string }) => fixture.approvePairing(code, input) } } }) };
-});
 
 import { POST } from "../route";
 
@@ -32,7 +36,10 @@ function approve(pairingCode = "123456", proof: Record<string, string> = {}): Pr
 // t707 C2: approving a pairing whose browser has gone away must tell the
 // person why, not report success and not a generic "not found".
 describe("POST /api/client-gateway/approve-pairing", () => {
-  beforeEach(() => { fixture.approvePairing = async () => null; });
+  beforeEach(() => {
+    fixture.approvePairing = async () => null;
+    fixture.released = 0;
+  });
 
   it("reports the gateway's reason when the pairing's client is no longer waiting", async () => {
     const message = "The browser disconnected before this pairing was approved. Reconnect from the browser to get a new code.";
@@ -50,6 +57,7 @@ describe("POST /api/client-gateway/approve-pairing", () => {
     const failure: unknown = await approve().then(() => null, (error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain("disk full");
+    expect(fixture.released).toBe(1);
   });
 
   it("returns the paired session on success", async () => {
@@ -59,6 +67,7 @@ describe("POST /api/client-gateway/approve-pairing", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, payload: { session: { sessionId: "session.1", status: "ready" } } });
+    expect(fixture.released).toBe(1);
   });
 
   it("does not require or consume legacy password fields for an authenticated approval", async () => {

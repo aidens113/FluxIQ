@@ -95,12 +95,31 @@ export const STEPS = Object.freeze({
   ...library("client-gateway-websocket"),
   ...library("sdk"),
   ...library("ui-components"),
+  // The cloud package compiles like a library but emits no declaration rewrite:
+  // its consumers are its own command line (`dist/cli/bin.js`) and the panel's
+  // Docker tooling, which import `dist/index.js` directly.
+  "cloud:build": {
+    package: "packages/cloud",
+    kind: "build",
+    command: LIBRARY_COMPILE,
+    outputs: [{ path: "dist" }, { path: "tsconfig.build.tsbuildinfo" }],
+    required: ["dist/index.js", "dist/index.d.ts", "dist/cli/bin.js"],
+    tsconfigs: ["tsconfig.build.json"],
+    env: ["NODE_ENV"]
+  },
+  "cloud:check": {
+    package: "packages/cloud",
+    kind: "check",
+    command: INCREMENTAL_CHECK,
+    tsconfigs: ["tsconfig.json"],
+    env: ["NODE_ENV"]
+  },
   "web:build": {
     package: "apps/web",
     kind: "build",
     // The last command fails the step when the server output still embeds
     // Core's unstamped runtime identity, i.e. compiled Core from source.
-    command: "node scripts/build-client-gateway-server.mjs && next build --turbopack && node ../../scripts/web-build/identity/check-web-build.mjs",
+    command: "node scripts/build-client-gateway-server.mjs && node scripts/next-build/run-next-build.mjs && node ../../scripts/web-build/identity/check-web-build.mjs",
     // `.next/cache` is Next's own compile and fetch cache, not the build: it
     // survives a build, is never restored and never digested.
     outputs: [{ path: ".next", exclude: ["cache"] }, { path: ".server-runtime" }],

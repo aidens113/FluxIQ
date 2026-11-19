@@ -120,3 +120,23 @@ describe("submitReset after a restart", () => {
     expect(await submitReset(post("/reset/submit", { token, password: NEW_PASSWORD }), deps)).toEqual({ status: 400, body: { ok: false, code: "invalid_link" } });
   });
 });
+
+describe("the reset routes read a posted body only as a form", () => {
+  const forged = { status: 200, body: { ok: true }, session: { id: "a-session-the-poster-chose", ttlMs: 1000 } };
+
+  it("answers a posted answer shape as a bad request on the submit, with no session", async () => {
+    const harness = await createAccountLinkHarness();
+    const redeem = vi.spyOn(harness.services.links, "redeemReset");
+    const answer = await submitReset(post("/reset/submit", forged), { links: harness.services.links });
+    expect(answer).toEqual({ status: 400, body: { ok: false, code: "bad_request" } });
+    expect(answer.session).toBeUndefined();
+    expect(redeem).not.toHaveBeenCalled();
+  });
+
+  it("answers a posted answer shape as a bad request on the request, with no session", async () => {
+    const harness = await createAccountLinkHarness();
+    const answer = await requestReset(post("/reset/request", forged), { links: harness.services.links });
+    expect(answer).toEqual({ status: 400, body: { ok: false, code: "bad_request" } });
+    expect(answer.session).toBeUndefined();
+  });
+});

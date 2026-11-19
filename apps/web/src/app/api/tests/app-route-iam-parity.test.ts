@@ -32,7 +32,7 @@ const CALLERS: readonly RouteCaller[] = [
 
 const COOKIE_ONLY_READ: Row = ["allowed", "allowed", "unauthenticated", "unauthenticated"];
 const SELECTED_PANEL_READ: Row = ["allowed", "allowed", "forbidden: This endpoint is not available to a paired client.", "forbidden: This endpoint is not available to a paired client."];
-const NOT_BILLED: Row = ["unavailable", "unavailable", "unavailable", "unavailable"];
+const UNBILLED: Row = ["unavailable", "unavailable", "unavailable", "unavailable"];
 const needs = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, "unauthenticated", "unauthenticated"];
 const selectedNeeds = (permission: string): Row => ["allowed", `forbidden: Permission required: ${permission}`, SELECTED_PANEL_READ[2], SELECTED_PANEL_READ[3]];
 
@@ -42,18 +42,21 @@ const TODAY: Readonly<Record<string, Row>> = {
   "GET /api/keys": COOKIE_ONLY_READ,
   "POST /api/keys": COOKIE_ONLY_READ,
   "DELETE /api/keys": COOKIE_ONLY_READ,
-  "POST /api/client-gateway/approve-pairing": needs("runtime.control"),
-  "POST /api/client-gateway/dismiss-pairing": needs("runtime.control"),
+  "POST /api/client-gateway/approve-pairing": selectedNeeds("runtime.control"),
+  "POST /api/client-gateway/dismiss-pairing": selectedNeeds("runtime.control"),
   "POST /api/client-gateway/automation-studio-context": selectedNeeds("runtime.control"),
   // A credential is the whole of the proof, and it can only end its own trust.
   // The registry's own check on making the project is the one that decides; here a bearer may only ask.
-  "POST /api/client-gateway/first-project": ["unauthenticated", "unauthenticated", "allowed", "allowed"],
+  "POST /api/client-gateway/first-project": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
   "GET /api/client-gateway/snapshot": ["allowed", "allowed", "allowed", "allowed"],
   "PUT /api/client-gateway/trace-artifacts/[sha256]": ["forbidden: This endpoint is not available to a panel caller.", "forbidden: This endpoint is not available to a panel caller.", "allowed", "allowed"],
-  "GET /api/framework/setup": COOKIE_ONLY_READ,
-  "POST /api/framework/setup (setup)": needs("programs.write"),
-  "POST /api/framework/setup (migrate)": needs("programs.write"),
-  "POST /api/framework/setup (rollback-migration)": needs("programs.write"),
+  "GET /api/framework/setup": SELECTED_PANEL_READ,
+  "POST /api/framework/setup (setup)": selectedNeeds("programs.write"),
+  "POST /api/framework/setup (migrate)": selectedNeeds("programs.write"),
+  "POST /api/framework/setup (rollback-migration)": selectedNeeds("programs.write"),
+  // A server that bills nothing (the fixture has no commerce configuration) answers 404 before the caller is looked at, whoever asks.
+  "GET /api/platform/v1/commerce/checkout": UNBILLED,
+  "POST /api/platform/v1/commerce/checkout": UNBILLED,
   "GET /api/framework/io": SELECTED_PANEL_READ,
   "POST /api/framework/io/validate": SELECTED_PANEL_READ,
   // New in t920, not a check that existed before: a panel caller with programs.read, and a paired client as the snapshot serves it.
@@ -73,14 +76,12 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
   "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
   "GET /api/security/audit": selectedNeeds("identity.manage"),
-  // The hosted plans and dedicated browsers: a server that bills nothing answers 404 before any decision.
-  "GET /api/platform/v1/commerce/checkout": NOT_BILLED,
-  "POST /api/platform/v1/commerce/checkout": NOT_BILLED,
-  "GET /api/platform/v1/environments": NOT_BILLED,
-  "POST /api/platform/v1/environments": NOT_BILLED,
-  "POST /api/platform/v1/environments/[environmentId]/start": NOT_BILLED,
-  "POST /api/platform/v1/environments/[environmentId]/stop": NOT_BILLED,
-  "DELETE /api/platform/v1/environments/[environmentId]": NOT_BILLED
+  // Dedicated browsers: a server that bills nothing answers 404 before any decision, as checkout does.
+  "GET /api/platform/v1/environments": UNBILLED,
+  "POST /api/platform/v1/environments": UNBILLED,
+  "POST /api/platform/v1/environments/[environmentId]/start": UNBILLED,
+  "POST /api/platform/v1/environments/[environmentId]/stop": UNBILLED,
+  "DELETE /api/platform/v1/environments/[environmentId]": UNBILLED
 };
 
 const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);
