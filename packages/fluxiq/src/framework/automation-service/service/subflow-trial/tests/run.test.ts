@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
+import { AutomationStudioHostLeaseAuthority, AutomationStudioHostLeaseScope, AutomationStudioHostResourceScheduler } from "../../../../../runtime/project-agents/host-resources/index.ts";
 import { StubHost } from "../../../../../runtime/project-agents/host-resources/tests/stub-host.ts";
 import type { AutomationStudioPrepareCandidateStart } from "../../candidate-trial/index.ts";
 import { runAutomationStudioSubflowTrial } from "../index.ts";
@@ -141,19 +141,37 @@ describe("one subflow partial trial", () => {
     expect(f.judged).toHaveLength(1);
   });
 
-  it("hands the start hook the brief's host lease under one, and no lease outside any (A11)", async () => {
+  // The trial reads its lease through the instance's bound lease authority, never the ambient scope (t911): the
+  // build's environment carries `leaseBinding` into these ports, and the brief's lease scope is bound to the same one.
+  function hooked() {
     const seen: Array<Parameters<AutomationStudioPrepareCandidateStart>[0]> = [];
     const f = fixture();
     f.ports.prepareStart = async (input) => {
       seen.push(input);
       return { reset: input.lease?.resourceKey ?? "everything" };
     };
-    const leases = new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 2 })));
-    const leased = await leases.run({ role: "subflow_builder", briefId: "brief.add" }, async (lease) => ({ lease, outcome: await runAutomationStudioSubflowTrial(f.request(), f.ports) }));
+    const binding = AutomationStudioHostLeaseAuthority.for({}).forDomain("synthetic.domain");
+    const scope = (bound?: typeof binding) => new AutomationStudioHostLeaseScope(new AutomationStudioHostResourceScheduler(new StubHost({ capacity: 2 })), bound ? { binding: bound } : {});
+    return { seen, f, binding, scope };
+  }
+
+  it("hands the start hook the brief's host lease under one, and no lease outside any (A11)", async () => {
+    const { seen, f, binding, scope } = hooked();
+    f.ports.leaseBinding = binding;
+    const leased = await scope(binding).run({ role: "subflow_builder", briefId: "brief.add" }, async (lease) => ({ lease, outcome: await runAutomationStudioSubflowTrial(f.request(), f.ports) }));
     expect(seen[0]!.lease).toEqual(leased.lease);
     expect(leased.outcome.record.start).toEqual({ status: "reset", result: { reset: leased.lease.resourceKey } });
     const bare = await runAutomationStudioSubflowTrial(f.request(), f.ports);
     expect("lease" in seen[1]!).toBe(false);
     expect(bare.record.start).toEqual({ status: "reset", result: { reset: "everything" } });
+  });
+
+  it("runs no start hook under a lease scope when the trial holds no bound lease authority, so it cannot reset past its own resource (A11, t911)", async () => {
+    const { seen, f, scope } = hooked();
+    const outcome = await scope().run({ role: "subflow_builder", briefId: "brief.add" }, async () => await runAutomationStudioSubflowTrial(f.request(), f.ports));
+    expect(seen).toEqual([]);
+    expect(outcome.record.start).toMatchObject({ status: "failed", code: "candidate.trial_start_lease_unbound" });
+    expect(outcome.record.execution).toBe("not_run");
+    expect(f.pressed).toEqual([]);
   });
 });
