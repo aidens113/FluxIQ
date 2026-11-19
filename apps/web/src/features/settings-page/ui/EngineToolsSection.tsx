@@ -6,12 +6,12 @@ import { ENGINE_TOOLS, type EngineTool } from "../model";
 export function EngineToolsSection(props: { tools?: readonly EngineTool[] }) {
   const tools = props.tools ?? ENGINE_TOOLS;
   return (
-    <details className="settings-advanced">
+    <details className="settings-advanced disclosure">
       <summary>Advanced</summary>
       <h2 id="settings-engine-tools">Engine tools</h2>
       <p>The engine&rsquo;s own tools, for when you need to look under the hood. You never need them to build or run a Flow.</p>
       <ul aria-labelledby="settings-engine-tools">
-        {tools.map((tool) => <li key={tool.id}><a href={tool.href}>{tool.name}</a> <span>{tool.explanation}</span></li>)}
+        {tools.map((tool) => <li key={tool.id}><a href={tool.href} aria-label={tool.name}>{tool.name}</a> <span>{tool.explanation}</span></li>)}
       </ul>
     </details>
   );

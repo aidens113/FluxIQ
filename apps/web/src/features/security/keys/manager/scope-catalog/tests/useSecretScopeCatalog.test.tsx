@@ -104,7 +104,7 @@ it("HTTP refusal does not parse private directory body or claim empty success", 
   const client = api();
   await mount(client);
   expect(json).not.toHaveBeenCalled();
-  expect(current.error).toBe("Scope choices could not be loaded. Try again.");
+  expect(current.error).toBe("The choices could not be loaded. Try again.");
   expect(current.loading).toBe(false);
  vi.mocked(fetch).mockResolvedValue({ ok: true, json: async () => ({ domains: [] }) } as unknown as Response);
   await act(async () => current.retryCatalog());

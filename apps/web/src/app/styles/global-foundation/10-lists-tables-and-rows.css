@@ -218,6 +218,10 @@
   padding: 5px 9px;
 }
 
+.field-row select {
+  min-height: var(--select-height);
+}
+
 .dense-fields {
   align-items: end;
 }

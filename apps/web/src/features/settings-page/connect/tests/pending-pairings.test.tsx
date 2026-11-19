@@ -21,11 +21,11 @@ afterEach(() => vi.unstubAllGlobals());
 const labels = (renderer: ReturnType<typeof create>) => renderer.root.findAll((node) => node.type === "button").map((node) => node.children.join(""));
 
 describe("PendingPairings with the confirmation dialog", () => {
-  it("offers Approve and Dismiss for every request while the dialog is closed", async () => {
+  it("offers Approve and Decline for every request while the dialog is closed", async () => {
     stubDialog(null);
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(createElement(PendingPairings, { requests, onDone: () => undefined })); });
-    expect(labels(renderer)).toEqual(["Approve", "Dismiss", "Approve", "Dismiss"]);
+    expect(labels(renderer)).toEqual(["Approve", "Decline", "Approve", "Decline"]);
   });
 
   it("shows the request the dialog is asking about as handled there, and keeps the other answerable", async () => {
@@ -33,6 +33,6 @@ describe("PendingPairings with the confirmation dialog", () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(createElement(PendingPairings, { requests, onDone: () => undefined })); });
     expect(JSON.stringify(renderer.toJSON())).toContain("Being handled in the confirmation dialog.");
-    expect(labels(renderer)).toEqual(["Approve", "Dismiss"]);
+    expect(labels(renderer)).toEqual(["Approve", "Decline"]);
   });
 });

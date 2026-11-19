@@ -1,12 +1,11 @@
 // The chat's "Open FluxIQ" control in this panel: a button that goes to the
 // screen where the question can be finished, in this window and never a new
 // tab, named for where it goes: this panel is FluxIQ, so "Open FluxIQ" would say
-// nothing. A model key to add goes to the Keys page under Security; a question only
+// nothing. An AI key to add goes to AI keys in Settings; a question only
 // the Studio can show goes to the project's Flows.
 
 import { createElement, type ChatOpenControl, type ChatOpenControlFactory } from "@fluxiq/ui-components";
-
-const SECRET_KEYS_HREF = "/security/keys";
+import { AI_KEYS_HREF } from "../../model-keys";
 
 /** Where a project's Flows open: the Flows screen, which reads `?project=`. */
 function studioHref(projectId: string | undefined): string {
@@ -20,10 +19,10 @@ export function createPanelOpenControl(navigate: (href: string) => void): ChatOp
     const element = createElement("button", {
       className: style.look === "small" ? "small-button open-fluxiq-link" : "link-button open-fluxiq-link",
       attrs: { type: "button" }
-    }, [style.purpose === "model-key" ? "Add a model key" : "Open the Studio"]);
+    }, [style.purpose === "model-key" ? "Add an AI key" : "Open the Studio"]);
     element.addEventListener("click", () => {
       if (style.canOpen && !style.canOpen()) return;
-      navigate(style.purpose === "model-key" ? SECRET_KEYS_HREF : studioHref(projectId));
+      navigate(style.purpose === "model-key" ? AI_KEYS_HREF : studioHref(projectId));
     });
     return { element, observe: (status) => void (projectId = status.projectId) };
   };

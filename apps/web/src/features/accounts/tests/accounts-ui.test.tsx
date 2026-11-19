@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { AccountsAdmin, InviteForm, MemberActions, PendingInvites, ProofForm, type AccountsOutcome, type MemberRow, type MembersView } from "..";
+import { AccountsAdmin, InviteForm, MemberActions, PendingInvites, ProofForm, TwoStepContext, type AccountsOutcome, type MemberRow, type MembersView } from "..";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,16 +129,59 @@ describe("InviteForm", () => {
     act(() => { password?.props.onChange({ target: { value: "dummy password" } }); });
     await act(async () => { await renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
     expect(onInvite).toHaveBeenCalledWith({ email: "new@example.test", displayName: "New Person", role: "read-only" }, { password: "dummy password" });
-    expect(text(renderer)).toContain("Invite sent to new@example.test");
+    expect(text(renderer)).toContain("Invite created for new@example.test.");
     expect(text(renderer)).not.toMatch(/token|https?:\/\//u);
+    expect(text(renderer)).not.toContain("email was");
+    expect(text(renderer)).not.toContain("Invite sent");
+    expect(text(renderer)).not.toContain("Copy link");
+  });
+
+  it("offers Copy link only when the answer carries the invite link", async () => {
+    const onInvite = vi.fn(async (): Promise<AccountsOutcome> => ({ kind: "done", link: "https://panel.test/welcome?x=1" }));
+    const renderer = render(createElement(InviteForm, { roles: ["administrator", "read-only"], onInvite, onDone: () => undefined }));
+    const [email, name] = renderer.root.findAllByType("input");
+    act(() => {
+      email?.props.onChange({ target: { value: "new@example.test" } });
+      name?.props.onChange({ target: { value: "New Person" } });
+    });
+    await act(async () => { renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
+    const [password] = renderer.root.findAllByType("input");
+    act(() => { password?.props.onChange({ target: { value: "dummy password" } }); });
+    await act(async () => { await renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
+    expect(text(renderer)).toContain("Invite created for new@example.test.");
+    expect(renderer.root.findAllByType("button").some((button) => button.props.children === "Copy link")).toBe(true);
   });
 });
 
 describe("ProofForm", () => {
   it("asks again when the server wants the credentials re-proved", async () => {
-    const renderer = render(createElement(ProofForm, { question: "Sure?", confirmLabel: "Go", onConfirm: async () => ({ kind: "needs-proof" as const, message: "That password, PIN or code was not accepted." }), onDone: () => undefined, onCancel: () => undefined }));
+    const renderer = render(createElement(ProofForm, { question: "Sure?", confirmLabel: "Go", onConfirm: async () => ({ kind: "needs-proof" as const, message: "That password or code was not accepted." }), onDone: () => undefined, onCancel: () => undefined }));
     await act(async () => { await renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
     expect(text(renderer)).toContain("was not accepted");
+  });
+
+  it("asks for the password only, with no PIN box and no authenticator code unless two-step sign-in is on", async () => {
+    const onConfirm = vi.fn(async (): Promise<AccountsOutcome> => ({ kind: "done" }));
+    const renderer = render(createElement(ProofForm, { question: "Sure?", confirmLabel: "Go", onConfirm, onDone: () => undefined, onCancel: () => undefined }));
+    expect(renderer.root.findAllByType("input")).toHaveLength(1);
+    expect(text(renderer)).not.toMatch(/\bPIN\b|authenticator/iu);
+    const [password] = renderer.root.findAllByType("input");
+    act(() => { password?.props.onChange({ target: { value: "dummy password" } }); });
+    await act(async () => { await renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
+    expect(onConfirm).toHaveBeenCalledWith({ password: "dummy password" });
+  });
+
+  it("also asks for the authenticator code when the person has two-step sign-in on", async () => {
+    const onConfirm = vi.fn(async (): Promise<AccountsOutcome> => ({ kind: "done" }));
+    const renderer = render(createElement(TwoStepContext.Provider, { value: true }, createElement(ProofForm, { question: "Sure?", confirmLabel: "Go", onConfirm, onDone: () => undefined, onCancel: () => undefined })));
+    const [password, code] = renderer.root.findAllByType("input");
+    expect(text(renderer)).toContain("Code from your authenticator app");
+    act(() => {
+      password?.props.onChange({ target: { value: "dummy password" } });
+      code?.props.onChange({ target: { value: "123456" } });
+    });
+    await act(async () => { await renderer.root.findByType("form").props.onSubmit({ preventDefault: () => undefined }); });
+    expect(onConfirm).toHaveBeenCalledWith({ password: "dummy password", totp: "123456" });
   });
 });
 

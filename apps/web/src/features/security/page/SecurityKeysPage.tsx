@@ -1,16 +1,21 @@
 "use client";
 
+import { PublishPanelPage } from "../../panel-shell";
 import type { CurrentUser } from "../../programs/types";
 import { TechnicalDetails } from "../../programs/technical-details";
 import { SecretKeysLive } from "../keys/manager";
-import { SecuritySubPage } from "./SecuritySubPage";
+import "../security.css";
 
-/** `/security/keys`: every stored key, managed as the Secret Keys page did, with the same confirmations. */
+/** `/settings/saved-logins` (Settings > Advanced): the logins and keys Flows use on other sites and services. AI keys are on `/settings#ai-keys`. */
 export function SecurityKeysPage(props: { user: CurrentUser }) {
   return (
-    <SecuritySubPage title="Keys" note="Every stored key, for AI and for anything else: add, replace, remove and scope. A value shows only when you reveal it, for 30 seconds.">
-      <TechnicalDetails toolId="secret-keys" title="Keys" />
+    <div className="security">
+      <PublishPanelPage page="settings" selection={{}} />
+      <a className="security-back" href="/settings">Settings</a>
+      <h1>Saved logins and keys for Flows</h1>
+      <p className="security-note">The logins and keys your Flows use on other sites and services. FluxIQ keeps each one and never shows it again. Your AI key is added in Settings, under <a href="/settings#ai-keys">AI keys</a>.</p>
+      <TechnicalDetails toolId="secret-keys" title="Saved logins and keys for Flows" />
       <SecretKeysLive currentUser={props.user} />
-    </SecuritySubPage>
+    </div>
   );
 }

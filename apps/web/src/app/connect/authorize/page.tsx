@@ -1,6 +1,7 @@
 import { LoginPanel } from "../../AuthShell";
 import { ConnectConsent, ConnectFrame } from "../../../features/connect";
 import { connectPageParams } from "../../../features/connect/model";
+import { OpenPanelLink } from "../OpenPanelLink";
 import { prepareConnectConsent } from "../../../features/connect/server";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export default async function ConnectAuthorizePage({ searchParams }: { searchPar
   </div>;
   return <ConnectFrame title="Connect your browser">
     {view.kind === "consent" ? <ConnectConsent view={view} /> : null}
-    {view.kind === "unavailable" ? <p>Hosted browser sign-in is not enabled on this server. <a href="/">Open the panel</a> to pair your browser.</p> : null}
+    {view.kind === "unavailable" ? <><p>Signing in from the browser is not switched on for this server. Pair your browser from FluxIQ instead.</p><OpenPanelLink /></> : null}
     {view.kind === "invalid" ? <p role="alert">This connection request is invalid. Start a new connection from the FluxIQ extension.</p> : null}
     {view.kind === "refused" ? <p role="alert">{view.message}</p> : null}
   </ConnectFrame>;

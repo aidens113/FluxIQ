@@ -1,5 +1,5 @@
 export { asRecord } from "./as-record";
-export { connectedRows, type ConnectedRow } from "./connected";
+export { connectedGroups, NO_REVOKED, readRevokedAccess, type ConnectedGroups, type ConnectedRow, type RevokedAccess } from "./connected";
 export { needsYouItems, type NeedsYouItem } from "./needs-you";
 export { numberOf } from "./number-of";
 export { readClients } from "./read-clients";

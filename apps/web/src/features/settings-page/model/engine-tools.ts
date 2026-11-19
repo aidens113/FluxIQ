@@ -15,10 +15,10 @@ export const SETTINGS_TOOLS: readonly EngineTool[] = Object.freeze([
   { id: "production-runner", name: "Production Runner", explanation: "Start and stop production runs.", href: "/settings/production-runner" }
 ]);
 
-/** The two engine tools that are Security's: every stored key, and the person's own sign-in. */
+/** The two Advanced tools that are about who and what you sign in as: the logins and keys your Flows use, and your own sign-in. */
 export const SECURITY_TOOLS: readonly EngineTool[] = Object.freeze([
-  { id: "secret-keys", name: "Keys", explanation: "Every stored key, including ones that are not for AI: add, replace, remove and scope.", href: "/security/keys" },
-  { id: "identity-access", name: "Your sign-in", explanation: "Password, PIN, two-factor, sessions and the credential vault.", href: "/security/sign-in" }
+  { id: "secret-keys", name: "Saved logins and keys for Flows", explanation: "The logins and keys your Flows use on other sites and services: add, replace and remove them, and choose where each is used. AI keys are added above.", href: "/settings/saved-logins" },
+  { id: "identity-access", name: "Your sign-in", explanation: "Your password, two-step sign-in and the places you are signed in.", href: "/security/sign-in" }
 ]);
 
 /** Every engine tool, in the order Settings lists them. */

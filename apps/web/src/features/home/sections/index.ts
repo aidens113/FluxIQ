@@ -1,3 +1,4 @@
+export { HomeAiKey } from "./HomeAiKey";
 export { HomeConnected } from "./HomeConnected";
 export { HomeEngine } from "./HomeEngine";
 export { HomeNeedsYou } from "./HomeNeedsYou";

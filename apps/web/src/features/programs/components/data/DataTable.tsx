@@ -35,7 +35,7 @@ export function DataTable(props: {
           ) : (
             <tr>
               <td className="empty-cell" colSpan={props.columns.length}>
-                {props.loading ? "Loading rows..." : props.empty ?? "No data available."}
+                {props.loading ? "Loading rows…" : props.empty ?? "No data available."}
               </td>
             </tr>
           )}

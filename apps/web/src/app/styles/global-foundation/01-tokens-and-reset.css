@@ -37,6 +37,8 @@
   --control-height-default: 32px;
   --control-height-comfortable: 38px;
   --control-size-icon: 32px;
+  /* The one height of every select in the panel: no list is taller or shorter than another beside it. */
+  --select-height: 36px;
   --border-width: 1px;
   --border-width-strong: 2px;
   --radius-small: 2px;
@@ -117,6 +119,7 @@ a {
 }
 
 :where(select) {
+  min-height: var(--select-height);
   max-width: 100%;
   appearance: none;
   padding-right: var(--space-xl);

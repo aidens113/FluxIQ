@@ -5,7 +5,7 @@ const PANEL_CHANGES_URL = "/api/panel/changes";
 /** `EventSource.CLOSED`: the browser will not re-open this stream by itself. */
 const CLOSED = 2;
 
-const EVENT_TYPES: readonly PanelChangeEventType[] = ["gateway", "conversation", "activity"];
+const EVENT_TYPES: readonly PanelChangeEventType[] = ["gateway", "conversation", "activity", "model-access"];
 
 type Parsed = { version: number; id?: string };
 
@@ -24,7 +24,7 @@ function parsed(type: PanelChangeEventType, data: unknown): Parsed {
   if (value === null || typeof value !== "object") throw new UnreadableChange();
   const record = value as Record<string, unknown>;
   if (typeof record.version !== "number" || !Number.isInteger(record.version)) throw new UnreadableChange();
-  if (type === "gateway") return { version: record.version };
+  if (type === "gateway" || type === "model-access") return { version: record.version };
   const id = type === "conversation" ? record.conversationId : record.projectId;
   if (typeof id !== "string" || id === "") throw new UnreadableChange();
   return { version: record.version, id };
@@ -33,7 +33,7 @@ function parsed(type: PanelChangeEventType, data: unknown): Parsed {
 /**
  * The page's one subscription to `GET /api/panel/changes`, shared by every
  * reader: the pairing prompt and the client lists (the gateway), the chat's
- * threads (conversations) and its live activity. One stream per page,
+ * threads (conversations), its live activity and the AI key's state (`model-access`). One stream per page,
  * however many readers there are.
  *
  * Nothing here runs on a timer. Each reader is told when to read: once when
@@ -142,6 +142,7 @@ export class PanelChangeConnection implements PanelChangesPort {
     this.lastVersion = event.version;
     const id = event.id ?? "";
     if (type === "gateway") this.tell((listener) => listener.gateway?.());
+    else if (type === "model-access") this.tell((listener) => listener.modelAccess?.());
     else if (type === "conversation") this.tell((listener) => listener.conversation?.(id));
     else this.tell((listener) => listener.activity?.(id));
   }
