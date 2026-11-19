@@ -26,17 +26,17 @@ export class IamRecords {
     return envelope === null ? null : (envelope.data as unknown as T);
   }
 
+  /** One repository operation: `put` keeps an existing row's `createdAtMs` itself, so no read comes first. */
   async put(kind: string, key: string, data: object): Promise<void> {
     const id = this.id(kind, key);
     const scope = this.scope();
-    const existing = await this.repository.get(id, scope);
     const nowMs = this.now();
     await this.repository.put({
       id,
       scope,
       kind: `iam.${kind}`,
       data: data as unknown as JsonObject,
-      createdAtMs: existing?.createdAtMs ?? nowMs,
+      createdAtMs: nowMs,
       updatedAtMs: nowMs
     });
   }
