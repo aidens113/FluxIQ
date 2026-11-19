@@ -4,6 +4,7 @@
 // server without Next.js answers it exactly as the web panel does.
 export * from "./handle-program-request.ts";
 export type { ProgramRouteIdentityAuthority } from "./identity-authority.ts";
+export * from "./paired-client-actor.ts";
 export * from "./paired-client-project-domain.ts";
 export * from "./person-domain-scope.ts";
 export * from "./present-panel-session.ts";

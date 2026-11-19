@@ -6,8 +6,9 @@
 // Real program runtime, in memory; dummy values only; no provider calls.
 //
 // The paired client's actor is what `server/program-route` builds for one,
-// with `secrets.manage` kept: the route's PAIRED_CLIENT_PERMISSIONS must keep
-// it for a client to reach these writes at all (key-writes report, Round 2).
+// on these writes (`pairedClientEndpointActor`), with `secrets.manage` kept:
+// only those three endpoints' actor carries it, never the generic paired cap
+// (t955), and a client reaches these writes only through it.
 
 import { describe, expect, it, vi } from "vitest";
 import { createGlobalProgramRuntime } from "../../../index.ts";

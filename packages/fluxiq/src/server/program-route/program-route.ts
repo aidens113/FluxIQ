@@ -1,4 +1,5 @@
 import { pairedClientModelAccessState, readModelAccessState, readModelKeyAvailability, type ModelAccessState } from "@fluxiq/contracts/platform";
+import type { PairedClientSession } from "./paired-client-actor.ts";
 
 const SESSION_BOUND_PROGRAMS = new Set(["identity-access", "database-manager", "deployment-sync", "automation-studio", "secret-keys"]);
 
@@ -51,9 +52,12 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 //   settings is the confirmation, IAM decides whether they may, and only the
 //   key their own calls use, which they added, can be removed this way.
 // - **Only the permissions these endpoints need.** The actor carries the
-//   approving person's role permissions intersected with the five the
+//   approving person's role permissions intersected with the four the
 //   allowlist uses, so a token never holds `identity.manage` or `data.manage`,
-//   whatever the person's role. Where an allowlisted endpoint's body could
+//   whatever the person's role. An endpoint that needs one more names it
+//   itself (`PAIRED_CLIENT_ENDPOINT_PERMISSIONS` in `paired-client-actor.ts`:
+//   `secrets.manage` on the three model-key writes, t955), and only that
+//   endpoint's actor carries it. Where an allowlisted endpoint's body could
 //   still reach further -- an LLM, an inline Flow, a side-effect authorization,
 //   another reviewer -- `narrowPairedClientRequest` refuses that field, and
 //   where its answer holds more than a token should read,
@@ -199,20 +203,6 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
   ]),
 });
 
-/**
- * The permissions a paired client's actor may hold: exactly those the
- * allowlisted endpoints require. `flows.write` is here only because the
- * recording proposal and its review, a task's carry-on and Run again, saving a
- * part and a Flow's humanness (`update-flow-settings`) require it, and each of
- * those is narrowed so it reaches nothing else of a Flow. `secrets.manage` is
- * here only because the person's own model key (save, replace and remove-model-key)
- * requires it. It reaches no other key endpoint: the allowlist above names
- * none, and the route refuses a token on an endpoint it does not name before
- * IAM is asked. Only a role that holds `secrets.manage` keeps it, so a member's
- * client is refused those three by IAM, exactly as the member's login is.
- */
-const PAIRED_CLIENT_PERMISSIONS: readonly string[] = ["programs.read", "programs.write", "runtime.control", "flows.write", "secrets.manage"];
-
 /** The registry classifications a token call may reach. Anything destructive or credential-gated is refused. */
 const PAIRED_CLIENT_CLASSIFICATIONS: readonly string[] = ["read", "authoring"];
 
@@ -263,50 +253,12 @@ export function readBearerToken(header: string | null): string | null {
   return match?.[1]?.trim() || null;
 }
 
-type PairedSession = {
-  sessionId: string;
-  operatorUserId?: string;
-  metadata?: Record<string, unknown>;
-};
-
-type IdentityDirectory = {
-  users: ReadonlyArray<{ id: string; roleId: string; enabled: boolean }>;
-  roles: ReadonlyArray<{ id: string; permissions: readonly string[] }>;
-};
-
-type PairedClientActor<TPermission extends string> = {
-  sessionId: string;
-  userId: string;
-  roleId: string;
-  permissions: TPermission[];
-  channel: "paired-client";
-};
-
-/**
- * The actor a paired client's call runs as: the person who approved the
- * pairing, with their role's permissions narrowed to the allowlist's, on the
- * `paired-client` channel (under the `service` profile the registry then
- * narrows it by those permissions as well as its person's policies). Null when
- * that person is gone, disabled or roleless, so disabling a person takes their
- * paired clients' reach with them.
- */
-export function pairedClientActor<TPermission extends string>(session: PairedSession, directory: IdentityDirectory): PairedClientActor<TPermission> | null {
-  const userId = session.operatorUserId;
-  if (!userId) return null;
-  const user = directory.users.find((candidate) => candidate.id === userId);
-  if (!user?.enabled) return null;
-  const role = directory.roles.find((candidate) => candidate.id === user.roleId);
-  if (!role) return null;
-  const permissions = role.permissions.filter((permission) => PAIRED_CLIENT_PERMISSIONS.includes(permission)) as TPermission[];
-  return { sessionId: `client-gateway:${session.sessionId}`, userId, roleId: role.id, permissions, channel: "paired-client" };
-}
-
 /**
  * The domain a paired client's call is scoped to: the one its session declared
  * when it connected. Undefined when the URL names a different one, which the
  * route refuses.
  */
-export function pairedClientDomainScope(requestUrl: string, session: PairedSession): { domainId: string | null } | undefined {
+export function pairedClientDomainScope(requestUrl: string, session: PairedClientSession): { domainId: string | null } | undefined {
   const declared = session.metadata?.domainId;
   const domainId = typeof declared === "string" && declared.trim() ? declared.trim() : null;
   const requested = programDomainScope(requestUrl).domainId;

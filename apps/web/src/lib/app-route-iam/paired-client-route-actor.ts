@@ -6,11 +6,13 @@ type IdentityDirectory = Parameters<typeof pairedClientActor>[1];
 type Permission = AppRouteActor["permissions"][number];
 
 /**
- * What a paired client may carry on an app route. The program route's paired
- * cap also holds `secrets.manage`, for the three model-key writes its own
- * allowlist names (t928); no app route a paired client may call needs it, so
- * it stops here instead of riding along unused. `tests/contracts.test.ts`
- * fails if a route accepting `paired-client` ever asks for more than this set.
+ * What a paired client may carry on an app route. Core's generic paired cap
+ * (`pairedClientActor`) is these four since t955; `secrets.manage` rides only
+ * on the program route's three model-key writes (`pairedClientEndpointActor`),
+ * never on an actor built here. This set still narrows on its own, so a
+ * permission Core's cap gains later stops here until an app route needs it.
+ * `tests/contracts.test.ts` fails if a route accepting `paired-client` ever
+ * asks for more than this set.
  */
 export const APP_ROUTE_PAIRED_CLIENT_PERMISSIONS: readonly Permission[] = ["programs.read", "programs.write", "runtime.control", "flows.write"];
 
