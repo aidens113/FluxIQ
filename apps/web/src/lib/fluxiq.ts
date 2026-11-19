@@ -353,13 +353,16 @@ function createWebRuntimeState(): WebRuntimeState {
     ...iamOf(primaryId),
     ...(tenancy === "multi" ? { clientGatewayTrustedClientStore: (paths: FluxIQ["paths"]) => getBrowserTrustRepository(paths.fluxiq).scopedStore(primaryId) } : {})
   }));
+  // The platform's identity directory, where every tenant's people sign in.
+  const platformIdentity = async () => (await getFluxIQAfterReload()).programs.identityAccess;
   const tenantOptions = ({ workspaceId, heldKeys, primary }: { workspaceId: string; heldKeys: HeldKeys; primary: FluxIQ }) => ({
     workspaceId, heldKeys, dataRoot: primary.paths.root, ...iamOf(workspaceId),
     clientGatewayTrustedClientStore: getBrowserTrustRepository(primary.paths.fluxiq).scopedStore(workspaceId),
     clientGatewayTrustAuthority: createWorkspaceTrustAuthority(workspaceId),
     clientGatewaySessionMetadata: createWorkspaceSessionMetadata(workspaceId),
     secretKeyPrincipalAuthority: workspaceKeyPrincipalAuthority(workspaceId),
-    secretKeyIdentityAuthority: async () => (await getFluxIQAfterReload()).programs.identityAccess,
+    secretKeyIdentityAuthority: platformIdentity,
+    identityDirectory: platformIdentity,
     instantiate: createTenantFluxIQInstance
   });
   const workspaces = new FluxIQWorkspaceManager({

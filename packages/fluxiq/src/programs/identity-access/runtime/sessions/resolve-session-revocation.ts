@@ -1,11 +1,14 @@
 // Who may revoke a panel session, and who the revoke is announced as.
 //
-// A session is named by its raw id (a sign-out presents its own cookie) or, by
-// an administrator only, by the digest the panel lists (`snapshot`), so no raw
-// id ever has to leave the server. A revoker who is not an administrator may
-// revoke only a session of their own. With no revoker, the presenter of a raw
-// id is taken to be its bearer, and the revoke is announced as the session's
-// own user; when the session is unknown here, nobody vouches for it.
+// A session is named by its raw id (a sign-out presents its own cookie) or by
+// the digest a listing shows (`snapshot`), so no raw id ever has to leave the
+// server. A digest is taken from an administrator, or from the session's own
+// user (a hosted person signs their own sessions out from the list of their
+// own, `IdentityDirectoryDelegation`); never from a revoker nobody named. A
+// revoker who is not an administrator may revoke only a session of their own.
+// With no revoker, the presenter of a raw id is taken to be its bearer, and the
+// revoke is announced as the session's own user; when the session is unknown
+// here, nobody vouches for it.
 
 import type { IdentitySessionRevoker, IdentitySessionTarget } from "../../types.ts";
 import { digestSessionId } from "../session-digest.ts";
@@ -21,11 +24,12 @@ export function resolveSessionRevocation(
 ): { digest: string; presented: string | undefined; revoker: IdentitySessionRevoker } {
   const presented = typeof target === "string" ? target : undefined;
   const digest = presented === undefined ? (target as { digest: string }).digest : digestSessionId(presented);
-  if (presented === undefined && (revoker?.administrator !== true || !SESSION_DIGEST.test(digest))) {
+  const ownerUserId = sessions.get(digest)?.userId ?? null;
+  const ownSession = revoker !== undefined && revoker.userId !== null && revoker.userId === ownerUserId;
+  if (presented === undefined && (!SESSION_DIGEST.test(digest) || (revoker?.administrator !== true && !ownSession))) {
     throw new Error("Only an administrator can revoke a session by its digest");
   }
-  const ownerUserId = sessions.get(digest)?.userId ?? null;
-  if (revoker && !revoker.administrator && (revoker.userId === null || revoker.userId !== ownerUserId)) {
+  if (revoker && !revoker.administrator && !ownSession) {
     throw new Error("Only the session's own user or an administrator can revoke it");
   }
   return { digest, presented, revoker: revoker ?? { userId: ownerUserId, administrator: false } };

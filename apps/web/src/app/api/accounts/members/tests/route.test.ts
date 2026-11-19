@@ -30,7 +30,8 @@ describe("selected workspace members read", () => {
     const a = await GET(routeRequest());
     const viewA = (await a.json()).payload;
     expect(viewA.members.map((row: { userId: string }) => row.userId).sort()).toEqual(["member-a", "person-a"]);
-    expect(viewA).toMatchObject({ readOnly: true, canRemove: false, assignableRoles: ["administrator", "read-only", "member"] });
+    // An organisation's members are administered one membership at a time; removal waits on the panel's wording.
+    expect(viewA).toMatchObject({ workspaceKind: "organisation", readOnly: false, canRemove: false, assignableRoles: ["administrator", "read-only", "member"] });
     await readRuntime.store.putMembership(membership("tenant-a", "person-a", { status: "removed" }));
     const b = await GET(routeRequest());
     const viewB = (await b.json()).payload;

@@ -63,13 +63,21 @@ describe("IdentityAccessService.revokeSession revoker", () => {
     ]);
   });
 
-  it("refuses another user, and a digest from anyone but an administrator, leaving the session live", async () => {
+  it("refuses another user, and a digest from anyone but an administrator or the session's own user, leaving the session live", async () => {
     const { service, told, target, digestOf } = await setup();
     await expect(service.revokeSession(target.session.id, { userId: "caller.admin", administrator: false })).rejects.toThrow("Only the session's own user or an administrator can revoke it");
-    await expect(service.revokeSession({ digest: await digestOf("target.viewer") }, { userId: "target.viewer", administrator: false })).rejects.toThrow("Only an administrator can revoke a session by its digest");
+    await expect(service.revokeSession({ digest: await digestOf("target.viewer") }, { userId: "caller.admin", administrator: false })).rejects.toThrow("Only an administrator can revoke a session by its digest");
+    await expect(service.revokeSession({ digest: await digestOf("target.viewer") }, { userId: null, administrator: false })).rejects.toThrow("Only an administrator can revoke a session by its digest");
     await expect(service.revokeSession({ digest: await digestOf("target.viewer") })).rejects.toThrow("Only an administrator can revoke a session by its digest");
     await expect(service.validateSession(target.session.id)).resolves.not.toBeNull();
     expect(told).toEqual([]);
+  });
+
+  it("lets the session's own user revoke it by the digest their own listing shows, announced as that user", async () => {
+    const { service, told, target, digestOf } = await setup();
+    await expect(service.revokeSession({ digest: await digestOf("target.viewer") }, { userId: "target.viewer", administrator: false })).resolves.toBe(true);
+    await expect(service.validateSession(target.session.id)).resolves.toBeNull();
+    expect(told).toEqual([[target.session.id, { userId: "target.viewer", administrator: false }]]);
   });
 
   it("announces a raw id nobody here knows to no one", async () => {
