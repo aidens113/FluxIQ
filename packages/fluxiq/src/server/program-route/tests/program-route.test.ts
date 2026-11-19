@@ -4,7 +4,6 @@ import {
   isPairedClientEndpoint,
   narrowPairedClientRequest,
   PAIRED_CLIENT_ENDPOINTS,
-  pairedClientActor,
   pairedClientDomainScope,
   pairedClientProjectTarget,
   programDomainScope,
@@ -155,40 +154,6 @@ describe("a paired client on the program route", () => {
     expect(readBearerToken("Basic abc")).toBeNull();
     expect(readBearerToken("Bearer ")).toBeNull();
     expect(readBearerToken(null)).toBeNull();
-  });
-
-  const directory = {
-    users: [
-      { id: "user:owner", roleId: "role:admin", enabled: true },
-      { id: "user:viewer", roleId: "role:viewer", enabled: true },
-      { id: "user:off", roleId: "role:admin", enabled: false },
-    ],
-    roles: [
-      { id: "role:admin", permissions: ["programs.read", "programs.write", "runtime.control", "flows.write", "identity.manage", "data.manage", "secrets.manage"] },
-      { id: "role:viewer", permissions: ["programs.read"] },
-    ],
-  };
-
-  it("acts as the approving person, with only the permissions the allowlist uses", () => {
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:owner" }, directory)).toEqual({
-      // Core recognises a paired caller by this prefix and maps it to the person's
-      // unlocked session (`AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX`,
-      // packages/fluxiq/.../runtime/conversations/commands/caller.ts). Change both or neither.
-      sessionId: "client-gateway:g1",
-      userId: "user:owner",
-      roleId: "role:admin",
-      // `secrets.manage` only for the person's own model key (t928); never identity.manage or data.manage.
-      permissions: ["programs.read", "programs.write", "runtime.control", "flows.write", "secrets.manage"],
-      // Under the service profile the registry narrows a paired client by these permissions too.
-      channel: "paired-client",
-    });
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory)?.permissions).toEqual(["programs.read"]);
-  });
-
-  it("acts as nobody when the approving person is disabled, gone, or never recorded", () => {
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:off" }, directory)).toBeNull();
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:gone" }, directory)).toBeNull();
-    expect(pairedClientActor({ sessionId: "g1" }, directory)).toBeNull();
   });
 
   it("scopes the call to the domain the session declared, and refuses a URL naming another", () => {

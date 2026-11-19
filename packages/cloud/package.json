@@ -13,8 +13,8 @@
   },
   "files": ["dist", "examples", "fluxiq-cloud.schema.json", "README.md"],
   "scripts": {
-    "build": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json --clean && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json",
-    "check": "node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit",
+    "build": "node ../../scripts/build-cache/cli.mjs cloud:build -- \"node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json --clean && node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b tsconfig.build.json\"",
+    "check": "node ../../scripts/build-cache/cli.mjs cloud:check -- \"node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/fluxiq-build/check.tsbuildinfo\"",
     "test": "vitest run --passWithNoTests",
     "cloud": "node --experimental-strip-types --no-warnings src/cli/bin.ts"
   },

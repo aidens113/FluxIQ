@@ -70,7 +70,17 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await fluxiq?.close();
+  // Closed as the web runtime closes (`closeFluxIQWebRuntime` in lib/fluxiq): the instance, then the
+  // host-owned platform services its routes composed. `GET /api/keys` composes them (key sessions ask
+  // the platform store whether the person is eligible), and with them the IAM audit store, whose
+  // connection stays open until `closePlatformServices`. Left open, its SQLite files cannot be removed
+  // on Windows and the root's removal below never returns (t955; reached since t928 let the local
+  // profile derive its instance id, so the keys route composes instead of failing its configuration).
+  try {
+    await fluxiq?.close();
+  } finally {
+    if (fluxiq) await (await import("../../../../server/provisioning-listener")).closePlatformServices(fluxiq);
+  }
   if (root && path.basename(root).startsWith("fluxiq-first-sign-in-")) await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 

@@ -90,13 +90,17 @@ export const CLOUD_CONFIG_SCHEMA = {
         retentionMs: { type: "integer", minimum: 0, description: "How long a lapsed account's data is kept." },
         refreshAfterMs: { type: "integer", minimum: 1, description: "A subscription not verified for this long is re-fetched from the provider." },
         maxVerificationAgeMs: { type: "integer", minimum: 1, description: "How old a verification cloud admission still trusts; must exceed refreshAfterMs. Default twice refreshAfterMs." },
+        checkoutLifetimeMs: { type: "integer", minimum: 1800000, maximum: 86400000, description: "How long a started checkout stays payable (30 minutes to 24 hours). Default one hour." },
+        region: { type: "string", minLength: 1, description: "The region the deployment's dedicated browsers run in, matched against dedicated grants. Default: the one region every dedicated grant names." },
         plans: {
           type: "object",
           description: "The plans sold, by plan id.",
           additionalProperties: {
             type: "object", additionalProperties: false, required: ["priceId", "grants"],
             properties: {
+              name: { type: "string", minLength: 1, maxLength: 80, description: "The plan's name on the plans page (default its id)." },
               priceId: { type: "string", minLength: 1, description: "The provider price the plan is sold as." },
+              quantity: { type: "integer", minimum: 1, description: "How many of what the price counts the checkout sells: dedicated browsers or seats (default 1; a flat price sells 1)." },
               unit: { enum: ["dedicated-browser", "seat", "flat"], description: "What this price counts, the Stripe item quantity being the count: dedicated-browser (a dedicated browser each), seat (a team seat each) or flat (default: one price for the whole plan)." },
               grants: {
                 type: "array", minItems: 1,

@@ -47,15 +47,19 @@ function copySubscription(value: CommerceSubscriptionSnapshot): CommerceSubscrip
 }
 
 function copyGrant(value: CommerceEntitlementGrant): CommerceEntitlementGrant {
-  exactKeys(value, ["key", "allocation", "capabilities", "regions", "resourceIds", "validFromMs", "validUntilMs"]);
+  const names = ["key", "allocation", "capabilities", "regions", "resourceIds", "validFromMs", "validUntilMs"];
+  exactKeys(value, Object.hasOwn(value ?? {}, "quantity") ? [...names, "quantity"] : names);
   identifier(value.key, "entitlement.key");
   if (!ALLOCATIONS.has(value.allocation)) invalid("entitlement.allocation");
   const capabilities = strings(value.capabilities, "capabilities");
   const regions = strings(value.regions, "regions");
   const resourceIds = strings(value.resourceIds, "resourceIds");
+  const quantity = value.quantity;
+  if (quantity !== undefined && (!Number.isSafeInteger(quantity) || quantity < 1)) invalid("entitlement.quantity");
   if (capabilities.length === 0) invalid("entitlement.capabilities");
   if (value.allocation !== "control" && regions.length === 0) invalid("entitlement.regions");
-  if (value.allocation === "dedicated" ? resourceIds.length === 0 : resourceIds.length !== 0) invalid("entitlement.resourceIds");
+  // A dedicated grant names its resources or counts them, never both and never neither.
+  if (value.allocation === "dedicated" ? (resourceIds.length === 0) === (quantity === undefined) : resourceIds.length !== 0) invalid("entitlement.resourceIds");
   timestamp(value.validFromMs, "entitlement.validFromMs");
   timestamp(value.validUntilMs, "entitlement.validUntilMs");
   if (value.validUntilMs <= value.validFromMs) invalid("entitlement.interval");
@@ -65,6 +69,7 @@ function copyGrant(value: CommerceEntitlementGrant): CommerceEntitlementGrant {
     capabilities,
     regions,
     resourceIds,
+    ...(quantity === undefined ? {} : { quantity }),
     validFromMs: value.validFromMs,
     validUntilMs: value.validUntilMs
   };

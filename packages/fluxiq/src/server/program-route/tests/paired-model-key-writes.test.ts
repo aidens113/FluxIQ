@@ -130,6 +130,31 @@ describe("a paired client and its person's own model key, through the program ro
     expect((await runtime.secretKeys.snapshot()).keys).toEqual(before);
   });
 
+  it("hands the token's actor secrets.manage on the three model-key writes alone, never on another call it may make (t955)", async () => {
+    const admin = await fixture.signIn(runtime);
+    expect(admin.role.permissions).toContain("secrets.manage");
+    const client = await fixture.pair(runtime, admin);
+    const call = vi.spyOn(runtime.api, "call");
+    const token = { token: client.token };
+    const permissionsOf = (endpoint: string) => call.mock.calls.filter(([request]) => request.endpoint === endpoint).map(([request]) => request.actor?.permissions);
+
+    expect((await send("snapshot", {}, token)).status).toBe(200);
+    expect((await send("save-model-key", { provider: "anthropic", value: "dummy-actor-value" }, token)).status).toBe(200);
+    expect((await send("replace-model-key", { value: "dummy-actor-value-2" }, token)).status).toBe(200);
+    expect((await send("remove-model-key", {}, token)).status).toBe(200);
+
+    // The snapshot is on the same program and the same token, and still never carries it.
+    const [snapshot] = permissionsOf("snapshot");
+    expect(snapshot).toBeDefined();
+    expect(snapshot).not.toContain("secrets.manage");
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) {
+      const seen = permissionsOf(endpoint);
+      expect(seen.length, endpoint).toBe(1);
+      expect([...(seen[0] ?? [])].sort(), endpoint).toEqual([...(snapshot ?? []), "secrets.manage"].sort());
+      expect(seen[0], endpoint).not.toContain("identity.manage");
+    }
+  });
+
   it("still refuses every other key write to a paired client before its handler runs, the default key, offering and revealing a key included", async () => {
     const admin = await fixture.signIn(runtime);
     const key = await fixture.createKey(runtime, admin);

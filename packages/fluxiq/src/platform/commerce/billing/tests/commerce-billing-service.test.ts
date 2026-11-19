@@ -1,66 +1,10 @@
 // @fluxiq-test-group real-sql
-import { mkdtemp, rm } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { SQLiteCommerceLedger } from "../../storage/index.ts";
 import { grant } from "../../tests/fixtures.ts";
-import { CommerceBillingService, FakePaymentProvider, PaymentProviderUnavailableError } from "../index.ts";
-import type { PaymentProvider, ProviderSubscriptionState } from "../index.ts";
+import { FakePaymentProvider, PaymentProviderUnavailableError } from "../index.ts";
+import { removeBillingRoots, setup, state } from "./billing-harness.ts";
 
-const SECRET = "whsec_fake_local_test_secret";
-const roots: string[] = [];
-afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
-});
-
-function state(changes: Partial<ProviderSubscriptionState> = {}): ProviderSubscriptionState {
-  return {
-    accountId: "account-a",
-    customerId: "customer-a",
-    subscriptionId: "sub-a",
-    status: "active",
-    paidThroughMs: 5_000,
-    cancelAtPeriodEnd: false,
-    endedAtMs: null,
-    verifiedAtMs: 0,
-    entitlements: [grant()],
-    ...changes
-  };
-}
-
-async function setup(options: { provider?: (fake: FakePaymentProvider) => PaymentProvider } = {}) {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-billing-"));
-  roots.push(rootDir);
-  const clock = { nowMs: 2_000 };
-  const fake = new FakePaymentProvider({ webhookSecret: SECRET, now: () => clock.nowMs, checkoutLifetimeMs: 1_000 });
-  const provider = options.provider?.(fake) ?? fake;
-  const open = () => new CommerceBillingService({
-    ledger: new SQLiteCommerceLedger({ rootDir, now: () => clock.nowMs }),
-    provider,
-    policy: { allowTrial: false, graceMs: 1_000, retentionMs: 30_000 },
-    refreshAfterMs: 500,
-    now: () => clock.nowMs
-  });
-  let service = open();
-  const deliver = (id: string, subscriptionId: string | null = "sub-a") => {
-    const { rawBody, signature } = fake.signedEvent({ id, type: "customer.subscription.updated", subscriptionId });
-    return service.ingestWebhook(rawBody, signature);
-  };
-  return {
-    rootDir,
-    clock,
-    fake,
-    deliver,
-    get service() {
-      return service;
-    },
-    restart() {
-      service = open();
-      return service;
-    }
-  };
-}
+afterEach(removeBillingRoots);
 
 it("walks every transition: none, checkout-pending, active, past-due, suspended, active, cancel-at-period-end, ended", async () => {
   const billing = await setup();
@@ -185,6 +129,7 @@ it("serializes racing reconciliations so the last committed write is the newest 
     provider: (fake) => ({
       providerId: fake.providerId,
       createCheckout: (request) => fake.createCheckout(request),
+      expireCheckout: (id) => fake.expireCheckout(id),
       createPortal: (request) => fake.createPortal(request),
       verifyWebhook: (body, header) => fake.verifyWebhook(body, header),
       cancelSubscription: (id, options) => fake.cancelSubscription(id, options),
@@ -267,13 +212,13 @@ it("closes an account's billing once: cancels what has not ended, records it end
   await billing.deliver("evt-a");
   await billing.deliver("evt-old", "sub-old");
   await billing.deliver("evt-b", "sub-b");
-  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: ["sub-a"], customersClosed: ["customer-a"] });
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ checkoutsExpired: [], cancelled: ["sub-a"], customersClosed: ["customer-a"] });
   expect([...billing.fake.cancellations]).toEqual([["receipt-1:cancel:sub-a", "sub-a"]]);
   expect([...billing.fake.customerClosures]).toEqual([["receipt-1:close:customer-a", "customer-a"]]);
   expect(await billing.service.getEntitlement("account-a")).toMatchObject({ state: "ended", grants: [], retentionEndsAt: billing.clock.nowMs + 30_000 });
   expect(await billing.service.getEntitlement("account-b")).toMatchObject({ state: "active" });
   // Asked again (a retried deletion), nothing is cancelled twice.
-  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: [], customersClosed: ["customer-a"] });
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ checkoutsExpired: [], cancelled: [], customersClosed: ["customer-a"] });
   expect(billing.fake.cancellations.size).toBe(1);
   expect(billing.fake.customerClosures.size).toBe(1);
 });
@@ -286,7 +231,7 @@ it("throws a provider outage as it came, and the retry with the same operation c
   await expect(billing.service.closeAccount("account-a", "receipt-1")).rejects.toBeInstanceOf(PaymentProviderUnavailableError);
   expect(await billing.service.getEntitlement("account-a")).toMatchObject({ state: "active" });
   billing.fake.unavailable = false;
-  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ cancelled: ["sub-a"], customersClosed: ["customer-a"] });
+  expect(await billing.service.closeAccount("account-a", "receipt-1")).toEqual({ checkoutsExpired: [], cancelled: ["sub-a"], customersClosed: ["customer-a"] });
   expect(billing.fake.cancellations.size).toBe(1);
   await expect(billing.service.closeAccount("", "receipt-1")).rejects.toMatchObject({ code: "invalid-request" });
 });

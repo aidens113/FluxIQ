@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { FLUXIQ_SESSION_COOKIE, sessionCookieOptions } from "../../../../lib/session-cookie";
-import { getFluxIQ } from "../../../../lib/fluxiq";
+import { platformScope } from "../../../../lib/platform";
 import { credentialSetupCookies, credentialSetupGrants } from "../temporary-credential";
 
 // Signing out revokes the cookie's session. Identity Access announces the
@@ -13,7 +13,7 @@ export async function POST() {
   const cookieStore = await cookies();
   const sessionId = cookieStore.get(FLUXIQ_SESSION_COOKIE)?.value;
   if (sessionId) {
-    await getFluxIQ().programs.identityAccess.revokeSession(sessionId);
+    await platformScope().identityAccess.revokeSession(sessionId);
   }
   const setupGrant = credentialSetupGrants.find(cookieStore.get(credentialSetupCookies.token)?.value);
   if (setupGrant) credentialSetupGrants.forget(setupGrant.userId);

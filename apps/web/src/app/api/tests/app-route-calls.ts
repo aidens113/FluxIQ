@@ -24,6 +24,7 @@ import { GET as streamRunDataset } from "../programs/automation-studio/run-datas
 import { GET as readStateAsset, PUT as writeStateAsset } from "../programs/automation-studio/state-assets/[projectId]/[sha256]/route";
 import { GET as programDirectory } from "../programs/route";
 import { GET as listRecordings } from "../recordings/route";
+import { GET as billingStatus, POST as startCheckout } from "../platform/v1/commerce/checkout/route";
 import { GET as readAudit } from "../security/audit/route";
 import { fixture, FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
 
@@ -71,14 +72,12 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),
-  // Takes no request: building one sets the caller's cookie, which is all it reads.
-  "GET /api/framework/setup": (caller) => {
-    routeRequest(caller, "/api/framework/setup");
-    return inspectSetup();
-  },
+  "GET /api/framework/setup": (caller) => inspectSetup(routeRequest(caller, "/api/framework/setup")),
   "POST /api/framework/setup (setup)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "setup" } })),
   "POST /api/framework/setup (migrate)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "migrate" } })),
   "POST /api/framework/setup (rollback-migration)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "rollback-migration" } })),
+  "GET /api/platform/v1/commerce/checkout": (caller) => billingStatus(routeRequest(caller, "/api/platform/v1/commerce/checkout")),
+  "POST /api/platform/v1/commerce/checkout": (caller) => startCheckout(routeRequest(caller, "/api/platform/v1/commerce/checkout", { method: "POST", json: { planId: "fixture-plan" } })),
   "GET /api/framework/io": (caller) => inspectIo(routeRequest(caller, "/api/framework/io")),
   "POST /api/framework/io/validate": (caller) => validateIo(routeRequest(caller, "/api/framework/io/validate", { method: "POST", json: {} })),
   "GET /api/panel/changes": (caller) => panelChanges(routeRequest(caller, "/api/panel/changes")),

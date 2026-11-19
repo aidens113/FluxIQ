@@ -4,6 +4,8 @@
 // scheduled deletions.
 export { composeCascadePorts } from "./compose-cascade-ports";
 export type { CascadePorts, CascadePortSources } from "./compose-cascade-ports";
+export { purgeEnvironments } from "./purge-environments";
+export type { EnvironmentPurgeSources } from "./purge-environments";
 export { createConnectedClientRevoker } from "./revoke-connected-clients";
 export type { ConnectedClientRevokerDeps } from "./revoke-connected-clients";
 export { startDeletionSweep } from "./deletion-sweep";
