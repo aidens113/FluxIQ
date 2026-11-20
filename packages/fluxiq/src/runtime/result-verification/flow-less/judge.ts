@@ -36,8 +36,9 @@
 // there is none here to change.
 
 import type { AutomationStudioFlowInstruction } from "../../../flows/authoring/model/index.ts";
-import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import { automationStudioLlmBuildTrace, automationStudioLlmStepLogNote, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE } from "../../llm/verification-checked/index.ts";
+import { automationStudioLlmUnboundedJsonAt } from "../../llm/provider-task/index.ts";
 import { automationStudioRunOverrides } from "../../run-overrides/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import type { AutomationStudioRunResultSummary } from "../contracts/index.ts";
@@ -52,6 +53,8 @@ import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgem
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
 const SOURCE = AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE;
 const BALANCE_CODE = "llm.provider_balance_exhausted";
+/** The provider's pre-send refusal of a context that is not JSON (`../../llm/provider-task/preflight.ts`). */
+const UNBOUNDED_CODE = "llm.provider_request_context_unbounded";
 const NO_BALANCE = "The model service says the account has no balance left, so this was not judged.";
 const PURSE_REFUSED = "The attempt's budget could not pay for the check, so it was not judged.";
 /** The most of the check's own words a result keeps: a result's words are bounded, and one over the bound is left off whole. */
@@ -126,6 +129,7 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
       if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
       if (!bounded.settled || expiry.signal.aborted) {
         if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
+        if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw") automationStudioFlowLessJudgeNotSent(thrownAccount(bounded.error));
         return unanswered(read, expiry.signal.aborted ? "llm.provider_timeout" : undefined);
       }
       if (form < forms.length - 1 && refusedForSize(bounded.value)) {
@@ -157,9 +161,17 @@ type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonl
 function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRunResultSummary, summary: AutomationStudioFlowLessSummary): Reading {
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   if (!response) {
-    const code = result.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code;
+    const error = result.diagnostics.find((diagnostic) => diagnostic.severity === "error");
+    const code = error?.code;
     if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { judgement: { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true } };
-    return { judgement: code !== undefined && PURSE_CODES.has(code) ? { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } : unanswered(read, code) };
+    if (code !== undefined && PURSE_CODES.has(code)) return { judgement: { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } };
+    // Refused before it was sent: no provider step records it, so this does (t974).
+    if (result.providerInvocation === "not_attempted") {
+      // A context that is not JSON is refused in Core's fixed words, so where it is not is found here (`../../llm/provider-task/unbounded-json.ts`).
+      const where = code === UNBOUNDED_CODE ? automationStudioLlmUnboundedJsonAt(result.request.context) : undefined;
+      automationStudioFlowLessJudgeNotSent({ code, message: [error?.message, where ? `The request held ${where}.` : undefined].filter(Boolean).join(" ") });
+    }
+    return { judgement: unanswered(read, code) };
   }
   // A reply cut off after its verdict is read from its whole fields alone (`../verify.ts`, t653).
   const cut = response.truncatedAfterVerdict === true;
@@ -196,6 +208,32 @@ const RECORDS_RULE = "A yes on a result that holds rows cites in checked each st
 function automationStudioFlowLessCitationNotice(sent: AutomationStudioRunResultSummary, refuted: readonly string[]): AutomationStudioRunResultSummary {
   const sentences = refuted.map((sentence) => automationStudioFlowLessScreenedWords(sentence).text ?? WITHHELD_SENTENCE);
   return { ...sent, citationsNotMatched: { note: "Core could not confirm your last yes on the stored rows: each line of notMatched says why. Judge again on the rows themselves, citing only cells the stored rows hold.", notMatched: sentences, validCitation: CITATION_RULE, onRows: RECORDS_RULE } } as unknown as AutomationStudioRunResultSummary;
+}
+
+/**
+ * A judge's call that was never sent, said where a person debugging the run looks (t974, F22): a note in the run's step
+ * log and a build-trace line (core.log). A call that is sent has its own step folder (`../../llm/step-log/model-step.ts`);
+ * one refused before sending -- by the harness, or by the adapter's pre-send check -- or whose harness threw, had none, so
+ * live runs run-mwouzg29-ebb0f27d, run-mwov5v61-01468cd3 and run-mwow1z18-81707c66 showed only "not judged". The note
+ * carries the code and Core's own message for it; a throw says only its name and code, since its message is not Core's.
+ */
+function automationStudioFlowLessJudgeNotSent(account: { code?: string | undefined; message?: string | undefined; name?: string | undefined }): void {
+  const code = account.code ?? "none";
+  const said = account.message?.trim() ? ` ${account.message.trim()}` : account.name ? ` It threw ${account.name}.` : "";
+  automationStudioLlmStepLogNote(`The judge's call was not sent (${code}), so the result was not judged.${said}`);
+  automationStudioLlmBuildTrace.line(`judge not_sent code=${codeWord(account.code)} name=${codeWord(account.name)}`);
+}
+
+/** A thrown error's name and code: its own `code`, or the code its build diagnostic carries (`AutomationStudioFlowBootstrapGenerationError`). */
+function thrownAccount(error: unknown): { code?: string; name?: string } {
+  const record = (typeof error === "object" && error !== null ? error : {}) as { name?: unknown; code?: unknown; diagnostic?: { code?: unknown } };
+  const code = typeof record.code === "string" ? record.code : typeof record.diagnostic?.code === "string" ? record.diagnostic.code : undefined;
+  return { ...(code !== undefined ? { code } : {}), ...(typeof record.name === "string" ? { name: record.name } : {}) };
+}
+
+/** A code-shaped value for the build trace, which carries no sentence; `-` for anything else. */
+function codeWord(value: string | undefined): string {
+  return value !== undefined && /^[A-Za-z0-9_.:-]{1,120}$/u.test(value) ? value : "-";
 }
 
 /** A call that gave nothing, in the reader's words for what happened to it, by its code. */

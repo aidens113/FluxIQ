@@ -11,5 +11,7 @@ export function callFailureWords(code: string | undefined): string {
   if (/^llm_output\.|^llm\.provider_(malformed_response|output_|response_oversize|usage_invalid|result_summary_invalid)/.test(code)) return "the judge's reply could not be read";
   if (/^llm\.provider_(http_error|network_error|rate_limited|auth_failed|secret_|request_failed|request_setup_failed|redirect_rejected|model_unsupported)/.test(code)) return "the model could not be reached";
   if (/^llm\.request\.|^llm\.provider_.*(_invalid|credential_in_request)$/.test(code)) return "the judge's request could not be sent";
+  // Core built a request its own pre-send check refused: a fault of Core's, never the model's, and never "no answer came back" (t974, F22).
+  if (/^llm\.provider_request_(context_unbounded|construction_failed|task_mismatch)$/.test(code)) return "Core built the judge's request in a form it could not send, so it was never asked";
   return "the verification call did not come back usable";
 }
