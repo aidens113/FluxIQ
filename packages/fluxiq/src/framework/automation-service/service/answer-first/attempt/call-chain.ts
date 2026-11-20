@@ -111,7 +111,7 @@ export function automationStudioAnswerFirstCallChain(input: {
       if (input.trailed) {
         const about = described({ toolId: call.toolId, value: call.value });
         const on = "said" in about && typeof about.said?.target === "string" ? about.said.target : undefined;
-        input.trailed(automationStudioResultTrailStepOfCall({ toolId: call.toolId, value: call.value }, answer, on));
+        input.trailed(automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on));
       }
     } catch {
       /* best-effort: the trail is evidence for a later check, never a reason to lose the call's answer */

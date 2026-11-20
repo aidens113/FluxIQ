@@ -32,8 +32,10 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
     const outcome = words(step.outcome);
     const where = words(step.where);
     const found = screened(step.found);
+    const callId = words(step.callId);
     return {
       n: at + 1,
+      ...(callId !== undefined ? { callId } : {}),
       did: words(step.did) ?? "(withheld)",
       ...(on !== undefined ? { on } : {}),
       ...(asked !== undefined ? { asked } : {}),

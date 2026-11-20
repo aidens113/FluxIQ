@@ -9,6 +9,8 @@ import type { JsonValue } from "../../../core/index.ts";
  * code, `where` the place it answered from (an address), and `found` what it found there: the domain's whole answer.
  */
 export type AutomationStudioResultTrailStep = {
+  /** The call's own id, where the step was a call of the attempt's: the same id its decider's evidence names it by (t965). */
+  callId?: string | undefined;
   did: string;
   on?: string | undefined;
   asked?: JsonValue | undefined;

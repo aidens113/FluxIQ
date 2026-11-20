@@ -1,0 +1,614 @@
+{
+ "source": "run-mwodpw10-3d5748ab step 0117 (judge request), trail entry 21 (a read of the saved Flow run): as sent, with the raw capture's element lists cut to their first two items to keep the fixture small",
+ "originalEntryChars": 684846,
+ "originalElements": 650,
+ "entry": {
+  "n": 21,
+  "did": "web.output.dom-extract_list",
+  "on": "name, price, rating and 1 more",
+  "asked": {
+   "core.summarised": {
+    "item": "trail.entries[20].asked",
+    "characters": 1339,
+    "kind": "object",
+    "keys": {
+     "extractList": "object of 5 keys",
+     "recordOutput": "object of 6 keys"
+    }
+   }
+  },
+  "outcome": "succeeded, route success",
+  "found": {
+   "outputs": {
+    "success": true,
+    "outputId": "web.dom.extract_list",
+    "ok": true,
+    "runtimeCommandId": "command.9ac82d40-25f7-49f5-b878-914a0ee1c8c0",
+    "runtimeStatus": "succeeded",
+    "result": {
+     "status": "succeeded",
+     "message": "List extracted.",
+     "result": {
+      "actionType": "web.dom.extract_list",
+      "status": "succeeded",
+      "validation": {
+       "status": "passed",
+       "expected": "at least 0 items on the page, each kept record carrying name, price, rating, url",
+       "actual": "0 records from 1 page, 11 items left out by where; every declared field present"
+      },
+      "message": "List extracted.",
+      "url": "http://127.0.0.1:50792/scenarios/everything-store/s?k=wireless+earbuds&page=5",
+      "title": "Brightaisle.com : wireless earbuds",
+      "snapshot": {
+       "url": "http://127.0.0.1:50792/scenarios/everything-store/s?k=wireless+earbuds&page=5",
+       "title": "Brightaisle.com : wireless earbuds",
+       "viewport": {
+        "width": 1280,
+        "height": 720,
+        "scrollX": 0,
+        "scrollY": 1745,
+        "documentWidth": 1280,
+        "documentHeight": 3616,
+        "devicePixelRatio": 1
+       },
+       "frame": {
+        "isTop": true,
+        "viewportOffset": {
+         "x": 0,
+         "y": 0,
+         "width": 1280,
+         "height": 720
+        }
+       },
+       "interactiveElements": [
+        {
+         "tagName": "div",
+         "selector": "[withheld]",
+         "isVisibleOnViewport": false,
+         "documentBounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1263,
+          "height": 64
+         },
+         "id": ":r04u6k:",
+         "classNames": [
+          "css-0bwtqhr"
+         ],
+         "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1]",
+         "role": "region",
+         "name": "Brightaisle app",
+         "accessibleName": "Brightaisle app",
+         "context": {
+          "landmark": "region",
+          "landmarkName": "Brightaisle app"
+         },
+         "attributes": {
+          "class": "css-0bwtqhr",
+          "id": ":r04u6k:",
+          "role": "region",
+          "aria-label": "Brightaisle app"
+         },
+         "nodeToken": 646,
+         "changed": true
+        },
+        {
+         "tagName": "strong",
+         "selector": "[withheld]",
+         "isVisibleOnViewport": false,
+         "documentBounds": {
+          "x": 16,
+          "y": 22.2,
+          "width": 238.81,
+          "height": 19.59
+         },
+         "text": "Shop faster with the Brightaisle app",
+         "visibleText": "Shop faster with the Brightaisle app",
+         "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1]",
+         "context": {
+          "landmark": "region",
+          "landmarkName": "Brightaisle app"
+         },
+         "nodeToken": 647,
+         "parent": 0,
+         "changed": true
+        }
+       ],
+       "evidence": {
+        "elements": {
+         "scanned": 748,
+         "candidates": 748,
+         "matched": 650,
+         "returned": 650,
+         "truncated": false,
+         "changed": 650,
+         "recentlyInteracted": 0
+        },
+        "loading": {
+         "documentState": "complete",
+         "busy": false,
+         "busyRegions": [],
+         "indicators": [],
+         "pendingNavigation": false
+        },
+        "navigation": {
+         "url": "http://127.0.0.1:50792/scenarios/everything-store/s?k=wireless+earbuds&page=5",
+         "origin": "http://127.0.0.1:50792",
+         "path": "/scenarios/everything-store/s",
+         "type": "navigate",
+         "historyLength": 19,
+         "visibility": "visible",
+         "timeOrigin": 1795143271222.7
+        },
+        "captureOptions": {
+         "includeHidden": false
+        },
+        "overlays": {
+         "tested": 75,
+         "blockedCount": 4,
+         "blockers": [
+          {
+           "selector": "[withheld]",
+           "bounds": {
+            "x": 276,
+            "y": 162.88,
+            "width": 43.41,
+            "height": 23
+           },
+           "blocks": 1,
+           "blocked": [
+            "main > div[locator withheld](2) > div > div[locator withheld](1) > div[locator withheld](8) > div > div[locator withheld](4) > a > span > span[locator withheld](1)"
+           ]
+          },
+          {
+           "selector": "[withheld]",
+           "bounds": {
+            "x": 523.75,
+            "y": 162.88,
+            "width": 43.41,
+            "height": 23
+           },
+           "blocks": 1,
+           "blocked": [
+            "main > div[locator withheld](2) > div > div[locator withheld](1) > div[locator withheld](9) > div > div[locator withheld](4) > a > span > span[locator withheld](1)"
+           ]
+          },
+          {
+           "selector": "[withheld]",
+           "bounds": {
+            "x": 771.5,
+            "y": 162.88,
+            "width": 43.41,
+            "height": 23
+           },
+           "blocks": 1,
+           "blocked": [
+            "main > div[locator withheld](2) > div > div[locator withheld](1) > div[locator withheld](10) > div > div[locator withheld](4) > a > span > span[locator withheld](1)"
+           ]
+          },
+          {
+           "selector": "[withheld]",
+           "bounds": {
+            "x": 1019.25,
+            "y": 179.67,
+            "width": 43.41,
+            "height": 23
+           },
+           "blocks": 1,
+           "blocked": [
+            "main > div[locator withheld](2) > div > div[locator withheld](1) > div[locator withheld](11) > div[locator withheld](2) > div[locator withheld](4) > a > span > span[locator withheld](1)"
+           ]
+          },
+          {
+           "selector": "[withheld]",
+           "role": "region",
+           "label": "Cookie preferences",
+           "bounds": {
+            "x": 0,
+            "y": 587.22,
+            "width": 1263,
+            "height": 132.78
+           },
+           "blocks": 0,
+           "blocked": [],
+           "kind": "consent"
+          }
+         ]
+        },
+        "regions": [
+         {
+          "role": "region",
+          "selector": "[withheld]",
+          "label": "Brightaisle app",
+          "bounds": {
+           "x": 0,
+           "y": 0,
+           "width": 1263,
+           "height": 64
+          }
+         },
+         {
+          "role": "banner",
+          "selector": "[withheld]",
+          "bounds": {
+           "x": 0,
+           "y": 64,
+           "width": 1263,
+           "height": 60
+          }
+         }
+        ],
+        "repeating": [
+         {
+          "containerSelector": "main > div[locator withheld](2) > div > div[locator withheld](1)",
+          "signature": "div|listitem||css-0rc9pnw",
+          "itemCount": 11,
+          "representative": {
+           "selector": "[withheld]",
+           "text": "Sponsored ⓘ NovaqNovaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold 4.24.2 out of 5 stars(24,846)50+ bought in past month $89.99$89.99 FREE delivery Wed, Oct 7Add to cart"
+          }
+         },
+         {
+          "containerSelector": "main > div[locator withheld](2) > div > div[locator withheld](1) > div[locator withheld](7) > ul",
+          "signature": "li|||css-05bbcyn",
+          "itemCount": 4,
+          "representative": {
+           "selector": "[withheld]",
+           "text": "Brightaisle Basics Wireless Earbuds, Bluetooth 5.3 with 30H Playtime, IPX5 Water Resistant, Black4.14.1 out of 5 stars(21,530)$17.99$17.99"
+          }
+         }
+        ],
+        "forms": [
+         {
+          "selector": "[withheld]",
+          "action": "/scenarios/everything-store/s",
+          "method": "get",
+          "controlCount": 4,
+          "controls": [
+           {
+            "selector": "[withheld]",
+            "controlType": "select",
+            "name": "i",
+            "label": "Search in",
+            "hasValue": true
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "text",
+            "name": "field-keywords",
+            "hasValue": false,
+            "autocomplete": "off"
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "text",
+            "name": "k",
+            "label": "Search Brightaisle",
+            "hasValue": true,
+            "autocomplete": "off"
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "submit",
+            "label": "Go"
+           }
+          ],
+          "submit": "[locator withheld]"
+         },
+         {
+          "selector": "[withheld]",
+          "action": "/scenarios/everything-store/s",
+          "method": "get",
+          "controlCount": 1,
+          "controls": [
+           {
+            "selector": "[withheld]",
+            "controlType": "select",
+            "name": "s",
+            "label": "Sort by:",
+            "hasValue": true
+           }
+          ]
+         }
+        ]
+       },
+       "focusedElement": {
+        "tagName": "body",
+        "selector": "[withheld]",
+        "isVisibleOnViewport": true,
+        "bounds": {
+         "x": 0,
+         "y": 0,
+         "width": 1263,
+         "height": 720
+        },
+        "documentBounds": {
+         "x": 0,
+         "y": 0,
+         "width": 1263,
+         "height": 3615.84
+        },
+        "xpath": "[locator withheld][1][locator withheld][1]"
+       }
+      },
+      "extracted": {
+       "$dataset": {
+        "datasetId": "web-output-dom-extract-list-d16",
+        "recordCount": 0,
+        "schemaDigest": "sha256:d71688b7e6826d834fea005cb5a5f728f525d4f4ad8f4d227ef1e3bba7f9399b"
+       }
+      },
+      "extraction": {
+       "recordCount": 0,
+       "pagesRead": 1,
+       "truncated": false,
+       "missingFields": [],
+       "fieldNames": [
+        "name",
+        "price",
+        "rating",
+        "url"
+       ],
+       "itemsSeen": 11,
+       "emptyRecords": 0,
+       "listPresence": "appeared",
+       "listWait": {
+        "stoppedOn": "list_present",
+        "waitedFor": 1
+       },
+       "conditions": {
+        "applied": 11,
+        "kept": 0,
+        "rejected": [
+         4,
+         5,
+         4,
+         7,
+         0
+        ],
+        "unfiltered": false,
+        "seen": [
+         null,
+         "Brightaisle Plus",
+         "4.2",
+         "$19.99",
+         "Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold"
+        ],
+        "alone": [
+         0,
+         0,
+         2,
+         2,
+         0
+        ],
+        "keptValues": [
+         [],
+         [],
+         [],
+         [],
+         []
+        ]
+       },
+       "rejectedSamples": [
+        [
+         {
+          "name": "Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold",
+          "price": "$89.99",
+          "rating": "4.2",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-2W5NC8&url=%2Fscenarios%2Feverything-store%2FNovaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0USYBVP06"
+         },
+         {
+          "name": "Zephyrline Z5 Pro Wireless Earbuds, Adaptive Noise Cancelling, Spatial Audio, 45H Playtime, Wireless Charging, Graphite",
+          "price": "$79.99",
+          "rating": "4.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-6J3DP1&url=%2Fscenarios%2Feverything-store%2FZephyrline-Z5-Pro-Wireless-Earbuds-Adaptive-Noise-Cancelling%2Fdp%2FB0ZPH5PRGR"
+         },
+         {
+          "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Deep Bass, Sage",
+          "price": "$49.99",
+          "rating": "4.8",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-8T7KV5&url=%2Fscenarios%2Feverything-store%2FAurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0PXG323U8"
+         },
+         {
+          "name": "Tessaro Arc Lite Wireless Earbuds, Bluetooth 5.3, Clear Calls with 4 Mics, 32H Playtime, White",
+          "price": "$24.99",
+          "rating": "4.1",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-1B4QS9&url=%2Fscenarios%2Feverything-store%2FTessaro-Arc-Lite-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0TSARCLW1"
+         }
+        ],
+        [
+         {
+          "name": "Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold",
+          "price": "$89.99",
+          "rating": "4.2",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-2W5NC8&url=%2Fscenarios%2Feverything-store%2FNovaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0USYBVP06"
+         },
+         {
+          "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Active Noise Cancelling, Low Latency Gaming Mode, White",
+          "price": "$99.99",
+          "rating": "4.4",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B04TZGKSF9"
+         },
+         {
+          "name": "Novaq Q20 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Wireless Charging Case, Ivory",
+          "price": "$59.99",
+          "rating": "3.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Novaq-Q20-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0QWDCWRHM"
+         },
+         {
+          "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Deep Bass, Sage",
+          "price": "$49.99",
+          "rating": "4.8",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-8T7KV5&url=%2Fscenarios%2Feverything-store%2FAurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0PXG323U8"
+         },
+         {
+          "name": "Tessaro Arc Lite Wireless Earbuds, Bluetooth 5.3, Clear Calls with 4 Mics, 32H Playtime, White",
+          "price": "$24.99",
+          "rating": "4.1",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-1B4QS9&url=%2Fscenarios%2Feverything-store%2FTessaro-Arc-Lite-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0TSARCLW1"
+         }
+        ],
+        [
+         {
+          "name": "Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Touch Control, Ear Hooks for Running, Graphite",
+          "price": "$19.99",
+          "rating": "3.4",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Lumo-Audio-Drift-Wireless-Earbuds-Bluetooth-5-3/dp/B0P5EPG131"
+         },
+         {
+          "name": "Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Low Latency Gaming Mode, IPX7 Waterproof, Ivory",
+          "price": "$34.99",
+          "rating": "3.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Novaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3/dp/B0BXMHW1GJ"
+         },
+         {
+          "name": "Novaq Q20 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Wireless Charging Case, Ivory",
+          "price": "$59.99",
+          "rating": "3.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Novaq-Q20-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0QWDCWRHM"
+         },
+         {
+          "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Built-in Mic, Midnight Blue",
+          "price": "$99.99",
+          "rating": "3.3",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0ZEDHSS93"
+         }
+        ],
+        [
+         {
+          "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Touch Control, White",
+          "price": "$69.99",
+          "rating": "4.1",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B05LH0X34D"
+         },
+         {
+          "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Wireless Charging Case, Graphite",
+          "price": "$54.99",
+          "rating": "4.0",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0D333BXW6"
+         },
+         {
+          "name": "Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold",
+          "price": "$89.99",
+          "rating": "4.2",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-2W5NC8&url=%2Fscenarios%2Feverything-store%2FNovaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0USYBVP06"
+         },
+         {
+          "name": "Zephyrline Z5 Pro Wireless Earbuds, Adaptive Noise Cancelling, Spatial Audio, 45H Playtime, Wireless Charging, Graphite",
+          "price": "$79.99",
+          "rating": "4.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/sspa/click?ie=UTF8&adId=sp-6J3DP1&url=%2Fscenarios%2Feverything-store%2FZephyrline-Z5-Pro-Wireless-Earbuds-Adaptive-Noise-Cancelling%2Fdp%2FB0ZPH5PRGR"
+         },
+         {
+          "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Active Noise Cancelling, Low Latency Gaming Mode, White",
+          "price": "$99.99",
+          "rating": "4.4",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B04TZGKSF9"
+         },
+         {
+          "name": "Novaq Q20 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Wireless Charging Case, Ivory",
+          "price": "$59.99",
+          "rating": "3.6",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Novaq-Q20-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0QWDCWRHM"
+         },
+         {
+          "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Built-in Mic, Midnight Blue",
+          "price": "$99.99",
+          "rating": "3.3",
+          "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0ZEDHSS93"
+         }
+        ],
+        []
+       ],
+       "rejectedSamplesAlone": [
+        0,
+        0,
+        2,
+        2,
+        0
+       ],
+       "rejectedObservations": [
+        [
+         null,
+         null,
+         null,
+         null
+        ],
+        [
+         null,
+         null,
+         null,
+         null,
+         null
+        ],
+        [
+         {
+          "conditionIndex": 2,
+          "state": "present",
+          "source": "field",
+          "page": 1,
+          "item": 3,
+          "readKind": "text",
+          "value": "3.4"
+         },
+         {
+          "conditionIndex": 2,
+          "state": "present",
+          "source": "field",
+          "page": 1,
+          "item": 7,
+          "readKind": "text",
+          "value": "3.6"
+         },
+         null,
+         null
+        ],
+        [
+         {
+          "conditionIndex": 3,
+          "state": "present",
+          "source": "field",
+          "page": 1,
+          "item": 4,
+          "readKind": "text",
+          "value": "$69.99"
+         },
+         {
+          "conditionIndex": 3,
+          "state": "present",
+          "source": "field",
+          "page": 1,
+          "item": 5,
+          "readKind": "text",
+          "value": "$54.99"
+         },
+         null,
+         null,
+         null,
+         null,
+         null
+        ],
+        []
+       ]
+      },
+      "sourceId": "tab:1064978751:frame:0"
+     }
+    },
+    "records": {
+     "$dataset": {
+      "datasetId": "web-output-dom-extract-list-d16",
+      "recordCount": 0,
+      "schemaDigest": "sha256:d71688b7e6826d834fea005cb5a5f728f525d4f4ad8f4d227ef1e3bba7f9399b"
+     }
+    }
+   },
+   "changed": {
+    "added": "\"Shop faster with the Brightaisle app\"\n\"Exclusive app-only deals every day.\"\nlink \"Get the app\" http://127.0.0.1:50792/scenarios/everything-store/s?k=wireless+earbuds&page=5#get-the-app\nclickable \"Close\"\nfield \"Minimum price\" placeholder \"$ Min\" =\"\"\n\"34\"\n\"59\"\n\"49\"",
+    "removed": "field \"Minimum price\" placeholder \"$ Min\" =\"\" covers 2\n\"89\"\n\"79\"\n\"19\"\n\"69\""
+   },
+   "view": {
+    "page": "PAGE \"Brightaisle.com : wireless earbuds\"\nURL ~/s?k=wireless+earbuds&page=5   (~ = http://127.0.0.1:50792/scenarios/everything-store)\nVIEW 1280x720 scrolled to y=1745 · 266 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t375 \"$34.99\" covers 1 · t404 \"$59.99\" covers 1 · t432 \"$99.99\" covers 1 · t470 \"$49.99\" covers 1 · t642 \"Cookie preferences\" consent\n\n--- above the screen ---\n[region]\nt2 \"Shop faster with the Brightaisle app\"\nt3 \"Exclusive app-only deals every day.\"\nt4 link \"Get the app\" ~/s?k=wireless+earbuds&page=5#get-the-app\nt5 clickable \"Close\"\n[banner]\nt8 link \"Brightaisle\" ~/\nt9 clickable \"Deliver to Dana\"\nt11 \"Portland 97214\"\n[search]\nt14 select \"Search in\" =\"All\" [All|Electronics|Home & Kitchen|Grocery|Toys & Games]\nt17 field[search] \"Search Brightaisle\" =\"wireless earbuds\"\nt18 button \"Go\"\n[banner]\nt22 link \"Hello, Dana Account & Lists\" ~/[locator withheld]\nt24 link \"Returns & Orders\" ~/[locator withheld]\nt26 link \"2 items in cart\" ~/cart\n[navigation]\nt29 link \"All\" ~/[locator withheld]\nt30 link \"Today's Deals\" ~/[locator withheld]\nt31 link \"Customer Service\" ~/[locator withheld]\nt32 link \"Registry\" ~/[locator withheld]\nt33 link \"Gift Cards\" ~/[locator withheld]\nt34 link \"Sell\" ~/[locator withheld]\n[main]\nt37 \"65-70 of over 1,000 results for \\\"wireless earbuds\\\"\"\nt40 select \"Sort by:\" =\"Featured\" [Featured|Price: Low to High|Price: High to Low|Avg. Customer Review]\n[complementary]\nt44 \"Delivery\"\nt45 link \"Brightaisle Plus\" ~/s?k=wireless+earbuds&rh=plus\nt49 \"Customer Reviews\"\nt50 link \"4 Stars & Up\" ~/s?k=wireless+earbuds&rh=stars-4\nt54 \"Price\"\nt55 link \"Under $25\" ~/s?k=wireless+earbuds&rh=price-under-25\nt58 link \"$25 to $50\" ~/s?k=wireless+earbuds&rh=price-25-50\nt61 link \"$50 to $100\" ~/s?k=wireless+earbuds&rh=price-50-100\nt64 link \"$100 & Above\" ~/s?k=wireless+earbuds&rh=price-100-up\nt69 field \"Minimum price\" placeholder \"$ Min\" =\"\"\nt71 field \"Maximum price\" placeholder \"$ Max\" =\"\"\nt72 button \"Go\"\nt74 \"Brands\"\nt75 link \"Kinetra\" ~/s?k=wireless+earbuds&rh=brand-kinetra\nt78 link \"Lumo Audio\" ~/s?k=wireless+earbuds&rh=brand-lumo-audio\nt81 link \"Soundcrest\" ~/s?k=wireless+earbuds&rh=brand-soundcrest\nt84 link \"Aurelle\" ~/s?k=wireless+earbuds&rh=brand-aurelle\nt87 link \"Novaq\" ~/s?k=wireless+earbuds&rh=brand-novaq\nt90 link \"EarFit\" ~/s?k=wireless+earbuds&rh=brand-earfit\nt94 toggle \"See more\"\n[main]\n- 1/11\nt99 \"Sponsored\"\nt100 button \"Leave ad feedback\"\nt101 link ~/sspa/click?ie=UTF8&adId=sp-2W5NC8&url=%2Fscenarios%2Feverything-store%2FNovaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0USYBVP06\nt104 \"Novaq\"\nt106 h2 link \"Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Ear Hooks for Running, Touch Control, Rose Gold\" same href\nt110 \"4.2\"\nt112 \"4.2 out of 5 stars\"\nt113 link \"24,846 ratings\" same [locator withheld]\nt115 \"50+ bought in past month\"\nt117 link \"$89.99\" same href\nt124 \"FREE delivery\"\nt125 \"Wed, Oct 7\"\nt127 button \"Add to cart\"\n- 2/11\nt130 \"Sponsored\"\nt131 button \"Leave ad feedback\"\nt132 link ~/sspa/click?ie=UTF8&adId=sp-6J3DP1&url=%2Fscenarios%2Feverything-store%2FZephyrline-Z5-Pro-Wireless-Earbuds-Adaptive-Noise-Cancelling%2Fdp%2FB0ZPH5PRGR\nt135 \"Zephyrline\"\nt137 h2 link \"Zephyrline Z5 Pro Wireless Earbuds, Adaptive Noise Cancelling, Spatial Audio, 45H Playtime, Wireless Charging, Graphite\" same href\nt141 \"4.6\"\nt143 \"4.6 out of 5 stars\"\nt144 link \"12,950 ratings\" same [locator withheld]\nt147 link \"$79.99\" same href\nt154 \"FREE delivery\"\nt155 img \"Brightaisle Plus\"\nt156 \"Thu, Sep 24\"\nt158 button \"Add to cart\"\n- 3/11\nt160 link ~/Lumo-Audio-Drift-Wireless-Earbuds-Bluetooth-5-3/dp/B0P5EPG131\nt163 \"Lumo Audio\"\nt165 h2 link \"Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Touch Control, Ear Hooks for Running, Graphite\" same href\nt169 \"3.4\"\nt171 \"3.4 out of 5 stars\"\nt172 link \"21,398 ratings\" same [locator withheld]\nt175 link \"$19.99\" same href\nt182 \"FREE delivery\"\nt183 img \"Brightaisle Plus\"\nt184 \"Thu, Sep 24\"\nt186 button \"Add to cart\"\n- 4/11\nt188 link ~/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B05LH0X34D\nt191 \"Aurelle\"\nt193 h2 link \"Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Touch Control, White\" same href\nt197 \"4.1\"\nt199 \"4.1 out of 5 stars\"\nt200 link \"15,132 ratings\" same [locator withheld]\nt203 link \"$69.99\" same href\nt210 \"List:\"\nt212 \"$84.99\"\nt214 \"FREE delivery\"\nt215 img \"Brightaisle Plus\"\nt216 \"Thu, Sep 24\"\nt218 button \"Add to cart\"\n- 5/11\nt220 link ~/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0D333BXW6\nt223 \"Aurelle\"\nt225 h2 link \"Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Wireless Charging Case, Graphite\" same href\nt229 \"4.0\"\nt231 \"4.0 out of 5 stars\"\nt232 link \"4,314 ratings\" same [locator withheld]\nt235 link \"$54.99\" same href\nt242 \"FREE delivery\"\nt243 img \"Brightaisle Plus\"\nt244 \"Thu, Sep 24\"\nt246 button \"Add to cart\"\n- 6/11\nt248 link ~/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B04TZGKSF9\nt251 \"Aurelle\"\nt253 h2 link \"Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Active Noise Cancelling, Low Latency Gaming Mode, White\" same href\nt257 \"4.4\"\nt259 \"4.4 out of 5 stars\"\nt260 link \"75 ratings\" same [locator withheld]\nt262 \"500+ bought in past month\"\nt264 link \"$99.99\" same href\nt271 \"FREE delivery\"\nt272 \"Wed, Oct 7\"\nt274 button \"Add to cart\"\n[region]\nt276 \"Featured from our brands Sponsored\"\n- 1/4\nt280 link \"Brightaisle Basics Wireless Earbuds, Bluetooth 5.3 with 30H Playtime, IPX5 Water Resistant, Black\" ~/sspa/click?ie=UTF8&adId=sb-HB1&url=%2Fscenarios%2Feverything-store%2FBrightaisle-Basics-Wireless-Earbuds-Bluetooth-5-3-with%2Fdp%2FB0BABUDS30\nt285 \"4.1\"\nt287 \"4.1 out of 5 stars\"\nt288 link \"21,530 ratings\" same [locator withheld]\nt291 link \"$17.99\" same href\n- 2/4\nt299 link \"Brightaisle Basics Wireless Earbuds Pro, Active Noise Cancelling, 40H Playtime, White\" ~/sspa/click?ie=UTF8&adId=sb-HB2&url=%2Fscenarios%2Feverything-store%2FBrightaisle-Basics-Wireless-Earbuds-Pro-Active-Noise-Cancelling%2Fdp%2FB0BABUDSPR\nt304 \"4.3\"\nt306 \"4.3 out of 5 stars\"\nt307 link \"9,804 ratings\" same [locator withheld]\nt310 link \"$29.99\" same href\n- 3/4\nt318 link \"Brightaisle Basics Sport Wireless Earbuds, Bluetooth 5.3 with Ear Hooks, 36H Playtime, IPX7 Sweatproof, Black\" ~/sspa/click?ie=UTF8&adId=sb-HB3&url=%2Fscenarios%2Feverything-store%2FBrightaisle-Basics-Sport-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0R257NR7U\nt323 \"4.0\"\nt325 \"4.0 out of 5 stars\"\nt326 link \"2,358 ratings\" same [locator withheld]\nt329 link \"$22.99\" same href\n- 4/4\nt337 link \"Brightaisle Basics Kids Wireless Earbuds, Volume Limited to 85dB, 20H Playtime, Blue\" ~/sspa/click?ie=UTF8&adId=sb-HB4&url=%2Fscenarios%2Feverything-store%2FBrightaisle-Basics-Kids-Wireless-Earbuds-Volume-Limited-to%2Fdp%2FB0BAKIDS85\nt342 \"3.9\"\nt344 \"3.9 out of 5 stars\"\nt345 link \"4,120 ratings\" same [locator withheld]\nt348 link \"$15.99\" same href\n--- on screen ---\n[main]\n- 7/11\nt356 link ~/Novaq-Life-Beam-Wireless-Earbuds-Bluetooth-5-3/dp/B0BXMHW1GJ\nt359 \"Novaq\"\nt361 h2 link \"Novaq Life Beam Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Low Latency Gaming Mode, IPX7 Waterproof, Ivory\" same href\nt365 \"3.6\"\nt367 \"3.6 out of 5 stars\"\nt368 link \"7,537 ratings\" same [locator withheld]\nt370 \"2K+ bought in past month\"\nt372 link \"$34.99\" same href\nt375 layer covers 1\nt376 \"$\"\nt377 \"34\"\nt378 \"99\"\nt379 \"FREE delivery\"\nt380 img \"Brightaisle Plus\"\nt381 \"Thu, Sep 24\"\nt383 button \"Add to cart\"\n- 8/11\nt385 link ~/Novaq-Q20-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0QWDCWRHM\nt388 \"Novaq\"\nt390 h2 link \"Novaq Q20 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Wireless Charging Case, Ivory\" same href\nt394 \"3.6\"\nt396 \"3.6 out of 5 stars\"\nt397 link \"28,352 ratings\" same [locator withheld]\nt399 \"100+ bought in past month\"\nt401 link \"$59.99\" same href\nt404 layer covers 1\nt405 \"$\"\nt406 \"59\"\nt407 \"99\"\nt408 \"FREE delivery\"\nt409 \"Wed, Oct 7\"\nt411 button \"Add to cart\"\n- 9/11\nt413 link ~/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0ZEDHSS93\nt416 \"Aurelle\"\nt418 h2 link \"Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Built-in Mic, Midnight Blue\" same href\nt422 \"3.3\"\nt424 \"3.3 out of 5 stars\"\nt425 link \"1,265 ratings\" same [locator withheld]\nt427 \"100+ bought in past month\"\nt429 link \"$99.99\" same href\nt432 layer covers 1\nt433 \"$\"\nt434 \"99\"\nt436 \"List:\"\nt438 \"$114.99\"\nt440 \"with coupon\"\nt441 \"Save 15%\"\nt442 \"FREE delivery\"\nt443 img \"Brightaisle Plus\"\nt444 \"Thu, Sep 24\"\nt446 button \"Add to cart\"\n--- above the screen ---\n- 10/11\nt449 \"Sponsored\"\nt450 button \"Leave ad feedback\"\n--- on screen ---\nt451 link ~/sspa/click?ie=UTF8&adId=sp-8T7KV5&url=%2Fscenarios%2Feverything-store%2FAurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0PXG323U8\nt454 \"Aurelle\"\nt456 h2 link \"Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Touch Control, Deep Bass, Sage\" same href\nt460 \"4.8\"\nt462 \"4.8 out of 5 stars\"\nt463 link \"8,184 ratings\" same [locator withheld]\nt465 \"2K+ bought in past month\"\nt467 link \"$49.99\" same href\nt470 layer covers 1\nt471 \"$\"\nt472 \"49\"\nt473 \"99\"\nt474 \"FREE delivery\"\nt475 \"Wed, Oct 7\"\nt477 button \"Add to cart\"\n- 11/11\nt480 \"Sponsored\"\nt481 button \"Leave ad feedback\"\nt482 link ~/sspa/click?ie=UTF8&adId=sp-1B4QS9&url=%2Fscenarios%2Feverything-store%2FTessaro-Arc-Lite-Wireless-Earbuds-Bluetooth-5-3%2Fdp%2FB0TSARCLW1\nt485 \"Tessaro\"\nt487 h2 link \"Tessaro Arc Lite Wireless Earbuds, Bluetooth 5.3, Clear Calls with 4 Mics, 32H Playtime, White\" same href\nt491 \"4.1\"\nt493 \"4.1 out of 5 stars\"\nt494 link \"642 ratings\" same [locator withheld]\nt497 link \"$24.99\" same href\nt504 \"$6.49 delivery\"\nt505 \"Wed, Oct 7\"\nt507 button \"Add to cart\"\n--- below the fold ---\n[region]\nt509 \"Customers frequently viewed | Popular products in the last 7 days\"\n- 1/4\nt512 link \"Kinetra Run Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Built-in Mic, LED Power Display, Ivory\" ~/Kinetra-Run-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0Z2SKHE0B\nt517 \"3.7\"\nt519 \"3.7 out of 5 stars\"\nt520 link \"16,733 ratings\" same [locator withheld]\nt523 link \"$79.99\" same href\n- 2/4\nt531 link \"Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 48H Playtime, Low Latency Gaming Mode, Wireless Charging Case, Rose Gold\" ~/Lumo-Audio-Drift-Wireless-Earbuds-Bluetooth-5-3/dp/B0P1XP6F3T\nt536 \"3.5\"\nt538 \"3.5 out of 5 stars\"\nt539 link \"42 ratings\" same [locator withheld]\nt542 link \"$19.99\" same href\nt549 \"List:\"\nt551 \"$29.99\"\n- 3/4\nt554 link \"Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Wireless Charging Case, Ear Hooks for Running, Black\" ~/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B0Z98WET4T\nt559 \"3.3\"\nt561 \"3.3 out of 5 stars\"\nt562 link \"6,988 ratings\" same [locator withheld]\nt565 link \"$69.99\" same href\n- 4/4\nt573 link \"Novaq Q30 Pro Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, IPX7 Waterproof, LED Power Display, Black\" ~/Novaq-Q30-Pro-Wireless-Earbuds-Bluetooth-5-3/dp/B01Y7UUVKX\nt578 \"3.5\"\nt580 \"3.5 out of 5 stars\"\nt581 link \"184 ratings\" same [locator withheld]\nt584 link \"$22.99\" same href\n[navigation]\nt592 link \"Go to previous page, page 4\" ~/s?k=wireless+earbuds&page=4\nt593 link \"Go to page 1\" ~/s?k=wireless+earbuds\nt594 link \"Go to page 2\" ~/s?k=wireless+earbuds&page=2\nt595 link \"Go to page 3\" ~/s?k=wireless+earbuds&page=3\nt596 link \"Go to page 4\" same href as t592\nt597 \"5\" current\nt598 \"Next\" disabled\n[contentinfo]\nt601 link \"Back to top\" ~/s?k=wireless+earbuds&page=5#top\nt605 \"Get to Know Us\"\nt607 link \"Careers\" ~/[locator withheld]\nt609 link \"About Brightaisle\" ~/[locator withheld]\nt611 link \"Sustainability\" ~/[locator withheld]\nt614 \"Make Money with Us\"\nt616 link \"Sell on Brightaisle\" ~/[locator withheld]\nt618 link \"Become an Affiliate\" ~/[locator withheld]\nt620 link \"Advertise Your Products\" ~/[locator withheld]\nt623 \"Let Us Help You\"\nt625 link \"Your Account\" ~/[locator withheld]\nt627 link \"Your Orders\" ~/[locator withheld]\nt629 link \"Shipping Rates & Policies\" ~/[locator withheld]\nt631 link \"Returns & Replacements\" ~/[locator withheld]\nt633 link \"Help\" ~/[locator withheld]\nt636 field:email \"Get deals in your inbox\" =\"\"\nt640 button \"Subscribe\"\nt641 \"© 2026 Brightaisle, Inc. or its affiliates\"\n--- on screen ---\n[region]\nt643 \"Cookies and advertising choices. We use cookies and similar tools to provide our services, understand how customers use them, and show you relevant ads. You can accept all cookies, decline the ones that are not essential, or choose.\"\nt646 button \"Accept\" marked\nt647 button \"Decline\"\nt648 button \"Customize cookies\"\n[page]\nt650 button \"Chat with Brightaisle Assistant\" closed"
+   }
+  }
+ }
+}

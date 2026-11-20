@@ -224,6 +224,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
+      // Once the decider has decided, the judge continues its cached conversation on its current model; a saved Flow's replay judged before any decision has a judge of its own (t965).
+      ...(run.decidedAt !== undefined ? { continuesDecider: true } : {}),
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       // The judge's request is built to the attempt model's window, as every round's is; a routed judge model's own window still wins (`runtime/llm/harness/served-limits.ts`).
       ...(input.provider.tokenLimits ? { tokenLimits: input.provider.tokenLimits } : {}),

@@ -26,7 +26,8 @@ describe("native Anthropic task provider", () => {
     // No automatic marker: it would sit after what changes on every call.
     expect(wire).not.toHaveProperty("cache_control");
     expect(wire).not.toHaveProperty("temperature");
-    expect(wire).not.toHaveProperty("thinking");
+    // No thinking on any call (t962, user 2026-11-19): Sonnet 5.5 turns it off with between_tools.
+    expect(wire.thinking).toEqual({ type: "between_tools" });
     expect(wire.system[0].text).toContain("Return exactly one JSON object matching the requested expectedOutput.");
     expect(JSON.parse(wire.messages[0].content).outputSchema.properties.kind).toEqual({ const: "diagnosis" });
     expect(secrets).toHaveBeenCalledWith(expect.objectContaining({ provider: "anthropic", secretReference: "secret:claude", purpose: "llm_provider_request", requestId: "request.one", projectId: "project.one", flowId: "flow.one" }));

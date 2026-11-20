@@ -1,3 +1,5 @@
+import { automationStudioAnthropicJsonValueOffset as valueOffset } from "./json-offset.ts";
+
 type TextBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
 
 /** One evidence entry as the projection wrote it: only what the rule below reads of it. */
@@ -43,18 +45,4 @@ export function automationStudioAnthropicCacheContent(text: string, moves: (entr
   });
   blocks.push({ type: "text", text: text.slice(end) });
   return blocks;
-}
-
-function valueOffset(object: Record<string, unknown>, path: readonly string[], offset = 0): number | undefined {
-  const [head, ...tail] = path;
-  let at = offset + 1;
-  for (const [key, value] of Object.entries(object)) {
-    at += JSON.stringify(key).length + 1;
-    if (key === head) {
-      if (!tail.length) return at;
-      return value && typeof value === "object" && !Array.isArray(value) ? valueOffset(value as Record<string, unknown>, tail, at) : undefined;
-    }
-    at += JSON.stringify(value).length + 1;
-  }
-  return undefined;
 }

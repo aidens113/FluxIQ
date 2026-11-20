@@ -22,6 +22,19 @@ describe("an attempt's trail across a resume", () => {
     expect(trails.of("attempt.1", { carriedOn: true, askedAgain: true })).toEqual([]);
   });
 
+  // t965: run-mwodpw10-3d5748ab's second attempt was judged on its own saved Flow run alone (judge 0117, 23 entries), and so it must stay.
+  it("gives a later attempt only its own trail: none of an earlier attempt's calls, however many it made", () => {
+    const trails = automationStudioAnswerFirstTrailsOf({});
+    const first = trails.of("attempt.1", { carriedOn: false, askedAgain: false });
+    for (let n = 0; n < 39; n += 1) first.push({ did: "page.read", outcome: "answered", found: { n } });
+    const second = trails.of("attempt.2", { carriedOn: false, askedAgain: false });
+    second.push({ did: "web.output.browser-navigate", outcome: "succeeded" });
+    expect(second).toEqual([{ did: "web.output.browser-navigate", outcome: "succeeded" }]);
+    expect(first).toHaveLength(39);
+    // And a carry-on of the second holds the second's, not the first's.
+    expect(trails.of("attempt.2", { carriedOn: true, askedAgain: false })).toBe(second);
+  });
+
   it("says the earlier calls are not held where this Core holds none of a carried-on attempt's, never making them up", () => {
     const resumed = automationStudioAnswerFirstTrailsOf({}).of("attempt.1", { carriedOn: true, askedAgain: false });
     expect(resumed).toHaveLength(1);

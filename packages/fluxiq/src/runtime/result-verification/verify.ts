@@ -202,7 +202,7 @@ import { automationStudioResultVerdict } from "./verdict/index.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
 import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
-import { automationStudioResultTrailFitting } from "./run-trail/index.ts";
+import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow, automationStudioResultTrailFitting } from "./run-trail/index.ts";
 
 /**
  * Core's codes for a run that was not verified, and why. Never a verdict.
@@ -459,7 +459,11 @@ async function askOnce(
     automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     request.instructions
   ))));
-  const result = await runAutomationStudioLlmHarness({
+  // The forms of the judge's copy, whole first, and the first that fits the judging model's window by a conservative
+  // measure; a refusal for size steps down one form, never read as no answer while one is left (`./run-trail/window.ts`, t965).
+  const forms = [judged, ...automationStudioResultTrailFitting(judged)];
+  let form = automationStudioResultSummaryFormForWindow(forms, request.tokenLimits, Buffer.byteLength(request.instructions.map((instruction) => instruction.body).join(" "), "utf8"));
+  const harnessed = () => runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,
     flowId: request.flowId,
@@ -467,9 +471,9 @@ async function askOnce(
     ...(request.subflowId ? { subflowId: request.subflowId } : {}),
     instructions: [...request.instructions],
     ...(request.runDetail ? { runDetail: request.runDetail } : {}),
-    resultSummary: judged,
-    // Where the judging model's window cannot hold it whole, the first shorter form that fits: the views first, the trail and the final data last (`./run-trail/fitting.ts`, t963).
-    resultSummaryFitting: automationStudioResultTrailFitting(judged),
+    resultSummary: forms[form]!,
+    // Where the judging model's window cannot hold even that, a shorter form still: the views first, the trail and the final data last (`./run-trail/fitting.ts`, t963).
+    resultSummaryFitting: forms.slice(form + 1),
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
     provider,
@@ -482,6 +486,11 @@ async function askOnce(
     ...(request.now ? { now: request.now } : {}),
     metadata: { source: VERIFICATION_SOURCE, expectedOutput: "diagnosis" }
   });
+  let result = await harnessed();
+  while (!result.ok && form < forms.length - 1 && result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === AUTOMATION_STUDIO_RESULT_SIZE_REFUSED)) {
+    form += 1;
+    result = await harnessed();
+  }
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   // A reply cut off after its verdict (header, t653), by the adapter's typed mark: read from its kind and diagnosis alone, never its summary.
   const truncatedAfterVerdict = response?.truncatedAfterVerdict === true;

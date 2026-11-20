@@ -8,6 +8,17 @@
 // what it changed on the page it stayed on (the domain's `added` and `removed` view lines) and the domain's view after
 // it, by the domain's declared view keys. A step that ran a child Flow is followed by that Flow's own steps, in order.
 // Whole: nothing is cut (`../../step-changes.ts` says what the diff lines are).
+//
+// **But the host's raw capture of the page is not sent twice (t965).** A step's `outputs` may carry
+// the host's own capture of the page it left -- every element with its bounds, frame and viewport --
+// beside the domain's view of that same page in `found.view`. Live run `run-mwodpw10-3d5748ab`
+// (judge 0117): three such captures, about 1.1 MB each against a 17 KB view, made a 2.2 MB
+// request the provider refused. So where the attempt has the domain's view after it, the capture
+// of the same page in its outputs is left out and said to be shown as the view: an object in
+// `outputs` that names the page the view is of (`location`), by any member, inside an answer that
+// names it too -- the outermost such, with all it holds. What the step answered around it -- its
+// validation, its rows, where it moved -- stays whole. A step with no view after it keeps its
+// outputs as they are.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
@@ -54,8 +65,10 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
   const changed = diff ? Object.fromEntries((["added", "removed"] as const).flatMap((key) => (typeof diff[key] === "string" && (diff[key] as string).trim() ? [[key, diff[key]!]] : []))) : {};
   const after = attempt.stateRefs?.afterAction?.summary;
   const view = after ? Object.fromEntries(keys.filter((key) => Object.hasOwn(after, key)).map((key) => [key, after[key]!])) : {};
+  const address = Object.keys(view).length && typeof after?.location === "string" ? pageAddress(after.location) : undefined;
+  const outputs = attempt.outputs && Object.keys(attempt.outputs).length ? (address ? withoutCapture(attempt.outputs as JsonValue, address) : (attempt.outputs as JsonValue)) : undefined;
   const found: JsonObject = {
-    ...(attempt.outputs && Object.keys(attempt.outputs).length ? { outputs: attempt.outputs as JsonValue } : {}),
+    ...(outputs !== undefined ? { outputs } : {}),
     ...(attempt.message?.trim() ? { message: attempt.message.trim() } : {}),
     ...(Object.keys(changed).length ? { changed } : {}),
     ...(Object.keys(view).length ? { view } : {})
@@ -67,4 +80,26 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
     ...(outcome ? { outcome } : {}),
     ...(Object.keys(found).length ? { found } : {})
   };
+}
+
+/** What stands in for the host's capture of the page, which `found.view` shows (header). */
+const CAPTURE_SHOWN_AS_VIEW = "[the host's capture of the page this step left: shown as found.view]";
+
+/** An address as a page names it, its fragment and a closing slash apart. */
+function pageAddress(address: string): string {
+  return address.trim().replace(/#.*$/u, "").replace(/\/+$/u, "");
+}
+
+/**
+ * `value` with the host's capture of the page at `address` left out (header): an object naming that page inside an
+ * answer that already names it -- the answer says where it was, and the capture beside it is the page as the host
+ * read it, every element and its geometry, which `found.view` shows as the domain reads it. The outermost such object
+ * goes, with all it holds; the answer around it stays.
+ */
+function withoutCapture(value: JsonValue, address: string, insideAnswer = false): JsonValue {
+  if (Array.isArray(value)) return value.map((item) => withoutCapture(item, address, insideAnswer));
+  if (value === null || typeof value !== "object") return value;
+  const names = Object.values(value).some((member) => typeof member === "string" && pageAddress(member) === address);
+  if (names && insideAnswer) return CAPTURE_SHOWN_AS_VIEW;
+  return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, withoutCapture(member, address, insideAnswer || names)]));
 }

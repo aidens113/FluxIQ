@@ -6,8 +6,10 @@ import { validateAutomationStudioLlmTaskRequest } from "../provider-task/index.t
 import type { AutomationStudioLlmSecretReference } from "../deepseek/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { automationStudioAnthropicRequest } from "./request.ts";
-import { automationStudioAnthropicReadReply } from "../../models/providers/anthropic/index.ts";
+import { automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix } from "../../models/providers/anthropic/index.ts";
+import { automationStudioLlmTaskMessages } from "../provider-task/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
+import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import { automationStudioAnthropicTaskAnswer } from "./task-answer.ts";
 
 export type AutomationStudioAnthropicProviderOptions = {
@@ -25,6 +27,8 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
   if (!isAutomationStudioAnthropicModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", automationStudioAnthropicModelRefusal(model));
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "Anthropic response-byte limit is invalid.");
+  // The latest decider request of each Flow this model served, for a judge that continues it (`continued`, t965).
+  const deciders = new Map<string, AutomationStudioAnthropicDeciderPrefix>();
   return {
     metadata: { provider: "anthropic", model },
     measureInput: (request) => {
@@ -35,7 +39,7 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
     // then charge the actual read/write split. Output is the harness reserve.
     estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens),
     runTask: async (request, execution) => {
-      const prepared = prepare(request, model);
+      const prepared = continued(request, prepare(request, model), model, deciders);
       return await automationStudioAnthropicMessage({
         body: prepared.body, model, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
         timeoutMs: request.timeoutMs, ...(execution?.signal ? { signal: execution.signal } : {}),
@@ -48,6 +52,32 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
       });
     }
   };
+}
+
+/**
+ * The request as it is sent (t965): a decider's is kept as the latest of its Flow, and a judge that continues the
+ * decider's conversation (`metadata.continuesDecider`) is sent as that request's cached prefix with the judging appended
+ * (`../../models/providers/anthropic/continuation.ts`), in the decider's JSON-text format. A judge with no such request
+ * held, of another attempt's decider, or whose continuation would not fit the window, is sent on its own as before.
+ */
+function continued(request: AutomationStudioLlmTaskRequest, prepared: ReturnType<typeof automationStudioAnthropicRequest>, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>): ReturnType<typeof automationStudioAnthropicRequest> {
+  const key = `${request.context.projectId} ${request.context.flowId}`;
+  if (request.context.evidenceLoop) {
+    const prefix = prepared.format.jsonText ? automationStudioAnthropicDeciderPrefix(JSON.parse(prepared.body) as Record<string, unknown>) : undefined;
+    if (prefix) deciders.set(key, prefix);
+    else deciders.delete(key);
+    return prepared;
+  }
+  const prefix = request.taskKind === "loop_verification" && request.metadata?.continuesDecider === true ? deciders.get(key) : undefined;
+  if (!prefix) return prepared;
+  const [system, user] = automationStudioLlmTaskMessages(request);
+  const wire = automationStudioAnthropicJudgeContinuation(prefix, system!.content, user!.content);
+  if (!wire) return prepared;
+  const body = JSON.stringify(wire);
+  const estimatedInputBytes = Buffer.byteLength(JSON.stringify({ system: wire.system, messages: wire.messages, output_config: wire.output_config }), "utf8");
+  const estimatedInputTokens = estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16;
+  if (estimatedInputTokens + request.tokenLimits.maxOutputTokens > AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens) return prepared;
+  return { body, format: { schema: prepared.format.schema, jsonText: true }, estimatedInputBytes, estimatedInputTokens };
 }
 
 function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudioAnthropicModel): ReturnType<typeof automationStudioAnthropicRequest> {

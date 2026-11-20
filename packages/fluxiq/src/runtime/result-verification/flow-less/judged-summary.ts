@@ -12,7 +12,7 @@
 // expect `flowShape`, here empty. `sent` is what the model sees, which leaves that
 // key out and adds the acts, the model's words, the witnesses, what looks found after the acts
 // (screened again, `lookedShown`, and never cut), on a repeat the person asked
-// for, what that means (`./asked-again.ts`), and last the trail of everything the
+// for, what that means (`./asked-again.ts`), and, first after the question, the trail of everything the
 // attempt did (`../run-trail/`, t963): the summary's type
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
@@ -66,17 +66,19 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const criteria = automationStudioJudgeCriteriaText();
   // The question is an open section (`judge.question`): a run may add to it or put its own in its place.
   const question = automationStudioOverriddenText("prompt", "judge.question", AUTOMATION_STUDIO_FLOW_LESS_QUESTION);
+  // The trail right after the question (t965): the same bytes from one check of an attempt to the next while the attempt only adds to it,
+  // so the provider reads it back from cache (`../../models/providers/anthropic/trail-cache-content.ts`); what changes comes after it.
   const sent = {
     question: criteria ? `${question}\n\n${criteria}` : question,
     ...(summary.askedAgain ? { askedAgain: AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } : {}),
+    ...(trail.trail ? { trail: trail.trail } : {}),
     ...shown,
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
     ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
     ...(looked.looks.length ? { looked: looked.looks } : {}),
-    ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
-    ...(trail.trail ? { trail: trail.trail } : {})
+    ...(readPages.pages.length ? { readPages: readPages.pages } : {})
   };
   return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
 }
