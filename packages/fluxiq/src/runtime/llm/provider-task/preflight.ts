@@ -9,15 +9,7 @@ import { automationStudioFlowBootstrapSizeLimitsOfContext } from "../../flow-aut
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop-decision.ts";
 import { automationStudioLlmTaskExpectedOutput } from "./output-schema.ts";
 import { isRecord } from "../provider-transport/index.ts";
-
-/**
- * How deep the request context may nest: a recursion guard, not a size limit.
- * There is no count, entry-total, string- or key-length limit on the context:
- * a whole page is thousands of elements, and every one is sent. The only bound
- * on a request's size is the model's context window, checked with the
- * request's measured size (`./provider.ts`).
- */
-const AUTOMATION_STUDIO_LLM_MAX_CONTEXT_DEPTH = 64;
+import { automationStudioLlmUnboundedJsonAt } from "./unbounded-json.ts";
 
 // Each check refuses with its own code, in the order they are made. They were
 // one condition and one code, which is how a stale field list went unnoticed.
@@ -26,7 +18,9 @@ export function validateAutomationStudioLlmTaskRequest(request: AutomationStudio
   const limits = request.tokenLimits;
   if (!validId(request.requestId) || !validId(request.idempotencyKey)) refuse("llm.provider_request_identity_invalid", "LLM request identity is invalid.");
   if (request.context.projectId.trim() === "" || request.context.flowId.trim() === "") refuse("llm.provider_request_scope_invalid", "LLM request names no project or Flow.");
-  if (!boundedJson(request.context)) refuse("llm.provider_request_context_unbounded", "LLM request context is not bounded JSON.");
+  // Where it is not, said on the refusal (`./unbounded-json.ts`, t974).
+  const unbounded = automationStudioLlmUnboundedJsonAt(request.context);
+  if (unbounded) refuse("llm.provider_request_context_unbounded", `LLM request context is not bounded JSON: ${unbounded}.`);
   if (!validRecentActions(request.context.recentActions)) refuse("llm.provider_recent_actions_invalid", "LLM request recent actions are not the packet's projection.");
   // Every evidence slot, each under its own code: Core's shared pre-send check.
   const evidenceRefusal = automationStudioLlmRequestEvidenceRefusal(request);
@@ -55,31 +49,6 @@ function validRecentActions(actions: unknown): boolean {
   if (!actions) return true;
   // Every action the run took, however many (2026-09-30): no count is checked.
   return Array.isArray(actions) && actions.every(isAutomationStudioLlmRecentActionContext);
-}
-
-function boundedJson(root: unknown): boolean {
-  const stack: Array<{ value: unknown; depth: number; leave?: true }> = [{ value: root, depth: 0 }];
-  const active = new Set<object>();
-  while (stack.length) {
-    const { value, depth, leave } = stack.pop()!;
-    if (value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value))) continue;
-    if (!value || typeof value !== "object") return false;
-    if (leave) {
-      active.delete(value);
-      continue;
-    }
-    if (depth > AUTOMATION_STUDIO_LLM_MAX_CONTEXT_DEPTH || active.has(value)) return false;
-    active.add(value);
-    stack.push({ value, depth, leave: true });
-    let children: ReadonlyArray<readonly [string, unknown]>;
-    try {
-      children = Array.isArray(value) ? value.map((item) => ["", item] as const) : Object.entries(value);
-    } catch {
-      return false;
-    }
-    for (const [, child] of children) stack.push({ value: child, depth: depth + 1 });
-  }
-  return true;
 }
 
 function validFlowBootstrapContext(context: AutomationStudioLlmTaskRequest["context"]): boolean {
@@ -141,7 +110,7 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
   for (const item of loop.evidence) {
     if (!isRecord(item) || Object.keys(item).some((key) => !["callId", "toolId", "value"].includes(key))
       || typeof item.callId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.callId)
-      || typeof item.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.toolId) || !boundedJson(item.value)) return false;
+      || typeof item.toolId !== "string" || !/^[a-z0-9_.:-]{1,200}$/i.test(item.toolId) || automationStudioLlmUnboundedJsonAt(item.value) !== undefined) return false;
   }
   if (!isRecord(loop.completionSchema) || typeof loop.canComplete !== "boolean") return false;
   // The decision schema must be one Core built from the tools it offered, and
