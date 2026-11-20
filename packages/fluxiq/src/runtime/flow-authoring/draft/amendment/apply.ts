@@ -1,6 +1,7 @@
 // One decision's amendments, applied to the draft in place (`./index.ts` says
 // what each change means and why the draft is edited this way).
 import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
+import { automationStudioFlowDraftSettleLoopCovered } from "../loop-covered/index.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
@@ -339,6 +340,11 @@ export function applyAutomationStudioFlowDraftAmendments(
   // (live run `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so
   // a drop put back never takes its partner out with it (`../reversal.ts`).
   if (reversalAfterCheck || withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
+  // A step kept right after a loop that already does its act leaves the Flow, and one
+  // taken out for that comes back once no loop covers it, once every repeat and move of
+  // the decision stands (`../loop-covered/`, t975: the press of Next page kept after the
+  // loop that presses it until the list ends, which stopped every replay).
+  automationStudioFlowDraftSettleLoopCovered(steps);
   const moved = movedActs(claims);
   return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
 }

@@ -220,6 +220,8 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     // Why Core took the step out (`./reversal.ts`): shown only on such a step,
     // so no other draft pays for it, and gone once the model puts it back.
     ...(step.cancels !== undefined && step.disposition !== "kept" ? { out: takenOutLine(step, all) } : {}),
+    // Why Core took the step out because a loop already does its act (`./loop-covered/`, t975).
+    ...(step.coveredBy !== undefined && step.disposition !== "kept" && step.cancels === undefined ? { out: coveredLine(step, all) } : {}),
     // The act the step says it does, under the word the amendment took. Not
     // shown until live run 36, whose model could not see that its listing on
     // step 11 named a1 and spent 24 decisions naming a1 on the Confirm.
@@ -312,6 +314,16 @@ function takenOutLine(step: AutomationStudioFlowDraftStep, all: readonly Automat
     ? `step ${later.position} pressed the same control back, so the two together changed nothing.`
     : `it pressed back the control step ${first.position} pressed, so the two together changed nothing.`;
   return `taken out by Core: ${why} ${state} Add both back only if a step between them needs the control the other way.`;
+}
+
+/**
+ * Why Core took a step out because the loop right before it already does its
+ * act (`./loop-covered/`, t975), in the step numbers the model reads.
+ */
+function coveredLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): string {
+  const last = automationStudioFlowDraftStepById(all, step.coveredBy!);
+  const at = last ? `step ${last.position}` : "a step no longer in the draft";
+  return `taken out by Core: the loop ending at ${at} already does this step's act on every pass until there is nothing more, so after the loop it could only find nothing more to do. It comes back by itself if that loop goes.`;
 }
 
 /**

@@ -31,7 +31,14 @@
 //       navigate (0095) and the Pickup filter (0108) again as new calls with
 //       `add`, and the Flow ended with a second navigate and a second Pickup
 //       filter after its page loop. A press done again right after itself --
-//       "+" twice -- has nothing between, so it is no copy.
+//       "+" twice -- has nothing between, so it is no copy;
+//   (d) the kept step is the last step of a loop that repeats while it
+//       succeeds until there is nothing more, and the joining step would
+//       directly follow that loop doing the same act (`./loop-covered/`, t975).
+//       The loop already does it until it can do no more, so done again after
+//       the loop it can only answer that there is nothing more: run
+//       `run-mwouhs7i-b22d9399` stopped there on every replay. Whatever page
+//       each started on, it is a copy.
 //
 // Applied wherever a step joins the Flow by the model's word: a call with `add`
 // (`../llm/decision-handlers/second-copy.ts`), and an `add` or `keep` amendment
@@ -39,6 +46,7 @@
 // replaced is refused on its own (`./amendment/replaced-attempt.ts`).
 import type { JsonValue } from "../../../core/index.ts";
 import { automationStudioFlowDraftStepCarried } from "./carried-step/index.ts";
+import { automationStudioFlowDraftLoopCoveringStep } from "./loop-covered/index.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";
 
 type Step = AutomationStudioFlowDraftStep;
@@ -46,6 +54,9 @@ type Step = AutomationStudioFlowDraftStep;
 /** The kept step that `step`, joining the Flow, would copy, or nothing. */
 export function automationStudioFlowDraftSecondCopy(steps: readonly Step[], step: Step): Step | undefined {
   if (!automationStudioFlowDraftStepIsProposable(step)) return undefined;
+  // Rule (d): the loop right before it already does its act.
+  const covering = automationStudioFlowDraftLoopCoveringStep(steps, step);
+  if (covering) return covering;
   const ordered = [...steps].sort((a, b) => a.position - b.position);
   return ordered.find((kept) => kept !== step && kept.disposition === "kept" && automationStudioFlowDraftStepIsProposable(kept)
     && kept.actionId === step.actionId && kept.toolId === step.toolId
