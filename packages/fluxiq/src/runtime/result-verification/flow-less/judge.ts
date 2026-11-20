@@ -46,6 +46,7 @@ import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict }
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
+import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow } from "../run-trail/index.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
@@ -94,6 +95,11 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   // A yes whose citations Core refutes is asked again, within this one check and its one deadline, until the refuted citations repeat.
   const tried = new Set<string>();
   let sentNow: AutomationStudioRunResultSummary = sent;
+  // The forms of what is sent, whole first, and the one to send: the first that fits the judging model's window by a
+  // conservative measure (`../run-trail/window.ts`, t965). A refusal for size steps down one form, and is never read as not judged while one is left.
+  const formsOf = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)];
+  let forms = formsOf(sentNow);
+  let form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
   try {
     for (;;) {
       const bounded = await automationStudioResultVerificationWithinDeadline({
@@ -105,15 +111,16 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           flowId: input.flowId,
           ...(input.runId ? { runId: input.runId } : {}),
           instructions: [asked(input)],
-          resultSummary: sentNow,
-          // Where the judging model's window cannot hold it whole, it is sent in the first shorter form that fits, each saying what it summarised (`./window-fitting.ts`).
-          resultSummaryFitting: automationStudioFlowLessSummaryFitting(sentNow),
+          resultSummary: forms[form]!,
+          // Where the judging model's window cannot hold even that, the harness sends a shorter form still, each saying what it summarised (`./window-fitting.ts`).
+          resultSummaryFitting: forms.slice(form + 1),
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
           ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
           ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
           signal,
-          metadata: { source: SOURCE, expectedOutput: "diagnosis" }
+          // A judge continuing the decider's conversation says so, for its routing and its adapter (`./types.ts`, t965).
+          metadata: { source: SOURCE, expectedOutput: "diagnosis", ...(input.continuesDecider ? { continuesDecider: true } : {}) }
         })
       });
       if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
@@ -121,16 +128,27 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
         if (!expiry.signal.aborted && !bounded.settled && bounded.reason === "threw" && isCancellation(bounded.error)) throw bounded.error;
         return unanswered(read, expiry.signal.aborted ? "llm.provider_timeout" : undefined);
       }
+      if (form < forms.length - 1 && refusedForSize(bounded.value)) {
+        form += 1;
+        continue;
+      }
       const got = reading(bounded.value, read, input.summary);
       if (!got.refuted) return got.judgement;
       const key = [...got.refuted].sort().join("|");
       if (tried.has(key)) return got.judgement;
       tried.add(key);
       sentNow = automationStudioFlowLessCitationNotice(sent, got.refuted);
+      forms = formsOf(sentNow);
+      form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
     }
   } finally {
     disarm();
   }
+}
+
+/** The provider refused the request as larger than its model's window (`../run-trail/window.ts`). */
+function refusedForSize(result: AutomationStudioLlmTaskResult): boolean {
+  return !result.ok && result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === AUTOMATION_STUDIO_RESULT_SIZE_REFUSED);
 }
 
 /** A judgement, and where it is an unsure for citations Core refuted, Core's sentences for them (the re-ask's grounds). */

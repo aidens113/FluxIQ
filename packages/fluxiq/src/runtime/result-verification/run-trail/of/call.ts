@@ -12,7 +12,7 @@ import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 /** The answer shape a tool call returns through the loop's executor, as far as this reads it. */
 type Execution = { kind: "llm_evidence_tool_execution"; evidence?: JsonValue; resultCode?: string | undefined; failure?: unknown };
 
-export function automationStudioResultTrailStepOfCall(call: { toolId: string; value: JsonObject }, answer: unknown, on?: string | undefined): AutomationStudioResultTrailStep {
+export function automationStudioResultTrailStepOfCall(call: { callId?: string | undefined; toolId: string; value: JsonObject }, answer: unknown, on?: string | undefined): AutomationStudioResultTrailStep {
   const { node, ...rest } = call.value;
   const did = typeof node === "string" && node.trim() ? node : call.toolId;
   const execution = isExecution(answer) ? answer : undefined;
@@ -23,6 +23,7 @@ export function automationStudioResultTrailStepOfCall(call: { toolId: string; va
   const refused = execution?.failure !== undefined || said?.ok === false;
   const code = execution?.resultCode ?? (typeof said?.code === "string" ? said.code : undefined);
   return {
+    ...(call.callId?.trim() ? { callId: call.callId.trim() } : {}),
     did,
     ...(on?.trim() ? { on: on.trim() } : {}),
     ...(Object.keys(rest).length ? { asked: rest } : {}),

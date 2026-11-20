@@ -1,7 +1,7 @@
 // The attempt's resolution on the model ladder (t962): every rung from the base up resolved as the
 // attempt starts, the base the named model or Haiku where none was named, each call served on the
-// rung the attempt's ladder stands on, every role climbing one rung per climb, and a role off the
-// ladder left where it is.
+// rung the attempt's ladder stands on, the decider and the repair climbing one rung per climb, the
+// judge staying on its start rung (t965), and a role off the ladder left where it is.
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../../models/catalog/index.ts";
 import { runWithAutomationStudioRunOverrides, type AutomationStudioRunOverrides } from "../../../run-overrides/index.ts";
@@ -59,7 +59,8 @@ describe("the attempt's resolution on the model ladder", () => {
       models.push(served(resolution));
       return models;
     });
-    expect(seen).toEqual(["claude-haiku-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
+    // The judge's call (the fourth) stays on the base: only the decider and the repair climbed (t965).
+    expect(seen).toEqual(["claude-haiku-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
     expect(runWithAutomationStudioLlmModelLadder(automationStudioLlmModelLadder(), () => served(resolution))).toBe("claude-haiku-5-5");
     // Outside every attempt's ladder: the base.
     expect(served(resolution)).toBe("claude-haiku-5-5");
@@ -76,7 +77,34 @@ describe("the attempt's resolution on the model ladder", () => {
     expect(ran).toEqual([{ model: "claude-haiku-5-5" }, { model: "claude-sonnet-5-5" }]);
   });
 
-  it("keeps a role's own stronger model and climbs it from there; a role off the ladder stays where it is", async () => {
+  // t965: run-mwodpw10-3d5748ab's judge climbed with the decider to Opus at $0.87 a check.
+  it("serves the judge on the attempt's base model however far the decider has climbed, to the top", async () => {
+    const resolution = await automationStudioLlmRoleRoutedResolution(resolver([]), { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
+    const attempt = automationStudioLlmModelLadder();
+    const seen = runWithAutomationStudioLlmModelLadder(attempt, () => {
+      served(resolution);
+      attempt.escalate({ reason: "loop_persisted" });
+      attempt.escalate({ reason: "loop_persisted" });
+      return [served(resolution), served(resolution, "loop_verification")];
+    });
+    expect(seen).toEqual(["claude-opus-5-5", "claude-haiku-5-5"]);
+  });
+
+  // t965 (user, 2026-11-19): a judge continuing the decider's conversation reads the decider's cache, which belongs to the decider's model.
+  it("serves a judge that continues the decider's conversation on the decider's current model, and every other judge on the base", async () => {
+    const resolution = await automationStudioLlmRoleRoutedResolution(resolver([]), { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
+    const continuing = { ...request("loop_verification"), metadata: { continuesDecider: true } } as AutomationStudioLlmTaskRequest;
+    const attempt = automationStudioLlmModelLadder();
+    const seen = runWithAutomationStudioLlmModelLadder(attempt, () => {
+      const before = [served(resolution), (resolution?.provider.servedBy?.(continuing))?.metadata.model];
+      attempt.escalate({ reason: "loop_persisted" });
+      return [...before, served(resolution), (resolution?.provider.servedBy?.(continuing))?.metadata.model, served(resolution, "loop_verification")];
+    });
+    // Decider, continuing judge; after a climb: decider, continuing judge on the decider's model, a replay's or a trial's judge on the base.
+    expect(seen).toEqual(["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+  });
+
+  it("keeps a role's own stronger judge model where it is, and a role off the ladder where it is", async () => {
     const asked: (string | undefined)[] = [];
     const resolution = await inFrame({ judge: "claude-opus-5-5", repair: "mock-repair" }, async () => await automationStudioLlmRoleRoutedResolution(resolver(asked), { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" }));
     expect(asked).toEqual(["claude-haiku-5-5", "claude-opus-5-5", "mock-repair", "claude-sonnet-5-5"]);

@@ -77,9 +77,9 @@ describe("the attempt's call chain", () => {
     await execute(PRESS);
     await execute({ ...PRESS, callId: "press.again" });
     expect(trail).toEqual([
-      { did: "page.look", asked: { query: "Ada" }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } },
-      { did: "refuse", asked: { reason: "first words" }, outcome: "no", found: { ok: false, code: "no" } },
-      { did: "press", asked: { target: { handle: "t1" }, consequences: ["delete"] }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } }
+      { callId: "look", did: "page.look", asked: { query: "Ada" }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } },
+      { callId: "no", did: "refuse", asked: { reason: "first words" }, outcome: "no", found: { ok: false, code: "no" } },
+      { callId: "press", did: "press", asked: { target: { handle: "t1" }, consequences: ["delete"] }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } }
     ]);
   });
 

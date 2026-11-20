@@ -7,6 +7,7 @@ import type { AutomationStudioAnthropicModel } from "../../catalog/index.ts";
 import { isRecord } from "../../transport/index.ts";
 import { automationStudioAnthropicCacheWriteTokens, automationStudioAnthropicUsage } from "./pricing.ts";
 import { readAutomationStudioAnthropicStream } from "./stream.ts";
+import { automationStudioAnthropicRefusedForSize } from "./size-refusal.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 
 export const AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
@@ -78,8 +79,10 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
       const refusal = automationStudioAnthropicReplyContainsCredential(screened, key)
         ? { ...screened, contentType: null, error: null, withheld: [...screened.withheld, "message_credential_shaped"] }
         : screened;
-      const code = balance ? "llm.provider_balance_exhausted" : response.status === 401 || response.status === 403 ? "llm.provider_auth_failed" : response.status === 429 ? "llm.provider_rate_limited" : "llm.provider_http_error";
-      throw new AutomationStudioLlmProviderError(code, "Anthropic refused the request.", !balance && (response.status === 429 || response.status >= 500), response.status, undefined, undefined, refusal);
+      // A request the model's window cannot hold is the caller's to make smaller, never a server error (t965, run-mwodpw10-3d5748ab 0117): said with the code Core's own size check uses.
+      const tooLarge = automationStudioAnthropicRefusedForSize(response.status, refusal.error);
+      const code = balance ? "llm.provider_balance_exhausted" : response.status === 401 || response.status === 403 ? "llm.provider_auth_failed" : response.status === 429 ? "llm.provider_rate_limited" : tooLarge ? "llm.provider_input_budget_exceeded" : "llm.provider_http_error";
+      throw new AutomationStudioLlmProviderError(code, tooLarge ? "Anthropic refused the request as larger than the model's context window; nothing was trimmed." : "Anthropic refused the request.", !balance && !tooLarge && (response.status === 429 || response.status >= 500), response.status, undefined, undefined, refusal);
     }
     let envelope: unknown;
     let raw: Uint8Array;

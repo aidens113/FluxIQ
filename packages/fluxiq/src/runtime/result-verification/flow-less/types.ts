@@ -62,6 +62,13 @@ export type AutomationStudioFlowLessJudgeInput = {
    * request to by size. A routed judge model's own limits, said on its provider, still win (`../../llm/harness/served-limits.ts`).
    */
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
+  /**
+   * The attempt's decider has decided at least once, so this judge continues the decider's own cached conversation
+   * (t965): it is served on the decider's current model, and where the model's adapter holds the decider's latest
+   * request, sent as that request's cached prefix with the judging appended
+   * (`../../models/providers/anthropic/continuation.ts`). Absent, a judge of its own on the attempt's base model.
+   */
+  continuesDecider?: boolean | undefined;
   /** The whole check's deadline. Absent, the verification deadline for `timeoutMs`. */
   deadlineMs?: number | undefined;
   /** How long this work has waited for a person: the deadline does not count it. Absent, nothing. */

@@ -6,3 +6,4 @@ export { automationStudioResultRunTrail } from "./trail.ts";
 export { automationStudioResultTrailScreened } from "./screen.ts";
 export { automationStudioResultTrailOfAttempts, automationStudioResultTrailOfObservations, automationStudioResultTrailStepOfCall } from "./of/index.ts";
 export { automationStudioResultTrailFitting } from "./fitting.ts";
+export { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow } from "./window.ts";

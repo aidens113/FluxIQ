@@ -84,16 +84,22 @@ describe("a judge on a model with a smaller window than the evidence", () => {
     expect(JSON.stringify(request.context.resultSummary)).not.toContain("north windows");
   });
 
-  it("was refused by its own adapter and not judged while the request was built to the caller's limits", async () => {
+  // t965: a refusal for size was read as not judged at once (run-mwodpw10-3d5748ab, 0117). Each shorter form is now tried
+  // once; here the judging model's provider says nothing of its window, so every request keeps the default reply budget,
+  // which alone is past this model's window, and no form can fit: it is not judged only once every form was refused.
+  it("is asked again with each shorter form, once, when its own adapter refuses by size, and is not judged only when none is left", async () => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    // The judging model's provider says nothing of its window, as before this change: the request is built to the default window.
     const provider = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", 1_000_000, []), judge: model("small-judge", SMALL.maxTotalTokens, seen) });
 
     const judgement = await judged(provider);
 
     expect(judgement).toMatchObject({ verdict: "not_judged", unanswered: true });
-    expect(seen).toHaveLength(1);
+    expect(seen.length).toBeGreaterThan(1);
     expect(summaryOf(seen[0])?.summarised).toBeUndefined();
+    const sizes = seen.map((request) => request.estimatedInputTokens);
+    expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
+    expect(new Set(sizes).size).toBe(sizes.length);
+    expect(summaryOf(seen.at(-1))?.summarised).toBeDefined();
   });
 });
 
