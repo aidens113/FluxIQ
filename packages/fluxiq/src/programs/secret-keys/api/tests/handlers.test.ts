@@ -10,6 +10,10 @@ import { actorFor } from "../../../tests/login-actor.ts";
 
 type Created = { ok: boolean; payload?: { id: string }; error?: string };
 
+// These tests are about keeping and showing a key, not its provider check: no provider is bound, so the dummy value
+// is never sent anywhere (before t950 it went to DeepSeek's real API, whose refusal was ignored after the save).
+const NO_PROVIDER = { modelProvidersEnabled: false } as const;
+
 async function signIn(runtime: ReturnType<typeof createGlobalProgramRuntime>) {
   const login = await runtime.identityAccess.authenticate({ username: "admin", password: "admin" });
   // What the login route does after authenticating.
@@ -19,7 +23,7 @@ async function signIn(runtime: ReturnType<typeof createGlobalProgramRuntime>) {
 
 describe("secret-keys endpoints", () => {
   it("makes a created key usable by the creator's calls at once, with no password, PIN or re-login", async () => {
-    const runtime = createGlobalProgramRuntime();
+    const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
     try {
       const login = await signIn(runtime);
       const created = await runtime.api.call({
@@ -42,7 +46,7 @@ describe("secret-keys endpoints", () => {
 
   describe('the retired unlock ceremony', () => {
     it('registers no unlock endpoint and emits no ticket or locked-client setup', async () => {
-      const runtime = createGlobalProgramRuntime();
+      const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
       try {
         const login = await signIn(runtime);
         const answer = await runtime.api.call({ programId: 'secret-keys', endpoint: 'unlock', scope: {}, actor: actorFor(login), payload: { authSessionId: login.session.id, authorizationPassword: 'admin' } });
@@ -55,7 +59,7 @@ describe("secret-keys endpoints", () => {
   });
 
   it("shows a value only for the caller's own session and password, never asking for a PIN", async () => {
-    const runtime = createGlobalProgramRuntime();
+    const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
     try {
       const first = await signIn(runtime);
       const second = await signIn(runtime);

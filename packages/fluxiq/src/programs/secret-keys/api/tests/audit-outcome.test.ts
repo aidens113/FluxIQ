@@ -13,6 +13,7 @@ import { SecretKeysService } from "../../runtime/service.ts";
 import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, hostProtectionOptions } from "../../runtime/tests/secret-key-fixtures.ts";
 import type { SecretKeysSnapshot } from "../../types.ts";
 import { registerSecretKeysApi } from "../handlers.ts";
+import { scriptedKeyCheck } from "./scripted-key-check.ts";
 
 const VALUE = "dummy-audit-value-1234";
 const panel = actor("alice", "admin", adminRole.permissions);
@@ -27,11 +28,12 @@ function workspace(options: { hostProtection: boolean }) {
     if (!key) return { status: "no_key", message: "Add a model key.", key: null, lastCall: null };
     return { status: "ready", message: "Ready.", key: { id: key.id, name: key.name, provider: "anthropic", model: "anthropic-default" }, lastCall: null };
   };
-  registerSecretKeysApi(registry, service, undefined, () => ({ sessionId: null }), modelAccessOf, async () => undefined);
+  const scripted = scriptedKeyCheck();
+  registerSecretKeysApi(registry, service, undefined, () => ({ sessionId: null }), modelAccessOf, scripted.check);
   const call = (endpoint: string, payload: Record<string, unknown>) =>
     registry.call({ programId: "secret-keys", endpoint, scope: {}, actor: panel, payload }) as Promise<ProgramApiResponse>;
   const outcomes = () => audit.records.filter((record) => record.outcome !== undefined).map((record) => record.outcome);
-  return { service, audit, call, outcomes };
+  return { service, audit, call, outcomes, scripted };
 }
 
 describe("key writes audit their real outcome", () => {
@@ -63,6 +65,27 @@ describe("key writes audit their real outcome", () => {
     expect((await call("rotate-key", { id: "secret:missing", value: VALUE })).ok).toBe(false);
     expect((await call("delete-key", { id })).ok).toBe(true);
     expect(outcomes().map((outcome) => outcome?.result)).toEqual(["succeeded", "failed", "succeeded"]);
+    service.close();
+  });
+
+  // t950: the provider's verdict, not the store step, decides what Activity reads. Refused and no-credit writes stored
+  // nothing and record a failed outcome with that kind; an unreachable provider still lets the key be saved.
+  it.each([
+    ["provider_refused", { result: "failed", errorKind: "provider_refused" }],
+    ["no_credit", { result: "failed", errorKind: "no_credit" }],
+    ["provider_unreachable", { result: "succeeded" }],
+    ["answered", { result: "succeeded" }]
+  ] as const)("records the provider's verdict %s as the outcome of save, replace, create and rotate", async (verdict, expected) => {
+    const { service, call, outcomes, scripted } = workspace({ hostProtection: true });
+    // A key the provider took, for replace and rotate to act on.
+    expect((await call("save-model-key", { provider: "anthropic", value: VALUE })).ok).toBe(true);
+    const id = (await service.snapshot()).keys[0]!.id;
+    scripted.answer({ outcome: verdict });
+    await call("save-model-key", { provider: "anthropic", value: `${VALUE}-2` });
+    await call("replace-model-key", { value: `${VALUE}-3` });
+    await call("create-key", { name: "Spare", value: `${VALUE}-4`, kind: "llm", provider: "anthropic" });
+    await call("rotate-key", { id, value: `${VALUE}-5` });
+    expect(outcomes().slice(1)).toEqual([expected, expected, expected, expected]);
     service.close();
   });
 });
