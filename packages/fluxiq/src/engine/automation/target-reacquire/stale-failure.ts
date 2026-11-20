@@ -18,7 +18,10 @@ const STALE_TARGET_CODE = /(?:^|[._:-])(?:stale|detached|renumbered)(?:$|[._:-])
  *
  * - it failed on its target: category `target_not_found` or `target_ambiguous`,
  *   stage `target_resolution`, or a code naming a stale, detached or
- *   renumbered target;
+ *   renumbered target; or its act certainly changed nothing (`certainNoEffect`,
+ *   t968): a press the page did not answer at all may have reached an inert
+ *   copy of the item, a row redrawn under it, so the item is found again from
+ *   its source step before the last retry, as a lost one is;
  * - the act never happened: the failure does not say its effect is
  *   `ambiguous`, no effect check answered `landed` or `unknown`, the attempt
  *   is not settled as done (`stateHeld`) or uncertain, and the run's
@@ -29,7 +32,7 @@ const STALE_TARGET_CODE = /(?:^|[._:-])(?:stale|detached|renumbered)(?:$|[._:-])
 export function automationStudioStaleTargetFailure(attempt: AutomationStudioNodeAttemptTrace, run: { actCompleted?: boolean } = {}): boolean {
   const failure = attempt.failure;
   if (attempt.status !== "failed" || !failure || failure.code === AUTOMATION_STUDIO_TARGET_GONE_CODE) return false;
-  const lostTarget = failure.category === "target_not_found" || failure.category === "target_ambiguous" || failure.stage === "target_resolution" || STALE_TARGET_CODE.test(failure.code);
+  const lostTarget = failure.category === "target_not_found" || failure.category === "target_ambiguous" || failure.stage === "target_resolution" || STALE_TARGET_CODE.test(failure.code) || failure.certainNoEffect === true;
   if (!lostTarget || failure.effect === "ambiguous") return false;
   if (attempt.effectCheck && attempt.effectCheck.result !== "not_landed") return false;
   if (attempt.stateHeld || attempt.skipped || attempt.fault?.actUncertain) return false;

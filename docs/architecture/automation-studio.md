@@ -1178,7 +1178,9 @@ element-target parameter first). Immediately before the attempt
 `automationStudioReacquireBeforeAttempt` names (attempt 4 of 4, the last of a
 Flow with fewer), once per arrival, and only after an attempt that lost its
 target without acting (`automationStudioStaleTargetFailure`: a missing,
-ambiguous, stale, detached or renumbered target; never an `ambiguous` effect,
+ambiguous, stale, detached or renumbered target, or, since t968, an act that
+certainly changed nothing (`certainNoEffect`), which may have pressed an inert
+copy of the item; never an `ambiguous` effect,
 an effect check that answered `landed` or `unknown`, or an act the
 completed-act ledger holds), the graph run (`engine/automation/step-loop/arrival.ts`):
 
