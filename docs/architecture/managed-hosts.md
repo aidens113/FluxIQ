@@ -62,7 +62,10 @@ admission, which admits a new environment only while the account holds fewer
 dedicated browsers than its paid plan's counted grants allow. A lapsed plan
 refuses new ones and stops none. The web server composes this
 (`getHostedEnvironmentController`) only when it bills; local and self-hosted
-servers keep the pool described above.
+servers keep the pool described above. On a local rehearsal the runner is a
+container (the `docker` driver): its `fluxiq-runner serve` launches the same
+browser host as the pool, and takes each ticket from `fluxiq-runner enrol`,
+which the driver runs with `docker exec` and feeds on its standard input.
 
 ## Selection and lifecycle
 

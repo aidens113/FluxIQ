@@ -1,6 +1,7 @@
 import path from "node:path";
-import { CloudAdmissionService, CommerceBillingService, FakePaymentProvider, SQLiteCommerceLedger } from "fluxiq/platform";
+import { CloudAdmissionService, CommerceBillingService, SQLiteCommerceLedger } from "fluxiq/platform";
 import type { PaymentProvider } from "fluxiq/platform";
+import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import { getFluxIQAfterReload } from "../../lib/fluxiq";
 import { hostedCloudAuthorizer, platformWorkspaces } from "../environments/authority";
 import { getEnvironmentStore } from "../environments";
@@ -11,6 +12,7 @@ import { setCloudAuthorizer } from "./cloud/set-authorizer";
 import { commerceCompositions as compositions } from "./compositions";
 import type { CommerceComposition } from "./compositions";
 import { commerceConfig } from "./config";
+import { PlanFakePaymentProvider } from "./fake";
 import { readSecretFile } from "./read-secret-file";
 import { StripePaymentProvider } from "./stripe";
 import type { CommerceConfig } from "./types";
@@ -49,7 +51,7 @@ async function compose(root: string): Promise<CommerceComposition> {
   const ledger = new SQLiteCommerceLedger({ rootDir: path.join(root, "platform", "commerce") });
   const service = new CommerceBillingService({
     ledger,
-    provider: await provider(config),
+    provider: await provider(config, root),
     policy: { allowTrial: config.allowTrial, graceMs: config.graceMs, retentionMs: config.retentionMs },
     refreshAfterMs: config.refreshAfterMs
   });
@@ -75,9 +77,15 @@ async function compose(root: string): Promise<CommerceComposition> {
   return { service, admission, stop: () => clearInterval(timer) };
 }
 
-async function provider(config: CommerceConfig): Promise<PaymentProvider> {
+async function provider(config: CommerceConfig, root: string): Promise<PaymentProvider> {
   const webhookSecret = await readSecretFile(config.webhookSecretFile, "webhook secret");
-  if (config.provider === "fake") return new FakePaymentProvider({ webhookSecret, checkoutLifetimeMs: config.checkoutLifetimeMs });
+  if (config.provider === "fake") {
+    // The fake takes no money, so it serves only an origin on this machine (a `.localhost` rehearsal or the plain panel).
+    const host = new URL(resolveFluxIQDeploymentSettings(process.env).publicOrigin).hostname;
+    if (host !== "localhost" && !host.endsWith(".localhost") && host !== "127.0.0.1") throw new Error(`commerce.configuration: the fake provider takes no money, so it is refused on ${host}; only an origin on this machine may use it.`);
+    // Kept beside the ledger, so the fake still holds what the ledger recorded after a restart, as Stripe would.
+    return new PlanFakePaymentProvider({ webhookSecret, plans: config.plans, checkoutLifetimeMs: config.checkoutLifetimeMs, stateFile: path.join(root, "platform", "commerce", "fake-provider.json") });
+  }
   return new StripePaymentProvider({
     secretKey: await readSecretFile(config.secretKeyFile!, "Stripe secret key"),
     webhookSecret,

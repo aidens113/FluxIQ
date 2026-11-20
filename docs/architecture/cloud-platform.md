@@ -125,13 +125,19 @@ the server bills nothing.
    with a sink), `compose/compose.env`, `env/service.env`, `env/commerce.json` (with `billing`) and
    `deployment.json`.
 5. Creates the `<project>_runners` network for the runner containers I5
-   describes (HC5); nothing joins it yet.
+   describes (traffic between containers disabled).
 6. Builds `fluxiq-cloud/core:<package version>` when it is missing (or with
-   `--build`).
+   `--build`). With `environments`, also builds the runner image
+   `fluxiq-cloud/runner:<package version>` from the extension checkout the
+   config names (labelled, so `down` removes it; the extension and browser
+   host must be built there first), and finds the engine socket's group, which
+   Core's container joins.
 7. Copies the secrets into the `<project>_secrets` volume (below), then
    `docker compose up --detach --wait`.
 8. With `tls internal`, exports Caddy's local root certificate to
-   `<state>/certs/root.crt` for clients to pin.
+   `<state>/certs/root.crt` for clients to pin; with `environments`, also
+   copies it into the secrets volume as `runner_authority`, which Core passes
+   to each runner it creates.
 
 Each step is recorded in `<state>/state.json` before the next, so a failed
 `up` can be removed with `down`. A second `up` changes nothing.
@@ -159,6 +165,33 @@ never in a config, env file, image, argument or container environment.
 
 `deployment.json` lists the volume and each secret's file, for an operator
 who runs Compose by hand.
+
+### Dedicated Browsers
+
+A service on the local profile may add `environments` (example:
+`examples/local-environments.config.json`, whose billing provider is
+`fake`): `runner.context` names the extension checkout, `limits` each
+runner's memory, CPUs and processes. The config refuses it on a self-hosted
+server, on the production profile (production gives each environment its own
+virtual machine), and without a plan that grants a dedicated browser. The
+override then mounts the engine's socket into Core (in its group) and
+`env/service.env` configures Core's `docker` driver
+([dedicated browser environments](./dedicated-browser-environments.md)). The
+gateway's allowed origins must include the runner's extension
+(`chrome-extension://kknpahmjpoklhjbelapilpkhedbkheck`). Giving Core the
+socket gives it the engine: acceptable for a rehearsal on one's own machine,
+never the production shape.
+
+The `fake` payment provider takes no money: Core refuses it on any origin
+that is not this machine's, and the config on the production profile. A
+Checkout of it is paid by the provider's own signed
+`checkout.session.completed` naming `fake_sub_<checkoutId>`: the fake then
+creates that plan's subscription (active for a month, the line's quantity),
+decided by the plan configuration alone. Like a real provider it keeps its checkouts and
+subscriptions across FluxIQ's restarts (`<FluxIQ root>/platform/commerce/fake-provider.json`,
+beside the ledger): before t953's round 2 it held them in memory only, so an
+account deleted after a restart failed closing its billing
+(`subscription-missing-at-provider`, answered as a 500).
 
 ## What `down` Removes
 
@@ -219,6 +252,23 @@ The machine store is never touched.
 8. `down --keep-data`, `up`, and both accounts sign in again, still isolated.
 9. A final `down`; no labelled container, network, volume or image is left.
 
+With `environments` and the `fake` provider, steps 6 and 7 are replaced by
+the dedicated browser journey: the first account buys the browser plan (the
+fake provider's signed completion), creates a browser over HTTPS (the answer
+comes once its runner container runs and its client enrolled at that
+workspace's gateway; the container is labelled for the project and the
+environment, and `docker inspect` shows no ticket), a repeated create is the
+same browser, the next one is refused (`entitlement-exhausted`), the second
+account is refused (`subscription-required`), sees none and cannot stop it,
+and deleting it removes its container and volume. After the restart, the
+first account creates another browser and is deleted through the
+provisioning listener; the purge removes that container and volume.
+The deletion either finishes or, when a step must wait, is answered
+`scheduled` and finished by the deletion sweep; it never answers 500. When
+any provisioning call does fail unexpectedly, the listener's one log line
+names the failure's kind (class and machine code, such as
+`failure=Error:workspaces.close_failed`), never its message.
+
 A self-hosted server's smoke is shorter: `/api/health` and `/api/ready` over
 TLS; discovery names the `self-hosted` profile and the wss gateway; the
 commerce webhook answers 404 (no billing); `down --keep-data`, `up`, and the
@@ -250,14 +300,10 @@ a config naming one is refused by every command except `render`.
   `stripe_secret_key` and `stripe_webhook_secret`. Without `billing` nothing
   is rendered and the server bills nothing.
 - A paid grant cannot be produced locally through stripe-mock: its only
-  subscription fixture ended in 2000, so the checkout journey proves account
-  resolution and the ledger write but not admission. A grant admitting a
-  dedicated browser is proven in-process over real parts
-  (`apps/web/src/server/environments/hosted/tests/hosted-admission.test.ts`:
-  no grant refused, a grant admitted, N browsers admit N and refuse the next,
-  a lapse refuses new and keeps running ones). An environments API route and
-  the `docker` driver, with a smoke journey on a `fake`-provider billing
-  config, come next.
+  subscription fixture ended in 2000, so the stripe-mock checkout journey
+  proves account resolution and the ledger write but not admission. The
+  `fake`-provider config with `environments` proves a paid grant admitting a
+  real dedicated browser end to end (above).
 - Seats are carried as grant quantities and shown on `/plans`, but no seat
   limit is enforced on invitations yet; a plan combining dedicated browsers
   and seats works in Core's commerce file but the cloud config sells one price

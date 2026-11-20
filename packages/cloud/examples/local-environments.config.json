@@ -1,0 +1,38 @@
+{
+  "$schema": "../fluxiq-cloud.schema.json",
+  "project": "fluxiq-local",
+  "profile": "local",
+  "mode": "service",
+  "driver": "local-docker",
+  "source": { "root": "../../.." },
+  "domain": "app.fluxiq.localhost",
+  "ports": { "http": 80, "https": 443 },
+  "tls": { "mode": "internal", "email": "operator@fluxiq.localhost", "trustLocalCa": false },
+  "instance": { "id": "fluxiq-local", "name": "FluxIQ (local rehearsal, dedicated browsers)" },
+  "signup": "off",
+  "gateway": { "allowedOrigins": ["chrome-extension://kknpahmjpoklhjbelapilpkhedbkheck", "moz-extension://*"] },
+  "provisioning": { "subnet": "172.31.250.0/24", "address": "172.31.250.10" },
+  "email": { "from": "FluxIQ <accounts@fluxiq.localhost>", "smtp": "smtp://mailpit:1025" },
+  "payments": { "apiBase": "http://stripe-mock:12111" },
+  "billing": {
+    "provider": "fake",
+    "allowTrial": false,
+    "graceMs": 259200000,
+    "retentionMs": 2592000000,
+    "refreshAfterMs": 3600000,
+    "plans": {
+      "browser": {
+        "name": "Dedicated browser",
+        "priceId": "price_dedicated_browser_monthly",
+        "unit": "dedicated-browser",
+        "quantity": 1,
+        "grants": [{ "key": "cloud.dedicated", "allocation": "dedicated", "capabilities": ["execute", "environment.dedicated"], "regions": ["local"] }]
+      }
+    }
+  },
+  "environments": {
+    "runner": { "context": "../../../../!FluxIQWebExtension", "dockerfile": "deploy/runner/Dockerfile" },
+    "limits": { "memory": "1g", "cpus": "1", "pids": 512 }
+  },
+  "sinks": { "mail": true, "payments": true, "mailUiPort": 8025 }
+}

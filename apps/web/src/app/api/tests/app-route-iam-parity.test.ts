@@ -75,7 +75,13 @@ const TODAY: Readonly<Record<string, Row>> = {
   "POST /api/accounts/member (remove)": needs("identity.manage"),
   "POST /api/accounts/member (resend-invite)": needs("identity.manage"),
   "POST /api/accounts/member (revoke-invite)": needs("identity.manage"),
-  "GET /api/security/audit": selectedNeeds("identity.manage")
+  "GET /api/security/audit": selectedNeeds("identity.manage"),
+  // Dedicated browsers: a server that bills nothing answers 404 before any decision, as checkout does.
+  "GET /api/platform/v1/environments": UNBILLED,
+  "POST /api/platform/v1/environments": UNBILLED,
+  "POST /api/platform/v1/environments/[environmentId]/start": UNBILLED,
+  "POST /api/platform/v1/environments/[environmentId]/stop": UNBILLED,
+  "DELETE /api/platform/v1/environments/[environmentId]": UNBILLED
 };
 
 const PEOPLE_AND_ACTIVITY = APP_ROUTE_IAM_CONTRACTS.filter((contract) => contract.path.startsWith("/api/accounts/") || contract.path === "/api/security/audit").map(key);

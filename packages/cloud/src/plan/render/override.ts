@@ -20,17 +20,22 @@ const LABELS = { [CLOUD_PROJECT_LABEL]: "${FLUXIQ_CLOUD_PROJECT}" };
  * the driver creates, fills and removes it, by the project label.
  *
  * The file is the same for every config of a mode (a self-hosted server has
- * no provisioning network and no base secrets); its values come from compose.env.
+ * no provisioning network and no base secrets), except that a rehearsal with
+ * dedicated browsers gives Core the Docker engine's socket, in its group, for
+ * its docker driver; its values come from compose.env.
  */
-export function renderOverride(mode: CloudMode = "service"): string {
+export function renderOverride(mode: CloudMode = "service", environments = false): string {
   const selfHosted = mode === "self-hosted";
+  // Dedicated browsers: Core's docker driver creates each runner through the engine's socket, in the socket's group.
+  const engine: Record<string, YamlValue> = environments ? { group_add: ["${FLUXIQ_DOCKER_SOCKET_GROUP}"] } : {};
   const override: Record<string, YamlValue> = {
     services: {
       fluxiq: {
         build: { context: "${FLUXIQ_BUILD_CONTEXT}", dockerfile: "deploy/docker/Dockerfile", labels: LABELS },
         labels: LABELS,
         secrets: { yamlTag: "!reset", value: [] },
-        volumes: ["secrets:/run/secrets:ro"]
+        volumes: environments ? ["secrets:/run/secrets:ro", "/var/run/docker.sock:/var/run/docker.sock"] : ["secrets:/run/secrets:ro"],
+        ...engine
       },
       caddy: { labels: LABELS }
     },

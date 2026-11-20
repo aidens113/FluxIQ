@@ -12,6 +12,7 @@ export function nodeCommandRunner(progress: (text: string) => void): CommandRunn
       return new Promise((resolve) => {
         const child = spawn(command, [...request.args], {
           cwd: request.cwd,
+          ...(request.env === undefined ? {} : { env: { ...process.env, ...request.env } }),
           stdio: [request.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
           windowsHide: true
         });

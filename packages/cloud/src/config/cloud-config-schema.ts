@@ -132,10 +132,33 @@ export const CLOUD_CONFIG_SCHEMA = {
       type: "object", additionalProperties: false,
       properties: { dir: { type: "string", minLength: 1, description: "Where the provisioning token, setup code and keyring files live; generated there when absent (default <state>/secrets)." } }
     },
+    environments: {
+      type: "object", additionalProperties: false, required: ["runner"],
+      description: "Dedicated browsers on a local rehearsal (service, local profile, billing with a dedicated grant): one runner container per environment, created by Core's docker driver. Production runs one virtual machine per environment instead (the vm driver, not built yet).",
+      properties: {
+        runner: {
+          type: "object", additionalProperties: false, required: ["context"],
+          properties: {
+            context: { type: "string", minLength: 1, description: "The runner image's build context: the FluxIQ web extension checkout (with apps/extension/dist/chrome and packages/browser-host/dist built), relative to this file or absolute." },
+            dockerfile: { type: "string", minLength: 1, description: "The runner's Dockerfile inside the context (default deploy/runner/Dockerfile)." },
+            domain: { type: "string", pattern: "^[a-z][a-z0-9-]*$", description: "The domain the runner's client declares at the gateway, which its enrolment tickets are minted for (default web-automation, the web extension's)." }
+          }
+        },
+        limits: {
+          type: "object", additionalProperties: false,
+          properties: {
+            memory: { type: "string", pattern: "^[0-9]+[kmg]$", description: "Each runner's memory limit (default 1g)." },
+            cpus: { type: "string", pattern: "^[0-9]+(\\.[0-9]+)?$", description: "Each runner's CPU limit (default 1)." },
+            pids: { type: "integer", minimum: 64, description: "Each runner's process limit (default 512)." }
+          }
+        }
+      }
+    },
     images: {
       type: "object", additionalProperties: false,
       properties: {
         core: { type: "string", pattern: "^[a-z0-9][a-z0-9._/-]*$", description: "The repository Core's image is tagged in (default fluxiq-cloud/core); the tag is the package version." },
+        runner: { type: "string", pattern: "^[a-z0-9][a-z0-9._/-]*$", description: "The repository the dedicated browsers' runner image is tagged in (default fluxiq-cloud/runner); the tag is the package version." },
         caddy: { type: "string", minLength: 1 },
         mailpit: { type: "string", minLength: 1 },
         stripeMock: { type: "string", minLength: 1 }
