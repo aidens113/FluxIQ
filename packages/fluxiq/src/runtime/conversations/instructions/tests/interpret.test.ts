@@ -192,7 +192,7 @@ describe("reading a person's message as an instruction", () => {
   });
 
   it("asks again, with the reason, when the answer tried to be an object and could not be read", async () => {
-    const model = scripted('{"do": "run.execute", "with": {', '{"reply": "Done reading."}');
+    const model = scripted('{"do": "run.execute", "with": {', '{"intent": "conversation", "reply": "Done reading."}');
     const result = await interpret(model, "anything");
     expect(result.attempts).toBe(2);
     expect(model.requests[1]?.correction).toContain("could not be read");

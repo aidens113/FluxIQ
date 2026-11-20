@@ -16,6 +16,7 @@ export * from "./rerun-check.ts";
 export * from "./rerun-checked-rows.ts";
 // Running part of the Flow again from a chosen step, never the Flow's test (t244).
 export * from "./run/flow-part.ts";
+export * from "./run/run-flow-tool-id.ts";
 export * from "./run/flow.ts";
 // The tools one evidence loop offers, read once for the whole loop.
 export * from "./loop-tools.ts";

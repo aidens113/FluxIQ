@@ -39,7 +39,9 @@ describe("the chat model's instructions about a described job, in answer-first m
 
   it("say a described job starts through create-here even when a Flow above was made from the same words, and is never a request to run one", () => {
     const text = instructions({ capabilities: parseAutomationStudioPanelCapabilities([AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability, AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.capability]), flows });
-    expect(text).toContain(`${DESCRIBED_JOB} -- something to find, list, collect, fill in or buy on it -- is a task to do from this page: choose flow.createHere and pass their whole message, in their own words, as its instruction.`);
+    expect(text).toContain(`${DESCRIBED_JOB} -- something to find, check, list, collect, fill in, change, remove or buy on it -- is a task to do from this page: choose flow.createHere and pass their whole message, in their own words, as its instruction.`);
+    // t973: a model with no thinking read "this page" as "open the right page first".
+    expect(text).toContain("They need not open any particular page first: it starts here and goes wherever on the site the job needs.");
     expect(text).toContain("That holds just the same when a Flow above was made from the same words before: flow.createHere finds that Flow, does the task with what it kept, and returns the result.");
     expect(text).toContain("A job described again is never a request to run a Flow; run one only when they ask for a Flow to be run without describing a job.");
     expect(text).not.toContain("that no Flow above already does");

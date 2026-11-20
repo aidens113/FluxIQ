@@ -30,6 +30,8 @@ export type AutomationStudioAnthropicMessageInput<T> = {
   requestShape?: JsonObject;
   /** A judge's cache path, for the call's step (`../../transport/observation.ts`, t967). */
   continuation?: { used: boolean; reason: string } | undefined;
+  /** A chat call asked one rung up, for the call's step (`../../transport/observation.ts`, t973). */
+  climb?: { from: string; reason: string } | undefined;
   readAnswer(text: string, usage: AutomationStudioLlmUsageSummary): T;
 };
 
@@ -57,7 +59,7 @@ export async function automationStudioAnthropicMessage<T>(input: AutomationStudi
     if (!key || typeof key !== "string" || !key.trim()) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "The configured Anthropic key could not be released.");
     if (input.body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The outbound request contains the configured credential.");
     if (controller.signal.aborted) throw signalFailure(input.signal, timedOut);
-    step = input.observe?.({ provider: "anthropic", model: input.model, url: AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, body: input.body, taskKind: input.taskKind, ...(input.taskKind === "panel_command" ? { kind: "chat" } : {}), ...(input.requestId ? { requestId: input.requestId } : {}), ...(input.stage ? { stage: input.stage } : {}), ...(input.iteration ? { iteration: input.iteration } : {}), ...(input.continuation ? { continuation: input.continuation } : {}) });
+    step = input.observe?.({ provider: "anthropic", model: input.model, url: AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, body: input.body, taskKind: input.taskKind, ...(input.taskKind === "panel_command" ? { kind: "chat" } : {}), ...(input.requestId ? { requestId: input.requestId } : {}), ...(input.stage ? { stage: input.stage } : {}), ...(input.iteration ? { iteration: input.iteration } : {}), ...(input.continuation ? { continuation: input.continuation } : {}), ...(input.climb ? { climb: input.climb } : {}) });
     const sent = input.fetchImpl(AUTOMATION_STUDIO_ANTHROPIC_MESSAGES_URL, {
       method: "POST", redirect: "manual", signal: controller.signal,
       headers: { authorization: `Bearer ${key}`, "anthropic-version": AUTOMATION_STUDIO_ANTHROPIC_API_VERSION, "content-type": "application/json", accept: "text/event-stream", ...(input.requestId ? { "x-request-id": input.requestId } : {}) }, body: input.body

@@ -85,6 +85,13 @@ export type AutomationStudioLlmLoopCall = {
    * still counts as progress; it is never counted as a repeat.
    */
   exempt?: boolean | undefined;
+  /**
+   * The call replays the Flow's own saved steps, from whichever step it names (t973). `changed`: it changed the
+   * result -- rows done, or which rows the result holds; `reachedEnd`: it ran through to the Flow's last step and
+   * passed. Replays that do neither, or that reach the end again with the result as it stood, are counted across
+   * their starting steps until a completion is tried (`./detector.ts`, "A replay again").
+   */
+  replay?: { changed: boolean; reachedEnd: boolean } | undefined;
 };
 
 /** What the caller is asked about a lasting act: the call, and the act of the instruction it names. Never the model's words. */
@@ -129,6 +136,12 @@ export type AutomationStudioLlmLoopFinding = {
    * contract's patterns already name.
    */
   succeeded?: true | undefined;
+  /**
+   * The calls were replays of the Flow's own steps, from varying steps, none of which changed the result or
+   * reached its end anew, with no completion tried (`./detector.ts`, "A replay again", t973). Counted under
+   * `near_repeat` as well: the same replay with its starting step varied.
+   */
+  replays?: true | undefined;
 };
 
 /**

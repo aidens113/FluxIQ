@@ -120,7 +120,7 @@ describe("a runtime bound with its own system instructions", () => {
     services.add(instance);
     const project = await instance.createProject({ name: "Chat", domainId: "example" });
     const seen: AutomationStudioConversationModelRequest[] = [];
-    instance.conversations.bindModel({ name: "capturing", decide: async (request) => { seen.push(request); return { reply: "Hello." }; } });
+    instance.conversations.bindModel({ name: "capturing", decide: async (request) => { seen.push(request); return { intent: "conversation", reply: "Hello." }; } });
     const opened = await instance.conversations.openConversation({ projectId: project.id, subject: { kind: "project", id: project.id }, title: null });
 
     await instance.conversations.respondToPersonTurn({
@@ -135,7 +135,8 @@ describe("a runtime bound with its own system instructions", () => {
     });
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]?.instructions).toContain(`\n\n${INSTRUCTIONS.text}\n\n`);
+    // Introduced as the attempt's text, not the chat's own (t973).
+    expect(seen[0]?.instructions).toContain(`You see no page here and need not read one: the attempt does that.\n${INSTRUCTIONS.text}\n\n`);
   }, 30_000);
 
   it("refuses a text Core would refuse when the runtime is bound, not mid-build", () => {

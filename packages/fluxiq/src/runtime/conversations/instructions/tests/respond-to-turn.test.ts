@@ -165,7 +165,7 @@ describe("a person's turn, answered in the thread", () => {
   it("records on each answer which decision wrote it, and keeps that off what a client reads", async () => {
     // t728 F3: what a person said before a plain answer is not part of their next request, and what they said before Core's question back is (`../../person-words.ts`).
     const { say, turns, decisions } = await thread(scripted(
-      '{"reply": "I can run and delete Flows here. Want me to run one?"}',
+      '{"intent": "conversation", "reply": "I can run and delete Flows here. Want me to run one?"}',
       '{"ask": "Tell me which Flow you mean"}',
       '{"do": "run.execute", "with": {"flowId": "flow.kettle-1"}}',
       '{"do": "flow.delete", "with": {"flowId": "toaster"}}'
@@ -207,7 +207,7 @@ describe("a person's turn, answered in the thread", () => {
       name: "recording",
       decide: async (request) => {
         seen = request.transcript;
-        return '{"reply": "ok"}';
+        return '{"intent": "conversation", "reply": "ok"}';
       }
     };
     const { say, record } = await thread(model);

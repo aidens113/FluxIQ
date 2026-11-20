@@ -19,12 +19,14 @@ import {
 } from "../index.ts";
 
 const DOMAIN_TEXT = "Pages are web pages.\nA control is named by its visible label.";
+/** What the chat is told the domain's text is: the attempt's, not its own (t973). */
+const DOMAIN_LEAD = "What follows is what the attempt you start is told about working on the site. You see no page here and need not read one: the attempt does that.";
 const CAPABILITIES = parseAutomationStudioPanelCapabilities([{ id: "run.execute", title: "Run a Flow", summary: "Run the Flow now.", group: "Running", phrases: ["run it"], consequences: [], arguments: [] }]);
 const CONTEXT: AutomationStudioConversationDecisionContext = { projectId: "project.home", capabilities: CAPABILITIES, flows: [{ flowId: "flow.kettle-1", name: "Kettle price checker" }], onScreen: {} };
 const QUICK = { attempts: 1, attemptTimeoutMs: 1_000, deadlineMs: 2_000, backoffMs: 1 };
 
 function capturing(seen: AutomationStudioConversationModelRequest[]): AutomationStudioConversationModel {
-  return { name: "capturing", decide: async (request) => { seen.push(request); return { reply: "Hello." }; } };
+  return { name: "capturing", decide: async (request) => { seen.push(request); return { intent: "conversation", reply: "Hello." }; } };
 }
 
 describe("the chat's instructions with a domain's own", () => {
@@ -33,11 +35,11 @@ describe("the chat's instructions with a domain's own", () => {
     const withDomain = automationStudioConversationInstructions(CONTEXT, { transcriptWithheld: false, domainInstructions: DOMAIN_TEXT });
     const vocabulary = automationStudioPanelCapabilityVocabulary(CAPABILITIES);
 
-    expect(withDomain.startsWith(`${vocabulary}\n\n${DOMAIN_TEXT}\n\nThe Flows in this project:`)).toBe(true);
+    expect(withDomain.startsWith(`${vocabulary}\n\n${DOMAIN_LEAD}\n${DOMAIN_TEXT}\n\nThe Flows in this project:`)).toBe(true);
     expect(withDomain.indexOf(DOMAIN_TEXT)).toBeLessThan(withDomain.indexOf("Kettle price checker"));
     expect(withDomain.indexOf(DOMAIN_TEXT)).toBeLessThan(withDomain.indexOf("Answer with one JSON object"));
     // Remove the domain's text and its separator, and the instructions are exactly what they were.
-    expect(withDomain.replace(`\n\n${DOMAIN_TEXT}`, "")).toBe(plain);
+    expect(withDomain.replace(`\n\n${DOMAIN_LEAD}\n${DOMAIN_TEXT}`, "")).toBe(plain);
   });
 
   it("are unchanged without one", () => {
@@ -51,7 +53,7 @@ describe("the chat's instructions with a domain's own", () => {
     await interpretAutomationStudioConversationTurn({ model: capturing(seen), message: "Run it.", transcript: [], transcriptWithheld: false, context: CONTEXT, domainInstructions: DOMAIN_TEXT, limits: QUICK });
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]?.instructions).toContain(`\n\n${DOMAIN_TEXT}\n\n`);
+    expect(seen[0]?.instructions).toContain(`\n\n${DOMAIN_LEAD}\n${DOMAIN_TEXT}\n\n`);
     expect(seen[0]?.message).toBe("Run it.");
   });
 });
@@ -81,6 +83,6 @@ describe("the conversations collaborator", () => {
 
     expect(seen).toHaveLength(2);
     expect(seen[0]?.instructions).not.toContain(DOMAIN_TEXT);
-    expect(seen[1]?.instructions).toContain(`\n\n${DOMAIN_TEXT}\n\n`);
+    expect(seen[1]?.instructions).toContain(`\n\n${DOMAIN_LEAD}\n${DOMAIN_TEXT}\n\n`);
   });
 });

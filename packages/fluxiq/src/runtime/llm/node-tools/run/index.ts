@@ -1,4 +1,5 @@
 export * from "./flow-part.ts";
+export * from "./run-flow-tool-id.ts";
 export * from "./flow.ts";
 export * from "./node.ts";
 export * from "./part.ts";
