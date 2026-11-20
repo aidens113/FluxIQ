@@ -1,5 +1,6 @@
 import type {
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
+  AUTOMATION_STUDIO_RECORD_DERIVED_READS,
   AUTOMATION_STUDIO_RECORD_CONDITION_TYPES,
   AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
   AUTOMATION_STUDIO_RECORD_SORT_TYPES
@@ -87,18 +88,66 @@ export type AutomationStudioRecordSortKey = {
 export type AutomationStudioRecordDedupe = { by: string[] };
 
 /**
+ * A column computed from one stored column of the same row before any filter
+ * runs (t970): the stored value's text, or the first group (else the whole
+ * match) of `pattern` in it, read `as` text, the number it states, or the date
+ * it states (written back as an ISO date). A row whose value has none of it has
+ * no value in the column. `id` names no schema field; a derived column may be
+ * filtered, compared, sorted and deduplicated by, and is never in the answer.
+ */
+export type AutomationStudioRecordDerivedField = {
+  id: string;
+  /** A stored field of the schema. */
+  from: string;
+  /** A pattern as `matches` writes one. */
+  pattern?: string;
+  as?: (typeof AUTOMATION_STUDIO_RECORD_DERIVED_READS)[number];
+};
+
+/**
+ * Two columns of one row compared (t970): `field` against the column each
+ * comparison names, both read `as` numbers (the default) or dates, every
+ * comparison named holding. A row where either side states none fails it
+ * whatever `not` says, as a date bound does.
+ */
+export type AutomationStudioRecordFieldComparison = {
+  field: string;
+  atLeast?: string;
+  atMost?: string;
+  lessThan?: string;
+  greaterThan?: string;
+  equals?: string;
+  as?: AutomationStudioRecordConditionType;
+  not?: boolean;
+};
+
+/**
  * How a dataset's collected rows become its answer at run end, applied in this
- * order: `where`, `dedupe`, `sort`, `limit`, `columns`. Every field id named is
- * a stored field of the record output's schema.
+ * order: `derive`, then the filters (`where`, `anyOf`, `compare`, every one
+ * holding), `dedupe`, `sort`, `limit`, `columns`. Every field id named is a
+ * stored field of the record output's schema, or a column `derive` makes.
+ *
+ * **A filter may test a column the answer does not show (t970).** `columns`
+ * only shapes the answer; the store processes the collected rows, which hold
+ * every stored field, so a mark read only to filter by stays out of the
+ * answer. Processing the collected rows again gives the same answer; an
+ * answer whose filters test a column it does not show is processed again only
+ * from its collected rows.
  */
 export type AutomationStudioRecordProcessing = {
+  /** Columns computed before the filters, in order (t970). */
+  derive?: AutomationStudioRecordDerivedField[];
   /** Absent: the whole row is the key (the answer's columns when `columns` is set). `false`: no dedupe. */
   dedupe?: AutomationStudioRecordDedupe | false;
   where?: AutomationStudioRecordCondition[];
+  /** Groups of conditions, each holding when any one of its conditions holds (t970): an "or" across columns. */
+  anyOf?: AutomationStudioRecordCondition[][];
+  /** Comparisons between two columns of a row (t970). */
+  compare?: AutomationStudioRecordFieldComparison[];
   sort?: AutomationStudioRecordSortKey[];
   /** 1 to `limitCeiling`. */
   limit?: number;
-  /** The stored columns the answer keeps, in this order. Each listed once; every `where` field among them. */
+  /** The stored columns the answer keeps, in this order, each listed once; a filter may test one it leaves out. */
   columns?: string[];
   /** Rows the answer is expected to hold; `minRowsDefault` when absent. Reported, never a failure. */
   minRows?: number;
@@ -173,6 +222,8 @@ export type AutomationStudioRecordProcessingAccount = {
   passes: AutomationStudioRecordProcessingPass[];
   /** One per `where` condition, in its order; absent when the declaration has none. */
   conditions?: AutomationStudioRecordProcessingConditionAccount[];
+  /** One per `anyOf` group, then one per `compare`, in their order (t970); absent when the declaration has neither. */
+  filters?: AutomationStudioRecordProcessingFilterAccount[];
   /** Each sort key the answer's `columns` leave out, as the sort read it before they were applied (t515); absent when none is. */
   hiddenSortKeys?: AutomationStudioRecordProcessingHiddenSortKey[];
 };
@@ -196,4 +247,21 @@ export type AutomationStudioRecordProcessingHiddenSortKey = {
   inOrder?: boolean;
   /** The first answer rows' readings, at most four: a date as epoch milliseconds, a number as itself, `null` where none. Never for text, which would be the page's own words. */
   readings?: (number | null)[];
+};
+
+/**
+ * One `anyOf` group or `compare` of a processing and the collected rows it
+ * left out (t970), counted and named as a `where` condition's are: `rejected`
+ * the rows it does not hold for, `alone` those every other filter holds for,
+ * and `leftOutOnlyByThis` those rows by label, each once, in capture order.
+ */
+export type AutomationStudioRecordProcessingFilterAccount = {
+  kind: "any_of" | "compare";
+  /** The stored or derived columns it reads, each once. */
+  fields: string[];
+  /** The filter as written, in words. */
+  condition: string;
+  rejected: number;
+  alone: number;
+  leftOutOnlyByThis: AutomationStudioRecordProcessingLeftOutRow[];
 };

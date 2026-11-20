@@ -59,6 +59,11 @@
 // In t963 (user, 2026-11-19: the judge sees all the run did plus the final data, and is less
 // strict) both verification pins by one appended paragraph, the trail calibration, after the
 // checked stored-cell sentence.
+// In t970 (user, 2026-11-19: filter internally via a post-processing stage, not only on the page)
+// evidence_tool_decision by two sentences after the site-filter sentence that ends "in the read's
+// where.": filter the rows already read with core.set_result_processing where it is offered when
+// the condition is printed on each row, a site's filter only when it cuts reading a lot, and rows a
+// later step acts on still narrowed by the read's where.
 // With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of

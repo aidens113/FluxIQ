@@ -27,6 +27,7 @@ import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANS
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
+import { automationStudioAnswerFirstResultProcessingExecutor, automationStudioAnswerFirstResultProcessingTools } from "../result-processing/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -71,7 +72,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     // No time limit: a build's nine minutes would only force a fresh round on real work, or one a locked key held. The purse, the turns and loop detection bound a round.
     budget: automationStudioAnswerFirstRoundBudget(input.limits.loop.budget, input.creation.purse.ceilingUsd),
     purse: input.creation.purse,
-    tools: options.tools,
+    // The domain's tools, and the result's own processing, which touches no page (`./result-processing.ts`, t970).
+    tools: automationStudioAnswerFirstResultProcessingTools(options.tools),
     observedStateKeys: options.observedStateKeys,
     ...(binding.readRowsKey ? { readRowsKey: binding.readRowsKey } : {}),
     deniedEvidenceKeys: binding.deniedEvidenceKeys,
@@ -124,7 +126,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       provider: automationStudioLlmProviderWithDomainInstructions(input.provider.provider, automationStudioAnswerFirstSystemInstructions(binding.systemInstructions)),
       startLocation
     }),
-    executeTool: input.routing.recording(person.executeTool)
+    executeTool: automationStudioAnswerFirstResultProcessingExecutor(run, input.routing.recording(person.executeTool))
   };
   const signalled = automationStudioAnswerFirstLoopSignal({
     askPerson: (signal) => {

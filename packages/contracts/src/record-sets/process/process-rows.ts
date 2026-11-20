@@ -42,10 +42,21 @@
 // could only write a pattern. A date bound now says it, and a row whose value
 // states no date it can read is left out, never kept as matching; its account
 // says how many such rows it left out (`undated`), beside the rows it names.
+//
+// **Derived columns, groups and comparisons (t970).** `derive` computes its
+// columns on a copy of each row before the filters (`derive.ts`); the filters
+// are every `where` condition, then every `anyOf` group (`any-of.ts`), then
+// every `compare` (`field-comparison.ts`), and a row is kept only when each
+// holds. A group or comparison names the rows it alone left out as a condition
+// does, on the account's `filters`. The answer is each kept row's own stored
+// values: a derived column is never in it.
 
+import { automationStudioRecordAnyOfFields, automationStudioRecordAnyOfHolds, automationStudioRecordAnyOfText } from "./any-of.ts";
 import { cellOf, cellText } from "./cell-text.ts";
 import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
 import { automationStudioRecordConditionHolds, automationStudioRecordConditionText } from "./condition/index.ts";
+import { automationStudioRecordDerivedValues } from "./derive.ts";
+import { automationStudioRecordFieldComparisonFields, automationStudioRecordFieldComparisonHolds, automationStudioRecordFieldComparisonText } from "./field-comparison.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { parseAutomationStudioRecordCondition } from "./parse-condition.ts";
 import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
@@ -58,6 +69,7 @@ import type {
   AutomationStudioRecordProcessing,
   AutomationStudioRecordProcessingAccount,
   AutomationStudioRecordProcessingConditionAccount,
+  AutomationStudioRecordProcessingFilterAccount,
   AutomationStudioRecordProcessingHiddenSortKey,
   AutomationStudioRecordProcessingPass,
   AutomationStudioRecordProcessingTestedValue,
@@ -95,14 +107,27 @@ export type AutomationStudioRecordProcessRowsResult = {
 /** The answer and its account. Leaves the input unmodified. */
 export function processAutomationStudioRecordRows(input: AutomationStudioRecordProcessRowsInput): AutomationStudioRecordProcessRowsResult {
   const process = input.process ?? {};
-  const stored = input.schema.fields.filter((field) => field.handling !== "exclude").map((field) => field.id);
-  const wholeRow = process.columns ?? stored;
+  const storedFields = input.schema.fields.filter((field) => field.handling !== "exclude").map((field) => field.id);
+  const wholeRow = process.columns ?? storedFields;
   const identityKey = process.dedupe === false ? undefined : process.dedupe?.by ?? wholeRow;
 
+  // Each row as the filters, dedupe and sort read it: its stored values and its derived columns (header).
+  const derive = process.derive ?? [];
+  const working = derive.length === 0 ? input.rows : input.rows.map((row) => ({ ...row, values: automationStudioRecordDerivedValues(row.values, derive, input.now) }));
+  const stored = new Map<AutomationStudioRecordCollectedRow, AutomationStudioRecordCollectedRow>(working.map((row, index) => [row, input.rows[index]!]));
+
   const where = process.where ?? [];
-  // Which conditions each row fails, by position: a row failing none is in the answer's running.
-  const failed = input.rows.map((row) => where.flatMap((condition, index) => automationStudioRecordConditionHolds(condition, cellOf(row.values, condition.field), input.now) ? [] : [index]));
-  const matching = input.rows.filter((_row, index) => failed[index]!.length === 0);
+  const groups = process.anyOf ?? [];
+  const comparisons = process.compare ?? [];
+  // Every filter in order: the `where` conditions, then the groups, then the comparisons (header).
+  const filters: ReadonlyArray<(values: Readonly<Record<string, unknown>>) => boolean> = [
+    ...where.map((condition) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordConditionHolds(condition, cellOf(values, condition.field), input.now)),
+    ...groups.map((group) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordAnyOfHolds(group, values, input.now)),
+    ...comparisons.map((comparison) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordFieldComparisonHolds(comparison, values, input.now))
+  ];
+  // Which filters each row fails, by position: a row failing none is in the answer's running.
+  const failed = working.map((row) => filters.flatMap((holds, index) => (holds(row.values) ? [] : [index])));
+  const matching = working.filter((_row, index) => failed[index]!.length === 0);
 
   const seen = new Set<string>();
   const distinct = identityKey === undefined ? matching : matching.filter((row) => {
@@ -115,7 +140,7 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
 
   const sorted = sortAutomationStudioRecordRows(distinct, process.sort ?? [], input.now);
   const limited = process.limit === undefined ? sorted : sorted.slice(0, process.limit);
-  const rows = limited.map((row) => answerRow(row.values, process.columns));
+  const rows = limited.map((row) => answerRow(stored.get(row)!.values, process.columns));
 
   const account: AutomationStudioRecordProcessingAccount = {
     collected: input.rows.length,
@@ -123,9 +148,15 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     filteredOut: input.rows.length - matching.length,
     cut: sorted.length - limited.length,
     kept: rows.length,
-    passes: passesOf(input.rows, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
+    passes: passesOf(working, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
   };
-  if (where.length) account.conditions = conditionAccounts(where, input.rows, failed, (process.columns ?? stored), input.now);
+  const labelFields = process.columns ?? storedFields;
+  if (where.length) account.conditions = conditionAccounts(where, working, failed, labelFields, input.now);
+  const otherFilters = [
+    ...groups.map((group): FilterOf => ({ kind: "any_of", fields: automationStudioRecordAnyOfFields(group), condition: automationStudioRecordAnyOfText(group) })),
+    ...comparisons.map((comparison): FilterOf => ({ kind: "compare", fields: automationStudioRecordFieldComparisonFields(comparison), condition: automationStudioRecordFieldComparisonText(comparison) }))
+  ];
+  if (otherFilters.length) account.filters = filterAccounts(otherFilters, where.length, working, failed, labelFields);
   const hiddenSortKeys = hiddenSortKeysOf(process.sort ?? [], process.columns, distinct, limited, input.now);
   if (hiddenSortKeys.length) account.hiddenSortKeys = hiddenSortKeys;
   if (rows.length === 0) account.keptNone = true;
@@ -175,6 +206,40 @@ function conditionAccounts(
       account.leftOutOnlyByThis.push({ ...label, tested: witnessed.get(label.label)!.tested });
     });
     if (undated > 0) account.undated = undated;
+    return account;
+  });
+}
+
+/** What an `anyOf` group or a `compare` is said as on the account. */
+type FilterOf = Pick<AutomationStudioRecordProcessingFilterAccount, "kind" | "fields" | "condition">;
+
+/**
+ * Each group's or comparison's rejected and alone counts, and the rows it alone
+ * left out, each label once, in capture order, as `conditionAccounts` counts a
+ * condition's; `offset` is where the first of them sits among every filter.
+ */
+function filterAccounts(
+  said: readonly FilterOf[],
+  offset: number,
+  rows: readonly AutomationStudioRecordCollectedRow[],
+  failed: readonly (readonly number[])[],
+  labelFields: readonly string[]
+): AutomationStudioRecordProcessingFilterAccount[] {
+  return said.map((filter, at) => {
+    const index = offset + at;
+    const account: AutomationStudioRecordProcessingFilterAccount = { ...filter, rejected: 0, alone: 0, leftOutOnlyByThis: [] };
+    const named = new Set<string>();
+    rows.forEach((row, position) => {
+      const fails = failed[position]!;
+      if (!fails.includes(index)) return;
+      account.rejected += 1;
+      if (fails.length !== 1) return;
+      account.alone += 1;
+      const label = labelOf(row.values, labelFields);
+      if (label === undefined || named.has(label.label)) return;
+      named.add(label.label);
+      account.leftOutOnlyByThis.push(label);
+    });
     return account;
   });
 }

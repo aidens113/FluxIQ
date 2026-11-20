@@ -6,7 +6,7 @@ import type { AutomationStudioResultTrailStep } from "../../../../../runtime/res
 import type { AutomationStudioTaskAttemptLoopsCaught, AutomationStudioTaskAttemptPath } from "@fluxiq/contracts/automation";
 import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftResultProcessing, AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/index.ts";
@@ -73,6 +73,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   completion: AutomationStudioAnswerFirstCompletionCheck;
   /** Everything the attempt did on the site, for its judge: every call its chain sent and every step a saved Flow's run made, held across a resume (`../trail/`, t963). */
   trail: AutomationStudioResultTrailStep[];
+  /** What `core.set_result_processing` holds for this attempt's result (`./result-processing.ts`, t970); absent until it is set. */
+  resultProcessing?: AutomationStudioFlowDraftResultProcessing | undefined;
   permissions: AutomationStudioFlowBootstrapActionPermissions;
   /** The domain's tools the chain sends to now: the arrival's until the page has got there, then the ones with no start location. */
   options: AutomationStudioHarnessOptionLoopBinding;

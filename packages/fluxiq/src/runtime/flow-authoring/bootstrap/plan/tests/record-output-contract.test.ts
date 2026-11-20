@@ -255,10 +255,10 @@ describe("the sentence and detail a refused processing field is given", () => {
 // t510 (F3): `exclude` was read as "left out of the answer"; the contract says it means never stored, and that
 // process.columns is what leaves a stored field out of the answer.
 describe("what handling exclude and process.columns mean, as the contract says them", () => {
-  it("says exclude is never stored and that a sort or dedupe key may be a stored field columns leaves out", () => {
+  it("says exclude is never stored and that a filter, sort or dedupe may read a stored field columns leaves out (t970)", () => {
     const { text, condensedText } = automationStudioFlowBootstrapRecordOutputContract(extractList);
     expect(text).toContain("exclude: never stored");
-    for (const shown of [text, condensedText]) expect(shown).toContain("a sort or dedupe key may be a stored field columns leaves out");
+    for (const shown of [text, condensedText]) expect(shown).toContain("a filter, sort or dedupe may read a stored field columns leaves out");
   });
 });
 

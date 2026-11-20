@@ -26,15 +26,22 @@
 // output step's own `recordOutput.process` (a sort, a where, a limit), read against the answer's columns, orders and
 // bounds its rows. One the contract does not accept, or one over a column the answer does not hold, shapes nothing.
 //
+// **And the result's own processing over it (t970).** What `core.set_result_processing` set
+// (`../attempt/result-processing.ts`) is merged over the output step's declaration, key by key, and shapes
+// the answer the same way, with the pages' whole rows as it reads them: a mark read only to filter by is
+// tested there and is no column of the answer. What it did -- the counts, and per filter the rows it alone
+// left out -- goes to the judge in `evidence().processing`, so the judge checks the filtering rather than
+// trusting it; `collected` is the rows it works on, before it, which the tool answers with.
+//
 // Lines said away from a call (a run's passes, the draft's own changes) are told once, with the header, in the next
 // request's fixed slot (`slot`). Nothing here caps or cuts: every page holds every row its read kept.
-import { parseAutomationStudioRecordProcessing } from "@fluxiq/contracts/automation";
+import { parseAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordProcessingAccount, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import { automationStudioFlowDraftStepIsAction, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage, AutomationStudioResultEvidenceProcessing } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstResultCoverage } from "../result/index.ts";
 import { automationStudioAnswerFirstResultPort, automationStudioAnswerFirstResultStepHolder, type AutomationStudioAnswerFirstResultEvent, type AutomationStudioAnswerFirstResultPort, type AutomationStudioAnswerFirstResultRead, type AutomationStudioAnswerFirstResultStepRef } from "../result/index.ts";
 import { automationStudioAnswerFirstProcessedRows, automationStudioAnswerFirstReadSchema, type AutomationStudioAnswerFirstRowCall, type AutomationStudioAnswerFirstRowsStored, type AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
@@ -77,6 +84,10 @@ export type AutomationStudioAnswerFirstResultFeed = {
   emptyRefusal(): string | undefined;
   /** The ledger id of a draft step. */
   idOf(step: AutomationStudioFlowDraftStep): string;
+  /** The result processing `core.set_result_processing` holds (header); `undefined` clears it. */
+  setProcessing(declared: AutomationStudioRecordProcessing | undefined): void;
+  /** The rows the answer is made from, before any processing, with their schema: what the result processing reads (header). */
+  collected(): { datasetId: string; schema: AutomationStudioRecordSchema; rows: JsonObject[] } | undefined;
 };
 
 const EMPTY: AutomationStudioAnswerFirstRowsSummary = { totalRows: 0, truncated: false, columns: [], rows: [] };
@@ -96,6 +107,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     if (process === undefined) processes.delete(id);
     else processes.set(id, process);
   };
+  /** The result processing the tool holds, merged over the output step's own (header). */
+  let held: AutomationStudioRecordProcessing | undefined;
+  /** What the latest processing of the answer did, for the judge (header); absent where nothing was declared. */
+  let account: { declared: AutomationStudioRecordProcessing; account: AutomationStudioRecordProcessingAccount } | undefined;
   let intent: AutomationStudioAnswerFirstResultIntent | undefined;
   /** The latest pass's read, for the forward run's report of it (`passed`). */
   let pass: { read?: AutomationStudioAnswerFirstResultRead } | undefined;
@@ -124,6 +139,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   };
 
   const rows = (): AutomationStudioAnswerFirstRowsSummary => {
+      account = undefined;
       // The output step, after the steps appending to its output before it (`../result/output-group.ts`).
       const group = port.outputGroup();
       const output = group.at(-1);
@@ -135,14 +151,30 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       if (!sources.length) return EMPTY;
       // A row repeated whole on two pages is one row, as the store's default processing counts it.
       const columns = answer.columns.length ? answer.columns : [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
-      const shaped = processed(pages.flatMap((page) => page.kept), columns, processes.get(output.id));
+      const shaped = processed(pages.flatMap((page) => page.kept), columns, merged(processes.get(output.id), held));
+      account = shaped.account;
       return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
   };
   const record = (events: readonly AutomationStudioAnswerFirstResultEvent[], before = rows().totalRows): string | undefined => port.record(events, { before, after: () => rows().totalRows });
+  /** What the answer's processing did, as the judge is shown it (header); nothing where none was declared. */
+  const processingEvidence = (): { processing?: AutomationStudioResultEvidenceProcessing } => {
+    rows();
+    return account ? { processing: automationStudioAnswerFirstProcessingEvidence(account.declared, account.account) } : {};
+  };
 
   return {
     port,
     idOf,
+    setProcessing(declared) {
+      held = declared;
+    },
+    collected() {
+      const group = port.outputGroup();
+      const output = group.at(-1);
+      const rows = group.flatMap((step) => step.pages).flatMap((page) => page.kept.map((row) => ({ ...row })));
+      const schema = rows.length ? automationStudioAnswerFirstReadSchema(rows) : undefined;
+      return output && schema ? { datasetId: automationStudioAnswerFirstStoredDatasetId("step", output.id, output.version), schema, rows } : undefined;
+    },
     expect(next) {
       intent = next;
     },
@@ -238,7 +270,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
         }),
         ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
         working: ledger.steps.filter((step) => !group.includes(step)).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
-        looks: ledger.looks.map((read) => page(read, "look", 1))
+        looks: ledger.looks.map((read) => page(read, "look", 1)),
+        ...processingEvidence()
       };
     },
   };
@@ -264,15 +297,36 @@ function declaredProcess(input: JsonObject): unknown {
   return output?.process;
 }
 
-/** The answer's rows as the declared processing shapes them (header), or as they are. */
-function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown): { rows: JsonObject[]; columns: { id: string; label: string }[] } {
+/** The output step's declaration with the result processing's keys over it (header); `undefined` where neither says anything. */
+function merged(own: unknown, held: AutomationStudioRecordProcessing | undefined): unknown {
+  if (held === undefined) return own;
+  return isObject(own) ? { ...own, ...(held as unknown as JsonObject) } : held;
+}
+
+/**
+ * The answer's rows as the declared processing shapes them (header), or as they are, and what the processing did. A
+ * declaration naming its `columns` shows those, in its order, where they are the answer's; else the answer's columns.
+ */
+function processed(rows: readonly JsonObject[], columns: readonly string[], declared: unknown): { rows: JsonObject[]; columns: { id: string; label: string }[]; account?: { declared: AutomationStudioRecordProcessing; account: AutomationStudioRecordProcessingAccount } } {
   const schema = automationStudioAnswerFirstReadSchema(rows);
   const parsed = schema ? parseAutomationStudioRecordProcessing(declared, schema) : undefined;
-  const shaped = declared !== undefined && schema && parsed?.ok
-    ? automationStudioAnswerFirstProcessedRows(rows, schema, parsed.processing).rows : wholeOnce(rows);
+  const made = declared !== undefined && schema && parsed?.ok ? automationStudioAnswerFirstProcessedRows(rows, schema, parsed.processing) : undefined;
+  const shaped = made ? made.rows : wholeOnce(rows);
+  const asked = made && parsed?.ok && parsed.processing.columns ? parsed.processing.columns : undefined;
+  const shown = asked ?? columns;
   // Dedupe compares the original whole rows before narrowing the answer. Two listings differing in an unasked
   // column remain two listings; a declared dedupe (including false) and sort run against those full rows too.
-  return { rows: shaped.map((row) => Object.fromEntries(columns.filter((column) => Object.hasOwn(row, column)).map((column) => [column, row[column]!]))), columns: columns.map((id) => ({ id, label: id })) };
+  return {
+    rows: shaped.map((row) => Object.fromEntries(shown.filter((column) => Object.hasOwn(row, column)).map((column) => [column, row[column]!]))),
+    columns: shown.map((id) => ({ id, label: id })),
+    ...(made && parsed?.ok ? { account: { declared: parsed.processing, account: made.account } } : {})
+  };
+}
+
+/** The account as the judge is shown it (`AutomationStudioResultEvidenceProcessing`): the counts, and per filter its words and the rows it alone left out, by label. */
+function automationStudioAnswerFirstProcessingEvidence(declared: AutomationStudioRecordProcessing, account: AutomationStudioRecordProcessingAccount): AutomationStudioResultEvidenceProcessing {
+  const filters = [...(account.conditions ?? []), ...(account.filters ?? [])].map((filter) => ({ condition: filter.condition, leftOut: filter.rejected, leftOutOnlyByThis: filter.leftOutOnlyByThis.map((row) => row.label) }));
+  return { declared: JSON.parse(JSON.stringify(declared)) as JsonObject, collected: account.collected, leftOut: account.filteredOut, repeats: account.duplicates, cut: account.cut, kept: account.kept, filters };
 }
 
 /** Rows without a row repeated whole, the first of each where it was. */
