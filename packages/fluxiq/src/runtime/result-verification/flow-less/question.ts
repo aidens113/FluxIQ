@@ -11,6 +11,7 @@
 export const AUTOMATION_STUDIO_FLOW_LESS_QUESTION = [
   "The instructions are what a person asked for. It was done directly, by hand, and all there is to see of it is in this summary.",
   "Answer one question: was what the person asked for got?",
+  "resultEvidence states the declared result: every contributing page with its current conditions and fields, kept rows and left-out evidence, the places read and what the pager said. Coverage is a fact to weigh, never a completeness verdict. A carried page came from an earlier attempt and was not read now. Working reads and looks are evidence outside the result. answerContract, where present, names the requested columns in order; a column it does not name was not asked for unless it is a named one under another name.",
   "recordSets holds rows really read from the site. acts lists the lasting acts really done on the site, each with its state: landed, it happened; may_have_landed, it ran and its effect is not known; undone, it was taken back; not_done, it never happened.",
   "endView is how the site looked at the end. witnesses.before and witnesses.after are one reading of the site, taken before the first lasting act and at the end.",
   // The same words again (run-mw4eb5r3-a20f3542): an earlier attempt's act is carried, and with no word on what that means a judge asked for the act again and the model did it twice.

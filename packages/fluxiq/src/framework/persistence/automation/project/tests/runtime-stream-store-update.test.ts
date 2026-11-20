@@ -55,6 +55,29 @@ describe("a run-detail save that reuses the stream it read", () => {
     }
   });
 
+  // A run longer than one chunk of the stream (2,000 events), and than the 5,000 events a read once stopped at: its
+  // detail was refused whole, and a re-save appended again what the shortened read had missed.
+  it("holds a run longer than one chunk whole: each page row keeps its attempt's own order, and saving it again adds nothing", async () => {
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: PROJECT });
+    try {
+      const long = detail("run.long", 5_200, 100);
+      await store.putRunDetail(long);
+      const page = await store.listRunActions({ runId: "run.long", limit: 3, offset: 5_197 });
+      expect(page).toMatchObject({ total: 5_200, actions: [{ attemptId: "attempt.5198", order: 5_198 }, { attemptId: "attempt.5199", order: 5_199 }, { attemptId: "attempt.5200", order: 5_200 }] });
+      // The stream's own place stays beside it: the run summary and the route decision come first.
+      expect(page.actions[0]?.metadata).toMatchObject({ eventSequence: 5_200 });
+      const read = await store.readRunForUpdate("run.long");
+      expect(read.events).toHaveLength(5_202);
+      expect(read.detail?.actionAttempts).toHaveLength(5_200);
+      await store.putRunDetail(long, { existingEvents: read.events! });
+      await store.putRunDetail(long);
+      expect((await store.listRuntimeEvents({ runId: "run.long", afterSequence: 5_202, limit: 10 })).events).toEqual([]);
+      expect((await store.listRunActions({ runId: "run.long", limit: 1 })).total).toBe(5_200);
+    } finally {
+      await store.close();
+    }
+  }, 60_000);
+
   it("reads no stream for a run it does not hold", async () => {
     const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: PROJECT });
     try {

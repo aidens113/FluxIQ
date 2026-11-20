@@ -170,7 +170,7 @@ describe("one answer-first attempt", () => {
         (request) => {
           said.push(JSON.stringify(request.context.evidenceLoop?.evidence));
           library.loans.push({ title: "Birds of the Coast", due: "2030-01-02" });
-          return runNode("read2", READ_LOANS, { page: 2 }, [], {});
+          return runNode("read2", READ_LOANS, { page: 2 }, [], { add: true });
         },
         complete("Listed it all.")
       ]

@@ -1,7 +1,7 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import type { AutomationStudioAnswerFirstReadPage } from "./list-page.ts";
+import type { AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstRowCall, AutomationStudioAnswerFirstRowsStored } from "./rows-call.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "./rows-summary.ts";
 
@@ -24,11 +24,20 @@ export type AutomationStudioAnswerFirstRowSink = {
    * read, which is how a run that found the wrong list stops standing in the repair's way.
    * What was stored stays stored; a later read simply becomes the result by the plain rule.
    */
-  runRowsRefused(): void;
+  /**
+   * Publish the ledger's declared answer under its step/version dataset, exactly as judged. A store failure propagates.
+   * Once it is stored, every other publication the run holds is retired (`./row-sink.ts`, "One result in the run").
+   */
+  publish(answer: AutomationStudioAnswerFirstRowsSummary, evidence?: AutomationStudioResultEvidenceBundle): Promise<void>;
+  /**
+   * The earlier segment's publication, which a carried-on attempt copied into this run (`./copied-rows.ts`): retired
+   * like this sink's own once a publication under another id supersedes it. An id outside the publications' namespace is ignored.
+   */
+  carried(datasetId: string): void;
   /** What this sink stored, now, from its own account (rows repeated whole are counted once, as processing does). */
-  summary(): AutomationStudioAnswerFirstRowsSummary;
+  summary(datasetId?: string): AutomationStudioAnswerFirstRowsSummary;
   /** `summary`, read back from the store after processing, so what is judged and shown is what was stored; the sink's own account when the store cannot be read. */
-  readBack(): Promise<AutomationStudioAnswerFirstRowsSummary & { fromStore: boolean }>;
+  readBack(datasetId?: string): Promise<AutomationStudioAnswerFirstRowsSummary & { fromStore: boolean }>;
   /**
    * How many reads have answered so far: each call whose answer held a list of rows, none
    * included, that was not lost to a failing store, and each batch a run captured. What says a
@@ -40,5 +49,4 @@ export type AutomationStudioAnswerFirstRowSink = {
    * of the site and the place in it, where the call or its answer said) and how many rows it kept. A further page of it read the
    * same way that kept no row is one, with `kept: 0` (`./row-sink.ts`). Empty while no read stored a row.
    */
-  readPages(): AutomationStudioAnswerFirstReadPage[];
 };

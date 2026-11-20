@@ -159,6 +159,13 @@ export function createAutomationStudioFlowExpansionFixture(nowMs = 2_000): Autom
       { entryId: "subflow-entry.primary", subflowId: primarySubflowId, enteredAt: nowMs + 3, exitedAt: nowMs + 12, status: "waiting" },
       { entryId: "subflow-entry.recovery", subflowId: recoverySubflowId, enteredAt: nowMs + 13, exitedAt: nowMs + 20, status: "succeeded" }
     ],
+    // The summary's three action attempts, as the run recorded them: the primary path's two and the recovery's one.
+    // Each is a whole record (`startedAt` included), so a test that copies one as a template saves a valid action.
+    actionAttempts: [
+      { attemptId: "attempt.primary.open", nodeId: "node.primary.open", definitionId: "action.open", order: 0, status: "succeeded", route: "success", startedAt: nowMs + 4, finishedAt: nowMs + 5 },
+      { attemptId: "attempt.primary.submit", nodeId: "node.primary.submit", definitionId: "action.click", order: 1, status: "failed", route: "failure", startedAt: nowMs + 6, finishedAt: nowMs + 11, message: "A popup covered the target." },
+      { attemptId: "attempt.recovery.dismiss", nodeId: "node.recovery.dismiss", definitionId: "action.click", order: 2, status: "succeeded", route: "success", startedAt: nowMs + 14, finishedAt: nowMs + 15 }
+    ],
     interventions: [
       {
         schemaVersion: "0.1",

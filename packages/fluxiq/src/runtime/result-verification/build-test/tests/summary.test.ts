@@ -10,7 +10,7 @@ import {
   ACCEPT_FRIENDS, FRIENDS, PICKUP_CART, RUN_36_READ, RUN_36_STEPS, RUN_40_CLAIMS, RUN_40_STEPS,
   run36, run36Report, run40, run41Steps
 } from "./live-run-drafts.ts";
-import type { JsonValue } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { DENIED, ROW_CONTEXT, SITE, navigate, present, replayed, report, verified, web } from "./draft-steps.ts";
 
 const run40Summary = () => automationStudioBuildTestResultSummary({
@@ -281,5 +281,32 @@ describe("an act whose only step may be skipped", () => {
     expect(missing).toMatchObject({ reason: "step_is_optional", step: "2" });
     expect(missing?.said).toEqual(expect.stringContaining("not evidence"));
     expect(missing?.said).toEqual(expect.stringContaining("step 2"));
+  });
+});
+
+describe("a build test's source result evidence", () => {
+  const sourceRead = web(1, "example.read", { selector: ".item" }, "https://reading.test/list", { parameters: { read: { fields: { title: "title_field" }, where: [{ field: "available", is: "present" }] } }, step: { effect: "observe", proposes: true } });
+
+  it("keeps validated records on their own source page, including an empty filtered page and its whole left-out account", () => {
+    const rows = [{ title: "B" }, { title: "A" }, { title: "Long ".repeat(400) }];
+    const rejected: JsonObject = { leftOutOnlyByThis: [{ conditionIndex: 0, rows: [{ title: "Left out ".repeat(300) }], observations: [{ conditionIndex: 0, state: "absent" }] }] };
+    const summary = automationStudioBuildTestResultSummary({
+      steps: [sourceRead], nodes: [], deniedEvidenceKeys: [], instructionText: "Give columns title.",
+      report: { reused: false, verdict: { outcomes: [replayed(sourceRead)] }, observations: [
+        { step: 1, stepId: sourceRead.id, evidence: { place: "page=1", listKey: "list.one" }, records: rows },
+        { step: 1, stepId: sourceRead.id, evidence: { place: "page=2", listKey: "list.one", readRows: rejected }, records: [] }
+      ] }
+    });
+    expect(summary.resultEvidence?.pages).toEqual([
+      { source: "trial.1", step: "d1", position: 1, version: 1, fields: { title: "title_field" }, conditions: [{ field: "available", is: "present" }], place: "page=1", listKey: "list.one", kept: 3, rows },
+      { source: "trial.2", step: "d1", position: 1, version: 1, fields: { title: "title_field" }, conditions: [{ field: "available", is: "present" }], place: "page=2", listKey: "list.one", kept: 0, rows: [], leftOut: { reported: rejected, parameters: sourceRead.input.parameters } }
+    ]);
+    expect(summary.resultEvidence?.answerContract).toEqual({ columns: ["title"] });
+    expect(summary.resultEvidence?.coverage).toMatchObject([{ first: "read", places: ["page=1", "page=2"] }]);
+  });
+
+  it("does not reconstruct a captured page from displayed row labels when validated records are absent", () => {
+    const summary = automationStudioBuildTestResultSummary({ steps: [sourceRead], nodes: [], deniedEvidenceKeys: [], report: { reused: false, verdict: { outcomes: [replayed(sourceRead)] }, observations: [{ step: 1, evidence: { place: "page=1", readRows: { rows: [{ title: "Only a label" }] } } }] } });
+    expect(summary.resultEvidence?.pages).toEqual([]);
   });
 });

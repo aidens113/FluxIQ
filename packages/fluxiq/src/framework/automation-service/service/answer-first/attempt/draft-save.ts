@@ -12,12 +12,23 @@
 // worked out here where the attempt's handles still mean what they meant, and kept by the task with
 // the steps. A person's Run again learns nothing new of which state is wanted: what it flipped, it
 // flipped because it was told to, so a step keeps what it had.
+//
+// **The saved Flow reads what the answer was read as** (lane t905). The answer is the output step's current version,
+// after the steps appending to its output before it (`../result/output-group.ts`): a Flow whose read of any of them lost
+// its conditions or columns is refused here and kept as steps, never saved
+// to hand the next attempt another list (`../result/output-saved.ts`, run-mwcess01). And a read the result folded into a
+// paging loop's read step (the same list read the same way, D2), with the press that only moved that list on for it, is
+// left out: it is the loop's own work done again by hand, and saved after the loop it stops the Flow on a press with
+// nothing left to press (`../result/loop-copies.ts`, run-mwcncux8).
 
 import { randomUUID } from "node:crypto";
 import { automationStudioCandidateFingerprint as fingerprint, type AutomationStudioFlowCandidate } from "../../../../../runtime/flow-authoring/bootstrap/candidate/index.ts";
 import { automationStudioLlmStepLogNote, checkAutomationStudioFlowBootstrapCompletion } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
+import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstInputBoundSteps, automationStudioAnswerFirstStampedPlan, automationStudioAnswerFirstStatedToggles } from "../flow-run/index.ts";
+import { automationStudioAnswerFirstResultLoopCopies, automationStudioAnswerFirstResultOutputSaved, type AutomationStudioAnswerFirstResultVersion } from "../result/index.ts";
+import { automationStudioAnswerFirstResultVersionOf } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -31,6 +42,7 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
   try {
     // A caller's input values become the Flow's inputs before anything is assembled, so the draft and the steps the task keeps (`./remember.ts`, after this) both hold the bindings (`../flow-run/input-bound-steps.ts`).
     if (input.caller?.inputs) run.steps = automationStudioAnswerFirstInputBoundSteps(run.steps, input.caller.inputs);
+    withoutLoopCopies(run);
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary }, projectId: input.projectId, flowId: input.flowId, registry: input.registry, resolution: input.resolution, size: input.size, binding: input.binding,
       permissionFor: () => async () => ({ permitted: true, missing: [], requestId: null }),
@@ -43,6 +55,13 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
       automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${[...verdict.codes, ...verdict.issues.map((issue) => `${issue.code} at ${issue.path}`)].join(", ") || "no code given"}`);
       return { kind: "kept", why: "not_assembled", codes: verdict.codes };
     }
+    // Every step whose rows are the answer must be held: the output step, and the steps appending to its output before it.
+    const reads = savedReads(run, verdict);
+    const held = run.result.port.outputGroup().map((step) => automationStudioAnswerFirstResultOutputSaved(step, reads)).find((each) => !each.ok);
+    if (held && !held.ok) {
+      automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${held.code}. ${held.said}`);
+      return { kind: "kept", why: "not_assembled", codes: [held.code] };
+    }
     const stated = statedOf(run, verdict);
     const record = await input.stores.drafts.save(draftRecord(run, verdict.summary, automationStudioAnswerFirstStampedPlan(input, verdict.buildPlan, verdict.locator, run.steps, stated)));
     // Its parts go to the library; a failure there is reported by name on the trace and changes nothing here (`../../project-parts/draft-parts.ts`).
@@ -53,6 +72,40 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
     automationStudioLlmStepLogNote(`The draft could not be saved and was kept as steps only: ${code}`);
     return { kind: "kept", why: "not_saved", codes: [code] };
   }
+}
+
+/** The draft without the reads that repeat a paging loop's own work by hand, and the presses that moved the list on for them (header). */
+function withoutLoopCopies(run: AutomationStudioAnswerFirstAttemptRun): void {
+  run.result.draft(run.steps);
+  const copies = automationStudioAnswerFirstResultLoopCopies(run.steps, run.result.port.ledger(), run.result.idOf);
+  if (!copies.size) return;
+  run.steps = run.steps.map((step) => (copies.has(step) ? { ...automationStudioFlowDraftStepCopy(step), disposition: "dropped" as const } : step));
+  run.result.draft(run.steps);
+  automationStudioLlmStepLogNote(`Left out of the saved Flow as a paging loop's own work done again by hand: steps ${[...copies].map((step) => step.position).sort((one, other) => one - other).join(", ")}.`);
+}
+
+/** What each plan read was authored as, what it ran with, and what was assembled, by its stable ledger step id. */
+function savedReads(
+  run: AutomationStudioAnswerFirstAttemptRun,
+  verdict: Extract<Awaited<ReturnType<typeof checkAutomationStudioFlowBootstrapCompletion>>, { ok: true }>
+): Parameters<typeof automationStudioAnswerFirstResultOutputSaved>[1] {
+  const saved = new Map<string, {
+    written: AutomationStudioAnswerFirstResultVersion;
+    resolved: AutomationStudioAnswerFirstResultVersion;
+    saved: AutomationStudioAnswerFirstResultVersion;
+  }>();
+  for (const [subflowIndex, subflow] of verdict.buildPlan.plan.subflows.entries()) {
+    for (const [nodeIndex, node] of subflow.nodes.entries()) {
+      const place = verdict.locator?.nodes[`${subflowIndex}.${nodeIndex}`];
+      const step = place === undefined ? undefined : run.steps.find((each) => (place.draftStepId !== undefined ? each.id === place.draftStepId : each.position === place.draftStep));
+      if (step) saved.set(run.result.idOf(step), {
+        written: automationStudioAnswerFirstResultVersionOf(step.input),
+        resolved: automationStudioAnswerFirstResultVersionOf(step.ranWith ?? step.input),
+        saved: automationStudioAnswerFirstResultVersionOf({ parameters: node.parameters ?? {} })
+      });
+    }
+  }
+  return saved;
 }
 
 /** What each step checks for: what it was already known to, and what this attempt saw flip. A care taken: one that cannot be worked out costs the draft nothing. */

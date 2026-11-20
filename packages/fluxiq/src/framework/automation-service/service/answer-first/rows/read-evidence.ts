@@ -1,15 +1,5 @@
-// What Core already holds about which list a read read, and where in it. Used to tell a re-read
-// from a next page (`./list-after-read.ts`) and to tell lists apart (`./dataset-of-read.ts`), and
-// never a source of a row.
-//
-// - **The model's own words**, where its call carries a record output: the list's name
-//   (`datasetId`), `writeMode` and `purpose`, the fields it already sets on any read it means to keep.
-// - **The call's page words** (`{ page: 2 }`): where in the list it asked to read.
-// - **The address it read**, as a domain's answer states it: the read's own `url`, the answer's
-//   `location`, or the place the step says it found the page. A page word in that address says
-//   where in the list, and the rest of it says which view of the site. A saved step's replay names
-//   only where it was written, which says which view and not which page. No address is no evidence:
-//   the rows decide.
+// The read's display location and its own account of rows its conditions left out.
+// The ledger alone decides identity, place, current conditions and result membership.
 //
 // **And what its own conditions left out (`leftOut`), for the judge of the result its rows make**
 // (`runtime/result-verification/flow-less/read-left-out.ts` says why: run-mwaknxf9-7549d126, where a site
@@ -41,18 +31,12 @@
 // ones the read was dispatched with. Without it the judge was told what a Flow's read kept and never what it left out,
 // and refused a right replay twice over the ad cards it had rightly left out (judges 0131, 0182).
 //
-// **And which conditions it was asked under (`conditions`).** The `where` list the call asked, or the batch's read was
-// dispatched with (only where the batch carries its account, above; a batch without one says none), found as `leftOut`'s
-// are, each condition in a stable form. The row sink holds a list's conditions by them and lets a read's rows become
-// the result only where they include every condition of the result's (`./row-sink.ts`, run-mwaudvnh-c208d32c).
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY, automationStudioResultReadParameters, type AutomationStudioFlowLessReadLeftOut } from "../../../../../runtime/result-verification/index.ts";
-import { stableJson } from "../../stable-json.ts";
 import { extractionSummaryFromOutputs } from "../../summaries/index.ts";
 import { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
-import { automationStudioAnswerFirstPageWord } from "./page-word.ts";
 import type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
 import type { AutomationStudioAnswerFirstRowCall } from "./rows-call.ts";
 
@@ -62,33 +46,11 @@ const REJECTED_ROWS_KEY = "rejectedRows";
 type LeftOutSet = AutomationStudioFlowLessReadLeftOut["sets"][number];
 
 export function automationStudioAnswerFirstReadEvidenceOf(call: AutomationStudioAnswerFirstRowCall, answer: AutomationStudioLlmEvidenceToolExecutionResult, readRowsKey: string | undefined): AutomationStudioAnswerFirstReadEvidence {
-  const output = recordOutputOf(call.value);
-  const named = typeof output?.datasetId === "string" && output.datasetId ? output.datasetId : undefined;
-  const says = output?.writeMode === "append" || output?.writeMode === "replace" ? output.writeMode : undefined;
   const live = addressIn(answer, readRowsKey);
   const address = live ?? (isObject(call.value.from) && typeof call.value.from.location === "string" ? call.value.from.location : undefined);
   const list = address === undefined ? undefined : automationStudioAnswerFirstAddressSplit(address);
-  const place = placeInCall(call.value) ?? (live === undefined ? undefined : list?.place);
   const leftOut = leftOutOf(call, answer, readRowsKey);
-  const conditions = automationStudioAnswerFirstReadConditions(isObject(call.value.parameters) ? call.value.parameters : undefined);
-  return { lookUp: output?.purpose === "intermediate", ...(output?.process !== undefined ? { process: output.process } : {}), ...(named ? { named } : {}), ...(says ? { says } : {}), ...(list ? { list: list.view } : {}), ...(place !== undefined ? { place } : {}), ...(leftOut ? { leftOut } : {}), ...(conditions.length ? { conditions } : {}) };
-}
-
-/**
- * A read's `where` conditions, from the parameters it was asked or dispatched with (header): each in a
- * stable form (keys sorted), once, sorted. Two reads share a condition only where they wrote it alike.
- * None, or no read parameters in reach, is none.
- */
-export function automationStudioAnswerFirstReadConditions(parameters: JsonObject | undefined): string[] {
-  const where = automationStudioResultReadParameters(parameters)?.where;
-  return Array.isArray(where) ? [...new Set(where.map((condition) => stableJson(condition)))].sort() : [];
-}
-
-function recordOutputOf(value: JsonObject): JsonObject | undefined {
-  const parameters = value.parameters;
-  const inner = isObject(parameters) ? parameters.recordOutput : undefined;
-  if (isObject(inner)) return inner;
-  return isObject(value.recordOutput) ? value.recordOutput : undefined;
+  return { ...(list ? { list: list.view } : {}), ...(leftOut ? { leftOut } : {}) };
 }
 
 function addressIn(answer: AutomationStudioLlmEvidenceToolExecutionResult, readRowsKey: string | undefined): string | undefined {
@@ -99,22 +61,6 @@ function addressIn(answer: AutomationStudioLlmEvidenceToolExecutionResult, readR
   const from = answer.draft?.replay?.from;
   for (const said of [isObject(read) ? read.url : undefined, evidence.location, from?.location]) if (typeof said === "string" && said) return said;
   return undefined;
-}
-
-/**
- * The call's own page words: a plain value on the call or its parameters. An object under such a
- * word (how to find a next-page control, say) describes how to turn the page and stays the same on
- * every page, so it says nothing of where the read is. None is `undefined`.
- */
-function placeInCall(value: JsonObject): string | undefined {
-  const places: string[] = [];
-  for (const holder of [value, value.parameters]) {
-    if (!isObject(holder)) continue;
-    for (const [name, inner] of Object.entries(holder)) {
-      if (automationStudioAnswerFirstPageWord(name) === "place" && isPlain(inner)) places.push(`${name.toLowerCase()}=${inner}`);
-    }
-  }
-  return places.length ? places.sort().join("&") : undefined;
 }
 
 /** What the read's conditions left out, as its answer said it (header), or `undefined` when it said none. */
@@ -247,10 +193,6 @@ function arrayAt(holder: JsonObject | undefined, key: string): JsonValue[] {
 
 function isIndex(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isPlain(value: JsonValue): value is string | number {
-  return typeof value === "string" || typeof value === "number";
 }
 
 function isObject(value: unknown): value is JsonObject {

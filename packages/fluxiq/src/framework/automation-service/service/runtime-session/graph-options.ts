@@ -27,8 +27,16 @@
 // read, and taken once, from beside the Flow. With nothing to carry its options are
 // exactly these, by the same object. A trial never names it: a trial is judged on what
 // it really does (`../answer-first/run-acts/`).
+//
+// **Input-use evidence is carried, never made here (t905 unit B).** A run that opened a
+// graph-entry session (`../input-basis/execution/`) passes its opaque port, which these
+// options carry; with none, no key and no work. Every field the engine adds to a native
+// dispatch beyond node, inputs, signal and host context reaches the native runtime as one
+// more argument, so a later per-attempt port arrives without editing this wrapper; today
+// the engine adds none, and the call is exactly as it was.
 
 import type { IoRegistry } from "../../../../io/index.ts";
+import type { AutomationStudioGraphInputUsePort } from "../../../../engine/automation/input-use/index.ts";
 import type { RuntimeService } from "../../../../runtime/index.ts";
 import { automationStudioEnvironmentExecutorOptions, automationStudioLiveRunEnvironment, type AutomationStudioRunEnvironment } from "../../environment/index.ts";
 import { type AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
@@ -56,7 +64,12 @@ type RunGraphOptionsInput = {
   environment?: AutomationStudioRunEnvironment | undefined;
   /** How human the person wants the run to act, 0-100, when the run's request set it; absent leaves the options as they were (level 0). */
   humanness?: number | undefined;
+  /** The run's own graph-entry input-use session port (header); absent, the options carry none. */
+  inputUse?: AutomationStudioGraphInputUsePort | undefined;
 };
+
+/** The native runtime's own call, taking whatever a dispatch carries beyond its four fields as one more argument (header). */
+type NativeForwarding = (...args: [...Parameters<AutomationStudioNativeNodeRuntime["execute"]>, Readonly<Record<string, unknown>>?]) => ReturnType<AutomationStudioNativeNodeRuntime["execute"]>;
 
 /** What a real run names to carry an attempt's acts: the service whose store holds them, and which Flow and run. */
 type CarryActs = Parameters<typeof automationStudioAnswerFirstRunActStoreOf>[1] & { owner: object; projectId: string | null | undefined; flowId: string; runId: string; runStatus?: (runId: string) => Promise<string | undefined> };
@@ -92,7 +105,10 @@ function runGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExec
   const native = input.nativeNodeRuntime;
   if (native) {
     options.runtimeCapabilities = [...new Set([...(options.runtimeCapabilities ?? []), ...native.getRuntimeCapabilities()])];
-    options.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => native.execute(node, inputs, signal, hostContext);
+    const forwarding: NativeForwarding = native.execute.bind(native);
+    options.nativeNodeExecutor = ({ node, inputs, signal, hostContext, ...carried }) => Object.keys(carried).length > 0
+      ? forwarding(node, inputs, signal, hostContext, carried)
+      : native.execute(node, inputs, signal, hostContext);
     options.resolveActionEffect = (node, parameterValues) => native.resolveActionEffect(node, parameterValues);
     options.resolveTargetRefresh = (node, parameterValues) => native.resolveTargetRefresh(node, parameterValues);
   }
@@ -101,5 +117,6 @@ function runGraphOptions(input: RunGraphOptionsInput): AutomationStudioGraphExec
   if (input.onRecordBatch) options.onRecordBatch = input.onRecordBatch;
   if (input.parking) options.parking = input.parking;
   if (input.humanness !== undefined) options.humanness = input.humanness;
+  if (input.inputUse) options.inputUse = input.inputUse;
   return automationStudioEnvironmentExecutorOptions(options, input.environment ?? automationStudioLiveRunEnvironment);
 }

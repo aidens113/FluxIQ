@@ -15,7 +15,7 @@
 // could stop. A task ends only with its result or its budget, so a refusal says where the evidence
 // is got, never that the trying may end.
 
-const NEW_EVIDENCE = "Only new evidence changes the check's answer: an act on the site that lands, a read that returns different rows or the same rows in a different order, after your acts a look at the page that shows what the check said it could not see (open that page, then read or search it there), the site showing something different, or different words in answer where the result is words. resultHolds is exactly what the check reads, so compare it with what was asked for before you complete. Editing the draft, or rewording your summary or notes, is not new evidence: the check reads none of them.";
+const NEW_EVIDENCE = "Only new evidence changes the check's answer: an act on the site that lands, a read that returns different rows or the same rows in a different order, after your acts a look at the page that shows what the check said it could not see (open that page, then read or search it there), the site showing something different, or different words in answer where the result is words. resultHolds is exactly what the check reads, and its result says which draft step the rows are from and which reads outside the draft are not in it, so compare it with what was asked for before you complete. Editing the draft, or rewording your summary or notes, is not new evidence: the check reads none of them.";
 
 const NOT_NEW = "The check reads what you hold, never the draft, your summary or your notes, so only new evidence changes its answer.";
 

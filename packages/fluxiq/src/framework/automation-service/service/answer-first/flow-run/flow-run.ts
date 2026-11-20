@@ -32,6 +32,10 @@
 // not run, and a step that resolves to an address off its sites is refused unsent. Either way the
 // attempt carries on and looks for another way, as after a person's no.
 //
+// **Its rows are its read steps' pages** (lane t905): each record batch goes to the row sink as it is captured, and
+// once the run has ended, to the attempt's one result as a page of the draft step its node stands for
+// (`./batch-steps.ts`), however the run ended.
+//
 // **A step on a control an earlier attempt saw flip checks before it presses** (`./stated-toggles.ts`),
 // a person's Run again included: that press empties the act record, not the states. What this run
 // sees flip goes to the same record, for the draft this attempt saves.
@@ -46,10 +50,17 @@
 // **How human the run acts is resolved by precedence** (`resolveHumanness`): a caller's own level, then the
 // task's stored level, then the run Flow's stored level, then the request's starting value. With none of them
 // the options carry no level, which is today's path exactly. A stored 0 wins over a starting value.
+//
+// **Graph-entry input evidence only where it was asked for** (t905 unit B, `../../input-basis/execution/`): with an
+// `inputUse` port the run opens one session over the layers it really assembles (the engine's, of no declared origin,
+// then the caller's own request's), carries its port into the engine and reports the closed observation the session
+// read from the real trace. It changes nothing the run does; without the port there is no session and no await.
 
 import { createHash } from "node:crypto";
 import { resolveHumanness } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
+import type { AutomationStudioGraphInputUsePort, AutomationStudioGraphInputUseSession, AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
@@ -57,12 +68,15 @@ import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateSta
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { automationStudioResultTrailOfAttempts } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
+import type { AutomationStudioInputUseEntry } from "../../input-basis/index.ts";
 import { automationStudioAnswerFirstReplayScope, type AutomationStudioAnswerFirstReplayScope } from "../caller/index.ts";
 import { automationStudioAnswerFirstRunActGate } from "../run-acts/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstFlowRunActClaims } from "./act-claims.ts";
 import { automationStudioAnswerFirstFlowRunAssemble, type AutomationStudioAnswerFirstFlowRunAssembly } from "./assemble.ts";
+import { automationStudioAnswerFirstFlowRunBatchSteps } from "./batch-steps.ts";
 import { automationStudioAnswerFirstFlowRunWatch, type AutomationStudioAnswerFirstFlowRunWatch } from "./dispatch-watch.ts";
+import { automationStudioAnswerFirstExecutionIdentity, type AutomationStudioAnswerFirstExecutableSource } from "./execution-identity.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "./outcome.ts";
 import { automationStudioAnswerFirstStampedPlan } from "./stamped-plan.ts";
 import { automationStudioAnswerFirstFlowRunPermission } from "./permission.ts";
@@ -70,10 +84,12 @@ import { automationStudioAnswerFirstFlowRunPersonCheckPort } from "./person-chec
 import { automationStudioAnswerFirstFlowRunStepBound } from "./step-bound.ts";
 import { automationStudioAnswerFirstFlowRunStoppedNote } from "./stopped-note.ts";
 import type { AutomationStudioAnswerFirstFlowRunEngine, AutomationStudioAnswerFirstFlowRunPorts } from "./ports.ts";
+import type { AutomationStudioAnswerFirstSourceRead } from "./source-authority.ts";
 import { automationStudioAnswerFirstFlowRunStepsRan, type AutomationStudioAnswerFirstFlowRunEnded } from "./steps-ran.ts";
 
 type Assembled = Extract<AutomationStudioAnswerFirstFlowRunAssembly, { ok: true }>;
-type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
+type Saved = { steps: readonly AutomationStudioFlowDraftStep[]; stepsDigest: string; candidateId?: string | undefined; stated?: readonly AutomationStudioAnswerFirstStatedToggle[] | undefined };
+type Ended = AutomationStudioAnswerFirstFlowRunEnded & { executableSource?: AutomationStudioAnswerFirstExecutableSource };
 
 /** What a thrown error reads as: its words may quote a value, so none is kept. */
 const THREW = "answer_first.flow_run_threw";
@@ -88,58 +104,84 @@ export async function automationStudioAnswerFirstFlowRun(ports: AutomationStudio
   const signal = attempt ? AbortSignal.any([attempt, halt.signal]) : halt.signal;
   const stopped = (): boolean => signal.aborted;
   if (stopped()) return { kind: "stopped" };
-  const assembly = await automationStudioAnswerFirstFlowRunAssemble(ports, saved.steps);
+  const basis = await sourceOf(ports, saved);
+  if (stopped()) return { kind: "stopped" };
+  const assembly = await automationStudioAnswerFirstFlowRunAssemble(ports, saved.steps, basis.status === "bound" ? basis.record.candidate.summary : undefined);
   if (stopped()) return { kind: "stopped" };
   if (!assembly.ok) return { kind: "not_assembled", codes: assembly.codes };
   const scope = automationStudioAnswerFirstReplayScope(ports.input.caller?.scope);
   const outside = scope?.refusal(scopeStepsOf(assembly));
   if (outside !== undefined) return { kind: "outside_scope", said: outside };
   const watch = automationStudioAnswerFirstFlowRunWatch(ports.stepped);
+  const batches: AutomationStudioRecordBatch[] = [];
   try {
     const declined = await automationStudioAnswerFirstFlowRunPermission(ports, assembly, saved.steps);
     if (stopped()) return { kind: "stopped" };
     if (declined) return { kind: "permission_declined", consequences: declined };
-    const ended = await run(ports, assembly, saved, watch, signal, () => halt.abort(), scope);
+    const ended = await run(ports, assembly, saved, basis, watch, signal, () => halt.abort(), scope, batches);
+    paged(ports, assembly, saved, ended, batches.splice(0));
     if (ended.code === CANCELLED || stopped()) return { kind: "stopped" };
     return outcome(ports, assembly, saved, ended, watch);
   } catch (error) {
+    paged(ports, assembly, saved, { reachedEnd: false }, batches.splice(0));
     if (stopped() || isCancellation(error)) return { kind: "stopped" };
     return outcome(ports, assembly, saved, { reachedEnd: false, code: THREW }, watch);
   }
 }
 
-function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: AutomationStudioAnswerFirstFlowRunEnded, watch: AutomationStudioAnswerFirstFlowRunWatch): AutomationStudioAnswerFirstFlowRunOutcome {
+function outcome(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: Ended, watch: AutomationStudioAnswerFirstFlowRunWatch): AutomationStudioAnswerFirstFlowRunOutcome {
   if (watch.anySent()) ports.arrived();
   const ran = automationStudioAnswerFirstFlowRunStepsRan({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, ended, watch });
   automationStudioAnswerFirstFlowRunStoppedNote(ran, ended.trace);
-  return ran;
+  const executableSource = ended.executableSource ?? (ports.sourceAuthority || saved.candidateId ? { status: "unknown" as const, code: "unavailable" as const } : undefined);
+  return executableSource ? { ...ran, executableSource } : ran;
+}
+
+/** The run's batches, as pages of their draft steps (header). A run that threw has no graph, and its batches stay with the row sink alone. */
+function paged(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, ended: AutomationStudioAnswerFirstFlowRunEnded, batches: readonly AutomationStudioRecordBatch[]): void {
+  if (!ports.result || !batches.length) return;
+  ports.result.batches(automationStudioAnswerFirstFlowRunBatchSteps({ buildPlan: assembly.buildPlan, locator: assembly.locator, saved: saved.steps, graph: ended.graph }, batches));
 }
 
 /** The assembled Flow, run as a trial runs it (`../../candidate-trial/run.ts`, `runIn`) under what is this attempt's. */
-async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined): Promise<AutomationStudioAnswerFirstFlowRunEnded> {
+async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, saved: Saved, basis: AutomationStudioAnswerFirstSourceRead, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, halt: () => void, scope: AutomationStudioAnswerFirstReplayScope | undefined, batches: AutomationStudioRecordBatch[]): Promise<Ended> {
   const { input, runId } = ports;
   const digest = saved.stepsDigest;
   const engine = ports.engine();
+  const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
+  const source = await automationStudioAnswerFirstExecutionIdentity({ projectId: input.projectId, flowId: input.flowId, candidateId: saved.candidateId, authority: ports.sourceAuthority, basis, buildPlan, currentBaseDigest: () => engine.currentBaseDigest() });
   const [parentFlow, baseDependencyDigest, snapshots, deprecatedPublicationIds] = await Promise.all([engine.parentFlow(), engine.currentBaseDigest(), engine.snapshots(), engine.deprecatedPublicationIds()]);
   const startedAt = Date.now();
   const identity: AutomationStudioCandidateVerificationIdentity = { projectId: input.projectId, flowId: input.flowId, revision: 1, digest, baseDependencyDigest, requirementsDigest: NO_REQUIREMENTS };
   const start: AutomationStudioCandidateStartReceipt = { receiptId: `${runId}.flow-run`, conditionsDigest: createHash("sha256").update(JSON.stringify({ startLocation: input.startLocation ?? null, start: "not_reset" })).digest("hex"), preparedAt: startedAt, pageGeneration: 0, subjectStates: [] };
-  const buildPlan = automationStudioAnswerFirstStampedPlan(input, assembly.buildPlan, assembly.locator, saved.steps, saved.stated);
   const claimedActs = automationStudioAnswerFirstFlowRunActClaims({ buildPlan, locator: assembly.locator, saved: saved.steps, instructionText: input.instructionText });
   let askedNobody = false;
   const parking = automationStudioAnswerFirstFlowRunPersonCheckPort(ports.personCheck, () => { askedNobody = true; }, halt);
-  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking, automationStudioFlowHumanness(parentFlow.metadata));
+  const use = ports.inputUse;
+  const opened: { session?: AutomationStudioGraphInputUseSession } = {};
+  const own = gatedOptions(ports, assembly, engine, watch, signal, startedAt, claimedActs, parking, batches, automationStudioFlowHumanness(parentFlow.metadata), use ? (entry) => (opened.session = use.open(entry)).port : undefined);
   // Outside the act gate, so a step the scope refuses is no act of the attempt's.
   const options = scope ? scope.gated(own) : own;
-  const executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
-    identity,
-    candidate: { revision: 1, digest, baseDependencyDigest, buildPlan },
-    parentFlow,
-    currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
-    registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
-    sourceInstructionIds: [...input.instructionIds], runId, start, options,
-    ...(input.size ? { size: input.size } : {})
-  }));
+  let executed: Awaited<ReturnType<typeof runAutomationStudioDetachedCandidate>> | undefined;
+  try {
+    executed = await runWithAutomationStudioDomainReadings(engine.domainReadings ?? {}, () => runAutomationStudioDetachedCandidate({
+      identity,
+      candidate: { revision: 1, digest, baseDependencyDigest, buildPlan },
+      parentFlow,
+      currentIdentity: async () => ({ ...identity, baseDependencyDigest: await engine.currentBaseDigest() }),
+      registry: input.registry, resolution: input.resolution, snapshots, deprecatedPublicationIds,
+      sourceInstructionIds: [...input.instructionIds], runId, start, options,
+      ...(input.size ? { size: input.size } : {})
+    }));
+  } finally {
+    // Only the session that saw the real trace answers for it; a run with no trace never reached its entry's use.
+    const session = opened.session;
+    if (use && session) {
+      const observation: AutomationStudioInputUseObservation = executed?.trace ? session.read(executed.trace) : { status: "unknown", code: "unobserved" };
+      session.close();
+      use.observed(observation);
+    }
+  }
   // A press whose answer the engine then failed on its checks may not have taken: without this it reads as landed, and a repair's retry is told it already happened.
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
   // Everything the run did, for the attempt's judge (header): evidence for a later check, never a reason to lose the run's own answer.
@@ -149,7 +191,8 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
     /* best-effort: the trail is evidence for a later check, as the call chain's is (`../attempt/call-chain.ts`) */
   }
   ports.permissions.exploredToggles?.trial(executed.trace?.attempts ?? [], executed.graph);
-  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}) };
+  const executableSource = ports.sourceAuthority || saved.candidateId ? await source.finish(baseDependencyDigest) : undefined;
+  return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}), ...(executableSource ? { executableSource } : {}) };
 }
 
 /**
@@ -158,14 +201,32 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
  * person can clear to the person, so a step that asks anything else stops the run and asks nobody
  * (`./person-check-port.ts`, `./permission.ts`). A caller's input values are the run's inputs, so a
  * step bound to one runs with this attempt's value (`./input-bound-steps.ts`). `flowHumanness` is the run Flow's
- * own stored level (header).
+ * own stored level (header). `inputUse`, where the run opted in, opens its session over exactly the layers assembled here.
  */
-function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, flowHumanness: number | undefined): AutomationStudioGraphExecutionOptions {
+function gatedOptions(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Assembled, engine: AutomationStudioAnswerFirstFlowRunEngine, watch: AutomationStudioAnswerFirstFlowRunWatch, signal: AbortSignal, referenceNow: number, claimedActs: ReadonlySet<string>, parking: AutomationStudioParkingPort | undefined, batches: AutomationStudioRecordBatch[], flowHumanness: number | undefined, inputUse: ((entry: AutomationStudioInputUseEntry) => AutomationStudioGraphInputUsePort) | undefined): AutomationStudioGraphExecutionOptions {
   const { parking: _theEnginesThread, ...given } = engine.graphOptions({ runId: ports.runId, signal });
   const inputs = ports.input.caller?.inputs;
+  const caller = inputs ? structuredClone(inputs) : undefined;
+  const port = inputUse?.(entryOf(given.inputs, caller));
   const humanness = resolveHumanness({ runOption: ports.input.caller?.humanness, task: ports.storedHumanness?.task, flow: flowHumanness, startingValue: ports.input.humanness });
-  const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: (batch) => ports.sink.recordBatch(batch), ...(parking ? { parking } : {}), ...(inputs ? { inputs: { ...given.inputs, ...structuredClone(inputs) } } : {}), ...(humanness !== undefined ? { humanness } : {}) };
+  const own: AutomationStudioGraphExecutionOptions = { ...given, ...(given.maxSteps === undefined ? { maxSteps: automationStudioAnswerFirstFlowRunStepBound(assembly.buildPlan) } : {}), referenceNow, onRecordBatch: async (batch) => {
+    const stored = await ports.sink.recordBatch(batch);
+    batches.push(batch);
+    return stored;
+  }, ...(parking ? { parking } : {}), ...(caller ? { inputs: { ...given.inputs, ...caller } } : {}), ...(humanness !== undefined ? { humanness } : {}), ...(port ? { inputUse: port } : {}) };
   return watch.asked(automationStudioAnswerFirstRunActGate(watch.sent(own), { record: ports.record, settle: true, claimedActs, ...(engine.definitions ? { definitions: engine.definitions } : {}) }));
+}
+
+/**
+ * The layers `gatedOptions` really assembles into the run's root inputs, in overlay order. The engine's options name no
+ * origin for theirs, so that layer stays unknown provenance; a caller's are its own request's (`../caller/options.ts`).
+ * An empty engine layer contributes nothing and is not listed.
+ */
+function entryOf(given: AutomationStudioGraphExecutionOptions["inputs"], caller: JsonObject | undefined): AutomationStudioInputUseEntry {
+  return { layers: [
+    ...(given && Object.keys(given).length > 0 ? [{ role: "inherited" as const, values: given }] : []),
+    ...(caller ? [{ role: "caller" as const, values: caller, origin: { kind: "request" as const } }] : [])
+  ] };
 }
 
 /** Each plan step as the scope reads it: what the domain declared for it, the classes on its node, and its parameters. */
@@ -178,4 +239,15 @@ function scopeStepsOf(assembly: Assembled): { consequences: readonly unknown[]; 
 
 function isCancellation(error: unknown): boolean {
   return (error instanceof Error || error instanceof DOMException) && error.name === "AbortError";
+}
+
+/** The one source A selected before assembly. Errors/malformed ports leave ordinary legacy execution available. */
+async function sourceOf(ports: AutomationStudioAnswerFirstFlowRunPorts, saved: Saved): Promise<AutomationStudioAnswerFirstSourceRead> {
+  if (!saved.candidateId) return { status: "unknown", code: "candidate_missing" };
+  if (!ports.sourceAuthority) return { status: "unknown", code: "authority_missing" };
+  try {
+    const source = structuredClone(await ports.sourceAuthority.read(saved.candidateId));
+    if (source?.status === "unknown" || source?.status === "bound" && typeof source.record?.candidate?.summary === "string") return source;
+  } catch { return { status: "unknown", code: "unavailable" }; }
+  return { status: "unknown", code: "unavailable" };
 }
