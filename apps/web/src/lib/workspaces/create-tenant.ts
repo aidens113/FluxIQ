@@ -1,6 +1,7 @@
 import { mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fluxiqLayoutV3Paths, fluxiqWorkspaceRootDir, initializeFluxIQLayoutV3, inspectFluxIQLayoutV3, type FluxIQ, type FluxIQOptions } from "fluxiq";
+import type { IdentityAccessService } from "fluxiq";
 import type { HeldKeys } from "fluxiq/secret-keys";
 import { initializeFluxIQWebStorage } from "./initialize-storage";
 
@@ -32,6 +33,15 @@ type TenantInput = {
   clientGatewaySessionMetadata?: FluxIQOptions["clientGatewaySessionMetadata"];
   secretKeyPrincipalAuthority?: FluxIQOptions["secretKeyPrincipalAuthority"];
   secretKeyIdentityAuthority?: FluxIQOptions["secretKeyIdentityAuthority"];
+  /**
+   * The identity directory the tenant's people sign in through (the
+   * platform's Identity Access). A person's own sign-in security reached
+   * through this tenant (their authenticator, preferences, the capitals of
+   * their name, their own sessions) acts there and only for them
+   * (`IdentityAccessService.directory`); without it, it would act on the
+   * tenant's own user store, where nobody signs in.
+   */
+  identityDirectory?: () => Promise<IdentityAccessService>;
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
 };
@@ -69,7 +79,10 @@ export async function createTenantFluxIQ(input: TenantInput & { existingOnly?: b
     ...(input.clientGatewaySessionMetadata ? { clientGatewaySessionMetadata: input.clientGatewaySessionMetadata } : {}),
     ...(input.clientGatewayTrustedClientStore ? { clientGatewayTrustedClientStore: input.clientGatewayTrustedClientStore } : {})
   });
+  await dropHeldUnlocksOnSignOut(input.secretKeyIdentityAuthority, input.heldKeys);
   try {
+    // Before the instance serves anything, as the authority owner is set.
+    if (input.identityDirectory) fluxiq.programs.identityAccess.directory.actOn(input.identityDirectory);
     await initializeFluxIQWebStorage(fluxiq);
   } catch (error) {
     try {
@@ -91,4 +104,29 @@ function refuseSharedStorageSettings(rootDir: string, env: Readonly<Record<strin
       throw new Error(`workspaces.shared_storage_refused: ${name} places storage outside the workspace root, which every workspace would share; unset it under the service profile`);
     }
   }
+}
+
+const subscribed = new WeakMap<IdentityAccessService, WeakSet<HeldKeys>>();
+
+/**
+ * A tenant's keys are held in the manager's custody, which outlives the
+ * instance, while sign-out revokes the session on the platform identity. So
+ * the custody listens to that identity's revocations itself: once per
+ * (identity, custody), however often the tenant is opened, and for as long as
+ * that identity lives. As Secret Keys does, it drops a session's unlock only
+ * for the unlock's own user or an administrator.
+ */
+async function dropHeldUnlocksOnSignOut(authority: FluxIQOptions["secretKeyIdentityAuthority"], heldKeys: HeldKeys): Promise<void> {
+  if (!authority) return;
+  const identity = await authority();
+  const known = subscribed.get(identity) ?? new WeakSet<HeldKeys>();
+  subscribed.set(identity, known);
+  if (known.has(heldKeys)) return;
+  known.add(heldKeys);
+  identity.subscribeSessionRevocation((sessionId, revoker) => {
+    const held = heldKeys.session(sessionId);
+    if (!held) return;
+    if (!revoker.administrator && held.userId !== revoker.userId) return;
+    heldKeys.revokeSession(sessionId);
+  });
 }

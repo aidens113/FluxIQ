@@ -23,9 +23,9 @@ type Waiting = { resolve(step: Step): void; reject(error: unknown): void };
 
 const DONE: Step = Object.freeze({ done: true, value: undefined });
 
-/** Changes that mean the same read are one until sent: one gateway read, one read per thread, one per project's activity. */
+/** Changes that mean the same read are one until sent: one gateway read, one model-access read, one read per thread, one per project's activity. */
 function keyOf(change: PanelChange): string {
-  if (change.topic === "gateway") return "gateway";
+  if (change.topic === "gateway" || change.topic === "model-access") return change.topic;
   return change.topic === "conversation" ? `conversation:${change.conversationId}` : `activity:${change.projectId}`;
 }
 
@@ -35,8 +35,9 @@ function keyOf(change: PanelChange): string {
  * and a comment whenever the stream has been silent for `keepAliveMs`.
  *
  * Events are `gateway` (read the gateway snapshot again), `conversation`
- * (read the thread `conversationId` again) and `activity` (read project
- * `projectId`'s live activity again). Each carries `version`, a count of the
+ * (read the thread `conversationId` again), `activity` (read project
+ * `projectId`'s live activity again) and `model-access` (read the Secret Keys
+ * snapshot again, for the caller's model access). Each carries `version`, a count of the
  * events this stream has sent, starting at 1 with no gaps: it cannot reveal
  * how many changes happened to anyone else, and a reader that sees a gap
  * knows it missed one. Nothing else is sent: no content, no kind of change.
@@ -112,7 +113,7 @@ export class PanelChangeStream implements AsyncIterator<string, undefined> {
   private event(change: PanelChange): string {
     this.sequence += 1;
     const version = this.sequence;
-    if (change.topic === "gateway") return `event: gateway\ndata: ${JSON.stringify({ version })}\n\n`;
+    if (change.topic === "gateway" || change.topic === "model-access") return `event: ${change.topic}\ndata: ${JSON.stringify({ version })}\n\n`;
     if (change.topic === "conversation") return `event: conversation\ndata: ${JSON.stringify({ conversationId: change.conversationId, version })}\n\n`;
     return `event: activity\ndata: ${JSON.stringify({ projectId: change.projectId, version })}\n\n`;
   }

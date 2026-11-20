@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import Stripe from "stripe";
-import { CommerceBillingError, PaymentWebhookVerificationError } from "fluxiq/platform";
+import { CommerceBillingError, PaymentProviderUnavailableError, PaymentWebhookVerificationError } from "fluxiq/platform";
 import type {
   PaymentCheckout,
+  PaymentCheckoutExpiry,
   PaymentCheckoutRequest,
   PaymentPortalRequest,
   PaymentProvider,
@@ -10,7 +11,9 @@ import type {
   ProviderWebhookEvent
 } from "fluxiq/platform";
 import type { CommercePlanCatalog } from "../types";
+import { stripeEventCheckout } from "./event-checkout";
 import { stripeEventSubscriptionId } from "./event-subscription-id";
+import { isStripeOutage } from "./is-stripe-outage";
 import { STRIPE_METADATA } from "./metadata";
 import { stripeSubscriptionState } from "./subscription-state";
 
@@ -23,26 +26,31 @@ export type StripePaymentProviderOptions = {
   plans: CommercePlanCatalog;
   /** A Stripe-compatible API other than api.stripe.com, such as a local stripe-mock; null for Stripe itself. */
   apiBaseUrl: string | null;
+  /** How long a checkout stays payable; Stripe requires 30 minutes to 24 hours. */
+  checkoutLifetimeMs: number;
   now?: () => number;
 };
 
 /**
  * The Stripe adapter of the payment provider port, on the official `stripe`
  * package. It reports Stripe's state and decides nothing: the commerce ledger
- * and `subscriptionBillingState` do. Its keys come from secret files; the
- * payer is the FluxIQ account, carried on the subscription's metadata.
+ * and `subscriptionBillingState` do. Its keys come from secret files. The
+ * payer is the FluxIQ account FluxIQ recorded with the checkout; the
+ * subscription's metadata repeats it only to be cross-checked.
  */
 export class StripePaymentProvider implements PaymentProvider {
   readonly providerId = "stripe";
   private readonly stripe: Stripe;
   private readonly webhookSecret: string;
   private readonly plans: CommercePlanCatalog;
+  private readonly checkoutLifetimeMs: number;
   private readonly now: () => number;
 
   constructor(options: StripePaymentProviderOptions) {
     this.stripe = new Stripe(options.secretKey, options.apiBaseUrl === null ? {} : endpoint(options.apiBaseUrl));
     this.webhookSecret = options.webhookSecret;
     this.plans = options.plans;
+    this.checkoutLifetimeMs = options.checkoutLifetimeMs;
     this.now = options.now ?? Date.now;
   }
 
@@ -50,18 +58,53 @@ export class StripePaymentProvider implements PaymentProvider {
     const plan = Object.hasOwn(this.plans, request.planId) ? this.plans[request.planId] : undefined;
     if (plan === undefined) throw new CommerceBillingError("unknown-plan");
     const metadata = { [STRIPE_METADATA.account]: request.accountId };
-    const session = await this.stripe.checkout.sessions.create({
-      mode: "subscription",
-      line_items: [{ price: plan.priceId, quantity: 1 }],
-      client_reference_id: request.accountId,
-      success_url: request.successUrl,
-      cancel_url: request.cancelUrl,
-      metadata,
-      subscription_data: { metadata },
-      ...(request.customerId === undefined ? {} : { customer: request.customerId })
-    });
+    // FluxIQ sets the expiry, so the checkout it records expires exactly when Stripe stops completing it.
+    const expiresAt = Math.floor((this.now() + this.checkoutLifetimeMs) / 1000);
+    let session: Stripe.Checkout.Session;
+    try {
+      session = await this.stripe.checkout.sessions.create({
+        mode: "subscription",
+        line_items: plan.lines.map((line) => ({ price: line.priceId, quantity: line.quantity })),
+        expires_at: expiresAt,
+        client_reference_id: request.accountId,
+        success_url: request.successUrl,
+        cancel_url: request.cancelUrl,
+        metadata,
+        subscription_data: { metadata },
+        ...(request.customerId === undefined ? {} : { customer: request.customerId })
+      });
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("createCheckout", { cause: error });
+      throw error;
+    }
     if (typeof session.url !== "string" || session.url === "") throw new Error(`Stripe checkout ${session.id} returned no URL.`);
     return { checkoutId: session.id, url: session.url, expiresAtMs: session.expires_at * 1000 };
+  }
+
+  /**
+   * Expires an open Checkout Session. Stripe refuses one that is no longer
+   * open; it is then read back: an expired one counts as expired, a complete
+   * one is answered as completed. An outage is `PaymentProviderUnavailableError`.
+   */
+  async expireCheckout(checkoutId: string): Promise<PaymentCheckoutExpiry> {
+    try {
+      await this.stripe.checkout.sessions.expire(checkoutId);
+      return "expired";
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("expireCheckout", { cause: error });
+      if (!(error instanceof Stripe.errors.StripeInvalidRequestError)) throw error;
+      if (error.code === "resource_missing") return "expired";
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await this.stripe.checkout.sessions.retrieve(checkoutId);
+      } catch (retrieval) {
+        if (isStripeOutage(retrieval)) throw new PaymentProviderUnavailableError("expireCheckout", { cause: retrieval });
+        throw retrieval;
+      }
+      if (session.status === "complete") return "completed";
+      if (session.status === "expired") return "expired";
+      throw error;
+    }
   }
 
   async createPortal(request: PaymentPortalRequest): Promise<{ url: string }> {
@@ -81,7 +124,7 @@ export class StripePaymentProvider implements PaymentProvider {
       throw new PaymentWebhookVerificationError("malformed-payload");
     }
     if (typeof event?.id !== "string" || typeof event.type !== "string" || event.data?.object === undefined) throw new PaymentWebhookVerificationError("malformed-payload");
-    return { eventId: event.id, type: event.type, payloadSha256: sha256(rawBody), subscriptionId: stripeEventSubscriptionId(event) };
+    return { eventId: event.id, type: event.type, payloadSha256: sha256(rawBody), subscriptionId: stripeEventSubscriptionId(event), checkout: stripeEventCheckout(event) };
   }
 
   async getSubscription(subscriptionId: string): Promise<ProviderSubscriptionFetch | null> {
@@ -93,6 +136,50 @@ export class StripePaymentProvider implements PaymentProvider {
       throw error;
     }
     return { subscription: stripeSubscriptionState(subscription, this.plans, this.now()), payloadSha256: sha256(JSON.stringify(subscription)) };
+  }
+
+  /**
+   * Cancels now, with Stripe's idempotency key, so a retried deletion is one
+   * cancellation. A subscription Stripe no longer has, or has already ended,
+   * counts as cancelled. An outage is `PaymentProviderUnavailableError`.
+   */
+  async cancelSubscription(subscriptionId: string, options: { idempotencyKey: string }): Promise<void> {
+    try {
+      await this.stripe.subscriptions.cancel(subscriptionId, {}, { idempotencyKey: options.idempotencyKey });
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("cancelSubscription", { cause: error });
+      if (!(error instanceof Stripe.errors.StripeInvalidRequestError)) throw error;
+      if (error.code === "resource_missing") return;
+      // Stripe refuses to cancel an ended subscription; that is the state asked for.
+      const current = await this.retrieveForCancel(subscriptionId);
+      if (current === null || current.status === "canceled" || current.status === "incomplete_expired") return;
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes the Stripe customer: its payment methods go with it and it can no
+   * longer be charged; its invoices stay at Stripe. A customer Stripe no
+   * longer has counts as closed. An outage is `PaymentProviderUnavailableError`.
+   */
+  async closeCustomer(customerId: string, options: { idempotencyKey: string }): Promise<void> {
+    try {
+      await this.stripe.customers.del(customerId, {}, { idempotencyKey: options.idempotencyKey });
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("closeCustomer", { cause: error });
+      if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "resource_missing") return;
+      throw error;
+    }
+  }
+
+  private async retrieveForCancel(subscriptionId: string): Promise<Stripe.Subscription | null> {
+    try {
+      return await this.stripe.subscriptions.retrieve(subscriptionId);
+    } catch (error) {
+      if (isStripeOutage(error)) throw new PaymentProviderUnavailableError("cancelSubscription", { cause: error });
+      if (error instanceof Stripe.errors.StripeInvalidRequestError && error.code === "resource_missing") return null;
+      throw error;
+    }
   }
 }
 

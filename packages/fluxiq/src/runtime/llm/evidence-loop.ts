@@ -22,7 +22,7 @@ import {
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest, automationStudioLlmEvidenceLoopCheck, automationStudioLlmEvidenceLoopOverdue, automationStudioLlmEvidenceLoopRan,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
-  automationStudioLlmEvidenceHandleCompletion,
+  automationStudioLlmEvidenceHandleCompletion, automationStudioLlmEvidenceHandleLoopDecision, automationStudioLlmEvidenceStallNow, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID,
   automationStudioLlmEvidenceHandleFailedCall,
   automationStudioLlmEvidenceLookBudget, automationStudioLlmEvidenceLookWithdrawal,
   automationStudioLlmEvidenceReaskOutcome,
@@ -55,6 +55,7 @@ import {
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
 import { automationStudioLlmFailedDecisionFeedback, automationStudioLlmFailedDecisionUsage } from "./failed-decision/index.ts";
+import { automationStudioLlmEvidenceLoopInAttempt } from "./attempt-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceOfStep } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
@@ -134,14 +135,9 @@ export type {
 /** The evidence entry a refused completion's feedback arrives under. */
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type AutomationStudioLlmEvidenceRestoredStep } from "./evidence-loop/index.ts";
 
-/**
- * Coordinates an allowlisted, bounded evidence-gathering loop. Provider grants,
- * request budgets, and final artifact validation remain authoritative in the
- * callbacks that already own those responsibilities.
- */
-export async function runAutomationStudioLlmEvidenceLoop(
-  untraced: AutomationStudioLlmEvidenceLoopInput
-): Promise<AutomationStudioLlmEvidenceLoopResult> {
+/** Coordinates an allowlisted, bounded evidence-gathering loop, as one part of its attempt: on its model ladder, offered the model's own decision about a caught repeat (`./attempt-loop/`, t962). Provider grants, request budgets, and final artifact validation remain authoritative in the callbacks that already own those responsibilities. */
+export async function runAutomationStudioLlmEvidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Promise<AutomationStudioLlmEvidenceLoopResult> { return await automationStudioLlmEvidenceLoopInAttempt(untraced, evidenceLoop); }
+async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Promise<AutomationStudioLlmEvidenceLoopResult> {
   if (untraced.discoveryOnly && untraced.draft !== false) throw new Error("Discovery-only loops require draft:false.");
   const traced = automationStudioLlmEvidenceLoopProgressTrace(untraced), loop = {};
   const currentScope = (): AutomationStudioLlmRerunScope | undefined => {
@@ -727,6 +723,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       rerunning = true;
       rerunReplaces = next.replaces; rerunHeld = next.held;
       decision = next.decision;
+    }
+    if (decision.toolId === AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID) { // The model's decision about a caught repeat, carried out (`./decision-handlers/model-decision.ts`).
+      const ended = await automationStudioLlmEvidenceHandleLoopDecision(handling, iteration, decision, { complete: async (result) => await automationStudioLlmEvidenceHandleCompletion(handling, iteration, { kind: "complete", result }), stall: (code) => automationStudioLlmEvidenceStallNow(handling, code) });
+      return ended ? { kind: "complete", result: ended } : { kind: "continue" };
     }
     if (decision.toolId === AUTOMATION_STUDIO_LLM_RUN_NODES_TOOL_ID && priorNodes.enabled) {
       const ended = await priorNodes.run(decision);

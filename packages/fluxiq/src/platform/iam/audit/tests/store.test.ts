@@ -67,6 +67,18 @@ describe("IamAuditStore", () => {
     expect(back[0]).not.toHaveProperty("via");
   });
 
+  it("round-trips an outcome row, and leaves every other row without `outcome`", async () => {
+    const rows: IamAuditRecord[] = [
+      record({ origin: "panel" }),
+      record({ time: T0 + 20, origin: "panel", outcome: { result: "succeeded" } }),
+      record({ time: T0 + 30, origin: "panel", via: "assistant", outcome: { result: "failed", errorKind: "key.invalid" } })
+    ];
+    await store.write(rows);
+    const back = await store.read();
+    expect(back).toEqual([...rows].reverse());
+    expect(back[2]).not.toHaveProperty("outcome");
+  });
+
   it("round-trips how a confirmed act was consented to, with or without `via`", async () => {
     const rows: IamAuditRecord[] = [
       record({ origin: "panel", consent: "words" }),

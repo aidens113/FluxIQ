@@ -4,7 +4,6 @@ import {
   isPairedClientEndpoint,
   narrowPairedClientRequest,
   PAIRED_CLIENT_ENDPOINTS,
-  pairedClientActor,
   pairedClientDomainScope,
   pairedClientProjectTarget,
   programDomainScope,
@@ -46,7 +45,7 @@ describe("global program web route", () => {
 });
 
 describe("a paired client on the program route", () => {
-  it("allowlists exactly the conversation, run and Simple Mode endpoints, and the secret-keys snapshot", () => {
+  it("allowlists exactly the conversation, run and Simple Mode endpoints, the secret-keys snapshot and the person's own model key", () => {
     expect(PAIRED_CLIENT_ENDPOINTS).toEqual({
       "automation-studio": [
         "get-runtime-build-identity",
@@ -91,7 +90,7 @@ describe("a paired client on the program route", () => {
         "save-project-part",
         "run-project-part",
       ],
-      "secret-keys": ["snapshot"],
+      "secret-keys": ["snapshot", "save-model-key", "replace-model-key", "remove-model-key"],
     });
     expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS)).toBe(true);
     expect(Object.isFrozen(PAIRED_CLIENT_ENDPOINTS["automation-studio"])).toBe(true);
@@ -116,6 +115,11 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "review-flow-adaptation")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "issue-llm-execution-grant")).toBe(false);
     expect(isPairedClientEndpoint("secret-keys", "reveal-key")).toBe(false);
+    // The person's own model key, and no other key write (t928).
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) expect(isPairedClientEndpoint("secret-keys", endpoint), endpoint).toBe(true);
+    for (const endpoint of ["create-key", "update-key", "rotate-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key", "get-assistant-model"]) {
+      expect(isPairedClientEndpoint("secret-keys", endpoint), endpoint).toBe(false);
+    }
     expect(isPairedClientEndpoint("identity-access", "append-turn")).toBe(false);
   });
 
@@ -128,45 +132,28 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientClassification(undefined)).toBe(false);
   });
 
+  it("reaches a program-gated endpoint only where it is the person's own model key, which IAM alone decides (t928)", () => {
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key", " Save-Model-Key "]) {
+      expect(isPairedClientClassification("program-gated", "secret-keys", endpoint), endpoint).toBe(true);
+    }
+    // Other program-gated endpoints run a credential check of their own, or are not the person's own key.
+    for (const endpoint of ["reveal-key", "create-key", "delete-key", "set-default-key", "set-assistant-model", "offer-key"]) {
+      expect(isPairedClientClassification("program-gated", "secret-keys", endpoint), endpoint).toBe(false);
+    }
+    // Named by program and endpoint together, and only for program-gated: never destructive, never unknown.
+    expect(isPairedClientClassification("program-gated", "automation-studio", "save-model-key")).toBe(false);
+    expect(isPairedClientClassification("program-gated", "secret-keys")).toBe(false);
+    for (const classification of ["destructive", "destructive-ungated", undefined]) {
+      expect(isPairedClientClassification(classification, "secret-keys", "remove-model-key"), String(classification)).toBe(false);
+    }
+  });
+
   it("reads a bearer token and nothing else", () => {
     expect(readBearerToken("Bearer abc")).toBe("abc");
     expect(readBearerToken("  bearer   abc  ")).toBe("abc");
     expect(readBearerToken("Basic abc")).toBeNull();
     expect(readBearerToken("Bearer ")).toBeNull();
     expect(readBearerToken(null)).toBeNull();
-  });
-
-  const directory = {
-    users: [
-      { id: "user:owner", roleId: "role:admin", enabled: true },
-      { id: "user:viewer", roleId: "role:viewer", enabled: true },
-      { id: "user:off", roleId: "role:admin", enabled: false },
-    ],
-    roles: [
-      { id: "role:admin", permissions: ["programs.read", "programs.write", "runtime.control", "flows.write", "identity.manage", "data.manage", "secrets.manage"] },
-      { id: "role:viewer", permissions: ["programs.read"] },
-    ],
-  };
-
-  it("acts as the approving person, with only the permissions the allowlist uses", () => {
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:owner" }, directory)).toEqual({
-      // Core recognises a paired caller by this prefix and maps it to the person's
-      // unlocked session (`AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX`,
-      // packages/fluxiq/.../runtime/conversations/commands/caller.ts). Change both or neither.
-      sessionId: "client-gateway:g1",
-      userId: "user:owner",
-      roleId: "role:admin",
-      permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"],
-      // Under the service profile the registry narrows a paired client by these permissions too.
-      channel: "paired-client",
-    });
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:viewer" }, directory)?.permissions).toEqual(["programs.read"]);
-  });
-
-  it("acts as nobody when the approving person is disabled, gone, or never recorded", () => {
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:off" }, directory)).toBeNull();
-    expect(pairedClientActor({ sessionId: "g1", operatorUserId: "user:gone" }, directory)).toBeNull();
-    expect(pairedClientActor({ sessionId: "g1" }, directory)).toBeNull();
   });
 
   it("scopes the call to the domain the session declared, and refuses a URL naming another", () => {
@@ -531,6 +518,29 @@ describe("a paired client on the program route", () => {
     const payload = { projectId: "p", flowId: "f", inputs: { a: 1 } };
     expect(narrowPairedClientRequest("automation-studio", "list-flow-runs", payload)).toEqual({ ok: true, payload });
     expect(narrowPairedClientRequest("secret-keys", "snapshot", undefined)).toEqual({ ok: true, payload: undefined });
+  });
+
+  it("hands a model-key write only the fields its handler reads, ignoring an older client's credential fields (t928)", () => {
+    const sent = { provider: "anthropic", value: "dummy-value", name: "Mine", authorizationPassword: "pw", authorizationPin: "1234", keyId: "secret:other", scope: "global" };
+    expect(narrowPairedClientRequest("secret-keys", "save-model-key", sent)).toEqual({ ok: true, payload: { provider: "anthropic", value: "dummy-value", name: "Mine" } });
+    expect(narrowPairedClientRequest("secret-keys", " Replace-Model-Key ", sent)).toEqual({ ok: true, payload: { value: "dummy-value" } });
+    expect(narrowPairedClientRequest("secret-keys", "remove-model-key", sent)).toEqual({ ok: true, payload: {} });
+    // A missing or malformed field goes on as sent, for the handler to refuse in its own words.
+    expect(narrowPairedClientRequest("secret-keys", "save-model-key", { provider: 7 })).toEqual({ ok: true, payload: { provider: 7 } });
+    for (const payload of [undefined, null, "text", ["value"]]) expect(narrowPairedClientRequest("secret-keys", "replace-model-key", payload)).toEqual({ ok: true, payload: {} });
+  });
+
+  it("answers a model-key write with the person's model access alone, without the key's id (t928)", () => {
+    const modelAccess = { status: "ready", message: "Your chats use your Anthropic key.", key: { id: "secret:1", name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5", value: "must-not-leak" }, lastCall: null };
+    for (const endpoint of ["save-model-key", "replace-model-key", "remove-model-key"]) {
+      const projected = projectPairedClientResponse("secret-keys", endpoint, { ok: true, payload: { modelAccess, id: "secret:1", keys: [{ id: "secret:1" }] } });
+      expect(projected, endpoint).toEqual({ ok: true, payload: { modelAccess: { status: "ready", message: modelAccess.message, key: { name: "Claude", provider: "anthropic", model: "claude-sonnet-4-5" }, lastCall: null } } });
+      expect(JSON.stringify(projected)).not.toMatch(/secret:1|must-not-leak/);
+    }
+    // One that does not read is left out, never shown as ready; a refusal keeps its sentence and code alone.
+    expect(projectPairedClientResponse("secret-keys", "remove-model-key", { ok: true, payload: { modelAccess: { status: "ready", message: "x", key: null, lastCall: null } } })).toEqual({ ok: true, payload: {} });
+    expect(projectPairedClientResponse("secret-keys", "save-model-key", { ok: true })).toEqual({ ok: true, payload: {} });
+    expect(projectPairedClientResponse("secret-keys", "replace-model-key", { ok: false, error: "No key.", errorCode: "authorization.forbidden", payload: { id: "secret:1" } })).toEqual({ ok: false, error: "No key.", errorCode: "authorization.forbidden" });
   });
 
   it("keeps readiness unknown when the snapshot supplied no list", () => {

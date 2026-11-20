@@ -1,6 +1,6 @@
 import { iamActionName } from "@fluxiq/contracts/iam";
 import { iamEndpointAccessLevel, iamProgramService } from "../../platform/iam/catalog/index.ts";
-import type { IamRequestConsent, IamRequestVia, IamResource } from "../../platform/iam/index.ts";
+import type { IamAuditOutcome, IamDecision, IamRequestConsent, IamRequestVia, IamResource } from "../../platform/iam/index.ts";
 import type { IdentityAccessService } from "../identity-access/index.ts";
 import type { Permission } from "../identity-access/types.ts";
 import { assistantDeclarationProblem, assistantTargetProblem, type ProgramEndpointAssistant } from "./assistant/index.ts";
@@ -102,6 +102,7 @@ type ProgramApiRegistration = Partial<ProgramEndpointIamDeclaration> & {
   permission: Permission;
   classification: ProgramEndpointClassification;
   assistant?: ProgramEndpointAssistant;
+  auditOutcome?: boolean;
 };
 
 /** A stored registration: as declared, plus the program and action it is decided under. */
@@ -112,7 +113,7 @@ type StoredRegistration = {
 };
 
 /** The decision `call` made before the handler: its request (for the list filter) and the resources it decided on. */
-type CallGate = { ok: true; request: ProgramIamRequest; resources: IamResource[] } | { ok: false; response: ProgramApiResponse<never> };
+type CallGate = { ok: true; request: ProgramIamRequest; resources: IamResource[]; decision: IamDecision } | { ok: false; response: ProgramApiResponse<never> };
 
 /**
  * One registration: its program, endpoint, today's permission and
@@ -135,6 +136,13 @@ export type ProgramApiRegistrationParams = Partial<ProgramEndpointIamDeclaration
   classification: ProgramEndpointClassification;
   handler: ProgramApiHandler;
   assistant?: ProgramEndpointAssistant;
+  /**
+   * Opt in to an outcome row: after the handler returns, one more audit row
+   * under the decision's request id says `succeeded`, or `failed` with the
+   * error's closed code only (`errorCode`, else `error`), never the payload
+   * or the error's text. Absent or false records nothing extra.
+   */
+  auditOutcome?: boolean;
 };
 
 /** What `endpoints()` lists for one registration (the catalog generator and parity read it). */
@@ -144,6 +152,7 @@ export type ProgramApiEndpointSummary = Partial<ProgramEndpointIamDeclaration> &
   permission: Permission;
   classification: ProgramEndpointClassification;
   assistant?: ProgramEndpointAssistant;
+  auditOutcome?: boolean;
 };
 
 export class GlobalProgramApiRegistry {
@@ -277,6 +286,7 @@ export class GlobalProgramApiRegistry {
         return { ok: false, error: error instanceof Error ? error.message : String(error), ...(typeof code === "string" && /^[a-z][a-z0-9_.]{0,99}$/u.test(code) ? { errorCode: code } : {}) };
       }
     });
+    if (registration.auditOutcome === true) this.recordOutcome(gate, measured.result);
     recordProgramEndpointPerformance({
       programId: request.programId,
       endpoint: request.endpoint,
@@ -286,6 +296,18 @@ export class GlobalProgramApiRegistry {
       ok: measured.result.ok,
     });
     return measured.result;
+  }
+
+  // The opted-in endpoint's outcome row. Never throws: the handler has run,
+  // so a failing sink must not turn its result into an error.
+  private recordOutcome(gate: Extract<CallGate, { ok: true }>, response: ProgramApiResponse): void {
+    const errorKind = typeof response.errorCode === "string" && AUDIT_ERROR_KIND.test(response.errorCode) ? response.errorCode : "error";
+    const outcome: IamAuditOutcome = response.ok ? { result: "succeeded" } : { result: "failed", errorKind };
+    try {
+      gate.request.authorizer.recordOutcome(gate.decision, outcome);
+    } catch {
+      // best-effort: the decision row already stands
+    }
   }
 
   /**
@@ -395,7 +417,7 @@ export class GlobalProgramApiRegistry {
       const resources = await this.iam.resources(iam, refs, stored.programId);
       const decision = iam.authorizer.decide(stored.iamAction, resources);
       if (decision.decision === "deny") return { ok: false, response: programForbiddenResponse(actor, registration.permission, stored.iamAction) };
-      return { ok: true, request: iam, resources };
+      return { ok: true, request: iam, resources, decision };
     } catch (error) {
       return { ok: false, response: { ok: false, error: error instanceof Error ? error.message : String(error) } };
     }
@@ -412,6 +434,8 @@ export class GlobalProgramApiRegistry {
     return filterProgramList(this.iam, gate.request, { list: registration.list, action: stored.iamAction, programId: stored.programId, listScope, response });
   }
 }
+
+const AUDIT_ERROR_KIND = /^[a-z][a-z0-9_.]{0,99}$/u;
 
 function apiKey(programId: string, endpoint: string): string {
   return `${programId.trim().toLowerCase()}:${endpoint.trim().toLowerCase()}`;

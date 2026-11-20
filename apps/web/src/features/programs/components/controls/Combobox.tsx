@@ -132,7 +132,7 @@ export function Combobox(props: {
               <span>{option.label}</span>
               {option.description ? <small>{option.description}</small> : null}
             </div>
-          )) : <div className="combobox-empty">{props.loading ? "Loading options..." : "No matching options."}</div>}
+          )) : <div className="combobox-empty">{props.loading ? "Loading options…" : "No matching options."}</div>}
         </div>
       ) : null}
       {props.hint ? <small className="field-message" id={hintId}>{props.hint}</small> : null}

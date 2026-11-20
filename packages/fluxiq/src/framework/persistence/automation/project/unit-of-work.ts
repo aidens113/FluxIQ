@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AutomationStudioChangeFeedOperation } from "./administration.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administration.ts";
+import { pruneAutomationStudioChangeFeed } from "./change-feed-retention/index.ts";
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
 
@@ -127,6 +128,8 @@ export class AutomationStudioProjectUnitOfWork {
           }
         };
         const response = await operation(context);
+        // Retention runs in the same transaction, so pruned rows and the watermark commit with the write.
+        await pruneAutomationStudioChangeFeed(sql);
         const responseJson = stableStringify(response);
         await sql.run(
           `update mutation_records set status = 'committed', response_json = ?, error_json = null,

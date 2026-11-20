@@ -1,5 +1,6 @@
 import type { ClientGatewayTrustedClient } from "@fluxiq/contracts/client-gateway";
 import { ClientTrustConflictError } from "../model/index.ts";
+import type { ClientTrustBinding } from "../model/index.ts";
 import type { ClientTrustDatabase } from "./database.ts";
 import { validateClientTrustRecord } from "./validate-client.ts";
 
@@ -67,6 +68,20 @@ export class ClientTrustRecords {
       if (client.managedHost || client.revokedAt !== undefined || client.expiresAt <= now) return false;
       return !(replacement && row.workspaceId === replacement.workspaceId && client.clientId === replacement.clientId && client.clientInstallId === replacement.clientInstallId);
     }).length;
+  }
+
+  /** One person's current ordinary clients across every workspace, as bindings: what `countActiveForUser` counts, without the replacement rule. */
+  async listActiveForUser(userId: string, now: number): Promise<ClientTrustBinding[]> {
+    const rows = await this.db.all<TrustRow>(`select ${COLUMNS} from browser_trust_records where present = 1 and json_extract(client_json, '$.approvedByUserId') = ? order by workspace_id, trusted_client_id`, [userId]);
+    const bindings: ClientTrustBinding[] = [];
+    for (const row of rows) {
+      const client = readClient(row);
+      if (client.managedHost || client.revokedAt !== undefined || client.expiresAt <= now || client.approvedByUserId !== userId) continue;
+      const binding: ClientTrustBinding = { workspaceId: row.workspaceId, trustedClientId: client.trustedClientId, approvedByUserId: client.approvedByUserId, clientId: client.clientId, clientType: client.clientType };
+      if (client.domainId !== undefined) binding.domainId = client.domainId;
+      bindings.push(binding);
+    }
+    return bindings;
   }
 
   private async put(workspaceId: string, client: ClientGatewayTrustedClient): Promise<void> {

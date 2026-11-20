@@ -31,7 +31,7 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
 
   /** A completion over what the check last refused: what that was about, what would change it, and what repeating it leads to. */
   sameEvidence: (verdict: "no" | "unsure", reason: string): string =>
-    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} So get something new before you complete again: go to where what the check could not see is shown, and look, read or act there. Completing again with nothing new starts a fresh round, and each time after that the round is stopped and the next must take a different way, while the person is asked what to do; you never wait for them.`,
+    `This completion was refused without being checked: what you hold is exactly what the check last ${SAID[verdict]}, so it would answer the same. What it said: ${reason} ${NEW_EVIDENCE} So get something new before you complete again: go to where what the check could not see is shown, and look, read or act there. First decide how to go on with core.loop_decision where it is offered: change_approach and name the way, ask_person with one plain question, escalate_model, or finish_with_best only with a different result. Completing again with nothing new stops this round, and the next must take a different way.`,
 
   /** Said when any of these comes again over one draft, in place of the loop's words for a check that reads the draft (`../../../../../runtime/llm/decision-handlers/completion.ts`). */
   sentAgain: NOT_NEW,
@@ -41,5 +41,5 @@ export const AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS = Object.freeze({
 
   /** A fresh round after a refused repeat, in front of its evidence: `lastCheck` beside it holds the reason, and `personSaid` the person's answer once they have given one. */
   freshRound: (personAnswered: boolean): string =>
-    `Your completion was refused again over the same evidence, so this round starts fresh. lastCheck says what the check said. ${NEW_EVIDENCE} Completing again with nothing new stops this round too, and the next must take a different way; the person is asked what to do, and you never wait for them.${personAnswered ? " The person has answered: personSaid holds their words. Follow them to get something new." : ""}`
+    `Your completion was refused again over the same evidence, so this round starts fresh. lastCheck says what the check said. ${NEW_EVIDENCE} Completing again with nothing new stops this round too, and the next must take a different way.${personAnswered ? " The person has answered: personSaid holds their words. Follow them to get something new." : ""}`
 });

@@ -1,15 +1,16 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { SQLiteRepository } from "fluxiq/database-manager";
+import { SQLiteConnectionPool, SQLiteRepository } from "fluxiq/database-manager";
 import { BufferedIamAuditSink, createPlatformServices, IamAuditStore, type IamAuditQuery, type IamAuditRecord, type PlatformServices } from "fluxiq/platform";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
 import type { FluxIQ } from "fluxiq";
-import { getFluxIQAfterReload, getFluxIQWorkspaces } from "../../lib/fluxiq";
+import { getFluxIQAfterReload, getFluxIQWorkspaces, isCurrentFluxIQPrimary } from "../../lib/fluxiq";
 import { primaryWorkspaceId } from "../../lib/workspaces";
 import { resolveEmailSender } from "./resolve-email-sender";
 import { closeKeySessionServices } from "../key-sessions";
-import { closeBrowserTrustRepository } from "../browser-trust";
+import { closeBrowserTrustRepository, getBrowserTrustRepository } from "../browser-trust";
 import { closeConnectServices } from "../connect";
+import { composeCascadePorts, startDeletionSweep, type CascadePortSources, type DeletionSweep } from "./cascade";
 
 // The platform services (account provisioning, the welcome and reset links)
 // for the running web server: one composition per FluxIQ instance, built on
@@ -18,8 +19,15 @@ import { closeConnectServices } from "../connect";
 // and "platform.iam"); the IAM decision audit is the persistent compact store
 // under `<fluxiq>/platform/iam-audit.sqlite`, written through one buffered sink
 // that every workspace's registry records into under the service profile.
+// Provisioning runs through the cascade ports (`./cascade`), so disabling,
+// deleting and suspending reach paired browsers, key custody, billing and the
+// workspace's data, and the deletion sweep finishes scheduled deletions.
+// Both platform repositories share one `SQLiteConnectionPool` owned by the
+// composition: a provisioning run and a deletion-sweep pass each hold the pool's
+// connections for their whole length, so a request opens each database file once
+// instead of once per read or write, and `closePlatformServices` closes them.
 
-type PlatformComposition = { services: PlatformServices; auditSink: BufferedIamAuditSink };
+type PlatformComposition = { services: PlatformServices; auditSink: BufferedIamAuditSink; sweep: DeletionSweep; connections: SQLiteConnectionPool };
 type PlatformAudit = { store: IamAuditStore; sink: BufferedIamAuditSink };
 
 // The audit belongs to the host root, not to a primary instance that a reload
@@ -93,8 +101,11 @@ export async function platformIamAuditReaderFor(primary: FluxIQ): Promise<{ read
 export async function closePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<void> {
   const composition = compositions.get(fluxiq);
   try {
+    // The sweep stops first, waiting for a pass in flight, so no deletion runs while the stores close.
+    const swept = composition ? await Promise.allSettled([composition.then((composed) => composed.sweep.stop())]) : [];
+    const pooled = composition ? await Promise.allSettled([composition.then((composed) => composed.connections.closeAll())]) : [];
     const closed = await Promise.allSettled([closeKeySessionServices(fluxiq.paths.fluxiq), closeBrowserTrustRepository(fluxiq.paths.fluxiq), closeConnectServices(fluxiq.paths.fluxiq)]);
-    const failures = closed.filter((outcome) => outcome.status === "rejected");
+    const failures = [...swept, ...pooled, ...closed].filter((outcome) => outcome.status === "rejected");
     if (composition) await composition;
     if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Platform credential authorities could not all close cleanly.");
   } finally {
@@ -128,21 +139,68 @@ function platformCompositionFor(fluxiq: FluxIQ): Promise<PlatformComposition> {
   return created;
 }
 
+/**
+ * Where the cascade ports reach for one primary: the running workspace
+ * manager, the platform store once composed, the browser-trust authority
+ * under the primary's root, and the commerce billing service when this
+ * server bills (loaded on use, so a server that bills nothing never loads it).
+ */
+function cascadeSources(fluxiq: FluxIQ, store: () => Promise<PlatformServices["store"]>): CascadePortSources {
+  const manager = getFluxIQWorkspaces();
+  return {
+    primary: fluxiq,
+    manager: () => getFluxIQWorkspaces(),
+    current: () => isCurrentFluxIQPrimary(fluxiq) && getFluxIQWorkspaces() === manager,
+    store,
+    listActiveForUser: (userId) => getBrowserTrustRepository(fluxiq.paths.fluxiq).listActiveForUser(userId),
+    billing: async () => (await import("../commerce")).getCommerceBilling()
+  };
+}
+
 async function composePlatformServices(fluxiq: Awaited<ReturnType<typeof getFluxIQAfterReload>>): Promise<PlatformComposition> {
   const layoutVersion = path.basename(fluxiq.paths.config) === "config.json" ? 2 : 1;
   const platformDir = path.join(fluxiq.paths.fluxiq, "platform");
   mkdirSync(platformDir, { recursive: true });
   const { sink: auditSink } = await platformAudit(fluxiq.paths.fluxiq, platformDir);
-  const services = await createPlatformServices({
-    repository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.store", layoutVersion }),
-    iamRepository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.iam", layoutVersion }),
+  let composed: PlatformServices | null = null;
+  const store = async () => {
+    if (composed === null) throw new Error("platform.not_composed: the platform store is not ready yet.");
+    return composed.store;
+  };
+  // One pool for both repositories: they share global.sqlite, and each workspace's IAM scope is one more file.
+  const connections = new SQLiteConnectionPool();
+  const created = await createPlatformServices({
+    ...composeCascadePorts(cascadeSources(fluxiq, store)),
+    repository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.store", layoutVersion, connections }),
+    iamRepository: new SQLiteRepository({ rootDir: fluxiq.paths.databases, kind: "platform.iam", layoutVersion, connections }),
     identity: fluxiq.programs.identityAccess,
     email: resolveEmailSender(process.env.FLUXIQ_EMAIL_SENDER, path.join(platformDir, "outbox")),
     auditSink,
     publicOrigin: resolveFluxIQDeploymentSettings(process.env).publicOrigin,
     tenancy: getFluxIQWorkspaces().tenancy === "multi" ? { mode: "multi" } : { mode: "single", workspaceId: primaryWorkspaceId() }
   });
-  return { services, auditSink };
+  const provisioning = keepConnectionsWhile(connections, created.provisioning);
+  // `links` is the same service, so the welcome and reset links run as a unit of work too.
+  const services = { ...created, provisioning, links: provisioning };
+  composed = services;
+  // Every profile can hold a scheduled deletion (the operator's command line makes one anywhere), so the sweep runs on each.
+  const sweep = startDeletionSweep(services.provisioning);
+  return { services, auditSink, sweep, connections };
+}
+
+/**
+ * The provisioning service with every operation run as one unit of work on the
+ * pool: its storage operations reuse one connection per database file, and the
+ * connections close when the operation ends. The pool's scope follows the
+ * operation through the provisioning queue (an async continuation), so queued
+ * mutations see it.
+ */
+function keepConnectionsWhile<T extends object>(connections: SQLiteConnectionPool, service: T): T {
+  const kept: Record<string, unknown> = {};
+  for (const [name, member] of Object.entries(service)) {
+    kept[name] = typeof member === "function" ? (...args: unknown[]) => connections.keepWhile(async () => await member(...args)) : member;
+  }
+  return kept as T;
 }
 
 function platformAudit(fluxiqDir: string, platformDir: string): Promise<PlatformAudit> {

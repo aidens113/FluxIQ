@@ -40,15 +40,29 @@ it("approves from the authenticated panel with only the pairing reference", asyn
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
-it("lays the request out as labelled lines: client, client id, code and time left, then what approving does", async () => {
+it("names the browser in the title, then lays out code and time left as labelled lines, then what approving does", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: true,
     json: async () => ({ ok: true, payload: { pairings: [{ pairingCode: "310437", requestedBySessionId: "session", requestedByClientName: "Chrome on Windows", requestedByClientId: "extension-90dd", expiresAt: Date.now() + 60_000 }] } })
   })));
   await act(async () => { view = create(<GlobalClientGatewayPairing />); });
   const terms = view!.root.findAllByType("dt").map((node) => node.children.join(""));
-  expect(terms).toEqual(["Client", "Client id", "Code", "Time left"]);
-  expect(JSON.stringify(view!.toJSON())).toMatch(/Chrome on Windows.*extension-90dd.*310437/u);
+  expect(terms).toEqual(["Code", "Time left"]);
+  expect(JSON.stringify(view!.toJSON())).toMatch(/Chrome on Windows.*310437/u);
+  expect(JSON.stringify(view!.toJSON())).not.toContain("extension-90dd");
   const effect = view!.root.findByProps({ className: "client-pairing-request-effect" });
-  expect(effect.children.join("")).toMatch(/Approving lets that browser use this workspace/u);
+  expect(effect.children.join("")).toMatch(/Approving lets it use this FluxIQ/u);
+});
+
+it("starts on Confirm, offers Decline, and shows no client id or jargon", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ ok: true, payload: { sessions: [{ sessionId: "session", clientId: "extension-90dd-secret-id" }], pairings: [{ pairingCode: "310437", requestedBySessionId: "session", requestedByClientName: "Chrome on Windows", expiresAt: Date.now() + 60_000 }] } })
+  })));
+  await act(async () => { view = create(<GlobalClientGatewayPairing />); });
+  const buttons = view!.root.findAllByType("button");
+  const confirm = buttons.find((button) => button.children.join("") === "Confirm")!;
+  expect(confirm.props["data-autofocus"]).toBe(true);
+  expect(buttons.find((button) => button.children.join("") === "Decline")!.props["data-autofocus"]).toBeUndefined();
+  expect(JSON.stringify(view!.toJSON())).not.toMatch(/extension-90dd|Client id|Reject|Confirm pairing/u);
 });

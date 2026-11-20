@@ -41,7 +41,7 @@ it("offers no role or sign-in on/off for a managed person, and links to Access i
 
   expect(menu("holder")).not.toContain("Change role");
   expect(menu("holder")).not.toContain("Disable user");
-  expect(menu("holder")).toEqual(expect.arrayContaining(["Edit profile", "Change password", "Change PIN", "Set up 2FA"]));
+  expect(menu("holder")).toEqual(expect.arrayContaining(["Edit profile", "Change password", "Set up 2FA"]));
   expect(accessLinks()).toHaveLength(1);
   expect(accessLinks()[0]!.props.href).toBe("/security#security-access");
 });

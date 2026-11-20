@@ -1161,8 +1161,10 @@ answer holds one look taken as the run ends, under the keys the domain declares 
 so the model's current view is the page as it stands (`pageNotRead` where that look failed).
 
 **Loop detection** is wired through `attemptRecord`, `loopSignal` and `askedRepeats`.
-`change_approach` takes a fresh round; `ask_person` waits with `stuck_in_a_loop`, keeping
-the best result and the draft, then resumes.
+`change_approach` takes a fresh round, steered off what was repeated; `ask_person` comes
+only from the model's own `core.loop_decision`, and posts its question without waiting
+while the attempt carries on (`failure-control.md`, "The model decides how to go on"). Every
+round runs on the attempt's model ladder (same file, "The model ladder").
 
 **Money.** One purse per attempt, with no creation record, at $5 by default
 (`runtime/answer-first/attempt-purse/`). It is held to an explicit Flow limit, a

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectedRows } from "../connected";
+import { connectedGroups, NO_REVOKED, readRevokedAccess } from "../connected";
 import { needsYouItems } from "../needs-you";
 import { readClients } from "../read-clients";
 import { readThreads } from "../read-threads";
@@ -92,10 +92,10 @@ describe("clients", () => {
     ]);
     expect(clients).toHaveLength(2);
     expect(readClients({ clients })).toEqual(clients);
-    const rows = connectedRows(clients, NOW);
-    expect(rows.map((row) => row.name)).toEqual(["Chrome extension", "Old browser"]);
-    expect(rows[0]).toMatchObject({ state: "Connected", lastSeen: "4 min ago" });
-    expect(rows[1]).toMatchObject({ state: "Not connected", lastSeen: "3 d ago" });
+    const { connected } = connectedGroups(clients, NO_REVOKED, NOW);
+    expect(connected.map((row) => row.name)).toEqual(["Chrome extension", "Old browser"]);
+    expect(connected[0]).toMatchObject({ state: "Online", lastSeen: "4 min ago" });
+    expect(connected[1]).toMatchObject({ state: "Offline", lastSeen: "3 d ago" });
     expect(readClients(null)).toEqual([]);
   });
 });
@@ -130,5 +130,39 @@ describe("needsYouItems", () => {
   });
   it("says nothing when nothing needs the person", () => {
     expect(needsYouItems([], [run({ runId: "a" })])).toEqual([]);
+  });
+});
+
+describe("connectedGroups (Home's browsers and apps)", () => {
+  const client = (clientId: string, label: string, status: string, over: Record<string, unknown> = {}) => ({ clientId, label, transport: "websocket", status, lastSeenAt: NOW - MIN, ...over });
+  const all = [
+    client("ext", "Chrome extension", "ready"),
+    client("sdk-1", "Test SDK", "pairing_required", { lastSeenAt: NOW - 3 * MIN }),
+    client("sdk-2", "Test SDK", "pairing_required", { lastSeenAt: NOW - 2 * MIN }),
+    client("sdk-3", "Test SDK", "pairing_required", { lastSeenAt: NOW - MIN }),
+    client("gone", "Old laptop", "offline"),
+    client("runtime", "Web Automation Gateway Runtime", "available", { transport: "direct", lastSeenAt: undefined })
+  ];
+  const revoked = readRevokedAccess([{ trustedClientId: "t1", clientId: "gone", name: "Old laptop", status: "revoked" }, { trustedClientId: "t2", clientId: "ext", name: "Chrome extension", status: "active" }]);
+  const groups = connectedGroups(all, revoked, NOW);
+  it("lists only approved clients as connected", () => {
+    expect(groups.connected.map((row) => row.name)).toEqual(["Chrome extension"]);
+  });
+  it("lists pending ones under waiting, repeat attempts folded into one row", () => {
+    expect(groups.waiting).toHaveLength(1);
+    expect(groups.waiting[0]).toMatchObject({ name: "Test SDK", state: "Waiting for approval", attempts: 3, lastSeen: "1 min ago" });
+  });
+  it("drops revoked clients and the built-in runtime row", () => {
+    const names = [...groups.connected, ...groups.waiting].map((row) => row.name);
+    expect(names).not.toContain("Old laptop");
+    expect(names).not.toContain("Web Automation Gateway Runtime");
+  });
+  it("matches a removed browser by name when the gateway gives no client id", () => {
+    const byName = readRevokedAccess([{ trustedClientId: "t1", name: "Old laptop", status: "revoked" }]);
+    expect(connectedGroups(all, byName, NOW).connected.map((row) => row.name)).toEqual(["Chrome extension"]);
+  });
+  it("keeps a name that was removed and approved again", () => {
+    const again = readRevokedAccess([{ trustedClientId: "t1", name: "Old laptop", status: "revoked" }, { trustedClientId: "t9", name: "Old laptop", status: "active" }]);
+    expect(connectedGroups([client("gone", "Old laptop", "offline")], again, NOW).connected).toHaveLength(1);
   });
 });

@@ -183,6 +183,32 @@ describe("the window over the Studio", () => {
     });
   });
 
+  it("takes a message at once with no project when it is the assistant, into its own thread", async () => {
+    const PANEL_THREAD = { conversationId: "panel.1", projectId: "panel", subject: { kind: "panel" }, status: "open", title: null, revision: 1, turnCount: 1, pendingAskCount: 0, createdAt: 1, updatedAt: 2 };
+    const sent: unknown[] = [];
+    const api = fakeProgramApi({
+      "list-panel-threads": () => ({ ok: true, payload: { conversations: sent.length ? [PANEL_THREAD] : [] } }),
+      "get-panel-thread": { ok: true, payload: { conversation: { conversation: PANEL_THREAD, turns: [], hasMore: false } } },
+      "send-panel-message": (payload) => {
+        sent.push(payload);
+        return { ok: true, payload: { conversation: PANEL_THREAD } };
+      },
+      "get-activity": { ok: true, payload: { current: null, recent: [] } }
+    });
+    await mount(<ChatDock projectId={null} panel={{ onScreen: () => ({ page: "home" }) }} />, api, async ({ host }) => {
+      await act(async () => launcher(host).dispatch("click"));
+      await settle();
+      expect(host.textContent).not.toContain("Open a project to start a conversation.");
+      const box = host.descendants().find((node) => node.id === "conversationInput")!;
+      expect(box.disabled).toBe(false);
+      await send(host, "hello");
+      expect(api.sentTo("send-panel-message")).toEqual([{ text: "hello", onScreen: { page: "home" } }]);
+      expect(api.sentTo("append-turn")).toEqual([]);
+      expect(api.sentTo("open-conversation")).toEqual([]);
+      expect(api.sentTo("list-conversations")).toEqual([]);
+    });
+  });
+
   it("lights the badge while collapsed, because the chat keeps reading the thread list", async () => {
     const { api, state } = world({ threads: [{ ...THREAD, pendingAskCount: 1 }] });
     state.turns = [CONFIRMATION];

@@ -2,6 +2,7 @@
 // reset routes: request checks, the typed answer, the welcome submit, and
 // describing a welcome link before it is spent.
 export type { AccountLinkResponse } from "./accountLinkResponse";
+export type { FormRead } from "./FormRead";
 export { describeWelcome } from "./describeWelcome";
 export { isCrossSiteRequest } from "./isCrossSiteRequest";
 export { readJsonObject } from "./readJsonObject";

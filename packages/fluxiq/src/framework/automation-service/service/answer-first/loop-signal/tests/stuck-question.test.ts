@@ -61,4 +61,11 @@ describe("the question a stuck attempt asks", () => {
     expect(bare).toContain("my last 12 steps each found nothing new.");
     expect(bare).toContain("What I have so far: nothing confirmed yet.");
   });
+
+  it("leads with the model's own question where it decided to ask the person (t962)", () => {
+    const words = automationStudioAnswerFirstStuckQuestion({ stuck: { finding: { pattern: "near_repeat", repeats: 3, unchanged: ["page"], question: "Which colour should the order be in?" } }, ...evidence(), held: { rows: 0, acts: 0, answered: false } });
+    expect(words.startsWith("I keep getting stuck and would like your help with one question: Which colour should the order be in?")).toBe(true);
+    expect(words).toContain("I kept making the same move on the same page, 3 times");
+    expect(words).toContain("I carry on meanwhile");
+  });
 });

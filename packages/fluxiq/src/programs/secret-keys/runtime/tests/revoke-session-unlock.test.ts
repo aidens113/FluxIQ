@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SecretKeysService } from "../service.ts";
-import { WEAK_SCRYPT_PARAMETERS } from "./secret-key-fixtures.ts";
+import { WEAK_SCRYPT_PARAMETERS, createPasswordSealedKey } from "./secret-key-fixtures.ts";
 
 // Who may drop a session's unlock: its own user or an administrator, never
 // anyone else who merely names the session id. Ids and the password are dummy
@@ -15,7 +15,7 @@ afterEach(() => vi.useRealTimers());
 
 async function serviceWithUnlock(): Promise<{ service: SecretKeysService; keyId: string }> {
   const service = new SecretKeysService({ now: () => NOW, passwordKdf: weakKdf });
-  const key = await service.createKey({ name: "DeepSeek", value: "provider-secret", authorizationPassword: PASSWORD, nowMs: NOW });
+  const key = await createPasswordSealedKey(service, { name: "DeepSeek", value: "provider-secret", authorizationPassword: PASSWORD, nowMs: NOW });
   await service.unlockSession({ sessionId: "session.owner", userId: "user.owner", authorizationPassword: PASSWORD, expiresAtMs: 9000, nowMs: NOW });
   return { service, keyId: key.id };
 }

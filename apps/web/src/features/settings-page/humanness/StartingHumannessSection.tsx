@@ -17,7 +17,7 @@ export function StartingHumannessSection(props: { port: SettingsPort }) {
     <section aria-labelledby="settings-starting-humanness">
       <h2 id="settings-starting-humanness">Starting humanness</h2>
       <p>The level a task or Flow uses when it has none of its own. 0 is fastest, with no added waits; higher looks more like a person.</p>
-      {starting.status === "loading" ? <p role="status">Loading your starting humanness...</p> : null}
+      {starting.status === "loading" ? <p role="status">Loading your starting humanness…</p> : null}
       {starting.status === "unavailable" ? <p role="status">Your starting humanness is not available right now.</p> : null}
       {starting.status === "ready" ? <StartingControl port={props.port} value={starting.value} /> : null}
     </section>
@@ -33,7 +33,8 @@ function StartingControl(props: { port: SettingsPort; value: number | null }) {
     if (!host) return;
     const control = createHumannessControl({
       level: props.value === null ? { starting: 0 } : { own: props.value, starting: 0 },
-      label: "Starting humanness",
+      // The section already says "Starting humanness"; the slider names what it sets, so the title is not said twice.
+      label: "Level",
       settleMs: 300,
       commit: async (humanness) => {
         const failure = await saveStartingHumanness(port.current, humanness);

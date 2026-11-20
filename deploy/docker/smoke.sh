@@ -14,8 +14,12 @@
 #   - service only: a provisioning round trip (createAccount, then getAccount)
 #     through the private listener, with the operator command line inside the
 #     container and a token generated for this run.
-# Needs docker, curl, jq and openssl. Every secret it uses is generated here,
-# lives in a temporary directory, and is removed on exit; nothing is printed.
+# Needs docker, curl and openssl; JSON is read by node inside the image, so
+# nothing else is installed on the machine. Runs under Git Bash on Windows too
+# (docker arguments are kept from MSYS path conversion, and the secrets folder
+# is handed to Docker as a Windows path). Every secret it uses is generated
+# here, lives in a temporary directory, and is removed on exit; nothing is
+# printed.
 
 set -euo pipefail
 
@@ -26,9 +30,15 @@ case "$profile" in
   *) echo "profile must be self-hosted or service" >&2; exit 2 ;;
 esac
 
+# Git Bash rewrites arguments that look like POSIX paths (/tmp, /data) into
+# Windows ones; docker must receive them as written.
+docker() { MSYS_NO_PATHCONV=1 command docker "$@"; }
+host_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+
 name="fluxiq-smoke-${profile}-$$"
 volume="${name}-data"
 secrets="$(mktemp -d)"
+secrets_host="$(host_path "$secrets")"
 panel_port="${SMOKE_PANEL_PORT:-13000}"
 gateway_port="${SMOKE_GATEWAY_PORT:-14777}"
 origin="https://fluxiq.example.org"
@@ -63,16 +73,18 @@ run_args=(
   --env "FLUXIQ_PUBLIC_ORIGIN=${origin}"
   --env "FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS=moz-extension://*"
   --env "FLUXIQ_SETUP_CODE_FILE=/run/secrets/setup_code"
-  --volume "$secrets/setup-code:/run/secrets/setup_code:ro"
+  --volume "$secrets_host/setup-code:/run/secrets/setup_code:ro"
   # Check health every few seconds here instead of the image's 30, so the
   # smoke does not idle; the command itself is the image's.
   --health-interval 5s
 )
 if [ "$profile" = "service" ]; then
   run_args+=(
+    # A service names its instance; its discovery document refuses to answer without one.
+    --env "FLUXIQ_INSTANCE_ID=fluxiq-image-smoke"
     --env "FLUXIQ_PROVISIONING_LISTEN=0.0.0.0:4780"
     --env "FLUXIQ_PROVISIONING_TOKEN_FILE=/run/secrets/provisioning_token"
-    --volume "$secrets/provisioning-token:/run/secrets/provisioning_token:ro"
+    --volume "$secrets_host/provisioning-token:/run/secrets/provisioning_token:ro"
   )
 fi
 
@@ -108,8 +120,10 @@ done
 echo "/api/ready: 200"
 
 discovery="$(curl --silent --fail "${base}/.well-known/fluxiq")" || fail "discovery did not answer 200"
-[ "$(jq -r '.instance.profile' <<<"$discovery")" = "$profile" ] || fail "discovery does not name the ${profile} profile"
-[ "$(jq -r '.gatewayUrl' <<<"$discovery")" = "wss://fluxiq.example.org/client" ] || fail "discovery does not advertise wss://fluxiq.example.org/client"
+# One field of the discovery document, read by the image's own node.
+field() { printf '%s' "$discovery" | docker exec --interactive "$name" node --input-type=module --eval "let t='';for await (const c of process.stdin) t+=c;const v=JSON.parse(t)$1;process.stdout.write(String(v))"; }
+[ "$(field '.instance.profile')" = "$profile" ] || fail "discovery does not name the ${profile} profile"
+[ "$(field '.gatewayUrl')" = "wss://fluxiq.example.org/client" ] || fail "discovery does not advertise wss://fluxiq.example.org/client"
 echo "Discovery: ${profile}, wss gateway advertised"
 
 [ "$(docker exec "$name" id -u)" != "0" ] || fail "the server runs as root"
@@ -136,7 +150,10 @@ if [ "$profile" = "service" ]; then
   echo "Provisioning round trip: createAccount, getAccount"
 fi
 
-# A clean stop: SIGTERM, the drain, then exit.
+# A clean stop: SIGTERM, the drain, then exit 0 (a kill after the grace
+# period would be 137).
 docker stop --time 60 "$name" >/dev/null
-echo "Stopped: exit code $(docker inspect --format '{{.State.ExitCode}}' "$name")"
+exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$name")"
+[ "$exit_code" = "0" ] || fail "SIGTERM did not stop the server cleanly (exit code ${exit_code})"
+echo "Stopped cleanly on SIGTERM: exit code 0"
 echo "PASS: ${image} (${profile})"

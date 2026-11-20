@@ -10,7 +10,7 @@ async function setup() {
   const login = await runtime.identityAccess.authenticate({ username: "admin", password: "admin" });
   const call = (endpoint: string, payload: Record<string, unknown> = {}) =>
     runtime.api.call({ programId: "secret-keys", endpoint, scope: {}, actor: actorFor(login), payload }) as Promise<Answer>;
-  const add = (name: string) => runtime.secretKeys.createKey({ name, value: `dummy-${name}`, authorizationPassword: "admin", provider: "alpha", createdBy: login.user.id });
+  const add = (name: string) => runtime.secretKeys.createKey({ name, value: `dummy-${name}`, provider: "alpha", createdBy: login.user.id });
   return { runtime, call, add };
 }
 

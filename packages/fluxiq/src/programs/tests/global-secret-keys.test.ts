@@ -8,7 +8,7 @@ import { testTotpCode } from "./totp-code.ts";
 
 describe("global program services", () => {
   it("creates secret keys without requiring TOTP but requires TOTP to reveal them", async () => {
-    const runtime = createGlobalProgramRuntime();
+    const runtime = createGlobalProgramRuntime(undefined, { modelProvidersEnabled: false });
     const setup = await runtime.identityAccess.beginTotp("admin");
     const code = testTotpCode(setup.secret);
     await runtime.identityAccess.confirmTotp("admin", code);
@@ -23,13 +23,15 @@ describe("global program services", () => {
     }) as { ok: boolean; payload?: { id: string }; error?: string };
 
     expect(created.ok, created.error).toBe(true);
-    // Real cost: the composed runtime seals at scrypt N=2^17, stamped for the acting user.
-    const store = (runtime.secretKeys as unknown as { store: { get(id: string): { sealed: unknown } | undefined } }).store;
-    expect(store.get(created.payload?.id ?? "")?.sealed).toMatchObject({
-      version: 2,
-      kdfParams: { N: 131072, r: 8, p: 1, keyLength: 32 },
-      sealedByUserId: login.user.id
-    });
+    // Since t928 a saved key is host-sealed (version 3): AES-256-GCM under a random data key held only as the
+    // record's host protection, with no password, KDF or acting-user hint in the seal.
+    const store = (runtime.secretKeys as unknown as { store: { get(id: string): { sealed: Record<string, unknown>; hostProtection?: unknown } | undefined } }).store;
+    const stored = store.get(created.payload?.id ?? "");
+    expect(stored?.sealed).toMatchObject({ version: 3, algorithm: "aes-256-gcm" });
+    for (const field of ["iv", "tag", "ciphertext"]) expect(typeof stored?.sealed[field]).toBe("string");
+    for (const field of ["kdf", "kdfParams", "salt", "sealedByUserId"]) expect(stored?.sealed).not.toHaveProperty(field);
+    expect(stored?.sealed.ciphertext).not.toContain("sk-secret");
+    expect(stored?.hostProtection).toBeDefined();
     await expect(runtime.api.call({
       programId: "secret-keys",
       endpoint: "reveal-key",

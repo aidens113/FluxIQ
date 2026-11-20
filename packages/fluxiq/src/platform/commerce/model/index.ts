@@ -3,6 +3,7 @@ export type {
   CommerceApplyOptions,
   CommerceBillingPolicy,
   CommerceBillingState,
+  CommerceCheckoutCompletion,
   CommerceCheckoutRecord,
   CommerceEntitlementGrant,
   CommerceEventReceipt,

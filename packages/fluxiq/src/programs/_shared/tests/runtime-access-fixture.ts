@@ -37,7 +37,13 @@ export class RuntimeAccessFixture {
   async close(runtime: GlobalProgramRuntime): Promise<void> {
     if (!this.open.delete(runtime)) return;
     runtime.detach();
-    try { await runtime.automationStudio.close(); } finally { runtime.secretKeys.close(); }
+    // A model-access ledger write still running (a key's recorded check outcome) lands before its folder is removed.
+    try {
+      await runtime.settled();
+      await runtime.automationStudio.close();
+    } finally {
+      runtime.secretKeys.close();
+    }
   }
 
   async dispose(): Promise<void> {
@@ -52,8 +58,7 @@ export class RuntimeAccessFixture {
   async createKey(runtime: GlobalProgramRuntime, login: Login, password = RUNTIME_PASSWORD) {
     return await runtime.secretKeys.createKey({
       name: "Model", kind: "llm", provider: "Anthropic", value: RUNTIME_KEY_VALUE,
-      authorizationPassword: password, createdBy: login.user.id,
-      actorSession: { sessionId: login.session.id, userId: login.user.id, expiresAtMs: login.session.expiresAtMs }
+      createdBy: login.user.id
     });
   }
 

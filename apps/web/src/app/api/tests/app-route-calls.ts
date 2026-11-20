@@ -24,7 +24,12 @@ import { GET as streamRunDataset } from "../programs/automation-studio/run-datas
 import { GET as readStateAsset, PUT as writeStateAsset } from "../programs/automation-studio/state-assets/[projectId]/[sha256]/route";
 import { GET as programDirectory } from "../programs/route";
 import { GET as listRecordings } from "../recordings/route";
+import { GET as billingStatus, POST as startCheckout } from "../platform/v1/commerce/checkout/route";
 import { GET as readAudit } from "../security/audit/route";
+import { GET as listEnvironments, POST as createEnvironment } from "../platform/v1/environments/route";
+import { DELETE as deleteEnvironment } from "../platform/v1/environments/[environmentId]/route";
+import { POST as startEnvironment } from "../platform/v1/environments/[environmentId]/start/route";
+import { POST as stopEnvironment } from "../platform/v1/environments/[environmentId]/stop/route";
 import { fixture, FIXTURE_SHA, INVITEE, routeRequest, type RouteCaller } from "./app-route-fixture";
 
 /** The project-scoped calls name this project; `a-` projects are alice's, `b-` bob's. */
@@ -32,6 +37,8 @@ export type RouteProject = { projectId: string };
 
 type RouteCall = (caller: RouteCaller, target: RouteProject) => Promise<Response>;
 
+/** The environment the per-environment routes name. */
+const ENVIRONMENT = { params: Promise.resolve({ environmentId: "env-fixture" }) };
 const PNG = new Uint8Array([137, 80, 78, 71]);
 const HTML = new TextEncoder().encode("<!doctype html><p>snapshot</p>");
 /** A dummy password: the fixture accepts any re-proof. */
@@ -71,14 +78,12 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "GET /api/client-gateway/snapshot": (caller) => gatewaySnapshot(routeRequest(caller, "/api/client-gateway/snapshot")),
   "PUT /api/client-gateway/trace-artifacts/[sha256]": (caller) =>
     putTraceArtifact(routeRequest(caller, `/api/client-gateway/trace-artifacts/${FIXTURE_SHA}`, { method: "PUT", bytes: HTML, mediaType: "text/html" }), { params: Promise.resolve({ sha256: FIXTURE_SHA }) }),
-  // Takes no request: building one sets the caller's cookie, which is all it reads.
-  "GET /api/framework/setup": (caller) => {
-    routeRequest(caller, "/api/framework/setup");
-    return inspectSetup();
-  },
+  "GET /api/framework/setup": (caller) => inspectSetup(routeRequest(caller, "/api/framework/setup")),
   "POST /api/framework/setup (setup)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "setup" } })),
   "POST /api/framework/setup (migrate)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "migrate" } })),
   "POST /api/framework/setup (rollback-migration)": (caller) => runSetup(routeRequest(caller, "/api/framework/setup", { method: "POST", json: { action: "rollback-migration" } })),
+  "GET /api/platform/v1/commerce/checkout": (caller) => billingStatus(routeRequest(caller, "/api/platform/v1/commerce/checkout")),
+  "POST /api/platform/v1/commerce/checkout": (caller) => startCheckout(routeRequest(caller, "/api/platform/v1/commerce/checkout", { method: "POST", json: { planId: "fixture-plan" } })),
   "GET /api/framework/io": (caller) => inspectIo(routeRequest(caller, "/api/framework/io")),
   "POST /api/framework/io/validate": (caller) => validateIo(routeRequest(caller, "/api/framework/io/validate", { method: "POST", json: {} })),
   "GET /api/panel/changes": (caller) => panelChanges(routeRequest(caller, "/api/panel/changes")),
@@ -103,6 +108,11 @@ export const APP_ROUTE_CALLS: Readonly<Record<string, RouteCall>> = {
   "POST /api/accounts/member (remove)": memberChange("remove"),
   "POST /api/accounts/member (resend-invite)": memberChange("resend-invite"),
   "POST /api/accounts/member (revoke-invite)": memberChange("revoke-invite"),
-  "GET /api/security/audit": (caller) => readAudit(routeRequest(caller, "/api/security/audit"))
+  "GET /api/security/audit": (caller) => readAudit(routeRequest(caller, "/api/security/audit")),
+  "GET /api/platform/v1/environments": (caller) => listEnvironments(routeRequest(caller, "/api/platform/v1/environments")),
+  "POST /api/platform/v1/environments": (caller) => createEnvironment(routeRequest(caller, "/api/platform/v1/environments", { method: "POST", json: { operationId: "fixture-create" } })),
+  "POST /api/platform/v1/environments/[environmentId]/start": (caller) => startEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture/start", { method: "POST", json: { operationId: "fixture-start" } }), ENVIRONMENT),
+  "POST /api/platform/v1/environments/[environmentId]/stop": (caller) => stopEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture/stop", { method: "POST", json: { operationId: "fixture-stop" } }), ENVIRONMENT),
+  "DELETE /api/platform/v1/environments/[environmentId]": (caller) => deleteEnvironment(routeRequest(caller, "/api/platform/v1/environments/env-fixture?operationId=fixture-delete", { method: "DELETE" }), ENVIRONMENT)
 };
 

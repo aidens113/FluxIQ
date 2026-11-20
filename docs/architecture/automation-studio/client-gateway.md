@@ -570,6 +570,33 @@ Keys' `snapshot` answers kind/provider/enabled, safe availability and ownership
 metadata, with no unlock ticket or key
 name, id, description, metadata or value.
 
+A token may also write its person's own model key (t928, t950): Secret Keys'
+`save-model-key` (`{ provider: "anthropic" | "deepseek", value, name? }`),
+`replace-model-key` (`{ value }`) and `remove-model-key` (`{}`). They are
+`authoring`: they ask for no password, PIN, authenticator code or confirmation,
+and each is decided on the caller's own user (`endpointResource.selfUser()`),
+never the workspace or a key the body names, so IAM alone decides. Under
+`local` and `self-hosted` the token must hold `secrets.manage`. Under `service`
+a token's call is decided by its person's policies narrowed by
+`FluxIQBrowserSession`, not by the permissions of its person's legacy identity
+role: `FluxIQUserAccess` grants the three on the person's own user
+(`OwnModelKey`) and the session policy keeps them for the session's own person,
+so a member's browser saves its member's own key. A save from a token never
+takes an empty workspace's assistant key there, since `FluxIQBrowserSession`
+refuses `set-assistant-model`. The endpoint allowlist still keeps every other
+key endpoint (create, rotate, reveal, the default and the assistant's choice,
+offering) away from a token. Each body is rebuilt from those fields alone, and
+each answer is exactly `{ modelAccess }`, rebuilt by the contract reader and
+without the key's id. Each write runs the free provider check BEFORE the value
+is stored (t950; so do the panel's `create-key` and `rotate-key`). A key the
+provider refuses, or whose account has no credit, is never stored. The answer is
+a refusal whose code is that outcome (`provider_refused` or `no_credit`), the
+person's previous key and value stay in use, and Activity records a failed write
+of that kind. A provider out of reach (`provider_unreachable`) does not block the
+save: the key is stored and reads that outcome. A stored key's change reaches
+every client through `server.model_access_changed` and the panel's
+`model-access` change event.
+
 `remove-recording-entry` (`runtime.control`, `authoring`) takes
 `{ projectId, recordingId, eventId }` and removes every entry of a recording
 that is still open whose `metadata.eventId` is `eventId` -- the id the IO
@@ -1170,6 +1197,59 @@ gateway socket as `server.conversation_changed`
   message skips the
   outbound queue, is untraced like `server.activity`, and is not replayed: a
   client reads its chats again on `server.session_ready`.
+
+## How a paired client and the panel hear model access change
+
+A person's model access (`ModelAccessState`: ready, no key, a key that cannot
+be opened, not permitted, refused, no credit, unreachable) is pushed when it
+changes, with no timer anywhere (t928). Paired clients get the state itself on
+their gateway socket; the panel gets a bare signal on its change stream and
+reads the Secret Keys snapshot again.
+
+- **Paired clients.** `ClientGatewayService.modelAccessPush`
+  (`service/model-access/delivery.ts`) is a port `{ setAuthority(stateOf),
+  publish() }`. The runtime installs `stateOf` (`programs/_shared/model-access/`,
+  `installModelAccessPush`, wired in `programs/_shared/runtime.ts`), which
+  answers a ready person-paired session's person (`{ sessionId, userId,
+  trustedClientId }`) with that person's state as the Secret Keys snapshot
+  answers them on that session, or null for "send nothing" when that session's
+  own `snapshot` call would be refused: the person is disabled, gone or
+  roleless (read as the paired program route reads them), their role lacks the
+  snapshot's permission, or IAM denies `secrets:Snapshot` to the paired-client
+  actor the route builds (`modelAccessRecipientAllowed`, decided per recipient
+  each time with the snapshot's registered action and resource, without an
+  audit row; a decision that could not be made throws, so nothing is sent). The
+  push and the snapshot therefore never disagree (t950). It
+  calls `publish()` whenever model access may have changed: a committed Secret
+  Keys change (`SecretKeysService.onModelKeysChanged`), a changed last-call or
+  free-check outcome (`AutomationStudioModelAccessLedger.subscribe`), an IAM
+  decision change (`subscribeDecisionChanges`) or a change of people
+  (`directoryChanges` of the identity the paired route reads). The ledger is
+  kept in the instance's program state (`secret-keys/model-access-ledger`), so
+  a refused or empty key still reads that way after a restart. For each ready, connected, person-paired
+  session the delivery works the state out again, strips the key id
+  (`pairedClientModelAccessState`), validates it (`readModelAccessState`), and
+  sends `server.model_access_changed` (`{ modelAccess }`) only when it differs
+  from the last state sent to that session for the same person. One lane per
+  session: a publish during a read reads once more after it. A read that
+  throws or answers an invalid state sends nothing and is audited once per
+  outage by kind only (`model_access_push.state_failed`); there is no retry
+  timer, the next publish reads again. A `session.ready` or
+  `session.disconnected` forgets what was last sent, because the client reads
+  its state afresh once ready. Sent with `sendUnqueued` and untraced like
+  `server.activity`.
+- **Panel.** The change stream's `model-access` topic
+  (`apps/web/src/app/api/panel/changes/topics/model-access.ts`) subscribes to
+  the workspace's program runtime's own `modelAccessChanges` source
+  (`GlobalProgramRuntime.modelAccessChanges`, `{ subscribe(listener: () =>
+  void): () => void }`) and sends `event: model-access` with `{ version }`
+  alone, coalesced with the other events. The route reads the source from the
+  runtime instance it was handed (`selected.fluxiq.programs`), through the
+  narrow accessor `panelModelAccessSource`, never from a module import: the panel server bundles Core into the instrumentation
+  graph and the route graph separately, so a module-level hub imported by the
+  route would be a different object from the one the runtime signals. The
+  topic is left out while the runtime carries no such source, and a paired
+  browser's stream never has it (its state comes over the socket).
 
 ## Client half
 

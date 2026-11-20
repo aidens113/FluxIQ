@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { compileIamPolicySet, evaluateIamRequest } from "../../evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../frn/index.ts";
 import type { IamPrincipal } from "../../types.ts";
-import { IAM_CONNECTED_SESSION, IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../index.ts";
+import { IAM_CONNECTED_SESSION, IAM_OWN_MODEL_KEY_ACTIONS, IAM_USER_ACCESS, IAM_USER_WORKSPACE_SETTING_READS } from "../index.ts";
 
 const WS = "ws-1";
 const ALICE: IamPrincipal = { type: "user", id: "alice", workspaceId: WS, frn: iamPrincipalFrn("user", WS, "alice") };
@@ -140,5 +140,44 @@ describe("FluxIQUserAccess self-only identity actions", () => {
     for (const action of SELF_ONLY) {
       expect(evaluateIamRequest(browser, ALICE, action, [{ frn: ALICE_USER, ownerId: "alice" }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision, action).toBe("deny");
     }
+  });
+});
+
+describe("FluxIQUserAccess and the key the person's own chats use (t950)", () => {
+  const browser = compileIamPolicySet({ identity: [IAM_USER_ACCESS], guardrails: [], sessions: [IAM_CONNECTED_SESSION], boundary: null }, ALICE, WS);
+  const decideBrowser = (action: string, frn: string, ownerId?: string) =>
+    evaluateIamRequest(browser, ALICE, action, [{ frn, ...(ownerId === undefined ? {} : { ownerId }) }], { workspaceId: WS, origin: "extension-chat", currentTimeMs: 0 }).decision;
+
+  it("lets the person save, replace and remove it on their own user, from the panel and from their paired browser", () => {
+    expect([...IAM_OWN_MODEL_KEY_ACTIONS].sort()).toEqual(["secrets:RemoveModelKey", "secrets:ReplaceModelKey", "secrets:SaveModelKey"]);
+    for (const action of IAM_OWN_MODEL_KEY_ACTIONS) {
+      expect(decide(action, ALICE_USER, "alice"), action).toBe("allow");
+      expect(decideFrom("extension-chat", action, ALICE_USER, "alice"), action).toBe("allow");
+      expect(decideBrowser(action, ALICE_USER, "alice"), action).toBe("allow");
+    }
+  });
+
+  it("never on another person's user, the workspace FRN, a key, or another workspace, from any origin", () => {
+    for (const action of IAM_OWN_MODEL_KEY_ACTIONS) {
+      for (const frn of [BOB_USER, iamWorkspaceFrn(WS), `frn:fluxiq:secrets:${WS}:key/k1`, iamPrincipalFrn("user", "ws-2", "alice"), iamWorkspaceFrn("ws-2")]) {
+        expect(decide(action, frn, "bob"), `${action} ${frn}`).toBe("deny");
+        expect(decideBrowser(action, frn, "bob"), `browser ${action} ${frn}`).toBe("deny");
+      }
+    }
+  });
+
+  it("keeps every other secrets action out of a paired browser's reach, model access (the snapshot, using one's own key) excepted", () => {
+    const ALICES_KEY = `frn:fluxiq:secrets:${WS}:key/k2`;
+    // A connected client has model access: it uses its person's own key, and nobody else's.
+    expect(decideBrowser("secrets:UseKey", ALICES_KEY, "alice")).toBe("allow");
+    expect(decideBrowser("secrets:UseKey", `frn:fluxiq:secrets:${WS}:key/k3`, "bob")).toBe("deny");
+    for (const action of ["secrets:CreateKey", "secrets:UpdateKey", "secrets:RotateKey", "secrets:DeleteKey", "secrets:RevealKey", "secrets:SetDefaultKey", "secrets:OfferKey", "secrets:SetAssistantModel", "secrets:Unlock"]) {
+      expect(decideBrowser(action, ALICES_KEY, "alice"), action).toBe("deny");
+      expect(decideBrowser(action, iamWorkspaceFrn(WS)), action).toBe("deny");
+      expect(decideBrowser(action, ALICE_USER, "alice"), action).toBe("deny");
+    }
+    expect(decideBrowser("secrets:Snapshot", iamWorkspaceFrn(WS))).toBe("allow");
+    expect(decideBrowser("secrets:Snapshot", ALICES_KEY, "alice")).toBe("allow");
+    expect(decideBrowser("secrets:Snapshot", `frn:fluxiq:secrets:${WS}:key/k3`, "bob")).toBe("deny");
   });
 });

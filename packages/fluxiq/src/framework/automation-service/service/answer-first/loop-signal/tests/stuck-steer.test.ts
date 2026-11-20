@@ -6,7 +6,7 @@ import { automationStudioAnswerFirstStuckSteer } from "../index.ts";
 describe("the steer after a stopped loop", () => {
   it("says the loop was stopped, points at what was tried, and asks for a different way until the result", () => {
     const steer = automationStudioAnswerFirstStuckSteer(false);
-    expect(steer.words).toMatch(/kept repeating itself .* so it was stopped/u);
+    expect(steer.words).toMatch(/kept repeating itself, so it was stopped/u);
     expect(steer.words).toMatch(/Everything under tried was already done/u);
     expect(steer.words).toMatch(/Take a different way to the result/u);
     expect(steer.words).toMatch(/Keep going until you have the result/u);

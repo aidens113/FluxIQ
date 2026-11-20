@@ -8,16 +8,16 @@ import { createPanelOpenControl } from "../panel-open-control";
 const status = (projectId?: string) => ({ connected: true, ownerKey: "k", recording: false, ...(projectId ? { projectId } : {}) });
 
 describe("the panel's Open FluxIQ control", () => {
-  it("takes a model key to the Keys page under Security, in place", async () => {
+  it("takes an AI key to AI keys in Settings, in place", async () => {
     await withFakeDocument(() => {
       const navigate = vi.fn();
       const control = createPanelOpenControl(navigate)({ label: "Open FluxIQ", look: "small", purpose: "model-key" });
       const button = fake(control.element);
-      expect(button.textContent).toBe("Add a model key");
+      expect(button.textContent).toBe("Add an AI key");
       expect(button.getAttribute("type")).toBe("button");
       expect(button.getAttribute("target")).toBeNull();
       button.dispatch("click");
-      expect(navigate).toHaveBeenCalledWith("/security/keys");
+      expect(navigate).toHaveBeenCalledWith("/settings#ai-keys");
     });
   });
 

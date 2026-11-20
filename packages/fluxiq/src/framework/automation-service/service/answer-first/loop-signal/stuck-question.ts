@@ -11,14 +11,23 @@
 // different way (`../attempt/stuck-ask.ts`, `./stuck-steer.ts`), so the words say it carries on.
 //
 // Generic and the person's words: counts and closed words only, never a code, a tool id, a digest
-// or a page's text. The one sentence not Core's is the check's own screened reason.
+// or a page's text. The sentences not Core's are the check's own screened reason and, where the
+// model itself decided to ask the person (`ask_person`, t962), its own question, screened the same
+// way, which then leads.
 
 import type { AutomationStudioTaskAttemptLoopsCaught } from "@fluxiq/contracts/automation";
 import type { AutomationStudioLlmLoopAttemptRecordData, AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopUnchanged } from "../../../../../runtime/llm/repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "../../../../../runtime/llm/index.ts";
+import { automationStudioFlowLessScreenedWords } from "../../../../../runtime/result-verification/index.ts";
 
 /** What the last rung stopped on: the loop's finding, and, where a completion was refused again, what the check said. */
 export type AutomationStudioAnswerFirstStuck = {
-  finding: Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "unchanged">;
+  finding: Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "unchanged"> & {
+    /** The model's own question, where it decided to ask the person. */
+    question?: string | undefined;
+    /** Core's tools the repeat was of: a completion refused again names the completion check. */
+    toolIds?: readonly string[] | undefined;
+  };
   /** The check kept refusing the same result: its screened reason, where it gave one. */
   completionRefused?: { reason?: string | undefined } | undefined;
 };
@@ -27,6 +36,7 @@ export type AutomationStudioAnswerFirstStuck = {
 export type AutomationStudioAnswerFirstStuckHeld = { rows: number; acts: number; answered: boolean };
 
 const OPENING = "I keep getting stuck, so I am trying a different way, and asking you in case you can help.";
+const OPENING_ASKED = "I keep getting stuck and would like your help with one question:";
 const YOU_CAN = "What you can do: tell me in your own words where what you asked for is shown, what to try differently, or what I may have misunderstood, and I will follow your words from then on. I carry on meanwhile; press Stop to end the task here, with the result as it stands.";
 
 const UNCHANGED: Readonly<Record<AutomationStudioLlmLoopUnchanged, string>> = Object.freeze({
@@ -47,8 +57,8 @@ function listed(parts: readonly string[]): string {
 
 /** What is stuck, in one sentence. */
 function stuckOn(stuck: AutomationStudioAnswerFirstStuck): string {
-  if (stuck.completionRefused) {
-    const reason = stuck.completionRefused.reason?.trim();
+  if (stuck.completionRefused || stuck.finding.toolIds?.includes(AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID)) {
+    const reason = stuck.completionRefused?.reason?.trim();
     return `What is stuck: the result I have keeps being refused, and I have found nothing new that would change that.${reason ? ` What was said about it: ${reason}` : ""}`;
   }
   const { pattern, repeats } = stuck.finding;
@@ -93,5 +103,7 @@ export function automationStudioAnswerFirstStuckQuestion(input: {
   held: AutomationStudioAnswerFirstStuckHeld;
 }): string {
   const tried = triedWords(input.caught, input.tried);
-  return [OPENING, stuckOn(input.stuck), ...(tried ? [tried] : []), heldWords(input.held), YOU_CAN].join(" ");
+  const question = input.stuck.finding.question?.trim() ? automationStudioFlowLessScreenedWords(input.stuck.finding.question.trim()).text : undefined;
+  const opening = question ? [OPENING_ASKED, question] : [OPENING];
+  return [...opening, stuckOn(input.stuck), ...(tried ? [tried] : []), heldWords(input.held), YOU_CAN].join(" ");
 }

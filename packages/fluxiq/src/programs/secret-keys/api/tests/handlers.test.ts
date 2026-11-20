@@ -1,6 +1,7 @@
-// The Secret Keys endpoints hand the signed-in person's verified session to the
-// service, so a key added on Secret Keys is usable by that sign-in at once
-// (install proof C5: the chat said "your model key is locked" until a re-login).
+// The Secret Keys endpoints on the real program runtime: a key added on Secret
+// Keys is usable by the person's calls at once, with no password, PIN or
+// re-login (install proof C5 once said "your model key is locked" until a
+// re-login), and showing a value still takes the person's password, never a PIN.
 
 import { describe, expect, it } from "vitest";
 
@@ -8,6 +9,10 @@ import { createGlobalProgramRuntime } from "../../../index.ts";
 import { actorFor } from "../../../tests/login-actor.ts";
 
 type Created = { ok: boolean; payload?: { id: string }; error?: string };
+
+// These tests are about keeping and showing a key, not its provider check: no provider is bound, so the dummy value
+// is never sent anywhere (before t950 it went to DeepSeek's real API, whose refusal was ignored after the save).
+const NO_PROVIDER = { modelProvidersEnabled: false } as const;
 
 async function signIn(runtime: ReturnType<typeof createGlobalProgramRuntime>) {
   const login = await runtime.identityAccess.authenticate({ username: "admin", password: "admin" });
@@ -17,30 +22,31 @@ async function signIn(runtime: ReturnType<typeof createGlobalProgramRuntime>) {
 }
 
 describe("secret-keys endpoints", () => {
-  it("makes a created key usable in the creator's current sign-in without a re-login", async () => {
-    const runtime = createGlobalProgramRuntime();
-    const login = await signIn(runtime);
-    expect(runtime.secretKeys.unlockedSessionFor(login.user.id)).toBeNull();
+  it("makes a created key usable by the creator's calls at once, with no password, PIN or re-login", async () => {
+    const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
+    try {
+      const login = await signIn(runtime);
+      const created = await runtime.api.call({
+        programId: "secret-keys",
+        endpoint: "create-key",
+        scope: {},
+        actor: actorFor(login),
+        payload: { name: "DeepSeek", value: "sk-dummy", provider: "deepseek" }
+      }) as Created;
 
-    const created = await runtime.api.call({
-      programId: "secret-keys",
-      endpoint: "create-key",
-      scope: {},
-      actor: actorFor(login),
-      payload: { name: "DeepSeek", value: "sk-dummy", provider: "deepseek", authSessionId: login.session.id, authorizationPassword: "admin" }
-    }) as Created;
-
-    expect(created.ok, created.error).toBe(true);
-    const id = created.payload?.id ?? "";
-    expect(runtime.secretKeys.unlockedSessionFor(login.user.id)).toBe(login.session.id);
-    const authorization = await runtime.secretKeys.createSessionRevealAuthorization({ sessionId: login.session.id, userId: login.user.id, id });
-    await expect(runtime.secretKeys.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id })).resolves.toMatchObject({ value: "sk-dummy" });
-    runtime.secretKeys.close();
+      expect(created.ok, created.error).toBe(true);
+      const id = created.payload?.id ?? "";
+      expect(JSON.stringify(created)).not.toContain("sk-dummy");
+      // No session holds it: the server opens it for its owner.
+      expect(runtime.secretKeys.unlockedSessionFor(login.user.id)).toBeNull();
+      const authorization = await runtime.secretKeys.access.createUseAuthorization({ id, principal: { kind: "session", userId: login.user.id, sessionId: login.session.id } });
+      await expect(runtime.secretKeys.revealKeyWithAuthorization({ authorizationId: authorization.authorizationId, id })).resolves.toMatchObject({ value: "sk-dummy" });
+    } finally { runtime.secretKeys.close(); }
   });
 
   describe('the retired unlock ceremony', () => {
     it('registers no unlock endpoint and emits no ticket or locked-client setup', async () => {
-      const runtime = createGlobalProgramRuntime();
+      const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
       try {
         const login = await signIn(runtime);
         const answer = await runtime.api.call({ programId: 'secret-keys', endpoint: 'unlock', scope: {}, actor: actorFor(login), payload: { authSessionId: login.session.id, authorizationPassword: 'admin' } });
@@ -52,22 +58,19 @@ describe("secret-keys endpoints", () => {
     });
   });
 
-  it("refuses mutation when its proof session is not the authenticated caller's", async () => {
-    const runtime = createGlobalProgramRuntime();
-    const first = await signIn(runtime);
-    const second = await signIn(runtime);
+  it("shows a value only for the caller's own session and password, never asking for a PIN", async () => {
+    const runtime = createGlobalProgramRuntime(undefined, NO_PROVIDER);
+    try {
+      const first = await signIn(runtime);
+      const second = await signIn(runtime);
+      const call = (endpoint: string, payload: Record<string, unknown>) => runtime.api.call({ programId: "secret-keys", endpoint, scope: {}, actor: actorFor(first), payload });
+      const created = await call("create-key", { name: "DeepSeek", value: "sk-dummy", provider: "deepseek" }) as Created;
+      const id = created.payload?.id ?? "";
 
-    const created = await runtime.api.call({
-      programId: "secret-keys",
-      endpoint: "create-key",
-      scope: {},
-      actor: actorFor(first),
-      payload: { name: "DeepSeek", value: "sk-dummy", provider: "deepseek", authSessionId: second.session.id, authorizationPassword: "admin" }
-    }) as Created;
-
-    expect(created.ok).toBe(false);
-    expect(runtime.secretKeys.unlockedSessionFor(first.user.id)).toBeNull();
-    expect((await runtime.secretKeys.snapshot()).keys).toEqual([]);
-    runtime.secretKeys.close();
+      expect(await call("reveal-key", { id })).toMatchObject({ ok: false, requiresRecheck: true });
+      expect(await call("reveal-key", { id, authSessionId: second.session.id, authorizationPassword: "admin" })).toMatchObject({ ok: false, requiresRecheck: true });
+      expect(await call("reveal-key", { id, authSessionId: first.session.id, authorizationPassword: "wrong" })).toMatchObject({ ok: false });
+      expect(await call("reveal-key", { id, authSessionId: first.session.id, authorizationPassword: "admin" })).toMatchObject({ ok: true, payload: { value: "sk-dummy" } });
+    } finally { runtime.secretKeys.close(); }
   });
 });

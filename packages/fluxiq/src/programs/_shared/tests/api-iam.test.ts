@@ -5,6 +5,7 @@
 // synthetic registrations; the live registry is covered beside them.
 
 import { describe, expect, it, vi } from "vitest";
+import { IAM_POLICY_LANGUAGE_VERSION, parseIamPolicyDocument } from "@fluxiq/contracts/iam";
 import { IAM_OWNER_FULL_ACCESS, IAM_USER_ACCESS } from "../../../platform/iam/predefined/index.ts";
 import { GlobalProgramApiRegistry, type ProgramApiRegistrationParams } from "../api.ts";
 import { endpointResource, ProgramIamGate, type ProgramApiIamOptions } from "../iam/index.ts";
@@ -189,12 +190,33 @@ describe("service narrows a user to their own resources", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("narrows a paired client by its permissions as well as its policies", async () => {
+  it("decides a paired client by its person's policies narrowed by FluxIQBrowserSession, never by its legacy role's permissions (t950)", async () => {
     const built = registry(service(), getFlow, saveFlow);
     registerPrefixOwners(built);
-    const paired = actor("alice", "user", ["programs.read"], "paired-client");
+    // A hosted member maps to the legacy `viewer` role (programs.read only); their browser still writes their own Flow.
+    const paired = actor("alice", "viewer", ["programs.read"], "paired-client");
     await expect(call(built, "get-flow", paired, { projectId: "a-1", flowId: "f" })).resolves.toMatchObject({ ok: true });
-    await expect(call(built, "save-flow", paired, { projectId: "a-1", flowId: "f" })).resolves.toEqual({ ok: false, error: "Permission required: programs.write", errorCode: "authorization.forbidden" });
+    await expect(call(built, "save-flow", paired, { projectId: "a-1", flowId: "f" })).resolves.toMatchObject({ ok: true });
+    // Their policies still decide: another person's project is refused.
+    await expect(call(built, "save-flow", paired, { projectId: "b-1", flowId: "f" })).resolves.toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
+    // And the session policy still narrows: the panel may manage the person's own key, the browser may not.
+    const ownKey = { kind: "key", keyId: "a-key" } as const;
+    const panel = actor("alice", "viewer", ["programs.read"]);
+    await expect(built.authorize({ actor: panel, action: "secrets:UpdateKey", permission: "secrets.manage", resources: ownKey, programId: "secret-keys" })).resolves.toMatchObject({ allowed: true });
+    await expect(built.authorize({ actor: paired, action: "secrets:UpdateKey", permission: "secrets.manage", resources: ownKey, programId: "secret-keys" })).resolves.toMatchObject({ allowed: false });
+    await expect(built.authorize({ actor: paired, action: "secrets:UseKey", permission: "programs.write", resources: ownKey, programId: "secret-keys" })).resolves.toMatchObject({ allowed: true });
+    await expect(built.authorize({ actor: paired, action: "secrets:UseKey", permission: "programs.write", resources: { kind: "key", keyId: "b-key" }, programId: "secret-keys" })).resolves.toMatchObject({ allowed: false });
+  });
+
+  it("keeps the session policies its source attaches beside FluxIQBrowserSession", async () => {
+    const parsed = parseIamPolicyDocument({ Version: IAM_POLICY_LANGUAGE_VERSION, Id: "ReadOnlySession", Statement: [{ Sid: "Read", Effect: "Allow", Action: "studio:GetFlow", Resource: "*" }] }, "session");
+    if (!parsed.success) throw new Error(parsed.error.message);
+    const readOnly = { name: "ReadOnlySession", kind: "session" as const, document: parsed.data };
+    const built = registry({ profile: "service", source: { resolvePolicySet: async () => ({ identity: [IAM_USER_ACCESS], guardrails: [], sessions: [readOnly], boundary: null }), getRole: async () => null } }, getFlow, saveFlow);
+    registerPrefixOwners(built);
+    const paired = actor("alice", "viewer", ["programs.read"], "paired-client");
+    await expect(call(built, "get-flow", paired, { projectId: "a-1", flowId: "f" })).resolves.toMatchObject({ ok: true });
+    await expect(call(built, "save-flow", paired, { projectId: "a-1", flowId: "f" })).resolves.toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 });
 

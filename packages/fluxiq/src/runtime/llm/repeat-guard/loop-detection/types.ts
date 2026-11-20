@@ -63,6 +63,8 @@ export type AutomationStudioLlmLoopCall = {
   effectApplied: boolean;
   /** The result was a refusal (`ok: false`). */
   refused: boolean;
+  /** The code the call's result came back with, where it had one: what a decision about a loop is told each repeat brought (`./watch.ts`). */
+  resultCode?: string | undefined;
   /** A digest per row the answer kept (`./row-digests.ts`), so a repeated read that brought new rows is progress. */
   rows?: readonly string[] | undefined;
   /** A digest of the answer: a look asked again that answered differently is not the same look again. */
@@ -123,16 +125,23 @@ export type AutomationStudioLlmLoopFinding = {
 };
 
 /**
- * The ladder's last two steps (`./watch.ts`), which need the single-loop path:
+ * What a loop's caller is asked to do (`./watch.ts`), which needs the single-loop path:
  * `change_approach` asks for a fresh, small context from the page as it stands,
- * and `ask_person` for the work to stop spending and ask. Carries what a caller
- * needs to do either; nothing a page or the model wrote.
+ * steered off what it repeated, when steering and refusing have not stopped a
+ * repeat; `ask_person` puts the model's own question to the person, and is raised
+ * only where the model decided so (`../../decision-handlers/loop-decision.ts`, t962).
+ * Carries what a caller needs to do either; nothing a page wrote.
  */
 export type AutomationStudioLlmLoopSignal = AutomationStudioLlmLoopFinding & {
   kind: "change_approach" | "ask_person";
   /** Fresh approaches already signalled in this attempt (`./attempt-record.ts`), this one included. */
   approaches: number;
+  /** For `ask_person`: the model's own question (`../../loop-decision/`), which the person is asked. */
+  question?: string | undefined;
 };
+
+/** What one call of a caught repeat came back with, by its call id: Core's codes, never its content. */
+export type AutomationStudioLlmLoopCameBack = { callId: string; toolId: string; came: string };
 
 /** What the caller answers: `continue` when it has dealt with the signal and the loop goes on; `end` to end as a stall does today. */
 export type AutomationStudioLlmLoopSignalAnswer = "continue" | "end";

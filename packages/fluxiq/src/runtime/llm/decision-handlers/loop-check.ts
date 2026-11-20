@@ -15,11 +15,23 @@
 //
 // A call this lets through still goes to `executeTool` and whatever gate stands
 // behind it: nothing here grants anything, and a lasting act's refusal stays.
+//
+// **The model decides how to go on** (user, 2026-11-19). Where the loop offers
+// `core.loop_decision` (`../loop-decision/`), a steer names the repeat, how often, and what each
+// repeat came back with, and asks the model for one decision, which the loop carries out
+// (`./model-decision.ts`). Detection alone never stops anything.
+//
+// **When a steer climbs the model ladder by itself** (`../role-routing/ladder/`, t962): a window of
+// no progress, which is decisions going on with no new evidence, always climbs one rung; any other
+// repeat climbs only where no model is asked to decide, since there escalating is the model's
+// choice (`escalate_model`).
 
 import type { JsonObject } from "../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, automationStudioFlowDraftStepWordsOf } from "../../flow-authoring/draft/index.ts";
 import { automationStudioLlmDecisionContextSupersede } from "../decision-context/supersede.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionAsk } from "../loop-decision/index.ts";
+import { automationStudioLlmModelLadderClimb } from "../role-routing/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop/index.ts";
 import { automationStudioLlmEvidenceCallWritten, automationStudioLlmEvidenceRetriesLater, type AutomationStudioLlmEvidenceRepeatedOutcome } from "../repeat-guard/index.ts";
 import {
@@ -56,7 +68,9 @@ export function automationStudioLlmEvidenceLoopAmendmentKey(amendments: unknown)
 
 /** Tells the model and the person, and puts it on the run's record. */
 function steer(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, finding: AutomationStudioLlmLoopFinding): void {
-  const note = automationStudioLlmLoopSteerNote(finding, context.input.draft === false ? "undrafted" : "drafted", finding.pattern !== "same_act" || context.input.loopSignal !== undefined);
+  const decides = context.toolIds.has(AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
+  const decide = decides ? automationStudioLlmLoopDecisionAsk(context.loops.cameBack(finding)) : undefined;
+  const note = automationStudioLlmLoopSteerNote(finding, context.input.draft === false ? "undrafted" : "drafted", finding.pattern !== "same_act" || context.input.loopSignal !== undefined, decide);
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID);
   context.evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID, value: note });
@@ -64,6 +78,8 @@ function steer(context: AutomationStudioLlmEvidenceDecisionHandlerContext, itera
   automationStudioLlmLoopStepFolder(iteration, "steer", finding);
   const { title, text } = automationStudioLlmLoopChatWords(finding);
   emitAutomationStudioActivity({ phase: "thinking", label: title, detail: { kind: "thought", title, text, status: "succeeded" } });
+  if (finding.pattern === "no_progress") automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "no_new_evidence", pattern: finding.pattern }, iteration);
+  else if (!decides) automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "loop_detected", pattern: finding.pattern }, iteration);
 }
 
 /** Where a call left the work, from the page its route state names: a digest, compared for equality. Read by shape: a result with none has no place. */
@@ -101,7 +117,7 @@ export function automationStudioLlmEvidenceLoopRan(context: AutomationStudioLlmE
   const fix = finishingTools?.submit === decision.toolId;
   const call: AutomationStudioLlmLoopCall = {
     callId: decision.callId, toolId: decision.toolId, input: decision.input, context: context.contextOf(decision.toolId), stateBefore, stateAfter, effect,
-    effectApplied: execution.effectApplied, refused, ...(rows ? { rows } : {}), answer: automationStudioLlmLoopDigest(answer), draftKey,
+    effectApplied: execution.effectApplied, refused, ...(execution.resultCode ? { resultCode: execution.resultCode } : {}), ...(rows ? { rows } : {}), answer: automationStudioLlmLoopDigest(answer), draftKey,
     ...(ranWith ? { ranAs: ranWith } : {}), ...(targetWords !== undefined ? { targetWords } : {}), ...placeOf(returned),
     // Stated lasting: what the call declared it would lastingly do, or an act of the instruction it says it does.
     ...(automationStudioFlowDraftDeclaresLasting(decision.input.consequences) || decision.act !== undefined ? { lasting: true } : {}),

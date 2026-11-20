@@ -1,4 +1,5 @@
 // @fluxiq-test-group real-sql
+import { createPasswordSealedKey } from "../programs/secret-keys/runtime/tests/secret-key-fixtures.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -39,7 +40,7 @@ it("executes an ordinary saved native Flow without releasing a retained key or d
     const service = fluxiq.programs.automationStudio;
     const keys = fluxiq.programs.secretKeys;
     const identity = fluxiq.programs.identityAccess;
-    const key = await keys.createKey({
+    const key = await createPasswordSealedKey(keys, {
       name: "Fixture DeepSeek", value: "fixture-only-provider-secret", provider: "deepseek",
       authorizationPassword: "fixture-only-password"
     });

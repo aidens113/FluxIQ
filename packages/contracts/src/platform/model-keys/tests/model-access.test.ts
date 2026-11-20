@@ -13,6 +13,12 @@ describe("model-access state", () => {
     expect(readModelAccessState({ status: "not_permitted", message: "Not yours.", key: null, lastCall: null })?.status).toBe("not_permitted");
   });
 
+  it("reads no_credit with its own call outcome and refuses it without one", () => {
+    expect(readModelAccessState({ status: "no_credit", message: "No credit.", key, lastCall: { outcome: "no_credit", atMs: 4 } })?.status).toBe("no_credit");
+    expect(readModelAccessState({ status: "no_credit", message: "No credit.", key, lastCall: { outcome: "provider_refused", atMs: 4 } })).toBeNull();
+    expect(readModelAccessState({ status: "no_credit", message: "No credit.", key: null, lastCall: null })).toBeNull();
+  });
+
   it("refuses a state that contradicts itself rather than showing it as ready", () => {
     for (const value of [
       null, [], {}, { status: "locked", message: "x", key: null, lastCall: null },

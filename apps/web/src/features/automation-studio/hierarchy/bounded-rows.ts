@@ -22,7 +22,7 @@ export function selectAutomationHierarchyRowWindow<T>(input: {
       rows: input.rows,
       remaining: 0,
       canLoadMore: input.pageInfo.hasMore || Boolean(input.pageInfo.invalidated),
-      loadMoreLabel: input.pageInfo.loading ? "Loading..." : input.pageInfo.invalidated ? "Refresh folder" : "Load more",
+      loadMoreLabel: input.pageInfo.loading ? "Loading…" : input.pageInfo.invalidated ? "Refresh folder" : "Load more",
       loading: Boolean(input.pageInfo.loading)
     };
   }

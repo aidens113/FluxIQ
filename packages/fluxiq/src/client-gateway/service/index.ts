@@ -17,6 +17,7 @@ export * from "./event-bus.ts";
 export * from "./credential-custody.ts";
 export * from "./inbound.ts";
 export * from "./lifecycle.ts";
+export * from "./model-access/index.ts";
 export * from "./pairing-flow.ts";
 export * from "./pairings.ts";
 export * from "./project-focus/index.ts";

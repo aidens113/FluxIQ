@@ -101,3 +101,11 @@ test("the default date is readable words, not an id or a raw number", () => {
   assert.ok(!first!.label.includes("1793"));
   assert.notEqual(first!.label, second!.label);
 });
+
+test("the assistant's own thread is never named for a project, and a host may name the chat that has no thread yet", () => {
+  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" } }), "Company website"), "FluxIQ assistant");
+  assert.equal(conversationDisplayTitle(summary("a", { subject: { kind: "panel" }, title: "Invoices" }), "Company website"), "Invoices");
+  assert.equal(conversationDisplayTitle(null, null, "New chat"), "New chat");
+  assert.equal(conversationDisplayTitle(null, "Company website", "New chat"), "Company website");
+  assert.equal(conversationDisplayTitle(null, "  ", "  "), "All projects");
+});

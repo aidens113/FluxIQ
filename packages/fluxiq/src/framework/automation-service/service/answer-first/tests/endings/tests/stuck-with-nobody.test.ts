@@ -3,7 +3,9 @@
 // park at `waiting_for_person` (`stuck_in_a_loop`) and spend nothing more. A task ends only with
 // its result, its budget or a person's Stop, so now it is steered onto a different way each time
 // the ladder's last rung fires, posts no question, and goes on until its purse is gone. It is
-// never a waiting row, so a restart has nothing to call interrupted.
+// never a waiting row, so a restart has nothing to call interrupted. Since t962 the ladder never
+// asks the person by itself, with or without somebody to ask: each stopped round is told what it
+// repeated and to take a different approach (`tried.loopStopped`).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { automationStudioAnswerFirstInterruptedView } from "../../../interrupted/index.ts";
 import { complete, READ_LOANS, runNode, scriptedAttempt } from "../../fake-library.ts";
@@ -37,12 +39,15 @@ describe("a stuck attempt with nobody to ask", () => {
     expect(answer.result?.rows?.totalRows).toBe(3);
     // The same refused completion is never judged again.
     expect(judgeCalls(attempt)).toHaveLength(1);
-    expect(Object.values(answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBeGreaterThanOrEqual(1);
-    // Each stopped loop's next round is told to take a different way, and that nobody was asked.
+    expect(Object.values(answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBe(0);
+    expect(answer.attempt.loopsCaught.near_repeat.changeApproach).toBeGreaterThanOrEqual(1);
+    // Each stopped loop's next round is told what it repeated and to take a different approach, and nobody was asked.
     const steered = decisions(attempt).filter((request) => JSON.stringify(request.context).includes("loopStopped"));
     expect(steered.length).toBeGreaterThanOrEqual(1);
-    for (const request of steered) expect(JSON.stringify(request.context)).not.toContain("personAsked");
-    expect(attempt.said.some((line) => line.includes("Trying a different way"))).toBe(true);
+    for (const request of steered) {
+      expect(JSON.stringify(request.context)).toContain("Take a different approach");
+      expect(JSON.stringify(request.context)).not.toContain("personAsked");
+    }
     const kept = await keptAttempt(attempt.service, attempt.projectId, attempt.flowId);
     expect(kept).toBeDefined();
     expect(automationStudioAnswerFirstInterruptedView(kept!)).toBeUndefined();

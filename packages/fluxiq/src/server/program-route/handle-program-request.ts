@@ -5,13 +5,13 @@ import { pairedClientProjectDomainRefusal, type PairedClientProjectDomainRefusal
 import { personDomainScope } from "./person-domain-scope.ts";
 import { presentPanelSession } from "./present-panel-session.ts";
 import { managedClientAuthority } from "../managed-hosts/index.ts";
+import { pairedClientEndpointActor } from "./paired-client-actor.ts";
 import { programJsonText } from "./program-json-text.ts";
 import type { ProgramRouteIdentityAuthority } from "./identity-authority.ts";
 import {
   isPairedClientClassification,
   isPairedClientEndpoint,
   narrowPairedClientRequest,
-  pairedClientActor,
   pairedClientDomainScope,
   pairedClientProjectTarget,
   programResponseStatus,
@@ -171,7 +171,8 @@ async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: Fl
   const notAvailable = "This endpoint is not available to a paired client.";
   if (!isPairedClientEndpoint(programId, endpoint)) return refuse(403, notAvailable);
   const classification = fluxiq.programs.api.endpoints().find((entry) => entry.programId === programId && entry.endpoint === endpoint)?.classification;
-  if (!isPairedClientClassification(classification)) return refuse(403, notAvailable);
+  // Named, because a `program-gated` endpoint is reachable by token only where it is the person's own model key (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`).
+  if (!isPairedClientClassification(classification, programId, endpoint)) return refuse(403, notAvailable);
   if (guard) {
     const refusal = await checkAuthorityGuard(guard);
     if (refusal) return refusal;
@@ -185,7 +186,8 @@ async function authenticatePairedClient(request: ProgramRouteRequest, fluxiq: Fl
     const scope = pairedClientDomainScope(request.url, session);
     return scope ? { kind: "paired-client", actor: managed.actor, scope, currentProjectId: managed.projectId, binding, managed } : refuse(403, "A managed host may only reach its own domain.");
   }
-  const actor = pairedClientActor<ProgramActor["permissions"][number]>(session, await identityAuthority.snapshot());
+  // The endpoint's own actor: `secrets.manage` rides only on the person's own model-key writes, never on another call (t955).
+  const actor = pairedClientEndpointActor<ProgramActor["permissions"][number]>(session, await identityAuthority.snapshot(), programId, endpoint);
   if (!actor) return refuse(401, "Authentication required");
   const scope = pairedClientDomainScope(request.url, session);
   if (!scope) return refuse(403, "A paired client may only reach its own domain.");

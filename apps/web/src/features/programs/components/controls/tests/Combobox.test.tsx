@@ -198,7 +198,7 @@ describe("Combobox keyboard and query journeys", () => {
     expect(input().props["aria-activedescendant"]).toBeUndefined();
     expect(press("Enter")).not.toHaveBeenCalled();
     expect(props.onChange).not.toHaveBeenCalled();
-    expect(renderer!.root.findByProps({ className: "combobox-empty" }).children).toEqual(["Loading options..."]);
+    expect(renderer!.root.findByProps({ className: "combobox-empty" }).children).toEqual(["Loading options…"]);
     update({ options: [options[1]!], loading: false });
     press("ArrowDown"); press("ArrowUp"); expect(activeLabel()).toBe("Beta");
     press("Enter"); expect(vi.mocked(props.onChange).mock.calls).toEqual([["beta"]]);

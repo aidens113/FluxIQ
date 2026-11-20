@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
-import { FLUXIQ_CONNECT_PATHS, isCrossSiteRequest, isOperatorOnlyPath } from "./lib/request-guard";
+import { FLUXIQ_CONNECT_PATHS, isClosedPlansPath, isClosedSignupPath, isCrossSiteRequest, isOperatorOnlyPath } from "./lib/request-guard";
 import { currentPanelPreset, isHiddenPanelPath } from "./app/product/preset";
 
 function refuse(code: string, status: number): NextResponse {
@@ -26,7 +26,7 @@ function connectHeaders(pathname: string, response: NextResponse): NextResponse 
   return response;
 }
 
-/** Discovery rewrite, operator-only endpoints on public profiles, screens the panel preset hides, and the cross-site guard for cookie-carrying writes. */
+/** Discovery rewrite, operator-only endpoints on public profiles, screens the panel preset hides (and the sign-up page while sign-up is closed, the plan page while billing is off), and the cross-site guard for cookie-carrying writes. */
 export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
   if (pathname === FLUXIQ_CONNECT_PATHS.discovery) {
@@ -41,7 +41,7 @@ export function middleware(request: NextRequest): NextResponse {
     return connectHeaders(pathname, refuse("deployment_misconfigured", 500));
   }
   if (settings.public && isOperatorOnlyPath(pathname)) return connectHeaders(pathname, refuse("operator_only", 403));
-  if (isHiddenPanelPath(pathname, preset)) return connectHeaders(pathname, NextResponse.rewrite(new URL(HIDDEN_SCREEN_PATH, request.url)));
+  if (isHiddenPanelPath(pathname, preset) || isClosedSignupPath(pathname, settings.signup) || isClosedPlansPath(pathname, process.env.FLUXIQ_COMMERCE_CONFIG_FILE)) return connectHeaders(pathname, NextResponse.rewrite(new URL(HIDDEN_SCREEN_PATH, request.url)));
   const crossSite = isCrossSiteRequest({
     method: request.method,
     headers: request.headers,

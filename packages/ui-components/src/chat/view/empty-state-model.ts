@@ -12,7 +12,8 @@
 // concept and no examples about the page. No DOM.
 
 import type { ConversationMode } from "../conversation/index.ts";
-import { modelUnavailableWords, type ModelReadiness } from "../onboarding/index.ts";
+import type { ModelAccessState } from "../../model-access/index.ts";
+import { modelAccessFromReadiness, modelUnavailableWords, type ModelReadiness } from "../onboarding/index.ts";
 import type { ChatWelcome, ChatWelcomeItem } from "../ports/index.ts";
 import type { ChatTarget } from "../target.ts";
 
@@ -26,6 +27,8 @@ export type EmptyStateModel = {
   starts: readonly EmptyStart[];
   /** Model configuration feedback; it does not restrict the composer or deterministic work. */
   keyLine: string | null;
+  /** The state of the key while `keyLine` shows: a host with a model-keys port draws the key card from it instead of the line. */
+  access: ModelAccessState | null;
   examples: readonly string[];
   /** A host's welcome lines, each with its icon; empty except in a welcome. */
   items: readonly ChatWelcomeItem[];
@@ -42,8 +45,8 @@ export const ONBOARDING_CONCEPT =
   + "It saves the steps, so it can repeat the job later without AI. "
   + "You can stop it at any time.";
 
-/** Said when no model key is enabled; Extract still works, because it needs no model. */
-export const MODEL_KEY_LINE = "FluxIQ needs a model key before it can build. Add one in FluxIQ.";
+/** Said when no AI key is enabled and the host has no card to add one with; Extract still works, because it needs no model. */
+export const MODEL_KEY_LINE = "Add an AI key to start. FluxIQ uses it to understand and build what you ask.";
 
 
 const LATEST_STARTS: readonly EmptyStart[] = [
@@ -86,7 +89,7 @@ export function emptyStateModel(
         return {
           ...quiet(offers.welcome.title, offers.welcome.line),
           items: offers.welcome.items,
-          keyLine: target.kind === "latest" ? keyLineFor(readiness) : null
+          ...(target.kind === "latest" ? keyOf(readiness) : { keyLine: null, access: null })
         };
       }
       if (automation !== undefined) {
@@ -100,7 +103,7 @@ export function emptyStateModel(
         title,
         line: ONBOARDING_CONCEPT,
         starts: offers.extract ? LATEST_STARTS : LATEST_STARTS.filter((start) => start.id !== "extract"),
-        keyLine: keyLineFor(readiness),
+        ...keyOf(readiness),
         examples: LATEST_EXAMPLES,
         items: []
       };
@@ -114,11 +117,11 @@ export function emptyStateModel(
 }
 
 /** Missing model setup or a saved-key problem; neither changes client authentication. */
-function keyLineFor(readiness: ModelReadiness): string | null {
-  if (readiness === "missing") return MODEL_KEY_LINE;
-  return modelUnavailableWords(readiness);
+function keyOf(readiness: ModelReadiness): { keyLine: string | null; access: ModelAccessState | null } {
+  const line = readiness === "missing" ? MODEL_KEY_LINE : modelUnavailableWords(readiness);
+  return { keyLine: line, access: line === null ? null : modelAccessFromReadiness(readiness) };
 }
 
 function quiet(title: string, line: string): EmptyStateModel {
-  return { title, line, starts: [], keyLine: null, examples: [], items: [] };
+  return { title, line, starts: [], keyLine: null, access: null, examples: [], items: [] };
 }

@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { PaymentProviderUnavailableError } from "../payment-provider-unavailable-error.ts";
 import { PaymentWebhookVerificationError } from "../payment-webhook-verification-error.ts";
 import { signWebhookPayload, verifyWebhookSignature } from "../signature/index.ts";
 import type {
   PaymentCheckout,
+  PaymentCheckoutExpiry,
   PaymentCheckoutRequest,
   PaymentPortalRequest,
   PaymentProvider,
@@ -11,7 +13,7 @@ import type {
   ProviderWebhookEvent
 } from "../types.ts";
 
-type FakeEventBody = { id: string; type: string; subscriptionId: string | null };
+type FakeEventBody = { id: string; type: string; subscriptionId: string | null; checkout?: ProviderWebhookEvent["checkout"] };
 
 /**
  * An in-memory payment provider for tests and local development. It keeps
@@ -23,6 +25,14 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly providerId: string;
   /** How often each subscription was fetched, so tests can prove a duplicate made no provider call. */
   readonly fetches = new Map<string, number>();
+  /** Each cancellation the fake carried out, by idempotency key: a retry with the same key is not another one. */
+  readonly cancellations = new Map<string, string>();
+  /** Each customer closure, by idempotency key. */
+  readonly customerClosures = new Map<string, string>();
+  /** Each checkout the fake created, by id: the plan it sells and whether it is open, completed or expired. */
+  readonly checkouts = new Map<string, { planId: string; accountId: string; customerId: string | null; status: "open" | "completed" | "expired" }>();
+  /** While true, cancelling, closing and expiring throw `PaymentProviderUnavailableError`, as an outage would. */
+  unavailable = false;
   private readonly subscriptions = new Map<string, ProviderSubscriptionState>();
   private readonly webhookSecret: string;
   private readonly now: () => number;
@@ -51,7 +61,23 @@ export class FakePaymentProvider implements PaymentProvider {
   async createCheckout(request: PaymentCheckoutRequest): Promise<PaymentCheckout> {
     this.checkoutCount += 1;
     const checkoutId = `fake_cs_${this.checkoutCount}`;
+    this.checkouts.set(checkoutId, { planId: request.planId, accountId: request.accountId, customerId: request.customerId ?? null, status: "open" });
     return { checkoutId, url: `https://checkout.fake.invalid/${checkoutId}?plan=${encodeURIComponent(request.planId)}`, expiresAtMs: this.now() + this.checkoutLifetimeMs };
+  }
+
+  /** Marks a checkout completed, as a person paying would; its subscription is set separately with `putSubscription`. */
+  completeCheckout(checkoutId: string): void {
+    const checkout = this.checkouts.get(checkoutId);
+    if (checkout === undefined) throw new Error(`The fake provider has no checkout ${checkoutId}`);
+    checkout.status = "completed";
+  }
+
+  async expireCheckout(checkoutId: string): Promise<PaymentCheckoutExpiry> {
+    if (this.unavailable) throw new PaymentProviderUnavailableError("expireCheckout");
+    const checkout = this.checkouts.get(checkoutId);
+    if (checkout?.status === "completed") return "completed";
+    if (checkout !== undefined) checkout.status = "expired";
+    return "expired";
   }
 
   async createPortal(request: PaymentPortalRequest): Promise<{ url: string }> {
@@ -66,7 +92,25 @@ export class FakePaymentProvider implements PaymentProvider {
     if (typeof body.id !== "string" || body.id === "" || typeof body.type !== "string" || (body.subscriptionId !== null && typeof body.subscriptionId !== "string")) {
       throw new PaymentWebhookVerificationError("malformed-payload");
     }
-    return { eventId: body.id, type: body.type, payloadSha256: sha256(rawBody), subscriptionId: body.subscriptionId ?? null };
+    const checkout = body.checkout ?? null;
+    if (checkout !== null && (typeof checkout.checkoutId !== "string" || checkout.checkoutId === "" || !["completed", "expired"].includes(checkout.outcome))) {
+      throw new PaymentWebhookVerificationError("malformed-payload");
+    }
+    return { eventId: body.id, type: body.type, payloadSha256: sha256(rawBody), subscriptionId: body.subscriptionId ?? null, checkout: checkout === null ? null : { checkoutId: checkout.checkoutId, outcome: checkout.outcome } };
+  }
+
+  async cancelSubscription(subscriptionId: string, options: { idempotencyKey: string }): Promise<void> {
+    if (this.unavailable) throw new PaymentProviderUnavailableError("cancelSubscription");
+    if (this.cancellations.has(options.idempotencyKey)) return;
+    this.cancellations.set(options.idempotencyKey, subscriptionId);
+    const stored = this.subscriptions.get(subscriptionId);
+    if (stored === undefined || stored.status === "canceled") return;
+    this.subscriptions.set(subscriptionId, { ...stored, status: "canceled", cancelAtPeriodEnd: false, endedAtMs: this.now(), entitlements: [] });
+  }
+
+  async closeCustomer(customerId: string, options: { idempotencyKey: string }): Promise<void> {
+    if (this.unavailable) throw new PaymentProviderUnavailableError("closeCustomer");
+    if (!this.customerClosures.has(options.idempotencyKey)) this.customerClosures.set(options.idempotencyKey, customerId);
   }
 
   async getSubscription(subscriptionId: string): Promise<ProviderSubscriptionFetch | null> {

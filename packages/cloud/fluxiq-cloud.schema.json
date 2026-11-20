@@ -14,8 +14,7 @@
     "tls",
     "instance",
     "gateway",
-    "email",
-    "payments"
+    "email"
   ],
   "properties": {
     "$schema": {
@@ -33,6 +32,13 @@
         "production"
       ],
       "description": "local: a rehearsal on this machine (local certificate authority, Mailpit, stripe-mock). production: a real server with a domain (ACME, a real SMTP relay, Stripe)."
+    },
+    "mode": {
+      "enum": [
+        "service",
+        "self-hosted"
+      ],
+      "description": "service (default): the hosted multi-user service, with billing, the provisioning listener and sign-up. self-hosted: one company's own server with the full base product and no billing, provisioning or payments."
     },
     "driver": {
       "enum": [
@@ -137,6 +143,13 @@
       "pattern": "^https://",
       "description": "Where the extension sends someone with no account yet."
     },
+    "signup": {
+      "enum": [
+        "off",
+        "open"
+      ],
+      "description": "Service only (default off): whether anyone may create their own account (FLUXIQ_SIGNUP); off leaves account creation to the provisioning listener."
+    },
     "gateway": {
       "type": "object",
       "additionalProperties": false,
@@ -207,6 +220,7 @@
       "required": [
         "apiBase"
       ],
+      "description": "Service only, and required there: the payments API and the files holding its keys.",
       "properties": {
         "apiBase": {
           "type": "string",
@@ -217,6 +231,152 @@
           "type": "string",
           "minLength": 1,
           "description": "A file holding the Stripe secret key (test or live), relative to this file or absolute. Generated for stripe-mock when absent locally."
+        },
+        "webhookSecretFile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A file holding the webhook signing secret Stripe gives this endpoint (whsec_...), relative to this file or absolute. Required with billing on a server; generated while the stripe-mock sink runs."
+        }
+      }
+    },
+    "billing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "allowTrial",
+        "graceMs",
+        "retentionMs",
+        "refreshAfterMs",
+        "plans"
+      ],
+      "description": "Service only. What the deployment sells and how long coverage outlasts payment. Rendered as Core's commerce configuration (FLUXIQ_COMMERCE_CONFIG_FILE); absent, the deployment bills nothing.",
+      "properties": {
+        "provider": {
+          "enum": [
+            "stripe",
+            "fake"
+          ],
+          "description": "stripe: Stripe (or stripe-mock locally). fake: Core's in-memory test provider, local profile only."
+        },
+        "allowTrial": {
+          "type": "boolean",
+          "description": "Whether a trialing subscription admits new work."
+        },
+        "graceMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long after paid coverage ended unpaid new work is still admitted (past due inside grace); 0 admits none."
+        },
+        "retentionMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How long a lapsed account's data is kept."
+        },
+        "refreshAfterMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "A subscription not verified for this long is re-fetched from the provider."
+        },
+        "maxVerificationAgeMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How old a verification cloud admission still trusts; must exceed refreshAfterMs. Default twice refreshAfterMs."
+        },
+        "checkoutLifetimeMs": {
+          "type": "integer",
+          "minimum": 1800000,
+          "maximum": 86400000,
+          "description": "How long a started checkout stays payable (30 minutes to 24 hours). Default one hour."
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The region the deployment's dedicated browsers run in, matched against dedicated grants. Default: the one region every dedicated grant names."
+        },
+        "plans": {
+          "type": "object",
+          "description": "The plans sold, by plan id.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "priceId",
+              "grants"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "description": "The plan's name on the plans page (default its id)."
+              },
+              "priceId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The provider price the plan is sold as."
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "How many of what the price counts the checkout sells: dedicated browsers or seats (default 1; a flat price sells 1)."
+              },
+              "unit": {
+                "enum": [
+                  "dedicated-browser",
+                  "seat",
+                  "flat"
+                ],
+                "description": "What this price counts, the Stripe item quantity being the count: dedicated-browser (a dedicated browser each), seat (a team seat each) or flat (default: one price for the whole plan)."
+              },
+              "grants": {
+                "type": "array",
+                "minItems": 1,
+                "description": "What the plan grants.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "key",
+                    "allocation",
+                    "capabilities"
+                  ],
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "The entitlement key."
+                    },
+                    "allocation": {
+                      "enum": [
+                        "control",
+                        "shared",
+                        "dedicated"
+                      ],
+                      "description": "The allocation class."
+                    },
+                    "capabilities": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "The capabilities granted."
+                    },
+                    "regions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "Where the grant applies; required unless the allocation is control."
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -251,6 +411,61 @@
         }
       }
     },
+    "environments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runner"
+      ],
+      "description": "Dedicated browsers on a local rehearsal (service, local profile, billing with a dedicated grant): one runner container per environment, created by Core's docker driver. Production runs one virtual machine per environment instead (the vm driver, not built yet).",
+      "properties": {
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "context"
+          ],
+          "properties": {
+            "context": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The runner image's build context: the FluxIQ web extension checkout (with apps/extension/dist/chrome and packages/browser-host/dist built), relative to this file or absolute."
+            },
+            "dockerfile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The runner's Dockerfile inside the context (default deploy/runner/Dockerfile)."
+            },
+            "domain": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "description": "The domain the runner's client declares at the gateway, which its enrolment tickets are minted for (default web-automation, the web extension's)."
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "memory": {
+              "type": "string",
+              "pattern": "^[0-9]+[kmg]$",
+              "description": "Each runner's memory limit (default 1g)."
+            },
+            "cpus": {
+              "type": "string",
+              "pattern": "^[0-9]+(\\.[0-9]+)?$",
+              "description": "Each runner's CPU limit (default 1)."
+            },
+            "pids": {
+              "type": "integer",
+              "minimum": 64,
+              "description": "Each runner's process limit (default 512)."
+            }
+          }
+        }
+      }
+    },
     "images": {
       "type": "object",
       "additionalProperties": false,
@@ -259,6 +474,11 @@
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9._/-]*$",
           "description": "The repository Core's image is tagged in (default fluxiq-cloud/core); the tag is the package version."
+        },
+        "runner": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "description": "The repository the dedicated browsers' runner image is tagged in (default fluxiq-cloud/runner); the tag is the package version."
         },
         "caddy": {
           "type": "string",

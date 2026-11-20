@@ -1,15 +1,16 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { decodeKdfSalt } from "../../_shared/password-kdf/index.ts";
-import type { EncryptedSecretValueRecord, SecretKeyRecord } from "../types.ts";
+import type { EncryptedSecretValueRecordV3, PasswordSealedSecretValueRecord, SecretKeyRecord } from "../types.ts";
 import type { SecretValueSealer } from "./value-sealer.ts";
 
 /**
  * The read guard for stored Secret Keys records. A seal's `version` must match
  * its fields: version 1 carries no `kdfParams` or `sealedByUserId`; version 2
- * carries `kdfParams` and a salt that decodes to bytes. Its parameters must be
- * in the sealer's read allowlist. A pending seal, when present, must be an
- * accepted version 2 seal. Any other record is skipped, so a tampered record
- * cannot request a derivation.
+ * carries `kdfParams` and a salt that decodes to bytes, and its parameters must
+ * be in the sealer's read allowlist; version 3 (host-sealed) carries no salt,
+ * `kdf`, `kdfParams` or `sealedByUserId`, since nothing is derived for it. A
+ * pending seal, when present, must be an accepted version 2 seal. Any other
+ * record is skipped, so a tampered record cannot request a derivation.
  */
 export function isSecretKeyRecord(value: unknown, sealer: SecretValueSealer): value is SecretKeyRecord {
   if (!isObject(value)) return false;
@@ -28,7 +29,14 @@ export function isSecretKeyRecord(value: unknown, sealer: SecretValueSealer): va
 }
 
 function isAcceptedSeal(value: unknown, sealer: SecretValueSealer): boolean {
+  if (isHostSeal(value)) return true;
   return isEncryptedSecretValueRecord(value) && sealer.parametersOf(value) !== null;
+}
+
+function isHostSeal(value: unknown): value is EncryptedSecretValueRecordV3 {
+  if (!isObject(value) || value.version !== 3 || value.algorithm !== "aes-256-gcm") return false;
+  if ("salt" in value || "kdf" in value || "kdfParams" in value || "sealedByUserId" in value) return false;
+  return typeof value.iv === "string" && typeof value.tag === "string" && typeof value.ciphertext === "string";
 }
 
 /** A pending seal is written by a credential change at the write parameters, so it is always version 2. */
@@ -36,7 +44,7 @@ function isAcceptedPendingSeal(value: unknown, sealer: SecretValueSealer): boole
   return isEncryptedSecretValueRecord(value) && value.version === 2 && sealer.parametersOf(value) !== null;
 }
 
-function isEncryptedSecretValueRecord(value: unknown): value is EncryptedSecretValueRecord {
+function isEncryptedSecretValueRecord(value: unknown): value is PasswordSealedSecretValueRecord {
   if (!isObject(value)) return false;
   if (value.algorithm !== "aes-256-gcm" || value.kdf !== "scrypt") return false;
   const { salt, iv, tag, ciphertext } = value;

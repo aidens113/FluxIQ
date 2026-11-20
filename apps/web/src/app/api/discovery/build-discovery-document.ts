@@ -1,4 +1,5 @@
 import { resolveFluxIQDeploymentSettings } from "fluxiq/platform/profile";
+import { resolveInstanceId } from "../../../server/key-sessions/instance-id";
 import { readCoreRuntimeBuildIdentity } from "fluxiq/runtime";
 import { CLIENT_GATEWAY_PROTOCOL_VERSIONS, FLUXIQ_CONNECT_PATHS, fluxiqDiscoveryDocumentSchema } from "../../../lib/request-guard";
 
@@ -13,7 +14,7 @@ export function buildDiscoveryDocument(env: Readonly<Record<string, string | und
     return { ok: false, fields: ["deployment_settings"] };
   }
   const signUpUrl = env.FLUXIQ_SIGN_UP_URL?.trim();
-  const instanceId = env.FLUXIQ_INSTANCE_ID?.trim();
+  const instanceId = resolveInstanceId(env, settings);
   if (settings.profile === "service" && !instanceId) return { ok: false, fields: ["instance.id"] };
   const identity = readCoreRuntimeBuildIdentity();
   const candidate = {

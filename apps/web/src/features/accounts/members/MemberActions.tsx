@@ -21,7 +21,7 @@ export function MemberActions(props: { member: MemberRow; view: Pick<MembersView
   const [step, setStep] = useState<Step | null>(null);
 
   if (view.readOnly) return <span className="accounts-muted">Member access is read-only here.</span>;
-  if (member.self) return <span className="accounts-muted">Your own access is changed by another administrator.</span>;
+  if (member.self) return null;
   if (member.role === "owner") return <span className="accounts-muted">The owner's access is changed only by whoever runs this FluxIQ.</span>;
   if (member.state === "invited") return <span className="accounts-muted">Invited. Their invite is listed under Invites.</span>;
 

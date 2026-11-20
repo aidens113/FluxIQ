@@ -1,9 +1,10 @@
 import { CommerceConflictError } from "../model/index.ts";
-import type { CommerceBillingPolicy, CommerceEventResult, CommerceLedger, VerifiedCommerceEvent } from "../model/index.ts";
+import type { CommerceBillingPolicy, CommerceCheckoutRecord, CommerceEventResult, CommerceLedger, VerifiedCommerceEvent } from "../model/index.ts";
 import { CommerceBillingError } from "./commerce-billing-error.ts";
 import { deriveCommerceEntitlement } from "./derive-entitlement.ts";
 import type {
   CommerceBillingServiceOptions,
+  CommerceCloseReport,
   CommerceEntitlement,
   CommerceReconcileReport,
   CommerceWebhookResult,
@@ -54,10 +55,18 @@ export class CommerceBillingService {
     return deriveCommerceEntitlement({ accountId, subscriptions, checkouts, nowMs: this.clock(), policy: this.policy });
   }
 
-  /** Starts a provider checkout for the paying account and records it, so the account reads `checkout-pending`. */
+  /**
+   * Starts a provider checkout of one configured plan for the paying account
+   * and records it (account, plan, customer), so the account reads
+   * `checkout-pending` and the subscription it creates resolves to this
+   * account through FluxIQ's record. The account's open checkout, if any, is
+   * expired at the provider first, so one account never has two payable.
+   */
   async createCheckout(request: PaymentCheckoutRequest): Promise<PaymentCheckout> {
     if (![request.accountId, request.planId, request.successUrl, request.cancelUrl].every(identifier)) throw new CommerceBillingError("invalid-request");
+    await this.expireOpenCheckouts(request.accountId);
     const customerId = await this.customerOf(request.accountId);
+    const createdAtMs = this.clock();
     const checkout = await this.provider.createCheckout({
       accountId: request.accountId,
       planId: request.planId,
@@ -69,10 +78,23 @@ export class CommerceBillingService {
       accountId: request.accountId,
       providerId: this.provider.providerId,
       checkoutId: checkout.checkoutId,
-      createdAtMs: this.clock(),
-      expiresAtMs: checkout.expiresAtMs
+      planId: request.planId,
+      customerId: customerId ?? null,
+      createdAtMs,
+      expiresAtMs: checkout.expiresAtMs,
+      subscriptionId: null,
+      completedAtMs: null,
+      expiredAtMs: null
     });
     return checkout;
+  }
+
+  /** The account's checkouts, newest first, from the ledger. */
+  async listCheckouts(accountId: string): Promise<CommerceCheckoutRecord[]> {
+    if (!identifier(accountId)) throw new CommerceBillingError("invalid-request");
+    return (await this.ledger.listCheckouts(accountId))
+      .filter((checkout) => checkout.accountId === accountId)
+      .sort((left, right) => right.createdAtMs - left.createdAtMs);
   }
 
   /** A provider billing portal for the account's own customer; the customer comes from the ledger, never the caller. */
@@ -90,11 +112,13 @@ export class CommerceBillingService {
    */
   async ingestWebhook(rawBody: string, signatureHeader: string | null): Promise<CommerceWebhookResult> {
     const event = await this.provider.verifyWebhook(rawBody, signatureHeader);
+    if (event.checkout !== null) await this.settleCheckout(event.checkout.checkoutId, event.checkout.outcome, event.subscriptionId);
     if (event.subscriptionId === null) return { eventId: event.eventId, outcome: "ignored", subscriptionId: null, version: null };
     const recorded = await this.recordedDelivery(event.eventId, event.payloadSha256);
     if (recorded !== null) return recorded;
     try {
       const result = await this.reconcile(event.subscriptionId, { eventId: event.eventId, payloadSha256: event.payloadSha256 });
+      if (result === null) return { eventId: event.eventId, outcome: "unbound", subscriptionId: event.subscriptionId, version: null };
       return { eventId: event.eventId, outcome: result.duplicate ? "duplicate" : result.outcome, subscriptionId: result.subscriptionId, version: result.version };
     } catch (error) {
       // A concurrent delivery of the same event committed first under this event id.
@@ -109,7 +133,9 @@ export class CommerceBillingService {
   /** Fetches the provider's current state of one subscription and records it as the next version. */
   async reconcileSubscription(subscriptionId: string): Promise<CommerceEventResult> {
     if (!identifier(subscriptionId)) throw new CommerceBillingError("invalid-request");
-    return this.reconcile(subscriptionId, null);
+    const result = await this.reconcile(subscriptionId, null);
+    if (result === null) throw new CommerceBillingError("subscription-unbound");
+    return result;
   }
 
   /**
@@ -133,6 +159,36 @@ export class CommerceBillingService {
     return report;
   }
 
+  /**
+   * Account deletion's billing step: expires the payer's open checkout, so
+   * nothing can be paid for a closing account, cancels every subscription of the payer
+   * that has not ended, records the provider's ended state for each (the
+   * entitlement then reads `ended`; ledger rows, which hold the account id and
+   * no email, stay for `policy.retentionMs`), then closes the payer's
+   * customers. Every provider call carries an idempotency key derived from
+   * `operationId` (the deletion receipt), so a retry after an outage
+   * (`PaymentProviderUnavailableError`, thrown as it came) cancels each
+   * subscription once. Customers and subscriptions come from the ledger,
+   * never the caller.
+   */
+  async closeAccount(accountId: string, operationId: string): Promise<CommerceCloseReport> {
+    if (!identifier(accountId) || !identifier(operationId)) throw new CommerceBillingError("invalid-request");
+    const subscriptions = (await this.ledger.listSubscriptions(accountId))
+      .filter((subscription) => subscription.providerId === this.provider.providerId && subscription.accountId === accountId);
+    const report: CommerceCloseReport = { checkoutsExpired: await this.expireOpenCheckouts(accountId), cancelled: [], customersClosed: [] };
+    for (const subscription of subscriptions) {
+      if (subscription.status === "canceled" || subscription.endedAtMs !== null) continue;
+      await this.provider.cancelSubscription(subscription.subscriptionId, { idempotencyKey: `${operationId}:cancel:${subscription.subscriptionId}` });
+      await this.reconcile(subscription.subscriptionId, null);
+      report.cancelled.push(subscription.subscriptionId);
+    }
+    for (const customerId of new Set(subscriptions.map((subscription) => subscription.customerId))) {
+      await this.provider.closeCustomer(customerId, { idempotencyKey: `${operationId}:close:${customerId}` });
+      report.customersClosed.push(customerId);
+    }
+    return report;
+  }
+
   /** The account's provider customer, from its ledger subscriptions; the caller never names it. */
   private async customerOf(accountId: string): Promise<string | undefined> {
     const subscriptions = (await this.ledger.listSubscriptions(accountId))
@@ -147,7 +203,46 @@ export class CommerceBillingService {
     return { eventId, outcome: "duplicate", subscriptionId: stored.receipt.subscriptionId, version: stored.receipt.version };
   }
 
-  private async reconcile(subscriptionId: string, origin: { eventId: string; payloadSha256: string } | null): Promise<CommerceEventResult> {
+  /**
+   * Expires every open checkout of the account at the provider and records
+   * it; one the provider had already completed is left to its completion.
+   * Answers the checkouts expired.
+   */
+  private async expireOpenCheckouts(accountId: string): Promise<string[]> {
+    const nowMs = this.clock();
+    const open = (await this.ledger.listCheckouts(accountId)).filter((checkout) => checkout.accountId === accountId
+      && checkout.providerId === this.provider.providerId
+      && checkout.completedAtMs === null && checkout.expiredAtMs === null && nowMs < checkout.expiresAtMs);
+    const expired: string[] = [];
+    for (const checkout of open) {
+      if (await this.provider.expireCheckout(checkout.checkoutId) !== "expired") continue;
+      await this.ledger.expireCheckout(this.provider.providerId, checkout.checkoutId, this.clock());
+      expired.push(checkout.checkoutId);
+    }
+    return expired;
+  }
+
+  /** Records what a signed checkout event reports: a completion binds its subscription to the checkout's account. */
+  private async settleCheckout(checkoutId: string, outcome: "completed" | "expired", subscriptionId: string | null): Promise<void> {
+    if (!identifier(checkoutId)) return;
+    if (outcome === "expired") {
+      await this.ledger.expireCheckout(this.provider.providerId, checkoutId, this.clock());
+      return;
+    }
+    if (subscriptionId === null) return;
+    await this.ledger.completeCheckout({ providerId: this.provider.providerId, checkoutId, subscriptionId, completedAtMs: this.clock() });
+  }
+
+  /**
+   * Fetches the provider's current state of one subscription and writes it
+   * as the next ledger version, under the account FluxIQ's own records bind
+   * it to: its stored snapshot, else the checkout that created it, else the
+   * customer an earlier subscription bound. The provider's echo of the
+   * account is only cross-checked, never followed, so forged metadata cannot
+   * move a subscription to another account. Null when no record binds it
+   * yet (nothing is written).
+   */
+  private async reconcile(subscriptionId: string, origin: { eventId: string; payloadSha256: string } | null): Promise<CommerceEventResult | null> {
     const providerId = this.provider.providerId;
     // Ends when a write commits: each lost compare-and-set means another writer committed newer provider state.
     for (;;) {
@@ -155,13 +250,19 @@ export class CommerceBillingService {
       const fetched = await this.provider.getSubscription(subscriptionId);
       if (fetched === null) throw new CommerceBillingError("subscription-missing-at-provider");
       if (fetched.subscription.subscriptionId !== subscriptionId) throw new TypeError("Payment provider returned a different subscription");
+      const accountId = previous?.accountId
+        ?? await this.ledger.subscriptionAccount(providerId, subscriptionId)
+        ?? await this.ledger.customerAccount(providerId, fetched.subscription.customerId);
+      if (accountId === null) return null;
+      const echoed = fetched.subscription.accountId;
+      if (echoed !== null && echoed !== accountId) throw new CommerceConflictError("account-mismatch");
       const version = (previous?.version ?? 0) + 1;
       const event: VerifiedCommerceEvent = {
         kind: "subscription.snapshot",
         providerId,
         eventId: origin?.eventId ?? `reconcile:${subscriptionId}:${version}`,
         payloadSha256: origin?.payloadSha256 ?? fetched.payloadSha256,
-        subscription: { ...fetched.subscription, version }
+        subscription: { ...fetched.subscription, accountId, version }
       };
       try {
         return await this.ledger.applyVerifiedEvent(event, { expectedPreviousVersion: previous?.version ?? 0 });

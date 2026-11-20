@@ -183,10 +183,10 @@ the generated lists" use `IAM_READ_ONLY_ACTIONS` and `IAM_DESTRUCTIVE_ACTIONS`.
 | `FluxIQOwnerFullAccess` | identity | `Allow *` on the workspace content and the workspace FRN, no condition, so it takes the fast path. Reaches nothing outside the workspace. |
 | `FluxIQAdministratorAccess` | identity | An unconditional `Allow *` on the workspace content, and `Allow` of the `studio`, `secrets`, `gateway`, `iam` and `ops` services on the workspace FRN. No `platform:*` (platform FRNs have no workspace segment, so the content grant cannot reach them). It reaches every endpoint today's admin does, and the content grant makes it full access, so the single local owner, who is `admin` today, keeps the list fast path. |
 | `FluxIQReadOnlyAccess` | identity | The actions in the generated `programs.read` list, one statement per service, on the same two resources. This includes explicitly registered self-service writes such as the caller's own preferences and username re-case. |
-| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential is refused them by IAM itself: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, the person's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`) and their own sign-in name in another case (`iam:RecaseMyUsername`, only its capitals), and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Reading the allowance is not among them: its endpoint declares the workspace, where the setting reads grant it. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed, chosen or offered by them. `secrets:OfferKey` (`offer-key`) on their own key is theirs under `OwnData`. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
-| `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace. Denies all `iam` actions, `secrets:RevealKey` and the 16 destructive actions. A connected browser acts as its user, narrowed by this. |
+| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential is refused them by IAM itself: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, the person's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`) and their own sign-in name in another case (`iam:RecaseMyUsername`, only its capitals), and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Reading the allowance is not among them: its endpoint declares the workspace, where the setting reads grant it. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed, chosen or offered by them. `secrets:OfferKey` (`offer-key`) on their own key is theirs under `OwnData`. Saving, replacing and removing the key their own chats use (`IAM_OWN_MODEL_KEY_ACTIONS`: `secrets:SaveModelKey`, `ReplaceModelKey`, `RemoveModelKey`) on the principal's own user FRN, from any origin (`OwnModelKey`, t950): each endpoint declares the caller's own user and nothing else, so a member reaches only their own key and never the workspace's assistant key. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
+| `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace; of `secrets`, only the session's own person's model key (`IAM_OWN_MODEL_KEY_ACTIONS` on their own user FRN), `secrets:Snapshot` (how the browser shows Ready, and what the model-access push is decided by) and `secrets:UseKey` (the person's own model calls; which keys is the identity policies' decision). Denies all `iam` actions, `secrets:RevealKey` and the generated destructive actions. Under `service` it is the session policy of every paired client (`ProgramIamGate`, t950), in place of the legacy permission session, so a member's browser is decided by the member's policies; under `local` and `self-hosted` a paired client is still narrowed by its role's permissions. A connected browser acts as its user, narrowed by this. |
 | `FluxIQProvisioner` | identity | For the website's provisioning identity: allows `platform:*Account*` on account FRNs; denies everything on any FRN with a workspace segment and on workspace FRNs. |
-| `FluxIQServiceGuardrail` | guardrail | `Deny ops:*` and `Deny platform:*`. Keeps operator actions (including database migration and node registration) out of a hosted workspace. |
+| `FluxIQServiceGuardrail` | guardrail | `Deny ops:*`, `Deny platform:*` and (v2) `DenyLocalIdentityAdministration`: `iam:CreateUser`, `iam:UpdateUser`, `iam:SetPassword`, `iam:SetPin`, `iam:CreateSession` and `iam:UnlockVault`. Keeps operator actions (including database migration and node registration) out of a hosted workspace, and the tenant's own Identity Access store unadministered: anyone made there could never sign in, so hosted accounts come only from provisioning. A person's own sign-in security is not denied (see [Web workspace manager](#web-workspace-manager)). |
 
 ## Store
 
@@ -377,7 +377,7 @@ resolver yet. Owners are looked up only under `service`.
 | Profile | Identity | Session | Guardrail |
 | --- | --- | --- | --- |
 | `local`, `self-hosted` | the role's predefined policies plus `FluxIQPermissions`, allowing exactly the actions whose permission the actor holds | `FluxIQPermissionSession`, the same set | none |
-| `service` | what the IAM store attaches to `user/<id>` | the permission session for a paired client only | `FluxIQServiceGuardrail` |
+| `service` | what the IAM store attaches to `user/<id>` | `FluxIQBrowserSession` for a paired client only (t950; before, the permission session of its legacy role) | `FluxIQServiceGuardrail` |
 
 On `local` and `self-hosted` identity can never allow less than the actor's
 permissions and the session never more, so every decision equals
@@ -506,6 +506,16 @@ over the same repository sees a write on its next read. No record ever holds a
 password, a hash of one, a key, a session id or a raw link token. Writes are
 last-writer-wins per record.
 
+**Connections.** `PlatformRecords.put` and `IamRecords.put` are one repository
+operation (the repository's `put` keeps a row's creation time itself), so a write
+opens its database once. The web server composes one `SQLiteConnectionPool` per
+platform composition and passes it to both SQLite repositories, which share
+`global.sqlite`; each provisioning operation (and so each deletion-sweep pass)
+runs inside `pool.keepWhile`, so a request opens each database file once (the
+platform file and the new workspace's IAM file for `createAccount`) instead of
+once per read or write, and every handle closes when the operation ends.
+`closePlatformServices` closes any that remain.
+
 | Record | Id | Holds |
 | --- | --- | --- |
 | Account | `account/<userId>` | Email (trimmed, lower-cased, unique), display name, external id, identities, status (`active`, `disabled`, `deleted`), origin, sign-in times, a scheduled deletion |
@@ -610,14 +620,50 @@ other failure propagates as a throw, which the listener answers as
 | `setPassword` | In-process only (the offline command line, the platform-admin, or the provisioner's service identity in-process). The operation is authorised and audited first, so it sets the password through `PlatformIdentityPort.resetPassword` with no recheck of the old credential, and it works after a restart. It then revokes the account's other sessions. An account with two-factor sign-in whose credential is sealed is `two_factor` (409), with nothing changed (see "Two-factor and PIN on a reset"). |
 | `setPolicies` | Replaces a member's attached policies. The identity role is set first, from the new policies, so demoting the last enabled administrator is `last_administrator` before any attachment or membership changes. |
 | `addMember` | Adds an account to an organisation workspace; `already_member` leaves its policies as they were. Needs the `organisation` entitlement, else `entitlement_required`. The identity role is set first, from every active membership plus the new one, so a demotion of the last enabled administrator is `last_administrator` before the membership is written. |
-| `disableAccount`, `enableAccount` | Disabling refuses sign-in and revokes sessions and (through lane D's port) connected clients. Enabling restores sign-in; revoked clients stay revoked. |
-| `deleteAccount` | `immediate`: the identity user is deleted first (so a refusal changes nothing), then its sessions and connected clients are revoked, then IAM attachments, then personal workspaces (data hook, then the row), then the store rows. `scheduled`: identity disabled first (so a refusal changes nothing), then status `deleted`, sessions and clients revoked; asking again returns the same receipt. |
+| `suspendMember`, `resumeMember` | One membership in one shared (organisation or single) workspace; the account, its sign-in and its other memberships are untouched. Suspending needs an active membership (`not_found` otherwise, and for a personal workspace), refuses the workspace's last active administrator (`last_administrator`, decided from that workspace's memberships), and sets the identity role without this workspace first; then the membership becomes `suspended` keeping its policies, they are detached, the person's connected clients bound to that workspace are revoked (`revoked_by_admin`), and their session unlocks in its key custody are dropped. Platform sessions stay: the session's workspace is chosen on every request from active memberships, so the next request lands in another workspace or answers 401. Resuming needs a suspended membership and an account that is not disabled (`disabled`), sets the role first, then reattaches the kept policies. Revoked clients stay revoked. |
+| `removeMember` | Ends an active or suspended membership of a shared workspace (`removed`, no policies), with the same checks, revocations and custody drop as suspending. A personal workspace is `not_found`: its owner leaves by deleting the account. |
+| `disableAccount`, `enableAccount` | Disabling refuses sign-in and revokes sessions and connected clients (`account_disabled`). Enabling restores sign-in; revoked clients stay revoked. |
+| `deleteAccount` | `immediate`: runs the deletion cascade below now. `scheduled`: identity disabled first (so a refusal changes nothing), then status `deleted`, sessions and clients revoked; asking again returns the same receipt. |
 | `rotateCredentials` | By scope: `sessions`, `browsers`, `password` (sends a reset link) or `all`. Reports the counts and `resetSent`. |
 | `getAccount` | By exactly one of `userId`, `email`, `externalId`. Never a hash, a key or a policy's contents. |
 
+**The deletion cascade.** `completeAccountDeletion` is the one hook: `immediate`
+calls it, and so does `runDueDeletions`. Each step can be repeated and is keyed by
+the deletion receipt id:
+
+1. identity access deletes the user (the only refusable step, `last_administrator`,
+   so it comes first and a refusal changes nothing); a deletion not yet recorded is
+   then recorded, due at once, so a failure after this point leaves it for the sweep;
+2. sessions are revoked, then connected clients in every workspace (`account_deleted`);
+3. for each membership, its policies are detached and the person's session unlocks
+   in that workspace's key custody are dropped (`dropWorkspaceCustody`);
+4. billing is closed (`closeBilling`): the commerce service cancels every
+   subscription of the payer that has not ended, with an idempotency key derived
+   from the receipt id, records the ended state (ledger rows, which hold the account
+   id and no email, stay for the retention period), and closes the provider
+   customer. Nothing is billed during the purge that follows. A server that bills
+   nothing makes this a no-op;
+5. environments are purged (`purgeEnvironments`, the account's and its personal
+   workspaces'); until the environment controller is composed into the web server
+   this port is a no-op;
+6. each personal workspace is deleted: `deleteWorkspaceData` (the workspace manager
+   closes it, revokes its custody and removes its root), then its row;
+7. the account row, with its memberships and link tokens.
+
+A step that must wait throws `DeletionPending`: a personal workspace with work in
+flight (`workspaces.busy`), or a payment provider that did not answer
+(`PaymentProviderUnavailableError`). `immediate` then answers `scheduled` with the
+receipt, due at once; a run already going keeps going to its result or its budget
+and its owner can still stop it. Any other failure surfaces, and the deletion stays
+recorded for the sweep.
+
 **Scheduled deletion** waits 7 days. `runDueDeletions(nowMs?)` completes the
-accounts that are due and collects failures into one `AggregateError`, so a failed
-account stays scheduled for the next sweep. Nothing calls it on a timer yet.
+accounts that are due; one that must wait stays scheduled, and failures are
+collected into one `AggregateError`, so a failed account stays scheduled for the
+next sweep. The web server's platform composition runs it every five minutes on
+an unreferenced timer (`server/provisioning-listener/cascade/deletion-sweep.ts`),
+on every profile, logging each failure's class and count only, and stops it before
+the stores close.
 
 **`forbidden_policy`.** Only predefined policies are provisionable. Whether a
 policy "grants `platform:*`" is decided by the evaluator, not by reading
@@ -650,11 +696,33 @@ and needs the `organisation` entitlement.
 `FluxIQAdministratorAccess` gives `admin`, anything else `viewer`. It is refreshed
 when policies change.
 
-**Optional ports.** An absent port does nothing, so the service runs before lanes C
-and D exist: `deleteWorkspaceData(workspaceId)` (lane C; called before a personal
-workspace row is deleted), `onWorkspaceCreated(workspaceId)` (lane C),
-`revokeConnectedClients(userId, reason)` (lane D; returns how many) and
-`entitlements`.
+**Optional ports.** An absent port does nothing: `revokeConnectedClients(userId,
+reason, scope?)` (returns how many; a scope limits it to one workspace's clients),
+`dropWorkspaceCustody(workspaceId, userId)`, `closeBilling(accountId, operationId)`,
+`purgeEnvironments({ accountId, workspaceIds, operationId })`,
+`deleteWorkspaceData(workspaceId)` (called before a personal workspace row is
+deleted), `onWorkspaceCreated(workspaceId)` and `entitlements`. The web server
+composes all but the last two in `server/provisioning-listener/cascade/`:
+connected clients are revoked through the gateway that owns each one (under several
+workspaces, the platform browser-trust authority lists a person's bindings and each
+tenant is held without creating a missing root; under one, the workspace's own
+gateway store), custody through the workspace manager's `dropUserCustody`, billing
+through the commerce service when one is configured, and workspace data through
+the manager's `deleteWorkspace`.
+
+**The accounts panel under several workspaces** changes the membership in the
+caller's workspace only: turning a person off suspends it, turning them on resumes
+it, removing ends it, and a role change is `setPolicies`. An invite is resent, or
+cancelled by deleting its account, only when the account exists for this workspace
+alone; a pending invite of a person who is also in another workspace is cancelled
+by removing the membership here. Turning off or deleting the account itself stays
+with the operator's command line and the account holder. The members list
+(`/api/accounts/members`) shows a membership suspended here as turned off, with the
+role its kept policies give, so its row offers turning it back on; a removed one is
+not listed. An organisation workspace's list is not read-only (`readOnly: false`);
+a personal one is, having nobody else to change. Removal stays off in the list
+(`canRemove: false`) under several workspaces until the panel's confirmation says it
+ends this membership alone.
 
 ## Welcome and reset links
 
@@ -808,7 +876,11 @@ points at it yet. Flags fill the operation's input (`--email`, `--display-name`,
 `--external-id`, `--user-id`, repeated `--policy`, `--workspace`, `--reason`,
 `--scope`, `--mode`, `--terms-version`, `--continue-url`, `--send-welcome`,
 `--request-id`), and `--json` supplies the whole input, with flags overriding it. A
-mutating operation gets a random request id unless one is given. Exit codes: 0 ok,
+mutating operation gets a random request id unless one is given. `--workspace <id>`
+fills `workspaceId` for every operation whose input names an existing workspace
+(`setPolicies`, `addMember`, `suspendMember`, `resumeMember`, `removeMember`, read
+from the contracts' input schemas), and `workspace` (`new` or an id) for
+`createAccount`; `--workspace-id` always fills `workspaceId`. Exit codes: 0 ok,
 1 a typed error or no answer, 2 usage.
 
 The transport is chosen by environment. With both `FLUXIQ_PROVISIONING_LISTEN` and
@@ -840,11 +912,73 @@ work, flushes the decision audit and closes its SQLite handle.
 
 `apps/web/src/lib/workspaces/` owns the web server's instances. `local` and
 `self-hosted` keep the primary alone; `service` creates tenants on demand under
-layout v3. `getFluxIQ()` still returns the synchronous primary. `workspaceFluxIQ`
-validates the primary's session and leases the caller's workspace; on `service`
-it chooses their oldest active membership, breaking a creation-time tie by
-workspace id. Repository listing order never selects a workspace. Provisioning
-and existing callers remain single-workspace until lanes C2 and C3 migrate them.
+layout v3. `getFluxIQ()` still returns the synchronous primary, but no page or
+route under `apps/web/src/app`, and not `lib/auth.ts`, may import it. Two scopes
+replace it, and a test (`lib/platform/tests/scope-boundary.test.ts`) fails when an
+app file imports `getFluxIQ` or `getFluxIQAfterReload` from `lib/fluxiq`.
+
+- **Platform scope** (identity, sessions, login attempts, the owner claim,
+  platform audit) goes through `platformScope()` in `lib/platform/`: a frozen
+  `{ identityAccess, fluxiqDir, tenancy }`, never the instance, so code holding it
+  cannot reach the primary's keys, gateway, API or paths. `lib/auth.ts` validates
+  the session there, and presents the person's stored credentials only under
+  `single` tenancy (`presentSingleTenantPanelSession`), where the primary is their
+  workspace. No unlock step stands between a signed-in person and model access;
+  under `multi` the program route and sign-in restore keys in the session's own
+  workspace.
+- **Workspace scope** (pairing approve and dismiss, a paired browser's first
+  project, framework setup, onboarding) acts on the signed-in person's workspace
+  through `workspaceRouteContext` or `workspaceFluxIQ`. `workspaceFluxIQ`
+  validates the primary's session and leases the caller's workspace; on `service`
+  it chooses their oldest active membership, breaking a creation-time tie by
+  workspace id. Repository listing order never selects a workspace.
+
+Sign-in, the welcome link and the owner claim restore saved keys through
+`restoreLoginKeys(input)`, which resolves the session's workspace and leases it
+under `multi`. That step is best effort: a failure there is logged by class and
+never revokes the session or answers a sign-in failure. A tenant's held keys are
+dropped when the platform identity revokes the session (sign-out), by a single
+subscription per identity and custody made in `createTenantFluxIQ`.
+
+`/api/framework/setup` is operator-only: the request guard answers 403
+`operator_only` on every public profile, and under `multi` the route refuses in
+code too, before reading its body, because the primary's root there holds every
+tenant's workspace. Under `single` it acts on the one workspace and releases its
+lease before a migrate or rollback reloads the primary.
+
+The operator's own storage step is `fluxiq storage <inspect|setup|migrate|rollback>
+[--data-dir <dir>]` (`packages/fluxiq/src/server/cli/storage/`), on the package's
+`fluxiq` bin. The data directory defaults to `FLUXIQ_ROOT`, else `~/.fluxiq/data`.
+It runs offline: it claims the data directory (`claimFluxIQDataRoot`, role
+`fluxiq storage`) before opening anything and gives it up only once its instance
+is closed, so while the web panel or `fluxiq dev` serves the directory it is
+refused, naming that server, and changes nothing. The instance is opened as the
+panel opens its primary (`FLUXIQ_HOST_MODULE`), so a domain's own legacy storage is
+found and migrated too. It prints the result as JSON; exit 0 done, 1 refused or
+failed, 2 usage. A hosted root starts at layout v3 and never needs the v1 to v2
+migration; this is for a self-hosted or local operator with older data.
+
+**A tenant's Identity Access.** A tenant instance has its own Identity Access
+store, but its people sign in only through the platform's, which validates every
+panel session. `createTenantFluxIQ` takes `identityDirectory` (the platform's
+Identity Access, from `lib/fluxiq.ts`) and hands it to the tenant's service before
+it serves anything (`identityAccess.directory.actOn`, set once, as the authority
+owner is). The self-service endpoints then act on that directory, and only for the
+caller, whatever role they hold in the workspace: `begin-totp`, `confirm-totp` and
+`disable-totp` on their own user (another person is
+`identity.directory_self_only`), `get-my-preferences`, `update-my-preferences`,
+`recase-my-username`, and `revoke-session` of their own sessions, by raw id or by
+the digest their own listing shows; the credential recheck is made there too.
+`snapshot` lists the caller alone, with their role and their own sessions. The
+member administration endpoints are denied by the guardrail's
+`DenyLocalIdentityAdministration`. `revoke-session` is decided on the caller's own
+user, so a person's own policy (`iam:RevokeSession` on their user) admits it; local
+and self-hosted installs set no directory and keep every endpoint as it was,
+member administration included.
+
+The welcome and reset routes read a posted body only as a form (`FormRead`: a
+tagged result of the parsed value or a refusal), so no posted field can pass for a
+ready-made answer.
 
 Tenant construction is shared per workspace id. Leases and the runtime's
 `activity()` counts pin an instance: open project databases, admitted background
@@ -1103,8 +1237,9 @@ never imports `@fluxiq/contracts`).
 - **Routing.** Whatever gates unauthenticated visitors must allow `/welcome`,
   `/welcome/submit`, `/reset`, `/reset/request` and `/reset/submit`. No middleware
   was found at `apps/web/src`, and the existing page gating was not checked.
-- No SMTP sender, no timer calling `runDueDeletions`, and no rate limit or human
-  check on the welcome and reset pages.
+- No SMTP sender, and no rate limit or human check on the welcome and reset pages.
+- **Environments in the deletion cascade.** `purgeEnvironments` is wired as a no-op
+  until the web server composes the environment controller.
 
 ## Known gaps
 

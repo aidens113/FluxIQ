@@ -484,18 +484,24 @@ describe("FluxIQ hosted runtime wiring", () => {
   });
 
   // Two real instances, each opening its stores and deriving a password key: well over the default 5 s on a loaded machine.
-  it("starts a new local install with no account, and leaves an existing install's temporary admin for the first-run step", { timeout: 60_000 }, async () => {
-    const fresh = await hostedEnv("local");
+  it.each(["local", "self-hosted", "service"])("%s: starts a new install with no account, and leaves an existing install's temporary admin for the claim", { timeout: 60_000 }, async (profile) => {
+    const fresh = await hostedEnv(profile);
     try {
       await initializeFluxIQWebRuntime();
       const identity = getFluxIQ().programs.identityAccess;
       expect(await identity.firstRun.state()).toBe("unclaimed");
       expect((await identity.snapshot()).users).toEqual([]);
       await expect(identity.authenticate({ username: "admin", password: "admin" })).rejects.toThrow();
+      if (profile === "service") {
+        // A tenant's store starts empty too: no workspace instance ever holds admin/admin.
+        const tenant = await getFluxIQWorkspaces().acquire("ws-fresh");
+        expect(await tenant.fluxiq.programs.identityAccess.firstRun.state()).toBe("unclaimed");
+        tenant.release();
+      }
     } finally {
       await cleanup(fresh.root);
     }
-    const existing = await hostedEnv("local");
+    const existing = await hostedEnv(profile);
     try {
       // An install made before: its store already holds the default admin on the temporary password.
       const before = FluxIQ.create({ rootDir: existing.root, loadEnv: false, modelProvidersEnabled: false });

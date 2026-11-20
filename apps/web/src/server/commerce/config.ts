@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
-import type { CommerceConfig, CommerceGrantTemplate, CommercePlan, CommercePlanCatalog } from "./types";
+import type { CommerceConfig, CommerceGrantTemplate, CommercePlan, CommercePlanCatalog, CommercePlanLine, CommercePlanUnit } from "./types";
 
 const ALLOCATIONS = new Set(["control", "shared", "dedicated"]);
+const UNITS = new Set(["dedicated-browser", "seat", "flat"]);
+/** Stripe's bounds on a checkout session's expiry, and the lifetime used when the file names none. */
+const CHECKOUT_LIFETIME = { minimum: 30 * 60_000, maximum: 24 * 3_600_000, unnamed: 3_600_000 };
 
 /**
  * The billing configuration, or null when this server bills nothing
@@ -24,16 +27,25 @@ export function commerceConfig(
   const provider = value.provider;
   if (provider !== "stripe" && provider !== "fake") invalid("provider must be \"stripe\" or \"fake\"");
   if (typeof value.allowTrial !== "boolean") invalid("allowTrial must be a boolean");
+  const refreshAfterMs = count(value.refreshAfterMs, "refreshAfterMs", 1);
+  const maxVerificationAgeMs = value.maxVerificationAgeMs === undefined ? refreshAfterMs * 2 : count(value.maxVerificationAgeMs, "maxVerificationAgeMs", 1);
+  if (maxVerificationAgeMs <= refreshAfterMs) invalid(`maxVerificationAgeMs (${maxVerificationAgeMs}) must exceed refreshAfterMs (${refreshAfterMs})`);
+  const catalog = plans(value.plans);
+  const checkoutLifetimeMs = value.checkoutLifetimeMs === undefined ? CHECKOUT_LIFETIME.unnamed : count(value.checkoutLifetimeMs, "checkoutLifetimeMs", CHECKOUT_LIFETIME.minimum);
+  if (checkoutLifetimeMs > CHECKOUT_LIFETIME.maximum) invalid(`checkoutLifetimeMs must be at most ${CHECKOUT_LIFETIME.maximum} (24 hours)`);
   const config: CommerceConfig = {
     provider,
     allowTrial: value.allowTrial,
     graceMs: count(value.graceMs, "graceMs", 0),
     retentionMs: count(value.retentionMs, "retentionMs", 0),
-    refreshAfterMs: count(value.refreshAfterMs, "refreshAfterMs", 1),
-    plans: plans(value.plans),
+    refreshAfterMs,
+    maxVerificationAgeMs,
+    plans: catalog,
     secretKeyFile: provider === "stripe" ? text(value.secretKeyFile, "secretKeyFile") : null,
     webhookSecretFile: text(value.webhookSecretFile, "webhookSecretFile"),
-    apiBaseUrl: value.apiBaseUrl === undefined || value.apiBaseUrl === null ? null : baseUrl(value.apiBaseUrl)
+    apiBaseUrl: value.apiBaseUrl === undefined || value.apiBaseUrl === null ? null : baseUrl(value.apiBaseUrl),
+    checkoutLifetimeMs,
+    region: region(value.region, catalog)
   };
   if (provider === "fake" && config.apiBaseUrl !== null) invalid("apiBaseUrl applies to the stripe provider only");
   return config;
@@ -47,13 +59,44 @@ function plans(value: unknown): CommercePlanCatalog {
   for (const [planId, entry] of entries) {
     identifier(planId, "a plan id");
     const plan = object(entry, `plans.${planId}`);
-    const priceId = text(plan.priceId, `plans.${planId}.priceId`);
-    if (prices.has(priceId)) invalid(`plans.${planId}.priceId is used by another plan`);
-    prices.add(priceId);
-    if (!Array.isArray(plan.grants) || plan.grants.length === 0) invalid(`plans.${planId}.grants must be a nonempty list`);
-    catalog[planId] = { priceId, grants: plan.grants.map((grant, index) => template(grant, `plans.${planId}.grants[${index}]`)) };
+    const name = plan.name === undefined ? planId : text(plan.name, `plans.${planId}.name`);
+    // A plan of one line may name it inline: { priceId, unit, quantity, grants }.
+    const listed = plan.lines === undefined ? [plan] : plan.lines;
+    if (!Array.isArray(listed) || listed.length === 0) invalid(`plans.${planId}.lines must be a nonempty list`);
+    const lines = listed.map((line, index) => planLine(line, plan.lines === undefined ? `plans.${planId}` : `plans.${planId}.lines[${index}]`));
+    for (const line of lines) {
+      if (prices.has(line.priceId)) invalid(`plans.${planId} sells price ${line.priceId}, which another line already sells`);
+      prices.add(line.priceId);
+    }
+    catalog[planId] = { name, lines };
   }
   return catalog;
+}
+
+function planLine(value: unknown, name: string): CommercePlanLine {
+  const line = object(value, name);
+  const priceId = text(line.priceId, `${name}.priceId`);
+  if (!Array.isArray(line.grants) || line.grants.length === 0) invalid(`${name}.grants must be a nonempty list`);
+  const unit = line.unit === undefined ? "flat" : line.unit;
+  if (typeof unit !== "string" || !UNITS.has(unit)) invalid(`${name}.unit must be dedicated-browser, seat or flat`);
+  const quantity = line.quantity === undefined ? 1 : count(line.quantity, `${name}.quantity`, 1);
+  if (unit === "flat" && quantity !== 1) invalid(`${name}.quantity must be 1 for a flat price: it counts nothing`);
+  const grants = line.grants.map((grant, index) => template(grant, `${name}.grants[${index}]`));
+  if (unit === "dedicated-browser" && !grants.some((grant) => grant.allocation === "dedicated")) invalid(`${name}.grants must include a dedicated grant: a dedicated-browser price counts dedicated browsers`);
+  return { priceId, unit: unit as CommercePlanUnit, quantity, grants };
+}
+
+/** The deployment's dedicated region: the one the file names, or the one every dedicated grant names. */
+function region(value: unknown, catalog: CommercePlanCatalog): string | null {
+  const granted = new Set<string>();
+  for (const plan of Object.values(catalog)) for (const line of plan.lines) for (const grant of line.grants) if (grant.allocation === "dedicated") grant.regions.forEach((entry) => granted.add(entry));
+  if (value !== undefined) {
+    const named = text(value, "region");
+    if (granted.size > 0 && !granted.has(named)) invalid(`region ${named} is not a region any dedicated grant names`);
+    return named;
+  }
+  if (granted.size > 1) invalid(`region must be named: dedicated grants name several regions (${[...granted].join(", ")})`);
+  return [...granted][0] ?? null;
 }
 
 function template(value: unknown, name: string): CommerceGrantTemplate {

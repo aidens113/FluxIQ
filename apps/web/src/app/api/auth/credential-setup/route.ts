@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { DEFAULT_SESSION_TTL_MS } from "fluxiq";
-import { getFluxIQ } from "../../../../lib/fluxiq";
+import { platformScope } from "../../../../lib/platform";
 import { FLUXIQ_SESSION_COOKIE, sessionCookieOptions } from "../../../../lib/session-cookie";
 import { restoreLoginKeys } from "../../../../server/connect";
 import { isCrossSiteRequest } from "../../../welcome/server";
@@ -40,8 +40,7 @@ export async function POST(request: Request) {
   const invalid = replacementPasswordError(password, confirmation);
   if (invalid) return refuse(400, "invalid_password", invalid);
 
-  const fluxiq = getFluxIQ();
-  const identity = fluxiq.programs.identityAccess;
+  const identity = platformScope().identityAccess;
   let outcome;
   try {
     outcome = await replaceTemporaryCredential(identity, grant, password);
@@ -55,7 +54,7 @@ export async function POST(request: Request) {
 
   const signedIn = await identity.authenticate({ username: grant.username, password, ttlMs: DEFAULT_SESSION_TTL_MS });
   try {
-    await restoreLoginKeys(fluxiq, { sessionId: signedIn.session.id, userId: signedIn.user.id, authorizationPassword: password, expiresAtMs: signedIn.session.expiresAtMs });
+    await restoreLoginKeys({ sessionId: signedIn.session.id, userId: signedIn.user.id, authorizationPassword: password, expiresAtMs: signedIn.session.expiresAtMs });
   } catch {
     // As the sign-in route: the password is replaced; a saved-key recovery problem is reported by key availability.
     console.warn("Saved model keys could not be migrated after first setup; inspect key availability and host protection.");

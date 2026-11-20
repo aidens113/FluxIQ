@@ -81,6 +81,9 @@ Current behavior:
   same credential recheck before encrypted rows can be viewed.
 - create, edit, rotate, reveal, and delete are mutually exclusive operations in the browser, retain retryable errors, and cannot be submitted twice by rapid input;
 - key filters reconcile detail to a visible key and clear stale detail after deletion.
+- every write that gives a model key a value (`create-key`, `rotate-key`, `save-model-key`, `replace-model-key`) asks the provider's free check first (t950): a key it refuses, or whose account has no credit, is never stored, the previous key and value stay in use, the write answers that outcome as its error code, and Activity reads a failed write of that kind; a provider out of reach does not block saving, and the stored key reads "can't reach" until a call says otherwise;
+- saving a model key (`save-model-key`) makes it what the saving person's own chats, Flows, model-access state and panel assistant use, and changes nobody else's: the workspace's assistant key and model stay as an owner or administrator chose them, except that the first key saved into a workspace with no assistant key at all becomes it, when the saver may choose the workspace's assistant key (decided as `set-assistant-model` is; a member or a paired browser never takes it, t950). Saving, replacing and removing one's own model key are `authoring`, decided by IAM on the caller's own user, with no password, PIN or confirmation. A person's own saved choice comes before the workspace's key for their own calls; removing the workspace's chosen key leaves the workspace with none ("No key" for those who relied on it), never another person's key;
+- a key its holder offered to the workspace, and an owner or administrator chose for it, may pay for members' chats, Flows and their Flows' standing result checks; withdrawing the offer stops it at the next use.
 
 Planned improvements:
 

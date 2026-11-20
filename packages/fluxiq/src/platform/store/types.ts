@@ -61,13 +61,20 @@ export type PlatformWorkspaceRecord = {
   createdAtMs: number;
 };
 
-/** A workspace membership (`workspace.members`): the policies are predefined policy names, attached to the member's IAM user principal in that workspace. */
+/**
+ * A membership's state: `active` grants its policies; `suspended` keeps them
+ * recorded (detached from IAM) so resuming restores them; `removed` ended,
+ * with no policies.
+ */
+export type PlatformMembershipStatus = "active" | "suspended" | "removed";
+
+/** A workspace membership (`workspace.members`): the policies are predefined policy names, attached to the member's IAM user principal in that workspace while it is active. */
 export type PlatformMembershipRecord = {
   workspaceId: string;
   userId: string;
   policies: string[];
   groups: string[];
-  status: "active" | "removed";
+  status: PlatformMembershipStatus;
   createdAtMs: number;
   updatedAtMs: number;
 };

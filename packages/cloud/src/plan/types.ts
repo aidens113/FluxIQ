@@ -7,7 +7,16 @@ export type PlannedSecret = {
   /** The file on the host, absolute. */
   file: string;
   /** What `up` writes when the file is absent; `operator` files are never generated. */
-  generate: "token" | "setup-code" | "keyring" | "stripe-mock-key" | "operator";
+  generate: "token" | "setup-code" | "keyring" | "stripe-mock-key" | "webhook-secret" | "operator";
+};
+
+/** A file the plan renders into the secrets volume (Core's /run/secrets), from the config alone: it holds no secret and is rewritten on every `up`. */
+export type PlannedRenderedFile = {
+  /** The file's name in the volume (`/run/secrets/<name>`). */
+  name: string;
+  /** The same text, bundle-relative, in the rendered bundle. */
+  bundlePath: string;
+  content: string;
 };
 
 /** One file of the rendered bundle: written from text, or copied from the Core checkout's deploy/. */
@@ -37,12 +46,26 @@ export type CloudPlan = {
   pulledImages: string[];
   dockerfile: string;
   services: string[];
-  networks: { edge: string; provisioning: string; runners: string };
+  networks: { edge: string; provisioning: string | null; runners: string };
   volumes: string[];
   /** The volume Core reads its secrets from (/run/secrets), filled by the driver from the secret files. */
   secretsVolume: string;
   secrets: PlannedSecret[];
+  /** Files rendered into the secrets volume beside the secrets (the commerce configuration). */
+  renderedFiles: PlannedRenderedFile[];
   /** Where Caddy's local root certificate is exported for clients to pin (tls internal only). */
   exportedCa: string | null;
   mailUi: string | null;
+  /** Dedicated browsers: the runner image Core's docker driver starts, how up builds it, and where Core reads the authority runners trust; null without them. */
+  environments: PlannedEnvironments | null;
+};
+
+/** The runner image of a deployment's dedicated browsers and how it is built. */
+export type PlannedEnvironments = {
+  image: string;
+  context: string;
+  /** Inside the context. */
+  dockerfile: string;
+  /** The secrets volume's name for Caddy's local root, which runners trust; null where public authorities serve. */
+  authoritySecret: string | null;
 };

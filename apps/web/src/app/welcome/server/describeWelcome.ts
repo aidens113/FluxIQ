@@ -1,5 +1,4 @@
 import { roleOfPolicies } from "../../../features/accounts/model";
-import type { AccountLinkResponse } from "./accountLinkResponse";
 import { readJsonObject } from "./readJsonObject";
 import type { WelcomeDescribeDeps, WelcomeDescription } from "./WelcomeDescription";
 import { welcomeLinkDigest } from "./welcomeLinkDigest";
@@ -19,11 +18,12 @@ const INVALID: WelcomeDescription = { status: 400, body: { ok: false, code: "inv
  * (same-site, a small JSON body) as the submit run first.
  */
 export async function describeWelcome(request: Request, deps: WelcomeDescribeDeps): Promise<WelcomeDescription> {
-  const body = await readJsonObject(request);
-  if ("status" in body) {
-    const refused = body as AccountLinkResponse;
+  const read = await readJsonObject(request);
+  if (!read.ok) {
+    const refused = read.response;
     return { status: refused.status, body: { ok: false, code: refused.body.ok ? "bad_request" : refused.body.code } };
   }
+  const body = read.value;
   if (typeof body.token !== "string" || !TOKEN_SHAPE.test(body.token)) return INVALID;
   const record = await deps.store.getLinkToken(welcomeLinkDigest(body.token));
   if (record === null || record.purpose !== "welcome" || record.usedAtMs !== null || record.expiresAtMs <= deps.now()) return INVALID;

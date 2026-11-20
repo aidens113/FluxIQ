@@ -473,7 +473,35 @@ FluxIQ may send:
 - `server.project_focused` (the answer to `client.focus_project`)
 - `server.project_access_ended` (the person lost the session's project; see Project Focus)
 - `server.conversation_changed` (a chat the session's person may read changed; see Project Focus)
+- `server.model_access_changed` (the session's person's model access changed; see below)
 - `server.error`
+
+### Model access that changed
+
+A session a person paired is told, unprompted, when that person's model access
+changed (a key added, removed, chosen or replaced, its availability changed,
+or the provider refusing or answering it), so the client shows it when it
+happens instead of reading on a timer:
+
+```json
+{ "type": "server.model_access_changed", "payload": { "modelAccess": { "status": "provider_refused", "message": "…", "key": { "name": "Work", "provider": "anthropic", "model": "…" }, "lastCall": { "outcome": "provider_refused", "atMs": 1794963959570 } } } }
+```
+
+`modelAccess` is the person's whole current `ModelAccessState`, the same one
+the Secret Keys snapshot answers them, in the paired-client form: never a key's
+id. Read it with `readClientGatewayModelAccessChanged` (or
+`readModelAccessState` on `modelAccess`) and show `message` as it is; a state
+that does not validate is not shown. Core sends it only when the state differs
+from the last one it sent to that session, so a repeat is never sent, and only
+to ready person-paired sessions: managed hosts and channel-scoped stand-ins
+hear none. Each session has one lane, so states arrive in order and the last
+one sent is never older than the last change. A state that could not be read
+sends nothing and is audited by kind only (`model_access_push.state_failed`);
+the next change reads it again. The message skips the session's outbound
+queue, is dropped on a closed socket, is not recorded in a trace, and is never
+replayed after a reconnect: read the state again once the session is ready.
+Neither side runs a timer for it. A client that does not know the type ignores
+it, so it is sent without a capability.
 
 ## Typed WebSocket Client Package
 

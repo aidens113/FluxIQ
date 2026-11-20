@@ -57,7 +57,7 @@ export function useHierarchyPersistence(options: HierarchyPersistenceOptions): {
           current.setSaveStatus("All workspace changes saved");
           return;
         }
-        current.setSaveStatus("Saving workspace changes...");
+        current.setSaveStatus("Saving workspace changes…");
         void persistHierarchyNodeMutations(
           current,
           projectId,

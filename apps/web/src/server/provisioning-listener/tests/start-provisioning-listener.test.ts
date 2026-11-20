@@ -181,7 +181,9 @@ describe("the private provisioning listener", () => {
     expect(failed.text).not.toContain("/secret/path");
     expect(errorCode(failed)).toBe("internal_error");
     expect(platformProvisioningResponseSchema(PLATFORM_PROVISIONING_OPERATIONS.getAccount.result).safeParse(failed.json).success).toBe(true);
-    expect(harness.logs.at(-1)).toMatch(/^\[FluxIQ\] provisioning getAccount 500 internal_error \d+ms$/u);
+    // The log names the failure's kind only, never its message (the path here).
+    expect(harness.logs.at(-1)).toMatch(/^\[FluxIQ\] provisioning getAccount 500 internal_error \d+ms failure=Error$/u);
+    expect(harness.logs.join(" ")).not.toContain("/secret/path");
   });
 
   it("answers last_administrator with the contract's 409", async () => {

@@ -41,7 +41,9 @@ test("without extract the empty latest chat offers only Describe, and the rest i
 
 test("the model-key line shows only when the keys were read and none is enabled", () => {
   assert.equal(emptyStateModel("empty", LATEST, "missing")!.keyLine, MODEL_KEY_LINE);
-  assert.equal(MODEL_KEY_LINE, "FluxIQ needs a model key before it can build. Add one in FluxIQ.");
+  assert.equal(MODEL_KEY_LINE, "Add an AI key to start. FluxIQ uses it to understand and build what you ask.");
+  assert.deepEqual(emptyStateModel("empty", LATEST, "missing")!.access, { kind: "no-key" });
+  assert.equal(emptyStateModel("empty", LATEST, "ready")!.access, null);
   assert.equal(emptyStateModel("empty", LATEST, "ready")!.keyLine, null);
   assert.equal(emptyStateModel("empty", LATEST, "unknown")!.keyLine, null, "a failed read says nothing");
   assert.equal(emptyStateModel("empty", LATEST)!.keyLine, null);
@@ -71,18 +73,18 @@ test("another project's empty thread keeps the plain invitation without the onbo
   assert.equal(model.examples.length, 3);
 });
 
-test("saved-key problems explain their actual cause without a second client authentication step", () => {
+test("saved-key problems say the shared words, without a second client authentication step", () => {
   for (const code of ["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid", "upgrade_required"] as const) {
     const model = emptyStateModel("empty", LATEST, `unavailable:${code}`)!;
     assert.ok(model.keyLine);
-    // A legacy key is the one case that asks the person to sign in to the panel, once, to finish upgrading it; never an unlock or a password.
-    assert.doesNotMatch(model.keyLine, code === "legacy_recovery_required" ? /unlock|password|PIN|sign out/iu : /unlock|password|PIN|sign out|sign in/iu);
+    assert.ok(model.access, "the card has a state to draw");
+    assert.doesNotMatch(model.keyLine, /unlock|vault|seal|credential|scope|token|password|PIN|sign out|sign in/iu);
     assert.deepEqual(model.starts.map(start => start.id), ["describe", "extract"]);
   }
-  assert.match(emptyStateModel("empty", LATEST, "unavailable:legacy_recovery_required")?.keyLine ?? "", /Sign in to the FluxIQ panel once/u);
-  assert.match(emptyStateModel("empty", LATEST, "unavailable:host_protection_unavailable")?.keyLine ?? "", /host configuration/u);
-  assert.match(emptyStateModel("empty", LATEST, "unavailable:ciphertext_invalid")?.keyLine ?? "", /could not be read/u);
-  assert.match(emptyStateModel("empty", LATEST, "unavailable:upgrade_required")?.keyLine ?? "", /Update FluxIQ/u);
+  for (const code of ["legacy_recovery_required", "host_protection_unavailable", "ciphertext_invalid"] as const) {
+    assert.match(emptyStateModel("empty", LATEST, `unavailable:${code}`)?.keyLine ?? "", /can't read it any more\. Paste it again/u);
+  }
+  assert.equal(emptyStateModel("empty", LATEST, "unavailable:upgrade_required")?.keyLine, "This FluxIQ is too old to use your AI key. Update it.");
   assert.equal(emptyStateModel("empty", LATEST, "ready")?.keyLine, null);
   assert.equal(emptyStateModel("empty", LATEST, "missing")?.keyLine, MODEL_KEY_LINE);
 });

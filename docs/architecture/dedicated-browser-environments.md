@@ -16,12 +16,15 @@ what a runner image puts inside one.
 | Piece | State |
 | --- | --- |
 | Record, state machine, durable store, `fake` driver | Built, tested (t938) |
-| `docker` driver, runner image `fluxiq-cloud/runner:<version>` | Later unit |
+| `docker` driver, runner image `fluxiq-cloud/runner:<version>` | Built (t953); local rehearsal only |
 | `vm` driver | Later unit, after the docker driver |
 | `local-process` driver | Later unit, for development only |
-| Tenant-bound enrolment of an environment's client | Later unit, after t911 and t929 |
+| Tenant-bound enrolment of an environment's client | Built (t943) |
+| Admission by counted plan grants (N paid browsers admit N) | Built (t948) |
+| Hosted composition: controller, cloud admission, IAM resolver | Built (t948); `docker` driver from configuration (t953) |
+| Provisioning cascade purge | Wired (t948) |
+| Panel API routes for environments (list, create, start, stop, delete) | Built (t953) |
 | Remote viewer | Mandatory before launch; later unit |
-| Wiring to the panel API, the provisioning cascade and the platform barrel | Not wired |
 
 ## The record
 
@@ -105,8 +108,7 @@ operation or reconcile picks up from what the driver observes.
 
 Allocation has one authority: the existing `CloudAdmissionService`
 (`platform/commerce/runtime`). A dedicated environment is a `managed-cloud`
-target with `allocation: "dedicated"` whose `targetId` is the `environmentId`,
-so admission matches it against the subscription grant's `resourceIds`.
+target with `allocation: "dedicated"` whose `targetId` is the `environmentId`.
 `dedicatedEnvironmentTarget()` builds that target for the server's IAM
 resolver, which alone establishes that the actor's account and workspace own
 the environment. `create` and `start` call `admit` every time, replays
@@ -116,11 +118,86 @@ included, and refuse unless the decision is `source: "commerce"`,
 customer-owned is `not-dedicated`). The account the record is written under
 comes from the decision, never from the request.
 
+A dedicated grant admits a target one of two ways:
+
+- **Counted** (what a plan sells): the grant carries a `quantity` and no
+  `resourceIds`. The Stripe adapter writes the subscription item's quantity
+  there, so the count is the one the customer pays for, never the
+  configuration's. The counted grants in force of the account's admitting
+  subscriptions add up to a limit, and admission asks its `holdings` port to
+  claim the target: an environment the account already holds (recorded and
+  not being deleted, so a stopped one too) is admitted again, a new one only
+  while the account holds fewer than the limit. `N` paid browsers admit `N`;
+  the next is `entitlement-exhausted`. Without a holdings port a counted
+  grant admits nothing (`commerce-policy-unavailable`): a count no one keeps
+  is never taken as unlimited.
+- **Named**: the grant names its exact resources in `resourceIds` (an operator
+  can set `fluxiq_resource_ids` on a Stripe item); the target must be one of
+  them, and no count applies.
+
+The web server's holdings (`apps/web/src/server/environments/holdings`) count
+the environment store's records of the account plus the claims this process
+admitted whose intent is not recorded yet. One account's claims run one after
+another, so two concurrent creates cannot both take the last browser, and the
+store wrapper the controller records through settles each claim once the
+intent is recorded or refused, so the count passes from the claim to the
+record with no gap. The serialization is per process; the web server is one
+process per deployment today.
+
 `stop`, `delete` and `get` allocate nothing, so they ask the same IAM resolver
 the admission service was built with, and no entitlement: a lapsed subscription
-can still stop and release what it holds. They refuse (`not-authorized`)
-unless the resolver answers a dedicated target for this environment owned by
-the caller's account and workspace. There is no second authority.
+can still stop and release what it holds, and nothing stops a running
+environment when its subscription lapses; only new allocation is refused. They
+refuse (`not-authorized`) unless the resolver answers a dedicated target for
+this environment owned by the caller's account and workspace. There is no
+second authority.
+
+### The hosted composition
+
+`getHostedEnvironmentController()` (`apps/web/src/server/environments/hosted`)
+composes the controller for the web server from the commerce composition's
+cloud admission (`getCloudAdmission()`), and is null when the server bills
+nothing, so local and self-hosted panels have no hosted environments. Composing
+it installs the hosted IAM resolver through `setCloudAuthorizer`; until then
+every admission is refused. The resolver (`hostedCloudAuthorizer`) takes as
+its actor a panel request's held authority (`WorkspaceRouteContext`) and
+revalidates it on every decision, so the caller's session, workspace and route
+IAM are decided again; the paying account is the workspace's owner (a personal
+workspace; organisations are billed by a later unit and answer none); an
+environment recorded under another account or workspace is refused. The
+region an environment runs in is the commerce configuration's `region`
+(default: the one region every dedicated grant names). The driver comes from
+`FLUXIQ_ENVIRONMENT_DRIVER`; only `fake` can be built from configuration, and
+the `service` profile refuses it, so a hosted service creates no environment
+until a real driver is configured. The domain the runner's client declares at
+the gateway, which every enrolment ticket is minted for, is named by
+`FLUXIQ_ENVIRONMENT_CLIENT_DOMAIN` (the web extension's is `web-automation`; a
+ticket minted for another domain is refused with `enrolment.domain_mismatch`,
+which the first live run of t953 hit while Core guessed `web`). The driver is
+`FLUXIQ_ENVIRONMENT_DRIVER=docker` with
+`FLUXIQ_ENVIRONMENT_DOCKER_PROJECT`, `_IMAGE` and `_NETWORK` (and optionally
+the runner limits, the host a rehearsal's name resolves to, and the local root
+its runners trust), which `fluxiq-cloud` renders for a rehearsal with
+dedicated browsers.
+
+### The panel routes
+
+`/api/platform/v1/environments` (GET lists, POST creates) and
+`/api/platform/v1/environments/[environmentId]?operationId=<id>` (DELETE;
+the operation id is in the query, since a DELETE's content has no defined
+meaning), `.../start` and `.../stop` (POST) act on the signed-in person's own workspace only, decided by
+the IAM actions `iam:ListEnvironments`, `iam:CreateEnvironment`,
+`iam:StartEnvironment`, `iam:StopEnvironment` and `iam:DeleteEnvironment` on
+the workspace (the account's own administration, like the plans), then again by
+the controller's resolver for the environment itself. Each operation carries
+an `operationId`; a create without an `environmentId` derives one from the
+workspace and the operation, so a retried create is the same browser. Answers:
+402 `environments.plan_required` with the admission's `reason` (no plan, a
+lapsed plan, `entitlement-exhausted` once N paid browsers are held); an
+environment of another workspace answers 404 exactly as a missing one; a
+driver failure is 503 and repeating the operation id finishes it. A server
+that bills nothing answers 404. A create or start answers once the runner's
+client has enrolled at the workspace's gateway.
 
 ## Drivers
 
@@ -137,10 +214,27 @@ may report `stopped`; the controller starts both when `running` is desired.
 - **`local-process`**: one runner process on the engine's machine with its
   own profile directory, for development. It isolates nothing between tenants,
   so the hosted service must refuse it in the `service` deployment mode.
-- **`docker`** (interface I5): the local simulation of production. Each
+- **`docker`** (interface I5, built in t953:
+  `platform/environments/docker/`): the local simulation of production. Each
   environment is one container from `fluxiq-cloud/runner:<version>` on the
   network `<project>_runners`, named `<project>-env-<environmentId>`, with one
-  named volume for its profile. Every Docker resource carries
+  named volume (`...-profile`) for its profile. The driver runs the `docker`
+  command line through an injected runner (Core's image carries the client;
+  only a deployment with dedicated browsers gives Core the engine's socket, in
+  the socket's group). `start` starts the container, then runs
+  `docker exec --interactive <container> fluxiq-runner enrol`: the runner asks
+  for a ticket with a `ticket` line, the driver answers it on that exec's
+  standard input, and the relay reports `connected` once the extension's
+  session is up. A runner that did not enrol is stopped again, so it never looks
+  converged. The runner reaches its gateway through the public origin
+  (`wss://<domain>/client`) as a remote runner would; on a `.localhost`
+  rehearsal its browser maps that name to `host.docker.internal` and trusts
+  the rehearsal's local root (public, passed in its environment). The runner
+  image is built from the extension checkout's `deploy/runner/Dockerfile`
+  (Chromium, the built extension, the browser host's `fluxiq-runner`); its
+  unpacked extension at `/opt/fluxiq/extension` has the id
+  `kknpahmjpoklhjbelapilpkhedbkheck`, which the gateway's allowed origins name.
+  Chromium's own sandbox is off inside the container, which is the sandbox. Every Docker resource carries
   `com.fluxiq.cloud.project=<name>`, and the driver adds
   `com.fluxiq.cloud.environment=<environmentId>` so `inspect` and `release`
   find the container and volume by label. `allocate` creates the volume and
@@ -168,8 +262,7 @@ line 13), and service client authorization refuses every managed-host binding
 (`authorize-binding.ts`, line 6). That is correct while managed hosts are only
 the single-tenant `fluxiq dev --browsers` pool ([managed hosts](./managed-hosts.md#enrolment-and-authority)).
 
-The later unit, after t911 (runtime lease isolation, which rewrites the host
-pool) and t929, makes the tenant's own gateway, the one for the environment's
+Built (t943, and t953 for the docker driver's relay): the tenant's own gateway, the one for the environment's
 workspace, mint the enrolment ticket, bound to that `workspaceId` and
 `environmentId` and minted in the engine's process exactly as managed-host
 tickets are. The driver receives a `takeEnrolmentTicket()` with `start` and
@@ -198,9 +291,16 @@ operationId)` release and then erase every environment of the account or
 workspace: the record, its operation ledger and its index rows. A failure
 part-way is reported for every environment that failed, which stay recorded as
 `desired: deleted`, and repeating the purge with the same operation id
-finishes them. Wiring, when the hosted service composes it: provisioning's
-`deleteWorkspaceData` port calls `purgeWorkspace` before the workspace row is
-deleted, and the commerce account's deletion calls `purgeAccount`.
+finishes them.
+
+Wired (t948): the provisioning cascade's `purgeEnvironments` port
+(`apps/web/src/server/provisioning-listener/cascade/purge-environments.ts`)
+purges the account, then each deleted workspace, under the deletion receipt
+id. Where nothing is billed it is a no-op. A failure part-way, or records whose
+controller cannot be composed (no driver configured), is `DeletionPending`
+(`environments_pending`), so the deletion sweep repeats it; with no records it
+is a no-op. Billing's own step (`closeAccount`) also expires the account's
+open checkout, so nothing can be paid for a closing account.
 
 ## Supervised headed check
 

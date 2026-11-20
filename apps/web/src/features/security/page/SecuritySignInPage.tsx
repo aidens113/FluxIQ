@@ -1,16 +1,14 @@
 "use client";
 
 import type { CurrentUser } from "../../programs/types";
-import { TechnicalDetails } from "../../programs/technical-details";
-import { IdentityAccessLive } from "../sign-in";
-import { SecuritySubPage } from "./SecuritySubPage";
+import { YourSignIn } from "../sign-in";
+import { SecurityTabPage } from "./SecurityTabPage";
 
-/** `/security/sign-in`: your password, PIN, two-factor, sessions and the credential vault. */
+/** `/security/sign-in`: the person's own name, password, two-step sign-in and Sign out. */
 export function SecuritySignInPage(props: { user: CurrentUser & { username?: string | undefined } }) {
   return (
-    <SecuritySubPage title="Your sign-in" note="Your password, PIN and two-factor sign-in, your sessions, and the credential vault.">
-      <TechnicalDetails toolId="identity-access" title="Your sign-in" />
-      <IdentityAccessLive currentUser={props.user} />
-    </SecuritySubPage>
+    <SecurityTabPage active="sign-in">
+      <YourSignIn user={props.user} />
+    </SecurityTabPage>
   );
 }

@@ -25,16 +25,21 @@ export class PlatformRecords {
     return envelope === null ? null : (envelope.data as unknown as T);
   }
 
+  /**
+   * One repository operation. The repository's `put` keeps an existing row's
+   * `createdAtMs` itself (`SQLiteRepository` does, inside the same statement), so
+   * a read before the write would only double the opens and leave a gap between
+   * the read and the write.
+   */
   async put(kind: string, key: string, data: object): Promise<void> {
     const id = `${kind}/${key}`;
-    const existing = await this.repository.get(id, SCOPE);
     const nowMs = this.now();
     await this.repository.put({
       id,
       scope: { domainId: null },
       kind: `platform.${kind}`,
       data: data as unknown as JsonObject,
-      createdAtMs: existing?.createdAtMs ?? nowMs,
+      createdAtMs: nowMs,
       updatedAtMs: nowMs
     });
   }

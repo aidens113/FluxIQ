@@ -70,6 +70,20 @@ describe("middleware", () => {
     expect(shown.headers.get("x-middleware-rewrite")).toBeNull();
     expect(shown.status).toBe(200);
   });
+  it("answers the sign-up page 404 before rendering unless FLUXIQ_SIGNUP=open on service", () => {
+    const rewriteOf = (response: Response) => response.headers.get("x-middleware-rewrite");
+    expect(new URL(rewriteOf(run("https://app.getfluxiq.com/signup", {}, PUBLIC_ENV)) ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    expect(new URL(rewriteOf(run("http://127.0.0.1:3000/signup", {}, { FLUXIQ_SIGNUP: "open" })) ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    expect(rewriteOf(run("https://app.getfluxiq.com/signup", {}, { ...PUBLIC_ENV, FLUXIQ_SIGNUP: "open" }))).toBeNull();
+    expect(rewriteOf(run("https://app.getfluxiq.com/signup/submit", { method: "POST" }, PUBLIC_ENV))).toBeNull();
+  });
+  it("answers the plan page 404 before rendering while billing is off", () => {
+    const rewriteOf = (response: Response) => response.headers.get("x-middleware-rewrite");
+    expect(new URL(rewriteOf(run("https://app.getfluxiq.com/plans", {}, PUBLIC_ENV)) ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    expect(new URL(rewriteOf(run("http://127.0.0.1:3000/plans")) ?? "").pathname).toBe("/__fluxiq-hidden-by-panel-preset");
+    expect(rewriteOf(run("https://app.getfluxiq.com/plans", {}, { ...PUBLIC_ENV, FLUXIQ_COMMERCE_CONFIG_FILE: "/run/secrets/commerce_config" }))).toBeNull();
+    expect(rewriteOf(run("https://app.getfluxiq.com/api/platform/v1/commerce/checkout", {}, PUBLIC_ENV))).toBeNull();
+  });
   it("refuses every request when the panel preset is unknown", async () => {
     const response = run("http://127.0.0.1:3000/", {}, { FLUXIQ_PANEL_PRESET: "no-such-preset" });
     expect(response.status).toBe(500);

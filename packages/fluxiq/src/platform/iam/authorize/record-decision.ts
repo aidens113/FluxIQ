@@ -1,5 +1,5 @@
 import { iamIpPrefix } from "../audit/index.ts";
-import type { IamAuditSink, IamDecision, IamRequestContext } from "../types.ts";
+import type { IamAuditOutcome, IamAuditSink, IamDecision, IamRequestContext } from "../types.ts";
 
 /**
  * Records one decision as one audit row: category `allow` or `deny`, time in
@@ -7,10 +7,11 @@ import type { IamAuditSink, IamDecision, IamRequestContext } from "../types.ts";
  * address truncated, and who acted for the principal and how the person
  * consented, when the context says. `hidden`, given only for a list request
  * that hid items, is how many it hid; a count below one is not recorded.
+ * `outcome`, given only for an opted-in endpoint's outcome row, is carried on the row.
  * A sink that throws propagates: the caller sees an error, which is never an
  * allow.
  */
-export function recordIamDecision(sink: IamAuditSink, decision: IamDecision, context: IamRequestContext, requestId: string, hidden?: number): void {
+export function recordIamDecision(sink: IamAuditSink, decision: IamDecision, context: IamRequestContext, requestId: string, hidden?: number, outcome?: IamAuditOutcome): void {
   sink.record({
     category: decision.decision,
     time: Math.floor(context.currentTimeMs / 1000),
@@ -24,6 +25,7 @@ export function recordIamDecision(sink: IamAuditSink, decision: IamDecision, con
     ipPrefix: iamIpPrefix(context.sourceIp),
     ...(context.via === undefined ? {} : { via: context.via }),
     ...(context.consent === undefined ? {} : { consent: context.consent }),
-    ...(hidden === undefined || hidden < 1 ? {} : { hidden })
+    ...(hidden === undefined || hidden < 1 ? {} : { hidden }),
+    ...(outcome === undefined ? {} : { outcome })
   });
 }

@@ -2,7 +2,7 @@ export { APP_ROUTE_IAM_CONTRACTS } from "./contracts";
 export { APP_ROUTES_DECIDED_BY_REGISTRY } from "./registry-decided-routes";
 export { appRouteIamContract } from "./contract-for";
 export { authorizeAppRoute } from "./authorize-app-route";
-export { pairedClientRouteActor } from "./paired-client-route-actor";
+export { APP_ROUTE_PAIRED_CLIENT_PERMISSIONS, pairedClientRouteActor } from "./paired-client-route-actor";
 export { panelRouteActor } from "./panel-actor";
 export { appRouteReadActions } from "./read-actions";
 export { routeParamId } from "./route-param-id";

@@ -101,3 +101,69 @@ test("the welcome's lines are drawn with their icons, and replaced only when the
     assert.equal(root.byClass("chat-welcome-item")[0], item);
   });
 });
+
+test("a title that is only the first message is not drawn again above the same bubble", async () => {
+  await withFakeDocument(() => {
+    const header = createThreadHeader("drawer", () => undefined, "list-3");
+    const root = fake(header.element);
+    const first = "Collect the name and price of every product on this page";
+    header.update({ title: first, firstMessage: first, showTitle: true, open: false, waiting: 0 });
+    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true, "the whole message");
+    header.update({ title: "Collect the name and price of every product...", firstMessage: first, showTitle: true, open: false, waiting: 0 });
+    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, true, "cut short");
+    header.update({ title: "Prices", firstMessage: first, showTitle: true, open: false, waiting: 0 });
+    assert.equal(root.byClass("chat-thread-title")[0]!.hidden, false, "a name of the person's own stays");
+    assert.equal(root.byClass("chat-thread-title")[0]!.textContent, "Prices");
+  });
+});
+
+test("the empty chat draws the key card in place of the key line when the host has a model-keys port", async () => {
+  await withFakeDocument(async () => {
+    let reads = 0;
+    const port = {
+      canWrite: true,
+      readState: async () => {
+        reads += 1;
+        return { ok: true as const, state: { kind: "no-key" as const } };
+      },
+      save: async () => ({ ok: true as const }),
+      replace: async () => ({ ok: true as const }),
+      remove: async () => ({ ok: true as const })
+    };
+    const state = createEmptyState(() => undefined, { modelKeys: { port, onAction: () => undefined } });
+    const root = fake(state.element);
+    state.update(emptyStateModel("empty", { kind: "latest" }, "missing")!, false);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.equal(root.byClass("chat-key-card")[0]!.hidden, false);
+    assert.equal(root.byClass("chat-key-line")[0]!.hidden, true, "the circular line is gone");
+    assert.equal(root.byClass("model-key-line")[0]!.textContent, "Add an AI key to start. FluxIQ uses it to understand and build what you ask.");
+    assert.equal(reads, 1);
+    state.update(emptyStateModel("empty", { kind: "latest" }, "ready")!, false);
+    assert.equal(root.byClass("chat-key-card")[0]!.hidden, true, "a ready key shows no card");
+    state.update(emptyStateModel("empty", { kind: "latest" }, "missing")!, false);
+    assert.equal(reads, 2, "it reads again when it comes back");
+    const without = createEmptyState(() => undefined);
+    without.update(emptyStateModel("empty", { kind: "latest" }, "missing")!, false);
+    assert.equal(fake(without.element).byClass("chat-key-line")[0]!.hidden, false, "no port: the line stays");
+  });
+});
+
+test("the key card sits above the welcome lines, so a short dock never leaves its button below the fold, and there is one card", async () => {
+  await withFakeDocument(async () => {
+    const port = {
+      canWrite: true,
+      readState: async () => ({ ok: true as const, state: { kind: "no-key" as const } }),
+      save: async () => ({ ok: true as const }),
+      replace: async () => ({ ok: true as const }),
+      remove: async () => ({ ok: true as const })
+    };
+    const state = createEmptyState(() => undefined, { modelKeys: { port, onAction: () => undefined } });
+    const root = fake(state.element);
+    state.update(emptyStateModel("empty", { kind: "latest" }, "missing", { extract: false, welcome: WELCOME })!, false);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const order = root.children.map((child) => String(fake(child).className));
+    assert.ok(order.indexOf("chat-key-card") >= 0 && order.indexOf("chat-key-card") < order.indexOf("chat-welcome-items"), order.join(","));
+    assert.equal(root.byClass("model-key-card").length, 1, "one no-key card");
+    assert.equal(root.byClass("chat-key-line")[0]!.hidden, true);
+  });
+});

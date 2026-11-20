@@ -25,4 +25,9 @@ export type AutomationStudioLlmProviderResolverInput = {
   metadata?: JsonObject;
   /** The person the call is made for, whose configured key pays. Absent for a run nobody is watching. */
   caller?: AutomationStudioLlmModelCaller;
+  /**
+   * A key another person lent to the workspace (chosen for it and offered by its holder, the rule the chat uses),
+   * which the call uses when the Flow names no key of its own. Secret Keys checks both consents on release.
+   */
+  lentKey?: { keyId: string; ownerUserId: string };
 };

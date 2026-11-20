@@ -4,3 +4,5 @@ export * from "./project-switcher/index.ts";
 export * from "./screens/index.ts";
 export * from "./dom/index.ts";
 export * from "./icons/index.ts";
+export * from "./model-access/index.ts";
+export { modelAccessFromReadiness } from "./chat/onboarding/index.ts";

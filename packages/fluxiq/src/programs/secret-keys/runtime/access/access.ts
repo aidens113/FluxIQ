@@ -83,17 +83,19 @@ export class SecretKeyAccess {
     }
   }
 
-  /** Migrates only material the exact authenticated caller already holds. */
-  async migrateHeldSession(input: { userId: string; sessionId: string }): Promise<void> {
+  /** Migrates only material the exact authenticated caller already holds. True when a record was written. */
+  async migrateHeldSession(input: { userId: string; sessionId: string }): Promise<boolean> {
     await this.ports.store.load();
     const held = this.ports.heldKeys.session(input.sessionId);
-    if (held?.userId !== input.userId || held.expiresAtMs <= this.ports.now()) return;
+    if (held?.userId !== input.userId || held.expiresAtMs <= this.ports.now()) return false;
+    let written = false;
     for (const [id, material] of held.decryptionKeys) {
       const record = this.ports.store.get(id);
       if (!record || record.createdBy !== input.userId || material.keyUpdatedAtMs !== record.updatedAtMs) continue;
       const next = await this.ports.dataKeys.protect(record, material.decryptionKey, input.userId);
-      if (next !== record) await this.ports.store.commit(next, record);
+      if (next !== record && await this.ports.store.commit(next, record)) written = true;
     }
+    return written;
   }
 
   private exactHeld(record: SecretKeyRecord, principal: SecretKeyUsePrincipal): Buffer | undefined {

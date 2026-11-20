@@ -142,7 +142,7 @@ export function useDocumentationWorkspace({ api, isOwner, requestedPage }: Optio
    read.current = null;
    setSnapshotLoading(false);
   setRebuilding(true);
-   setStatus("Rebuilding documentation snapshot...");
+   setStatus("Rebuilding documentation snapshot…");
   try {
    const result = await api.post<DocsSnapshotResponse>("rebuild", {});
    if (!current() || mutation.current !== id) return;

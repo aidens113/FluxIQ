@@ -16,9 +16,11 @@ import { HeldKeys, type HeldRevealAuthorization, type HeldSessionUnlock, type Se
 import { SecretKeyStore } from "./key-store.ts";
 import { ModelKeySettings } from "./model-key-settings.ts";
 import { SealUpgrades } from "./seal-upgrades.ts";
+import { upgradeOpenedRecord } from "./sign-in-upgrade.ts";
+import { ModelKeysChangeNotice } from "./model-keys-notice.ts";
 import { SecretValueSealer } from "./value-sealer.ts";
 import type { SecretKeyHostProtection } from "../../../platform/custody/protection/index.ts";
-import { SecretKeyAccess, SecretKeyDataKeys, sameSecretKeyVersion, type SecretKeyUseAuthority, type SecretKeyManagementProof } from "./access/index.ts";
+import { SecretKeyAccess, SecretKeyAccessUnavailableError, SecretKeyDataKeys, sameSecretKeyVersion, type SecretKeyUseAuthority, type SecretKeyManagementProof } from "./access/index.ts";
 
 export type { SecretKeyCredentialChange, SecretKeyCredentialChangeInput } from "./credential-changes.ts";
 export type { SecretRevealAuthorizationMetadata } from "./held-keys.ts";
@@ -37,7 +39,6 @@ export type SecretKeyActorSession = {
 type CreateSecretKeyInput = {
   name: string;
   value: string;
-  authorizationPassword?: string;
   kind?: SecretKeyKind;
   provider?: string;
   scope?: SecretKeyScope;
@@ -45,10 +46,8 @@ type CreateSecretKeyInput = {
   description?: string;
   enabled?: boolean;
   metadata?: JsonObject;
-  /** The creating user; also stamped on the seal as `sealedByUserId`. */
+  /** The creating user, who owns the key: its value is protected for them. Required; a key nobody owns is refused. */
   createdBy?: string | undefined;
-  /** The creator's own signed-in session, whose password was just verified: the new key is usable there at once. */
-  actorSession?: SecretKeyActorSession | undefined;
   nowMs?: number;
 };
 
@@ -70,11 +69,8 @@ type UpdateSecretKeyInput = {
 type RotateSecretKeyInput = {
   id: string;
   value: string;
-  authorizationPassword?: string;
-  /** The user whose password seals the new value, stamped as `sealedByUserId`. */
+  /** The user replacing the value. The value stays protected for the key's owner; a key that had no owner becomes this user's. */
   actorUserId?: string | undefined;
-  /** The rotating user's own signed-in session, whose password was just verified: the new value is usable there at once. */
-  actorSession?: SecretKeyActorSession | undefined;
   nowMs?: number;
 };
 
@@ -97,8 +93,18 @@ export type SecretKeysCloseMode = "shutdown" | "evict";
 
 const MAX_SECRET_REVEAL_AUTHORIZATION_TTL_MS = 300_000;
 
+/** Said when a value cannot be protected for its owner, so it is not saved: a key saved without host protection could never be opened. */
+const SECRET_KEY_UNPROTECTED_REFUSAL = "The key was not saved because this server's key protection is not available, and a key saved without it could never be opened. Restart FluxIQ on this machine, then save the key again.";
+/** Said when nobody would own a new key. */
+const SECRET_KEY_OWNERLESS_REFUSAL = "Sign in to save a key: a saved key belongs to the person who saves it.";
+
 /**
- * Secret Keys: values sealed under account passwords. This class is the public
+ * Secret Keys. Every value saved or replaced is sealed under a random data key
+ * that host protection keeps for the key's owner (version 3, t928), so using,
+ * replacing or removing a key never needs a password, PIN or sign-in step; IAM
+ * alone decides who may. Values sealed under account passwords before that
+ * (versions 1 and 2) keep opening as they did, and the owner's next sign-in
+ * makes each one the server can open for them. This class is the public
  * surface; records and their writes live in `SecretKeyStore`, held derived keys
  * in `HeldKeys`, seal upgrades in `SealUpgrades`, and credential changes,
  * including pending seals, in `CredentialChanges`.
@@ -125,6 +131,9 @@ export class SecretKeysService {
   readonly access: SecretKeyAccess;
   private readonly dataKeys: SecretKeyDataKeys;
   private readonly now: () => number;
+  private readonly notice = new ModelKeysChangeNotice();
+  /** The newest creation time given out, reserved before any await so two saves at once never share one. */
+  private lastCreatedAtMs = 0;
 
   /**
    * `heldKeys`, when given, is custody that outlives this service (a workspace
@@ -139,8 +148,8 @@ export class SecretKeysService {
     this.store = new SecretKeyStore({ repository: options.repository, kind: SecretKeysService.storeKind, sealer: this.sealer });
     this.dataKeys = new SecretKeyDataKeys({ hostProtection: options.hostProtection, storeId: options.protectionStoreId, sealer: this.sealer });
     this.access = new SecretKeyAccess({ store: this.store, heldKeys: this.heldKeys, dataKeys: this.dataKeys, authority: options.useAuthority, now: this.now, summary: toSummary });
-    this.modelKeys = new ModelKeySettings({ repository: options.repository, kind: SecretKeysService.storeKind, store: this.store, now: this.now });
-    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder, onHeld: (held) => this.access.migrateHeldSession({ userId: held.userId, sessionId: held.sessionId }) });
+    this.modelKeys = new ModelKeySettings({ repository: options.repository, kind: SecretKeysService.storeKind, store: this.store, now: this.now, onChanged: () => this.announceModelKeysChanged() });
+    this.credentialUnlocks = new CredentialUnlocks({ repository: options.credentialUnlockRepository, kind: SecretKeysService.credentialUnlockStoreKind, store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, now: this.now, vouch: options.vouchForHolder, onHeld: (held) => this.migrateHeldSession(held.userId, held.sessionId) });
     this.upgrades = new SealUpgrades({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, dataKeys: this.dataKeys, onResealed: (recordId, key) => this.quietly(this.credentialUnlocks.resealed(recordId, key)) });
     this.credentialChanges = new CredentialChanges({ store: this.store, sealer: this.sealer, heldKeys: this.heldKeys, upgrades: this.upgrades, dataKeys: this.dataKeys, onCommitted: (userId, keys, actorSessionId) => this.quietly(this.credentialUnlocks.passwordChanged(userId, keys, actorSessionId)) });
   }
@@ -162,14 +171,43 @@ export class SecretKeysService {
     return record ? toSummary(record) : null;
   }
 
+  /**
+   * Tells `listener` after every committed change to the keys or the model-key
+   * choices: a key created, edited, replaced, removed or upgraded so the server
+   * can open it, and an offer, default, assistant choice or allowance. Called
+   * once the write landed, with nothing in it; returns the function that stops it.
+   */
+  onModelKeysChanged(listener: () => void): () => void {
+    return this.notice.subscribe(listener);
+  }
+
+  /**
+   * Runs a write whose model access is final only when `run` settles (a key
+   * saved or replaced, then its free check recorded): its change notices are
+   * held and given once, after `run` returns or throws (`ModelKeysChangeNotice`).
+   */
+  holdingModelKeysNotice<T>(run: () => Promise<T>): Promise<T> {
+    return this.notice.holding(run);
+  }
+
+  /**
+   * Saves a value for its owner, `createdBy`, sealed under a new random data key
+   * that host protection keeps for them (version 3): no password is asked or
+   * used, and the server opens it for its owner from then on. Refused in plain
+   * words, with nothing written, when nobody would own it or host protection
+   * cannot keep it.
+   */
   async createKey(input: CreateSecretKeyInput): Promise<SecretKeySummary> {
     await this.store.load();
-    const now = input.nowMs ?? Date.now();
+    // Strictly after every saved key: "oldest first" (the default key) must not fall to a random id between two keys saved in one millisecond.
+    const now = Math.max(input.nowMs ?? Date.now(), this.lastCreatedAtMs + 1, ...this.store.list().map((record) => record.createdAtMs + 1));
+    this.lastCreatedAtMs = now;
     const id = `secret:${randomUUID()}`;
     const name = cleanRequired(input.name, "name");
     const createdBy = cleanOptional(input.createdBy);
-    const password = requirePassword(input.authorizationPassword);
-    // Every field that can refuse its input is read before the seal, so nothing throws while its key is unheld and unzeroed.
+    if (!createdBy) throw new Error(SECRET_KEY_OWNERLESS_REFUSAL);
+    if (!this.dataKeys.configured) throw new Error(SECRET_KEY_UNPROTECTED_REFUSAL);
+    // Every field that can refuse its input is read before the seal, so nothing throws while its key is unzeroed.
     const fields: Omit<SecretKeyRecord, "sealed"> = {
       id,
       name,
@@ -179,7 +217,7 @@ export class SecretKeysService {
       ...(cleanOptional(input.scopeRef) ? { scopeRef: cleanOptional(input.scopeRef) } : {}),
       ...(cleanOptional(input.description) ? { description: cleanOptional(input.description) } : {}),
       enabled: input.enabled ?? true,
-      ...(createdBy ? { createdBy } : {}),
+      createdBy,
       createdAtMs: now,
       updatedAtMs: now,
       lastRotatedAtMs: now,
@@ -187,20 +225,17 @@ export class SecretKeysService {
       recordType: "secret-key",
       encrypted: true
     };
-    const { sealed, key } = await this.sealer.seal({ id, value: input.value, updatedAtMs: now }, password, createdBy);
+    const { sealed, key } = this.sealer.sealForHost({ id, value: input.value, updatedAtMs: now });
     let record: SecretKeyRecord;
     try {
-      record = await this.dataKeys.protect({ ...fields, sealed }, key, createdBy);
+      record = await protectedForOwner(this.dataKeys, { ...fields, sealed }, key, createdBy);
       if (!await this.store.commit(record, undefined)) throw new Error("Secret key changed during creation.");
-    } catch (error) {
+    } finally {
       key.fill(0);
-      throw error;
     }
-    await this.boxForProver(createdBy, record, key);
-    const unlockNeeded = this.holdForActor(record, key, input.actorSession, createdBy);
     await this.modelKeys.load();
     await this.modelKeys.ensureDefault();
-    if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
+    this.announceModelKeysChanged();
     return toSummary(record);
   }
 
@@ -232,51 +267,53 @@ export class SecretKeysService {
     await this.store.persist(existing.id);
     if (ModelKeySettings.isModelKey(existing) && !ModelKeySettings.isModelKey(next)) await this.modelKeys.keyLost({ id: existing.id, wasDefault, phrase: next.enabled ? "is no longer a model key" : "was disabled" });
     else if (ModelKeySettings.isModelKey(next)) await this.modelKeys.ensureDefault();
+    this.announceModelKeysChanged();
     return toSummary(next);
   }
 
-  /** Seals a new value. A pending seal from a credential change holds the old value, so the rotation drops it. */
+  /**
+   * Replaces a key's value, sealed as `createKey` seals one (version 3) and
+   * protected for the key's owner, with no password: a password-sealed key
+   * becomes a host-sealed one. A key that had no owner becomes `actorUserId`'s.
+   * A pending seal from a credential change holds the old value, so the
+   * rotation drops it, and every holder of the old value is revoked.
+   */
   async rotateKey(input: RotateSecretKeyInput): Promise<SecretKeySummary> {
     await this.store.load();
     const existing = this.store.require(input.id);
-    const password = requirePassword(input.authorizationPassword);
     const now = Math.max(input.nowMs ?? Date.now(), existing.updatedAtMs + 1);
-    const actorUserId = cleanOptional(input.actorUserId);
-    const { sealed, key } = await this.sealer.seal({ id: existing.id, value: input.value, updatedAtMs: now }, password, actorUserId);
-    let current = this.store.get(existing.id);
-    if (!current) {
-      key.fill(0);
-      throw new Error(`Unknown secret key: ${existing.id}`);
-    }
-    let next: SecretKeyRecord = {
-      ...current,
-      updatedAtMs: Math.max(now, current.updatedAtMs + 1),
-      lastRotatedAtMs: now,
-      sealed,
-      pendingSealed: undefined,
-      hostProtection: undefined,
-      pendingHostProtection: undefined
-    };
+    const owner = existing.createdBy ?? cleanOptional(input.actorUserId);
+    if (!owner) throw new Error(SECRET_KEY_OWNERLESS_REFUSAL);
+    if (!this.dataKeys.configured) throw new Error(SECRET_KEY_UNPROTECTED_REFUSAL);
+    const { sealed, key } = this.sealer.sealForHost({ id: existing.id, value: input.value, updatedAtMs: now });
+    let current = existing;
     try {
       for (;;) {
-        next = await this.dataKeys.protect(next, key, current.createdBy ?? actorUserId);
-        if (await this.store.commit(next, current)) break;
+        const next = await protectedForOwner(this.dataKeys, {
+          ...current,
+          createdBy: owner,
+          updatedAtMs: Math.max(now, current.updatedAtMs + 1),
+          lastRotatedAtMs: now,
+          sealed,
+          hostProtection: undefined,
+          pendingSealed: undefined,
+          pendingHostProtection: undefined
+        }, key, owner);
+        if (await this.store.commit(next, current)) {
+          current = next;
+          break;
+        }
         const latest = this.store.get(existing.id);
-        if (!latest || latest.lastRotatedAtMs !== current.lastRotatedAtMs) throw new Error("Secret key changed during rotation.");
+        if (!latest || latest.lastRotatedAtMs !== current.lastRotatedAtMs || (latest.createdBy ?? owner) !== owner) throw new Error("Secret key changed during rotation.");
         current = latest;
-        next = { ...latest, updatedAtMs: Math.max(now, latest.updatedAtMs + 1), lastRotatedAtMs: now, sealed, hostProtection: next.hostProtection, pendingSealed: undefined, pendingHostProtection: undefined };
       }
-    } catch (error) {
+    } finally {
       key.fill(0);
-      throw error;
     }
     this.heldKeys.revokeKey(current.id);
     await this.quietly(this.credentialUnlocks.dropKey(current.id));
-    // The rotator proved their password for this value: it reaches their own browsers, and only theirs. Anyone else's old box is gone with the old seal.
-    if (actorUserId && (current.createdBy === undefined || current.createdBy === actorUserId)) await this.boxForProver(actorUserId, next, key);
-    const unlockNeeded = this.holdForActor(next, key, input.actorSession, actorUserId);
-    if (unlockNeeded && input.actorSession) await this.unlockActorSession(input.actorSession, password);
-    return toSummary(next);
+    this.announceModelKeysChanged();
+    return toSummary(current);
   }
 
   async revealKey(input: RevealSecretKeyInput): Promise<{ key: SecretKeySummary; value: string }> {
@@ -329,7 +366,10 @@ export class SecretKeysService {
     this.heldKeys.revokeKey(id);
     await this.quietly(this.credentialUnlocks.dropKey(id));
     const deleted = await this.store.delete(id);
-    if (deleted) await this.modelKeys.keyLost({ id, wasDefault, phrase: "was removed" });
+    if (deleted) {
+      await this.modelKeys.keyLost({ id, wasDefault, phrase: "was removed" });
+      this.announceModelKeysChanged();
+    }
     return deleted;
   }
 
@@ -370,11 +410,16 @@ export class SecretKeysService {
   }
 
   /**
-   * `unlockClients` names the paired clients the person chose: only those have a lock
-   * lifted. An ordinary sign-in names none and leaves a locked client locked,
-   * so signing in elsewhere never undoes signing out here.
+   * A sign-in's password opens the person's old-format (password-sealed) keys
+   * for this session, upgrades each the server can then open with no password,
+   * and boxes them to the person's vouched holders. It lifts no client lock:
+   * a connected client needs no unlock (t928).
+   *
+   * `passwordVerified` is accepted and ignored. It once let a lift stand with no
+   * key to box; nothing reads it now. `apps/web/src/server/connect/restore-login-keys.ts`
+   * still passes it, and its owner can drop it.
    */
-  async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number; unlockClients?: readonly string[] | undefined; passwordVerified?: boolean | undefined }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
+  async unlockSession(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; nowMs?: number; passwordVerified?: boolean | undefined }): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
     await this.store.load();
     const nowMs = input.nowMs ?? this.now();
     if (!input.sessionId || !input.userId || !input.authorizationPassword || !Number.isFinite(input.expiresAtMs) || input.expiresAtMs <= nowMs) {
@@ -388,7 +433,7 @@ export class SecretKeysService {
     }
   }
 
-  private async fillSessionUnlock(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number; unlockClients?: readonly string[] | undefined; passwordVerified?: boolean | undefined }, nowMs: number): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
+  private async fillSessionUnlock(input: { sessionId: string; userId: string; authorizationPassword: string; expiresAtMs: number }, nowMs: number): Promise<{ sessionId: string; expiresAtMs: number; unlockedKeyCount: number }> {
     this.heldKeys.revokeSession(input.sessionId);
     // The timer holds only the custody and the id: never this service, nor `input`, which carries the password.
     const expiryTimer = this.heldKeys.sessionExpiryTimer(input.sessionId, input.expiresAtMs - nowMs);
@@ -406,7 +451,7 @@ export class SecretKeysService {
     if (this.heldKeys.session(input.sessionId) !== unlock) throw new Error("Secret key session unlock is unavailable");
     // A failure here costs a later convenience, never this sign-in: the session is unlocked either way.
     await this.quietly(this.credentialUnlocks.enrolPanelSession(input));
-    await this.quietly(this.credentialUnlocks.personProved(input.userId, unlock.decryptionKeys, { lift: new Set(input.unlockClients ?? []), passwordVerified: input.passwordVerified }));
+    await this.quietly(this.credentialUnlocks.personProved(input.userId, unlock.decryptionKeys));
     this.heldKeys.notifyChanged(input.userId);
     return { sessionId: input.sessionId, expiresAtMs: input.expiresAtMs, unlockedKeyCount: unlock.decryptionKeys.size };
   }
@@ -446,6 +491,11 @@ export class SecretKeysService {
     return publicRevealAuthorization(authorization);
   }
 
+  /**
+   * Releases a value once for an authorization (a model call's use). A use is
+   * not a person's reveal: nothing is written, so `lastRevealedAtMs` says only
+   * when the person last revealed the key (`revealKey`).
+   */
   async revealKeyWithAuthorization(input: { authorizationId: string; id: string; nowMs?: number }): Promise<{ key: SecretKeySummary; value: string }> {
     const authorization = this.heldKeys.authorization(input.authorizationId);
     const nowMs = input.nowMs ?? this.now();
@@ -462,20 +512,23 @@ export class SecretKeysService {
       if (!sameSecretKeyVersion(this.store.get(input.id), existing) || existing.updatedAtMs !== authorization.keyUpdatedAtMs) throw new Error("Secret reveal authorization is no longer valid");
       const secret = this.sealer.openRecordWithKey(existing, authorization.decryptionKey);
       if (!secret) throw new Error("Invalid secret key payload");
-      const next: SecretKeyRecord = { ...existing, lastRevealedAtMs: nowMs };
-      this.store.set(next);
-      await this.store.persist(existing.id);
       const active = this.heldKeys.authorization(input.authorizationId);
       if (active !== authorization || authorization.state !== "claimed" || authorization.expiresAtMs <= this.now()) {
         secret.value = "";
         throw new Error("Secret reveal authorization is unavailable");
       }
       await this.access.assertAuthorization(authorization, this.store.require(input.id));
-      if (!sameSecretKeyVersion(this.store.get(input.id), next)) throw new Error("Secret reveal authorization is no longer valid");
-      if (this.heldKeys.authorization(input.authorizationId) !== authorization || authorization.expiresAtMs <= this.now()) throw new Error("Secret reveal authorization is unavailable");
+      if (!sameSecretKeyVersion(this.store.get(input.id), existing)) {
+        secret.value = "";
+        throw new Error("Secret reveal authorization is no longer valid");
+      }
+      if (this.heldKeys.authorization(input.authorizationId) !== authorization || authorization.expiresAtMs <= this.now()) {
+        secret.value = "";
+        throw new Error("Secret reveal authorization is unavailable");
+      }
       const value = secret.value;
       this.heldKeys.revokeAuthorization(input.authorizationId);
-      return { key: toSummary(next), value };
+      return { key: toSummary(existing), value };
     } catch (error) {
       this.heldKeys.revokeAuthorization(input.authorizationId);
       throw error;
@@ -571,17 +624,6 @@ export class SecretKeysService {
     this.credentialUnlocks.closeConnections();
   }
 
-  /** Boxes a key its prover just sealed to their holders; `key` stays theirs to hold or zero. */
-  private async boxForProver(userId: string | undefined, record: SecretKeyRecord, key: Buffer): Promise<void> {
-    if (!userId) return;
-    const copy = Buffer.from(key);
-    try {
-      await this.quietly(this.credentialUnlocks.personProved(userId, new Map([[record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey: copy }]])));
-    } finally {
-      copy.fill(0);
-    }
-  }
-
   /**
    * Best-effort legacy credential-box propagation. Required host protection and
    * strict enrollment writes never use this helper; a box failure creates no
@@ -595,28 +637,14 @@ export class SecretKeysService {
     }
   }
 
-  /**
-   * Hands the key a create or rotation just sealed `record` with to the acting
-   * user's own live session, which then holds it like a key opened at sign-in;
-   * zeroes it otherwise. Synchronous with the record write, so the key opens the
-   * record's current seal when it is held. Only the user the seal is stamped for,
-   * only their own session. True when that session holds no unlock at all (a
-   * sign-in this process has not unlocked), so the caller unlocks it with the
-   * password it just verified.
-   */
-  private holdForActor(record: SecretKeyRecord, key: Buffer, actorSession: SecretKeyActorSession | undefined, sealedByUserId: string | undefined): boolean {
-    if (!actorSession || !sealedByUserId || actorSession.userId !== sealedByUserId || actorSession.expiresAtMs <= this.now()) {
-      key.fill(0);
-      return false;
-    }
-    const unlock = this.liveActorUnlock(actorSession);
-    if (!unlock) {
-      key.fill(0);
-      return this.heldKeys.session(actorSession.sessionId) === undefined;
-    }
-    unlock.decryptionKeys.get(record.id)?.decryptionKey.fill(0);
-    unlock.decryptionKeys.set(record.id, { keyUpdatedAtMs: record.updatedAtMs, decryptionKey: key });
-    return false;
+  /** Tells every `onModelKeysChanged` listener, or the write holding them (`holdingModelKeysNotice`). */
+  private announceModelKeysChanged(): void {
+    this.notice.announce();
+  }
+
+  /** `SecretKeyAccess.migrateHeldSession`, announced when it made a key one the server can open. */
+  private async migrateHeldSession(userId: string, sessionId: string): Promise<void> {
+    if (await this.access.migrateHeldSession({ userId, sessionId })) this.announceModelKeysChanged();
   }
 
   /** The acting user's own held, unexpired session unlock, or undefined. */
@@ -624,12 +652,6 @@ export class SecretKeysService {
     if (!actorSession) return undefined;
     const unlock = this.heldKeys.session(actorSession.sessionId);
     return unlock && unlock.userId === actorSession.userId && unlock.expiresAtMs > this.now() ? unlock : undefined;
-  }
-
-  /** Unlocks the acting user's session with the password the caller verified, as sign-in does; a failure leaves the key written and the session locked. */
-  private async unlockActorSession(actorSession: SecretKeyActorSession, password: string): Promise<void> {
-    if (this.heldKeys.session(actorSession.sessionId) !== undefined) return;
-    await this.unlockSession({ sessionId: actorSession.sessionId, userId: actorSession.userId, authorizationPassword: password, expiresAtMs: actorSession.expiresAtMs }).catch(/* best-effort: the key is already written and stays usable after the next sign-in, which is the old behaviour */ () => undefined);
   }
 
   /**
@@ -658,11 +680,20 @@ export class SecretKeysService {
       }
       // Settling may promote the pending seal, which revokes the old key's holders, so the key is held after it.
       const settling = this.credentialChanges.settle(current, opened.sealed);
+      // The session's copy can be revoked (and zeroed) at any await; the upgrade below uses its own.
+      const openedKey = Buffer.from(opened.key);
       unlock.decryptionKeys.set(recordId, { keyUpdatedAtMs: current.updatedAtMs, decryptionKey: opened.key });
-      // A failed write leaves the settled record in memory; after a restart the stored pending seal is settled again.
-      await settling.catch(() => undefined);
+      let upgraded: boolean;
+      try {
+        // A failed write leaves the settled record in memory; after a restart the stored pending seal is settled again.
+        await settling.catch(() => undefined);
+        upgraded = await upgradeOpenedRecord({ store: this.store, dataKeys: this.dataKeys }, { recordId, openedSeal: opened.sealed, key: openedKey, userId: unlock.userId });
+      } finally {
+        openedKey.fill(0);
+      }
       await this.upgrades.upgrade(recordId, opened.sealed, opened.secret, password, unlock.userId);
-      await this.access.migrateHeldSession({ userId: unlock.userId, sessionId: unlock.sessionId });
+      await this.migrateHeldSession(unlock.userId, unlock.sessionId);
+      if (upgraded) this.announceModelKeysChanged();
       opened.secret.value = "";
       return;
     }
@@ -691,6 +722,16 @@ function toSummary(record: SecretKeyRecord): SecretKeySummary {
     ...(record.lastRevealedAtMs ? { lastRevealedAtMs: record.lastRevealedAtMs } : {}),
     ...(record.metadata ? { metadata: record.metadata } : {})
   };
+}
+
+/** `SecretKeyDataKeys.protectHostSealed`, with an unavailable protection key said in plain words. */
+async function protectedForOwner(dataKeys: SecretKeyDataKeys, record: SecretKeyRecord, key: Buffer, owner: string): Promise<SecretKeyRecord> {
+  try {
+    return await dataKeys.protectHostSealed(record, key, owner);
+  } catch (error) {
+    if (error instanceof SecretKeyAccessUnavailableError && error.code === "host_protection_unavailable") throw new Error(SECRET_KEY_UNPROTECTED_REFUSAL);
+    throw error;
+  }
 }
 
 function requirePassword(value: string | undefined): string {

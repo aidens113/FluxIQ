@@ -5,6 +5,7 @@ import { resolveGatewayLimits } from "./gateway-limits.ts";
 import { resolveGatewayPublicUrl } from "./gateway-public-url.ts";
 import { resolvePublicOrigin } from "./public-origin.ts";
 import { resolveFluxIQProfile } from "./resolve-profile.ts";
+import { resolveSignupMode } from "./signup-mode.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -46,6 +47,7 @@ export function resolveFluxIQDeploymentSettings(env: Env): FluxIQDeploymentSetti
     drainSeconds: parseIntegerSetting("FLUXIQ_DRAIN_SECONDS", env.FLUXIQ_DRAIN_SECONDS, profile === "local" ? 0 : 30, true) ?? 0,
     session: httpsOrigin ? { name: "__Host-fluxiq_session", secure: true } : { name: "fluxiq_session", secure: env.NODE_ENV === "production" },
     setupCodeFile: env.FLUXIQ_SETUP_CODE_FILE?.trim() || null,
+    signup: resolveSignupMode(profile, env),
     logFormat: env.FLUXIQ_LOG_FORMAT === "json" || env.FLUXIQ_LOG_FORMAT === "text" ? env.FLUXIQ_LOG_FORMAT : profile === "local" ? "text" : "json"
   };
 }

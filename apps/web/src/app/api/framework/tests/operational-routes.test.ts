@@ -12,10 +12,9 @@ describe("operational framework route authorization", () => {
       expect(route, file).toContain("operationalRouteContract");
       expect(route, file).not.toContain("permissions.includes");
     }
-    // Setup decides on the panel session directly.
+    // Setup holds the caller's workspace (the one workspace of a single-tenancy server) and decides through its route context.
     const setup = source("setup/route.ts");
-    expect(setup).toContain("authorizeAppRoute(fluxiq.programs.api, contract.iam");
-    expect(setup).toContain("status: 401");
+    expect(setup).toContain("workspaceRouteContext(request, contract.iam)");
     expect(setup).toContain("status: refusal.status");
     // The IO routes hold the selected tenant's authority (t914, 6ba2e1f29): the
     // route context authenticates, decides the contract through IAM and answers

@@ -8,6 +8,7 @@ const NL = String.fromCharCode(10);
 
 const examples = fileURLToPath(new URL("../../../examples/", import.meta.url));
 const localConfig = () => parseCloudConfig(readFileSync(`${examples}local.config.json`, "utf8"), `${examples}local.config.json`);
+const selfHostedConfig = () => parseCloudConfig(readFileSync(`${examples}self-hosted.config.json`, "utf8"), `${examples}self-hosted.config.json`);
 const productionConfig = () => parseCloudConfig(readFileSync(`${examples}production.config.json`, "utf8"), "C:/laptop/production.config.json");
 
 describe("buildCloudPlan", () => {
@@ -29,9 +30,9 @@ describe("buildCloudPlan", () => {
     });
     expect(plan.exportedCa).toBe(`${plan.config.stateDir}/certs/root.crt`);
     expect(plan.secrets.map((secret) => [secret.name, secret.generate])).toEqual([
-      ["provisioning_token", "token"], ["setup_code", "setup-code"], ["secret_keyring", "keyring"], ["stripe_secret_key", "stripe-mock-key"]
+      ["provisioning_token", "token"], ["setup_code", "setup-code"], ["secret_keyring", "keyring"], ["stripe_secret_key", "stripe-mock-key"], ["stripe_webhook_secret", "webhook-secret"]
     ]);
-    expect(Object.keys(plan.files)).toEqual(["caddy/Caddyfile", "compose/cloud.override.yml", "compose/compose.env", "compose/service.compose.yml", "compose/sinks.compose.yml", "deployment.json", "env/service.env"]);
+    expect(Object.keys(plan.files)).toEqual(["caddy/Caddyfile", "compose/cloud.override.yml", "compose/compose.env", "compose/service.compose.yml", "compose/sinks.compose.yml", "deployment.json", "env/commerce.json", "env/service.env"]);
   });
 
   it("plans production without sinks or a local certificate, with operator secrets never generated", () => {
@@ -40,7 +41,7 @@ describe("buildCloudPlan", () => {
     expect(plan.services).toEqual(["fluxiq", "caddy"]);
     expect(plan.exportedCa).toBeNull();
     expect(plan.mailUi).toBeNull();
-    expect(plan.secrets.filter((secret) => secret.generate === "operator").map((secret) => secret.file)).toEqual(["/etc/fluxiq-cloud/secrets/stripe-secret-key", "/etc/fluxiq-cloud/secrets/smtp-password"]);
+    expect(plan.secrets.filter((secret) => secret.generate === "operator").map((secret) => secret.file)).toEqual(["/etc/fluxiq-cloud/secrets/stripe-secret-key", "/etc/fluxiq-cloud/secrets/stripe-webhook-secret", "/etc/fluxiq-cloud/secrets/smtp-password"]);
     expect(plan.dockerfile).toBe("/opt/fluxiq/core/deploy/docker/Dockerfile");
   });
 
@@ -64,6 +65,71 @@ describe("buildCloudPlan", () => {
     expect(plan.secretsVolume).toBe("fluxiq-production_secrets");
     const everything = Object.values(plan.files).map((file) => ("content" in file ? file.content : "")).join(NL);
     expect(everything).not.toMatch(/sk_(test|live)_|BEGIN .*PRIVATE KEY/u);
+  });
+
+  it("renders the commerce configuration Core reads beside the secrets and points Core at it, with no secret in it", () => {
+    const local = buildCloudPlan(localConfig(), "0.1.0");
+    const commerce = JSON.parse((local.files["env/commerce.json"] as { content: string }).content) as Record<string, unknown>;
+    expect(commerce).toEqual({
+      provider: "stripe", allowTrial: false, graceMs: 259_200_000, retentionMs: 2_592_000_000, refreshAfterMs: 3_600_000,
+      plans: {
+        browser: { name: "Dedicated browser", priceId: "price_dedicated_browser_monthly", unit: "dedicated-browser", quantity: 1, grants: [{ key: "cloud.dedicated", allocation: "dedicated", capabilities: ["execute", "environment.dedicated"], regions: ["local"] }] },
+        seat: { priceId: "price_team_seat_monthly", unit: "seat", quantity: 1, grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] },
+        shared: { priceId: "price_shared_monthly", unit: "flat", quantity: 1, grants: [{ key: "cloud.shared", allocation: "shared", capabilities: ["execute"], regions: ["local"] }] }
+      },
+      secretKeyFile: "/run/secrets/stripe_secret_key", webhookSecretFile: "/run/secrets/stripe_webhook_secret", apiBaseUrl: "http://stripe-mock:12111"
+    });
+    expect(local.renderedFiles).toEqual([{ name: "commerce_config", bundlePath: "env/commerce.json", content: (local.files["env/commerce.json"] as { content: string }).content }]);
+    const env = (local.files["env/service.env"] as { content: string }).content;
+    expect(env).toContain("FLUXIQ_COMMERCE_CONFIG_FILE=/run/secrets/commerce_config" + NL);
+    expect(env).not.toMatch(/FLUXIQ_STRIPE_/u);
+    expect(env).toContain("FLUXIQ_SIGNUP=off" + NL);
+    const production = JSON.parse((buildCloudPlan(productionConfig(), "0.1.0").files["env/commerce.json"] as { content: string }).content) as Record<string, unknown>;
+    expect(production).not.toHaveProperty("apiBaseUrl");
+    expect(production).toMatchObject({ secretKeyFile: "/run/secrets/stripe_secret_key", webhookSecretFile: "/run/secrets/stripe_webhook_secret" });
+  });
+
+  it("renders no commerce configuration when the config bills nothing", () => {
+    const plan = buildCloudPlan({ ...localConfig(), billing: null }, "0.1.0");
+    expect(plan.renderedFiles).toEqual([]);
+    expect(Object.keys(plan.files)).not.toContain("env/commerce.json");
+    expect(plan.secrets.map((secret) => secret.name)).not.toContain("stripe_webhook_secret");
+    expect((plan.files["env/service.env"] as { content: string }).content).not.toContain("FLUXIQ_COMMERCE_CONFIG_FILE");
+  });
+
+  it("leaves apiBaseUrl and the Stripe key out of the fake provider's configuration", () => {
+    const base = localConfig();
+    const config = { ...base, billing: { ...base.billing!, provider: "fake" as const } };
+    const commerce = JSON.parse((buildCloudPlan(config, "0.1.0").files["env/commerce.json"] as { content: string }).content) as Record<string, unknown>;
+    expect(commerce).not.toHaveProperty("secretKeyFile");
+    expect(commerce).not.toHaveProperty("apiBaseUrl");
+    expect(commerce.webhookSecretFile).toBe("/run/secrets/stripe_webhook_secret");
+  });
+
+  it("renders FLUXIQ_SIGNUP from the signup setting", () => {
+    const open = buildCloudPlan({ ...localConfig(), signup: "open" }, "0.1.0");
+    expect((open.files["env/service.env"] as { content: string }).content).toContain("FLUXIQ_SIGNUP=open" + NL);
+  });
+
+  it("plans a self-hosted server: its own base file, no provisioning, no billing, no payments secrets", () => {
+    const plan = buildCloudPlan(selfHostedConfig(), "0.1.0");
+    expect(plan.composeFiles).toEqual(["compose/self-hosted.compose.yml", "compose/cloud.override.yml", "compose/sinks.compose.yml"]);
+    expect(plan.services).toEqual(["fluxiq", "caddy", "mailpit"]);
+    expect(plan.networks).toEqual({ edge: "fluxiq-selfhosted_edge", provisioning: null, runners: "fluxiq-selfhosted_runners" });
+    expect(plan.secrets.map((secret) => [secret.name, secret.generate])).toEqual([["setup_code", "setup-code"]]);
+    expect(plan.renderedFiles).toEqual([]);
+    expect(Object.keys(plan.files)).toEqual(["caddy/Caddyfile", "compose/cloud.override.yml", "compose/compose.env", "compose/self-hosted.compose.yml", "compose/sinks.compose.yml", "deployment.json", "env/self-hosted.env"]);
+    const env = (plan.files["env/self-hosted.env"] as { content: string }).content;
+    expect(env).toContain("FLUXIQ_SETUP_CODE_FILE=/run/secrets/setup_code" + NL);
+    expect(env).not.toMatch(/FLUXIQ_SIGNUP|FLUXIQ_COMMERCE_CONFIG_FILE|PROVISIONING/u);
+    const composeEnv = (plan.files["compose/compose.env"] as { content: string }).content;
+    expect(composeEnv).toContain("FLUXIQ_ENV_FILE=../env/self-hosted.env" + NL);
+    expect(composeEnv).not.toContain("PROVISIONING");
+    const override = (plan.files["compose/cloud.override.yml"] as { content: string }).content;
+    expect(override).not.toContain("provisioning");
+    expect(override).not.toContain("secrets: !reset {}");
+    expect(override).toContain("    secrets: !reset []");
+    expect(JSON.parse((plan.files["deployment.json"] as { content: string }).content)).toMatchObject({ mode: "self-hosted", composeFiles: plan.composeFiles });
   });
 
   it("serves the public origin on a non-default port when the config moves HTTPS", () => {
