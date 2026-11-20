@@ -36,6 +36,13 @@ describe("a failure that lost its target without acting", () => {
     expect(automationStudioStaleTargetFailure(failed(failure))).toBe(true);
   });
 
+  it("counts an act that certainly changed nothing, which may have pressed a stale copy of the item (t968)", () => {
+    const noEffect: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+    expect(automationStudioStaleTargetFailure(failed(noEffect))).toBe(true);
+    // Never one the run already holds as done.
+    expect(automationStudioStaleTargetFailure(failed(noEffect), { actCompleted: true })).toBe(false);
+  });
+
   it("counts no failure that is not about the target, and no code that only contains the word", () => {
     expect(automationStudioStaleTargetFailure(failed({ category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted" }))).toBe(false);
     expect(automationStudioStaleTargetFailure(failed({ category: "timeout", code: "web.staleness_check.timeout", retryable: true, stage: "execution" }))).toBe(false);

@@ -9,7 +9,7 @@ import { AUTOMATION_STUDIO_LLM_LOOP_DECISIONS, type AutomationStudioLlmLoopDecis
 export type AutomationStudioLlmLoopDecision =
   | { decision: "continue"; why: string }
   | { decision: "change_approach"; approach: string }
-  | { decision: "ask_person"; question: string }
+  | { decision: "ask_person"; question: string; why: string }
   | { decision: "escalate_model"; why?: string | undefined }
   | { decision: "finish_with_best"; result: JsonObject };
 
@@ -34,6 +34,11 @@ export function automationStudioLlmLoopDecisionRead(input: JsonObject): Automati
   const need = NEEDS[kind];
   const said = words(input[need.field]);
   if (!said) return { issue: need.missing };
+  if (kind === "ask_person") {
+    // Only for a task that is genuinely impossible under the person's instructions: what is impossible, and why, must be said.
+    const impossible = words(input.why);
+    return impossible ? { decision: kind, question: said, why: impossible } : { issue: "ask_person needs why: name what is impossible under the person's instructions and why, since asking is only for a task that genuinely cannot be completed as instructed, never for difficulty or a repeat." };
+  }
   if (kind === "continue") return { decision: kind, why: said };
   if (kind === "change_approach") return { decision: kind, approach: said };
   return { decision: kind, question: said };

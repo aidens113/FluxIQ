@@ -237,9 +237,16 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     // cost, from the malformed reply's account or from any other refusal of a
     // reply that arrived. Without it both ledgers charged the hold, and
     // `run-muqiojz4-04a7a8fc` step 0108 cost $0.0041 and was charged $0.0144.
-    const paid = failure.reply?.usage ?? failure.paid;
+    // A failure that reported no cost billed nothing: an HTTP refusal before
+    // generation, an error with no usage, a transport fault. Its reservation is
+    // released at zero rather than kept at the hold, which charged `run-mwodpw10-3d5748ab`
+    // attempt 2 $1.4233 for three refused judge calls the provider never billed
+    // and emptied the Flow's purse (t966). Whether the provider reported usage
+    // decides it, never the error code.
+    const reported = failure.reply?.usage ?? failure.paid;
+    const paid = billedUsage(reported) ? reported : UNBILLED_USAGE;
     if (reservation?.ok) reservation.lease.complete(paid, callOutcome(diagnostics));
-    // A request the adapter refused before sending cost nothing; one that may have gone out is charged as held, or as reported.
+    // A request the adapter refused before sending cost nothing; one that went out is charged what it reported, or nothing when it reported none.
     if (held?.ok) { if (failure.provenance.providerInvocation === "not_attempted") held.hold.release(); else held.hold.settle(paid); }
     return {
       ok: false,
@@ -363,4 +370,13 @@ function replyReserveFor(taskKind: AutomationStudioLlmHarnessInput["taskKind"], 
 function reservedCostUsd(provider: AutomationStudioLlmProvider, inputTokens: number, outputTokens: number, ceilingUsd: number): number {
   const priced = automationStudioLlmProjectedCallCostUsd(provider, inputTokens, outputTokens);
   return priced !== undefined ? Math.min(ceilingUsd, priced) : ceilingUsd;
+}
+
+/** What a failed call that reported no cost is charged: nothing, recorded as a call that cost 0. */
+const UNBILLED_USAGE: AutomationStudioLlmUsageSummary = { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
+
+/** Whether the provider reported what a failed call cost. Absent, the call was not billed. */
+function billedUsage(usage: AutomationStudioLlmUsageSummary | undefined): usage is AutomationStudioLlmUsageSummary {
+  const cost = usage?.estimatedCostUsd;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0;
 }

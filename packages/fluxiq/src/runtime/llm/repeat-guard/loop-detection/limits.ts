@@ -4,6 +4,9 @@
 /** Runs of one call on one page, with only free text changed, each bringing nothing, that make a near repeat. */
 export const AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT = 2;
 
+/** Runs of one call that each succeeded, with the same result and no new row between them, that are a success again (t969: `core.run_flow` seven times in run-mwoi785f-ebe09067, each ending normally). */
+export const AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT = 3;
+
 /** The longest repeating block a cycle is looked for at: A B A B up to A B C D A B C D. */
 export const AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD = 4;
 

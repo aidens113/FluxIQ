@@ -104,6 +104,32 @@ describe("the attempt's resolution on the model ladder", () => {
     expect(seen).toEqual(["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
   });
 
+  // t967: what tells a model's adapter one attempt's conversation from another's, so a judge continues only its own decider.
+  it("stamps every call made in an attempt's frame with that attempt's key, the same for all of its calls and another for another attempt", async () => {
+    const seen: (string | undefined)[] = [];
+    const capture: AutomationStudioLlmProvider = {
+      metadata: { provider: "anthropic", model: "claude-haiku-5-5" },
+      runTask: async (sent) => {
+        seen.push(sent.metadata?.attemptKey as string | undefined);
+        return { model: "claude-haiku-5-5" };
+      }
+    };
+    const resolution = await automationStudioLlmRoleRoutedResolution(resolver([], { "claude-haiku-5-5": capture }), { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
+    const provider = resolution!.provider;
+    const first = automationStudioLlmModelLadder();
+    await runWithAutomationStudioLlmModelLadder(first, async () => {
+      await provider.runTask(request("evidence_tool_decision"));
+      await provider.runTask({ ...request("loop_verification"), metadata: { continuesDecider: true } } as AutomationStudioLlmTaskRequest);
+    });
+    await runWithAutomationStudioLlmModelLadder(automationStudioLlmModelLadder(), async () => { await provider.runTask(request("evidence_tool_decision")); });
+    await provider.runTask(request("loop_verification"));
+    expect(seen[0]).toMatch(/^attempt\.\d+$/u);
+    expect(seen[1]).toBe(seen[0]);
+    expect(seen[2]).toMatch(/^attempt\.\d+$/u);
+    expect(seen[2]).not.toBe(seen[0]);
+    expect(seen[3]).toBeUndefined();
+  });
+
   it("keeps a role's own stronger judge model where it is, and a role off the ladder where it is", async () => {
     const asked: (string | undefined)[] = [];
     const resolution = await inFrame({ judge: "claude-opus-5-5", repair: "mock-repair" }, async () => await automationStudioLlmRoleRoutedResolution(resolver(asked), { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" }));

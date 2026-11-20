@@ -28,10 +28,11 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionRead, type AutomationStudioLlmLoopDecision } from "../loop-decision/index.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionRead, type AutomationStudioLlmLoopDecision, type AutomationStudioLlmLoopDecisionOptions } from "../loop-decision/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_SIGNAL_CODES, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopSignal } from "../repeat-guard/index.ts";
 import { automationStudioLlmModelLadderClimb } from "../role-routing/index.ts";
 import { automationStudioLlmStepLogEvent } from "../step-log/index.ts";
+import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
@@ -50,7 +51,8 @@ const CODES = Object.freeze({
   carried: "core.loop_decision.carried_out",
   invalid: "core.loop_decision.invalid",
   top: "core.loop_decision.strongest_model",
-  noPerson: "core.loop_decision.no_person"
+  noPerson: "core.loop_decision.no_person",
+  notYet: "core.loop_decision.ask_person_not_offered"
 });
 
 /** What the model is told once each decision is carried out. */
@@ -72,12 +74,17 @@ export async function automationStudioLlmEvidenceHandleLoopDecision(context: Aut
   if ("issue" in read) return answered(context, iteration, call, { ok: false, code: CODES.invalid, instruction: `${read.issue} Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with one decision.` });
   // The repeat the model was told of: the watch's, or a completion refused again, which never passes the watch.
   const about = context.loops.standing() ?? context.loops.record.lastNoted;
+  // What was on offer when the model was asked, before this decision changes it.
+  const options = automationStudioLlmEvidenceLoopDecisionOptions(context);
   if (read.decision === "escalate_model") {
     const climbed = automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "model_decided", ...(about ? { pattern: about.pattern } : {}) }, iteration);
     if (!climbed) return answered(context, iteration, call, { ok: false, code: CODES.top, instruction: `This attempt is already on the strongest model it can use. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with another decision.` });
   }
-  if (read.decision === "ask_person") return asked(context, iteration, call, read.question, about, steps);
-  recorded(context, iteration, read, about);
+  if (read.decision === "ask_person") {
+    if (!options.offered.includes("ask_person")) return answered(context, iteration, call, { ok: false, code: CODES.notYet, offered: [...options.offered], instruction: `Asking the person is for when your own approaches and a stronger model have not worked, and that is not so yet. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with one of: ${options.offered.join(", ")}.` });
+    return asked(context, iteration, call, read.question, read.why, about, steps, options);
+  }
+  recorded(context, iteration, read, about, options);
   context.loops.decided(read.decision);
   answered(context, iteration, call, { ok: true, code: CODES.carried, decision: read.decision, instruction: read.decision === "continue" && about?.pattern === "exact_repeat" ? CONTINUE_EXACT : CARRIED[read.decision] });
   if (read.decision !== "finish_with_best") return undefined;
@@ -86,9 +93,9 @@ export async function automationStudioLlmEvidenceHandleLoopDecision(context: Aut
 }
 
 /** The person is asked the model's own question through the loop's caller, which ends the round there; with no caller, nobody can be asked and the model chooses again. */
-function asked(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, call: ToolCall, question: string, about: AutomationStudioLlmLoopFinding | undefined, steps: AutomationStudioLlmEvidenceModelDecisionSteps): AutomationStudioLlmEvidenceLoopResult | undefined {
+function asked(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, call: ToolCall, question: string, why: string, about: AutomationStudioLlmLoopFinding | undefined, steps: AutomationStudioLlmEvidenceModelDecisionSteps, options: AutomationStudioLlmLoopDecisionOptions): AutomationStudioLlmEvidenceLoopResult | undefined {
   if (!context.input.loopSignal) return answered(context, iteration, call, { ok: false, code: CODES.noPerson, instruction: `No person can be asked from here. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with another decision.` });
-  recorded(context, iteration, { decision: "ask_person", question }, about);
+  recorded(context, iteration, { decision: "ask_person", question, why }, about, options);
   answered(context, iteration, call, { ok: true, code: CODES.carried, decision: "ask_person", instruction: CARRIED.ask_person });
   const finding = about ?? { pattern: "exact_repeat", repeats: 0, toolIds: [], unchanged: [] };
   const signal: AutomationStudioLlmLoopSignal = { ...finding, kind: "ask_person", approaches: context.loops.record.approaches, question };
@@ -105,12 +112,12 @@ function answered(context: AutomationStudioLlmEvidenceDecisionHandlerContext, it
 }
 
 /** On the attempt's record, in a step folder and in the chat. */
-function recorded(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, decision: AutomationStudioLlmLoopDecision, about: AutomationStudioLlmLoopFinding | undefined): void {
+function recorded(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, decision: AutomationStudioLlmLoopDecision, about: AutomationStudioLlmLoopFinding | undefined, options: AutomationStudioLlmLoopDecisionOptions): void {
   context.loops.record.decided({ decision: decision.decision, ...(about ? { pattern: about.pattern, repeats: about.repeats } : {}) });
   const words = wordsOf(decision);
   const text = `FluxIQ noticed it was repeating itself and decided ${CHAT[decision.decision]}${words ? `: ${words}` : "."}`;
   emitAutomationStudioActivity({ phase: "thinking", label: "Decided how to go on", detail: { kind: "thought", title: "Decided how to go on", text, status: "succeeded" } });
-  stepFolder(iteration, decision.decision, words, about);
+  stepFolder(iteration, decision.decision, words, about, options);
 }
 
 /** How the chat says each decision, before the model's own words for it. */
@@ -129,7 +136,7 @@ function wordsOf(decision: AutomationStudioLlmLoopDecision): string | undefined 
   return decision.decision === "escalate_model" ? decision.why : undefined;
 }
 
-function stepFolder(iteration: number, decision: AutomationStudioLlmLoopDecision["decision"], words: string | undefined, about: AutomationStudioLlmLoopFinding | undefined): void {
+function stepFolder(iteration: number, decision: AutomationStudioLlmLoopDecision["decision"], words: string | undefined, about: AutomationStudioLlmLoopFinding | undefined, options: AutomationStudioLlmLoopDecisionOptions): void {
   const summary = `${decision}${about ? ` on ${about.pattern} x${about.repeats}` : ""}`;
-  automationStudioLlmStepLogEvent("loop_decision", { iteration, decision, pattern: about?.pattern ?? null, repeats: about?.repeats ?? null, toolIds: [...(about?.toolIds ?? [])], words: words ?? null }, summary, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
+  automationStudioLlmStepLogEvent("loop_decision", { iteration, decision, pattern: about?.pattern ?? null, repeats: about?.repeats ?? null, toolIds: [...(about?.toolIds ?? [])], words: words ?? null, offered: [...options.offered], askPerson: options.askPerson, approachesChanged: options.approachesChanged, climbedOrAtTop: options.climbedOrAtTop }, summary, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
 }

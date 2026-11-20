@@ -20,6 +20,11 @@ export type ModelTransportCall = {
   requestId?: string | undefined;
   stage?: string | undefined;
   iteration?: number | undefined;
+  /**
+   * Whether a judge's call continued its attempt's decider conversation, and where it did not, why (t967): written in
+   * the call's step meta, so a run shows each judge's cache path. Absent on every other call.
+   */
+  continuation?: { used: boolean; reason: string } | undefined;
   /** What a reply's usage cost, for an adapter whose own parse does not price it. */
   price?: (usage: { inputTokens: number; outputTokens: number; cacheHitInputTokens: number }) => number;
 };
