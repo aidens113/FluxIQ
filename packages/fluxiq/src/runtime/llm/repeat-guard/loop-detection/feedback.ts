@@ -39,6 +39,7 @@ export type AutomationStudioLlmLoopAudience = keyof typeof DO_INSTEAD;
 function repeated(finding: AutomationStudioLlmLoopFinding): string {
   const unchanged = finding.unchanged.map((word) => UNCHANGED_WORDS[word]).join(", ");
   const calls = finding.toolIds.join(", ");
+  if (finding.pattern === "near_repeat" && finding.replays) return `You have replayed the Flow's steps with ${calls} ${finding.repeats} times, from different steps, without the result changing, without a new run through to its end, and without trying to complete. Replaying from another step will not change that: complete with what the result holds if it answers the task, or change the steps that keep it from doing so.`;
   if (finding.pattern === "near_repeat" && finding.succeeded) return `You have made the same call to ${calls} ${finding.repeats} times, and it went through every time with the same result: ${unchanged}. Doing it again will bring the same result.`;
   if (finding.pattern === "near_repeat") return `You have made the same call to ${calls} on the same page ${finding.repeats} times, changing at most its wording, and it came to nothing: ${unchanged}.`;
   if (finding.pattern === "cycle") return `You have been going round the same calls (${calls}) ${finding.repeats} times in the same order, and the last round brought nothing new: ${unchanged}.`;
@@ -67,18 +68,19 @@ export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoo
 }
 
 /** What was repeated, how often and what did not change, in the model's terms: what a fresh round is told it was stopped on. */
-export function automationStudioLlmLoopRepeatedWords(finding: Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "toolIds">): string {
+export function automationStudioLlmLoopRepeatedWords(finding: Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "toolIds" | "replays">): string {
   return repeated({ ...finding, unchanged: [] }).replace(/: \.$/u, ".");
 }
 
 /** What a call refused on a finding is told, in place of the exact repeat's words. */
-export function automationStudioLlmLoopRefusalInstruction(finding: { pattern: AutomationStudioLlmLoopPattern; repeats?: number | undefined; toolIds?: readonly string[] | undefined }, audience: AutomationStudioLlmLoopAudience): string {
-  return `${repeated({ pattern: finding.pattern, repeats: finding.repeats ?? 2, toolIds: finding.toolIds ?? [], unchanged: ["page", "rows", "acts", "draft"] })} So this one was not run, and it cost nothing but this decision. ${DO_INSTEAD[audience]} Refusals in a row end this work where it stands.`;
+export function automationStudioLlmLoopRefusalInstruction(finding: { pattern: AutomationStudioLlmLoopPattern; repeats?: number | undefined; toolIds?: readonly string[] | undefined; replays?: true | undefined }, audience: AutomationStudioLlmLoopAudience): string {
+  return `${repeated({ pattern: finding.pattern, repeats: finding.repeats ?? 2, toolIds: finding.toolIds ?? [], unchanged: ["page", "rows", "acts", "draft"], ...(finding.replays ? { replays: true as const } : {}) })} So this one was not run, and it cost nothing but this decision. ${DO_INSTEAD[audience]} Refusals in a row end this work where it stands.`;
 }
 
 /** The chat step for a steer: a person's words, with no code in them. */
 export function automationStudioLlmLoopChatWords(finding: AutomationStudioLlmLoopFinding): { title: string; text: string } {
   const title = "Noticed it was repeating itself";
+  if (finding.pattern === "near_repeat" && finding.replays) return { title, text: `FluxIQ ran its saved steps again ${finding.repeats} times from different places and the result did not change, so it is deciding what to do next.` };
   if (finding.pattern === "near_repeat" && finding.succeeded) return { title, text: `FluxIQ did the same thing ${finding.repeats} times and got the same result each time, so it is deciding what to do next.` };
   if (finding.pattern === "near_repeat") return { title, text: `FluxIQ tried the same thing ${finding.repeats} times and nothing changed, so it is trying something else.` };
   if (finding.pattern === "cycle") return { title, text: "FluxIQ kept going back and forth between the same steps with nothing new to show for it, so it is trying something else." };

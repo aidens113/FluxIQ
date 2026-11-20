@@ -40,6 +40,7 @@ import {
   automationStudioLlmLoopChatWords, automationStudioLlmLoopDigest, automationStudioLlmLoopMeaningfulInput, automationStudioLlmLoopRowBound, automationStudioLlmLoopRowDigests, automationStudioLlmLoopSteerNote, automationStudioLlmLoopStepFolder,
   type AutomationStudioLlmLoopAmendment, type AutomationStudioLlmLoopCall, type AutomationStudioLlmLoopFinding
 } from "../repeat-guard/loop-detection/index.ts";
+import { automationStudioLlmEvidenceReplayFacts } from "./replay-facts.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
 import type { AutomationStudioLlmEvidenceRefusedRepeatNext } from "./refused-repeat.ts";
 
@@ -125,6 +126,8 @@ export function automationStudioLlmEvidenceLoopRan(context: AutomationStudioLlmE
     ...(decision.act !== undefined ? { act: decision.act } : {}), ...(decision.input.undoes !== undefined ? { undo: true } : {}), ...(automationStudioLlmLoopRowBound(decision.input) ? { rowBound: true } : {}),
     ...(fix ? { fix: true } : {}), ...(finishingTools?.test === decision.toolId ? { judges: true } : {}),
     ...((fix || planning?.toolIds.includes(decision.toolId)) && !refused ? { accepted: true } : {}),
+    // A replay of the Flow's own steps, from whichever step: whether it changed the result or reached the end (t973).
+    ...automationStudioLlmEvidenceReplayFacts(decision.toolId, decision.input, answer, refused),
     exempt: notCounted || execution.personNeeded === true || (execution.ownRetestBound === true && execution.effectApplied) || automationStudioLlmEvidenceRetriesLater(execution)
       || automationStudioLlmEvidenceCallWritten({ input: decision.input, refused, resultCode: execution.resultCode })
   };

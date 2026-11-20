@@ -16,6 +16,7 @@ export * from "./rerun-check.ts";
 export * from "./rerun-checked-rows.ts";
 // Running part of the Flow again from a chosen step, never the Flow's test (t244).
 export * from "./run/flow-part.ts";
+export * from "./run/run-flow-tool-id.ts";
 export * from "./run/flow.ts";
 // The Flow's result processing, set apart from its steps (t970).
 export * from "./result/index.ts";

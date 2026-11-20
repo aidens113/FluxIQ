@@ -71,6 +71,8 @@ export type AutomationStudioLlmLoopWatch = {
   /** The loop answered a call from memory: one more without progress. */
   answered(toolId: string, input: JsonObject, context: string | undefined, state: string | undefined): void;
   moved(): void;
+  /** The model tried to complete: replays of the Flow count from nothing (`./detector.ts`, "A replay again"). */
+  completionTried(): void;
   /** Refusing has not worked, whether or not they came in a row: the signal now due, or nothing. */
   due(): AutomationStudioLlmLoopSignal | undefined;
   /** The round is about to stall on refusals in a row: the signal for it, always. */
@@ -192,6 +194,9 @@ export function automationStudioLlmLoopWatch(options: {
     moved() {
       detector.moved();
       cleared();
+    },
+    completionTried() {
+      detector.completionTried();
     },
     due() {
       if (strikes < AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE || !standing) return undefined;

@@ -13,15 +13,40 @@ import { automationStudioConversationAnswersFirst } from "../commands/answer-fir
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
 
+/**
+ * The answer's shapes, and the declaration every answer opens with (t973).
+ *
+ * With no thinking (t962), Haiku answered two clear jobs typed into the chat -- one that deletes, one
+ * that looks something up -- with a reply in words asking whether to start (run-mwoqy6fo-f44d3e98,
+ * run-mwos5phg-115e3a15), on requests word for word the same as ones that started on 2026-11-11 with
+ * thinking. The text let it: a reply was "when they are not asking for anything to be done", which a
+ * model that has decided to be careful does not test itself against; "do not ask whether you may do
+ * something ordinary" exempted whatever it judged not ordinary; and a PIN "asked when it is needed"
+ * told it there was a gate to respect without saying whose it was. So every answer first declares what
+ * the message is (`intent`), a reply is only for conversation, and the one question a dangerous act
+ * needs is said to be FluxIQ's own. Core checks the declaration (`./unanswered-task.ts`): a reply to a
+ * task, or a reply that declares nothing, is asked for again one rung up.
+ */
 const ANSWER_SHAPE = [
-  "Answer with one JSON object and nothing else, in one of these three shapes:",
-  '  {"do": "<capability id>", "with": {"<argument>": "<value>"}}   to do something in the panel. Leave out any argument you do not know.',
-  '  {"ask": "<one short question>"}   only when you cannot tell what they want, such as which of several Flows they mean.',
-  '  {"reply": "<your answer>"}   when they are not asking for anything to be done, or asked what you can do.',
+  'Answer with one JSON object and nothing else. It first says what their message is, in "intent":',
+  '  "task" -- it asks for something to be done or found: on a website, with a Flow, or in the panel. A question whose answer has to be looked up on a site is a task, and so is a job that deletes, pays, sends or posts.',
+  '  "conversation" -- it asks for nothing to be done or found: a greeting, thanks, a remark, or a question about FluxIQ itself or about what you can do.',
+  "Then, in the same object, one of:",
+  '  {"intent": "task", "do": "<capability id>", "with": {"<argument>": "<value>"}}   to do it. Leave out any argument you do not know.',
+  '  {"intent": "task", "ask": "<one short question>"}   only when you cannot tell what they want, such as which of several Flows they mean.',
+  '  {"intent": "conversation", "reply": "<your answer>"}   only for conversation.',
+  "A task is never answered with a reply. Start it with the capability that does it, and give it a full effort: start it even when you are unsure how the site is laid out or whether it will work, because the attempt reads the site itself and reports what it found. Ask instead only when it is truly impossible to tell what they want.",
   "Choose the capability that does all of what was asked: when they ask for something to be run, choose the one that runs it, not one that only gets it ready.",
-  "Leave projectId out: it is always this project. A Flow goes in flowId, and can be given by its name; FluxIQ finds its id. Never ask for or supply a PIN: FluxIQ asks the person for it when it is needed.",
-  "Do not ask whether you may do something ordinary. Asking for it is the person's permission."
+  "Leave projectId out: it is always this project. A Flow goes in flowId, and can be given by its name; FluxIQ finds its id.",
+  "Never ask whether you may start, and never ask for or supply a PIN or a password: asking for the job is the person's permission. When a job deletes something, moves money, sends or posts, FluxIQ itself asks the person once, in plain words, as the attempt starts; that question is never yours to ask."
 ].join("\n");
+
+/**
+ * What the bound domain's text is, to the chat's model. It is written for the attempt that works on the
+ * site and says "you operate a real website"; read as the chat's own, it told a model with no page in
+ * front of it that it had not read the person's page yet (run-mwos5phg-115e3a15, t973).
+ */
+const DOMAIN_LEAD = "What follows is what the attempt you start is told about working on the site. You see no page here and need not read one: the attempt does that.";
 
 /**
  * The system message for one person's message.
@@ -38,7 +63,7 @@ export function automationStudioConversationInstructions(
   context: AutomationStudioConversationDecisionContext,
   notes: { transcriptWithheld: boolean; domainInstructions?: string | undefined }
 ): string {
-  const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), ...(notes.domainInstructions ? ["", notes.domainInstructions] : []), "", flowSection(context), "", onScreenSection(context)];
+  const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), ...(notes.domainInstructions ? ["", `${DOMAIN_LEAD}\n${notes.domainInstructions}`] : []), "", flowSection(context), "", onScreenSection(context)];
   const waiting = waitingAsksSection(context);
   if (waiting) sections.push("", waiting);
   const building = buildContinuationGuidance(context);
@@ -153,5 +178,5 @@ function describedJobLine(context: AutomationStudioConversationDecisionContext):
  * changes nothing, and that describing a job is never a request to run a Flow.
  */
 function answerFirstJobLine(createHere: string): string {
-  return `A job they describe for this site -- something to find, list, collect, fill in or buy on it -- is a task to do from this page: choose ${createHere} and pass their whole message, in their own words, as its instruction. That holds just the same when a Flow above was made from the same words before: ${createHere} finds that Flow, does the task with what it kept, and returns the result. A job described again is never a request to run a Flow; run one only when they ask for a Flow to be run without describing a job.`;
+  return `A job they describe for this site -- something to find, check, list, collect, fill in, change, remove or buy on it -- is a task to do from this page: choose ${createHere} and pass their whole message, in their own words, as its instruction. They need not open any particular page first: it starts here and goes wherever on the site the job needs. That holds just the same when a Flow above was made from the same words before: ${createHere} finds that Flow, does the task with what it kept, and returns the result. A job described again is never a request to run a Flow; run one only when they ask for a Flow to be run without describing a job.`;
 }

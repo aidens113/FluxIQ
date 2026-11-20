@@ -1,0 +1,12 @@
+{
+  "response": "{\"reply\": \"I can't see Kestrel Lane's team page from here, and I can't read the apprentice cards or their order. The request is to list apprentices from that page, which is a read-only task on the site, so I've made no change. If you open the page in your browser, I can build a Flow from it to collect the apprentices as a table with name, role and branch.\"}",
+  "usage": {
+    "inputTokens": 3119,
+    "outputTokens": 125,
+    "totalTokens": 3244,
+    "cacheHitInputTokens": 0,
+    "cacheMissInputTokens": 3119,
+    "estimatedCostUsd": 0.000452275,
+    "cacheWriteInputTokens": 3115
+  }
+}

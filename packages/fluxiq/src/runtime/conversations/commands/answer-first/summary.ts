@@ -10,5 +10,12 @@
  * second and asked, so the attempt never started and the person never got the result
  * (run-mw4907db-c3992394, t875). The same words are the first case only; the ask is for the person's own
  * words asking for a repeat.
+ *
+ * **Where it works, and what it brings back (t973).** It said "on the page they have open", and a model
+ * with no thinking (t962) read that literally: a person on a site's home page who asked for something on
+ * one of its inner pages was told to open that page first (run-mwos5phg-115e3a15), and a lookup was
+ * declined as "not a build" because the text named only steps kept as a draft. So it says the attempt
+ * starts on the open page and goes wherever the job needs, and that what it returns may be something
+ * found as well as something changed.
  */
-export const AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY = "Does what the person asks on the page they have open, in one live pass, comes back with the result, and keeps the steps it took as a draft Flow. The same words again are not a request to do it twice: start it as usual, and it checks what it already did, does not do that again, and reports the result. Only when the person's own words ask for something done before to be done again, ask them once before starting whether they want it done again, and start only when they answer yes.";
+export const AUTOMATION_STUDIO_CONVERSATION_ATTEMPT_SUMMARY = "Does what the person asks on the web in one live pass: it starts on the page they have open, goes wherever on the site the job needs (its search, menus, links and inner pages), and comes back with the result, whether that is something found, a list or table, an answer, or a change made. It keeps the steps it took as a draft Flow. The same words again are not a request to do it twice: start it as usual, and it checks what it already did, does not do that again, and reports the result. Only when the person's own words ask for something done before to be done again, ask them once before starting whether they want it done again, and start only when they answer yes.";

@@ -25,6 +25,8 @@ export type ModelTransportCall = {
    * the call's step meta, so a run shows each judge's cache path. Absent on every other call.
    */
   continuation?: { used: boolean; reason: string } | undefined;
+  /** A chat call asked one rung up the model ladder (t973): the model it climbed from and why, written in the call's step meta. Absent on every other call. */
+  climb?: { from: string; reason: string } | undefined;
   /** What a reply's usage cost, for an adapter whose own parse does not price it. */
   price?: (usage: { inputTokens: number; outputTokens: number; cacheHitInputTokens: number }) => number;
 };

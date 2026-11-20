@@ -7,6 +7,14 @@ export const AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT = 2;
 /** Runs of one call that each succeeded, with the same result and no new row between them, that are a success again (t969: `core.run_flow` seven times in run-mwoi785f-ebe09067, each ending normally). */
 export const AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT = 3;
 
+/**
+ * Replays of the Flow's own steps, from any step, that neither changed the result nor reached its end for the
+ * first time since it last changed, with no completion tried between, that make a replay again (t973:
+ * `core.run_flow` thirteen times from steps 29, 33, 34 and 38 in run-mworaue7-5a56f19a, never completing). As
+ * many as a success again takes: it is the same failure with the starting step varied.
+ */
+export const AUTOMATION_STUDIO_LLM_LOOP_SAME_REPLAY_AT = AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT;
+
 /** The longest repeating block a cycle is looked for at: A B A B up to A B C D A B C D. */
 export const AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD = 4;
 

@@ -28,9 +28,8 @@ import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraft
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
 import { runAutomationStudioFlowDraftPart } from "./flow-part.ts";
 import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
-
-/** The tool that runs part of the Flow. */
-export const AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID = "core.run_flow";
+// The id lives in its own module, which a reader of this tool's answers imports without this one (t973).
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID } from "./run-flow-tool-id.ts";
 
 /** The most tools a loop may offer (`../evidence-loop-decision.ts`); the tool is not added past it. */
 const MAX_TOOLS = 32;

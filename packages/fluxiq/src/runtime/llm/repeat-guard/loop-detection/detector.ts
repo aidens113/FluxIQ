@@ -29,6 +29,14 @@
 //   another target, as for a lasting act). A
 //   result that changed (a new row, a new page) starts it again, and it is told as a near
 //   repeat of a success (`succeeded`), never refused unless the model decided to change approach.
+// - A replay again is a replay of the Flow's own steps (`replay`) from whichever step, that neither
+//   changed the result nor reached the Flow's end for the first time since the result last changed,
+//   counted across starting steps until a completion is tried (t973, run-mworaue7-5a56f19a:
+//   `core.run_flow` thirteen times from steps 29, 33, 34 and 38, never completing). A success again
+//   keys on one input, so a model that varied the starting step was never caught; and the steps it
+//   added between replays each stood at a new draft, which cleared every other pattern. So only what
+//   a replay is for counts here: the result changing, the end reached anew, or a completion tried. It
+//   is told as a near repeat (`replays`) and never refused unless the model decided to change approach.
 // - The same fix is a Flow the draft already stood at, come back by an edit, or a
 //   submission already made. It is read off the attempt's record, so it still
 //   holds after a fresh context (`./attempt-record.ts`).
@@ -73,7 +81,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmLoopAttemptRecord } from "./attempt-record.ts";
-import { AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD, AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT, AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW, AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT, AUTOMATION_STUDIO_LLM_LOOP_SINGLE_CYCLE_AT } from "./limits.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD, AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT, AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW, AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, AUTOMATION_STUDIO_LLM_LOOP_SAME_REPLAY_AT, AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT, AUTOMATION_STUDIO_LLM_LOOP_SINGLE_CYCLE_AT } from "./limits.ts";
 import { automationStudioLlmEvidenceTimingFree, type AutomationStudioLlmEvidenceTimingOf } from "../timing-free.ts";
 import { automationStudioLlmLoopCallKey, automationStudioLlmLoopDigest, automationStudioLlmLoopRanKey } from "./meaningful-input.ts";
 import type { AutomationStudioLlmLoopAmendment, AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopCall, AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopUnchanged } from "./types.ts";
@@ -107,6 +115,8 @@ export type AutomationStudioLlmLoopDetector = {
   amended(amendment: AutomationStudioLlmLoopAmendment): { finding?: AutomationStudioLlmLoopFinding; progressed: boolean };
   /** Something moved the page unseen (a dry run): nothing the calls before it did says anything about the calls after it. */
   moved(): void;
+  /** The model tried to complete: what replays were for has been tried, so a replay again counts from nothing (header). */
+  completionTried(): void;
 };
 
 /**
@@ -136,6 +146,8 @@ export function automationStudioLlmLoopDetector(options: {
   // Each call that succeeded, by how it was asked: how often with the same result, where the rows and drafts stood, and when it last ran.
   const successes = new Map<string, { runs: number; answer: string | undefined; code: string | undefined; after: string | undefined; place: string | undefined; rowsAt: number; draftsAt: number; tick: number; toolId: string; callId: string }>();
   let tick = 0;
+  // Replays of the Flow's own steps since the result last changed or a completion was tried, from any step; and whether one has reached the end since (header, "A replay again").
+  let replays: { runs: number; ended: boolean; toolId: string; callId: string } | undefined;
   // What a call as written ran as, by where it was written; and each lasting act, by what it ran as and by how it was written.
   const ranAsHere = new Map<string, string>();
   /** Calls that did nothing and said which act they stand for, by act, whatever page they came from: a page that moves by itself is no way round one (header). */
@@ -179,6 +191,7 @@ export function automationStudioLlmLoopDetector(options: {
   const windowFinding = (): AutomationStudioLlmLoopFinding => ({ pattern: "no_progress", repeats: window.count, toolIds: [...window.toolIds], unchanged: NOTHING_NEW, ...(window.callId ? { callId: window.callId } : {}) });
 
   const successFinding = (entry: { runs: number; toolId: string; callId: string }): AutomationStudioLlmLoopFinding => ({ pattern: "near_repeat", repeats: entry.runs, toolIds: [entry.toolId], unchanged: ["page", "rows"], callId: entry.callId, succeeded: true });
+  const replayFinding = (entry: { runs: number; toolId: string; callId: string }): AutomationStudioLlmLoopFinding => ({ pattern: "near_repeat", repeats: entry.runs, toolIds: [entry.toolId], unchanged: ["rows"], callId: entry.callId, replays: true });
 
   /** The longest-standing block at the tail of the calls, whose last pass brought nothing. */
   const cycle = (): { finding: AutomationStudioLlmLoopFinding; keys: ReadonlySet<string> } | undefined => {
@@ -222,6 +235,8 @@ export function automationStudioLlmLoopDetector(options: {
       const key = ranAsHere.get(at(written, page)) ?? written;
       const succeeded = successes.get(key);
       if (succeeded && succeeded.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT && succeeded.rowsAt === rowsSeen.size && succeeded.draftsAt === draftsStoodAt.size && tick - succeeded.tick < AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW) return successFinding(succeeded);
+      // Another replay, from whichever step, while replays have stood still: the finding it would continue.
+      if (replays && replays.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_REPLAY_AT && toolId === replays.toolId) return replayFinding(replays);
       if (lifted(key, page, toolId)) return undefined;
       const entry = near.get(at(key, page));
       if (entry && entry.runs >= AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT) return nearFinding(entry);
@@ -289,7 +304,20 @@ export function automationStudioLlmLoopDetector(options: {
         successes.set(key, entry);
         if (entry.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT) sameSuccess = successFinding(entry);
       }
-      const progressed = !sameAct && !sameSuccess && (newState || newRows || newDraft || newContext || newAct);
+      // A replay again: counted across starting steps, whatever else moved, because the steps added and the page each replay leaves look like work (header).
+      let replayAgain: AutomationStudioLlmLoopFinding | undefined;
+      if (call.replay && !call.refused && call.exempt !== true) {
+        const id = { toolId: call.toolId, callId: call.callId };
+        if (call.replay.changed || newRows) replays = { runs: 0, ended: call.replay.reachedEnd, ...id };
+        else if (call.replay.reachedEnd && replays?.ended !== true) replays = { runs: 0, ended: true, ...id };
+        else {
+          replays = { runs: (replays?.runs ?? 0) + 1, ended: replays?.ended ?? false, ...id };
+          if (replays.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_REPLAY_AT) replayAgain = replayFinding(replays);
+        }
+      }
+      // A success again of the same replay is the same finding, told once.
+      if (replayAgain) sameSuccess = undefined;
+      const progressed = !sameAct && !sameSuccess && !replayAgain && (newState || newRows || newDraft || newContext || newAct);
       let sameFix: AutomationStudioLlmLoopFinding | undefined;
       if (call.fix === true) {
         // Only a submission known not to have worked: one accepted and never judged may well come back.
@@ -310,6 +338,11 @@ export function automationStudioLlmLoopDetector(options: {
         record.tried({ kind: "call", key, toolId: call.toolId, outcome: "applied" });
         record.caught(key, "near_repeat");
         return { progressed: false, finding: sameSuccess };
+      }
+      if (replayAgain) {
+        record.tried({ kind: "call", key, toolId: call.toolId, outcome: call.effectApplied ? "applied" : "changed_nothing" });
+        record.caught(key, "near_repeat");
+        return { progressed: false, finding: replayAgain };
       }
       // Told, and no other pattern's to count: what refuses it, where anything does, is the ladder's reading of this one.
       if (sameAct) {
@@ -398,9 +431,13 @@ export function automationStudioLlmLoopDetector(options: {
     },
     moved() {
       successes.clear();
+      replays = undefined;
       last = undefined;
       tokens = [];
       progress();
+    },
+    completionTried() {
+      replays = undefined;
     }
   };
 }

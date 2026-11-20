@@ -14,6 +14,7 @@
 // caller does, with the reason.
 
 import type { AutomationStudioConversationDecision } from "./decision.ts";
+import { automationStudioConversationAnswerRecord } from "./answer-record.ts";
 import { automationStudioConversationInvocationDecision, type AutomationStudioConversationDecisionContext } from "./invocation.ts";
 
 const INVOKE_KEYS = ["do", "capability", "capabilityid", "capability_id", "invoke", "run", "tool", "command", "id"];
@@ -33,7 +34,7 @@ export function parseAutomationStudioConversationDecision(
   raw: unknown,
   context: AutomationStudioConversationDecisionContext
 ): AutomationStudioConversationDecision | null {
-  const record = answerRecord(raw);
+  const record = automationStudioConversationAnswerRecord(raw);
   if (record === "unreadable") return null;
   if (record === null) {
     const words = answerText(raw);
@@ -57,32 +58,6 @@ function decisionFrom(record: Record<string, unknown>, context: AutomationStudio
   if (question) return { kind: "clarify", question };
   if (writtenId) return automationStudioConversationInvocationDecision(writtenId, field(record, ARGUMENT_KEYS), context, say);
   return null;
-}
-
-/** The object in an answer, null when the answer holds no object at all, or `"unreadable"` when it holds a broken one. */
-function answerRecord(raw: unknown): Record<string, unknown> | null | "unreadable" {
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const record = raw as Record<string, unknown>;
-    // A provider envelope around the model's own text: read the text.
-    for (const key of ["output", "content", "text", "completion"]) {
-      const inner = record[key];
-      if (typeof inner === "string" && Object.keys(record).length <= 3 && inner.includes("{")) return answerRecord(inner);
-    }
-    return record;
-  }
-  if (typeof raw !== "string") return null;
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0) return null;
-  if (end <= start) return "unreadable";
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : "unreadable";
-  } catch {
-    // Braces that do not hold JSON. Not a refusal and not an empty answer: the
-    // caller asks the model again with the reason, then reads the words itself.
-    return "unreadable";
-  }
 }
 
 function answerText(raw: unknown): string {
