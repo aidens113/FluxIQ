@@ -41,6 +41,90 @@ A full stored Flow document is structurally assignable to the execution contract
 
 Host contracts do not import the engine. No framework area imports Studio, including erased type imports and tests: `importBoundaries` in the structure audit's configuration stops it, and only the program catalog composes Studio. Presentation is supplied per run or scoped context; pure execution can run without a panel.
 
+## Input binding and graph-entry evidence
+
+`runtime/input-basis` owns authenticated normal-input revisions; the service's
+`input-basis` adapter persists their exact private snapshots and authoritative heads.
+An input lease proves a stored binding, not that execution used it.
+
+`engine/automation/input-use` supplies optional graph-entry evidence through an
+explicit run session and a methodless opaque handle. Internal engine integration
+prepares an authenticated copy and uses that same dictionary to initialize actual
+working values. It retains full private child-boundary inputs before public frame
+projection and checks the child handoff at entry. Only the owning session associates
+the real execution traces with closed `graph_entry_inputs` observations.
+
+Missing authority, active secrets, unsupported values, stale producers, foreign
+handoffs and seeded continuation remain unknown. An initially unknown observation
+cannot become sealed later. Cancellation invalidates proof and closes live leases;
+final freshness cancellation preserves any trace and landed-act evidence already
+produced. Late cleanup failure cannot create an unhandled rejection or replace the
+settled execution. With no input-use handle, ordinary execution keeps its timing and
+input behavior.
+
+Node invocation (`input-use/node`) records one private event per actual callback an
+attempt makes: builtin `execute`, the native callback, the composite callback and the
+Call Subflow helper are each their own event, and each retry is captured again after
+its own target refresh. Just before the chosen callback, the engine snapshots the
+exact input/parameter pair it would pass. It asks the authority's optional `node`
+method for a lease over that pair, and passes the lease's exactly equal copy into the
+real callback, including as the native/composite node's `parameterValues`. Only that
+invocation seals `node_invocation_values`, and only if the lease is still current
+afterwards and the frame's own graph entry is still sealed when the frame publishes.
+A missing `node` method, active secrets, rows the run captured (checked by identity on
+the original objects), unsupported values or a mismatched copy leave the event unknown.
+The callback then runs synchronously on the original pair, with no copy and no added
+await. Missing bindings, pinned-version refusals and non-executable nodes make no
+event, and a cancellation during the proof never reaches the callback. The session's
+read-only `readNodes(trace)` returns the closed events, which are labels plus
+component evidence. They cover neither the live variables/iteration/clock/random/
+expectation ports, native implementation entry after declared-port filtering, emitted
+effects nor child entry (t905 C2/C3), and they make no whole-execution claim. The
+service authority does not implement `node` yet, so every production node event is
+`authority_unavailable`.
+
+The service's producer adapter, `framework/automation-service/service/input-basis/execution`,
+is the only authority wired to it. A run opts in by opening one session through the
+typed seam `AutomationStudioInputUseExecutions.of(service)`, which reads only the
+service's public project paths, project store and run datasets (so `service.ts` gains
+nothing), with a scope its own authenticated owners resolved and the
+layers it actually assembled (`inherited`, then `caller`); nothing is attached by
+default, and a run with no session adds no await. A root entry seals only when its
+exact effective dictionary is the overlay of those layers and every layer's declared
+origin authenticates: `request` is the operation's own authenticated channel, and
+`revision` (a root input from an earlier run) must reopen as the current head of its
+slot, under the same project, task and principal, with an execution copy exactly equal
+to the layer. Each layer is issued in its own owner slot and becomes the entry's
+producer, so a changed layer advances the entry even when the effective values are
+equal, and a layer changed during the run withdraws the seal at completion. A layer
+with no origin, an unattributed key, root declared defaults, a stale, forged or
+foreign revision, an active secret context and a seeded continuation all stay unknown;
+nothing is inferred from a value's shape or from its looking nonsecret. `flow-run`
+reports its run's closed observation through its optional `inputUse` port, and
+`runtime-session/graph-options.ts` carries a session's port and forwards every extra
+field the engine adds to a native dispatch, so a later per-attempt port reaches the
+native runtime without editing that wrapper.
+
+Answer First's saved-Flow stage (`service/answer-first/attempt/flow-stage.ts`) is the
+production caller that opts in. Its scope comes from authenticated owners only:
+the attempt's project, its task id, the principal the generation was made for
+(`caller.actorUserId`, which the server sets from the authenticated session in
+`flow-bootstrap-requests/generate.ts`, or a FluxNode's owner, read with the same
+validator the service read the request with), and the producer id
+`answer-first.flow-run`. No request body names any part of the scope. The stage keeps
+the closed observation, a sealed reference or an unknown code and never a value, on
+`flowRun.inputUse`. Caller inputs therefore seal as the caller layer's single producer,
+while a run inside a run-secret context (a FluxNode run with a secret input) seals
+nothing; either way the run executes and answers exactly as it would without a
+session.
+
+The adapter grants no child fork: a child's inputs come from values produced after
+entry, and no durable child-occurrence slot or callee-to-executable correspondence
+exists to authenticate them. Nothing here is a replay exemption. It does not prove
+later resolved/default/wired/refreshed node inputs, secret continuity, durable child
+occurrence identity, result correctness or whole-execution equivalence. Those require
+their own authenticated consumption and service integration.
+
 ## FluxNode execution identity
 
 A FluxNode's name and spec hash identify the task and its learned Flow. Its lasting acts belong to an execution within that task: a fresh run gets its own `actScope`, and an idempotency key in the trusted caller/project namespace durably allocates an opaque execution scope. Request comparison replaces declared secret input positions with their binding pointers before hashing; non-secret request fields remain significant. Secret values, including guessable hashes of them, do not enter the scope or its stored request comparison. A changed non-secret request conflicts across restart; rotating a supplied secret preserves its binding identity.

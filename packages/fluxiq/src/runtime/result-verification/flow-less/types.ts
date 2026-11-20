@@ -6,9 +6,12 @@ import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, Auto
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
+import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
 
 /** What an attempt got, with no Flow behind it. */
 export type AutomationStudioFlowLessSummary = {
+  /** The declared output version and all its pages, shared with finished-run judging. */
+  resultEvidence?: AutomationStudioResultEvidenceBundle;
   /** What the person asked for, in their words. */
   instructions: string;
   /** Rows real reads returned. A model never writes one. */
@@ -21,7 +24,7 @@ export type AutomationStudioFlowLessSummary = {
   endView?: AutomationStudioResultEndView;
   /** The same reading of the site before the first lasting act and at the end: the change is what is judged. */
   witnesses?: { before?: JsonObject; after?: JsonObject };
-  /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and a short screened cut of what was found, the latest few. */
+  /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and what was found, screened line by line; every distinct look, never cut. */
   looked?: readonly { where: string; found: string }[];
   /**
    * For a result made of rows: one entry per read that makes up the list, oldest first, with where it read (the view of

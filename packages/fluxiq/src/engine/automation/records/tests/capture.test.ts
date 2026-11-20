@@ -89,7 +89,8 @@ describe("capturing the rows a record output declares", () => {
       schema: { schemaVersion: "0.1", fields: [nameField, priceField] },
       rows: validatedRows,
       invalidCount: 1,
-      truncated: false
+      truncated: false,
+      evidence: { pages: [{ source: "extract.attempt.1", step: "extract", version: 1, fields: {}, conditions: [], rows: validatedRows, kept: 2 }], coverage: [], working: [], looks: [] }
     });
   });
 
@@ -101,6 +102,21 @@ describe("capturing the rows a record output declares", () => {
       expect(held).not.toContain(UNKNOWN);
     }
     expect(JSON.stringify(batch)).not.toContain("secret");
+  });
+
+  it("retains declared read provenance before processing and records a genuine empty page", () => {
+    const fields = { name: "name_field", price: "price_field" };
+    const where = [{ field: "available", is: "present" }];
+    const declared = effect({ ...recordOutput, process: { sort: [{ field: "name", order: "asc" }] } });
+    declared.payload.parameters = { read: { fields, where } };
+    const payload = extractedPayload();
+    const page = payload.page as JsonObject;
+    page.place = "page=2";
+    page.listKey = "list.catalogue";
+    const captured = capture(declared, answer(payload));
+    expect(captured.batch?.evidence?.pages).toEqual([{ source: "extract.attempt.1", step: "extract", version: 1, fields, conditions: where, place: "page=2", listKey: "list.catalogue", rows: validatedRows, kept: 2 }]);
+    const empty = capture(declared, answer({ page: { items: [], place: "page=3", listKey: "list.catalogue" } }));
+    expect(empty.batch?.evidence?.pages).toMatchObject([{ place: "page=3", rows: [], kept: 0 }]);
   });
 
   it("puts the same array back at recordsPath inside result, keeps the rest of result, and never changes the dispatcher's answer", () => {
@@ -258,7 +274,8 @@ describe("capturing the rows a records.write effect carries", () => {
       schema: { schemaVersion: "0.1", fields: [nameField, priceField] },
       rows: validatedRows,
       invalidCount: 1,
-      truncated: false
+      truncated: false,
+      evidence: { pages: [{ source: "write.attempt.1", step: "write", version: 1, fields: {}, conditions: [], rows: validatedRows, kept: 2 }], coverage: [], working: [], looks: [] }
     });
     expect(batch?.rows).toBe(result.outputs?.records);
     expect((kept.payload as JsonObject).records).toBe(result.outputs?.records);
@@ -328,5 +345,22 @@ describe("capturing the rows a records.write effect carries", () => {
     expect(batch).toBeUndefined();
     expect(kept.payload).toBe(AUTOMATION_STUDIO_WITHHELD_VALUE);
     expect(result.failure?.code).toBe("record_output.invalid");
+  });
+});
+
+describe("which list and place a read's answer says, on its batch (invariant I3)", () => {
+  it("carries the list's key and the place the pager said, beside the rows and never in them", () => {
+    const said = { page: { items: [{ name: EXTRACTED }], listKey: "list.0a1b2c3d4e5f60718293a4b5c6d7", place: "page=2" } };
+    const { batch } = capture(effect(recordOutput), answer(said));
+    expect(batch?.listKey).toBe("list.0a1b2c3d4e5f60718293a4b5c6d7");
+    expect(batch?.place).toBe("page=2");
+    expect(batch?.rows).toEqual([{ name: EXTRACTED }]);
+  });
+
+  it("says neither where the answer said neither", () => {
+    const { batch } = capture(effect(recordOutput), answer(extractedPayload()));
+    expect(batch).toBeDefined();
+    expect(batch).not.toHaveProperty("listKey");
+    expect(batch).not.toHaveProperty("place");
   });
 });

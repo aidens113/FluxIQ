@@ -182,6 +182,6 @@ function stuckQuestion(run: AutomationStudioAnswerFirstAttemptRun): string {
     stuck: run.stuck ?? { finding: { pattern: "exact_repeat", repeats: 0, unchanged: [] } },
     caught: run.loopsCaught,
     tried: run.tried.data(),
-    held: { rows: held?.rows.totalRows ?? run.sink.summary().totalRows, acts: held?.acts ?? run.record.acts().length, answered: answerText !== undefined }
+    held: { rows: held?.rows.totalRows ?? run.result.rows().totalRows, acts: held?.acts ?? run.record.acts().length, answered: answerText !== undefined }
   });
 }

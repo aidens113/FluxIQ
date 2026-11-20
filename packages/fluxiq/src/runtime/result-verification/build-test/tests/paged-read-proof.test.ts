@@ -151,7 +151,7 @@ async function openStore(): Promise<AutomationStudioProjectRunDatasetStore> {
   const lease = await pool.acquire(PROJECT);
   await lease.database.run("insert into flows (flow_id, name, scope_kind, visibility, origin, source_mode, status, created_at_ms, updated_at_ms) values ('flow.paged-read', 'Flow', 'project', 'project', 'user', 'visual', 'draft', 1, 1)");
   const runtime = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: PROJECT });
-  await runtime.upsertRunSummary({ schemaVersion: "0.1", runId: RUN, flowId: "flow.paged-read", projectId: PROJECT, status: "succeeded", startedAt: 10, finishedAt: 100, updatedAt: 100, routeDecisionCount: 0, subflowEntryCount: 0, actionAttemptCount: 0, interventionCount: 0, adaptationCount: 0 } as never);
+  await runtime.upsertRunSummary({ schemaVersion: "0.1", runId: RUN, flowId: "flow.paged-read", projectId: PROJECT, status: "succeeded", startedAt: 10, finishedAt: 100, updatedAt: 100, routeDecisionCount: 0, subflowEntryCount: 0, actionAttemptCount: 0, interventionCount: 0, adaptationCount: 0 });
   await runtime.close();
   await lease.release();
   await admin.close();
@@ -221,7 +221,7 @@ describe("proof 1: lane C's paged read, provider-free, from the build's test to 
     expect(stores[0]!.keptNone).toBeUndefined();
   });
 
-  it("the build-test judge's request carries the answer and its account, and no page's row values beyond the labels", async () => {
+  it("the build-test judge carries the processed answer and every page's original validated source records", async () => {
     const { summary } = await buildTest();
     const seen: AutomationStudioLlmTaskRequest[] = [];
     const provider: AutomationStudioLlmProvider = {
@@ -234,12 +234,12 @@ describe("proof 1: lane C's paged read, provider-free, from the build's test to 
     const verdict = await automationStudioBuildTestJudge({ instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: PROJECT, flowId: "flow.paged-read", provider })({ summary, budget: { maxCostUsd: 0.2 } });
     expect(verdict.verdict).toBe("yes");
     expect(seen.length).toBeGreaterThan(0);
-    const sent = JSON.stringify(seen[0]!.context);
     const store = (seen[0]!.context as { resultSummary?: { buildTest?: { stores?: JsonObject[] } } }).resultSummary?.buildTest?.stores?.[0];
     expect(store).toMatchObject({ passes: 5, collected: COLLECTED, answer: { rows: 13, labels: LABELS }, removed: { duplicates: 4, filteredOut: 0, cut: 0 } });
-    // The rows travel to the judge as labels only: no stored price or link reached the request.
-    expect(sent).not.toContain("/item/13");
-    expect(sent).not.toContain("$33.99");
+    // Processing removed boundary repeats in the answer; provenance keeps each original page whole.
+    const pages = seen[0]?.context.resultSummary?.resultEvidence?.pages;
+    expect(pages).toMatchObject(PAGES.map((rows) => ({ kept: rows.length, rows })));
+    expect(Array.isArray(pages) && pages.length).toBe(5);
   });
 
   it("the stored Flow, run with fake natives, stores the same answer: 5 passes collected, the same 13 rows in order", async () => {

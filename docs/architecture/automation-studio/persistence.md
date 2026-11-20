@@ -57,9 +57,65 @@ recording-drain performance remains a separate validation requirement.
 
 ## Other persistence foundations
 
+The internal normal-input binding owner keeps its project head at
+`input-basis/owner.json` through the existing program-document transaction owner.
+The head contains opaque owner/binding IDs, monotonic revisions, trusted scopes,
+ordered producer references and immutable snapshot references. Exact nonsecret
+values live in private dataset snapshots; unchanged values and producer references
+reuse a revision, while A-to-B-to-A advances it. Snapshot creation and read-back
+precede the head compare-and-swap, so a failed head write cannot publish an orphan
+snapshot as authority. Both a project root and persistent dataset storage are
+required. Corrupt state and storage errors do not create replacement authority.
+
+Scope, secrecy and producer authority are injected trusted ports. Missing authority
+or an active/unverified secret context yields unknown before publication. Reopening
+rechecks scope, current revision, stored values and producer references. Runtime
+leases expose isolated execution copies, serialize only their reference and release
+their live copy on close. Per-operation cancellation preserves its original reason;
+an already-started storage commit may finish, but cancellation returns no receipt.
+
+The service's graph-entry adapter (`service/input-basis/execution/`) is the trusted
+producer for a run's root inputs. Each layer the run assembled is observed in its own
+slot, the entry's producer id followed by the layer's role, and the entry's revision
+names those layer revisions in overlay order; scope authority admits only the run's
+own project, task and principal. A layer slot answers secrecy only for exactly the
+authenticated layer's values, and the entry only for exactly their overlay and issued
+producers. A `revision` origin reopens a binding this owner issued earlier, so its
+values never leave the owner's private snapshots for a new kind of record. Every
+origin is authenticated before the first write, so an unknown origin writes nothing.
+This foundation proves a stored normal binding only: engine-use evidence, secret
+continuity and replay admission require their own integration.
+
 Immutable source occurrence snapshots live in the project's SQLite database, independently of runtime runs. The store lives under `framework/persistence/automation/project/dataset-occurrences`, with its additive schema under `dataset-occurrence-schema`. `AutomationStudioRunDatasets.createImmutableSnapshot({projectId, rows})` accepts sanitized `{occurrenceId, row}` values and returns `{snapshotId, count}`; task memory holds that opaque reference. Migration `0037_dataset_snapshots` adds snapshot metadata and ordered occurrence rows. It is additive and independent of the run-batch evidence migration. Creation writes metadata and all occurrences in one transaction; duplicate occurrence IDs and non-JSON values refuse the entire snapshot. Duplicate row values remain separate occurrences.
 
 `readImmutableSnapshotPage({projectId, snapshotId, cursor?, limit?})` reads that immutable order, with a cursor bound to the snapshot and an explicit empty page for an empty snapshot. A missing snapshot is `null`. Snapshots survive process restart and remain isolated by the owning project database. The API provides no overwrite, creates no runtime session, and computes no digest of row contents. Callers retain secret references rather than resolved secret values. Snapshots remain project data until the owning project is removed; they are never browser cache.
+
+Project stores compose administration and independently owned migrations with
+`automationStudioSchemaMigrationOrder`, which copies and orders them by exact
+ID before the strict migration runner validates them. Duplicate IDs remain
+errors. New administration migrations cannot put older private migrations out
+of order, and an older pending migration can still apply after a newer one is
+installed without rewriting either migration's identity or checksum.
+
+When typed runtime storage is configured, failure to open or write a run detail
+propagates its original cause, including on the first write. A legacy detail
+file cannot replace the SQL parent that run datasets need. Explicit file-only
+configurations retain their legacy writer. The one exception is an unavailable
+(closing or closed) store at open: the detail is written to the legacy file and
+the next typed save merges it back, because a run that loses its store must end
+failed, never throw (t258), and the closed pool refuses dataset writes too, so
+no dataset row can exist without its run row.
+
+Run capture batches retain private result evidence in the nullable
+`evidence_json` column added by `0036_run_dataset_evidence` (`project/batch-evidence`).
+Rows and their provenance are written in the same transaction, so rollback
+cannot associate surviving rows with a failed page capture. Evidence records
+the source step, version, conditions, fields, list identity, place, kept rows,
+left-out account and coverage before result processing. Dataset processing
+can sort, dedupe or project the answer without inferring where its rows came
+from. Legacy null evidence remains explicitly missing; a validated empty
+page remains a recorded page with zero kept rows. Evidence never becomes an
+exported cell or changes the declared output schema.
 
 The isolated `framework/persistence/automation/project/accepted-state` foundation stores explicitly supplied
 complete visual-project snapshots in project SQLite. Its immutable snapshot and
@@ -561,6 +617,18 @@ A run's event stream holds the kinds `run_summary`, `route_decision`,
 `subflow_execution`, `action_attempt`, `recovery_attempt`,
 `handler_execution` (one lifecycle handler that ran, folded into the detail's
 `handlerExecutions` by `executionId`) and `intervention`.
+
+The runtime stream store (`framework/persistence/automation/project/runtime-stream-store.ts`)
+writes a batch of events as consecutive chunks of at most 2,000 events each (the
+`maxEvents` default), so a long run's detail (a 10,000-action run) is never refused as
+one oversized chunk. Every action row is built, and so validated, before the first
+chunk is written; each chunk is then followed by its own action rows and by moving the
+run's `last_event_sequence` and action count past it. Splitting is by event count only:
+a 2,000-event chunk over the chunk byte limit is still refused. Reading a run back for
+its detail or for the next save (`readRunForUpdate`, `saveFlowRunDetail`) reads every
+event, 500 per page, with no total cap; a cap once read a long run short and its next
+save appended the missing events again. An action page row's `order` is the action's
+own order from its detail record; the stream sequence stays in `metadata.eventSequence`.
 
 The migrations are additive. The full `get-flow-router` endpoint remains only
 for runtime execution, mutation internals, exports, and documented legacy

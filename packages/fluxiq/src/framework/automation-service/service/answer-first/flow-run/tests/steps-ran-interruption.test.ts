@@ -57,3 +57,73 @@ describe("a saved step whose layer was not there on the replay", () => {
     expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "act_not_done" });
   });
 });
+
+describe("the record of each check a person cleared", () => {
+  const cleared = (resolution: object, id = "cleared"): AutomationStudioNodeAttemptTrace => ({
+    ...attempt("n2"), attemptId: id, status: "failed", route: "failed",
+    ask: { askId: `ask.${id}`, kind: "choice", parks: true, status: "answered", route: "success", personNeeded: true },
+    personContinuation: resolution
+  }) as AutomationStudioNodeAttemptTrace;
+  const outcomeOf = (attempts: AutomationStudioNodeAttemptTrace[]) => automationStudioAnswerFirstFlowRunStepsRan({
+    buildPlan: plan, locator, saved: [], ended: { reachedEnd: true, trace: { attempts }, graph } as unknown as Parameters<typeof automationStudioAnswerFirstFlowRunStepsRan>[0]["ended"]
+  });
+
+  it("keeps proved landed effects and unverified continuations distinct, while both still require the judge", () => {
+    for (const resolution of [{ kind: "effect_landed" }, { kind: "unverified", reason: "no_expected_state" }]) {
+      const outcome = outcomeOf([attempt("n1"), cleared(resolution), attempt("n3")]);
+      expect(outcome.steps[1]).toMatchObject({ personCleared: true, personClearances: [{ attemptId: "cleared", resolution }] });
+      expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    }
+  });
+
+  it("links a requested rerun only to its immediate successful execution on the same node, definition and frame", () => {
+    const resolution = { kind: "rerun", reason: "unacted" };
+    const reran = { ...attempt("n2"), attemptId: "reran" };
+    const outcome = outcomeOf([attempt("n1"), cleared(resolution), reran, attempt("n3")]);
+    expect(outcome.steps[1]).toMatchObject({ personClearances: [{ attemptId: "cleared", resolution, rerunAttemptId: "reran" }] });
+    expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    const unrelated = [
+      [attempt("n3"), reran],
+      [{ ...reran, definitionId: "another.definition" }],
+      [{ ...reran, framePath: ["another.frame"] }],
+      [{ ...reran, skipped: { reason: "already_done", code: "executor.act.already_done" } }],
+      [{ ...reran, repair: { kind: "local", repairId: "changed", unit: {}, outcome: "held", reason: "changed configuration" } }],
+      [{ ...reran, status: "failed" }]
+    ];
+    for (const after of unrelated) {
+      const read = outcomeOf([attempt("n1"), cleared(resolution), ...after as AutomationStudioNodeAttemptTrace[]]);
+      expect(read.steps[1]?.personClearances).toEqual([{ attemptId: "cleared", resolution }]);
+    }
+  });
+
+  it("keeps every clearance, including an unresolved earlier rerun, without aliasing its engine record", () => {
+    const first = cleared({ kind: "rerun", reason: "unacted" }, "first");
+    const second = cleared({ kind: "effect_landed" }, "second");
+    const outcome = outcomeOf([attempt("n1"), first, second, attempt("n3")]);
+    expect(outcome.steps[1]?.personClearances).toEqual([
+      { attemptId: "first", resolution: { kind: "rerun", reason: "unacted" } },
+      { attemptId: "second", resolution: { kind: "effect_landed" } }
+    ]);
+    Object.assign(first.personContinuation!, { kind: "unverified" });
+    expect(outcome.steps[1]?.personClearances?.[0]?.resolution.kind).toBe("rerun");
+    expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+  });
+
+  it("keeps legacy or malformed clearance evidence unproved and strips extra fields from a closed record", () => {
+    const legacy = cleared({ kind: "effect_landed" });
+    delete legacy.personContinuation;
+    for (const met of [legacy, cleared({ kind: "rerun", reason: "invented" }), cleared({ kind: "invented" })]) {
+      const outcome = outcomeOf([attempt("n1"), met, attempt("n3")]);
+      expect(outcome.steps[1]?.personClearances).toEqual([{ attemptId: "cleared", resolution: { kind: "unknown" } }]);
+      expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    }
+    const outcome = outcomeOf([attempt("n1"), cleared({ kind: "effect_landed", unrelated: "fixture-private-value" }), attempt("n3")]);
+    expect(outcome.steps[1]?.personClearances).toEqual([{ attemptId: "cleared", resolution: { kind: "effect_landed" } }]);
+    const mixed = outcomeOf([attempt("n1"), legacy, cleared({ kind: "effect_landed" }, "new"), attempt("n3")]);
+    expect(mixed.steps[1]?.personClearances).toEqual([
+      { attemptId: "cleared", resolution: { kind: "unknown" } },
+      { attemptId: "new", resolution: { kind: "effect_landed" } }
+    ]);
+    expect(stands(mixed.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+  });
+});

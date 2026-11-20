@@ -112,7 +112,13 @@ export function applyAutomationStudioFlowDraftAmendments(
   const withdrawn: AutomationStudioFlowDraftWithdrawal[] = [];
   // A step kept after a withdrawal of this decision, whose reversal waits for the strand check.
   let reversalAfterCheck = false;
-  for (const amendment of amendments) {
+  for (const said of amendments) {
+    // `take` names the call, not the step: the step that call ran, put in the Flow as `add` puts one (`./types.ts`, `call`).
+    const amendment = said.change === "take" ? takenAs(steps, said, shown.number) : said;
+    if (!amendment) {
+      refused.push({ step: said.step, reason: "no_such_step" });
+      continue;
+    }
     const step = shown.step(amendment.step);
     if (!step) {
       refused.push({ step: amendment.step, reason: "no_such_step" });
@@ -353,4 +359,12 @@ function movedActs(claims: readonly { act: string; from: AutomationStudioFlowDra
     moved.push({ act, from: from.position, to: to.position });
   }
   return moved;
+}
+
+/** A `take` as the `add` of the step its call ran, numbered as the draft was shown; `undefined` where no step ran that call. */
+function takenAs(steps: readonly AutomationStudioFlowDraftStep[], amendment: AutomationStudioFlowDraftAmendment, numberOf: (step: AutomationStudioFlowDraftStep) => number): AutomationStudioFlowDraftAmendment | undefined {
+  const ran = amendment.call === undefined ? undefined : steps.find((step) => step.callId === amendment.call && step.replacedBy === undefined);
+  if (!ran) return undefined;
+  const { call: _named, ...rest } = amendment;
+  return { ...rest, step: numberOf(ran), change: "add" };
 }

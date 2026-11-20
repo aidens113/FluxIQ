@@ -52,6 +52,14 @@ and a new Core entry that is rewritten, replaced or taken away belongs there:
   `core.rerun_check`. The window puts them after every result, in the order they
   arose, rather than where they arose (`runtime/llm/context-window.ts`).
 
+The draft view exposes an optional `steps[].callId` copied from the actual call
+that created that step. It remains stable when positions move, and a replaced
+entry retains its own call ID alongside `replacedBy`. Authors can use this to
+identify the exact read they intend to take, then check its disposition. A call
+ID is bookkeeping, not proof that a step is kept or its effect verified; written
+or checked-only steps without their own performed call do not inherit an ID
+from a prior execution.
+
 **Anthropic's markers** (`runtime/models/providers/anthropic/cache-content.ts`). A
 request carries at most four: the system prompt, the end of the head, the last entry
 before the first that changes, and one 19 entries before that. A marker looks back

@@ -1,0 +1,2 @@
+/** `origin_unverified`: a value with no authenticated origin; provenance is never inferred from shape or nonsecret status. */
+export type AutomationStudioInputUnknownCode = "invalid_scope" | "invalid_reference" | "unsupported_input" | "scope_unverified" | "secrecy_unverified" | "producer_unverified" | "origin_unverified" | "storage_unavailable" | "missing" | "stale" | "snapshot_unavailable" | "lease_closed";

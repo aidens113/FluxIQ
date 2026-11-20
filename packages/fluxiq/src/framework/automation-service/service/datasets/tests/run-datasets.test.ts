@@ -292,8 +292,9 @@ describe("AutomationStudioRunDatasets", () => {
     await expect(datasets.listRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toEqual(processed);
     // The declaration reached the store: the answer is in its order, not the order collected.
     expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("D"), row("C"), row("B"), row("A")]);
-    // A batch declaring something else is refused by the store, so the declaration is what was stored.
-    await expect(handler(batch({ process: { limit: 1 }, attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("E")] }))).rejects.toThrow("Run dataset processing changed within one run.");
+    // A batch declaring something else makes its declaration the dataset's, keeping every collected row (t970).
+    await handler(batch({ process: { limit: 1 }, attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("E")] }));
+    expect(await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN })).toMatchObject([{ datasetId: "listings", recordCount: 1, processing: { collected: 6, kept: 1 } }]);
   });
 
   it("lets a repair's re-run replace what earlier passes stored, keeping them until it reaches each read", async () => {

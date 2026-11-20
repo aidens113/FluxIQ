@@ -354,9 +354,9 @@ those recorded actions to fail wherever the evaluator rejects the state.
 ### Record outputs and run-end processing
 
 Flow-authoring catalog entries and early validation feedback publish the parser's
-supported `process` shapes in both full and condensed help: `dedupe.by`, `where`,
-`sort`, `limit`, `columns` and `minRows`, with the same field and value constraints.
-Unsupported processing keys remain validation errors.
+supported `process` shapes in both full and condensed help: `derive`, `dedupe.by`,
+`where`, `anyOf`, `compare`, `sort`, `limit`, `columns` and `minRows`, with the same
+field and value constraints. Unsupported processing keys remain validation errors.
 
 Read-list redesign, stage S1. By default, a node that carries a `recordOutput` stores the
 rows its output returns as a batch of a run dataset
@@ -366,8 +366,13 @@ stored row, so every pass of a repeated read -- a new attempt -- adds its rows
 to the same dataset in capture order: pass order, then the page's own order.
 A retried attempt replaces only its own batch. `replace` clears the dataset
 first. `maxRecords` caps one capture, not the dataset. One dataset keeps one
-schema and one `process` declaration for the whole run: a batch carrying a
-different schema or declaration is refused at capture. A model-built Flow's
+schema for the whole run: a batch carrying a different schema is refused at
+capture. Its `process` declaration is the latest batch's: a batch carrying
+another one makes it the dataset's and keeps every collected row, and
+`setProcess` sets or clears it without storing a row, processing a dataset
+already processed again at once from its collected rows (t970; until then a
+changed declaration was refused, so a result's processing could not change
+within a run without reading its pages again). A model-built Flow's
 reads each write a dataset of their own: assembly always gives an extraction
 node a `recordOutput`, its id the slug of the step's words then the step's
 stable id (`runtime/flow-authoring/bootstrap/authoring/assembled-record-output.ts`,
@@ -401,19 +406,39 @@ declared or not. Processing is the one pure function
 `processAutomationStudioRecordRows` (`@fluxiq/contracts`,
 `packages/contracts/src/record-sets/process/`). It applies, in order:
 
-1. `where`: conditions over stored columns;
-2. `dedupe`: absent, the whole row is the key -- every stored field, or the
+1. `derive` (t970): columns computed on a copy of each row from one stored
+   column -- its text, or the first group (else the whole match) of a `pattern`
+   in it -- read `as` text, the number it states or the date it states
+   (`derive.ts`). A derived column may be filtered, compared, sorted and
+   deduplicated by, and is never stored or shown (`columns` naming one is
+   `record_output.process_derived_column_shown`);
+2. the filters, each of which must hold: `where`, conditions over stored or
+   derived columns; `anyOf` (t970), groups of conditions, a group holding when
+   any one of its conditions does, so "this or that" across columns
+   (`any-of.ts`); and `compare` (t970), two columns of a row set against each
+   other (`atLeast`, `atMost`, `lessThan`, `greaterThan`, `equals` naming the
+   other column), read as numbers or, with `as: "date"`, dates; a side stating
+   none fails it whatever `not` says (`field-comparison.ts`);
+3. `dedupe`: absent, the whole row is the key -- every stored field, or the
    answer's `columns` when it names them -- compared with layout and case
    ignored, the first row seen kept; `{by: [...]}` narrows the key; `false`
    keeps repeats. A row whose key fields are all empty is never a duplicate;
-3. `sort`: at most four keys, each `asc` or `desc`, read `as` `auto`,
+4. `sort`: at most four keys, each `asc` or `desc`, read `as` `auto`,
    `number`, `date` or `text`;
-4. `limit`: 1 to 10,000;
-5. `columns`: the stored columns the answer keeps, in order.
+5. `limit`: 1 to 10,000;
+6. `columns`: the stored columns the answer keeps, in order.
 
 `minRows` (default 1) is reported, never a failure. Every field named must be
-a stored field of the schema and none an excluded one
-(`parseAutomationStudioRecordProcessing`, issues `record_output.process_*`).
+a stored field of the schema and none an excluded one, or a column `derive`
+makes (`parseAutomationStudioRecordProcessing`, issues `record_output.process_*`).
+**A filter, sort or dedupe may read a stored column `columns` leaves out**
+(t970): processing reads the collected rows, which hold every stored column,
+so a mark a read takes only to filter by -- a badge, a sponsored or promoted
+label -- is stored and never shown. Until t970 every `where` field had to stay
+in `columns` (`record_output.process_where_column_dropped`, no longer produced),
+and the judge then found columns nobody asked for. Processing the collected rows
+again gives the same answer; an answer whose filters read a column it does not
+show is only ever processed again from its collected rows.
 The answer is stored beside the collected rows (`run_dataset_answer_rows`),
 with the account on `run_datasets.processing_json` and `processed_at_ms`.
 From then on every reader reads the answer: dataset pages, export streams,
@@ -454,13 +479,70 @@ summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
 short, and `passes`: one entry per batch with its node, its pass number per
 node, its rows and its `newRows` (rows that repeat no earlier collected row).
 
-Each `where` condition also accounts for the rows it alone excluded. Its optional
+Each `where` condition also accounts for the rows it alone excluded; each
+`anyOf` group and `compare` does the same on the account's `filters` (t970),
+with its kind, the columns it reads and its words. Its optional
 tested-value evidence comes from the same processing evaluation over collected
 rows, before answer-column projection. Evidence is screened before it reaches a
 judge and is left out of every public dataset and run-detail read; it is not an
 assertion the model can author. Older accounts remain valid
 without it and retain their previous verification requirements. Duplicate row
 labels cannot merge conflicting observations into a measured exclusion.
+
+### The result's own processing (`core.set_result_processing`, t970)
+
+A build used to filter only by acting on the page: a site's filters, or a
+read's `where`. Each change to a condition re-read every page, a page filter
+the site offered could be missing, slow or not the request's words, and a mark
+that showed on a row could not be filtered by once the read had collected it
+(run `run-mwojyaub-a76ac16e` spent $5 and never dropped a promoted row its read
+had collected). The result's processing is a stage of its own, apart from the
+Flow's steps:
+
+- **The tool.** `core.set_result_processing` (`runtime/llm/node-tools/result/`,
+  effect `observe`) takes a whole `process` declaration, or `clear: true`. It
+  touches no page. Its answer is the declaration as the contract read it
+  against the rows the result holds, the counts (read, left out, repeats, cut,
+  kept), each filter's words with the rows it alone left out by label, and
+  every row kept; a declaration the schema refuses is answered with the
+  contract's codes and changes nothing. An answer-first attempt offers it in
+  every round beside the domain's tools and answers it itself
+  (`service/answer-first/attempt/result-processing.ts`); its calls are never
+  draft steps (`runtime/llm/evidence-loop.ts`). A declaration naming no
+  `columns` shows the columns the person named, where the request names them
+  surely and the rows hold them all.
+- **The answer.** The attempt's result feed merges the declaration over the
+  output step's own `recordOutput.process`, key by key, and makes the answer
+  from the pages' whole rows (`service/answer-first/result-feed/feed.ts`), so
+  the completion check, the person and the store's publication all have the
+  processed rows.
+- **The judge.** What the processing did goes on `resultEvidence.processing`
+  (`AutomationStudioResultEvidenceProcessing`,
+  `runtime/result-verification/result-evidence/types.ts`): the declaration, the
+  counts, and per filter its words and the rows it alone left out, by label. It
+  travels with the publication's stored evidence, so a finished run's judge
+  reads it too, and the call itself is on the attempt's trail. The Flow-less
+  judge's question says to check each filter against the request and each row
+  it left out against the filter: the tool's own proof over a live run's rows
+  caught a plausible condition (`name not contains "charging case"`) dropping
+  three right rows.
+- **Saved and replayed with no call.** A saved Flow is assembled from its saved
+  steps every time it runs, so the declaration is written into the record
+  output of each step whose pages are the answer before the steps are checked
+  and kept (`attempt/draft-save.ts`, `attempt/remember.ts`). A later run applies
+  it in the store at its end. For a caller that assembles a draft without
+  steps of its own, assembly also takes declarations held on the draft
+  (`AutomationStudioFlowDraft.result`, `runtime/flow-authoring/draft/result-processing/`)
+  as `resultProcessing` and writes them onto each record output they apply to
+  (`runtime/flow-authoring/bootstrap/authoring/result-processing/`): merged over
+  the output's own processing, the fields only the declaration reads added to
+  the schema, and `columns` defaulting to the columns from before so those
+  fields stay hidden.
+- **Guidance.** The decision instruction says to read a condition printed on
+  each row as a column (a mark or badge included) and filter the rows already
+  read with the tool where it is offered, to use a site's filter only when it
+  cuts what must be read by a lot, and that rows a later step acts on are still
+  narrowed by the read's `where`, which processing never changes.
 
 **Not yet.** The build's test does not process: `buildTest.stores` still
 counts every row each pass of a read returned

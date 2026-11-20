@@ -4,8 +4,9 @@
 
 import type { AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioTaskAttemptLoopsCaught, AutomationStudioTaskAttemptPath } from "@fluxiq/contracts/automation";
+import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftResultProcessing, AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioAnswerFirstAttemptStore } from "../attempt-store/index.ts";
@@ -13,6 +14,7 @@ import type { AutomationStudioAnswerFirstAttemptPrior } from "../carry-on/index.
 import type { AutomationStudioAnswerFirstCompletionCheck } from "../completion/index.ts";
 import type { AutomationStudioAnswerFirstFlowRunOutcome } from "../flow-run/index.ts";
 import type { AutomationStudioAnswerFirstStuck } from "../loop-signal/index.ts";
+import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRoute } from "../route/index.ts";
 import type { AutomationStudioAnswerFirstRowSink, AutomationStudioAnswerFirstSession } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstAttemptProvenance, AutomationStudioAnswerFirstTaskMemoryStore } from "../task-memory/index.ts";
@@ -36,8 +38,12 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   startedWith: readonly AutomationStudioFlowDraftStep[];
   /** How it is going at the task, as its row says. Settled at the ending (`./path.ts`). */
   path: AutomationStudioTaskAttemptPath;
-  /** The saved Flow's run, where one was tried: what came of it, whether anything really went out, and what the judge said of a whole run. */
-  flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure" } | undefined;
+  /**
+   * The saved Flow's run, where one was tried: what came of it, whether anything really went out, what the judge said of
+   * a whole run, and the run's graph-entry input evidence where a session was opened (`./flow-stage.ts`): a sealed
+   * reference or an unknown code, never a value.
+   */
+  flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure"; inputUse?: AutomationStudioInputUseObservation | undefined } | undefined;
   /** A round has made a decision since the saved Flow's run (`./path.ts`). */
   decidedAfterRun: boolean;
   /** A person pressed Run again (`../run-again/`): its record started empty; its run still checks each stated control before it presses. */
@@ -60,11 +66,15 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   /** The act of the request the latest decision says its call does, for `asked`: which act, never how many. */
   claim?: string | undefined;
   sink: AutomationStudioAnswerFirstRowSink;
+  /** The attempt's one result (`../result-feed/`): which of the rows the sink stores are the answer. */
+  result: AutomationStudioAnswerFirstResultFeed;
   session: AutomationStudioAnswerFirstSession;
   witnesses: AutomationStudioAnswerFirstWitnesses;
   completion: AutomationStudioAnswerFirstCompletionCheck;
   /** Everything the attempt did on the site, for its judge: every call its chain sent and every step a saved Flow's run made, held across a resume (`../trail/`, t963). */
   trail: AutomationStudioResultTrailStep[];
+  /** What `core.set_result_processing` holds for this attempt's result (`./result-processing.ts`, t970); absent until it is set. */
+  resultProcessing?: AutomationStudioFlowDraftResultProcessing | undefined;
   permissions: AutomationStudioFlowBootstrapActionPermissions;
   /** The domain's tools the chain sends to now: the arrival's until the page has got there, then the ones with no start location. */
   options: AutomationStudioHarnessOptionLoopBinding;

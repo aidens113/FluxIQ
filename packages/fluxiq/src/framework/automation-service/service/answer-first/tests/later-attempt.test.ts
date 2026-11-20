@@ -91,13 +91,15 @@ describe("a later attempt at the same task", () => {
     expect(after.filter((call) => call.startLocation !== undefined)).toEqual([]);
   });
 
-  it("where it breaks at a step: the rounds are told the step in Core's words, and a yes with no forward run is an exploration", async () => {
+  // Changed by lane t905: the hand read must be a draft step to be the result (D1; a look never changes it), so it
+  // stands in for the broken step and runs live, which `../attempt/path.ts` has always called a repair.
+  it("where it breaks at a step: the rounds are told the step in Core's words, and a hand read in its place with no forward run is a repair", async () => {
     const lane = await laterAttempts(cleanups);
     await lane.attempt(firstAttempt);
     lane.target.page = "elsewhere";
-    const second = await lane.attempt({ script: [readLoans("again", {}), complete("Listed them by hand.")] });
+    const second = await lane.attempt({ script: [readLoans("again"), complete("Listed them by hand.")] });
     const { answer } = second;
-    expect(answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore", ordinal: 2 });
+    expect(answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair", ordinal: 2 });
     expect(answer.result?.source).toBe("both");
     expect(answer.result?.rows?.totalRows).toBe(3);
     const told = toldTo(second.decisions[0])!;
@@ -182,11 +184,12 @@ describe("a later attempt at the same task", () => {
     await lane.attempt({});
     expect((await lane.kept())?.best?.provenWhole).toBe(true);
     // A proven Flow's run is judged only when it deviates (task speed S9): a person's Run again always does.
-    const third = await lane.attempt({ runAgain: true, judge: [judgedNo("Not what was asked.")], script: [readLoans("again", {}), complete("Listed by hand.")] });
+    const third = await lane.attempt({ runAgain: true, judge: [judgedNo("Not what was asked.")], script: [readLoans("again"), complete("Listed by hand.")] });
     const told = toldTo(third.decisions[0])!;
     expect(told.lastCheck).toMatchObject({ verdict: "no" });
     expect(told.flowRun).toMatchObject({ happened: expect.stringMatching(/not accepted/u) });
-    expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore", ordinal: 3 });
+    // Changed by lane t905: the hand read is a draft step (D1), so the Flow changed and every step ran: a repair (`../attempt/path.ts`).
+    expect(third.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair", ordinal: 3 });
     expect(third.judgeCalls).toHaveLength(2);
     expect((await lane.kept())?.best?.provenWhole).toBe(false);
   });
@@ -372,7 +375,7 @@ describe("a memory that fails", () => {
     const { get, update } = lane.memory;
     lane.memory.get = async () => { throw new Error("disk"); };
     lane.memory.update = async () => { throw new Error("disk"); };
-    const second = await lane.attempt({ script: [readLoans("again", {}), complete("Listed.")] });
+    const second = await lane.attempt({ script: [readLoans("again"), complete("Listed.")] });
     lane.memory.get = get;
     lane.memory.update = update;
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "explore" });

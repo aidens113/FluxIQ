@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { JsonObject } from "../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_DATASET_RUN_STATUSES,
   AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS,
@@ -58,6 +59,8 @@ export type AutomationStudioRunDatasetAuditEventInput = {
 
 /** One capture's rows for one dataset, already validated against `schema` by the caller. */
 export type AutomationStudioRunDatasetBatch = {
+  /** Private source provenance, atomically replaced with the batch; never part of an exported row. */
+  evidence?: JsonObject | undefined;
   runId: string;
   datasetId: string;
   label?: string | undefined;
@@ -74,8 +77,9 @@ export type AutomationStudioRunDatasetBatch = {
   schemaDigest: string;
   writeMode: AutomationStudioRecordWriteMode;
   /**
-   * The record output's `process` declaration. The dataset's first batch fixes
-   * it; a later batch must carry the same one (absent means none).
+   * The record output's `process` declaration (absent means none). The latest
+   * batch's is the dataset's: one that changes it keeps every collected row
+   * (t970).
    */
   process?: AutomationStudioRecordProcessing | undefined;
   rows: readonly AutomationStudioRunDatasetRow[];
@@ -162,6 +166,8 @@ export class AutomationStudioProjectRunDatasetStore {
    * key outside the stored schema, or when the run has no `runtime_runs` row.
    * A `startsOver` batch clears the dataset as `replace` does and also takes on
    * its own schema and declaration, so neither is compared with the earlier pass's.
+   * A batch with another `process` declaration makes it the dataset's, keeping
+   * every collected row (t970); until then a changed one threw.
    */
   async appendBatch(input: AutomationStudioRunDatasetBatch): Promise<AutomationStudioRunDatasetSummary> {
     const runId = requiredId(input.runId, "run");
@@ -182,7 +188,8 @@ export class AutomationStudioProjectRunDatasetStore {
     return this.lease.database.transaction(async (sql) => {
       const existing = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
       if (existing && !startsOver && existing.schema_digest !== schemaDigest) throw new Error("Run dataset schema changed within one run.");
-      if (existing && !startsOver && existing.process_json !== processJson) throw new Error("Run dataset processing changed within one run.");
+      // A changed declaration is the dataset's from now on (t970): the collected rows are kept, and the answer is made again from them under it.
+      if (existing && !startsOver && existing.process_json !== processJson) await sql.run("update run_datasets set process_json = ? where run_id = ? and dataset_id = ?", [processJson, runId, datasetId]);
       if (existing && startsOver) await sql.run("update run_datasets set schema_json = ?, schema_digest = ?, process_json = ? where run_id = ? and dataset_id = ?", [JSON.stringify(schema), schemaDigest, processJson, runId, datasetId]);
       if (!existing) {
         // flow_id is the run's Flow. For an unknown run it would be null, but the run_id guard aborts first.
@@ -221,11 +228,11 @@ export class AutomationStudioProjectRunDatasetStore {
       const firstOrdinal = (highest?.ordinal ?? 0) + 1;
       await insertRows(sql, "run_dataset_rows", runId, datasetId, kept.map((rowJson, index) => ({ ordinal: firstOrdinal + index, attemptId, batchKey, rowJson })));
       await sql.run(
-        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms, evidence_json)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          on conflict(run_id, dataset_id, batch_key) do update set attempt_id = excluded.attempt_id, node_id = excluded.node_id, row_count = excluded.row_count,
-           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms`,
-        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now]
+           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms, evidence_json = excluded.evidence_json`,
+        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now, input.evidence === undefined ? null : JSON.stringify(input.evidence)]
       );
       recordCount += kept.length;
       invalidTotal += invalidCount;
@@ -300,9 +307,45 @@ export class AutomationStudioProjectRunDatasetStore {
     return runDatasetSummariesForRun(this.lease.database, run);
   }
 
+  /**
+   * Makes `process` the dataset's declaration without storing a row (t970): the
+   * result processing a model set or changed while the run went on. It is read
+   * against the stored schema and refused, writing nothing, when it does not
+   * parse. The collected rows stay; a dataset already processed is processed
+   * again from them at once, under the run's own `now` as `processRunDatasets`
+   * measures it, so every reader reads the new answer. Returns the dataset's
+   * summary, or null when the run stored no such dataset.
+   */
+  async setProcess(input: { runId: string; datasetId: string; process: AutomationStudioRecordProcessing | undefined; now?: number | undefined }): Promise<AutomationStudioRunDatasetSummary | null> {
+    const runId = requiredId(input.runId, "run");
+    const datasetId = requiredDatasetId(input.datasetId);
+    const now = nonNegativeInteger(input.now ?? Date.now(), "Run dataset timestamp");
+    return this.lease.database.transaction(async (sql) => {
+      const dataset = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
+      if (!dataset) return null;
+      const processJson = processDeclarationJson(input.process, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema);
+      if (dataset.process_json !== processJson) {
+        await sql.run("update run_datasets set process_json = ? where run_id = ? and dataset_id = ?", [processJson, runId, datasetId]);
+        if (dataset.processed_at_ms !== null) await processDataset(sql, runId, datasetId, now, input.now !== undefined);
+      }
+      const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
+      return saved ? summaryFromRow(saved) : null;
+    });
+  }
+
   /** Every dataset the run stored, most recently written first. */
   listDatasets(runId: string): Promise<AutomationStudioRunDatasetSummary[]> {
     return runDatasetSummariesForRun(this.lease.database, runId);
+  }
+
+  /** Source evidence survives processing and restart. A missing member explicitly marks a legacy/unrecorded batch. */
+  async readBatchEvidence(runId: string): Promise<Array<{ datasetId: string; batchKey: string; evidence?: JsonObject }>> {
+    const rows = await this.lease.database.all<{ dataset_id: string; batch_key: string; evidence_json: string | null }>("select dataset_id, batch_key, evidence_json from run_dataset_batches where run_id = ? order by created_at_ms, rowid", [requiredId(runId, "run")]);
+    return rows.map((row) => {
+      const evidence: unknown = row.evidence_json === null ? undefined : JSON.parse(row.evidence_json);
+      if (evidence !== undefined && (typeof evidence !== "object" || evidence === null || Array.isArray(evidence))) throw new Error("Run dataset batch evidence is invalid.");
+      return { datasetId: row.dataset_id, batchKey: row.batch_key, ...(evidence === undefined ? {} : { evidence: evidence as JsonObject }) };
+    });
   }
 
   /** `listDatasets` with each processing account whole, its tested cells included: the result check's evidence, and no public read's (t841). */

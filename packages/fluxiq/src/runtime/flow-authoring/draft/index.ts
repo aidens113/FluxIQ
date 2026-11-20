@@ -37,6 +37,8 @@ export * from "./full-run-required.ts";
 export * from "./interruption.ts";
 export * from "./opener.ts";
 export * from "./reversal.ts";
+// What the Flow does to its result's collected rows, set apart from its steps (t970).
+export * from "./result-processing/index.ts";
 export * from "./route-places/index.ts";
 export * from "./routing.ts";
 export * from "./second-copy.ts";

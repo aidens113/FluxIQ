@@ -65,4 +65,15 @@ describe("the judge's summary told more briefly", () => {
     expect(last.looked["core.summarised"]).toMatchObject({ item: "looked", kind: "list", entries: 12 });
     expect(last.readPages["core.summarised"]).toMatchObject({ item: "readPages", kind: "list", entries: 45 });
   });
+
+  it("names shared result evidence when it must be summarized and keeps its version and coverage", () => {
+    const page = { source: "read", step: "reader", version: 2, fields: { desk: "desk_field" }, conditions: [], place: "page=1", kept: rows.length, rows };
+    const evidence = { pages: [page], coverage: [{ step: "reader", version: 2, places: ["page=1"], first: "read" as const }], working: [], looks: [{ ...page, source: "look" }] };
+    const whole = sent(summary({ resultEvidence: evidence }));
+    expect(whole.resultEvidence).toEqual(evidence);
+    const last = automationStudioFlowLessSummaryFitting(whole).map(shown).at(-1);
+    expect(last.summarised.items).toEqual(expect.arrayContaining(["resultEvidence.looks", "resultEvidence.pages"]));
+    expect(last.resultEvidence.pages["core.summarised"]).toMatchObject({ item: "resultEvidence.pages", entries: 1 });
+    expect(last.resultEvidence.coverage).toEqual(evidence.coverage);
+  });
 });

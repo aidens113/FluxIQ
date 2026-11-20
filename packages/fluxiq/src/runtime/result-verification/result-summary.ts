@@ -94,6 +94,7 @@
 // `run-mveba82m-fd0616dc`'s judges saw three read values only as authored
 // targets and page text, beside no record set, and said yes.
 
+import { automationStudioResultEvidenceFromBatches, automationStudioResultEvidenceScreen } from "./result-evidence/index.ts";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../flows/authoring/model/index.ts";
@@ -165,6 +166,9 @@ export type AutomationStudioResultRecordSetInput = {
 };
 
 export type AutomationStudioRunResultSummaryInput = {
+  /** Private provenance read alongside the batches before any dataset processing; absent means legacy/unrecorded. */
+  batchEvidence?: readonly { datasetId: string; batchKey: string; evidence?: JsonObject }[];
+  instructionText?: string;
   recordSets: readonly AutomationStudioResultRecordSetInput[];
   /** The Flow's authored nodes, in order: the shape of what it can do at all. */
   flowNodes?: readonly AutomationStudioFlowNode[];
@@ -271,6 +275,9 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const read = automationStudioResultValueReadings({ reads: narrowedReads, authoredNodes: accounted.authoredNodes, recordSets: summarizedSets, flowNodes, now: referenceNow });
   const reads = read.reads;
   const recordSets = read.recordSets;
+  const bundle = automationStudioResultEvidenceFromBatches({ datasets: input.recordSets.map((set) => set.summary.datasetId), ...(input.batchEvidence === undefined ? {} : { entries: input.batchEvidence }), ...(input.instructionText === undefined ? {} : { instructionText: input.instructionText }) });
+  const resultEvidence = input.deniedEvidenceKeys === undefined ? undefined : automationStudioResultEvidenceScreen(bundle, input.deniedEvidenceKeys);
+  withheld ||= resultEvidence?.withheld === true;
   // Everything the run did, step by step, with what each answered and the page after it: the judge reads the result by it (`./run-trail/`, t963).
   const trail = input.sessionAttempts ? automationStudioResultRunTrail(automationStudioResultTrailOfAttempts(input.sessionAttempts, flowNodes, input.observedStateKeys ?? viewKeysOf(input.endView)), input.deniedEvidenceKeys) : undefined;
   if (trail?.withheld) withheld = true;
@@ -286,6 +293,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     totalRowsMissingRequired: recordSets.reduce((total, set) => total + set.rowsMissingRequired, 0),
     recordSetCount: input.recordSets.length,
     recordSets,
+    ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {}),
     ...(reads.length ? { reads } : {}),
     flowShape,
     ...(returned.returned ? { returned: returned.returned } : {}),

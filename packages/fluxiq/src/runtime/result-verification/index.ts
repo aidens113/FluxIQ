@@ -58,4 +58,5 @@ export * from "./verify.ts";
 export * from "./zero-provider-run.ts";
 export * from "./exclusion-evidence/index.ts";
 export * from "./flow-less/index.ts";
+export * from "./result-evidence/index.ts";
 export * from "./left-out-cells/index.ts";
