@@ -6,3 +6,4 @@ export { automationStudioLlmLoopDecisionTool } from "./tool.ts";
 export { automationStudioLlmLoopDecisionRead, type AutomationStudioLlmLoopDecision } from "./read.ts";
 export { automationStudioLlmLoopDecisionAsk } from "./ask.ts";
 export { automationStudioLlmLoopDecisionOffered } from "./offered.ts";
+export * from "./options.ts";

@@ -106,13 +106,67 @@ describe("each decision is carried out and recorded", () => {
     expect(top.data().decisions).toBeUndefined();
   });
 
-  it("ask_person: the person is asked the model's own question through the loop's caller, which ends the round there", async () => {
-    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?" })]);
-    const { ran, signals, record } = run(decide);
+  /** An attempt that already changed approach and climbed a rung: the last resort is open. */
+  const triedEverything = () => {
+    const tried = automationStudioLlmLoopAttemptRecord();
+    tried.ladder.serve(LADDER);
+    tried.ladder.escalate({ reason: "model_decided" });
+    tried.decided({ decision: "change_approach", pattern: "near_repeat", repeats: 2 });
+    return tried;
+  };
+
+  it("ask_person: the person is asked the model's own question through the loop's caller, which ends the round there, once its own approaches and a stronger model have not worked", async () => {
+    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?", why: "the instructions name a store that does not exist, and only the person can say which they meant" })]);
+    const record = triedEverything();
+    const { ran, signals } = run(decide, { attemptRecord: record });
     await expect(ran).rejects.toBe(stalledError);
     expect(signals).toHaveLength(1);
     expect(signals[0]).toMatchObject({ kind: "ask_person", question: "Which store should I use?", pattern: "near_repeat", toolIds: ["press"] });
-    expect(record.data().decisions).toEqual([{ decision: "ask_person", pattern: "near_repeat", repeats: 2 }]);
+    expect(record.data().decisions?.at(-1)).toEqual({ decision: "ask_person", pattern: "near_repeat", repeats: 2 });
+    expect(noteAt(decide, 2, "core.loop_check")?.decide).toMatchObject({ offered: ["continue", "change_approach", "ask_person", "escalate_model", "finish_with_best"] });
+  });
+
+  it("ask_person needs a stated reason naming what is impossible and why, and the prompt says it is only for the genuinely impossible", async () => {
+    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?" })]);
+    const record = triedEverything();
+    const { ran, signals } = run(decide, { attemptRecord: record });
+    await ran.catch(() => undefined);
+    expect(noteAt(decide, 3, "core.loop_decision")).toMatchObject({ ok: false, code: "core.loop_decision.invalid" });
+    expect(String(noteAt(decide, 3, "core.loop_decision")?.instruction)).toContain("ask_person needs why");
+    expect(signals).toHaveLength(0);
+    expect(String((noteAt(decide, 2, "core.loop_check")?.decide as JsonObject).instruction)).toContain("genuinely impossible under their instructions");
+  });
+
+  it("ask_person is last: absent from the first detection's ask, and refused if called", async () => {
+    const decide = script([decided(3, { decision: "ask_person", question: "Which store should I use?", why: "the instructions name a store that does not exist, and only the person can say which they meant" })]);
+    const { ran, signals, record } = run(decide);
+    await ran.catch(() => undefined);
+    const ask = noteAt(decide, 2, "core.loop_check")?.decide as JsonObject;
+    expect(ask.offered).toEqual(["continue", "change_approach", "escalate_model", "finish_with_best"]);
+    expect(String(ask.instruction)).toContain("Asking the person is for when your own approaches and a stronger model have not worked");
+    expect(noteAt(decide, 3, "core.loop_decision")).toMatchObject({ ok: false, code: "core.loop_decision.ask_person_not_offered" });
+    expect(signals).toHaveLength(0);
+    expect(record.data().decisions).toBeUndefined();
+  });
+
+  it("ask_person stays absent after a changed approach alone, and after a climb alone; present only after both", async () => {
+    const changedOnly = automationStudioLlmLoopAttemptRecord();
+    changedOnly.ladder.serve(LADDER);
+    changedOnly.decided({ decision: "change_approach" });
+    const first = script([]);
+    await run(first, { attemptRecord: changedOnly }).ran;
+    expect((noteAt(first, 2, "core.loop_check")?.decide as JsonObject).offered).not.toContain("ask_person");
+
+    const climbedOnly = automationStudioLlmLoopAttemptRecord();
+    climbedOnly.ladder.serve(LADDER);
+    climbedOnly.ladder.escalate({ reason: "model_decided" });
+    const second = script([]);
+    await run(second, { attemptRecord: climbedOnly }).ran;
+    expect((noteAt(second, 2, "core.loop_check")?.decide as JsonObject).offered).not.toContain("ask_person");
+
+    const both = script([]);
+    await run(both, { attemptRecord: triedEverything() }).ran;
+    expect((noteAt(both, 2, "core.loop_check")?.decide as JsonObject).offered).toContain("ask_person");
   });
 
   it("finish_with_best: the result goes to the completion check as the attempt's result", async () => {
@@ -152,5 +206,6 @@ describe("what the Lab sees of a decision", () => {
     expect(folders).toHaveLength(1);
     const meta = JSON.parse(readFileSync(join(directory.path, folders[0]!, "meta.json"), "utf8")) as JsonObject;
     expect(meta).toMatchObject({ kind: "loop_decision", decision: "change_approach", pattern: "near_repeat", repeats: 2, toolIds: ["press"] });
+    expect(meta).toMatchObject({ offered: ["continue", "change_approach", "escalate_model", "finish_with_best"], askPerson: "after_change_approach", approachesChanged: 0 });
   });
 });

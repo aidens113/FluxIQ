@@ -14,7 +14,8 @@ import type { JsonObject } from "../../../../core/index.ts";
  * - `exact_repeat`: the same call on the same page that failed or changed
  *   nothing, refused by the repeat guard (`../outcomes.ts`), which stays the
  *   first case.
- * - `near_repeat`: the same call with only free text changed.
+ * - `near_repeat`: the same call with only free text changed; or, with `succeeded`, one that
+ *   went through again and again with the same result (t969, run-mwoi785f-ebe09067).
  * - `cycle`: A B A B, across pages too, with nothing new in the second pass.
  * - `no_progress`: a window of calls that each ran and brought nothing new.
  * - `same_fix`: a draft edit undone and redone, or a repair already tried,
@@ -122,6 +123,12 @@ export type AutomationStudioLlmLoopFinding = {
   unchanged: readonly AutomationStudioLlmLoopUnchanged[];
   /** The latest call it is about, where one ran: what a refused call is told it is the same as. */
   callId?: string | undefined;
+  /**
+   * Every one of the calls succeeded and came back with the same result: a near repeat of work that went
+   * through (`./detector.ts`, "A success again"), told as such. It is counted under `near_repeat`, which the
+   * contract's patterns already name.
+   */
+  succeeded?: true | undefined;
 };
 
 /**

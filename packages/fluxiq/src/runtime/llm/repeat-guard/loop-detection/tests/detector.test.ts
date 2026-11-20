@@ -237,3 +237,37 @@ describe("the ladder over a recording", () => {
     expect(firings).toEqual([]);
   });
 });
+
+describe("a success again (run-mwoi785f-ebe09067, steps 0184-0249)", () => {
+  const replay = (index: number, fields: Partial<AutomationStudioLlmLoopCall> = {}): AutomationStudioLlmLoopCall => ({
+    callId: `c${index}`, toolId: "core.run_flow", input: { from: 16 }, effect: "mutate", effectApplied: true, refused: false, stateBefore: `start${index}`, stateAfter: "end", resultCode: "run_flow.ended", answer: "no next page, the loop ends", ...fields
+  });
+
+  it("tells the third identical run_flow that ended the same way, and counts it as a near repeat", () => {
+    const watch = automationStudioLlmLoopWatch({ refuseActs: true });
+    expect(watch.ran(replay(1))).toBeUndefined();
+    expect(watch.ran(replay(2))).toBeUndefined();
+    const finding = watch.ran(replay(3));
+    expect(finding).toMatchObject({ pattern: "near_repeat", repeats: 3, toolIds: ["core.run_flow"], succeeded: true, callId: "c3" });
+    expect(watch.tally().caught.near_repeat).toBe(1);
+    const note = automationStudioLlmLoopSteerNote(finding!, "drafted", true, { instruction: "Decide how to go on." });
+    expect(String(note.instruction)).toContain("went through every time with the same result");
+    expect(personFacingTextFaults(automationStudioLlmLoopChatWords(finding!).text)).toEqual([]);
+  });
+
+  it("is not told when each run's result changed: new rows are progress", () => {
+    const watch = automationStudioLlmLoopWatch({ refuseActs: true });
+    for (let index = 1; index <= 6; index += 1) expect(watch.ran(replay(index, { answer: `page ${index}`, rows: [`row-${index}`], stateAfter: `end${index}` }))).toBeUndefined();
+  });
+
+  it("starts again when a row is read between, and keeps counting after a decision to continue", () => {
+    const watch = automationStudioLlmLoopWatch({ refuseActs: true });
+    watch.ran(replay(1));
+    watch.ran(replay(2));
+    watch.ran(replay(3, { answer: "another ending", resultCode: "run_flow.other", stateAfter: "end2" }));
+    expect(watch.ran(replay(4, { answer: "another ending", resultCode: "run_flow.other", stateAfter: "end2" }))).toBeUndefined();
+    expect(watch.ran(replay(5, { answer: "another ending", resultCode: "run_flow.other", stateAfter: "end2" }))?.succeeded).toBe(true);
+    watch.decided("continue");
+    expect(watch.ran(replay(6, { answer: "another ending", resultCode: "run_flow.other", stateAfter: "end2" }))?.repeats).toBe(4);
+  });
+});

@@ -5,6 +5,7 @@
 import type { JsonObject } from "../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionAsk } from "../loop-decision/index.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_PATTERNS, type AutomationStudioLlmEvidenceRepeatedOutcome, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopPattern } from "../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext } from "./types.ts";
 
 /**
@@ -17,6 +18,6 @@ export function automationStudioLlmEvidenceRefusalDecisionAsk(context: Automatio
   const pattern: AutomationStudioLlmLoopPattern = (AUTOMATION_STUDIO_LLM_LOOP_PATTERNS as readonly string[]).includes(earlier.outcome) ? earlier.outcome as AutomationStudioLlmLoopPattern : "exact_repeat";
   const finding: AutomationStudioLlmLoopFinding = { pattern, repeats: earlier.repeats ?? inARow + 1, toolIds: [toolId], unchanged: ["page"] };
   context.loops.record.noted(finding);
-  const decide = automationStudioLlmLoopDecisionAsk(context.loops.cameBack(finding));
+  const decide = automationStudioLlmLoopDecisionAsk(context.loops.cameBack(finding), automationStudioLlmEvidenceLoopDecisionOptions(context));
   return { ...note, instruction: `${String(note.instruction ?? "")} ${String(decide.instruction)}`.trim(), decide };
 }
