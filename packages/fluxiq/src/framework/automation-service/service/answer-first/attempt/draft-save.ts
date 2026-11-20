@@ -27,7 +27,7 @@ import { automationStudioLlmStepLogNote, checkAutomationStudioFlowBootstrapCompl
 import type { AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
 import { automationStudioFlowDraftStepCopy } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { automationStudioAnswerFirstInputBoundSteps, automationStudioAnswerFirstStampedPlan, automationStudioAnswerFirstStatedToggles } from "../flow-run/index.ts";
-import { automationStudioAnswerFirstResultLoopCopies, automationStudioAnswerFirstResultOutputSaved, type AutomationStudioAnswerFirstResultVersion } from "../result/index.ts";
+import { automationStudioAnswerFirstResultLoopCopies, automationStudioAnswerFirstResultOutputSaved, type AutomationStudioAnswerFirstResultSavedRead } from "../result/index.ts";
 import { automationStudioAnswerFirstResultVersionOf } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
@@ -84,23 +84,22 @@ function withoutLoopCopies(run: AutomationStudioAnswerFirstAttemptRun): void {
   automationStudioLlmStepLogNote(`Left out of the saved Flow as a paging loop's own work done again by hand: steps ${[...copies].map((step) => step.position).sort((one, other) => one - other).join(", ")}.`);
 }
 
-/** What each plan read was authored as, what it ran with, and what was assembled, by its stable ledger step id. */
+/**
+ * What each plan read was authored as, what the assembly was handed for it (`ranWith ?? input`, which a domain may keep in
+ * the authored words and resolve again at assembly), and what was assembled, by its stable ledger step id.
+ */
 function savedReads(
   run: AutomationStudioAnswerFirstAttemptRun,
   verdict: Extract<Awaited<ReturnType<typeof checkAutomationStudioFlowBootstrapCompletion>>, { ok: true }>
-): Parameters<typeof automationStudioAnswerFirstResultOutputSaved>[1] {
-  const saved = new Map<string, {
-    written: AutomationStudioAnswerFirstResultVersion;
-    resolved: AutomationStudioAnswerFirstResultVersion;
-    saved: AutomationStudioAnswerFirstResultVersion;
-  }>();
+): Map<string, AutomationStudioAnswerFirstResultSavedRead> {
+  const saved = new Map<string, AutomationStudioAnswerFirstResultSavedRead>();
   for (const [subflowIndex, subflow] of verdict.buildPlan.plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const place = verdict.locator?.nodes[`${subflowIndex}.${nodeIndex}`];
       const step = place === undefined ? undefined : run.steps.find((each) => (place.draftStepId !== undefined ? each.id === place.draftStepId : each.position === place.draftStep));
       if (step) saved.set(run.result.idOf(step), {
         written: automationStudioAnswerFirstResultVersionOf(step.input),
-        resolved: automationStudioAnswerFirstResultVersionOf(step.ranWith ?? step.input),
+        recorded: automationStudioAnswerFirstResultVersionOf(step.ranWith ?? step.input),
         saved: automationStudioAnswerFirstResultVersionOf({ parameters: node.parameters ?? {} })
       });
     }

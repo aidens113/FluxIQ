@@ -151,6 +151,59 @@ describe("an answer-first draft's save", () => {
         verdictFor.locator = undefined;
       }
     });
+
+    // run-mwop7kt3 (and run-mwdbj3vf before it): a list read is recorded as it was written. The domain keeps a list
+    // read's handle in `ranWith`, with what the handle stood for beside it, and resolves it again when the plan is
+    // assembled, so the plan's read is the domain's resolution of exactly the recorded read, never `ranWith` itself.
+    // Every such Flow was refused `output_step_version_not_saved`, saved nothing, and no later attempt's continuation
+    // could be proven. A library's catalogue, read under one exclusion over a column it does not keep.
+    describe("a list read recorded as written and resolved again at assembly", () => {
+      const fields = { title: "col-title", author: "col-author", shelf: "col-shelf" };
+      const where = [{ field: "col-on-loan", is: "present", not: true }];
+      const binding = { location: "https://library.example/catalogue", itemCount: 12, extractList: { item: ".book", fields: { "col-title": { kind: "text", selector: ".t" } } } };
+      const listRead = { handle: "extraction.1", fields, where, minItems: 1 };
+      const step = (recorded: object): AutomationStudioFlowDraftStep => ({
+        ...read, callId: "books", actionId: "catalogue.read",
+        input: { node: "catalogue.read", parameters: { extractList: listRead } },
+        ranWith: { node: "catalogue.read", parameters: { extractList: { ...recorded, extractionBinding: binding } } }
+      });
+      const resolution = (over: object = {}) => ({
+        item: ".book",
+        fields: { title: { kind: "text", selector: ".t", required: false }, author: { kind: "text", selector: ".a", required: false }, shelf: { kind: "text", selector: ".s", required: false } },
+        where: [{ read: { kind: "text", selector: ".loan", required: false }, is: "present", not: true }],
+        minItems: 1,
+        ...over
+      });
+      const outcomeOf = async (recorded: object, plan: object) => {
+        const result = automationStudioAnswerFirstResultFeed({ instructionText: "List the books on the shelf with title, author and shelf.", readRowsKey: undefined });
+        result.port.record([{ kind: "page", step: { id: "books", position: 2 }, read: { source: "books", version: { conditions: where, fields }, kept: [{ title: "Tides", author: "Ames", shelf: "B4" }] } }]);
+        verdictFor.plan = planReading({ extractList: plan });
+        verdictFor.locator = { nodes: { "0.0": { draftStepId: "d2", draftStep: 2 } } };
+        const saved: AutomationStudioFlowCandidateDraftRecord[] = [];
+        try {
+          return { outcome: await automationStudioAnswerFirstSaveDraft(runOf(undefined, saved, [step(recorded)], result), "Done."), saved };
+        } finally {
+          verdictFor.plan = undefined;
+          verdictFor.locator = undefined;
+        }
+      };
+
+      it("saves the Flow whose plan is the domain's resolution of the read the answer was read as", async () => {
+        const { outcome, saved } = await outcomeOf(listRead, resolution());
+        expect(outcome.kind).toBe("saved");
+        expect(saved).toHaveLength(1);
+      });
+
+      it("refuses one whose resolution lost a condition or a column, or whose recorded read is not the answer's", async () => {
+        const refused = { kind: "kept", why: "not_assembled", codes: ["answer_first.output_step_version_not_saved"] };
+        expect((await outcomeOf(listRead, resolution({ where: [] }))).outcome).toEqual(refused);
+        const { shelf: _shelf, ...twoColumns } = resolution().fields;
+        expect((await outcomeOf(listRead, resolution({ fields: twoColumns }))).outcome).toEqual(refused);
+        // Recorded under another version than the one whose rows are the answer: its resolution is another read.
+        expect((await outcomeOf({ ...listRead, where: [{ field: "col-on-loan", is: "present" }] }, resolution())).outcome).toEqual(refused);
+        expect((await outcomeOf({ ...listRead, fields: { title: "col-title", author: "col-author" } }, resolution())).outcome).toEqual(refused);
+      });
+    });
   });
 
   // Lead addition C (lane t905, run-mwcncux8): a cinema's listings read in pages by a loop (read, Next page, repeat while
