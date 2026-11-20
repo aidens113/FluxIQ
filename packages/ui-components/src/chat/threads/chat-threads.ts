@@ -54,6 +54,8 @@ export type ChatThreadsDeps = {
   changed(): void;
   /** Puts the caret in the composer. */
   focusComposer(): void;
+  /** The shown chat's first message, when the whole chat is loaded; the header does not repeat it as the title. */
+  firstMessage?(): string | undefined;
   /** Draws the chat bar (name, "Chats", "+ New chat") in a drawer instead of the bare "Chats" button. */
   bar?: boolean;
 };
@@ -178,8 +180,16 @@ export function createChatThreads(deps: ChatThreadsDeps): ChatThreads {
     const shownId = target.kind === "thread" ? target.conversationId : conversationId;
     const threads = catalog.threads();
     const selected = threads.find((thread) => thread.conversationId === shownId) ?? null;
-    const title = conversationDisplayTitle(selected, deps.projectName());
-    header.update({ title, showTitle: options.onTitle === undefined, open, waiting: unansweredThreadCount(threads), canCreate: actions.can.create, busy: actions.busy() });
+    const title = conversationDisplayTitle(selected, deps.projectName(), options.emptyTitle);
+    header.update({
+      title,
+      showTitle: options.onTitle === undefined,
+      firstMessage: deps.firstMessage?.(),
+      open,
+      waiting: unansweredThreadCount(threads),
+      canCreate: actions.can.create,
+      busy: actions.busy()
+    });
     list.update({
       rows: threadRows(threads, selected?.conversationId, Date.now()),
       loaded: catalog.loaded(),

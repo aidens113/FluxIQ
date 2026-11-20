@@ -113,3 +113,22 @@ describe("the dock's list with no project open", () => {
     expect(api.sentTo("answer-panel-ask")).toHaveLength(1);
   });
 });
+
+describe("the dock with no project open", () => {
+  it("lists the latest chat and sends a first message through the person's own panel endpoints", async () => {
+    const { api, conversation } = dock(undefined);
+    expect(await conversation.listThreads({ subjectKind: "project", status: "open", limit: 1 })).toMatchObject({ ok: true });
+    await conversation.send({ text: "hello", conversationId: undefined, projectId: undefined });
+    expect(api.sentTo("list-panel-threads")).toEqual([{ limit: 1 }]);
+    expect(api.sentTo("send-panel-message")).toEqual([{ text: "hello", onScreen: { page: "flows" } }]);
+    expect(api.sentTo("list-conversations")).toEqual([]);
+    expect(api.sentTo("open-conversation")).toEqual([]);
+  });
+
+  it("still reads a project's latest chat from the project when one is open", async () => {
+    const { api, conversation } = dock({ projectId: "p1" });
+    await conversation.listThreads({ subjectKind: "project", status: "open", limit: 1, projectId: "p1" });
+    expect(api.sentTo("list-conversations")).toEqual([{ projectId: "p1", subjectKind: "project", subjectId: "p1", status: "open", limit: 1 }]);
+    expect(api.sentTo("list-panel-threads")).toEqual([]);
+  });
+});

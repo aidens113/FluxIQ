@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Guarded } from "../../model";
-import { ActivityList, ActivitySection, loadActivity, type ActivityEntry, type ActivityPage } from "..";
+import { activitySentence, ActivityList, ActivitySection, loadActivity, shapeActivityPage, type ActivityEntry, type ActivityPage } from "..";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,7 +37,7 @@ describe("ActivitySection", () => {
     });
     const renderer = await mount(load);
     const first = text(renderer);
-    for (const shown of ["Ada", "Set member role", "Allowed", "Cy", "Denied", "Ben", "5 min ago", "2 h ago", "Load more"]) expect([shown, first.includes(shown)]).toEqual([shown, true]);
+    for (const shown of ["Ada changed someone's role.", "Cy tried to change someone's role.", "Not allowed", "Ben", "5 min ago", "2 h ago", "Load more"]) expect([shown, first.includes(shown)]).toEqual([shown, true]);
     await act(async () => {
       renderer.root.findByProps({ className: "activity-more" }).props.onClick();
     });
@@ -83,7 +83,7 @@ describe("ActivitySection", () => {
     expect(html).toContain("This workspace · 4 items hidden · ");
     expect(html).toContain("This workspace · 1 item hidden · ");
     expect(html.match(/hidden/gu)).toHaveLength(2);
-    expect(html).toContain("List projects");
+    expect(html).toContain("Bo was not allowed to list projects.");
   });
 
   it("draws an entry's values as text", () => {
@@ -120,7 +120,86 @@ describe("loadActivity", () => {
   });
 
   it("keeps only the fields it knows from an answer", async () => {
-    stub(200, { ok: true, payload: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r", 7], requestId: "dummy-request", ipPrefix: "203.0.113.0/24" }, { at: "bad" }], next: "" } });
+    stub(200, { ok: true, payload: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r", 7], ipPrefix: "203.0.113.0/24" }, { at: "bad" }], next: "" } });
     expect(await loadActivity(null)).toEqual({ state: "ready", data: { entries: [{ at: 1, who: "Ada", action: "iam:X", outcome: "allowed", resources: ["r"] }], next: null } });
+  });
+});
+
+describe("a key change's outcome, joined by the server onto its own entry", () => {
+  const entry = (action: string, extra: Partial<ActivityEntry> = {}): ActivityEntry => ({ at: NOW, who: "Ada", action, outcome: "allowed", resources: [], ...extra });
+
+  it("says a key was added, replaced or removed only when its entry says succeeded", () => {
+    expect([entry("secrets:CreateKey", { result: "succeeded" }), entry("secrets:RotateKey", { result: "succeeded" }), entry("secrets:DeleteKey", { result: "succeeded" })].map(activitySentence))
+      .toEqual(["Ada added a key.", "Ada replaced a key.", "Ada removed a key."]);
+  });
+
+  it("says a failed one could not be done, with the closed code in words where known", () => {
+    expect(activitySentence(entry("secrets:CreateKey", { result: "failed", errorKind: "provider_refused" }))).toBe("Ada could not add a key because the provider did not accept the key.");
+    expect(activitySentence(entry("secrets:RotateKey", { result: "failed", errorKind: "no_credit" }))).toBe("Ada could not replace a key because the provider says the account has no credit.");
+    expect(activitySentence(entry("secrets:DeleteKey", { result: "failed", errorKind: "something_new" }))).toBe("Ada could not remove a key.");
+  });
+
+  it("keeps 'tried to' for an entry with no outcome, and a denied request never reads as done", () => {
+    expect(activitySentence(entry("secrets:CreateKey"))).toBe("Ada tried to add a key.");
+    expect(activitySentence(entry("secrets:CreateKey", { outcome: "denied" }))).toBe("Ada tried to add a key.");
+  });
+
+  it("reads result and errorKind from an answer, drops a malformed code, and keeps no request id", () => {
+    const page = shapeActivityPage({ entries: [
+      { at: 1, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "failed", errorKind: "no_credit", requestId: "r1", resources: [] },
+      { at: 2, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "failed", errorKind: "Bad Code!", resources: [] }
+    ] });
+    expect(page.entries.map((one) => [one.result, one.errorKind])).toEqual([["failed", "no_credit"], ["failed", undefined]]);
+    expect(JSON.stringify(page)).not.toContain("r1");
+  });
+});
+
+describe("activity in plain words", () => {
+  it("names a key by its readable name and never shows hex", () => {
+    const hex = Array.from(new TextEncoder().encode("secret:Work")).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const html = renderToStaticMarkup(createElement(ActivityList, { entries: [{ at: NOW, who: "Ada", action: "secrets:DeleteKey", outcome: "allowed", result: "succeeded", resources: [`key ~${hex}`] }], now: NOW }));
+    expect(html).toContain("Ada removed the key Work.");
+    expect(html).not.toContain(hex);
+  });
+
+  it("says a key whose reference is only an id, without the id", () => {
+    const html = renderToStaticMarkup(createElement(ActivityList, { entries: [{ at: NOW, who: "Ada", action: "secrets:DeleteKey", outcome: "allowed", result: "succeeded", resources: ["key ~7365637265743a3733363537323635373437"] }], now: NOW }));
+    expect(html).toContain("Ada removed a key.");
+    expect(html).not.toContain("7365");
+  });
+
+  it("says a key was added only when the save is known to have worked (journey 10)", () => {
+    const line = (result?: "succeeded" | "failed") => activitySentence({ at: NOW, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", ...(result ? { result } : {}), resources: [] });
+    expect(line("succeeded")).toBe("Ada added a key.");
+    expect(line("failed")).toBe("Ada could not add a key.");
+    // The permission check passing says nothing about the save: never "added" from the authorization alone.
+    expect(line()).toBe("Ada tried to add a key.");
+    expect(line()).not.toContain("added");
+  });
+
+  it("keeps the permission-only wording for acts that cannot fail after the check, and the denied wording", () => {
+    expect(activitySentence({ at: NOW, who: "Ada", action: "iam:SetPassword", outcome: "allowed", resources: [] })).toBe("Ada changed a password.");
+    expect(activitySentence({ at: NOW, who: "Cy", action: "secrets:CreateKey", outcome: "denied", resources: [] })).toBe("Cy tried to add a key.");
+  });
+
+  it("reads the operation's own result when the audit carries one, and ignores any other value", () => {
+    const page = shapeActivityPage({ entries: [
+      { at: 1, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "failed", resources: [] },
+      { at: 2, who: "Ada", action: "secrets:CreateKey", outcome: "allowed", result: "other", resources: [] }
+    ] });
+    expect(page.entries.map((one) => one.result)).toEqual(["failed", undefined]);
+  });
+
+  it("keeps system activity behind Show system activity", async () => {
+    const system: ActivityEntry = { at: NOW, who: "The platform administrator", action: "iam:AttachUserPolicy", outcome: "allowed", resources: ["service-identity website-backend"] };
+    const lookup: ActivityEntry = { at: NOW, who: "Ada", action: "iam:Snapshot", outcome: "allowed", resources: [] };
+    const renderer = await mount(async () => ({ state: "ready", data: { entries: [entry(NOW, "Ada"), system, lookup], next: null } }));
+    expect(text(renderer)).not.toContain("platform administrator");
+    expect(text(renderer)).not.toContain("snapshot");
+    await act(async () => {
+      renderer.root.findByProps({ type: "checkbox" }).props.onChange({ target: { checked: true } });
+    });
+    expect(text(renderer)).toContain("The platform administrator");
+    expect(text(renderer)).toContain("Ada snapshot.");
   });
 });

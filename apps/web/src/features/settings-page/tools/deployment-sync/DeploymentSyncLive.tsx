@@ -166,7 +166,7 @@ function DeploymentWorkspace({ api, isOwner }: { api: ReturnType<typeof useProgr
       <Panel title="Repository Sync" action={<button className="button" disabled={reading || busy} onClick={() => { if (!actionLock.current) void refresh(); }} type="button">Refresh</button>}>
         {readError ? <VisualAlert tone="error" title="Snapshot refresh failed" message={readError} /> : null}
         {readError ? <button className="button" disabled={reading || busy} onClick={() => { if (!actionLock.current) void refresh(); }} type="button">Retry</button> : null}
-        {reading ? <p role="status">Refreshing repository state...</p> : null}
+        {reading ? <p role="status">Refreshing repository state…</p> : null}
         <SummaryStrip items={[["Branches", git?.branches?.length ?? targets.length], ["Current", git?.currentBranch ?? "-"], ["Working Tree", git?.available ? (git.dirty ? "Dirty" : "Clean") : "Unknown"], ["Actions", snapshot?.payload?.runs?.length ?? 0]]} />
         {git?.available ? <KeyValue rows={[["Repo root", git.rootDir], ["HEAD", git.headSha ?? "-"], ["Remotes", String(git.remotes?.length ?? 0)], ["Status rows", String(git.status?.length ?? 0)]]} /> : <VisualAlert tone="error" title="Git unavailable" message={git?.error ?? "The importing project root is not a git repository."} />}
       </Panel>
@@ -197,8 +197,8 @@ function DeploymentWorkspace({ api, isOwner }: { api: ReturnType<typeof useProgr
         {historyTab === "branches" ? <DataTable label="Git branches" columns={["Branch", "Current", "Remote", "Upstream", "SHA"]} rows={(git?.branches ?? []).map((branch) => [branch.name, yesNo(branch.current), yesNo(branch.remote), branch.upstream ?? "-", String(branch.sha ?? "-").slice(0, 12)])} empty="No branches discovered." /> : null}
         {historyTab === "actions" ? <DataTable label="Deployment actions" columns={["Run", "Target", "Mode", "Status", "Message"]} rows={(snapshot?.payload?.runs ?? []).map((run) => [<button className="link-button" onClick={() => setSelectedRun(run)} type="button">{run.id.slice(0, 8)}</button>, run.targetId, run.mode ?? "-", run.status, run.message ?? "-"])} empty="No deployment actions have run." /> : null}
         {selectedRun ? <DeploymentResultDetail value={selectedRun} /> : null}
-        {busy || status ? <p role={status.startsWith("Deployment action failed") ? "alert" : "status"}>{busy ? "Deployment action in progress..." : status}</p> : null}
-        <StatusText value={busy ? "Deployment action in progress..." : status} />
+        {busy || status ? <p role={status.startsWith("Deployment action failed") ? "alert" : "status"}>{busy ? "Deployment action in progress…" : status}</p> : null}
+        <StatusText value={busy ? "Deployment action in progress…" : status} />
       </Panel>
       {pendingAction ? <AuthorizationDialog actionLabel={pendingAction.endpoint === "rollback" ? "Rollback" : "Checkout"} busy={busy} credentials={credentials} description={(pendingAction.endpoint === "rollback" ? "Rollback changes the selected target to version " + pendingAction.versionSha + "." : "Checkout updates the importing repository to the selected branch. Local changes may block the operation.") + " Target " + pendingAction.targetId + "; enter your security PIN to continue."} error={authError} requirements={{ pin: true }} title={pendingAction.endpoint === "rollback" ? "Confirm Rollback" : "Confirm Branch Checkout"} onAuthorize={() => void confirmAction(pendingAction)} onCancel={() => closeConfirmation(pendingAction)} onChange={setCredentials} /> : null}
     </section>

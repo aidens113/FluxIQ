@@ -17,6 +17,7 @@ import { createProgramActivityPort, type ProgramActivityPort } from "../activity
 import { createChangesPort } from "./changes-port";
 import { createComposedConversationPort } from "./composed-conversation-port";
 import { createConversationPort } from "./conversation-port";
+import { notifyKeysOnFailedSend } from "./notify-keys-on-failed-send";
 import { createPanelConversationPort } from "./panel-conversation-port";
 import { createModelsPort } from "./models-port";
 import type { ProgramChatTransportOptions } from "./options";
@@ -28,13 +29,19 @@ export type ProgramChatTransport = ChatTransport & { readonly activity: ProgramA
 
 export function createProgramChatTransport(api: ProgramCommandTransport, options: ProgramChatTransportOptions): ProgramChatTransport {
   return {
-    conversation: conversationFor(api, options),
+    conversation: withKeyRefresh(conversationFor(api, options), options),
     changes: createChangesPort(options),
     activity: createProgramActivityPort(api, { projectId: options.projectId, ...(options.activityTimers ? { timers: options.activityTimers } : {}), ...(options.changes ? { changes: options.changes } : {}) }),
     runs: createRunPort(api, options),
     recordings: createRecordingsPort(api, options),
-    ...(options.secretKeys ? { models: createModelsPort(options.secretKeys) } : {})
+    ...(options.secretKeys ? { models: createModelsPort(options.secretKeys) } : {}),
+    ...(options.modelKeys ? { modelKeys: options.modelKeys } : {})
   };
+}
+
+function withKeyRefresh(conversation: ChatConversationPort, options: ProgramChatTransportOptions): ChatConversationPort {
+  const { modelKeys } = options;
+  return modelKeys ? notifyKeysOnFailedSend(conversation, () => modelKeys.notify()) : conversation;
 }
 
 // A panel chat is the person's own threads, joined by the open project's when the host says which is open.

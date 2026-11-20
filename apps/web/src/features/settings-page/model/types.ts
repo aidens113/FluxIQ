@@ -28,6 +28,8 @@ export type SettingsKey = {
   heldByYou?: boolean | undefined;
   /** Its holder offered it to the workspace, so it may pay for other people's messages once it is chosen. */
   offeredToWorkspace?: boolean | undefined;
+  /** When the key was added; the engine says it of every key. */
+  createdAtMs?: number | undefined;
 };
 
 /** What `snapshot` and `get-assistant-model` say about the default and the assistant's pick. */

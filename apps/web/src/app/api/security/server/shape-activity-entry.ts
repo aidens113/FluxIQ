@@ -2,12 +2,6 @@ import type { IamAuditOutcome, IamAuditRecord } from "fluxiq/platform";
 import type { ActivityEntry } from "../../../../features/security/activity/model";
 import { frnScope } from "./frn-scope";
 
-/**
- * An entry as the route sends it: the shared entry plus, only when the
- * endpoint opted in to an outcome row, whether the act then succeeded or
- * failed and, on failure, its closed error kind (never a message).
- */
-export type JoinedActivityEntry = ActivityEntry & { result?: "succeeded" | "failed"; errorKind?: string };
 
 type NameOf = (userId: string) => Promise<string | null>;
 
@@ -44,7 +38,7 @@ async function resourceLabel(resource: string, nameOf: NameOf): Promise<string> 
  * request id, deciding statement, address prefix, origin, who acted on the
  * person's behalf and how they consented never leave the server.
  */
-export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf, outcome?: IamAuditOutcome): Promise<JoinedActivityEntry> {
+export async function shapeActivityEntry(record: IamAuditRecord, nameOf: NameOf, outcome?: IamAuditOutcome): Promise<ActivityEntry> {
   const hidden = record.hidden;
   return {
     at: record.time * 1000,

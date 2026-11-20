@@ -25,6 +25,11 @@ export type ThreadHeaderModel = {
   title: string;
   /** Whether the header says the name itself. */
   showTitle: boolean;
+  /**
+   * The chat's first message, when the client knows it. Core titles a thread with it, so a title that is only
+   * that message (whole or cut short) is not drawn again above the same bubble.
+   */
+  firstMessage?: string | undefined;
   /** Whether the drawer is open. */
   open: boolean;
   /** How many chats hold a question waiting on the person. */
@@ -37,6 +42,20 @@ export type ThreadHeaderModel = {
 
 /** What the chat bar does beyond the list's button. */
 export type ThreadBar = { create(): void };
+
+/** Whether `title` is only the chat's first message, whole or cut short with an ellipsis. */
+function repeatsFirstMessage(title: string, firstMessage: string | undefined): boolean {
+  if (firstMessage === undefined) return false;
+  const plain = (text: string) => text.replace(/\s+/gu, " ").trim();
+  const shown = plain(title).replace(/(\.\.\.|…)$/u, "").trim();
+  const first = plain(firstMessage);
+  return shown !== "" && first.startsWith(shown);
+}
+
+/** The name the header draws: nothing when it would only say the first message again. */
+function drawn(model: ThreadHeaderModel): string {
+  return repeatsFirstMessage(model.title, model.firstMessage) ? "" : model.title;
+}
 
 /** The mounted header. */
 export type ThreadHeader = {
@@ -55,8 +74,10 @@ export function createThreadHeader(layout: ChatThreadsLayout, toggle: () => void
       element,
       toggle: undefined,
       update(model) {
-        if (title.textContent !== model.title) title.textContent = model.title;
-        if (element.hidden === model.showTitle) element.hidden = !model.showTitle;
+        const name = drawn(model);
+        if (title.textContent !== name) title.textContent = name;
+        const shown = model.showTitle && name !== "";
+        if (element.hidden === shown) element.hidden = !shown;
       }
     };
   }
@@ -78,8 +99,10 @@ export function createThreadHeader(layout: ChatThreadsLayout, toggle: () => void
     element,
     toggle: button,
     update(model) {
-      if (title.textContent !== model.title) title.textContent = model.title;
-      if (title.hidden === model.showTitle) title.hidden = !model.showTitle;
+      const name = drawn(model);
+      if (title.textContent !== name) title.textContent = name;
+      const shown = model.showTitle && name !== "";
+      if (title.hidden === shown) title.hidden = !shown;
       const waiting = model.waiting > 0 ? `${model.waiting} waiting` : "";
       if (badge.textContent !== waiting) badge.textContent = waiting;
       if (badge.hidden === (waiting !== "")) badge.hidden = waiting === "";
@@ -104,7 +127,8 @@ function createBar(layout: ChatThreadsLayout, button: HTMLButtonElement, title: 
     element,
     toggle: button,
     update(model) {
-      if (name.textContent !== model.title) name.textContent = model.title;
+      const said = drawn(model);
+      if (name.textContent !== said) name.textContent = said;
       const waiting = model.waiting > 0 ? `${model.waiting} waiting` : "";
       if (badge.textContent !== waiting) badge.textContent = waiting;
       if (badge.hidden === (waiting !== "")) badge.hidden = waiting === "";

@@ -16,7 +16,7 @@ export function HomeEngine(props: { engine: Resource<EngineStatus> }) {
       render={(status) => (
         <p className="home-fact" data-tone={status.tone}>
           <span className="home-dot" aria-hidden="true" />
-          {status.tone === "ok" ? "Running" : status.tone === "warn" ? "Not ready yet" : "Could not tell whether the engine is running"}
+          {status.tone === "ok" ? "Running" : status.tone === "warn" ? "Not ready yet" : "Could not tell whether the engine is running."}
         </p>
       )}
     />

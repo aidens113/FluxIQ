@@ -7,4 +7,4 @@ export { InviteForm } from "./invite";
 export { PendingInvites } from "./invites";
 export { MemberActions } from "./members";
 export * from "./model";
-export { ProofForm } from "./proof";
+export { ProofForm, TwoStepContext } from "./proof";

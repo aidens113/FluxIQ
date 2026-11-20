@@ -18,7 +18,7 @@ test("with nowhere to send the box is disabled and the reason stands above it, u
     composer.setUnavailable("Open a project to start a conversation.");
     composer.render(READY);
     assert.equal(box.disabled, true);
-    assert.equal(box.placeholder, "Chat unavailable");
+    assert.equal(box.placeholder, "Open a project to start a conversation.", "the placeholder says the reason, not a bare Chat unavailable");
     assert.equal(reason.hidden, false);
     assert.equal(reason.textContent, "Open a project to start a conversation.");
     assert.equal(root.byClass("composer-send")[0]!.disabled, true);

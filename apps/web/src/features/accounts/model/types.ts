@@ -81,7 +81,7 @@ export type InviteRequest = { email: string; displayName: string; role: Assignab
  * act on (`message`); or failed.
  */
 export type AccountsOutcome =
-  | { kind: "done" }
+  | { kind: "done"; link?: string }
   | { kind: "denied" }
   | { kind: "needs-proof"; message: string }
   | { kind: "refused"; message: string }

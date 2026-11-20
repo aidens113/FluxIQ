@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { Breadcrumb, Button, Field, IconButton, InlineNotice, Menu, type AlertTone, type BreadcrumbItem } from "../features/programs/shared-ui";
 import { sanitizeAsciiDigits } from "../lib/input-sanitizers";
 import { CREDENTIAL_SETUP_PENDING_COOKIE, replacementPasswordError } from "./api/auth/credential-setup-rules";
+import { signedOutPath } from "../features/panel-shell/account";
 import { localAuthDestination } from "./auth-navigation";
 import { BrandMark, LoginProductLinks, usePanelBranding } from "./product/client";
 
@@ -30,7 +31,8 @@ export function AuthStatus(props: { displayName: string; roleId: string }) {
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       if (!isCurrent()) return;
-      if (response.ok) window.location.href = "/";
+      // Stay on this page: the signed-out panel shows sign-in here, and signing in again returns to it.
+      if (response.ok) window.location.href = signedOutPath(window.location);
       else setFailed(true);
     } catch {
       if (isCurrent()) setFailed(true);
@@ -86,6 +88,8 @@ export function LoginPanel() {
   const [setupPending, setSetupPending] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  // The browser extension opens FluxIQ with `?pairing=1` while its connect request waits for approval.
+  const [pairingWaits, setPairingWaits] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: AlertTone; title: string; message: string } | null>(null);
   const mounted = useRef(false);
   const generation = useRef(0);
@@ -93,6 +97,7 @@ export function LoginPanel() {
   const destination = useRef<{ scope: string; path: string } | null>(null);
   useEffect(() => {
     mounted.current = true;
+    setPairingWaits(new URLSearchParams(window.location.search).get(PAIRING_WAITS_PARAM) === "1");
     destination.current = { scope: currentLoginScope(), path: localAuthDestination(window.location.pathname + window.location.search + window.location.hash, window.location.origin) };
     // A reload, or another page, during first setup returns here: stay on the setup form.
     if (credentialSetupPending()) {
@@ -172,8 +177,7 @@ export function LoginPanel() {
         setRateLimitSeconds(seconds);
         setFeedback({ tone: "error", title: "Sign-in temporarily locked", message: `Try again in ${seconds} seconds.` });
       } else {
-        const remaining = typeof body?.attemptsRemaining === "number" ? ` ${body.attemptsRemaining} attempt${body.attemptsRemaining === 1 ? "" : "s"} remaining.` : "";
-        setFeedback({ tone: "error", title: "Sign-in failed", message: `${body?.error ?? "Check your username and password."}${remaining}` });
+        setFeedback({ tone: "error", title: "Sign-in failed", message: signInFailureMessage(body?.error, body?.attemptsRemaining) });
       }
     } catch {
       if (!isCurrent()) return;
@@ -249,6 +253,7 @@ export function LoginPanel() {
           <BrandMark icon={<ShieldCheck size={17} aria-hidden />} />
           <span><strong id="auth-title">{branding.signInTitle ?? branding.name}</strong><small>{setupPending ? "Secure first setup" : branding.signInMessage ?? "Sign in to continue"}</small></span>
         </div>
+        {!setupPending && pairingWaits ? <InlineNotice message="Sign in to approve the browser that is asking to connect." tone="info" /> : null}
         {feedback ? <InlineNotice message={feedback.message} title={feedback.title} tone={feedback.tone} /> : null}
         {setupPending ? (
           <form className="auth-form" onSubmit={completeSetup}>
@@ -281,10 +286,21 @@ export function LoginPanel() {
         <LoginProductLinks signUp={!setupPending} />
         {setupPending
           ? <div className="auth-setup-assurance"><CheckCircle2 aria-hidden size={14} /><span>Your entries stay on this device and are sent only to the local FluxIQ identity service.</span></div>
-          : <div className="auth-setup-assurance"><KeyRound aria-hidden size={14} /><span>Setting up FluxIQ for the first time? Open the setup link it printed when it started.</span></div>}
+          : <div className="auth-setup-assurance"><KeyRound aria-hidden size={14} /><span>First time here? Open the setup link FluxIQ printed where you started it, and choose your password there. Already set up? Sign in with your username and password above.</span></div>}
       </section>
     </main>
   );
+}
+
+/** The query flag the browser extension adds to the address it opens while its connect request waits for approval. */
+export const PAIRING_WAITS_PARAM = "pairing";
+
+/** A failed sign-in in two plain sentences: what went wrong, then how many tries remain before the lock. */
+export function signInFailureMessage(error: string | undefined, attemptsRemaining: number | undefined): string {
+  const reason = (error?.trim() || "Check your username and password").replace(/[.!?]+$/u, "") + ".";
+  if (typeof attemptsRemaining !== "number") return reason;
+  const tries = attemptsRemaining <= 0 ? "No tries are left before sign-in locks for a while." : `${attemptsRemaining} ${attemptsRemaining === 1 ? "try is" : "tries are"} left before sign-in locks for a while.`;
+  return `${reason} ${tries}`;
 }
 
 const REPLACE_TEMPORARY = { tone: "warning" as const, title: "Replace the temporary password", message: "Choose your own password to open FluxIQ. Nothing else opens until you do." };

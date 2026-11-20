@@ -4,6 +4,7 @@
 // the chat reads each with a checking reader (`conversation/core-thread.ts`), so
 // a shape it does not know is a failed read, never a thrown error.
 
+import type { ModelKeysPort } from "../../model-access/index.ts";
 import type { ChatResult } from "./result.ts";
 import type { ChatResultsPort } from "./results.ts";
 import type { ChatSelection } from "./selection.ts";
@@ -176,6 +177,8 @@ export type ChatTransport = {
   readonly runs: ChatRunPort;
   readonly recordings?: ChatRecordingsPort;
   readonly models?: ChatModelsPort;
+  /** Reads and changes the person's AI keys, for the key card in the empty chat. Absent: the empty chat says the key line only. */
+  readonly modelKeys?: ModelKeysPort;
   readonly changes?: ChatChangesPort;
   /** A task's answer (`./results.ts`). Absent: the chat shows no answer turn. */
   readonly results?: ChatResultsPort;

@@ -7,11 +7,12 @@ import type { ChatThreadSummary } from "./summary.ts";
  * a Flow Core did not title reads as that noun in the project ("This run ·
  * Company website"). With neither a thread nor a project, it spans them all.
  */
-export function conversationDisplayTitle(thread: ChatThreadSummary | null, projectName?: string | null): string {
+export function conversationDisplayTitle(thread: ChatThreadSummary | null, projectName?: string | null, emptyTitle?: string): string {
   const project = projectName?.trim() || null;
-  if (!thread) return project ?? "All projects";
+  if (!thread) return project ?? (emptyTitle?.trim() || "All projects");
   const label = conversationSubjectLabel(thread);
   if (label !== conversationSubjectFallbackLabel(thread)) return label;
-  if (!project) return label;
+  // The assistant's own thread belongs to no project, so no project is added to its name.
+  if (!project || thread.subject.kind === "panel") return label;
   return thread.subject.kind === "project" ? project : `${label} · ${project}`;
 }

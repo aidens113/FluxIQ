@@ -2,6 +2,9 @@
 // panel threads and that project's threads in one list, each call going to the
 // port the thread belongs to.
 //
+// With no project open, the latest chat and a first message are the person's own, so the assistant works
+// before any project exists.
+//
 // Origin is what each list read said (a record from `list-panel-threads` is a
 // panel thread, one from `list-conversations` is the project's), else the
 // record's project (`panel` is the reserved panel project). A thread the lists
@@ -41,7 +44,8 @@ export function createComposedConversationPort(options: ComposedConversationOpti
   const portFor = (origin: Origin): ChatConversationPort => (origin === "panel" ? options.panel : options.project);
 
   const port: ChatConversationPort = {
-    listThreads: (query) => portFor(query.subjectKind === "panel" ? "panel" : "project").listThreads(query),
+    // With no project open the latest chat is the person's own: the project port has nowhere to read.
+    listThreads: (query) => portFor(query.subjectKind === "panel" || (query.projectId === undefined && !options.openProject()) ? "panel" : "project").listThreads(query),
 
     async listAllThreads(query) {
       const own = await options.panel.listAllThreads!(query);

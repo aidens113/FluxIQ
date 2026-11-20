@@ -56,7 +56,8 @@ function reader() {
     opened: () => heard.push("opened"),
     gateway: () => heard.push("gateway"),
     conversation: (id) => heard.push(`conversation:${id}`),
-    activity: (id) => heard.push(`activity:${id}`)
+    activity: (id) => heard.push(`activity:${id}`),
+    modelAccess: () => heard.push("model-access")
   };
   return { heard, listener };
 }
@@ -81,6 +82,19 @@ describe("PanelChangeConnection", () => {
     expect(streams[0]!.closed).toBe(false);
     leaveChat();
     expect(streams[0]!.closed).toBe(true);
+  });
+
+  it("tells readers to read the AI key's state again on a model-access event, in the same stream, numbered with the others", () => {
+    const { connection, streams } = harness();
+    const keys = reader();
+    connection.subscribe(keys.listener);
+    streams[0]!.open();
+    streams[0]!.send("gateway", { version: 1 });
+    streams[0]!.send("model-access", { version: 2 });
+    streams[0]!.send("model-access", { version: 4 });
+    streams[0]!.send("model-access", "not json");
+    expect(streams).toHaveLength(1);
+    expect(keys.heard).toEqual(["status:connecting", "status:live", "opened", "gateway", "model-access", "opened", "opened"]);
   });
 
   it("tells a reader who joins an open stream to read once, since it has read nothing yet", () => {

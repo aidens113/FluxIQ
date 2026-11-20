@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Guarded } from "../model";
 import { ActivityList } from "./ActivityList";
 import { loadActivity } from "./data";
-import type { ActivityEntry, ActivityPage } from "./model";
+import { isSystemActivity, type ActivityEntry, type ActivityPage } from "./model";
 import "./activity.css";
 
 /** What the section shows: loading, no access, could not read, or the entries so far and where the next page starts. */
@@ -31,6 +31,7 @@ function readyOrDenied(answer: Guarded<ActivityPage>, before: ActivityEntry[]): 
  */
 export function ActivitySection(props: { load?: Load; now?: () => number }) {
   const [view, setView] = useState<ActivityState>({ state: "loading" });
+  const [showSystem, setShowSystem] = useState(false);
   const load = useRef<Load>(props.load ?? loadActivity);
   load.current = props.load ?? loadActivity;
 
@@ -62,20 +63,22 @@ export function ActivitySection(props: { load?: Load; now?: () => number }) {
   return (
     <section className="security-section" aria-labelledby="security-activity">
       <h2 id="security-activity">Activity</h2>
-      <ActivityBody view={view} now={(props.now ?? Date.now)()} onMore={() => void loadMore()} />
+      <label className="activity-system"><input type="checkbox" checked={showSystem} onChange={(event) => setShowSystem(event.target.checked)} /> Show system activity</label>
+      <ActivityBody view={view} showSystem={showSystem} now={(props.now ?? Date.now)()} onMore={() => void loadMore()} />
     </section>
   );
 }
 
-function ActivityBody(props: { view: ActivityState; now: number; onMore: () => void }) {
+function ActivityBody(props: { view: ActivityState; showSystem: boolean; now: number; onMore: () => void }) {
   const { view } = props;
   if (view.state === "loading") return <p className="security-note" role="status">Loading activity…</p>;
   if (view.state === "denied") return <p className="security-note" role="status">You do not have access to this.</p>;
   if (view.state === "error") return <p className="security-note security-error" role="alert">Could not read the activity. Check that the engine is running, then reload.</p>;
-  const empty = view.entries.length === 0 && view.next === null;
+  const entries = props.showSystem ? view.entries : view.entries.filter((entry) => !isSystemActivity(entry));
+  const empty = entries.length === 0 && view.next === null;
   return (
     <>
-      {empty ? <p className="security-note">Nothing has been recorded yet.</p> : <ActivityList entries={view.entries} now={props.now} />}
+      {empty ? <p className="security-note">Nothing has been recorded yet. What people do here shows up in this list.</p> : <ActivityList entries={entries} now={props.now} />}
       {view.next !== null ? (
         <button type="button" className="activity-more" disabled={view.more === "loading"} onClick={props.onMore}>{view.more === "loading" ? "Loading…" : "Load more"}</button>
       ) : empty ? null : <p className="security-note">That is everything recorded.</p>}

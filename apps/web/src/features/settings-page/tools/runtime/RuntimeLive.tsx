@@ -76,8 +76,8 @@ export function RuntimeLive() {
   return <Panel title="Runtime" action={<button type="button" className="button" onClick={() => void refresh()}>Refresh Runtime</button>}>
     <section aria-label="Global Runtime workspace" aria-busy={loading}>
       <SummaryStrip items={[["Clients", snapshot.clients.length], ["Capability entries", snapshot.capabilities.length], ["Runs", snapshot.runs.length], ["Dispatch attempts", snapshot.dispatch.length]]} />
-      <p className="runtime-note">Global runtime inventory: {snapshot.runtimeId}. Snapshot loaded at {loadedAt === null ? "-" : new Date(loadedAt).toLocaleTimeString()}. Use Refresh for current state.</p>
-      <p className="runtime-note">Pages show 50 entries from the returned global snapshot. The Runtime API returns the full inventory; these are client-side pages.</p>
+      <p className="runtime-note" title={snapshot.runtimeId}>What the engine is running, as of {loadedAt === null ? "-" : new Date(loadedAt).toLocaleTimeString()}. Use Refresh for current state.</p>
+      <p className="runtime-note">Entries show 50 at a time; use Next and Previous to move through them.</p>
       {loading ? <LoadingState compact label="Refreshing Runtime; displayed snapshot may be stale" /> : null}
       {error ? <VisualAlert tone="error" title="Displayed snapshot is stale" message={error} /> : null}
       <nav aria-label="Runtime sections" className="segmented-control runtime-sections">{sections.map((value) => <button key={value} type="button" className={section === value ? "selected" : ""} aria-pressed={section === value} onClick={() => {

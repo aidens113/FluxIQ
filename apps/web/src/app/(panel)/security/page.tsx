@@ -1,5 +1,6 @@
-import { SecurityPage } from "../../../features/security";
+import { redirect } from "next/navigation";
 
-export default function SecurityRoute() {
-  return <SecurityPage />;
+/** `/security` opens the first tab, Your sign-in. */
+export default function SecurityRoute(): never {
+  redirect("/security/sign-in");
 }

@@ -14,6 +14,8 @@
 @import "./view/thread-list/thread-list.css";
 /* One task's humanness slider, on its answer card and wherever a host mounts it. */
 @import "./controls/humanness/humanness.css";
+/* The shared AI-key card, in the empty chat and wherever a host mounts it. */
+@import "../model-access/model-access.css";
 /* The project switcher a host mounts in its own header. */
 @import "../project-switcher/project-switcher.css";
 @import "./view/message.css";

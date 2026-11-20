@@ -27,17 +27,17 @@ afterEach(() => {
   renderer = undefined;
   vi.unstubAllGlobals();
 });
-it.each(["password", "pin"])("binds %s replacement to the dialog subject despite retained background selection", async (kind) => {
+it("binds password replacement to the dialog subject despite retained background selection", async () => {
   await mount();
   const selectB = row("b").props.onClick;
-  act(() => action(kind === "password" ? "Change password" : "Change PIN").props.onClick());
-  const passwords = renderer!.root.findByProps({ "data-modal": kind === "password" ? "Change password" : "Change pin" }).findAllByType("input");
-  act(() => { passwords[0]!.props.onChange({ target: { value: kind === "password" ? "new-value" : "1234" } }); });
-  act(() => passwords[1]!.props.onChange({ target: { value: kind === "password" ? "new-value" : "1234" } }));
+  act(() => action("Change password").props.onClick());
+  const passwords = renderer!.root.findByProps({ "data-modal": "Change password" }).findAllByType("input");
+  act(() => { passwords[0]!.props.onChange({ target: { value: "new-value" } }); });
+  act(() => passwords[1]!.props.onChange({ target: { value: "new-value" } }));
   act(() => passwords[2]!.props.onChange({ target: { value: "synthetic-auth" } }));
   act(() => selectB());
-  await act(async () => button("Save Credential").props.onClick());
-  expect(fixture.api.post).toHaveBeenLastCalledWith(kind === "password" ? "set-password" : "set-pin", expect.objectContaining({ userId: "a" }));
+  await act(async () => button("Save password").props.onClick());
+  expect(fixture.api.post).toHaveBeenLastCalledWith("set-password", expect.objectContaining({ userId: "a" }));
 });
 const passwordDraft = () => {
   act(() => action("Change password").props.onClick());
@@ -46,7 +46,7 @@ const passwordDraft = () => {
 it("masks a disappeared credential subject and refuses its retained submit without retargeting", async () => {
   await mount();
   passwordDraft();
-  const submit = button("Save Credential").props.onClick;
+  const submit = button("Save password").props.onClick;
   payload = { ...payload, users: payload.users.filter((item: any) => item.id !== "a") };
   await act(async () => button("Refresh").props.onClick());
   expect(renderer!.root.findAll((node) => node.props["data-modal"] === "Change password")).toHaveLength(0);
@@ -58,26 +58,26 @@ it("keeps same-owner refused credential drafts and recheck guidance for direct r
   fixture.api.post.mockResolvedValueOnce({ ok: false, requiresRecheck: true, error: "Fresh proof needed." });
   await mount();
   passwordDraft();
-  await act(async () => button("Save Credential").props.onClick());
+  await act(async () => button("Save password").props.onClick());
   expect(text()).toContain("new-value");
   expect(text()).toContain("Enter your current security factors and try again.");
-  await act(async () => button("Save Credential").props.onClick());
+  await act(async () => button("Save password").props.onClick());
   expect(fixture.api.post).toHaveBeenCalledTimes(2);
 });
 it("recovers unexpected credential rejection with fixed local feedback", async () => {
   fixture.api.post.mockRejectedValueOnce(new Error("private-provider-exception"));
   await mount();
   passwordDraft();
-  await act(async () => button("Save Credential").props.onClick());
+  await act(async () => button("Save password").props.onClick());
   expect(text()).toContain("The identity operation could not be completed. Try again.");
   expect(text()).not.toContain("private-provider-exception");
-  await act(async () => button("Save Credential").props.onClick());
+  await act(async () => button("Save password").props.onClick());
   expect(fixture.api.post).toHaveBeenCalledTimes(2);
 });
 it("fences obsolete input/close/submit handlers from an earlier credential dialog", async () => {
   await mount();
   passwordDraft();
-  const oldSubmit = button("Save Credential").props.onClick, oldClose = renderer!.root.findByProps({ "data-modal": "Change password" }).props["data-close"], oldInput = renderer!.root.findByProps({ "data-modal": "Change password" }).findAllByType("input")[0]!.props.onChange;
+  const oldSubmit = button("Save password").props.onClick, oldClose = renderer!.root.findByProps({ "data-modal": "Change password" }).props["data-close"], oldInput = renderer!.root.findByProps({ "data-modal": "Change password" }).findAllByType("input")[0]!.props.onChange;
   act(() => button("Cancel").props.onClick());
   passwordDraft();
   await act(async () => {
@@ -95,19 +95,19 @@ it("does not close a replacement credential dialog after an old issued write fin
   let resolve!: (value: any) => void;
   fixture.api.post.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
   const close = renderer!.root.findByProps({ "data-modal": "Change password" }).props["data-close"];
-  act(() => void button("Save Credential").props.onClick());
+  act(() => void button("Save password").props.onClick());
   // Retained/programmatic callbacks model an obsolete epoch, not an enabled normal Cancel gesture.
   act(() => close());
   // The old retained close is itself fenced; replace through a current synthetic menu action.
-  act(() => action("Change PIN").props.onClick());
+  act(() => action("Change password").props.onClick());
   await act(async () => resolve({ ok: true }));
-  expect(renderer!.root.findByProps({ "data-modal": "Change pin" })).toBeDefined();
-  expect(text()).not.toContain("password updated");
+  expect(renderer!.root.findByProps({ "data-modal": "Change password" })).toBeDefined();
+  expect(text()).not.toContain("Password updated");
 });
 it.each(["actor", "factor"])("invalidates proof and retained submit on %s changes", async (kind) => {
   await mount();
   passwordDraft();
-  const submit = button("Save Credential").props.onClick;
+  const submit = button("Save password").props.onClick;
   await act(async () => renderer!.update(<IdentityAccessLive currentUser={kind === "actor" ? { ...actor, id: "other-actor" } : { ...actor, totpEnabled: true }} />));
   await act(async () => submit());
   expect(fixture.api.post).not.toHaveBeenCalled();
@@ -173,7 +173,7 @@ it("preserves final-enabled-admin restrictions and refuses captured disabled rol
 it("preserves the authorized create-user envelope and clears the completed draft", async () => {
   await mount();
   act(() => button("Add User").props.onClick());
-  for (const [index, value] of ["created", "Created User", "temporary", "", "synthetic-auth"].entries()) {
+  for (const [index, value] of ["created", "Created User", "temporary", "synthetic-auth"].entries()) {
     act(() => renderer!.root.findByProps({ "data-modal": "Add User" }).findAllByType("input").filter((node) => node.props.type !== "checkbox")[index]!.props.onChange({ target: { value } }));
   }
   await act(async () => button("Create User").props.onClick());
@@ -216,17 +216,16 @@ it.each([null, {}, { ok: "true" }, { ok: false, error: {} }])("recovers malforme
   fixture.api.post.mockResolvedValueOnce(result);
   await mount();
   passwordDraft();
-  await act(async () => button("Save Credential").props.onClick());
+  await act(async () => button("Save password").props.onClick());
   expect(text()).toContain("The identity operation could not be completed. Try again.");
   expect(text()).toContain("new-value");
 });
-it("revalidates newly configured actor PIN before accepting old proof", async () => {
-  await mount();
-  passwordDraft();
-  const old = button("Save Credential").props.onClick;
+it("offers no PIN anywhere in the people console", async () => {
   payload.users[0].pinConfigured = true;
-  await act(async () => button("Refresh").props.onClick());
-  await act(async () => old());
-  expect(fixture.api.post).not.toHaveBeenCalled();
-  expect(text()).not.toContain("new-value");
+  await mount();
+  act(() => button("Add User").props.onClick());
+  expect(text()).not.toMatch(/\bPIN\b/iu);
+  expect(text()).not.toMatch(/Credential vault|Unlocked|Locked/iu);
+  expect(renderer!.root.findAllByType("button").some((node) => /PIN/u.test(label(node)))).toBe(false);
+  expect(renderer!.root.findByProps({ "data-menu": "Actions for a" }).findAllByType("button").map(label)).not.toContain("Change PIN");
 });

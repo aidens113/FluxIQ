@@ -151,6 +151,8 @@
 }
 
 .db-grid-wrap {
+  min-width: 0;
+  max-width: 100%;
   position: relative;
   min-height: 0;
   overflow: auto;
