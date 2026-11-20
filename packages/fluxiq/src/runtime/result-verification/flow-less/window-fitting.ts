@@ -20,7 +20,9 @@
 //
 // **Which items go first.** The views of the site go first, as the largest and the
 // furthest from the result itself, then the model's own words, then the looks and the
-// reads' accounts, which the trail holds as well. The trail of everything the attempt did
+// reads' accounts, which the trail holds as well: `readPages`, then the declared result's
+// looks and contributing pages (`resultEvidence`, t905; its coverage, working reads and
+// answer contract are small and never summarised). The trail of everything the attempt did
 // (`../run-trail/`, t963) and the final data go last (user, 2026-11-19: the judge sees
 // everything that happened, then judges by it and the final data): what each trail step was
 // asked, oldest first, then what each found, oldest first, then the acts, and the rows held
@@ -76,6 +78,8 @@ function steps(summary: JsonObject): Step[] {
     { item: "answerText.text", path: ["answerText", "text"], account },
     { item: "looked", path: ["looked"], account },
     { item: "readPages", path: ["readPages"], account },
+    { item: "resultEvidence.looks", path: ["resultEvidence", "looks"], account },
+    { item: "resultEvidence.pages", path: ["resultEvidence", "pages"], account },
     ...trailed("asked"),
     ...trailed("found"),
     { item: "acts", path: ["acts"], account },

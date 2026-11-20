@@ -12,6 +12,7 @@ import { automationStudioAnswerFirstBetterFlow, automationStudioAnswerFirstSteps
 import { automationStudioAnswerFirstKeptCallerOptions } from "../caller/index.ts";
 import { automationStudioAnswerFirstReadShapeOf } from "../completion/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
+import { automationStudioAnswerFirstStepsWithResultProcessing } from "../result-processing/index.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
@@ -25,6 +26,8 @@ type Ended = { label: AutomationStudioTaskResultLabel; candidateId: string | und
 export async function automationStudioAnswerFirstRemember(run: AutomationStudioAnswerFirstAttemptRun, ending: AutomationStudioAnswerFirstRoundsEnding, ended: Ended): Promise<{ ok: boolean }> {
   const { projectId, flowId } = run.input;
   const scope = run.input.caller?.actScope;
+  // The result's processing is kept in its output steps, as the saved Flow holds it (`./result-processing.ts`, t970).
+  run.steps = automationStudioAnswerFirstStepsWithResultProcessing(run);
   const save = async () => {
     // The Flow is the steps it proposes: a round's opening look, which is no part of it, does not make it another Flow, and an attempt that only looked left none.
     const proposed = run.steps.filter(automationStudioFlowDraftStepIsProposed);

@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { ProgramJsonStore } from "../../../../persistence/program-state/storage.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../../flows/authoring/model/index.ts";
-import { AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
+import { AutomationStudioProjectRuntimeStreamStore, AutomationStudioProjectStoreUnavailableError, type AutomationStudioProjectDatabasePool } from "../../../../persistence/automation/index.ts";
 import { upsertBy } from "../../collections.ts";
 import type { AutomationStudioServiceIndexes } from "../../indexes/index.ts";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../../paths/index.ts";
@@ -66,23 +66,25 @@ export class AutomationStudioRunDetailWriter {
     return normalizedDetail;
   }
 
-  // `null` means the typed store is not configured or could not be opened, or
-  // refused a run it has never held, and the legacy JSON detail is written
-  // instead, as before. A refused run keeps its summary row, when the store
-  // accepts that much, so run listings still show it. Once the store is open,
-  // reading the stored detail and writing over a run it already holds are
-  // strict: a failure propagates, because a JSON copy written in their place
-  // would never be read ahead of the typed detail it failed to update.
+  // `null` means typed storage is absent, or unavailable (closing or closed).
+  // Once configured, every other open, read or write failure propagates with its
+  // original cause, including the first write. A legacy file cannot stand in for
+  // the SQL run row that datasets need, except when the store itself is gone.
   private async saveTyped(detail: AutomationStudioFlowRunDetail): Promise<AutomationStudioFlowRunDetail | null> {
     if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
     const { projectId, flowId, runId } = detail.summary;
+    await this.projects.requireProject(projectId);
     let store: AutomationStudioProjectRuntimeStreamStore;
     try {
-      await this.projects.requireProject(projectId);
       store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
-    } catch {
-      return null;
+    } catch (error) {
+      // The store is gone (pool closing or closed, t258): no run row and no dataset
+      // row can be written for this run, so the legacy detail written instead is
+      // merged back by the next typed save, and the run ends failed, never throws.
+      if (AutomationStudioProjectStoreUnavailableError.is(error)) return null;
+      throw error;
     }
+    let failed = true;
     try {
       // The stream read here is handed to the write below, so a save reads the
       // run's events once rather than twice.
@@ -91,17 +93,14 @@ export class AutomationStudioRunDetailWriter {
       // typed store takes it over, so the move cannot drop what it recorded.
       const stored = held ?? await this.readLegacy(projectId, runId);
       const normalizedDetail = normalizedFlowRunDetail(runDetailPreservingStored(stored, detail));
-      try {
-        await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: normalizedDetail.summary.startedAt ?? normalizedDetail.summary.updatedAt });
-        await store.putRunDetail(normalizedDetail, events ? { existingEvents: events } : {});
-      } catch (error) {
-        if (held) throw error;
-        await store.upsertRunSummary(normalizedDetail.summary).catch(() => undefined);
-        return null;
-      }
+      await store.ensureRuntimeFlowProjection({ flowId, name: flowId, now: normalizedDetail.summary.startedAt ?? normalizedDetail.summary.updatedAt });
+      await store.putRunDetail(normalizedDetail, events ? { existingEvents: events } : {});
+      failed = false;
       return normalizedDetail;
     } finally {
-      await store.close();
+      // Cleanup must not replace the original storage error with a secondary close failure.
+      if (failed) await store.close().catch(() => undefined);
+      else await store.close();
     }
   }
 

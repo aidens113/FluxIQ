@@ -55,13 +55,13 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const triggers = await query<{ name: string }>(pool, "select name from sqlite_master where type = 'trigger' and tbl_name = 'run_datasets' order by name");
     expect(triggers.map((row) => row.name)).toEqual(["fk_run_datasets_run_id_insert", "fk_run_datasets_run_id_update"]);
     const batchColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_batches)");
-    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms"]);
+    expect(batchColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "batch_key", "attempt_id", "node_id", "row_count", "invalid_count", "truncated", "created_at_ms", "updated_at_ms", "evidence_json"]);
     const rowColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_rows)");
     expect(rowColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "ordinal", "attempt_id", "batch_key", "row_json"]);
 
     const legacyPool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(rootDir, "legacy") });
     const lease = await legacyPool.acquire("project.legacy");
-    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers") }).migrate();
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers" && migration.id !== "0036_run_dataset_evidence") }).migrate();
     await expect(lease.database.get("select name from sqlite_master where name = 'run_datasets'")).resolves.toBeUndefined();
     const legacyStore = await AutomationStudioProjectRunDatasetStore.open({ pool: legacyPool, projectId: "project.legacy" });
     await expect(lease.database.get("select migration_id from automation_schema_migrations where migration_id = '0019_run_datasets'")).resolves.toEqual({ migration_id: "0019_run_datasets" });
@@ -69,6 +69,33 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     await lease.release();
     await legacyStore.close();
     await legacyPool.closeAll();
+  });
+
+  it("persists private provenance atomically and retains it independently of processed row order", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const evidence = { pages: [{ source: "capture.one", step: "read", version: 1, fields: { title: ".name" }, conditions: [], rows: items(2), kept: 2, place: "page=1" }], coverage: [], working: [], looks: [] };
+    await store.appendBatch(batch({ rows: items(2), evidence }));
+    await store.processRunDatasets("run.a");
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    await store.close();
+    const reopened = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
+    fixture!.store = reopened;
+    expect((await reopened.readBatchEvidence("run.a"))[0]?.evidence).toEqual(evidence);
+    expect((await reopened.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(2));
+    // A retried batch that genuinely carries no provenance must not inherit an older snapshot.
+    await reopened.appendBatch(batch({ rows: items(1) }));
+    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey }]);
+  });
+
+  it("rolls back replacement rows and their evidence together when the provenance write fails", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const evidence = { pages: [{ source: "original" }] };
+    await store.appendBatch(batch({ rows: items(1), evidence }));
+    const lease = await pool.acquire(PROJECT);
+    try { await lease.database.run("create trigger refuse_evidence_update before insert on run_dataset_batches when new.evidence_json is not null begin select raise(abort, 'fixture refuses evidence'); end"); } finally { await lease.release(); }
+    await expect(store.appendBatch(batch({ writeMode: "replace", rows: items(3), evidence: { pages: [{ source: "replacement" }] } }))).rejects.toThrow(/fixture refuses evidence/u);
+    expect((await store.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(1));
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
   });
 
   it("assigns ordinals 1..N on the first append and continues from N+1", async () => {
@@ -471,25 +498,41 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C", "D", "E"]);
   });
 
-  it("refuses a processing declaration that changes within one run and writes nothing", async () => {
+  it("keeps every collected row when a batch changes the processing declaration, and answers under the latest (t970)", async () => {
     const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
     const process: AutomationStudioRecordProcessing = { sort: [{ field: "price", order: "desc" }], limit: 3 };
     await store.appendBatch(batch({ rows: lettered("A", "B"), process }));
     // The same declaration with its keys in another order is the same declaration.
     await expect(store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C"), process: { limit: 3, sort: [{ order: "desc", field: "price" }] } }))).resolves.toMatchObject({ recordCount: 3 });
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D"), process: { ...process, limit: 2 } }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", writeMode: "replace", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
+    // Another declaration was refused until t970; now it is the dataset's, and no collected row goes.
+    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D"), process: { ...process, limit: 2 } }))).resolves.toMatchObject({ recordCount: 4 });
+    expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3, 4]);
+    const [listings] = await store.processRunDatasets("run.a");
+    expect(listings).toMatchObject({ recordCount: 2, processing: { collected: 4, kept: 2, cut: 2 } });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["D", "C"]);
+
+    // A dataset first written with no declaration takes one later; an invalid one is still refused, writing nothing.
+    await store.appendBatch(batch({ datasetId: "plain", rows: lettered("A") }));
+    await expect(store.appendBatch(batch({ datasetId: "plain", attemptId: "attempt.2", rows: lettered("B"), process }))).resolves.toMatchObject({ recordCount: 2 });
+    await expect(store.appendBatch(batch({ datasetId: "other", process: { columns: ["missing"] } }))).rejects.toThrow("Invalid run dataset processing.");
+  });
+
+  it("sets a dataset's processing without storing a row, and processes it again at once when it was processed (t970)", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    await store.appendBatch(batch({ rows: lettered("A", "B", "C") }));
+    await store.processRunDatasets("run.a");
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C"]);
+
+    const changed = await store.setProcess({ runId: "run.a", datasetId: "listings", process: { sort: [{ field: "price", order: "desc" }], limit: 2, columns: ["title"] } });
+    expect(changed).toMatchObject({ recordCount: 2, processing: { collected: 3, kept: 2, cut: 1 } });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows).toEqual([{ title: "C" }, { title: "B" }]);
     expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3]);
 
-    // A dataset first written with no declaration refuses one later.
-    await store.appendBatch(batch({ datasetId: "plain", rows: lettered("A") }));
-    await expect(store.appendBatch(batch({ datasetId: "plain", attemptId: "attempt.2", rows: lettered("B"), process }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ datasetId: "other", process: { columns: ["missing"] } }))).rejects.toThrow("Invalid run dataset processing.");
-
-    const summaries = await store.processRunDatasets("run.a");
-    expect(summaries.find((summary) => summary.datasetId === "listings")).toMatchObject({ recordCount: 3 });
-    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["C", "B", "A"]);
+    // Cleared, the answer is the default's again, from the same collected rows.
+    await store.setProcess({ runId: "run.a", datasetId: "listings", process: undefined });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C"]);
+    await expect(store.setProcess({ runId: "run.a", datasetId: "listings", process: { columns: ["missing"] } })).rejects.toThrow("Invalid run dataset processing.");
+    await expect(store.setProcess({ runId: "run.a", datasetId: "nowhere", process: { limit: 1 } })).resolves.toBeNull();
   });
 
   it("projects the answer and its page schema to the declared columns, in order", async () => {

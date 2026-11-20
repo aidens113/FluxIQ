@@ -458,6 +458,34 @@ provider with `measureInput`.
   A request whose sent messages fit is no longer refused for the node catalog
   it never sends.
 
+### Next minor (unreleased): the result's own processing, and filters over hidden columns (`@fluxiq/contracts`, `fluxiq`)
+
+t970. A build filtered only on the page; the result's processing is now a stage
+of its own ([the result's own processing](automation-studio-native-nodes.md#the-results-own-processing-coreset_result_processing-t970)).
+Read this entry if a host writes or reads a record output's `process`, stores
+run datasets, or judges a result.
+
+**Added.**
+- `AutomationStudioRecordProcessing.derive`, `.anyOf` and `.compare`, with
+  `AutomationStudioRecordDerivedField`, `AutomationStudioRecordFieldComparison`,
+  `AUTOMATION_STUDIO_RECORD_DERIVED_READS`, `AUTOMATION_STUDIO_RECORD_FIELD_COMPARISONS`,
+  issues `record_output.process_invalid_derive`, `_invalid_any_of`,
+  `_invalid_compare` and `_derived_column_shown`, and the account's `filters`.
+- `AutomationStudioProjectRunDatasetStore.setProcess`.
+- The tool `core.set_result_processing` (`automationStudioLlmSetResultProcessingTool`,
+  `automationStudioLlmSetResultProcessing`), `AutomationStudioFlowDraft.result`,
+  and the draft assembly's `resultProcessing` and the bootstrap completion's
+  `draftResultProcessing`.
+- `AutomationStudioResultEvidenceBundle.processing`.
+
+**Changed behaviour.**
+- A `where` field may be a stored field `columns` leaves out:
+  `record_output.process_where_column_dropped` is no longer produced.
+- A run dataset's `process` declaration is its latest batch's; a changed one no
+  longer throws "Run dataset processing changed within one run".
+- A part's default `columns` is declared even where a `where` tests a field it
+  leaves out.
+
 ### Next minor (unreleased): Core owns run accounting, activity status, record processing and capture policy a domain used to restate (`@fluxiq/contracts`, `fluxiq`)
 
 Lane S of the extension-Core boundary audit (t728) moved generic behaviour the

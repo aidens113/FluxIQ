@@ -137,9 +137,14 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     // text -- replace: this read is the list as it now stands; append: adds to
     // what the datasetId already holds; one datasetId per list -- after a paid
     // run's re-read left a stale list beside the new one: 178 bytes on purpose
-    // (the sentence names no site and no task), to 5,012. The bound sits just
-    // above the intended entry, not room for another addition.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(5_025);
+    // (the sentence names no site and no task), to 5,012. The bound was 5,025
+    // until t970 (2026-11-20; user: "the model ... filter data internally via
+    // steps ... a post-processing step") published the result-processing
+    // operators in the same contract text -- anyOf across columns, compare two
+    // columns, derive a computed column, and filters on hidden columns: 543
+    // bytes on purpose, to 5,555. The bound sits just above the intended
+    // entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(5_575);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 

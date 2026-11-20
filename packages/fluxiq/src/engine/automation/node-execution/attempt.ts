@@ -41,6 +41,7 @@ import { automationStudioApplyParameterRefresh } from "../parameter-refresh/inde
 import type { AutomationStudioParameterRefreshOverlay } from "../parameter-refresh/index.ts";
 import { AUTOMATION_STUDIO_RUNTIME_REPEAT_STOP, automationStudioRuntimeRepeatExecutionKind } from "../../../runtime/repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "../repeat/index.ts";
+import { AutomationStudioInputUseNodeIntegration as NodeUse } from "../input-use/index.ts";
 
 // `cleared` collects the layers each dispatch of the attempt says the client
 // closed over the page (`./cleared-layers.ts`), in dispatch order;
@@ -100,6 +101,9 @@ export class AutomationStudioNodeAttemptExecution {
       if (refreshed.kind === "applied") executionParameters = refreshed.parameters;
     }
     const executionNode = resolvedParameters.missingPaths.length ? node : { ...node, parameterValues: executionParameters };
+    // Each callback below receives the pair captured just before it (t905 C1). With no input-use port, or no proof,
+    // it runs at once on these very objects; one private occurrence groups this execute call's callback branches.
+    const use = { nodeId: node.id, attemptId, occurrence: Object.freeze({}), refreshed: executionParameters !== resolvedParameters.values, signal: options.signal };
     // This frame's floor is resolved before any host/native/output call. On a
     // missing binding keep its raw slot; a dropped slot is not an absent value
     // to which a trusted false schema default may honestly apply.
@@ -172,27 +176,34 @@ export class AutomationStudioNodeAttemptExecution {
       }
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
       runState.dispatchedActions.add(node.id);
-      const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
+      // The helper receives no input dictionary: the child's values are its resolved `inputs` parameter.
+      const called = await NodeUse.invoke(options.inputUse, { ...use, consumer: "call_subflow", values: { inputs: {}, parameters: executionParameters } },
+        prepared => automationStudioCallSubflow({ node: this.withParameters(executionNode, prepared.parameters), options: this.callFlowChildOptions(options, attemptId) }));
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
     }
     if (!definition?.execute) {
-      if (!options.commandRun && options.nativeNodeExecutor) runState.dispatchedActions.add(node.id);
-      const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
-        node: executionNode,
-        // The run's own Flow inputs, then what an edge brings: a declared port is
-        // never filled from a bare key another node left behind (`node-inputs.ts`).
-        // Flow inputs come from `options.inputs`, not `values`, where a node's
-        // bare output key could have overwritten them. The native runtime still
-        // hands the implementation only its declared ports.
-        inputs: { ...(options.inputs ?? {}), ...collectWiredNodeInputs(flow, node, values) },
-        ...(options.signal ? { signal: options.signal } : {}),
-        hostContext: {
-          ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
-          capabilityIds: hostCapabilities,
-          sideEffectClass: automationStudioNodeSideEffectClass(executionNode, runState.actionEffects.get(node.id)),
-          ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
-          ...(executionNode.parameterValues?.target !== undefined ? { target: executionNode.parameterValues.target } : {})
-        }
+      const nativeExecutor = !options.commandRun ? options.nativeNodeExecutor : undefined;
+      if (nativeExecutor) runState.dispatchedActions.add(node.id);
+      // The run's own Flow inputs, then what an edge brings: a declared port is
+      // never filled from a bare key another node left behind (`node-inputs.ts`).
+      // Flow inputs come from `options.inputs`, not `values`, where a node's
+      // bare output key could have overwritten them. The native runtime still
+      // hands the implementation only its declared ports.
+      const native = await (nativeExecutor ? NodeUse.invoke(options.inputUse, { ...use, consumer: "native_callback", values: { inputs: { ...(options.inputs ?? {}), ...collectWiredNodeInputs(flow, node, values) }, parameters: executionParameters } }, prepared => {
+        const nativeNode = this.withParameters(executionNode, prepared.parameters);
+        // Called on `options`, as before, so the executor's receiver is unchanged; this is still the one native dispatch site.
+        return options.nativeNodeExecutor?.({
+          node: nativeNode,
+          inputs: prepared.inputs,
+          ...(options.signal ? { signal: options.signal } : {}),
+          hostContext: {
+            ...(options.referenceNow !== undefined ? { referenceNow: options.referenceNow } : {}),
+            capabilityIds: hostCapabilities,
+            sideEffectClass: automationStudioNodeSideEffectClass(nativeNode, runState.actionEffects.get(node.id)),
+            ...(beforeAction ? { currentStateRef: beforeAction, previousStateRef: beforeAction } : {}),
+            ...(nativeNode.parameterValues?.target !== undefined ? { target: nativeNode.parameterValues.target } : {})
+          }
+        });
       }) : undefined);
       if (native) {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
@@ -204,8 +215,11 @@ export class AutomationStudioNodeAttemptExecution {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
         throw new Error("executor.unsupported_native_or_composite");
       }
-      if (options.compositeExecutor) runState.dispatchedActions.add(node.id);
-      const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
+      const compositeExecutor = options.compositeExecutor;
+      if (compositeExecutor) runState.dispatchedActions.add(node.id);
+      // A native callback that answered nothing proved no entry; this callback is an event of its own.
+      const composite = await (compositeExecutor ? NodeUse.invoke(options.inputUse, { ...use, consumer: "composite_callback", values: { inputs, parameters: executionParameters } },
+        prepared => options.compositeExecutor?.({ node: this.withParameters(executionNode, prepared.parameters), inputs: prepared.inputs, options: this.callFlowChildOptions(options, attemptId) })) : undefined);
       if (composite) {
         return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities, runState);
       }
@@ -244,7 +258,9 @@ export class AutomationStudioNodeAttemptExecution {
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
       if (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute) runState.dispatchedActions.add(node.id);
-      let result = await definition.execute(context);
+      const pair = { inputs, parameters: executionParameters };
+      let result = await NodeUse.invoke(options.inputUse, { ...use, consumer: "builtin", values: pair },
+        prepared => definition.execute!(prepared === pair ? context : { ...context, inputs: prepared.inputs, parameters: prepared.parameters }));
       const target: RecordCaptureTarget = { runState, nodeId: node.id, node: executionNode, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, definition.outputs);
       return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...this.obstructionMet(target) }, options, beforeAction, hostCapabilities, runState);
@@ -516,6 +532,11 @@ export class AutomationStudioNodeAttemptExecution {
         else runState.loops.delete(nodeId);
       }
     };
+  }
+
+  /** The node a callback receives: the execution node itself unless its parameters are the prepared copy. */
+  private static withParameters(node: AutomationStudioFlowNode, parameters: Record<string, JsonValue>): AutomationStudioFlowNode {
+    return node.parameterValues === parameters ? node : { ...node, parameterValues: parameters };
   }
 
   // The child run a Call Flow attempt starts keys its record batches under this

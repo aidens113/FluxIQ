@@ -532,6 +532,20 @@ describe("a tool request the loop has already answered", () => {
   });
 });
 
+describe("taking an earlier read by call", () => {
+  it("reads only an explicit call adoption, with no argument or routing change", () => {
+    const amend = (...amendments: unknown[]) => ({ kind: "amend_draft", amendments });
+    expect(automationStudioLlmEvidenceParseDecision(amend({ change: "take", call: "  call.2  " }))).toEqual({ kind: "amend_draft", amendments: [{ step: 0, change: "take", call: "call.2" }] });
+    expect(automationStudioLlmEvidenceParseDecision(amend({ step: 2, change: "take", call: "call.2" }))).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "take", call: "call.2" }] });
+    for (const invalid of [
+      { change: "take" }, { change: "take", call: " " }, { change: "take", call: 2 },
+      { step: 0, change: "take", call: "call.2" }, { step: 1.5, change: "take", call: "call.2" },
+      { change: "take", call: "call.2", input: {} }, { change: "take", call: "call.2", to: 1 },
+      { step: 2, change: "add", call: "call.2" }
+    ]) expect(automationStudioLlmEvidenceParseDecision(amend(invalid))).toBeUndefined();
+  });
+});
+
 // A statement about when a step runs travels the same road an ordinary
 // amendment does: it is read strictly, a field the model mistyped leaves the
 // amendment out rather than becoming something else, and the grammar itself is

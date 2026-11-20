@@ -6,7 +6,9 @@
 // from the identity fields the schema stores. Nothing derivable returns
 // `undefined` and the output is left exactly as it was. Every id returned is a
 // stored field, so the contract's own reader (`parseAutomationStudioRecordProcessing`)
-// takes it.
+// takes it. Until t970 `columns` was not declared where it left out a field a
+// `where` tests, which the contract then refused; it no longer does, so a mark
+// kept only to filter by is stored and left out of the answer.
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AuthoringPartAnswer } from "./answer.ts";
 import { authoringKey } from "../authoring/keys.ts";
@@ -24,7 +26,7 @@ export function authoringPartProcessDefaults(input: {
   const added: JsonObject = {};
   if (base.columns === undefined) {
     const columns = matched(input.part.columns, stored);
-    if (columns.length && keepsWhereFields(base.where, columns, stored)) added.columns = columns;
+    if (columns.length) added.columns = columns;
   }
   if (base.dedupe === undefined && input.part.rowIdentity?.length) {
     const by = matched(input.part.rowIdentity, stored);
@@ -46,10 +48,4 @@ function matched(names: readonly string[], stored: readonly string[]): string[] 
     if (id !== undefined && !found.includes(id)) found.push(id);
   }
   return found;
-}
-
-/** The contract refuses `columns` that drop a field a `where` tests; a `where` that is not a list names none, and a field the schema does not store is not its concern. */
-function keepsWhereFields(where: JsonValue | undefined, columns: readonly string[], stored: readonly string[]): boolean {
-  if (!Array.isArray(where)) return true;
-  return where.every((condition) => !isJsonObject(condition) || typeof condition.field !== "string" || !stored.includes(condition.field) || columns.includes(condition.field));
 }

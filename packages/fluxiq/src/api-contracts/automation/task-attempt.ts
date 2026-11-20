@@ -14,7 +14,9 @@ export type AutomationStudioTaskOutcomeProvenance = {
 /**
  * Every way a replay of a saved Flow can deviate from the run a person accepted, which sends it to the
  * judge instead of standing on its record (task speed S9), in the order Core checks them
- * (`framework/.../answer-first/completion/replay-stands.ts` says what each means).
+ * (`framework/.../answer-first/completion/replay-stands.ts` says what each means). `check_cleared` is
+ * no longer written (t972: a check a person cleared is no deviation) and stays so attempts stored
+ * before then still read.
  */
 export const AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS = [
   "judge_always", "asked_again", "flow_not_proven", "flow_not_confirmed", "run_not_whole", "repaired", "step_failed", "step_routed",

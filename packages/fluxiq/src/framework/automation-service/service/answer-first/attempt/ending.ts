@@ -22,7 +22,7 @@ import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "..
 import { automationStudioAnswerFirstApplyProven } from "../apply-proven/index.ts";
 import { automationStudioAnswerFirstReplayKept } from "../completion/index.ts";
 import { automationStudioAnswerFirstStandIn } from "../flow-run/index.ts";
-import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING, AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING } from "../interrupted/index.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING } from "../interrupted/index.ts";
 import { automationStudioAnswerFirstTriedAsContract } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
 import { automationStudioAnswerFirstHeldStated, automationStudioAnswerFirstSaveDraft } from "./draft-save.ts";
@@ -45,15 +45,19 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
   await run.witnesses.atEnd();
   const flushed = await flushedRecord(run);
+  run.result.draft(run.steps);
+  await run.sink.publish(run.result.rows(), run.result.evidence());
   const sessionEnded = await endedSession(run, ending);
-  const rows = await run.sink.readBack();
+  // Read back for what it does to the store: the run's datasets are processed for the Data window and an export. The answer is the attempt's one result (`../result-feed/`), the draft's output step.
+  await run.sink.readBack();
+  run.result.draft(run.steps);
+  const rows = run.result.rows();
   const summary = ending === "achieved" ? "What the attempt did, as a Flow." : "What the attempt had done when it ended, as a Flow.";
   const draft = await automationStudioAnswerFirstSaveDraft(run, summary);
   if (draft.kind === "kept") automationStudioAnswerFirstSay("The steps were not saved as a Flow", "I could not write what I did as a Flow this time, so I kept the steps with this attempt.");
-  // A wait is for a check only a person can clear, or for a person to say whether a task that kept getting stuck goes on.
-  const stuck = ending === "waiting_for_check" && run.waitingFor === "stuck_in_a_loop";
-  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : ending === "taken_unverified" ? TAKEN_MISSING : stuck ? AUTOMATION_STUDIO_ANSWER_FIRST_STUCK_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
-  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: stuck ? "stuck_in_a_loop" as const : "person_only_check" as const } : { status: ending === "taken_unverified" ? "achieved" as const : ending };
+  // A wait is for a check only a person can clear: a caught loop never parks (t885 fix 34), so no ending waits on one.
+  const missing = ending === "achieved" ? undefined : ending === "budget_out" ? BUDGET_MISSING : ending === "stopped_by_person" ? STOP_MISSING : ending === "taken_unverified" ? TAKEN_MISSING : AUTOMATION_STUDIO_ANSWER_FIRST_CHECK_MISSING;
+  const status = ending === "waiting_for_check" ? { status: "waiting_for_person" as const, waitingFor: "person_only_check" as const } : { status: ending === "taken_unverified" ? "achieved" as const : ending };
   const checked = automationStudioAnswerFirstEnding({ attempt: automationStudioAnswerFirstAttemptAs(run, status), result: automationStudioAnswerFirstResultAs(run, rows, missing) });
   const saved = await storedEnding(run, checked, draft.kind === "saved" ? draft.record.candidateId : undefined, draft.kind === "kept" ? draft.why : undefined);
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;

@@ -27,6 +27,7 @@ import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA, AUTOMATION_STUDIO_ANS
 import { automationStudioAnswerFirstAddLoopsCaught, automationStudioAnswerFirstCompletionRefusedAgain, automationStudioAnswerFirstLoopSignal } from "../loop-signal/index.ts";
 import { automationStudioAnswerFirstDecide } from "./decide.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
+import { automationStudioAnswerFirstResultProcessingExecutor, automationStudioAnswerFirstResultProcessingTools } from "../result-processing/index.ts";
 import { automationStudioAnswerFirstUnboundedPort } from "../person-waits/index.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -71,7 +72,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     // No time limit: a build's nine minutes would only force a fresh round on real work, or one a locked key held. The purse, the turns and loop detection bound a round.
     budget: automationStudioAnswerFirstRoundBudget(input.limits.loop.budget, input.creation.purse.ceilingUsd),
     purse: input.creation.purse,
-    tools: options.tools,
+    // The domain's tools, and the result's own processing, which touches no page (`./result-processing.ts`, t970).
+    tools: automationStudioAnswerFirstResultProcessingTools(options.tools),
     observedStateKeys: options.observedStateKeys,
     ...(binding.readRowsKey ? { readRowsKey: binding.readRowsKey } : {}),
     deniedEvidenceKeys: binding.deniedEvidenceKeys,
@@ -96,6 +98,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       ...automationStudioAttemptActForward(run.record),
       // Which steps forward runs got through, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
       passed: (step, _row, answer) => {
+        // A pass of a draft read step is that step's page; a pass that moves a loop's list on says its paging (`../result-feed/feed.ts`).
+        run.result.passed(step, run.steps, answer);
         if (automationStudioNodeReplayStatus(answer.resultCode, "replay") === "replayed" || automationStudioNodeReplayStatus(answer.resultCode, "verify") === "replayed") run.forwardPassed.add(automationStudioFlowDraftStepId(step));
       }
     },
@@ -122,7 +126,7 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
       provider: automationStudioLlmProviderWithDomainInstructions(input.provider.provider, automationStudioAnswerFirstSystemInstructions(binding.systemInstructions)),
       startLocation
     }),
-    executeTool: input.routing.recording(person.executeTool)
+    executeTool: automationStudioAnswerFirstResultProcessingExecutor(run, input.routing.recording(person.executeTool))
   };
   const signalled = automationStudioAnswerFirstLoopSignal({
     askPerson: (signal) => {
@@ -159,7 +163,6 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
 async function checked(run: AutomationStudioAnswerFirstAttemptRun, result: JsonObject): ReturnType<AutomationStudioAnswerFirstAttemptRun["completion"]["check"]> {
   const answer = await run.completion.check(result);
   const { state } = run.completion;
-  if (run.prior && state.refused?.verdict === "no") run.sink.runRowsRefused();
   if (answer.ok) return answer;
   const rung = answer.issueCodes.includes(AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE)
     ? automationStudioAnswerFirstCompletionRefusedAgain({ times: state.refusedAgain, evidence: state.refused?.digest ?? "", iteration: run.decidedAt ?? 0, record: run.tried, caught: run.loopsCaught, say: automationStudioAnswerFirstSay })
@@ -181,7 +184,7 @@ function sentAgain(issueCodes: readonly string[]): string {
 
 function resultHolds(run: AutomationStudioAnswerFirstAttemptRun): JsonObject {
   const { held } = run.completion.state;
-  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.sink.summary(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? []);
+  return automationStudioAnswerFirstResultHolds(held ?? { rows: run.result.rows(), acts: run.record.acts().length }, run.input.binding?.deniedEvidenceKeys ?? [], run.result.port.header(run.result.rows().totalRows));
 }
 
 function personWaiting(run: AutomationStudioAnswerFirstAttemptRun): (state: "started" | "ended", waitedMs: number) => void {

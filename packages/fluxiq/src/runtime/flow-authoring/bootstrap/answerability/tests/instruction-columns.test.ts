@@ -77,6 +77,13 @@ describe("a colon after a listed column", () => {
     expect(columns.cutShort).toBeUndefined();
   });
 
+  it("reads the run's own wording as author, comment, date", () => {
+    // The words of run-mwblz4aq's request, whose reader answered none (lane t905, priya fix 4).
+    const columns = automationStudioFlowBootstrapInstructionColumns("columns author, comment and date: author is the username of whoever wrote it, comment is the text, date as shown");
+    expect([...columns]).toEqual(["author", "comment", "date"]);
+    expect(columns.cutShort).toBeUndefined();
+  });
+
   it("ends the list at a colon after an item that is not the last", () => {
     expect(automationStudioFlowBootstrapInstructionColumns("columns author, comment: the whole text, and date")).toEqual(["author", "comment"]);
   });

@@ -74,25 +74,39 @@ export async function automationStudioStepAfterPersonCleared(
   if (!attempt || !clearedByPerson(attempt)) return undefined;
   const actionEffect = ctx.runState.actionEffects.get(node.id) ?? floorAfterResume(ctx, node);
   const fault = automationStudioAssessAttemptFault(attempt, node, ctx.now(), actionEffect);
-  const rerun = (text: string): AutomationStudioPersonClearedOutcome => {
+  const record = (resolution: NonNullable<AutomationStudioNodeAttemptTrace["personContinuation"]>): void => {
+    ctx.attempts[attemptIndex] = { ...ctx.attempts[attemptIndex]!, personContinuation: resolution };
+  };
+  const rerun = (reason: "unacted" | "repeat_cannot_act" | "effect_not_landed", text: string): AutomationStudioPersonClearedOutcome => {
+    record({ kind: "rerun", reason });
     emitAutomationStudioActivityThought({ phase: "repairing", title: "Doing the step again", text, ref: node.id });
     automationStudioRecordDefendedFault(ctx.runState, node.id, ctx.attempts[attemptIndex]!, ctx.arrival.attempts, fault, "retried", 0);
     return { kind: "rerun" };
   };
   if (fault?.effect === "unacted" || automationStudioNodeRepeatCannotAct(node, actionEffect)) {
-    return rerun("The check came up before the step had done anything, so now that it is cleared the step runs again on the page as it is.");
+    return rerun(fault?.effect === "unacted" ? "unacted" : "repeat_cannot_act", "The check came up before the step had done anything, so now that it is cleared the step runs again on the page as it is.");
   }
   const lasting = actLasts(node, actionEffect);
-  if (!lasting && !declaresExpectedState(node, attempt)) return { kind: "go_on" };
+  if (!lasting && !declaresExpectedState(node, attempt)) {
+    record({ kind: "unverified", reason: "no_expected_state" });
+    return { kind: "go_on" };
+  }
   // A plain press is asked of the page as an act that does not last, so a step's facts still false read `not_landed` (header).
   // The attempt's own comparison read the page the check covered, before it was cleared, so the page is read afresh.
   const asCleared: AutomationStudioNodeAttemptTrace = { ...attempt };
   delete asCleared.transitionComparison;
   const result = await automationStudioRunEffectCheck(automationStudioHostEffectCheck(node, ctx.options, lasting ? actionEffect : undefined), asCleared, ctx.arrival.attempts);
   ctx.attempts[attemptIndex] = { ...ctx.attempts[attemptIndex]!, effectCheck: { result, checkedAt: ctx.now() } };
-  if (result === "landed") return { kind: "go_on" };
-  if (result === "not_landed") return rerun("The check was cleared, but the page does not show what the step was to do, so the step runs again.");
-  if (!lasting || !fault) return { kind: "go_on" };
+  if (result === "landed") {
+    record({ kind: "effect_landed" });
+    return { kind: "go_on" };
+  }
+  if (result === "not_landed") return rerun("effect_not_landed", "The check was cleared, but the page does not show what the step was to do, so the step runs again.");
+  if (!lasting || !fault) {
+    record({ kind: "unverified", reason: "effect_unknown" });
+    return { kind: "go_on" };
+  }
+  record({ kind: "outcome_uncertain" });
   const settled = { ...fault, actUncertain: true as const, reason: `${node.id} makes a lasting act that a check only a person can clear answered, and once the check was cleared the page could not show whether it took effect, so it is not made again.` };
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Outcome uncertain", text: "The step may already have taken effect before the check came up, and nothing on the page shows whether it did, so it is not done again and the run stops here.", ref: node.id });
   automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: true, onFail: [] });

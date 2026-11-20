@@ -120,7 +120,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permission-requests/index.ts";
 import type { AutomationStudioBuildTestNote } from "../../result-verification/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
+import type { AutomationStudioFlowDraftResultProcessing, AutomationStudioFlowDraftStep } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../../framework/automation-service/route-state/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-authoring/draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
@@ -276,6 +276,12 @@ export type AutomationStudioFlowBootstrapCompletionInput = {
    * steps are nodes that provably ran cannot contain one that never did.
    */
   draftSteps?: readonly AutomationStudioFlowDraftStep[] | undefined;
+  /**
+   * What the Flow does to its result's collected rows, held beside the draft's
+   * steps and set by `core.set_result_processing` (t970): written onto each
+   * record output it applies to as the draft is assembled. Absent, nothing is.
+   */
+  draftResultProcessing?: AutomationStudioFlowDraftResultProcessing | undefined;
   /** The build's permission check for each step, handed to the domain as it resolves the step. */
   permissionFor?: ((step: { definitionId: string; ref: string }) => AutomationStudioActionPermissionCheck) | undefined;
   /**
@@ -384,7 +390,7 @@ export async function checkAutomationStudioFlowBootstrapPlanCompletion(
     : undefined;
   const proposed = draftSteps?.filter(automationStudioFlowDraftStepIsProposed) ?? [];
   const drafted = draftSteps && proposed.length && proposed.every(automationStudioFlowBootstrapDraftStepIsWritable)
-    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf, input.partOf)
+    ? fromDraft(draftSteps, result, input.registry, input.resolution, input.instructionText, input.routeSignaturesOf, input.partOf, input.draftResultProcessing)
     : undefined;
   const accepted = drafted ?? fromReply(result, input.registry, input.resolution, input.instructionText, input.partOf);
   return checkPlan(input, accepted, { origin: "model", result, drafted, draftSteps, restoredStep });
@@ -636,7 +642,8 @@ function fromDraft(
   resolution: AutomationStudioNodeRegistryResolution,
   instructionText: string | undefined,
   routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined,
-  partOf: AuthoringPartOfStep | undefined
+  partOf: AuthoringPartOfStep | undefined,
+  resultProcessing: AutomationStudioFlowDraftResultProcessing | undefined
 ): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string>; amendedParameters?: ReadonlyMap<string, readonly string[]> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
@@ -652,7 +659,8 @@ function fromDraft(
     summary,
     instructionText,
     routeSignaturesOf,
-    partOf
+    partOf,
+    resultProcessing
   });
   if (!assembled.plan) {
     return { ok: false, issues: assembled.issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), ...(assembled.locator ? { locator: assembled.locator } : {}), script: DRAFT_SCRIPT_NOTE };

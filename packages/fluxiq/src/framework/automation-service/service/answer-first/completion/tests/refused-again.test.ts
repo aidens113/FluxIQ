@@ -90,12 +90,11 @@ describe("what the result holds, as the model is shown it", () => {
     expect(JSON.stringify(shown)).toContain("[withheld]");
   });
 
-  it("is bounded, and says when a long list is cut", () => {
+  it("shows a long result's rows and cell values whole, in order", () => {
     const long = Array.from({ length: 100 }, (_, index) => ({ title: `${index} ${"x".repeat(500)}` }));
     const shown = holds(long);
-    expect(shown.rowsInOrder).toHaveLength(30);
-    expect(shown.moreRowsNotShownHere).toBe(70);
-    expect(JSON.stringify(shown).length).toBeLessThan(8_000);
+    expect(shown.rowsInOrder).toEqual(long);
+    expect(shown.moreRowsNotShownHere).toBeUndefined();
   });
 
   it("says plainly when it holds nothing", () => {

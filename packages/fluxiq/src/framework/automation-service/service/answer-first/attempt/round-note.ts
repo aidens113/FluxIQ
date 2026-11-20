@@ -30,7 +30,7 @@ const CARRIED_ON = "This task was cut off earlier and has been carried on. Nothi
 export function automationStudioAnswerFirstRoundNote(run: AutomationStudioAnswerFirstAttemptRun, base: JsonObject | undefined): JsonObject | undefined {
   const told = broughtWith(run);
   if (base === undefined && Object.keys(told).length === 0 && run.record.acts().length === 0) return undefined;
-  const rows = run.sink.summary();
+  const rows = run.result.rows();
   const refused = run.completion.state.refused;
   return {
     ...base,

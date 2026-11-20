@@ -1,0 +1,335 @@
+{
+ "run": "run-mwojyaub-a76ac16e",
+ "note": "The result as judge 0361 saw it: all four pages, a promoted card and a suggestions block collected as rows, page 4 read before the others.",
+ "rows": [
+  {
+   "name": "Matteo Ricci",
+   "headline": "Senior Data Engineer at Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Elif Kaya",
+   "headline": "Data Engineer",
+   "location": "Utrecht, Utrecht, Netherlands"
+  },
+  {
+   "name": "Yara Haddad",
+   "headline": "Data Engineer (m/v/x) bij Gemeente Rotterdam",
+   "location": "Rotterdam"
+  },
+  {
+   "name": "Mara Okafor",
+   "headline": "Senior Data Engineer at Harbourline Logistics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Joost van Dijk 🚀",
+   "headline": "Data Engineer | Spark · Kafka · Airflow | Building the port's data platform",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Aylin Demir",
+   "headline": "Lead Data Engineer @ Maasvlakte Terminals",
+   "location": "Rotterdam, Netherlands"
+  },
+  {
+   "headline": "Find data engineers who are open to work, before anyone else does.",
+   "location": "Promoted"
+  },
+  {
+   "name": "Sanne de Wit",
+   "headline": "Senior Data Engineer | Hiring for TalentBridge",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Ruben Klaassen",
+   "headline": "Data Engineer II at Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Priyanka Raman",
+   "headline": "Analytics Engineer | dbt, Data Modelling, Looker",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Emre Yilmaz",
+   "headline": "Data Engineer at Schiedam Port Services",
+   "location": "Schiedam, South Holland, Netherlands"
+  },
+  {
+   "name": "Tomasz Wiśniewski",
+   "headline": "Software Engineer, Data Platform — Veldhuis Bank",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Femke de Graaf",
+   "headline": "Freelance Data Engineer | Azure · Databricks | Open to projects",
+   "location": "Rotterdam"
+  },
+  {
+   "name": "Chidi Nwosu",
+   "headline": "Data Engineering Manager at Harbourline Logistics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Julia Nowak",
+   "headline": "Data Engineer at Canal Street Media",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Zoë Hendriks",
+   "headline": "Data Engineer at Portwise | Ex-Maasvlakte Terminals",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Sven Aalders",
+   "headline": "Data Engineer at Hofstad Digital",
+   "location": "The Hague, South Holland, Netherlands"
+  },
+  {
+   "name": "Arjun Mehta",
+   "headline": "Cloud Data Engineer | AWS · Terraform · Snowflake",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Noor El Amrani",
+   "headline": "Data Engineer & Data Steward | Harbourline Logistics",
+   "location": "Rotterdam, Netherlands"
+  },
+  {
+   "name": "Bram Mulder",
+   "headline": "Principal Data Engineer at Northsea Freight",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Lars Hoekstra",
+   "headline": "Data Engineer at TalentBridge Recruitment (we're hiring!)",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Ewa Kowalczyk",
+   "headline": "Data Engineer | Kafka Streams | Open to relocation",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Daniela Costa",
+   "headline": "Data Engineer at Canal Street Media",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Lotte Jansen",
+   "headline": "Junior Data Engineer · Trainee at Portwise",
+   "location": "Rotterdam, Zuid-Holland, Nederland"
+  },
+  {
+   "name": "Sébastien Moreau",
+   "headline": "Staff Data Engineer | Streaming & real-time analytics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Hana Sato, PhD",
+   "headline": "Machine Learning & Data Engineer at Erasmus Health Data Lab",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Freya Lindqvist",
+   "headline": "Data Engineer at Rijnmond Water",
+   "location": "Utrecht, Utrecht, Netherlands"
+  },
+  {
+   "name": "Daan Visser",
+   "headline": "Big Data Engineer bij Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "location": "data engineer jobs data analyst analytics engineer"
+  },
+  {
+   "name": "Olumide Adeyemi",
+   "headline": "Data Engineer | GCP Professional Data Engineer | Python",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Isabel Fonseca",
+   "headline": "Senior Data Engineer — Payments at Veldhuis Bank",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Kees Bakker",
+   "headline": "Engineer, Data & Integration at Gemeente Rotterdam",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Nadia Benali",
+   "headline": "Data Engineer",
+   "location": "Eindhoven, North Brabant, Netherlands"
+  },
+  {
+   "name": "Koen Verbeek",
+   "headline": "Data Engineer at Schiedam Port Services",
+   "location": "Schiedam, South Holland, Netherlands"
+  }
+ ],
+ "expected": [
+  {
+   "name": "Mara Okafor",
+   "headline": "Senior Data Engineer at Harbourline Logistics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Joost van Dijk 🚀",
+   "headline": "Data Engineer | Spark · Kafka · Airflow | Building the port's data platform",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Aylin Demir",
+   "headline": "Lead Data Engineer @ Maasvlakte Terminals",
+   "location": "Rotterdam, Netherlands"
+  },
+  {
+   "name": "Sanne de Wit",
+   "headline": "Senior Data Engineer | Hiring for TalentBridge",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Ruben Klaassen",
+   "headline": "Data Engineer II at Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Priyanka Raman",
+   "headline": "Analytics Engineer | dbt, Data Modelling, Looker",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Emre Yilmaz",
+   "headline": "Data Engineer at Schiedam Port Services",
+   "location": "Schiedam, South Holland, Netherlands"
+  },
+  {
+   "name": "Tomasz Wiśniewski",
+   "headline": "Software Engineer, Data Platform — Veldhuis Bank",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Femke de Graaf",
+   "headline": "Freelance Data Engineer | Azure · Databricks | Open to projects",
+   "location": "Rotterdam"
+  },
+  {
+   "name": "Chidi Nwosu",
+   "headline": "Data Engineering Manager at Harbourline Logistics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Daniela Costa",
+   "headline": "Data Engineer at Canal Street Media",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Lotte Jansen",
+   "headline": "Junior Data Engineer · Trainee at Portwise",
+   "location": "Rotterdam, Zuid-Holland, Nederland"
+  },
+  {
+   "name": "Sébastien Moreau",
+   "headline": "Staff Data Engineer | Streaming & real-time analytics",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Hana Sato, PhD",
+   "headline": "Machine Learning & Data Engineer at Erasmus Health Data Lab",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Freya Lindqvist",
+   "headline": "Data Engineer at Rijnmond Water",
+   "location": "Utrecht, Utrecht, Netherlands"
+  },
+  {
+   "name": "Daan Visser",
+   "headline": "Big Data Engineer bij Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Olumide Adeyemi",
+   "headline": "Data Engineer | GCP Professional Data Engineer | Python",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Isabel Fonseca",
+   "headline": "Senior Data Engineer — Payments at Veldhuis Bank",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Kees Bakker",
+   "headline": "Engineer, Data & Integration at Gemeente Rotterdam",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Julia Nowak",
+   "headline": "Data Engineer at Canal Street Media",
+   "location": "Amsterdam, North Holland, Netherlands"
+  },
+  {
+   "name": "Zoë Hendriks",
+   "headline": "Data Engineer at Portwise | Ex-Maasvlakte Terminals",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Sven Aalders",
+   "headline": "Data Engineer at Hofstad Digital",
+   "location": "The Hague, South Holland, Netherlands"
+  },
+  {
+   "name": "Arjun Mehta",
+   "headline": "Cloud Data Engineer | AWS · Terraform · Snowflake",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Noor El Amrani",
+   "headline": "Data Engineer & Data Steward | Harbourline Logistics",
+   "location": "Rotterdam, Netherlands"
+  },
+  {
+   "name": "Bram Mulder",
+   "headline": "Principal Data Engineer at Northsea Freight",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Lars Hoekstra",
+   "headline": "Data Engineer at TalentBridge Recruitment (we're hiring!)",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Nadia Benali",
+   "headline": "Data Engineer",
+   "location": "Eindhoven, North Brabant, Netherlands"
+  },
+  {
+   "name": "Ewa Kowalczyk",
+   "headline": "Data Engineer | Kafka Streams | Open to relocation",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Koen Verbeek",
+   "headline": "Data Engineer at Schiedam Port Services",
+   "location": "Schiedam, South Holland, Netherlands"
+  },
+  {
+   "name": "Matteo Ricci",
+   "headline": "Senior Data Engineer at Kade Energy",
+   "location": "Rotterdam, South Holland, Netherlands"
+  },
+  {
+   "name": "Elif Kaya",
+   "headline": "Data Engineer",
+   "location": "Utrecht, Utrecht, Netherlands"
+  },
+  {
+   "name": "Yara Haddad",
+   "headline": "Data Engineer (m/v/x) bij Gemeente Rotterdam",
+   "location": "Rotterdam"
+  }
+ ]
+}

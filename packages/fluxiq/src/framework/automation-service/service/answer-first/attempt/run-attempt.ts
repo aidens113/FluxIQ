@@ -25,8 +25,9 @@
 // written, the ceiling `automationStudioAnswerFirstBudgetUsd`'s. The judge's call is kept back.
 //
 // **The rows' reader only processes once the session has ended**, since processing is what a run's
-// end does. Before that a read-back answers the rows as they were collected, which is what a
-// completion is judged on.
+// end does. The row sink stores every read's rows; **which of them are the answer is the attempt's one
+// result** (`../result-feed/`, lane t905): the draft's read steps' pages, never a look. The completion
+// check, the attempt's row and the ending all read the answer from it.
 //
 // **A caller that drives it from code** (`input.caller`, a FluxNode; `../caller/`) may bring its
 // own task key (`./opening.ts`), check and judge mode (`../completion/check.ts`), person port and
@@ -58,6 +59,7 @@ import { automationStudioAnswerFirstAttemptsRead, automationStudioAnswerFirstLiv
 import type { AutomationStudioGenerateFlowBootstrapAdaptationAnswered } from "../../flow-bootstrap-commands/index.ts";
 import { automationStudioAnswerFirstCopyRows, automationStudioAnswerFirstRowSink, automationStudioAnswerFirstSession } from "../rows/index.ts";
 import { automationStudioAnswerFirstRunActStoreOf } from "../run-acts/index.ts";
+import { automationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import { automationStudioAnswerFirstRunAgainScope, type AutomationStudioAnswerFirstRunAgainHold } from "../run-again/index.ts";
 import { automationStudioAnswerFirstTaskMemoryOf } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBeforeReadingsOf, automationStudioAnswerFirstEarlierBefore, automationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
@@ -184,12 +186,18 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     instructionText: input.instructionText,
     // A host with no project store has nowhere to put rows: the sink's own account is all there is, and a read-back answers from it.
     onRecordBatch: datasets.available ? datasets.recordBatchHandler(projectId, runId) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
+    // A publication of the answer starts its dataset over (`../rows/row-sink.ts`): a pass of its own for each.
+    startOver: datasets.available ? (batch) => datasets.restartedPass(projectId, runId).onRecordBatch(batch) : async () => ({}) as unknown as AutomationStudioRunDatasetSummary,
+    // A publication a later one superseded leaves the run, which then lists one result beside its capture datasets (`../rows/row-sink.ts`).
+    ...(datasets.available ? { retire: (datasetId: string) => datasets.deleteRunDatasets({ projectId, runId, datasetId }) } : {}),
     reader: {
       listDatasets: () => datasets.listRunDatasetsForVerification({ projectId, runId }),
       getPage: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) }),
       process: async () => { if (sessionEnded) await datasets.processEndedRunDatasets({ projectId, runId }); }
     }
   });
+  // The attempt's one result: which of the rows the sink stores are the answer (header).
+  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey });
   const look = automationStudioEndViewLook({ tools: input.harnessOptions.tools, viewKeys: input.harnessOptions.observedStateKeys });
   let looks = 0;
   // Through the domain alone: a look is no call of the task's, and it reaches none of its records.
@@ -205,14 +213,16 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const trail = automationStudioAnswerFirstTrailsOf(input.owner).of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined });
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
-    rows: () => sink.readBack(),
+    rows: async () => result.rows(),
     readsRan: () => sink.readsAnswered() > 0,
+    emptyResult: () => result.emptyRefusal(),
     acts: () => record.acts(),
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
     looked: () => looked,
     trail: () => trail,
-    readPages: () => sink.readPages(),
+    readPages: () => result.readPages(),
+    resultEvidence: () => result.evidence(),
     askedAgain: again !== undefined || carried?.askedAgain === true,
     purse: input.creation.purse,
     say: automationStudioAnswerFirstSay,
@@ -244,7 +254,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   // A caller's scope, held before anything in the chain (`../caller/scope-gate.ts`); with none, the chain as it was.
   const chain = automationStudioAnswerFirstScopeGate(input.caller?.scope, automationStudioAnswerFirstCallChain({
     domain: (call) => run.options.executeTool(call),
-    record, sink, witnesses,
+    record, sink, witnesses, result,
     readRowsKey: input.binding?.readRowsKey,
     describe: describe ? (call) => describe({ projectId, flowId, ...call }) : undefined,
     stepped: () => { run.liveSteps += 1; },
@@ -274,7 +284,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
     taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardPassed: new Set(), askedAgain: again !== undefined || carried?.askedAgain === true,
     attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
-    record, tried, asked, sink, session: ending, witnesses, completion, trail, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
+    record, tried, asked, sink, result, session: ending, witnesses, completion, trail, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: carried?.prior.liveSteps ?? 0, arrived, loopsCaught: carried?.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };
@@ -314,6 +324,11 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
       page: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId: lastRun, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) })
     } : undefined
   });
+  // What it found so far is the answer again, as its output step's page carried from the earlier segment (`../result-feed/feed.ts`).
+  const shown = carried.result?.rows;
+  // The copy of the earlier segment's publication is a result too: it leaves once this run publishes under another id.
+  if (shown) run.sink.carried(shown.datasetId);
+  if (shown?.previewRows.length) run.result.carried(run.steps, shown.previewRows, shown.datasetId);
   if (!copied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I am carrying on, but some of the rows found so far could not be brought along. I will read them again if I need them.");
   automationStudioAnswerFirstSay("Carrying on", "Carrying on from where it got to.");
   await automationStudioAnswerFirstKeep(run);

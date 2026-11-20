@@ -59,3 +59,9 @@ export const AUTOMATION_STUDIO_RECORD_CONDITION_RELATIVE_DAYS = Object.freeze(["
 
 /** What a condition's bounds compare (t790): the number the value states, or the date; a bound written as text is always a date. */
 export const AUTOMATION_STUDIO_RECORD_CONDITION_TYPES = Object.freeze(["number", "date"] as const);
+
+/** What a derived column reads its value as (t970): its text, the number it states, or the date it states. */
+export const AUTOMATION_STUDIO_RECORD_DERIVED_READS = Object.freeze(["text", "number", "date"] as const);
+
+/** The comparisons a `compare` may put between two columns of a row (t970). */
+export const AUTOMATION_STUDIO_RECORD_FIELD_COMPARISONS = Object.freeze(["atLeast", "atMost", "lessThan", "greaterThan", "equals"] as const);

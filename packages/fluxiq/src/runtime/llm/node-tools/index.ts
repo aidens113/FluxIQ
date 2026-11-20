@@ -18,6 +18,8 @@ export * from "./rerun-checked-rows.ts";
 export * from "./run/flow-part.ts";
 export * from "./run/run-flow-tool-id.ts";
 export * from "./run/flow.ts";
+// The Flow's result processing, set apart from its steps (t970).
+export * from "./result/index.ts";
 // The tools one evidence loop offers, read once for the whole loop.
 export * from "./loop-tools.ts";
 export * from "./run/start-pages.ts";

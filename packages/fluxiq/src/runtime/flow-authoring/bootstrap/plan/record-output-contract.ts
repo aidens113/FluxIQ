@@ -206,9 +206,19 @@ function fieldRefusal(code: string, value: JsonValue | undefined): FieldRefusal 
 /** The processing codes about a field, which `automationStudioFlowBootstrapRecordOutputIssueMessage` names. */
 const PROCESS_FIELD_CODES: ReadonlySet<string> = new Set(["record_output.process_unknown_field", "record_output.process_excluded_field", "record_output.process_where_column_dropped"]);
 
-/** Every field id a record output's processing names, as the parser reads them: dedupe.by, where, sort and columns, each once. */
+/**
+ * Every field id a record output's processing names, as the parser reads them, each once: derive's sources,
+ * dedupe.by, where, anyOf, compare (both sides), sort and columns (t970 the new four), less the columns derive makes.
+ */
 function processFields(process: JsonObject): string[] {
-  return unique([...(isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : []), ...conditionFields(process.where), ...sortFields(process), ...idsOf(process.columns)]);
+  const derived = new Set(Array.isArray(process.derive) ? process.derive.filter(isPlainObject).map((field) => field.id).filter((id): id is string => typeof id === "string") : []);
+  const sources = Array.isArray(process.derive) ? process.derive.filter(isPlainObject).map((field) => field.from).filter((id): id is string => typeof id === "string") : [];
+  const grouped = Array.isArray(process.anyOf) ? process.anyOf.flatMap((group) => conditionFields(group)) : [];
+  const compared = Array.isArray(process.compare)
+    ? process.compare.filter(isPlainObject).flatMap((entry) => [entry.field, entry.atLeast, entry.atMost, entry.lessThan, entry.greaterThan, entry.equals].filter((id): id is string => typeof id === "string"))
+    : [];
+  const named = [...sources, ...(isPlainObject(process.dedupe) ? idsOf(process.dedupe.by) : []), ...conditionFields(process.where), ...grouped, ...compared, ...sortFields(process), ...idsOf(process.columns)];
+  return unique(named.filter((id) => !derived.has(id)));
 }
 
 /** The fields processing orders or drops repeats by: each must be stored, and may be one columns leaves out. */
@@ -267,7 +277,7 @@ function processingText(): string {
   const bounds = AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.join("|");
   const texts = AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS.join("|");
   return [
-    "process is optional, with only dedupe, where, sort, limit, columns, minRows; every member is optional.",
+    "process is optional, with only derive, dedupe, where, anyOf, compare, sort, limit, columns, minRows; every member is optional.",
     "dedupe: false | {by:[fieldId,...]}; by is a nonempty list of distinct stored field ids. Absent dedupe uses the whole row (selected columns when columns is set); false keeps duplicates.",
     `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number|date text, within?:text, as?:date, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
     "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank, matches a valid regex.",
@@ -275,8 +285,9 @@ function processingText(): string {
     `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
     `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
     `minRows: nonnegative integer, default ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault}; a shortfall is reported, never a failure.`,
-    "Every field id must be stored in schema, not excluded. columns picks the answer's columns, so a sort or dedupe key may be a stored field columns leaves out; every where field must remain in columns when columns is set.",
-    "Processing shapes the collected answer at run end in order where, dedupe, sort, limit, columns; it never changes which rows a repeat visits."
+    "anyOf: [[condition,...],...]; each group keeps a row when any one of its conditions holds. compare: [{field:fieldId, atLeast|atMost|lessThan|greaterThan|equals:otherFieldId, as?:number|date, not?:boolean}] compares two columns of a row; a side stating no number or date fails it. derive: [{id:newId, from:fieldId, pattern?:regex, as?:text|number|date}] makes a column from the first group of pattern in another (or its whole text) before filtering; it may be filtered, compared, sorted and deduplicated by, never listed in columns.",
+    "Every field id must be stored in schema, not excluded, or be a derive id. columns picks the answer's columns, so a filter, sort or dedupe may read a stored field columns leaves out.",
+    "Processing shapes the collected answer at run end in order derive, where, anyOf, compare, dedupe, sort, limit, columns; it never changes which rows a repeat visits."
   ].join(" ");
 }
 

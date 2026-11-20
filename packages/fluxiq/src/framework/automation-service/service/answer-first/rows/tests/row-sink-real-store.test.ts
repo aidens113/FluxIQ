@@ -9,6 +9,7 @@ import { AutomationStudioProjectStore } from "../../../projects/index.ts";
 import { AutomationStudioRunDatasets } from "../../../datasets/index.ts";
 import { automationStudioAnswerFirstRowSink } from "../index.ts";
 import { call, item, liveAnswer, READ_ROWS_KEY } from "./support.ts";
+import { resultPipeline } from "../../result-feed/tests/pipeline.ts";
 
 const PROJECT = "project.rows";
 const RUN = "run.exploration";
@@ -53,99 +54,68 @@ function sinkOf(datasets: AutomationStudioRunDatasets) {
   });
 }
 
-describe("automationStudioAnswerFirstRowSink over the real run datasets", () => {
-  it("adds two pages of one read into one dataset and reads back the processed answer", async () => {
+describe("the ledger answer on the real run datasets", () => {
+  it("publishes all pages and a reread in exact page order, including exports and source provenance", async () => {
     const datasets = await open();
-    const sink = automationStudioAnswerFirstRowSink({
-      runId: RUN,
-      readRowsKey: READ_ROWS_KEY,
-      onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN),
-      reader: {
-        listDatasets: () => datasets.listRunDatasetsForVerification({ projectId: PROJECT, runId: RUN }),
-        getPage: (page) => datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: page.datasetId, limit: page.limit, ...(page.cursor !== undefined ? { cursor: page.cursor } : {}) }),
-        process: () => datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN })
-      }
-    });
-    await sink.fromCall(call("call.1", "web.read", { target: "list", page: 1 }), liveAnswer([item(1), item(2)]));
-    await sink.fromCall(call("call.2", "web.read", { target: "list", page: 2 }), liveAnswer([item(2), item(3)]));
-
-    const stored = await datasets.listRunDatasets({ projectId: PROJECT, runId: RUN });
-    expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({ recordCount: 4 });
-
-    const back = await sink.readBack();
-    expect(back.fromStore).toBe(true);
-    expect(back).toMatchObject({ datasetId: stored[0]!.datasetId, totalRows: 3, truncated: false, columns: [{ id: "title" }, { id: "price" }] });
-    expect(back.rows).toEqual([item(1), item(2), item(3)]);
-    expect(back.rows).toEqual(sink.summary().rows);
+    const p = resultPipeline(undefined, datasets.recordBatchHandler(PROJECT, RUN));
+    await p.read({ source: "s1", place: "page=2", rows: [item(3)] });
+    await p.read({ source: "s2", position: 2, place: "page=1", rows: [item(1), item(2)] });
+    await p.sink.publish(p.feed.rows(), p.feed.evidence());
+    await p.read({ source: "s3", position: 3, place: "page=1", rows: [{ ...item(2), price: 90 }, item(1)] });
+    const answer = p.feed.rows();
+    await p.sink.publish(answer, p.feed.evidence());
+    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
+    const page = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: answer.datasetId!, limit: 100 });
+    expect(page?.rows).toEqual(answer.rows);
+    expect(page?.rows).toEqual([{ ...item(2), price: 90 }, item(1), item(3)]);
+    const exported = await datasets.exportRunDataset({ projectId: PROJECT, runId: RUN, datasetId: answer.datasetId!, format: "json" });
+    if (!exported || exported.tooLarge) throw new Error("No inline export");
+    expect(JSON.parse(exported.body)).toEqual(answer.rows);
+    expect(exported.body).not.toContain("capture");
+    const captured = await datasets.readRunDatasetEvidence({ projectId: PROJECT, runId: RUN });
+    const provenance = captured.find((entry) => entry.datasetId === answer.datasetId)?.evidence;
+    expect(provenance?.pages).toEqual(p.feed.evidence().pages);
+    expect(page?.schema.fields.map((field) => field.id)).toEqual(["title", "price"]);
   });
 
-  it("a re-read is what the store holds, in that order, and processing keeps it", async () => {
+  it.each([false, { by: ["title"] }])("keeps projected twins unless the declared processing requests dedupe: %j", async (dedupe) => {
+    const datasets = await open();
+    const p = resultPipeline(undefined, datasets.recordBatchHandler(PROJECT, RUN));
+    await p.read({ source: "s1", place: "offset=0", value: p.input([], undefined, { dedupe }), rows: [{ ...item(1), link: "first" }, { ...item(1), link: "second" }] });
+    const answer = p.feed.rows();
+    await p.sink.publish(answer, p.feed.evidence());
+    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
+    const page = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: answer.datasetId!, limit: 100 });
+    expect(answer.totalRows).toBe(dedupe === false ? 2 : 1);
+    expect(page?.rows).toEqual(answer.rows);
+    expect(page?.rows).toHaveLength(answer.totalRows);
+  });
+
+  it("retains a genuine empty page and distinguishes it from missing legacy evidence after restart", async () => {
+    const datasets = await open();
+    const p = resultPipeline(undefined, datasets.recordBatchHandler(PROJECT, RUN));
+    await p.read({ source: "s1", place: "page=1", rows: [item(1)] });
+    await p.read({ source: "s2", place: "page=2", position: 2, rows: [] });
+    const answer = p.feed.rows();
+    await p.sink.publish(answer, p.feed.evidence());
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    pools.push(pool);
+    const projects = new AutomationStudioProjectStore(new AutomationStudioProjectPaths(path.join(rootDir, "projects")));
+    const restored = new AutomationStudioRunDatasets(projects, pool);
+    const entries = await restored.readRunDatasetEvidence({ projectId: PROJECT, runId: RUN });
+    expect(entries.find((entry) => entry.datasetId === "read.s1")?.evidence).toBeUndefined();
+    const evidence = entries.find((entry) => entry.datasetId === answer.datasetId)?.evidence;
+    expect(evidence?.pages).toEqual(p.feed.evidence().pages);
+    expect((evidence?.pages as Array<{ place: string; kept: number }>).map((page) => [page.place, page.kept])).toEqual([["page=1", 1], ["page=2", 0]]);
+  });
+
+  it("a real store refusal is visible and contributes no capture or answer page", async () => {
     const datasets = await open();
     const sink = sinkOf(datasets);
-    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2), item(3)]));
-    await sink.fromCall(call("call.2"), liveAnswer([item(3), item(1)]));
-    const judged = await sink.readBack();
-    expect(judged).toMatchObject({ fromStore: true, totalRows: 2, rows: [item(3), item(1)], fewerThanEarlier: { earlierRows: 3 } });
-    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
-    expect(await sink.readBack()).toMatchObject({ fromStore: true, totalRows: 2, rows: judged.rows, fewerThanEarlier: { earlierRows: 3 } });
-  });
-
-  it("a row changed in place on one of two pages is one row, in its place, in the store too", async () => {
-    const datasets = await open();
-    const sink = sinkOf(datasets);
-    await sink.fromCall(call("call.1"), liveAnswer([item(1), item(2)]));
-    await sink.fromCall(call("call.2"), liveAnswer([item(3)]));
-    await sink.fromCall(call("call.3"), liveAnswer([{ ...item(1), price: 90 }, item(2)]));
-    expect((await sink.readBack()).rows).toEqual([{ ...item(1), price: 90 }, item(2), item(3)]);
-    expect(sink.summary().rows).toEqual((await sink.readBack()).rows);
-  });
-
-  it("a run's declared sort reaches the judge, with the attempt still open, as it will reach the person", async () => {
-    const datasets = await open();
-    const sink = sinkOf(datasets);
-    const schema = { schemaVersion: "0.1" as const, fields: [{ id: "title", label: "Title", valueType: "string" as const }, { id: "price", label: "Price", valueType: "number" as const }] };
-    await sink.recordBatch({ nodeId: "node.read", attemptId: "a", batchKey: "a", datasetId: "shelves", writeMode: "append", schema, rows: [item(2), item(1), item(3)], invalidCount: 0, truncated: false, process: { sort: [{ field: "price", order: "desc", as: "number" }] } });
-    const judged = await sink.readBack();
-    expect(judged.rows).toEqual([item(3), item(2), item(1)]);
-    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
-    expect((await sink.readBack()).rows).toEqual(judged.rows);
-    expect(sink.summary().rows).toEqual(judged.rows);
-  });
-
-  it("the columns the request names are the answer the store serves, judged and processed, and the read is collected whole (run-mwb2kkv5-1baeee11)", async () => {
-    const datasets = await open();
-    const sink = automationStudioAnswerFirstRowSink({
-      runId: RUN,
-      readRowsKey: READ_ROWS_KEY,
-      onRecordBatch: datasets.recordBatchHandler(PROJECT, RUN),
-      reader: {
-        listDatasets: () => datasets.listRunDatasetsForVerification({ projectId: PROJECT, runId: RUN }),
-        getPage: (page) => datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: page.datasetId, limit: page.limit, ...(page.cursor !== undefined ? { cursor: page.cursor } : {}) })
-      },
-      instructionText: "List every shelf the shop sells. Give me a table with columns title and price, where price is written like 12.50."
-    });
-    const shelf = (n: number) => ({ ...item(n), link: `https://shop.example/shelf/${n}` });
-    await sink.fromCall(call("call.1"), liveAnswer([shelf(1), shelf(2)]));
-    const [stored] = await datasets.listRunDatasets({ projectId: PROJECT, runId: RUN });
-    // Collected whole: the link the read returned is stored with each row.
-    const collected = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored!.datasetId, limit: 10 });
-    expect(collected?.rows).toEqual([shelf(1), shelf(2)]);
-    // What the judge reads, the attempt still open, and what the person is shown once processed.
-    const judged = await sink.readBack();
-    expect(judged).toMatchObject({ fromStore: true, columns: [{ id: "title" }, { id: "price" }], rows: [item(1), item(2)] });
-    await datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN });
-    const answered = await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: stored!.datasetId, limit: 10 });
-    expect(answered?.schema.fields.map((field) => field.id)).toEqual(["title", "price"]);
-    expect(answered?.rows).toEqual([item(1), item(2)]);
-    expect((await sink.readBack()).rows).toEqual(judged.rows);
-  });
-
-  it("reports a store the real datasets refuse as data, and counts nothing", async () => {
-    const datasets = await open();
-    const sink = automationStudioAnswerFirstRowSink({ runId: RUN, readRowsKey: READ_ROWS_KEY, onRecordBatch: datasets.recordBatchHandler("project.unknown", RUN) });
-    const result = await sink.fromCall(call("call.1"), liveAnswer([item(1)]));
-    expect(result).toMatchObject({ rows: [], failure: { code: "answer_first.rows_not_stored" } });
-    expect(sink.summary().totalRows).toBe(0);
+    const lease = await pools[0]!.acquire(PROJECT);
+    try { await lease.database.run("create trigger refuse_raw_read before insert on run_dataset_batches begin select raise(abort, 'fixture refuses capture'); end"); } finally { await lease.release(); }
+    expect(await sink.fromCall(call("lost"), liveAnswer([item(1)]))).toMatchObject({ rows: [], failure: { code: "answer_first.rows_not_stored" } });
+    expect(await datasets.listRunDatasetsForVerification({ projectId: PROJECT, runId: RUN })).toEqual([]);
+    expect(sink.readsAnswered()).toBe(0);
   });
 });

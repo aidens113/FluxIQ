@@ -2,11 +2,20 @@
 // The Flow run stage on the real engine, a real service and a real dataset store: what it runs,
 // what it says each step did, and that a run that fails is an answer. No model, no browser.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioAskEffect } from "../../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapSizeLimits } from "../../../../../../runtime/flow-authoring/bootstrap/plan/index.ts";
-import { automationStudioAnswerFirstFlowRun } from "../index.ts";
-import { flowRunFixture, libraryTarget, LOANS_OUTPUT, OPEN_ACCOUNT, renewEveryLoan, savedStep, shownRows, type FlowRunFixture } from "../../tests/fake-library-engine.ts";
+import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstSourceAuthority } from "../index.ts";
+import { AutomationStudioCandidateSource, AutomationStudioFlowCandidateDraftStore } from "../../../candidate-drafts/index.ts";
+import { candidateSourceFixture } from "../../../candidate-drafts/tests/fixtures.ts";
+import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../../paths/index.ts";
+import type { AutomationStudioProjectStore } from "../../../projects/index.ts";
+import { automationStudioAnswerFirstSaveDraft } from "../../attempt/index.ts";
+import { automationStudioAnswerFirstResultFeed } from "../../result-feed/index.ts";
+import { flowRunFixture, libraryTarget, LOANS_OUTPUT, OPEN_ACCOUNT, pressLoan, renewEveryLoan, savedStep, shownRows, type FlowRunFixture } from "../../tests/fake-library-engine.ts";
 import { READ_LOANS, RENEW_CARD, RENEW_LOAN } from "../../tests/fake-library.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -15,6 +24,150 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const ran = (fixture: FlowRunFixture, steps = renewEveryLoan()) => automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved" });
+
+/** The real save path and strict disk owner, with no mocked compiler or source-verification result. */
+async function savedSource(fixture: FlowRunFixture, summary: string) {
+  const parent = await realpath(os.tmpdir()), root = await mkdtemp(path.join(parent, "fluxiq-flow-run-source-"));
+  cleanups.push(async () => {
+    const target = await realpath(root);
+    expect(path.dirname(target)).toBe(parent);
+    expect(path.basename(target)).toMatch(/^fluxiq-flow-run-source-/);
+    await rm(target, { recursive: true, force: true });
+  });
+  const paths = new AutomationStudioProjectPaths(root);
+  const drafts = new AutomationStudioFlowCandidateDraftStore(paths, new AutomationStudioFlowPaths(paths), { ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore);
+  const original = await fixture.service.getFlowInstruction(fixture.projectId, "instruction.task");
+  if (!original) throw new Error("Missing original fixture instruction");
+  const source = AutomationStudioCandidateSource.capture({ projectId: fixture.projectId, flowId: fixture.flowId, inventoryInstructionIds: [original.instructionId], instructions: [original] });
+  const binding = await fixture.service.getLlmExecutionBinding(fixture.projectId, fixture.flowId);
+  fixture.ports.input.instructionText = AutomationStudioCandidateSource.text(source);
+  const steps = renewEveryLoan(), zero = { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+  const attempt = {
+    steps, usage: zero, result: automationStudioAnswerFirstResultFeed({ instructionText: fixture.ports.input.instructionText, readRowsKey: undefined }),
+    input: { ...fixture.ports.input, source, stores: { drafts }, baseDependencyDigest: binding.executionDigest, baseSettingsRevision: binding.settingsRevision,
+      provider: { provider: { metadata: { provider: "test", model: "test" } } }, authority: { usage: zero }, creation: { purse: { spentUsd: () => 0 } } }
+  } as unknown as Parameters<typeof automationStudioAnswerFirstSaveDraft>[0];
+  const saved = await automationStudioAnswerFirstSaveDraft(attempt, summary);
+  if (saved.kind !== "saved" || saved.record.schemaVersion !== 2) throw new Error("The actual fixture draft did not save as v2");
+  const authority = automationStudioAnswerFirstSourceAuthority({ projectId: fixture.projectId, flowId: fixture.flowId, owner: fixture.service, drafts });
+  return { steps, saved, authority, drafts, reference: candidateSourceFixture.reference(saved.record) };
+}
+
+describe("the executable source carried by a run", () => {
+  it("carries the exact saved candidate reference without changing the run's digest or work", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const { steps, saved, authority, reference } = await savedSource(fixture, "The saved steps of this task.");
+    const read = vi.spyOn(authority, "read");
+    fixture.ports.sourceAuthority = authority;
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId, stated: saved.stated });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "bound", reference } });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenNthCalledWith(1, saved.record.candidateId);
+    expect(read).toHaveBeenNthCalledWith(2, saved.record.candidateId, reference);
+    expect(fixture.target.library.renewals).toEqual({ "Atlas of Rivers": 1, "Birds of the Coast": 1, Clockmaking: 1 });
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+
+  it("reassembles an actual saved completion with its recorded original compiler input", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const { steps, saved, authority, reference } = await savedSource(fixture, "Renewed every current loan.");
+    fixture.ports.sourceAuthority = authority;
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId, stated: saved.stated });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "bound", reference } });
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+
+  it.each(["revision", "replacement", "original source"] as const)("pins source A before assembly and refuses changed %s B", async kind => {
+    let assembling: (() => Promise<void>) | undefined;
+    const events: string[] = [];
+    const fixture = await flowRunFixture({ binding: { resolvePlanNodeParameters: async ({ parameters }) => {
+      const change = assembling;
+      assembling = undefined;
+      await change?.();
+      return { status: "resolved", parameters };
+    } } }, cleanups);
+    const { steps, saved, authority, drafts } = await savedSource(fixture, "The saved steps of this task.");
+    const read = authority.read;
+    vi.spyOn(authority, "read").mockImplementation(async (...args) => {
+      events.push("source");
+      return read(...args);
+    });
+    assembling = async () => {
+      events.push("assembly");
+      if (kind === "original source") {
+        const original = await fixture.service.getFlowInstruction(fixture.projectId, "instruction.task");
+        if (!original) throw new Error("Missing source to change");
+        await fixture.service.saveFlowInstruction(fixture.projectId, { ...original, body: "Changed original task", updatedAt: original.updatedAt + 1 });
+      } else {
+        const newer = structuredClone(saved.record);
+        if (kind === "revision") newer.candidate.revision += 1;
+        else newer.candidateId = "candidate.replaced";
+        await drafts.save(newer);
+      }
+    };
+    fixture.ports.sourceAuthority = authority;
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId, stated: saved.stated });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: kind === "original source" ? "binding_changed" : "source_stale" } });
+    expect(events.slice(0, 2)).toEqual(["source", "assembly"]);
+    if (kind !== "original source") expect(events).toEqual(["source", "assembly", "source"]);
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+
+  it("treats an altered recorded summary as an untrusted hint requiring complete plan equality", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const { steps, saved, authority, drafts } = await savedSource(fixture, "Renewed every current loan.");
+    const altered = structuredClone(saved.record);
+    altered.candidate.summary = "A different recorded compiler input";
+    await drafts.save(altered);
+    fixture.ports.sourceAuthority = authority;
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: "executable_changed" } });
+  });
+
+  it("keeps a candidate replaced during actual execution unknown", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const { steps, saved, authority, drafts } = await savedSource(fixture, "Renewed every current loan.");
+    let changed = false;
+    fixture.target.over = ({ nodeId, inputs, parameters }) => {
+      if (nodeId !== RENEW_LOAN || changed) return undefined;
+      changed = true;
+      return drafts.save({ ...saved.record, candidateId: "candidate.replaced" }).then(() => pressLoan(fixture.target, inputs ?? {}, parameters ?? {}));
+    };
+    fixture.ports.sourceAuthority = authority;
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: "source_stale" } });
+    expect(changed).toBe(true);
+    expect(fixture.target.presses).toHaveLength(3);
+  });
+
+  it("keeps an initially unknown source unknown and uses ordinary default assembly", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const { steps, saved, authority } = await savedSource(fixture, "Renewed every current loan.");
+    const read = vi.fn(authority.read).mockResolvedValueOnce({ status: "unknown", code: "source_unbound" });
+    fixture.ports.sourceAuthority = { read };
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps, stepsDigest: "digest.saved", candidateId: saved.record.candidateId });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: "source_unbound" } });
+    expect(read).toHaveBeenCalledOnce();
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+
+  it("runs a legacy caller with a saved id and no authority", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps: renewEveryLoan(), stepsDigest: "digest.saved", candidateId: "candidate.saved" });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: "authority_missing" } });
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+
+  it("keeps authority errors closed and still runs ordinary legacy steps", async () => {
+    const fixture = await flowRunFixture({}, cleanups);
+    const read = vi.fn(async () => { throw new Error("private source text"); });
+    fixture.ports.sourceAuthority = { read };
+    const outcome = await automationStudioAnswerFirstFlowRun(fixture.ports, { steps: renewEveryLoan(), stepsDigest: "digest.saved", candidateId: "candidate.saved" });
+    expect(outcome).toMatchObject({ kind: "ran", reachedEnd: true, executableSource: { status: "unknown", code: "unavailable" } });
+    expect(JSON.stringify(outcome)).not.toContain("private source text");
+    expect(fixture.counts).toEqual({ liveSteps: 4, arrived: true });
+  });
+});
 
 describe("a saved Flow's run", () => {
   it("runs the saved steps on the engine with no model, and says what each step did", async () => {
@@ -31,23 +184,46 @@ describe("a saved Flow's run", () => {
   it("puts the run's rows in the attempt's sink, as the record output kept them", async () => {
     const fixture = await flowRunFixture({}, cleanups);
     await ran(fixture);
-    const rows = await fixture.sink.readBack();
+    const rows = await fixture.sink.readBack("loans");
     expect(rows).toMatchObject({ fromStore: true, datasetId: "loans", totalRows: 3, columns: [{ id: "title" }, { id: "due" }] });
     expect(rows.rows).toEqual([{ title: "Atlas of Rivers", due: "2030-01-01" }, { title: "Birds of the Coast", due: "2030-01-02" }, { title: "Clockmaking", due: "2030-01-03" }]);
   });
 
-  it("joins a later read of the same list on the real store: five with two new, three with the same again, while the session is open", async () => {
+  it("keeps raw look columns separate from the ledger's declared answer and export", async () => {
     const fixture = await flowRunFixture({}, cleanups);
+    const result = automationStudioAnswerFirstResultFeed({ instructionText: "Give columns title and due.", readRowsKey: "read.extracted" });
+    fixture.ports.result = result;
     await ran(fixture);
-    const read = (callId: string, rows: JsonObject[]) => fixture.sink.fromCall({ callId, toolId: "core.run_node", value: { node: READ_LOANS } }, { kind: "llm_evidence_tool_execution", evidence: { read: { extracted: rows } }, effectApplied: false });
+    const read = async (callId: string, rows: JsonObject[]) => {
+      const call = { callId, toolId: "core.run_node", value: { node: READ_LOANS } };
+      const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { read: { extracted: rows } }, effectApplied: false };
+      const stored = await fixture.sink.fromCall(call, answer);
+      result.expect(undefined);
+      result.called(call, answer, stored);
+    };
     await read("read.again", shownRows(fixture.target));
-    expect(await fixture.sink.readBack()).toMatchObject({ fromStore: true, datasetId: "loans", totalRows: 3 });
+    expect(await fixture.sink.readBack("loans")).toMatchObject({ fromStore: true, datasetId: "loans", totalRows: 3 });
     fixture.target.library.loans.push({ title: "Dials", due: "2030-02-01" }, { title: "Ephemera", due: "2030-02-02" });
     await read("read.more", shownRows(fixture.target));
-    const rows = await fixture.sink.readBack();
-    expect(rows).toMatchObject({ fromStore: true, datasetId: "loans", totalRows: 5 });
+    const rows = await fixture.sink.readBack("read.read.more");
+    expect(rows).toMatchObject({ fromStore: true, datasetId: "read.read.more", totalRows: 5 });
     expect(rows.rows.map((row) => row.title)).toEqual(["Atlas of Rivers", "Birds of the Coast", "Clockmaking", "Dials", "Ephemera"]);
-    expect(rows.rows.every((row) => Object.keys(row).join() === "title,due")).toBe(true);
+    expect(rows.rows.every((row) => Object.keys(row).join() === "title,due,shelfmark")).toBe(true);
+    const answer = result.rows();
+    expect(answer.totalRows).toBe(3);
+    expect(answer.columns.map((column) => column.id)).toEqual(["title", "due"]);
+    expect(answer.rows.every((row) => Object.keys(row).join() === "title,due")).toBe(true);
+    expect(result.evidence().looks.at(-1)?.rows).toHaveLength(5);
+    await fixture.sink.publish(answer, result.evidence());
+    if (!answer.datasetId) throw new Error("The declared answer has no dataset");
+    const published = await fixture.sink.readBack(answer.datasetId);
+    expect(published.rows).toEqual(answer.rows);
+    expect(published.columns.map((column) => column.id)).toEqual(["title", "due"]);
+    const exported = await fixture.service.runDatasets.exportRunDataset({ projectId: fixture.projectId, runId: fixture.ports.runId, datasetId: answer.datasetId, format: "json" });
+    if (!exported || exported.tooLarge) throw new Error("No inline answer export");
+    expect(JSON.parse(exported.body)).toEqual(answer.rows);
+    expect(exported.body).not.toContain("shelfmark");
+    expect(exported.body).not.toContain("$handle");
   });
 
   it("names a step by its draft position: one left out of the plan is simply absent", async () => {

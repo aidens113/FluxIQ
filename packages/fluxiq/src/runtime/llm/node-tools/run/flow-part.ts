@@ -42,9 +42,6 @@
 // never saw it change nothing, and one passing `{from: 15, to: 16}` ran about
 // twenty times over an unchanged draft (`../repeat-guard/outcomes.ts`).
 //
-// **A switch of the result's list inside the run is told on its answer (`./result-list.ts`).** The model sees only
-// the run's summary, so a pass that changed which rows the result holds had said so where it never read it.
-//
 // **A forward run's answer holds the page as it stands (t869).** A pass's answer
 // carries no page, so the newest page the model held was the one from before
 // the run, while the browser stood on the last row's; a handle read from that
@@ -65,7 +62,6 @@ import {
 import { automationStudioLlmEvidenceViewGroups } from "../../decision-context/view-groups.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
-import { automationStudioFlowDraftPartResultList } from "./result-list.ts";
 import { automationStudioNodeReplayStepCall } from "../replay/replay.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_NO_ROWS_CODE, automationStudioFlowDraftReplaySteps } from "../replay/draft.ts";
 import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayForward, AutomationStudioFlowDraftReplayNodeOf } from "../replay/index.ts";
@@ -118,7 +114,6 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   let before: string | undefined;
   let after: string | undefined;
   let first = true;
-  const switched: JsonValue[] = [];
   const done = await automationStudioFlowDraftReplaySteps({
     executeTool: input.executeTool,
     ...(input.signal ? { signal: input.signal } : {}),
@@ -137,7 +132,6 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     stopsAt: (step, excused) => !excused || unrunnable(step),
     answered: (step, answer) => {
       shown = { step: step.position, evidence: answer.evidence };
-      switched.push(answer.evidence); // Any pass that switched the result's list says so in it (`./result-list.ts`).
       effectApplied ||= step.effect === "mutate" && answer.effectApplied; // A read replayed moved nothing (see the header).
       if (first) before = answer.stateDigests?.before;
       after = answer.stateDigests?.after;
@@ -160,10 +154,8 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   const passed = stoppedAt === undefined && rowsNotDone.length === 0;
   const seen = input.forward && input.look ? await pageAsItStands(input, input.look) : undefined;
   if (seen?.after !== undefined) after = seen.after;
-  const resultList = automationStudioFlowDraftPartResultList(switched);
   const evidence: JsonObject = {
     ...seen?.view,
-    ...(resultList ? { resultList } : {}),
     ...(seen?.read === false ? { pageNotRead: true } : {}),
     ok: true, passed, from: range.from, to, steps: ran,
     ...(stoppedAt === undefined ? {} : { stoppedAt }),
