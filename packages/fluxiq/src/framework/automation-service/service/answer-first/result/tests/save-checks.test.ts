@@ -15,7 +15,7 @@ function ledgerOfLoop(conditions = [FREE]) {
 }
 
 describe("the saved Flow holds the output step as it reads (A)", () => {
-  const saved = (version: AutomationStudioAnswerFirstResultVersion, written = version, resolved = written) => new Map([["s1", { written, resolved, saved: version }]]);
+  const saved = (version: AutomationStudioAnswerFirstResultVersion, written = version, recorded = written) => new Map([["s1", { written, recorded, saved: version }]]);
 
   it("a Flow whose read dropped the output step's conditions is refused", () => {
     const output = automationStudioAnswerFirstResultOutputStep(ledgerOfLoop([FREE, AISLE]).ledger());
@@ -30,7 +30,7 @@ describe("the saved Flow holds the output step as it reads (A)", () => {
     const resolved = { conditions: [FREE], fields: { seat: "#seats .label", price: "#seats .price", state: "#seats .state" } };
     expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, seatVersion([FREE]), resolved))).toEqual({ ok: true });
     // The folded step (step 4) is the output step too.
-    expect(automationStudioAnswerFirstResultOutputSaved(output, new Map([["s4", { written: seatVersion([FREE]), resolved: seatVersion([FREE]), saved: seatVersion([FREE]) }]]))).toEqual({ ok: true });
+    expect(automationStudioAnswerFirstResultOutputSaved(output, new Map([["s4", { written: seatVersion([FREE]), recorded: seatVersion([FREE]), saved: seatVersion([FREE]) }]]))).toEqual({ ok: true });
     expect(automationStudioAnswerFirstResultOutputSaved(undefined, new Map())).toEqual({ ok: true });
   });
 
@@ -48,7 +48,23 @@ describe("the saved Flow holds the output step as it reads (A)", () => {
     expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, conditions: [] }, written, resolved))).toMatchObject(refused);
     expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, conditions: [{ ...condition, equals: "booked" }] }, written, resolved))).toMatchObject(refused);
     expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, fields: { ...resolved.fields, state: ".other-state" } }, written, resolved))).toMatchObject(refused);
-    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written))).toMatchObject(refused);
+  });
+
+  // run-mwop7kt3: a domain may record a read in the words it was written in and resolve it again at assembly (the web
+  // domain does so for every list read). The plan is then the domain's resolution of exactly the answer's read, in words
+  // Core does not read: it is held when it keeps every column and condition, and the recorded read must be the answer's.
+  it("holds a read recorded as written whose resolution keeps every column and condition, and no other", () => {
+    const output = automationStudioAnswerFirstResultOutputStep(ledgerOfLoop([FREE]).ledger());
+    const written = seatVersion([FREE]);
+    const resolved = { conditions: [{ read: { kind: "text", selector: ".availability", required: false }, equals: "free" }], fields: { seat: ".label", price: ".price", state: ".state" } };
+    const refused = { ok: false, code: "answer_first.output_step_version_not_saved" };
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written))).toEqual({ ok: true });
+    // The resolution lost the condition, or a column, of the read it was made from.
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, conditions: [] }, written))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved({ ...resolved, fields: { seat: ".label", price: ".price" } }, written))).toMatchObject(refused);
+    // The assembly was handed another version than the answer's: whatever it resolved to, it is another read.
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written, seatVersion([AISLE])))).toMatchObject(refused);
+    expect(automationStudioAnswerFirstResultOutputSaved(output, saved(resolved, written, seatVersion([])))).toMatchObject(refused);
   });
 });
 

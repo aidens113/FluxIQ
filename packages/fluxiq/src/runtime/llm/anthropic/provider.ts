@@ -39,9 +39,9 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
     // then charge the actual read/write split. Output is the harness reserve.
     estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioAnthropicCostUsd(inputTokens, outputTokens, 0, model, inputTokens),
     runTask: async (request, execution) => {
-      const prepared = continued(request, prepare(request, model), model, deciders);
+      const { continuation, ...prepared } = continued(request, prepare(request, model), model, deciders);
       return await automationStudioAnthropicMessage({
-        body: prepared.body, model, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
+        body: prepared.body, model, ...(continuation ? { continuation } : {}), fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes,
         timeoutMs: request.timeoutMs, ...(execution?.signal ? { signal: execution.signal } : {}),
         requestId: request.requestId, taskKind: request.taskKind,
         ...(request.context.stage ? { stage: request.context.stage } : {}),
@@ -55,29 +55,51 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
 }
 
 /**
- * The request as it is sent (t965): a decider's is kept as the latest of its Flow, and a judge that continues the
- * decider's conversation (`metadata.continuesDecider`) is sent as that request's cached prefix with the judging appended
- * (`../../models/providers/anthropic/continuation.ts`), in the decider's JSON-text format. A judge with no such request
- * held, of another attempt's decider, or whose continuation would not fit the window, is sent on its own as before.
+ * The request as it is sent (t965, t967): a decider's is kept as the latest of its attempt, and a judge that continues
+ * the decider's conversation (`metadata.continuesDecider`) is sent as that request's cached prefix with the judging
+ * appended (`../../models/providers/anthropic/continuation.ts`), in the decider's JSON-text format.
+ *
+ * **Its own attempt's decider, by the attempt's key.** Every call of an attempt is stamped with its attempt's key by the
+ * routing (`metadata.attemptKey`, `../role-routing/provider.ts`), and a decider's prefix is held under it: a judge
+ * continues only the prefix held under its own key, so it never continues another attempt's conversation. Run
+ * run-mwohvt8n-a57cad8a's judges all fell back under t965's rule, which asked every call of the prefix's evidence to be
+ * in the judge's trail, and Core's own entries in that evidence never are.
+ *
+ * Every judge's call says which way it went (`continuation`, written in its step meta): `used`, or why not.
  */
-function continued(request: AutomationStudioLlmTaskRequest, prepared: ReturnType<typeof automationStudioAnthropicRequest>, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>): ReturnType<typeof automationStudioAnthropicRequest> {
-  const key = `${request.context.projectId} ${request.context.flowId}`;
+/** The attempts whose latest decider request a model's adapter holds, the oldest dropped first. */
+const DECIDERS_HELD = 8;
+
+type Prepared = ReturnType<typeof automationStudioAnthropicRequest> & { continuation?: { used: boolean; reason: string } };
+
+function continued(request: AutomationStudioLlmTaskRequest, prepared: ReturnType<typeof automationStudioAnthropicRequest>, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>): Prepared {
+  const key = typeof request.metadata?.attemptKey === "string" ? request.metadata.attemptKey : undefined;
   if (request.context.evidenceLoop) {
-    const prefix = prepared.format.jsonText ? automationStudioAnthropicDeciderPrefix(JSON.parse(prepared.body) as Record<string, unknown>) : undefined;
-    if (prefix) deciders.set(key, prefix);
-    else deciders.delete(key);
+    const prefix = key !== undefined && prepared.format.jsonText ? automationStudioAnthropicDeciderPrefix(JSON.parse(prepared.body) as Record<string, unknown>) : undefined;
+    if (key !== undefined) {
+      deciders.delete(key);
+      if (prefix) deciders.set(key, prefix);
+      // The latest few attempts' only: a prefix is a whole decision's request, and an attempt that ended is never judged again.
+      for (const oldest of deciders.keys()) {
+        if (deciders.size <= DECIDERS_HELD) break;
+        deciders.delete(oldest);
+      }
+    }
     return prepared;
   }
-  const prefix = request.taskKind === "loop_verification" && request.metadata?.continuesDecider === true ? deciders.get(key) : undefined;
-  if (!prefix) return prepared;
+  if (request.taskKind !== "loop_verification") return prepared;
+  const own = (reason: string): Prepared => ({ ...prepared, continuation: { used: false, reason } });
+  if (request.metadata?.continuesDecider !== true) return own("no_decision_in_this_attempt");
+  if (key === undefined) return own("no_attempt_key");
+  const prefix = deciders.get(key);
+  if (!prefix) return own("no_decider_request_held_for_this_attempt_on_this_model");
   const [system, user] = automationStudioLlmTaskMessages(request);
   const wire = automationStudioAnthropicJudgeContinuation(prefix, system!.content, user!.content);
-  if (!wire) return prepared;
   const body = JSON.stringify(wire);
   const estimatedInputBytes = Buffer.byteLength(JSON.stringify({ system: wire.system, messages: wire.messages, output_config: wire.output_config }), "utf8");
   const estimatedInputTokens = estimateAutomationStudioLlmTokensFromUtf8Bytes(estimatedInputBytes) + 16;
-  if (estimatedInputTokens + request.tokenLimits.maxOutputTokens > AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens) return prepared;
-  return { body, format: { schema: prepared.format.schema, jsonText: true }, estimatedInputBytes, estimatedInputTokens };
+  if (estimatedInputTokens + request.tokenLimits.maxOutputTokens > AUTOMATION_STUDIO_ANTHROPIC_MODEL_LIMITS[model].contextTokens) return own("continuation_past_the_window");
+  return { body, format: { schema: prepared.format.schema, jsonText: true }, estimatedInputBytes, estimatedInputTokens, continuation: { used: true, reason: "continues_the_decider" } };
 }
 
 function prepare(request: AutomationStudioLlmTaskRequest, model: AutomationStudioAnthropicModel): ReturnType<typeof automationStudioAnthropicRequest> {

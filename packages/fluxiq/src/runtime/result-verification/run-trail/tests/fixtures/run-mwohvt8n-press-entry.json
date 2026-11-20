@@ -1,0 +1,418 @@
+{
+ "source": "run-mwohvt8n-a57cad8a step 0029 (judge request), trail entry 3 (a press that opened a listing), as sent, with the capture element lists cut to their first two items; viewBefore is entry 2's own view (the page the press was made on)",
+ "originalEntryChars": 209496,
+ "originalElements": 248,
+ "entry": {
+  "n": 3,
+  "did": "web.output.dom-click",
+  "on": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+  "asked": {
+   "selector": "[withheld]",
+   "element": {
+    "tagName": "a",
+    "implicitRole": "link",
+    "accessibleName": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+    "selector": "[withheld]",
+    "classNames": [
+     "css-16ijmrv"
+    ],
+    "context": {
+     "landmark": "main",
+     "listPosition": {
+      "index": 2,
+      "total": 4
+     },
+     "record": {
+      "text": "Lens hood for Kestrel 35 / 35S, 40.5mm Pre-owned · Kestrel £11.00 3 bids 1d 13h left(Wed 23 Sep, 03:30) +£2.50 postage 4 watchers"
+     }
+    }
+   }
+  },
+  "outcome": "succeeded, route success",
+  "found": {
+   "outputs": {
+    "success": true,
+    "outputId": "web.dom.click",
+    "ok": true,
+    "runtimeCommandId": "command.4e51058e-4a5e-4829-b5da-f35103355038",
+    "runtimeStatus": "succeeded",
+    "elementTargetResolution": {
+     "status": "unresolved_no_candidates",
+     "reason": "No runtime element candidates were supplied, so Core applied no confidence floor and left resolving the element to the output adapter."
+    },
+    "result": {
+     "status": "succeeded",
+     "message": "Element clicked.",
+     "result": {
+      "actionType": "web.dom.click",
+      "status": "succeeded",
+      "actionability": {
+       "actionable": true
+      },
+      "validation": {
+       "status": "passed",
+       "expected": "navigation to http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313 begins, or the page answers the click in place",
+       "actual": "navigation to http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313 was initiated"
+      },
+      "message": "Element clicked.",
+      "url": "http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0",
+      "title": "Kestrel 35 lens hood for sale | Hammerline",
+      "element": {
+       "tagName": "a",
+       "selector": "[withheld]",
+       "isVisibleOnViewport": true,
+       "bounds": {
+        "x": 484,
+        "y": 349.16,
+        "width": 755,
+        "height": 22.39
+       },
+       "documentBounds": {
+        "x": 484,
+        "y": 508.16,
+        "width": 755,
+        "height": 22.39
+       },
+       "text": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+       "visibleText": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+       "classNames": [
+        "css-16ijmrv"
+       ],
+       "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][2][locator withheld][2][locator withheld][1]",
+       "href": "http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313",
+       "accessibleName": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+       "implicitRole": "link",
+       "context": {
+        "landmark": "main",
+        "heading": "Kestrel 35 — mint, boxed, with 3 lenses & hood",
+        "listPosition": {
+         "index": 2,
+         "total": 4
+        },
+        "record": {
+         "text": "Lens hood for Kestrel 35 / 35S, 40.5mm Pre-owned · Kestrel £11.00 3 bids 1d 13h left(Wed 23 Sep, 03:30) +£2.50 postage 4 watchers"
+        },
+        "subject": "Lens hood for Kestrel 35 / 35S, 40.5mm"
+       },
+       "attributes": {
+        "class": "css-16ijmrv",
+        "href": "/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313"
+       }
+      },
+      "snapshot": {
+       "url": "http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0",
+       "title": "Kestrel 35 lens hood for sale | Hammerline",
+       "viewport": {
+        "width": 1280,
+        "height": 720,
+        "scrollX": 0,
+        "scrollY": 159,
+        "documentWidth": 1280,
+        "documentHeight": 1588,
+        "devicePixelRatio": 1
+       },
+       "frame": {
+        "isTop": true,
+        "viewportOffset": {
+         "x": 0,
+         "y": 0,
+         "width": 1280,
+         "height": 720
+        }
+       },
+       "interactiveElements": [
+        {
+         "tagName": "div",
+         "selector": "[withheld]",
+         "isVisibleOnViewport": true,
+         "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1263,
+          "height": 720
+         },
+         "documentBounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1263,
+          "height": 1588.44
+         },
+         "classNames": [
+          "css-0do1k7p"
+         ],
+         "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1]",
+         "attributes": {
+          "class": "css-0do1k7p"
+         },
+         "nodeToken": 1
+        },
+        {
+         "tagName": "div",
+         "selector": "[withheld]",
+         "isVisibleOnViewport": false,
+         "documentBounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1263,
+          "height": 29.8
+         },
+         "classNames": [
+          "css-0opww65"
+         ],
+         "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1]",
+         "attributes": {
+          "class": "css-0opww65"
+         },
+         "nodeToken": 2,
+         "parent": 0
+        }
+       ],
+       "evidence": {
+        "elements": {
+         "scanned": 292,
+         "candidates": 292,
+         "matched": 248,
+         "returned": 248,
+         "truncated": false,
+         "changed": 8,
+         "recentlyInteracted": 1
+        },
+        "loading": {
+         "documentState": "complete",
+         "busy": false,
+         "busyRegions": [],
+         "indicators": [],
+         "pendingNavigation": false
+        },
+        "navigation": {
+         "url": "http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0",
+         "origin": "http://127.0.0.1:51574",
+         "path": "/scenarios/auction-marketplace/sch/i.html",
+         "type": "navigate",
+         "historyLength": 6,
+         "visibility": "visible",
+         "timeOrigin": 1795150092124.8
+        },
+        "captureOptions": {
+         "includeHidden": false
+        },
+        "overlays": {
+         "tested": 43,
+         "blockedCount": 0,
+         "blockers": [
+          {
+           "selector": "[withheld]",
+           "role": "region",
+           "label": "Cookie consent",
+           "bounds": {
+            "x": 0,
+            "y": 594.22,
+            "width": 1263,
+            "height": 125.78
+           },
+           "blocks": 0,
+           "blocked": [],
+           "kind": "consent"
+          }
+         ]
+        },
+        "regions": [
+         {
+          "role": "banner",
+          "selector": "[withheld]",
+          "bounds": {
+           "x": 0,
+           "y": 29.8,
+           "width": 1263,
+           "height": 67.59
+          }
+         },
+         {
+          "role": "search",
+          "selector": "[withheld]",
+          "bounds": {
+           "x": 220.75,
+           "y": 41.8,
+           "width": 948.88,
+           "height": 43.59
+          }
+         }
+        ],
+        "repeating": [
+         {
+          "containerSelector": "main > div > aside > section[locator withheld](1) > ul",
+          "signature": "li|||",
+          "itemCount": 3,
+          "representative": {
+           "selector": "[withheld]",
+           "text": "Cameras & Photography"
+          }
+         },
+         {
+          "containerSelector": "main > div > aside > section[locator withheld](2) > ul",
+          "signature": "li|||",
+          "itemCount": 3,
+          "representative": {
+           "selector": "[withheld]",
+           "text": "Seller refurbished (0)"
+          }
+         }
+        ],
+        "forms": [
+         {
+          "selector": "[withheld]",
+          "action": "/scenarios/auction-marketplace/sch/i.html",
+          "method": "get",
+          "controlCount": 3,
+          "controls": [
+           {
+            "selector": "[withheld]",
+            "controlType": "text",
+            "name": "_nkw",
+            "label": "Search for anything",
+            "hasValue": true,
+            "autocomplete": "off"
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "select",
+            "name": "_sacat",
+            "label": "Select a category for search",
+            "hasValue": true
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "submit",
+            "label": "Search"
+           }
+          ],
+          "submit": "body > div[locator withheld](1) > header > form > button"
+         },
+         {
+          "selector": "[withheld]",
+          "action": "/scenarios/auction-marketplace/sch/i.html",
+          "method": "get",
+          "controlCount": 2,
+          "controls": [
+           {
+            "selector": "[withheld]",
+            "controlType": "text",
+            "name": "_udlo",
+            "label": "Minimum Value in £",
+            "hasValue": false
+           },
+           {
+            "selector": "[withheld]",
+            "controlType": "text",
+            "name": "_udhi",
+            "label": "Maximum Value in £",
+            "hasValue": false
+           }
+          ]
+         }
+        ]
+       },
+       "focusedElement": {
+        "tagName": "a",
+        "selector": "[withheld]",
+        "isVisibleOnViewport": true,
+        "bounds": {
+         "x": 484,
+         "y": 349.16,
+         "width": 755,
+         "height": 22.39
+        },
+        "documentBounds": {
+         "x": 484,
+         "y": 508.16,
+         "width": 755,
+         "height": 22.39
+        },
+        "text": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+        "visibleText": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+        "classNames": [
+         "css-16ijmrv"
+        ],
+        "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][2][locator withheld][2][locator withheld][1]",
+        "href": "http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313",
+        "accessibleName": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+        "implicitRole": "link",
+        "context": {
+         "landmark": "main",
+         "heading": "Kestrel 35 — mint, boxed, with 3 lenses & hood",
+         "listPosition": {
+          "index": 2,
+          "total": 4
+         },
+         "record": {
+          "text": "Lens hood for Kestrel 35 / 35S, 40.5mm Pre-owned · Kestrel £11.00 3 bids 1d 13h left(Wed 23 Sep, 03:30) +£2.50 postage 4 watchers"
+         },
+         "subject": "Lens hood for Kestrel 35 / 35S, 40.5mm"
+        },
+        "attributes": {
+         "class": "css-16ijmrv",
+         "href": "/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313"
+        }
+       }
+      },
+      "resolution": {
+       "strategy": "selector",
+       "candidateCount": 1,
+       "bestScore": 0.727,
+       "confidence": 0.64
+      },
+      "sourceId": "tab:667864634:frame:0",
+      "visualTarget": {
+       "namespace": "web",
+       "statePath": "web.elements.main.div.div.ul.li.nth.of.type.2.div.nth.of.type.2.a",
+       "selector": "[withheld]",
+       "frameId": "screen",
+       "layerId": "element.main.div.div.ul.li.nth.of.type.2.div.nth.of.type.2.a",
+       "documentLayerId": "document.element.main.div.div.ul.li.nth.of.type.2.div.nth.of.type.2.a",
+       "bounds": {
+        "x": 484,
+        "y": 349.16,
+        "width": 755,
+        "height": 22.39
+       },
+       "documentBounds": {
+        "x": 484,
+        "y": 508.16,
+        "width": 755,
+        "height": 22.39
+       },
+       "anchor": {
+        "type": "bounds",
+        "bounds": {
+         "x": 484,
+         "y": 508.16,
+         "width": 755,
+         "height": 22.39
+        }
+       },
+       "confidence": 0.88,
+       "metadata": {
+        "tagName": "a",
+        "xpath": "[locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][1][locator withheld][2][locator withheld][2][locator withheld][1]",
+        "classNames": [
+         "css-16ijmrv"
+        ],
+        "visibleText": "Lens hood for Kestrel 35 / 35S, 40.5mm",
+        "href": "http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313",
+        "isVisibleOnViewport": true
+       }
+      }
+     }
+    }
+   },
+   "changed": {
+    "added": "link \"Sign out\" http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nlink \"Daily Deals\" http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nlink \"Help & Contact\" http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nlink \"Sell\" http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nfield[search] \"Search for anything\" =\"\"\nlink \"Advanced\" http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\n\"Hammerline › Cameras & Photography › Film Photography › Film Cameras\"\nimg \"Lens hood for Kestrel 35 / 35S, 40.5mm\"\nimg icon [locator withheld]\nimg icon [locator withheld]\nimg icon [locator withheld]\nimg icon [locator withheld]\nh1 \"Lens hood for Kestrel 35 / 35S, 40.5mm\"\n\"the_camera_loft (5,530) · 99.8% positive · 4 watching\"\nlink \"the_camera_loft\" /scenarios/auction-marketplace/str/the_camera_loft\n\"Condition: Pre-owned\"\n\"Current bid:\"\n\"· Ends in 1d 13h\"\nlink \"3 bids\" /scenarios/auction-marketplace/bfl/viewbids/176623309961\n\"Ends Wed, 23 Sep 2026, 03:30 BST\"\nbutton \"Place bid\"\nbutton \"♡ Add to Watchlist\"\n\"Postage: £2.50 Royal Mail Tracked 48\"\n\"Located in: Hebden Bridge, United Kingdom\"\n\"Returns: 30 days returns. Buyer pays for return postage.\"\n\"the_camera_loft · member since 2006\"\n\"99.8% positive feedback\"\nbutton \"Save seller\"\nh2 \"About this item Item number: 176623309961\"\n\"Condition\" @Condition\n\"Pre-owned\" @Pre-owned\n\"Brand\" @Condition\n\"Kestrel\" @Pre-owned\n\"Model\" @Condition\n\"Not specified\" @Pre-owned\n\"Type\" @Condition\n\"Lens hood\" @Pre-owned\n\"Film format\" @Condition\n\"35mm\" @Pre-owned\n\"Country of origin\" @Condition\n\"Japan\" @Pre-owned\n\"Seller notes\" @Condition\n\"See description\" @Pre-owned\nh2 \"Similar sponsored items\"",
+    "removed": "link \"Sign out\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0#signout\nlink \"Daily Deals\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0#deals\nlink \"Help & Contact\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0#help\nlink \"Sell\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0#sell\nfield[search] \"Search for anything\" =\"Kestrel 35 lens hood\"\nlink \"Advanced\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&_sacat=0#advanced\n\"Hammerline › Cameras & Photography › Film Photography\"\nclickable \"Category\"\n\"Cameras & Photography\"\n\"Film Photography\"\n\"Film Cameras\"\nclickable \"Condition\"\ncheckbox \"Seller refurbished (0)\" unchecked\ncheckbox \"Pre-owned (2)\" unchecked\ncheckbox \"For parts or not working (0)\" unchecked\nclickable \"Model\" closed\nclickable \"Type\" closed\nclickable \"Price\"\nfield \"Minimum Value in £\" placeholder \"£ Min\" =\"\"\n\"to\"\nfield \"Maximum Value in £\" placeholder \"£ Max\" =\"\"\nclickable \"Submit price range\"\nclickable \"Item location\"\n\"Default\"\n\"UK only\"\n\"European Union\"\n\"Worldwide\"\nh1 \"2 results for Kestrel 35 lens hood\"\nbutton \"Save this search\"\nlink \"All listings\" current marked http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood\nlink \"Auction\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&LH_Auction=1\nlink \"Buy it now\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=Kestrel+35+lens+hood&LH_BIN=1\nbutton \"Sort: Best Match\" closed\nlink icon [locator withheld] /scenarios/auction-marketplace/itm/305533002187?hash=item47232fa1cb&_trksid=p4429486.m570.l1313\nclickable \"Watch this item\"\nlink \"Kestrel 35 — mint, boxed, with 3 lenses & hood\" same href\n\"Collector's set\"\n\"Pre-owned\"\n\"Kestrel\"\n\"EUR 1.165,00\"\n\"approx. £1,011.10\"\n\"21 bids\"\n\"1d 16h left\"\n\"(Wed 23 Sep, 06:00)\"\n\"+EUR 25,00 postage\"\n\"approx. £21.70\"\n\"from Netherlands\"\n\"88 watchers\"\nlink icon [locator withheld] /scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313\nclickable \"Watch this item\"\nlink \"Lens hood for Kestrel 35 / 35S, 40.5mm\" same href\n\"Pre-owned\"\n\"Kestrel\"\n\"3 bids\"\n\"1d 13h left\"\n\"(Wed 23 Sep, 03:30)\"\n\"+£2.50 postage\"\n\"4 watchers\"\nlink icon [locator withheld] /scenarios/auction-marketplace/sspa/click?mkevt=1&mkcid=1&[locator withheld]&pos=3\nclickable \"Watch this item\"\nlink \"Kestrel 35 rangefinder camera body + original leather case\" same href\n\"Buy it now available until the reserve is met\"\n\"Pre-owned\"\n\"Kestrel\"\n\"£96.00\"\n\"4 bids\"\n\"or Buy it now £140.00\"\n\"17h 14m left\"\n\"(Tue 22 Sep, 07:14)\"\n\"+£6.50 postage\"\n\"31 watchers\"\n\"S\"\n\"p\"\n\"o\"\n\"n\"\n\"s\"\n\"o\"\n\"r\"\n\"e\"\n\"d\"\nlink icon [locator withheld] /scenarios/auction-marketplace/sspa/click?mkevt=1&mkcid=1&[locator withheld]&pos=4\nclickable \"Watch this item\"\nlink \"Vantor V2 rangefinder with 50mm f/2 — serviced\" same href\n\"Pre-owned\"\n\"Vantor\"\n\"£219.00\"\n\"Buy it now\"\n\"Free postage\"\n\"33 watchers\"\n\"S\"\n\"p\"\n\"o\"\n\"n\"\n\"s\"\n\"o\"\n\"r\"\n\"e\"\n\"d\"\nlink \"1\" current same href as t*\nselect \"Items per page\" =\"24\" [24|48|96]\n\"Related searches: · ·\"\nlink \"kestrel 35s\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=kestrel+35s\nlink \"kestrel rangefinder\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=kestrel+rangefinder\nlink \"kestrel 35 case\" http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html?_nkw=kestrel+35+case"
+   },
+   "view": {
+    "page": "PAGE \"Lens hood for Kestrel 35 / 35S, 40.5mm | Hammerline\"\nURL ~?hash=item291f91d489&_trksid=p4429486.m570.l1313   (~ = http://127.0.0.1:51574/scenarios/auction-marketplace/itm/176623309961)\nVIEW 1280x720 at the top · 61 elements with visible words or a control, in page order · find_on_page searches the rest\nFRAMES 6 did not answer\n\nt4 \"Hi !\"\nt5 \"Sam\"\nt6 link \"Sign out\" ~?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nt7 link \"Daily Deals\" ~?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nt8 link \"Help & Contact\" ~?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nt10 link \"Sell\" ~?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\nt12 button \"Watchlist2\" closed\nt15 button \"My Hammerline\" closed\nt16 \"🔔\"\nt17 \"🛒\"\n[banner]\nt19 link \"hammerline\" /scenarios/auction-marketplace/\n[search]\nt21 field[search] \"Search for anything\" =\"\"\nt22 select \"Select a category for search\" =\"All Categories\" [All Categories|Cameras & Photography|Film Photography]\nt23 button \"Search\"\n[banner]\nt24 link \"Advanced\" ~?hash=item291f91d489&_trksid=p4429486.m570.[locator withheld]\n[main]\nt26 \"Hammerline › Cameras & Photography › Film Photography › Film Cameras\"\nt29 img \"Lens hood for Kestrel 35 / 35S, 40.5mm\"\nt31 img icon [locator withheld]\nt32 img icon [locator withheld]\nt33 img icon [locator withheld]\nt34 img icon [locator withheld]\nt36 h1 \"Lens hood for Kestrel 35 / 35S, 40.5mm\"\nt38 \"the_camera_loft (5,530) · 99.8% positive · 4 watching\"\nt39 link \"the_camera_loft\" /scenarios/auction-marketplace/str/the_camera_loft\nt40 \"Condition: Pre-owned\"\nt43 \"Current bid:\"\nt44 \"£11.00\"\nt45 \"· Ends in 1d 13h\"\nt46 link \"3 bids\" /scenarios/auction-marketplace/bfl/viewbids/176623309961\nt47 \"Ends Wed, 23 Sep 2026, 03:30 BST\"\nt49 button \"Place bid\"\nt50 button \"♡ Add to Watchlist\"\nt51 \"Postage: £2.50 Royal Mail Tracked 48\"\nt52 \"Located in: Hebden Bridge, United Kingdom\"\nt53 \"Returns: 30 days returns. Buyer pays for return postage.\"\nt55 \"the_camera_loft · member since 2006\"\nt57 \"99.8% positive feedback\"\n--- below the fold ---\nt58 button \"Save seller\"\n[region]\nt60 h2 \"About this item Item number: 176623309961\"\n- row 1\nt65 \"Condition\" @Condition\nt66 \"Pre-owned\" @Pre-owned\n- row 2\nt68 \"Brand\" @Condition\nt69 \"Kestrel\" @Pre-owned\n- row 3\nt71 \"Model\" @Condition\nt72 \"Not specified\" @Pre-owned\n- row 4\nt74 \"Type\" @Condition\nt75 \"Lens hood\" @Pre-owned\n- row 5\nt77 \"Film format\" @Condition\nt78 \"35mm\" @Pre-owned\n- row 6\nt80 \"Country of origin\" @Condition\nt81 \"Japan\" @Pre-owned\n- row 7\nt83 \"Seller notes\" @Condition\nt84 \"See description\" @Pre-owned\nt87 h2 \"Similar sponsored items\"\n[contentinfo]\nt89 \"Copyright © 2002-2026 Hammerline Marketplaces Ltd. All rights reserved.\"\nt90 \"Prices, bids and times as of Mon, 21 Sep 2026, 14:00 BST.\"\n--- on screen ---\n[region]\nt92 \"Hammerline and our 212 partners use cookies and similar technologies to run the site, measure how it is used and show you personalised ads. Choose Accept all to agree, or Manage choices to decide for yourself. You can change your mind at any time in Cookie preferences.\"\nt94 button \"Accept all\"\nt95 clickable \"Reject all\"\nt96 button \"Manage choices\"\n[page]\nt98 button \"Chat with Hal\""
+   }
+  }
+ },
+ "viewBefore": "PAGE \"Kestrel 35 lens hood for sale | Hammerline\"\nURL ~?_nkw=Kestrel+35+lens+hood&_sacat=0   (~ = http://127.0.0.1:51574/scenarios/auction-marketplace/sch/i.html)\nVIEW 1280x720 at the top · 121 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t240 \"Cookie consent\" consent\n\nt4 \"Hi !\"\nt5 \"Sam\"\nt6 link \"Sign out\" ~?_nkw=Kestrel+35+lens+hood&_sacat=0#signout\nt7 link \"Daily Deals\" ~?_nkw=Kestrel+35+lens+hood&_sacat=0#deals\nt8 link \"Help & Contact\" ~?_nkw=Kestrel+35+lens+hood&_sacat=0#help\nt10 link \"Sell\" ~?_nkw=Kestrel+35+lens+hood&_sacat=0#sell\nt12 button \"Watchlist2\" closed\nt15 button \"My Hammerline\" closed\nt16 \"🔔\"\nt17 \"🛒\"\n[banner]\nt19 link \"hammerline\" /scenarios/auction-marketplace/\n[search]\nt21 field[search] \"Search for anything\" =\"Kestrel 35 lens hood\"\nt22 select \"Select a category for search\" =\"All Categories\" [All Categories|Cameras & Photography|Film Photography]\nt23 button \"Search\"\n[banner]\nt24 link \"Advanced\" ~?_nkw=Kestrel+35+lens+hood&_sacat=0#advanced\n[main]\nt26 \"Hammerline › Cameras & Photography › Film Photography\"\n[region]\nt30 clickable \"Category\"\n- 1/3\nt32 \"Cameras & Photography\"\n- 2/3\nt33 \"Film Photography\"\n- 3/3\nt34 \"Film Cameras\"\nt36 clickable \"Condition\"\n- 1/3\nt39 checkbox \"Seller refurbished (0)\" unchecked\n- 2/3\nt43 checkbox \"Pre-owned (2)\" unchecked\n- 3/3\nt47 checkbox \"For parts or not working (0)\" unchecked\nt51 clickable \"Model\" closed\nt53 clickable \"Type\" closed\nt55 clickable \"Price\"\nt57 field \"Minimum Value in £\" placeholder \"£ Min\" =\"\"\nt58 \"to\"\nt59 field \"Maximum Value in £\" placeholder \"£ Max\" =\"\"\nt60 clickable \"Submit price range\"\nt62 clickable \"Item location\"\n- 1/4\nt64 \"Default\"\n- 2/4\nt65 \"UK only\"\n- 3/4\nt66 \"European Union\"\n- 4/4\nt67 \"Worldwide\"\n[main]\nt70 h1 \"2 results for Kestrel 35 lens hood\"\nt72 button \"Save this search\"\n[navigation]\nt74 link \"All listings\" current marked ~?_nkw=Kestrel+35+lens+hood\nt75 link \"Auction\" ~?_nkw=Kestrel+35+lens+hood&LH_Auction=1\nt76 link \"Buy it now\" ~?_nkw=Kestrel+35+lens+hood&LH_BIN=1\n[main]\nt79 button \"Sort: Best Match\" closed\n- 1/4\nt83 link icon [locator withheld] /scenarios/auction-marketplace/itm/305533002187?hash=item47232fa1cb&_trksid=p4429486.m570.l1313\n[page]\nt86 clickable \"Watch this item\"\n[main]\n- 1/4\nt90 link \"Kestrel 35 — mint, boxed, with 3 lenses & hood\" same href\nt93 \"Collector's set\"\nt95 \"Pre-owned\"\nt96 \"Kestrel\"\nt98 \"EUR 1.165,00\"\nt99 \"approx. £1,011.10\"\nt101 \"21 bids\"\nt104 \"1d 16h left\"\nt105 \"(Wed 23 Sep, 06:00)\"\nt107 \"+EUR 25,00 postage\"\nt108 \"approx. £21.70\"\nt110 \"from Netherlands\"\nt111 \"88 watchers\"\n- 2/4\nt114 link icon [locator withheld] /scenarios/auction-marketplace/itm/176623309961?hash=item291f91d489&_trksid=p4429486.m570.l1313\n[page]\nt117 clickable \"Watch this item\"\n[main]\n- 2/4\nt121 link \"Lens hood for Kestrel 35 / 35S, 40.5mm\" same href\nt126 \"Pre-owned\"\nt127 \"Kestrel\"\nt129 \"£11.00\"\nt132 \"3 bids\"\nt135 \"1d 13h left\"\nt136 \"(Wed 23 Sep, 03:30)\"\nt138 \"+£2.50 postage\"\nt142 \"4 watchers\"\n--- below the fold ---\n- 3/4\nt145 link icon [locator withheld] /scenarios/auction-marketplace/sspa/click?mkevt=1&mkcid=1&[locator withheld]&pos=3\n[page]\nt148 clickable \"Watch this item\"\n[main]\n- 3/4\nt152 link \"Kestrel 35 rangefinder camera body + original leather case\" same href\nt155 \"Buy it now available until the reserve is met\"\nt157 \"Pre-owned\"\nt158 \"Kestrel\"\nt160 \"£96.00\"\nt163 \"4 bids\"\nt164 \"or Buy it now £140.00\"\nt166 \"17h 14m left\"\nt167 \"(Tue 22 Sep, 07:14)\"\nt169 \"+£6.50 postage\"\nt173 \"31 watchers\"\nt176 \"S\"\nt177 \"p\"\nt178 \"o\"\nt179 \"n\"\nt180 \"s\"\nt181 \"o\"\nt182 \"r\"\nt183 \"e\"\nt184 \"d\"\n- 4/4\nt187 link icon [locator withheld] /scenarios/auction-marketplace/sspa/click?mkevt=1&mkcid=1&[locator withheld]&pos=4\n[page]\nt190 clickable \"Watch this item\"\n[main]\n- 4/4\nt194 link \"Vantor V2 rangefinder with 50mm f/2 — serviced\" same href\nt199 \"Pre-owned\"\nt200 \"Vantor\"\nt202 \"£219.00\"\nt205 \"Buy it now\"\nt211 \"Free postage\"\nt215 \"33 watchers\"\nt218 \"S\"\nt219 \"p\"\nt220 \"o\"\nt221 \"n\"\nt222 \"s\"\nt223 \"o\"\nt224 \"r\"\nt225 \"e\"\nt226 \"d\"\n[navigation]\nt229 link \"1\" current same href as t74\nt232 select \"Items per page\" =\"24\" [24|48|96]\n[main]\nt233 \"Related searches: · ·\"\nt234 link \"kestrel 35s\" ~?_nkw=kestrel+35s\nt235 link \"kestrel rangefinder\" ~?_nkw=kestrel+rangefinder\nt236 link \"kestrel 35 case\" ~?_nkw=kestrel+35+case\n[contentinfo]\nt238 \"Copyright © 2002-2026 Hammerline Marketplaces Ltd. All rights reserved.\"\nt239 \"Prices, bids and times as of Mon, 21 Sep 2026, 14:00 BST.\"\n--- on screen ---\n[region]\nt241 \"Hammerline and our 212 partners use cookies and similar technologies to run the site, measure how it is used and show you personalised ads. Choose Accept all to agree, or Manage choices to decide for yourself. You can change your mind at any time in Cookie preferences.\"\nt243 button \"Accept all\"\nt244 clickable \"Reject all\"\nt245 button \"Manage choices\"\n[page]\nt247 button \"Chat with Hal\""
+}

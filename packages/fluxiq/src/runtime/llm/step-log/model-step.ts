@@ -33,6 +33,8 @@ export type AutomationStudioLlmStepLogModelCall = {
   requestId?: string | undefined;
   stage?: string | undefined;
   iteration?: number | undefined;
+  /** A judge's cache path: whether it continued its attempt's decider conversation, and why not where it did not (t967). */
+  continuation?: { used: boolean; reason: string } | undefined;
   /** What a reply's usage cost, for an adapter whose own parse does not price it. */
   price?: (usage: { inputTokens: number; outputTokens: number; cacheHitInputTokens: number }) => number;
 };
@@ -95,7 +97,9 @@ export function automationStudioLlmStepLogModelStep(call: AutomationStudioLlmSte
         role: scope?.role ?? null, briefId: scope?.briefId ?? null,
         status: failure ? "error" : "ok", httpStatus: httpStatus ?? null,
         usage: usage ? { inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, cacheHitInputTokens: usage.cacheHitInputTokens ?? null, cacheMissInputTokens: usage.cacheMissInputTokens ?? null, cacheWriteInputTokens: usage.cacheWriteInputTokens ?? null } : null,
-        costUsd: costUsd ?? null, finishReason: finishReason ?? null, error: failure ? { code: failure.code } : null, summary
+        costUsd: costUsd ?? null, finishReason: finishReason ?? null, error: failure ? { code: failure.code } : null, summary,
+        // A judge's cache path, where its adapter said one (t967): the campaign reads why a judge did not continue its decider.
+        ...(call.continuation ? { continuation: call.continuation } : {})
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: undefined, summary, costUsd, role: scope?.role, briefId: scope?.briefId });
     } catch {

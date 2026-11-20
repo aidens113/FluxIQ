@@ -255,8 +255,15 @@ describe("an attempt stuck in a loop", () => {
   /** Reads the wrong list again and again, until `unstuck` says the request shows what gets it out; answers the first ask to decide with `decision`, where given. */
   const stuckScript = (unstuck: (request: AutomationStudioLlmTaskRequest) => boolean, decision?: JsonObject) => {
     let decided = false;
+    let changed = false;
     const decide = (request: AutomationStudioLlmTaskRequest) => {
       if (decision && !decided && asksDecision(request)) {
+        // Asking the person is a last resort (t969): offered only after a changed approach and a climb, so the model changes approach first.
+        if (!/"offered":\[[^\]]*"ask_person"/u.test(JSON.stringify(request.context.evidenceLoop?.evidence))) {
+          if (changed) return runNode("read.stuck", READ_LOANS, { from: "the wrong list" }, [], {});
+          changed = true;
+          return toolCall("decide.0", "core.loop_decision", { decision: "change_approach", approach: "Look for the list that holds the loans." });
+        }
         decided = true;
         return toolCall("decide.1", "core.loop_decision", decision);
       }
@@ -269,7 +276,7 @@ describe("an attempt stuck in a loop", () => {
   const failing = (call: { value: JsonObject }): AutomationStudioLlmEvidenceToolExecutionResult | undefined => (call.value.parameters as JsonObject | undefined)?.from === "the wrong list" ? { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "target_not_found" }, effectApplied: false, resultCode: "web.action.rejected.target_not_found", failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "dispatch" } } : undefined;
   const ANSWER = "Try it once more from the list.";
   const QUESTION = "Which list holds the loans: the wrong one keeps failing?";
-  const ASK: JsonObject = { decision: "ask_person", question: QUESTION };
+  const ASK: JsonObject = { decision: "ask_person", question: QUESTION, why: "The list that holds the loans cannot be found from the page, and only the person can say which list they mean." };
   const told = (request: AutomationStudioLlmTaskRequest): string => JSON.stringify(request.context);
 
   // t962: told it is repeating itself, the model decides; its ask_person posts its own question, and the attempt never waits (R7).
@@ -297,7 +304,7 @@ describe("an attempt stuck in a loop", () => {
     const kept = await keptAttempt(service, projectId, flowId);
     expect(kept?.attempt.status).toBe("working");
     expect(kept?.attempt).not.toHaveProperty("waitingFor");
-    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["ask_person"]);
+    expect(kept?.tried.decisions?.map((each) => each.decision)).toEqual(["change_approach", "ask_person"]);
     await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
     steer.release();
     const attempt = await generating;

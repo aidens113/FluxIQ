@@ -39,6 +39,7 @@ export type AutomationStudioLlmLoopAudience = keyof typeof DO_INSTEAD;
 function repeated(finding: AutomationStudioLlmLoopFinding): string {
   const unchanged = finding.unchanged.map((word) => UNCHANGED_WORDS[word]).join(", ");
   const calls = finding.toolIds.join(", ");
+  if (finding.pattern === "near_repeat" && finding.succeeded) return `You have made the same call to ${calls} ${finding.repeats} times, and it went through every time with the same result: ${unchanged}. Doing it again will bring the same result.`;
   if (finding.pattern === "near_repeat") return `You have made the same call to ${calls} on the same page ${finding.repeats} times, changing at most its wording, and it came to nothing: ${unchanged}.`;
   if (finding.pattern === "cycle") return `You have been going round the same calls (${calls}) ${finding.repeats} times in the same order, and the last round brought nothing new: ${unchanged}.`;
   if (finding.pattern === "no_progress") return `Your last ${finding.repeats} calls (${calls}) each ran and brought nothing new: ${unchanged}.`;
@@ -78,6 +79,7 @@ export function automationStudioLlmLoopRefusalInstruction(finding: { pattern: Au
 /** The chat step for a steer: a person's words, with no code in them. */
 export function automationStudioLlmLoopChatWords(finding: AutomationStudioLlmLoopFinding): { title: string; text: string } {
   const title = "Noticed it was repeating itself";
+  if (finding.pattern === "near_repeat" && finding.succeeded) return { title, text: `FluxIQ did the same thing ${finding.repeats} times and got the same result each time, so it is deciding what to do next.` };
   if (finding.pattern === "near_repeat") return { title, text: `FluxIQ tried the same thing ${finding.repeats} times and nothing changed, so it is trying something else.` };
   if (finding.pattern === "cycle") return { title, text: "FluxIQ kept going back and forth between the same steps with nothing new to show for it, so it is trying something else." };
   if (finding.pattern === "no_progress") return { title, text: `The last ${finding.repeats} steps found nothing new, so FluxIQ is changing what it does next.` };
