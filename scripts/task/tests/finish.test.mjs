@@ -87,7 +87,7 @@ test("a failing contract test refuses the merge, naming the file and how to re-p
   );
 
   assert.equal(await git(root, "rev-parse", "dev"), devBefore, "dev is untouched");
-  assert.equal(await git(root, "rev-parse", "--abbrev-ref", "HEAD"), task.branch);
+  assert.equal(await git(root, "rev-parse", "--abbrev-ref", "HEAD"), "dev", "the main checkout is not left on the task branch");
   assert.equal(checked, false, "pnpm check does not run after a contract failure");
 });
 
@@ -116,4 +116,77 @@ test("a dry run reports the contract tests it would run and runs nothing", async
   });
   assert.equal(calls.length, 0);
   assert.equal(await git(root, "rev-parse", "dev"), devBefore);
+});
+
+// Core's own worktree for the task, as `startTask` with --worktree would leave it.
+async function withTaskWorktree(root, task, t) {
+  const tree = await mkdtemp(path.join(os.tmpdir(), "core-finish-tree-"));
+  t.after(() => rm(tree, { recursive: true, force: true }));
+  await git(root, "checkout", "--quiet", "dev");
+  await git(root, "worktree", "add", "--quiet", path.join(tree, "wt"), task.branch);
+  return path.join(tree, "wt");
+}
+
+test("a task branch held by its own worktree is integrated and gated there, and the main checkout stays on dev", async (t) => {
+  const { root, task } = await repositoryWithTask();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await git(root, "checkout", "--quiet", "dev");
+  await writeFile(path.join(root, "devfile"), "dev moved");
+  await git(root, "add", ".");
+  await git(root, "commit", "--quiet", "--no-gpg-sign", "-m", "dev moves");
+  const tree = await withTaskWorktree(root, task, t);
+  const { runner, calls } = contractRunner();
+
+  const result = await finishTask({ repositoryRoot: root, id: task.id, note: quiet, check: passingCheck, contractTests: runner });
+
+  assert.equal(result.applied, true);
+  assert.equal(path.resolve(calls[0].packageRoot), path.resolve(tree, "packages/fluxiq"), "contract tests ran in the task worktree");
+  assert.equal(await git(root, "rev-parse", "--abbrev-ref", "HEAD"), "dev");
+  assert.match(await git(root, "log", "-1", "--format=%s", "dev"), /^Merge task /u);
+  assert.equal(await git(tree, "rev-parse", "--abbrev-ref", "HEAD"), "HEAD", "the task worktree is detached");
+  assert.equal(await git(root, "branch", "--list", task.branch), "", "the branch is deleted");
+});
+
+test("a contract failure with a task worktree leaves the main checkout untouched on dev", async (t) => {
+  const { root, task } = await repositoryWithTask();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const tree = await withTaskWorktree(root, task, t);
+  const devBefore = await git(root, "rev-parse", "dev");
+  const { runner } = contractRunner([CONTRACT_TESTS[0].file]);
+
+  await assert.rejects(finishTask({ repositoryRoot: root, id: task.id, note: quiet, check: passingCheck, contractTests: runner }), /Contract test/u);
+
+  assert.equal(await git(root, "rev-parse", "--abbrev-ref", "HEAD"), "dev");
+  assert.equal(await git(root, "rev-parse", "dev"), devBefore);
+  assert.equal(await git(tree, "rev-parse", "--abbrev-ref", "HEAD"), task.branch);
+});
+
+test("a pushed branch whose upstream lacks the integration merge is still deleted once dev contains it", async (t) => {
+  const { root, task } = await repositoryWithTask();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const remote = await mkdtemp(path.join(os.tmpdir(), "core-finish-remote-"));
+  t.after(() => rm(remote, { recursive: true, force: true }));
+  await git(remote, "init", "--bare", "--quiet");
+  await git(root, "remote", "add", "origin", remote);
+  await git(root, "push", "--quiet", "-u", "origin", task.branch);
+  await git(root, "checkout", "--quiet", "dev");
+  await writeFile(path.join(root, "devfile"), "dev moved");
+  await git(root, "add", ".");
+  await git(root, "commit", "--quiet", "--no-gpg-sign", "-m", "dev moves");
+
+  await finishTask({ repositoryRoot: root, id: task.id, note: quiet, check: passingCheck, contractTests: contractRunner().runner });
+
+  assert.equal(await git(root, "branch", "--list", task.branch), "");
+});
+
+test("a branch dev does not contain is refused, not force-deleted", async () => {
+  const { deleteMergedBranch } = await import("../delete-merged-branch.mjs");
+  const { root, task } = await repositoryWithTask();
+  try {
+    await assert.rejects(deleteMergedBranch({ repositoryRoot: root, branch: task.branch, integrationBranch: "dev" }), /does not contain all of its commits/u);
+    await git(root, "checkout", "--quiet", "dev");
+    assert.equal(await git(root, "branch", "--list", task.branch), task.branch);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
