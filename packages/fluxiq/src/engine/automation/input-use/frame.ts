@@ -12,6 +12,7 @@ import { AutomationStudioInputUseCapture as Capture } from "./capture.ts";
 import { AutomationStudioInputUseLocationRead as Location } from "./location-read.ts";
 import { AutomationStudioInputUseOperation as Operation } from "./operation.ts";
 import { AutomationStudioInputUseOwnedCapture as Owned } from "./owned-capture/index.ts";
+import { AutomationStudioInputUseNodeController as Nodes, type AutomationStudioInputUseNodeObservation, type AutomationStudioInputUseNodeRequest, type AutomationStudioInputUseNodeValues } from "./node/index.ts";
 
 /** One private preparation and actual values initialization; never a whole-execution receipt. */
 export class AutomationStudioGraphInputUseFrame {
@@ -31,13 +32,18 @@ export class AutomationStudioGraphInputUseFrame {
   #record: (trace: object, observation: AutomationStudioInputUseObservation) => void;
   #boundary: AutomationStudioInputUseChildCapture | undefined;
   #records: Pick<AutomationStudioRecordTraceSummary, "captured"> | undefined;
+  #recordNodes: (trace: object, observations: readonly AutomationStudioInputUseNodeObservation[]) => void;
+  readonly #nodes: Nodes;
 
   constructor(authority: AutomationStudioInputUseAuthority | undefined, signal: AbortSignal | undefined,
     record: (trace: object, observation: AutomationStudioInputUseObservation) => void,
+    recordNodes: (trace: object, observations: readonly AutomationStudioInputUseNodeObservation[]) => void,
     boundary?: AutomationStudioInputUseChildCapture, refusal?: AutomationStudioInputUseUnknown) {
     this.#authority = authority;
     this.#signal = signal;
     this.#record = record;
+    this.#recordNodes = recordNodes;
+    this.#nodes = new Nodes(authority, this.lifetime.signal, original => this.captured(original));
     this.#boundary = boundary;
     this.#code = refusal;
   }
@@ -93,6 +99,12 @@ export class AutomationStudioGraphInputUseFrame {
     return Owned.inspect(this.#closed ? undefined : this.#records, original);
   }
 
+  /** One actual node callback: provable only while this frame's own entry is still sealable (t905 C1). */
+  node<T>(request: AutomationStudioInputUseNodeRequest, call: (values: AutomationStudioInputUseNodeValues) => T): T | Promise<Awaited<T>> {
+    const entry = this.canFork && this.#location && this.#reference ? { location: this.#location, reference: this.#reference } : undefined;
+    return this.#nodes.invoke(entry, request, call);
+  }
+
   /** This is the initializer the graph actually uses, not a reference attached beside it. */
   initialize(actualInputs: JsonObject): Record<string, JsonValue> {
     if (this.#lease && !this.#code && actualInputs === this.#inputs && Capture.same(actualInputs, this.#template)) this.#consumed = true;
@@ -140,6 +152,7 @@ export class AutomationStudioGraphInputUseFrame {
     this.#boundary = undefined;
     this.#authority = undefined;
     this.#records = undefined;
+    this.#nodes.close();
     if (lease) this.dispose(lease);
     this.publish();
     this.#traces = [];
@@ -163,6 +176,10 @@ export class AutomationStudioGraphInputUseFrame {
     const observation: AutomationStudioInputUseObservation = !this.#code && this.#consumed && this.#reference && this.#location
       ? Object.freeze({ status: "sealed", coverage: "graph_entry_inputs", reference: this.#reference, location: this.#location })
       : Object.freeze({ status: "unknown", code: this.#code ?? "unconsumed" });
-    for (const trace of this.#traces) this.#record(trace, observation);
+    const nodes = this.#nodes.observations(observation.status === "sealed");
+    for (const trace of this.#traces) {
+      this.#record(trace, observation);
+      this.#recordNodes(trace, nodes);
+    }
   }
 }

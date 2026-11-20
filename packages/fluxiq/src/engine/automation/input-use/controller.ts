@@ -12,6 +12,9 @@ import { AutomationStudioGraphInputUseFrame } from "./frame.ts";
 import { AutomationStudioInputUseCapture as Capture } from "./capture.ts";
 import { AutomationStudioInputUseLocationRead as Location } from "./location-read.ts";
 import { AutomationStudioInputUseOperation as Operation } from "./operation.ts";
+import type { AutomationStudioInputUseNodeObservation, AutomationStudioInputUseNodeRequest, AutomationStudioInputUseNodeValues } from "./node/index.ts";
+
+type RecordNodes = (trace: object, observations: readonly AutomationStudioInputUseNodeObservation[]) => void;
 
 /** Session-owned engine control, not the capability exposed through graph options. */
 export class AutomationStudioGraphInputUseController {
@@ -20,16 +23,19 @@ export class AutomationStudioGraphInputUseController {
   #closed = false;
   #authority: AutomationStudioInputUseAuthority | undefined;
   #record: (trace: object, observation: AutomationStudioInputUseObservation) => void;
+  #recordNodes: RecordNodes;
   #createChild: (authority: AutomationStudioInputUseAuthority | undefined, boundary: AutomationStudioInputUseChildCapture | undefined, refusal?: AutomationStudioInputUseUnknown) => AutomationStudioGraphInputUsePort;
   #boundary: AutomationStudioInputUseChildCapture | undefined;
   #refusal: AutomationStudioInputUseUnknown | undefined;
 
   constructor(authority: AutomationStudioInputUseAuthority | undefined,
     record: (trace: object, observation: AutomationStudioInputUseObservation) => void,
+    recordNodes: RecordNodes,
     createChild: (authority: AutomationStudioInputUseAuthority | undefined, boundary: AutomationStudioInputUseChildCapture | undefined, refusal?: AutomationStudioInputUseUnknown) => AutomationStudioGraphInputUsePort,
     boundary?: AutomationStudioInputUseChildCapture, refusal?: AutomationStudioInputUseUnknown) {
     this.#authority = authority;
     this.#record = record;
+    this.#recordNodes = recordNodes;
     this.#createChild = createChild;
     this.#boundary = boundary;
     this.#refusal = refusal;
@@ -42,7 +48,7 @@ export class AutomationStudioGraphInputUseController {
       this.#frame?.close();
     }
     this.#used = true;
-    const frame = this.#frame = new AutomationStudioGraphInputUseFrame(this.#authority, options.signal, this.#record, this.#boundary, refusal);
+    const frame = this.#frame = new AutomationStudioGraphInputUseFrame(this.#authority, options.signal, this.#record, this.#recordNodes, this.#boundary, refusal);
     await frame.prepare(graphFlowId, options, suppliedInputs, activeSecrets, seeded);
     return frame;
   }
@@ -75,6 +81,11 @@ export class AutomationStudioGraphInputUseController {
       Operation.propagateCancellation(error, signal);
       return this.#createChild(undefined, captured, this.#closed ? "session_closed" : "fork_unverified");
     }
+  }
+
+  /** The current frame's node callback; a closed or unentered controller runs it on its own pair with no evidence. */
+  node<T>(request: AutomationStudioInputUseNodeRequest, call: (values: AutomationStudioInputUseNodeValues) => T): T | Promise<Awaited<T>> {
+    return this.#frame && !this.#closed ? this.#frame.node(request, call) : call(request.values);
   }
 
   recordFailure(trace: object): void {

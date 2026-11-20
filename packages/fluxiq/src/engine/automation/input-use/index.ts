@@ -12,3 +12,5 @@ export { AutomationStudioGraphInputUseSession } from "./session.ts";
 export type { AutomationStudioGraphInputUseFrame } from "./frame.ts";
 export { AutomationStudioInputUseCapture } from "./capture.ts";
 export { AutomationStudioGraphInputUseIntegration } from "./integration.ts";
+export type { AutomationStudioInputUseNodeConsumer, AutomationStudioInputUseNodeValues, AutomationStudioInputUseNodeRequest, AutomationStudioInputUseNodeCapture, AutomationStudioInputUseNodeLease, AutomationStudioInputUseNodeObservation } from "./node/index.ts";
+export { AutomationStudioInputUseNodeIntegration } from "./node/index.ts";

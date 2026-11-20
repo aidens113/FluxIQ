@@ -62,6 +62,27 @@ produced. Late cleanup failure cannot create an unhandled rejection or replace t
 settled execution. With no input-use handle, ordinary execution keeps its timing and
 input behavior.
 
+Node invocation (`input-use/node`) records one private event per actual callback an
+attempt makes: builtin `execute`, the native callback, the composite callback and the
+Call Subflow helper are each their own event, and each retry is captured again after
+its own target refresh. Just before the chosen callback, the engine snapshots the
+exact input/parameter pair it would pass. It asks the authority's optional `node`
+method for a lease over that pair, and passes the lease's exactly equal copy into the
+real callback, including as the native/composite node's `parameterValues`. Only that
+invocation seals `node_invocation_values`, and only if the lease is still current
+afterwards and the frame's own graph entry is still sealed when the frame publishes.
+A missing `node` method, active secrets, rows the run captured (checked by identity on
+the original objects), unsupported values or a mismatched copy leave the event unknown.
+The callback then runs synchronously on the original pair, with no copy and no added
+await. Missing bindings, pinned-version refusals and non-executable nodes make no
+event, and a cancellation during the proof never reaches the callback. The session's
+read-only `readNodes(trace)` returns the closed events, which are labels plus
+component evidence. They cover neither the live variables/iteration/clock/random/
+expectation ports, native implementation entry after declared-port filtering, emitted
+effects nor child entry (t905 C2/C3), and they make no whole-execution claim. The
+service authority does not implement `node` yet, so every production node event is
+`authority_unavailable`.
+
 The service's producer adapter, `framework/automation-service/service/input-basis/execution`,
 is the only authority wired to it. A run opts in by opening one session through the
 typed seam `AutomationStudioInputUseExecutions.of(service)`, which reads only the
