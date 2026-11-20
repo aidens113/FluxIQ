@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GlobalTopbar, LoginPanel, setupPasswordError } from "../AuthShell";
+import { GlobalTopbar, LoginPanel, setupPasswordError, signInFailureMessage } from "../AuthShell";
 
 describe("FluxIQ login and first setup", () => {
   it("restores expired sessions without replacing the current workspace", () => {
@@ -229,5 +229,45 @@ describe("first setup stays on the setup form", () => {
     });
     expect(fetcher.mock.calls[1]).toEqual(["/api/auth/logout", { method: "POST" }]);
     expect(loginRenderer!.root.findAllByProps({ name: "username" })).toHaveLength(1);
+  });
+});
+
+describe("sign-in says what to do and what went wrong", () => {
+  const rendered = () => JSON.stringify(loginRenderer!.toJSON());
+
+  it("tells a first-time person to open the setup link, and an existing owner to sign in", async () => {
+    await mountLogin("/");
+    expect(rendered()).toContain("First time here? Open the setup link FluxIQ printed");
+    expect(rendered()).toContain("Already set up? Sign in");
+  });
+
+  it("separates the refusal from the tries that remain", () => {
+    expect(signInFailureMessage("Invalid username or credentials", 3)).toBe("Invalid username or credentials. 3 tries are left before sign-in locks for a while.");
+    expect(signInFailureMessage("Invalid username or credentials.", 1)).toBe("Invalid username or credentials. 1 try is left before sign-in locks for a while.");
+    expect(signInFailureMessage(undefined, 0)).toBe("Check your username and password. No tries are left before sign-in locks for a while.");
+    expect(signInFailureMessage("Nope", undefined)).toBe("Nope.");
+  });
+
+  it("shows the separated refusal after a wrong password", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ error: "Invalid username or credentials", attemptsRemaining: 2 }, 401));
+    await mountLogin("/", fetcher);
+    await submitLogin();
+    expect(rendered()).toContain("Invalid username or credentials. 2 tries are left");
+  });
+
+  it("says a browser is waiting for approval when the extension opened the page for it", async () => {
+    await mountLogin("/?pairing=1");
+    expect(rendered()).toContain("Sign in to approve the browser that is asking to connect.");
+  });
+
+  it("does not mention a waiting browser on an ordinary visit", async () => {
+    await mountLogin("/projects");
+    expect(rendered()).not.toContain("asking to connect");
+  });
+
+  it("returns to the requested page after sign-in", async () => {
+    const { location } = await mountLogin("/settings/saved-logins?x=1");
+    await submitLogin();
+    expect(location.href).toBe("/settings/saved-logins?x=1");
   });
 });

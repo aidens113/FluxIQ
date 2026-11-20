@@ -235,6 +235,30 @@ describe("accounts and activity reads, two tenants", () => {
     expect((JSON.parse(text) as { payload: { entries: unknown[] } }).payload.entries.length).toBeGreaterThan(0);
   });
 
+  it("lists a person suspended in the caller's workspace as turned off, with their role, and lists them active again once turned back on", async () => {
+    const { adminA, adminB, shared } = twoTenants.people;
+    type View = { readOnly: boolean; canRemove: boolean; members: Array<{ userId: string; state: string; role: string }> };
+    const listAs = async (who: Person) => (await (await readMembers(asPerson(who, `${ORIGIN}/api/accounts/members`))).json() as { payload: View }).payload;
+    expect((await changeAs(adminA, { action: "turn-off", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    const suspended = await listAs(adminA);
+    // An organisation's members are administered here, one membership at a time.
+    expect(suspended).toMatchObject({ readOnly: false, canRemove: false });
+    expect(suspended.members.find((row) => row.userId === shared.userId)).toMatchObject({ state: "turned-off", role: "member" });
+    // The other workspace still lists them active, as its administrator.
+    expect((await listAs(adminB)).members.find((row) => row.userId === shared.userId)).toMatchObject({ state: "active", role: "administrator" });
+    // The row's own action resumes the membership (resumeMember), with the policies it kept.
+    expect((await changeAs(adminA, { action: "turn-on", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    expect(await membershipOf(TENANT_A, shared.userId)).toMatchObject({ status: "active", policies: ["FluxIQUserAccess"] });
+    expect((await listAs(adminA)).members.find((row) => row.userId === shared.userId)).toMatchObject({ state: "active", role: "member" });
+  });
+
+  it("does not list a membership removed from the caller's workspace", async () => {
+    const { adminA, shared } = twoTenants.people;
+    expect((await changeAs(adminA, { action: "remove", userId: shared.userId, proof: PROOF })).status).toBe(200);
+    const text = await (await readMembers(asPerson(adminA, `${ORIGIN}/api/accounts/members`))).text();
+    expect(text).not.toContain(shared.userId);
+  });
+
   it("refuses a member the people list and the activity by their own workspace's policies", async () => {
     const { shared } = twoTenants.people;
     expect((await readMembers(asPerson(shared, `${ORIGIN}/api/accounts/members`))).status).toBe(403);

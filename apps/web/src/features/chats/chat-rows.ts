@@ -1,5 +1,18 @@
 import type { Conversation } from "../automation-studio/conversation/thread";
 import { chatHref } from "./chat-href";
+import { PANEL_PROJECT } from "./parse-panel-threads";
+
+/** What a chat is called when nobody named it and the assistant has not: the day it was last used. */
+function untitledName(chat: Conversation): string {
+  const day = new Date(chat.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return chat.projectId === PANEL_PROJECT ? `Assistant chat, ${day}` : `Chat from ${day}`;
+}
+
+/** The assistant's own chats belong to no project; a project the person cannot see is not named by its id. */
+function projectLabel(chat: Conversation, names: ReadonlyMap<string, string>): string {
+  if (chat.projectId === PANEL_PROJECT) return "Assistant";
+  return names.get(chat.projectId) ?? "Another project";
+}
 
 export type ChatRow = {
   conversationId: string;
@@ -19,9 +32,9 @@ export function chatRows(conversations: readonly Conversation[], projectNames: R
   return conversations
     .map((chat): ChatRow => ({
       conversationId: chat.conversationId,
-      title: chat.title?.trim() || "Untitled chat",
+      title: chat.title?.trim() || untitledName(chat),
       projectId: chat.projectId,
-      projectName: projectNames.get(chat.projectId) ?? chat.projectId,
+      projectName: projectLabel(chat, projectNames),
       status: chat.status,
       turns: chat.turnCount,
       waiting: chat.pendingAskCount,

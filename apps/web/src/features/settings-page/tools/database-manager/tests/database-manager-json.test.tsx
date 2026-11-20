@@ -254,7 +254,7 @@ it.each(["store", "database"])("retires expansion across a %s query change", asy
   const captured = currentToggle();
   await act(async () => {
     if (target === "database") button("domain-b").props.onClick();
-    else renderer!.root.findAllByType("button").find((node) => node.props.className?.includes("db-table-node") && label(node).includes("public.other"))!.props.onClick();
+    else renderer!.root.findAllByType("button").find((node) => node.props.className?.includes("db-table-node") && label(node).includes("Other"))!.props.onClick();
   });
   expect(raw()).toBeUndefined();
   await inspect();

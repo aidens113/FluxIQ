@@ -18,7 +18,7 @@ export function AssistantModelSection(props: { data: SettingsData }) {
     setStatus(failure || "Saved.");
   }
   return (
-    <section aria-labelledby="settings-assistant">
+    <section id="assistant-model" aria-labelledby="settings-assistant">
       <h2 id="settings-assistant">The assistant</h2>
       {choice.workspace && keyStatus === "not-chosen" ? (
         <p className="settings-assistant-row">No key pays for your messages to the assistant yet. An owner or administrator of this workspace chooses one in Settings, from a key its holder has offered to the workspace.</p>
@@ -46,7 +46,7 @@ export function AssistantModelSection(props: { data: SettingsData }) {
         </div>
       )}
       <p>The key says who you pay and whose account the assistant uses. The model is the AI that answers; the usual model is a good choice unless you want a cheaper or a stronger one. Your Flows pick their own model and are not changed here.</p>
-      <p role="status">{status}</p>
+      <p role="status" className="settings-saved">{status}</p>
     </section>
   );
 }

@@ -1,9 +1,9 @@
 import type { IamAuditOutcome, IamAuditRecord } from "fluxiq/platform";
-import type { ActivityPage } from "../../../../../features/security/activity/model";
+import type { ActivityEntry, ActivityPage } from "../../../../../features/security/activity/model";
 import { belongsToWorkspace } from "../belongs-to-workspace";
 import { formatCursor } from "../format-cursor";
 import { parseCursor } from "../parse-cursor";
-import { shapeActivityEntry, type JoinedActivityEntry } from "../shape-activity-entry";
+import { shapeActivityEntry } from "../shape-activity-entry";
 import type { ActivityCursor, ActivitySource, AuditReader } from "../types";
 import type { AuditActivityAnswer } from "./types";
 
@@ -27,7 +27,7 @@ export async function assembleAuditActivity(activity: () => Promise<ActivitySour
     if (name === undefined) names.set(userId, (name = source.nameOf(userId)));
     return name;
   };
-  const entries: JoinedActivityEntry[] = [];
+  const entries: ActivityEntry[] = [];
   // Outcome rows read before their decision row (newest first puts them first), by request id and action.
   const waiting = new Map<string, IamAuditOutcome>();
   let stoppedAt: number | null = null;
@@ -73,7 +73,7 @@ async function nextBatch(audit: AuditReader, position: ActivityCursor | null, in
   return { records, full: records.length === BATCH };
 }
 
-function page(entries: JoinedActivityEntry[], next: ActivityCursor | null): AuditActivityAnswer {
+function page(entries: ActivityEntry[], next: ActivityCursor | null): AuditActivityAnswer {
   const payload: ActivityPage = { entries, next: next === null ? null : formatCursor(next) };
   return { status: 200, body: { ok: true, payload } };
 }

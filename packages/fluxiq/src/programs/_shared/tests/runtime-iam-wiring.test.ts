@@ -15,7 +15,8 @@ const viewer = actor("viewer", "viewer", VIEWER_PERMISSIONS);
 // resolvers (which read storage) are never reached.
 const OWN = { kind: "user", userId: "alice" } as const;
 const OTHERS = { kind: "user", userId: "bob" } as const;
-const SET_PIN = { action: "iam:SetPin", permission: "programs.read" } as const;
+// A person's own sign-in security: allowed on their own user by a user-level policy, and left alone by the service guardrail.
+const OWN_AUTHENTICATOR = { action: "iam:BeginTotp", permission: "programs.read" } as const;
 const EXPORT = { action: "studio:ExportProject", permission: "programs.read" } as const;
 
 afterEach(() => {
@@ -39,8 +40,8 @@ describe("createGlobalProgramRuntime decides by profile", () => {
     const audit = new MemoryIamAuditSink();
     const runtime = createGlobalProgramRuntime(undefined, { iam: { profile: "service", source: fixedPolicySource([IAM_USER_ACCESS]), audit } });
     try {
-      await expect(runtime.api.authorize({ actor: alice, ...SET_PIN, resources: OWN })).resolves.toMatchObject({ allowed: true });
-      await expect(runtime.api.authorize({ actor: alice, ...SET_PIN, resources: OTHERS })).resolves.toMatchObject({ allowed: false });
+      await expect(runtime.api.authorize({ actor: alice, ...OWN_AUTHENTICATOR, resources: OWN })).resolves.toMatchObject({ allowed: true });
+      await expect(runtime.api.authorize({ actor: alice, ...OWN_AUTHENTICATOR, resources: OTHERS })).resolves.toMatchObject({ allowed: false });
       await audit.flush();
       const decisions = audit.records.filter((record) => record.category !== "iam-change");
       expect(decisions.map((record) => record.decision)).toEqual(["allow", "deny"]);
@@ -54,7 +55,7 @@ describe("createGlobalProgramRuntime decides by profile", () => {
   it("refuses everything under service with no source", async () => {
     const runtime = createGlobalProgramRuntime(undefined, { iam: { profile: "service" } });
     try {
-      await expect(runtime.api.authorize({ actor: alice, ...SET_PIN, resources: OWN })).resolves.toMatchObject({ allowed: false });
+      await expect(runtime.api.authorize({ actor: alice, ...OWN_AUTHENTICATOR, resources: OWN })).resolves.toMatchObject({ allowed: false });
     } finally {
       runtime.detach();
     }
@@ -88,7 +89,7 @@ describe("FLUXIQ_PROFILE selects the profile", () => {
     expect(await endedSessionsAfterAnHour()).toBe(1);
     const runtime = createGlobalProgramRuntime();
     try {
-      await expect(runtime.api.authorize({ actor: alice, ...SET_PIN, resources: OWN })).resolves.toMatchObject({ allowed: false });
+      await expect(runtime.api.authorize({ actor: alice, ...OWN_AUTHENTICATOR, resources: OWN })).resolves.toMatchObject({ allowed: false });
     } finally {
       runtime.detach();
     }

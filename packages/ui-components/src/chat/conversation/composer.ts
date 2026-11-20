@@ -62,7 +62,7 @@ export type Composer = {
 
 const PLACEHOLDER = "Message FluxIQ";
 const OFFLINE_PLACEHOLDER = "Connect to FluxIQ first";
-const UNAVAILABLE_PLACEHOLDER = "Chat unavailable";
+const UNREADABLE_PLACEHOLDER = "Can't read this chat right now.";
 const HELD = "This goes as soon as the conversation is ready.";
 const HOLD_FAILED = "Not sent: the conversation could not be read. Your words are still here.";
 /** The most lines the box grows to before it scrolls. */
@@ -264,7 +264,7 @@ export function createComposer(send: (text: string, recordingId?: string) => Pro
       ready = state.scopeState !== "loading";
       sending = state.sending;
       if (box.disabled !== !enabled) box.disabled = !enabled;
-      const shown = enabled ? placeholder : unavailable !== undefined ? UNAVAILABLE_PLACEHOLDER : state.mode === "offline" ? OFFLINE_PLACEHOLDER : state.scopeState === "loading" ? "Loading the conversation..." : state.scopeState === "error" ? "Chat unavailable" : OFFLINE_PLACEHOLDER;
+      const shown = enabled ? placeholder : unavailable !== undefined ? unavailable : state.mode === "offline" ? OFFLINE_PLACEHOLDER : state.scopeState === "loading" ? "Loading the conversation..." : state.scopeState === "error" ? UNREADABLE_PLACEHOLDER : OFFLINE_PLACEHOLDER;
       if (box.placeholder !== shown) box.placeholder = shown;
       syncButton();
       // A kept draft is sized once the box is on screen.

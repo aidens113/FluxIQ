@@ -5,7 +5,7 @@
 
 .background-task-filters select,
 .background-run-panel select {
-  min-height: 34px;
+  min-height: var(--select-height);
   border: 1px solid var(--edge);
   border-radius: var(--radius-control);
   background: var(--surface);

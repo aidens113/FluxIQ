@@ -5,8 +5,9 @@
 
 .humanness { display: grid; gap: 6px; min-width: 0; color: var(--text); font-size: 13px; line-height: 1.45; }
 .humanness-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.humanness-label { font-weight: 650; }
-.humanness-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent-text); }
+.humanness-label { min-width: 0; font-weight: 650; }
+/* Wide enough for 100 at any value, so the label beside it never rewraps when the value gains a digit. */
+.humanness-value { flex: none; min-width: 3ch; text-align: end; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--accent-text); }
 .humanness[data-state="inherited"] .humanness-value { color: var(--muted); }
 .humanness-range { width: 100%; min-height: 24px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .humanness-range:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: 2px; border-radius: 4px; }
@@ -23,7 +24,9 @@
 .humanness-status[data-tone="ok"] { color: var(--success); }
 .humanness-status[data-tone="error"] { color: var(--danger-text); }
 .humanness-inherited[hidden], .humanness-clear[hidden], .humanness-status:empty { display: none; }
-/* The track is drawn from tokens: the browser's own track is near-black in a light theme. */
-.humanness-range { height: 24px; background: transparent; }
+/* The track and thumb are drawn from tokens: the browser's own track is near-black in a light theme and its thumb is tiny. */
+.humanness-range { -webkit-appearance: none; appearance: none; height: 24px; background: transparent; }
 .humanness-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--edge); }
 .humanness-range::-moz-range-track { height: 4px; border-radius: 999px; background: var(--edge); }
+.humanness-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; margin-top: -7px; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px var(--accent-edge); }
+.humanness-range::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--surface); border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1px var(--accent-edge); }

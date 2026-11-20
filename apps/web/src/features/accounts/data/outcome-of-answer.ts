@@ -1,4 +1,5 @@
 import type { AccountsOutcome } from "../model";
+import { inviteLinkOf } from "./invite-link-of";
 
 /**
  * What an answer from an accounts route or Identity Access means for the
@@ -6,8 +7,11 @@ import type { AccountsOutcome } from "../model";
  * `requiresRecheck` refusal); refused for a reason they can act on (the
  * route's sentence); or failed.
  */
-export function outcomeOfAnswer(status: number, body: { ok?: unknown; error?: unknown; code?: unknown; requiresRecheck?: unknown } | undefined): AccountsOutcome {
-  if (body?.ok === true && status < 400) return { kind: "done" };
+export function outcomeOfAnswer(status: number, body: { ok?: unknown; error?: unknown; code?: unknown; requiresRecheck?: unknown; payload?: unknown } | undefined): AccountsOutcome {
+  if (body?.ok === true && status < 400) {
+    const link = inviteLinkOf(body);
+    return link === undefined ? { kind: "done" } : { kind: "done", link };
+  }
   const message = typeof body?.error === "string" && body.error ? body.error : undefined;
   if (body?.requiresRecheck === true) return { kind: "needs-proof", message: message ?? "Type your password to confirm." };
   if (status === 401) return { kind: "refused", message: "Your session has ended. Sign in again." };

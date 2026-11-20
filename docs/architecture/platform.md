@@ -183,10 +183,10 @@ the generated lists" use `IAM_READ_ONLY_ACTIONS` and `IAM_DESTRUCTIVE_ACTIONS`.
 | `FluxIQOwnerFullAccess` | identity | `Allow *` on the workspace content and the workspace FRN, no condition, so it takes the fast path. Reaches nothing outside the workspace. |
 | `FluxIQAdministratorAccess` | identity | An unconditional `Allow *` on the workspace content, and `Allow` of the `studio`, `secrets`, `gateway`, `iam` and `ops` services on the workspace FRN. No `platform:*` (platform FRNs have no workspace segment, so the content grant cannot reach them). It reaches every endpoint today's admin does, and the content grant makes it full access, so the single local owner, who is `admin` today, keeps the list fast path. |
 | `FluxIQReadOnlyAccess` | identity | The actions in the generated `programs.read` list, one statement per service, on the same two resources. This includes explicitly registered self-service writes such as the caller's own preferences and username re-case. |
-| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential is refused them by IAM itself: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, the person's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`) and their own sign-in name in another case (`iam:RecaseMyUsername`, only its capitals), and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Reading the allowance is not among them: its endpoint declares the workspace, where the setting reads grant it. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed, chosen or offered by them. `secrets:OfferKey` (`offer-key`) on their own key is theirs under `OwnData`. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
-| `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace. Denies all `iam` actions, `secrets:RevealKey` and the 16 destructive actions. A connected browser acts as its user, narrowed by this. |
+| `FluxIQUserAccess` | identity | Own data: `studio`, `secrets` and `gateway` actions on resources whose owner is the principal. `Create*` of those services on the workspace FRN, and the workspace-wide lists that filter their items, named one by one (`studio:ListConversations`, `studio:Projects`, `secrets:Snapshot`), never `List*`. The workspace settings a person reads to use it (`IAM_USER_WORKSPACE_SETTING_READS`), on the workspace FRN and only when `fluxiq:RequestOrigin` is `panel`, so a paired browser's credential is refused them by IAM itself: `secrets:GetAssistantModel`, which provider and model the panel assistant uses, the same `modelSettings` the filtered snapshot already carries (key ids, a provider, a model; never a key's name, value or seal); and `studio:GetPanelAssistantAllowance`, what one message to the assistant may spend, so Settings shows it. Self-service password, PIN, TOTP, session and vault actions, the person's own preferences (`iam:GetMyPreferences`, `iam:UpdateMyPreferences`) and their own sign-in name in another case (`iam:RecaseMyUsername`, only its capitals), and `secrets:Unlock`, on the principal's own user FRN. The panel assistant's endpoints for the person's own chats, named one by one (`studio:ListPanelThreads`, `GetPanelThread`, `GetPanelThreadAttachment`, `OpenPanelThread`, `RenamePanelThread`, `DeletePanelThread`, `SendPanelMessage`, `AnswerPanelAsk`), on the principal's own user FRN and only when `fluxiq:RequestOrigin` is `panel`, so never to a paired browser; a project-bound attachment is decided again on its project. Reading the allowance is not among them: its endpoint declares the workspace, where the setting reads grant it. Not `studio:SetPanelAssistantAllowance`, which sets one allowance for the whole workspace, nor `secrets:SetAssistantModel` or `secrets:SetDefaultKey`, which `set-assistant-model` and `set-default-key` decide on the workspace FRN: a member cannot make even their own key the workspace's default or the assistant's. A person sends on the workspace's assistant key with no key action at all (Model keys, "The workspace's assistant key"); `OwnData` never reaches another person's key, so it is never revealed, listed, changed, chosen or offered by them. `secrets:OfferKey` (`offer-key`) on their own key is theirs under `OwnData`. Saving, replacing and removing the key their own chats use (`IAM_OWN_MODEL_KEY_ACTIONS`: `secrets:SaveModelKey`, `ReplaceModelKey`, `RemoveModelKey`) on the principal's own user FRN, from any origin (`OwnModelKey`, t950): each endpoint declares the caller's own user and nothing else, so a member reaches only their own key and never the workspace's assistant key. No `CreateUser`, `UpdateUser` or `iam:Snapshot`. |
+| `FluxIQBrowserSession` | session | Allows `gateway` and `studio` in the workspace; of `secrets`, only the session's own person's model key (`IAM_OWN_MODEL_KEY_ACTIONS` on their own user FRN), `secrets:Snapshot` (how the browser shows Ready, and what the model-access push is decided by) and `secrets:UseKey` (the person's own model calls; which keys is the identity policies' decision). Denies all `iam` actions, `secrets:RevealKey` and the generated destructive actions. Under `service` it is the session policy of every paired client (`ProgramIamGate`, t950), in place of the legacy permission session, so a member's browser is decided by the member's policies; under `local` and `self-hosted` a paired client is still narrowed by its role's permissions. A connected browser acts as its user, narrowed by this. |
 | `FluxIQProvisioner` | identity | For the website's provisioning identity: allows `platform:*Account*` on account FRNs; denies everything on any FRN with a workspace segment and on workspace FRNs. |
-| `FluxIQServiceGuardrail` | guardrail | `Deny ops:*` and `Deny platform:*`. Keeps operator actions (including database migration and node registration) out of a hosted workspace. |
+| `FluxIQServiceGuardrail` | guardrail | `Deny ops:*`, `Deny platform:*` and (v2) `DenyLocalIdentityAdministration`: `iam:CreateUser`, `iam:UpdateUser`, `iam:SetPassword`, `iam:SetPin`, `iam:CreateSession` and `iam:UnlockVault`. Keeps operator actions (including database migration and node registration) out of a hosted workspace, and the tenant's own Identity Access store unadministered: anyone made there could never sign in, so hosted accounts come only from provisioning. A person's own sign-in security is not denied (see [Web workspace manager](#web-workspace-manager)). |
 
 ## Store
 
@@ -377,7 +377,7 @@ resolver yet. Owners are looked up only under `service`.
 | Profile | Identity | Session | Guardrail |
 | --- | --- | --- | --- |
 | `local`, `self-hosted` | the role's predefined policies plus `FluxIQPermissions`, allowing exactly the actions whose permission the actor holds | `FluxIQPermissionSession`, the same set | none |
-| `service` | what the IAM store attaches to `user/<id>` | the permission session for a paired client only | `FluxIQServiceGuardrail` |
+| `service` | what the IAM store attaches to `user/<id>` | `FluxIQBrowserSession` for a paired client only (t950; before, the permission session of its legacy role) | `FluxIQServiceGuardrail` |
 
 On `local` and `self-hosted` identity can never allow less than the actor's
 permissions and the session never more, so every decision equals
@@ -706,7 +706,13 @@ it, removing ends it, and a role change is `setPolicies`. An invite is resent, o
 cancelled by deleting its account, only when the account exists for this workspace
 alone; a pending invite of a person who is also in another workspace is cancelled
 by removing the membership here. Turning off or deleting the account itself stays
-with the operator's command line and the account holder.
+with the operator's command line and the account holder. The members list
+(`/api/accounts/members`) shows a membership suspended here as turned off, with the
+role its kept policies give, so its row offers turning it back on; a removed one is
+not listed. An organisation workspace's list is not read-only (`readOnly: false`);
+a personal one is, having nobody else to change. Removal stays off in the list
+(`canRemove: false`) under several workspaces until the panel's confirmation says it
+ends this membership alone.
 
 ## Welcome and reset links
 
@@ -860,7 +866,11 @@ points at it yet. Flags fill the operation's input (`--email`, `--display-name`,
 `--external-id`, `--user-id`, repeated `--policy`, `--workspace`, `--reason`,
 `--scope`, `--mode`, `--terms-version`, `--continue-url`, `--send-welcome`,
 `--request-id`), and `--json` supplies the whole input, with flags overriding it. A
-mutating operation gets a random request id unless one is given. Exit codes: 0 ok,
+mutating operation gets a random request id unless one is given. `--workspace <id>`
+fills `workspaceId` for every operation whose input names an existing workspace
+(`setPolicies`, `addMember`, `suspendMember`, `resumeMember`, `removeMember`, read
+from the contracts' input schemas), and `workspace` (`new` or an id) for
+`createAccount`; `--workspace-id` always fills `workspaceId`. Exit codes: 0 ok,
 1 a typed error or no answer, 2 usage.
 
 The transport is chosen by environment. With both `FLUXIQ_PROVISIONING_LISTEN` and
@@ -925,6 +935,36 @@ subscription per identity and custody made in `createTenantFluxIQ`.
 code too, before reading its body, because the primary's root there holds every
 tenant's workspace. Under `single` it acts on the one workspace and releases its
 lease before a migrate or rollback reloads the primary.
+
+The operator's own storage step is `fluxiq storage <inspect|setup|migrate|rollback>
+[--data-dir <dir>]` (`packages/fluxiq/src/server/cli/storage/`), on the package's
+`fluxiq` bin. The data directory defaults to `FLUXIQ_ROOT`, else `~/.fluxiq/data`.
+It runs offline: it claims the data directory (`claimFluxIQDataRoot`, role
+`fluxiq storage`) before opening anything and gives it up only once its instance
+is closed, so while the web panel or `fluxiq dev` serves the directory it is
+refused, naming that server, and changes nothing. The instance is opened as the
+panel opens its primary (`FLUXIQ_HOST_MODULE`), so a domain's own legacy storage is
+found and migrated too. It prints the result as JSON; exit 0 done, 1 refused or
+failed, 2 usage. A hosted root starts at layout v3 and never needs the v1 to v2
+migration; this is for a self-hosted or local operator with older data.
+
+**A tenant's Identity Access.** A tenant instance has its own Identity Access
+store, but its people sign in only through the platform's, which validates every
+panel session. `createTenantFluxIQ` takes `identityDirectory` (the platform's
+Identity Access, from `lib/fluxiq.ts`) and hands it to the tenant's service before
+it serves anything (`identityAccess.directory.actOn`, set once, as the authority
+owner is). The self-service endpoints then act on that directory, and only for the
+caller, whatever role they hold in the workspace: `begin-totp`, `confirm-totp` and
+`disable-totp` on their own user (another person is
+`identity.directory_self_only`), `get-my-preferences`, `update-my-preferences`,
+`recase-my-username`, and `revoke-session` of their own sessions, by raw id or by
+the digest their own listing shows; the credential recheck is made there too.
+`snapshot` lists the caller alone, with their role and their own sessions. The
+member administration endpoints are denied by the guardrail's
+`DenyLocalIdentityAdministration`. `revoke-session` is decided on the caller's own
+user, so a person's own policy (`iam:RevokeSession` on their user) admits it; local
+and self-hosted installs set no directory and keep every endpoint as it was,
+member administration included.
 
 The welcome and reset routes read a posted body only as a form (`FormRead`: a
 tagged result of the parsed value or a refusal), so no posted field can pass for a

@@ -33,6 +33,15 @@ type TenantInput = {
   clientGatewaySessionMetadata?: FluxIQOptions["clientGatewaySessionMetadata"];
   secretKeyPrincipalAuthority?: FluxIQOptions["secretKeyPrincipalAuthority"];
   secretKeyIdentityAuthority?: FluxIQOptions["secretKeyIdentityAuthority"];
+  /**
+   * The identity directory the tenant's people sign in through (the
+   * platform's Identity Access). A person's own sign-in security reached
+   * through this tenant (their authenticator, preferences, the capitals of
+   * their name, their own sessions) acts there and only for them
+   * (`IdentityAccessService.directory`); without it, it would act on the
+   * tenant's own user store, where nobody signs in.
+   */
+  identityDirectory?: () => Promise<IdentityAccessService>;
   instantiate: (options: FluxIQOptions) => Promise<FluxIQ> | FluxIQ;
   env?: Readonly<Record<string, string | undefined>>;
 };
@@ -72,6 +81,8 @@ export async function createTenantFluxIQ(input: TenantInput & { existingOnly?: b
   });
   await dropHeldUnlocksOnSignOut(input.secretKeyIdentityAuthority, input.heldKeys);
   try {
+    // Before the instance serves anything, as the authority owner is set.
+    if (input.identityDirectory) fluxiq.programs.identityAccess.directory.actOn(input.identityDirectory);
     await initializeFluxIQWebStorage(fluxiq);
   } catch (error) {
     try {

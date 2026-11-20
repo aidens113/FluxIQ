@@ -36,4 +36,9 @@ export type ChatThreadsOptions = {
    * of a project.
    */
   unavailableReason?: string;
+  /**
+   * The chat's name while it has no thread and no project to name it (default "All projects"). A host whose
+   * chat is its own assistant, which needs no project, names it here instead of claiming to span every project.
+   */
+  emptyTitle?: string;
 };

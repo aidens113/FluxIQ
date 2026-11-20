@@ -3,18 +3,44 @@ import { ConfirmButton } from "../confirm";
 import type { ChangeResult } from "../data";
 import type { PairedClientRow } from "../model";
 
-/** Browsers paired with this FluxIQ. Every paired browser can be forgotten, active or not. */
+/** "9 Nov", or "an unknown date". */
+function dayText(at: number | undefined): string {
+  return at === undefined ? "an unknown date" : new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
+/** One line for a browser or app: its name, when it was paired and when it last connected. */
+function deviceLine(row: PairedClientRow, now: number): string {
+  return `${row.name} · paired ${dayText(row.approvedAt)} · last used ${agoText(row.lastUsedAt, now)}`;
+}
+
+/**
+ * The browsers and apps that can use this FluxIQ, one row each with "Remove
+ * access". Ones already removed are folded under "Removed (n)" and offer
+ * nothing: a removed browser asks to be approved again when it connects.
+ */
 export function PairedClientsList(props: { rows: PairedClientRow[]; now: number; onForget: (trustedClientId: string) => Promise<ChangeResult>; onDone: () => void }) {
-  if (props.rows.length === 0) return <p className="security-note">No browsers are paired. A browser you pair shows up here.</p>;
+  const connected = props.rows.filter((row) => row.status !== "revoked");
+  const removed = props.rows.filter((row) => row.status === "revoked");
   return (
-    <ul className="security-list" aria-label="Paired browsers">
-      {props.rows.map((row) => (
-        <li key={row.trustedClientId} className="security-row">
-          <span className="security-title">{row.name}</span>
-          <span className="security-muted">{row.clientType} · {row.status} · paired {agoText(row.approvedAt, props.now)} · last used {agoText(row.lastUsedAt, props.now)}</span>
-          <ConfirmButton label="Forget" question={`Forget ${row.name}? It will have to pair again.`} confirmLabel="Forget" onConfirm={() => props.onForget(row.trustedClientId)} onDone={props.onDone} />
-        </li>
-      ))}
-    </ul>
+    <>
+      {connected.length === 0 ? <p className="security-note">No browsers or apps are connected yet.</p> : (
+        <ul className="security-list" aria-label="Connected browsers and apps">
+          {connected.map((row) => (
+            <li key={row.trustedClientId} className="security-row">
+              <span className="security-title">{deviceLine(row, props.now)}</span>
+              <ConfirmButton label="Remove access" question={`Remove access for ${row.name}? It will have to ask to connect again.`} confirmLabel="Remove access" onConfirm={() => props.onForget(row.trustedClientId)} onDone={props.onDone} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {removed.length > 0 ? (
+        <details className="security-removed">
+          <summary>{`Removed (${removed.length})`}</summary>
+          <ul className="security-list" aria-label="Removed browsers and apps">
+            {removed.map((row) => <li key={row.trustedClientId} className="security-row"><span className="security-muted">{row.name} · paired {dayText(row.approvedAt)} · removed</span></li>)}
+          </ul>
+        </details>
+      ) : null}
+    </>
   );
 }

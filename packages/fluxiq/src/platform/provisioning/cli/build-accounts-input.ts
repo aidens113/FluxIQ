@@ -3,7 +3,18 @@ import { ACCOUNTS_SWITCH_FLAGS, ACCOUNTS_VALUE_FLAGS } from "./flag-fields.ts";
 import { stripTrailingNewline } from "./strip-trailing-newline.ts";
 import type { AccountsCommandIo, AccountsInputResult } from "./types.ts";
 
-const WORKSPACE_ID_OPERATIONS: ReadonlySet<string> = new Set(["setPolicies", "addMember"]);
+/**
+ * The operations whose input names an existing workspace by `workspaceId`
+ * (`setPolicies`, `addMember`, `suspendMember`, `resumeMember`,
+ * `removeMember`), read from the contracts so a new one is covered without
+ * being listed here. For them `--workspace <id>` fills `workspaceId`;
+ * `createAccount` keeps `workspace` (`new` or an id).
+ */
+const WORKSPACE_ID_OPERATIONS: ReadonlySet<string> = new Set(
+  Object.entries(PLATFORM_PROVISIONING_OPERATIONS)
+    .filter(([, definition]) => "shape" in definition.input && Object.hasOwn(definition.input.shape, "workspaceId"))
+    .map(([name]) => name)
+);
 
 type ParsedFlags = { values: Map<string, string[]>; switches: Set<string> };
 
