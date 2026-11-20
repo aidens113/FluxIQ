@@ -38,7 +38,7 @@ export async function releaseAutomationStudioSessionProviderKey(
 ): Promise<string> {
   const { keys } = await ports.snapshot();
   const label = automationStudioLlmProviderLabel(options.provider);
-  const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, options.keyOwnerUserId ?? caller.userId, options.provider, options.model)] : callerKeys(keys, caller.userId, options.provider, options.model);
+  const candidates = options.flowKeyId ? [flowKey(keys, options.flowKeyId, options.keyOwnerUserId ?? caller.userId, options.provider)] : callerKeys(keys, caller.userId, options.provider, options.model);
   if (!candidates.length) throw new Error(`There is no enabled ${label} key of yours in Secret Keys.`);
   let denied = 0;
   let refusal: unknown;
@@ -73,21 +73,38 @@ export function automationStudioSessionKeyProvider(key: AutomationStudioSessionK
   return provider === "anthropic" || provider === "anthropicclaude" ? "anthropic" : provider === "deepseek" ? "deepseek" : undefined;
 }
 
-function isProviderLlmKey(key: AutomationStudioSessionKeySummary, provider: AutomationStudioLlmProviderId, model?: string): boolean {
-  return automationStudioSessionKeyProvider(key) === provider && (!model || !key.metadata?.model || key.metadata.model === model);
+/**
+ * A key is its provider's: one Claude key pays for every Claude model, so the model a key was saved
+ * with is a preference, never a restriction. The model ladder (t962) starts an attempt on the
+ * cheapest model and climbs only when it is stuck; the climbed model must find the same key, or
+ * every decision after a climb failed `provider_secret_unavailable` (live runs mwocg0zw, mwoclsg0,
+ * 2026-11-19).
+ */
+function isProviderLlmKey(key: AutomationStudioSessionKeySummary, provider: AutomationStudioLlmProviderId): boolean {
+  return automationStudioSessionKeyProvider(key) === provider;
 }
 
-/** The caller's own enabled DeepSeek keys, newest first, then legacy keys nobody is stamped on. */
+/** A key saved with the model this call asks for comes before the provider's other keys. */
+function savedFor(model: string | undefined): (key: AutomationStudioSessionKeySummary) => boolean {
+  return (key) => model !== undefined && key.metadata?.model === model;
+}
+
+/**
+ * The caller's own enabled keys of the provider, newest first, then legacy keys nobody is stamped
+ * on; within each, the keys saved with the requested model first.
+ */
 function callerKeys(keys: readonly AutomationStudioSessionKeySummary[], userId: string, provider: AutomationStudioLlmProviderId, model?: string): AutomationStudioSessionKeySummary[] {
-  const usable = keys.filter((key) => key.enabled && isProviderLlmKey(key, provider, model));
-  return [...usable.filter((key) => key.createdBy === userId), ...usable.filter((key) => !key.createdBy)];
+  const usable = keys.filter((key) => key.enabled && isProviderLlmKey(key, provider));
+  const matches = savedFor(model);
+  const preferred = (list: AutomationStudioSessionKeySummary[]) => [...list.filter(matches), ...list.filter((key) => !matches(key))];
+  return [...preferred(usable.filter((key) => key.createdBy === userId)), ...preferred(usable.filter((key) => !key.createdBy))];
 }
 
-/** The Flow's named key, refused in words when it cannot be the caller's. */
-function flowKey(keys: readonly AutomationStudioSessionKeySummary[], keyId: string, userId: string, provider: AutomationStudioLlmProviderId, model?: string): AutomationStudioSessionKeySummary {
+/** The Flow's named key, refused in words when it cannot be the caller's. Any model of its provider may use it. */
+function flowKey(keys: readonly AutomationStudioSessionKeySummary[], keyId: string, userId: string, provider: AutomationStudioLlmProviderId): AutomationStudioSessionKeySummary {
   const key = keys.find((entry) => entry.id === keyId);
   if (!key || !key.enabled) throw new Error("This Flow's model key is missing or turned off in Secret Keys.");
-  if (!isProviderLlmKey(key, provider, model)) throw new Error(`This Flow's model key is not a matching ${automationStudioLlmProviderLabel(provider)} model key.`);
+  if (!isProviderLlmKey(key, provider)) throw new Error(`This Flow's model key is not a matching ${automationStudioLlmProviderLabel(provider)} model key.`);
   if (key.createdBy && key.createdBy !== userId) throw new Error("This Flow's model key belongs to another person, so it cannot pay for your calls.");
   return key;
 }

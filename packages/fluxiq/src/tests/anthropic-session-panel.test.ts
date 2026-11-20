@@ -20,7 +20,7 @@ function secretKeys(): SecretKeysService {
 }
 
 describe("Claude keys, Flow resolution and panel requests", () => {
-  it("releases an Anthropic key only to its owner, resolves every call and refuses provider/model mismatch", async () => {
+  it("releases an Anthropic key only to its owner, resolves every call, refuses a provider mismatch and serves any model of its provider", async () => {
     const keys = secretKeys();
     const base = { kind: "llm" as const, authorizationPassword: "fake-password", createdBy: "person.one" };
     const claude = await createPasswordSealedKey(keys, { ...base, name: "Claude", provider: "Anthropic", metadata: { model: "claude-sonnet-5-5" }, value: "dummy-claude-key" });
@@ -31,7 +31,9 @@ describe("Claude keys, Flow resolution and panel requests", () => {
     await keys.unlockSession({ ...caller, authorizationPassword: "fake-password", expiresAtMs: Date.now() + 60_000 });
     expect(await releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic" })).toBe("dummy-claude-key");
     await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "deepseek", flowKeyId: claude.id })).rejects.toThrow(/model key/);
-    await expect(releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic", model: "claude-haiku-5-5", flowKeyId: claude.id })).rejects.toThrow(/model key/);
+    // A Claude key saved with Sonnet pays for Haiku and Opus too: the model ladder climbs on one key (t964).
+    expect(await releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic", model: "claude-haiku-5-5", flowKeyId: claude.id })).toBe("dummy-claude-key");
+    expect(await releaseAutomationStudioSessionProviderKey(heldSessionPorts(keys), caller, { provider: "anthropic", model: "claude-opus-5-5" })).toBe("dummy-claude-key");
     const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer dummy-claude-key");
       return streamReply();
