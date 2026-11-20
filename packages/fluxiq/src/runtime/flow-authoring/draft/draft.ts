@@ -8,6 +8,7 @@
 // result should contain. A list with the other two silently absent is a claim
 // no one can audit.
 
+import type { AutomationStudioFlowDraftResultProcessing } from "./result-processing/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 
@@ -15,6 +16,8 @@ export type AutomationStudioFlowDraft = {
   schemaVersion: "automation-studio.flow-draft.v1";
   /** Every step, in the order it happened. */
   steps: readonly AutomationStudioFlowDraftStep[];
+  /** What the Flow does to its result's collected rows, beside its steps (`./result-processing/held.ts`, t970); absent is nothing. */
+  result?: { process: AutomationStudioFlowDraftResultProcessing };
 };
 
 /** The draft a list of steps makes. */

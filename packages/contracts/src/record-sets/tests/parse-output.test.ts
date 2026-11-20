@@ -157,11 +157,11 @@ describe("parseAutomationStudioRecordOutput process", () => {
     for (const minRows of [-1, 0.5, "1"]) expect(processIssues({ minRows })).toEqual(["record_output.process_invalid_min_rows"]);
   });
 
-  it("refuses repeated, empty or malformed columns and a where over a column the answer drops", () => {
+  it("refuses repeated, empty or malformed columns, and takes a where over a column the answer leaves out (t970)", () => {
     expect(processIssues({ columns: ["title", "title"] })).toEqual(["record_output.process_invalid_columns"]);
     expect(processIssues({ columns: [] })).toEqual(["record_output.process_invalid_columns"]);
     expect(processIssues({ columns: "title" })).toEqual(["record_output.process_invalid_columns"]);
-    expect(processIssues({ columns: ["title"], where: [{ field: "price", lessThan: 5 }] })).toEqual(["record_output.process_where_column_dropped"]);
+    expect(processIssues({ columns: ["title"], where: [{ field: "price", lessThan: 5 }] })).toEqual([]);
   });
 
   it("refuses a malformed dedupe", () => {

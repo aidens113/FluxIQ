@@ -1,0 +1,182 @@
+{
+ "run": "run-mwodpw10-3d5748ab",
+ "note": "The result as the first judge saw it (step 0062): five pages read with the page-side where, accessories still in, a page repeat still in.",
+ "rows": [
+  {
+   "name": "Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Ear Hooks for Running, IPX7 Waterproof, Rose Gold",
+   "price": "$49.99",
+   "rating": "4.1",
+   "url": "/scenarios/everything-store/Lumo-Audio-Drift-Wireless-Earbuds-Bluetooth-5-3/dp/B0PXHP88KT"
+  },
+  {
+   "name": "Replacement Ear Tips for Wireless Earbuds, Memory Foam Eartips, 3 Pairs (S/M/L), Black",
+   "price": "$12.99",
+   "rating": "4.5",
+   "url": "/scenarios/everything-store/Replacement-Ear-Tips-for-Wireless-Earbuds-Memory-Foam/dp/B0JKYDKPGR"
+  },
+  {
+   "name": "Brightaisle Basics Sport Wireless Earbuds, Bluetooth 5.3 with Ear Hooks, 36H Playtime, IPX7 Sweatproof, Black",
+   "price": "$22.99",
+   "rating": "4.0",
+   "url": "/scenarios/everything-store/Brightaisle-Basics-Sport-Wireless-Earbuds-Bluetooth-5-3/dp/B0R257NR7U"
+  },
+  {
+   "name": "Zephyrline Z3 Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Ear Hooks for Running, Sage",
+   "price": "$34.99",
+   "rating": "4.3",
+   "url": "/scenarios/everything-store/Zephyrline-Z3-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0P8ZF57AC"
+  },
+  {
+   "name": "Zephyrline Z3 Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Ear Hooks for Running, Sage",
+   "price": "$34.99",
+   "rating": "4.3",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Zephyrline-Z3-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0P8ZF57AC"
+  },
+  {
+   "name": "Aurelle Echo Wireless Earbuds, Bluetooth 5.3 Headphones with 40H Playtime, Built-in Mic, Low Latency Gaming Mode, Ivory",
+   "price": "$47.99",
+   "rating": "4.5",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Echo-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0J5MCMBAY"
+  },
+  {
+   "name": "Charging Case Replacement for Soundcrest Air Pro Wireless Earbuds, 600mAh Charger Case with Pairing Button, White",
+   "price": "$24.99",
+   "rating": "4.2",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Charging-Case-Replacement-for-Soundcrest-Air-Pro-Wireless/dp/B0W5X5HSU9"
+  },
+  {
+   "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Touch Control, Built-in Mic, Ivory",
+   "price": "$39.99",
+   "rating": "4.4",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B0VNKJTVCD"
+  },
+  {
+   "name": "Tessaro Arc Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, IPX7 Waterproof, Touch Control, Sage",
+   "price": "$29.99",
+   "rating": "4.2",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Tessaro-Arc-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B07Z1RZGJG"
+  },
+  {
+   "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 40H Playtime, Low Latency Gaming Mode, Touch Control, Black",
+   "price": "$47.99",
+   "rating": "4.0",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B00BJX53AC"
+  },
+  {
+   "name": "Lumo Audio Drift Pro Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Touch Control, White",
+   "price": "$26.99",
+   "rating": "4.2",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Lumo-Audio-Drift-Pro-Wireless-Earbuds-Bluetooth-5/dp/B09HZLEPLS"
+  },
+  {
+   "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Touch Control, Built-in Mic, Ivory with Wireless Charging Case",
+   "price": "$39.99",
+   "rating": "4.4",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B0HKSZ2BM6"
+  },
+  {
+   "name": "Trevio T5 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Active Noise Cancelling, Built-in Mic, Ivory",
+   "price": "$22.99",
+   "rating": "4.6",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Trevio-T5-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0G68DZTDB"
+  },
+  {
+   "name": "Trevio T5 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Wireless Charging Case, Built-in Mic, Rose Gold",
+   "price": "$39.99",
+   "rating": "4.0",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Trevio-T5-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0X473P78X"
+  },
+  {
+   "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Deep Bass, Ear Hooks for Running, Black",
+   "price": "$47.99",
+   "rating": "4.0",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B02UB6NJWC"
+  },
+  {
+   "name": "Soundcrest Air Pro 2 Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, LED Power Display, Built-in Mic, Graphite",
+   "price": "$34.99",
+   "rating": "4.5",
+   "url": "http://127.0.0.1:50792/scenarios/everything-store/Soundcrest-Air-Pro-2-Wireless-Earbuds-Bluetooth-5/dp/B016CBKJ2R"
+  }
+ ],
+ "expected": [
+  {
+   "name": "Lumo Audio Drift Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Ear Hooks for Running, IPX7 Waterproof, Rose Gold",
+   "price": "$49.99",
+   "rating": "4.1",
+   "url": "/scenarios/everything-store/Lumo-Audio-Drift-Wireless-Earbuds-Bluetooth-5-3/dp/B0PXHP88KT"
+  },
+  {
+   "name": "Brightaisle Basics Sport Wireless Earbuds, Bluetooth 5.3 with Ear Hooks, 36H Playtime, IPX7 Sweatproof, Black",
+   "price": "$22.99",
+   "rating": "4.0",
+   "url": "/scenarios/everything-store/Brightaisle-Basics-Sport-Wireless-Earbuds-Bluetooth-5-3/dp/B0R257NR7U"
+  },
+  {
+   "name": "Zephyrline Z3 Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, Deep Bass, Ear Hooks for Running, Sage",
+   "price": "$34.99",
+   "rating": "4.3",
+   "url": "/scenarios/everything-store/Zephyrline-Z3-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0P8ZF57AC"
+  },
+  {
+   "name": "Aurelle Echo Wireless Earbuds, Bluetooth 5.3 Headphones with 40H Playtime, Built-in Mic, Low Latency Gaming Mode, Ivory",
+   "price": "$47.99",
+   "rating": "4.5",
+   "url": "/scenarios/everything-store/Aurelle-Echo-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0J5MCMBAY"
+  },
+  {
+   "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Touch Control, Built-in Mic, Ivory",
+   "price": "$39.99",
+   "rating": "4.4",
+   "url": "/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B0VNKJTVCD"
+  },
+  {
+   "name": "Tessaro Arc Wireless Earbuds, Bluetooth 5.3 Headphones with 24H Playtime, IPX7 Waterproof, Touch Control, Sage",
+   "price": "$29.99",
+   "rating": "4.2",
+   "url": "/scenarios/everything-store/Tessaro-Arc-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B07Z1RZGJG"
+  },
+  {
+   "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 40H Playtime, Low Latency Gaming Mode, Touch Control, Black",
+   "price": "$47.99",
+   "rating": "4.0",
+   "url": "/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B00BJX53AC"
+  },
+  {
+   "name": "Lumo Audio Drift Pro Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Touch Control, White",
+   "price": "$26.99",
+   "rating": "4.2",
+   "url": "/scenarios/everything-store/Lumo-Audio-Drift-Pro-Wireless-Earbuds-Bluetooth-5/dp/B09HZLEPLS"
+  },
+  {
+   "name": "Aurelle Pods Fit Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, Touch Control, Built-in Mic, Ivory with Wireless Charging Case",
+   "price": "$39.99",
+   "rating": "4.4",
+   "url": "/scenarios/everything-store/Aurelle-Pods-Fit-Wireless-Earbuds-Bluetooth-5-3/dp/B0HKSZ2BM6"
+  },
+  {
+   "name": "Trevio T5 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Active Noise Cancelling, Built-in Mic, Ivory",
+   "price": "$22.99",
+   "rating": "4.6",
+   "url": "/scenarios/everything-store/Trevio-T5-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0G68DZTDB"
+  },
+  {
+   "name": "Trevio T5 Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Wireless Charging Case, Built-in Mic, Rose Gold",
+   "price": "$39.99",
+   "rating": "4.0",
+   "url": "/scenarios/everything-store/Trevio-T5-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B0X473P78X"
+  },
+  {
+   "name": "Aurelle Pods Wireless Earbuds, Bluetooth 5.3 Headphones with 50H Playtime, Deep Bass, Ear Hooks for Running, Black",
+   "price": "$47.99",
+   "rating": "4.0",
+   "url": "/scenarios/everything-store/Aurelle-Pods-Wireless-Earbuds-Bluetooth-5-3-Headphones/dp/B02UB6NJWC"
+  },
+  {
+   "name": "Soundcrest Air Pro 2 Wireless Earbuds, Bluetooth 5.3 Headphones with 36H Playtime, LED Power Display, Built-in Mic, Graphite",
+   "price": "$34.99",
+   "rating": "4.5",
+   "url": "/scenarios/everything-store/Soundcrest-Air-Pro-2-Wireless-Earbuds-Bluetooth-5/dp/B016CBKJ2R"
+  }
+ ]
+}

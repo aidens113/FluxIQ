@@ -57,6 +57,7 @@ import {
   automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStoredBindingKind,
+  type AutomationStudioFlowDraftResultProcessing,
   type AutomationStudioFlowDraftStep
 } from "../../draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../../../framework/automation-service/route-state/index.ts";
@@ -67,6 +68,7 @@ import type { AutomationStudioFlowBootstrapIssueLocator, AutomationStudioFlowScr
 import { authoringDraftBindingIssues, authoringPlanGraph } from "./draft-bindings.ts";
 import { routeAutomationStudioFlowDraftSteps, type AutomationStudioFlowDraftRoutedStep } from "./draft-routing.ts";
 import { authoringError } from "./issue.ts";
+import { automationStudioFlowBootstrapPlanWithResultProcessing } from "./result-processing/index.ts";
 import type { AuthoringPartOfStep } from "../record-defaults/index.ts";
 
 /** One draft step as a written step, in the caller's own vocabulary. */
@@ -114,6 +116,13 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
    * Absent, or answering nothing for a step, no node records any.
    */
   routeSignaturesOf?: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined;
+  /**
+   * What the Flow does to its result's collected rows, held on the draft apart
+   * from its steps (`../../draft/result-processing/held.ts`, t970): written onto each
+   * record output it applies to once the plan is assembled
+   * (`./result-processing/plan.ts`). Absent, no output changes.
+   */
+  resultProcessing?: AutomationStudioFlowDraftResultProcessing | undefined;
 }): {
   plan?: AutomationStudioFlowBootstrapPlan;
   refusedPlan?: AutomationStudioFlowBootstrapPlan;
@@ -208,11 +217,14 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   // honour, since the Flow would run the step on nothing or on the wrong value,
   // and an input tested with two values.
   if (issues.length) return { issues: all, locator, ...(built ? { refusedPlan: built } : {}) };
-  const plan = assembled.plan ? withNodeOutputReferences(assembled.plan, draftStepIdByNodeKey(steps, assembled.plan)) : undefined;
+  const referenced = assembled.plan ? withNodeOutputReferences(assembled.plan, draftStepIdByNodeKey(steps, assembled.plan)) : undefined;
+  // The result processing, on every record output it applies to (header of `./result-processing/plan.ts`, t970).
+  const processed = referenced ? automationStudioFlowBootstrapPlanWithResultProcessing(referenced, input.resultProcessing) : undefined;
+  const plan = processed?.plan;
   return {
     ...(plan ? { plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, plan) } : {}),
     ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}),
-    issues: all,
+    issues: processed?.issues.length ? [...all, ...processed.issues] : all,
     locator
   };
 }

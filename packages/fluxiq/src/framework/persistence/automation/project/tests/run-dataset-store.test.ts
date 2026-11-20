@@ -471,25 +471,41 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C", "D", "E"]);
   });
 
-  it("refuses a processing declaration that changes within one run and writes nothing", async () => {
+  it("keeps every collected row when a batch changes the processing declaration, and answers under the latest (t970)", async () => {
     const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
     const process: AutomationStudioRecordProcessing = { sort: [{ field: "price", order: "desc" }], limit: 3 };
     await store.appendBatch(batch({ rows: lettered("A", "B"), process }));
     // The same declaration with its keys in another order is the same declaration.
     await expect(store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C"), process: { limit: 3, sort: [{ order: "desc", field: "price" }] } }))).resolves.toMatchObject({ recordCount: 3 });
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D"), process: { ...process, limit: 2 } }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ attemptId: "attempt.3", writeMode: "replace", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
+    // Another declaration was refused until t970; now it is the dataset's, and no collected row goes.
+    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D"), process: { ...process, limit: 2 } }))).resolves.toMatchObject({ recordCount: 4 });
+    expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3, 4]);
+    const [listings] = await store.processRunDatasets("run.a");
+    expect(listings).toMatchObject({ recordCount: 2, processing: { collected: 4, kept: 2, cut: 2 } });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["D", "C"]);
+
+    // A dataset first written with no declaration takes one later; an invalid one is still refused, writing nothing.
+    await store.appendBatch(batch({ datasetId: "plain", rows: lettered("A") }));
+    await expect(store.appendBatch(batch({ datasetId: "plain", attemptId: "attempt.2", rows: lettered("B"), process }))).resolves.toMatchObject({ recordCount: 2 });
+    await expect(store.appendBatch(batch({ datasetId: "other", process: { columns: ["missing"] } }))).rejects.toThrow("Invalid run dataset processing.");
+  });
+
+  it("sets a dataset's processing without storing a row, and processes it again at once when it was processed (t970)", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    await store.appendBatch(batch({ rows: lettered("A", "B", "C") }));
+    await store.processRunDatasets("run.a");
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C"]);
+
+    const changed = await store.setProcess({ runId: "run.a", datasetId: "listings", process: { sort: [{ field: "price", order: "desc" }], limit: 2, columns: ["title"] } });
+    expect(changed).toMatchObject({ recordCount: 2, processing: { collected: 3, kept: 2, cut: 1 } });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows).toEqual([{ title: "C" }, { title: "B" }]);
     expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3]);
 
-    // A dataset first written with no declaration refuses one later.
-    await store.appendBatch(batch({ datasetId: "plain", rows: lettered("A") }));
-    await expect(store.appendBatch(batch({ datasetId: "plain", attemptId: "attempt.2", rows: lettered("B"), process }))).rejects.toThrow("Run dataset processing changed within one run.");
-    await expect(store.appendBatch(batch({ datasetId: "other", process: { columns: ["missing"] } }))).rejects.toThrow("Invalid run dataset processing.");
-
-    const summaries = await store.processRunDatasets("run.a");
-    expect(summaries.find((summary) => summary.datasetId === "listings")).toMatchObject({ recordCount: 3 });
-    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["C", "B", "A"]);
+    // Cleared, the answer is the default's again, from the same collected rows.
+    await store.setProcess({ runId: "run.a", datasetId: "listings", process: undefined });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C"]);
+    await expect(store.setProcess({ runId: "run.a", datasetId: "listings", process: { columns: ["missing"] } })).rejects.toThrow("Invalid run dataset processing.");
+    await expect(store.setProcess({ runId: "run.a", datasetId: "nowhere", process: { limit: 1 } })).resolves.toBeNull();
   });
 
   it("projects the answer and its page schema to the declared columns, in order", async () => {

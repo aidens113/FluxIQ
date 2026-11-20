@@ -292,11 +292,9 @@ describe("a record output whose processing names a field it does not keep", () =
     expect(issue!.message).toMatch(/stores "name"\./u);
   });
 
-  it("names a where field that columns leaves out, and the columns kept", () => {
+  it("takes a where over a stored field that columns leaves out (t970): the filter reads it and the answer does not show it", () => {
     const issues = issuesOf(club({ where: [{ field: "visits", atLeast: 5 }], columns: ["name"] }));
-    expect(issues.map((issue) => issue.code)).toEqual(["record_output.process_where_column_dropped"]);
-    expect(issues[0]!.message).toContain("\"visits\"");
-    expect(issues[0]!.message).toContain("columns keeps \"name\"");
+    expect(issues.filter((issue) => issue.code.startsWith("record_output.process_"))).toEqual([]);
   });
 
   it("names a field the schema excludes", () => {
