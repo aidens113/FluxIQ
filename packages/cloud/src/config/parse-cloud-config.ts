@@ -1,12 +1,12 @@
 import path from "node:path";
-import { checkAgainstSchema, checkBillingRules, checkModeRules, checkProfileRules, type SchemaNode } from "./check/index.ts";
+import { checkAgainstSchema, checkBillingRules, checkEnvironmentRules, checkModeRules, checkProfileRules, type SchemaNode } from "./check/index.ts";
 import { CLOUD_CONFIG_SCHEMA } from "./cloud-config-schema.ts";
 import { CloudConfigError } from "./cloud-config-error.ts";
 import { resolveConfigPath } from "./resolve-config-path.ts";
-import type { CloudBilling, CloudConfig, CloudConfigFile } from "./types.ts";
+import type { CloudBilling, CloudConfig, CloudConfigFile, CloudEnvironments } from "./types.ts";
 
 /** The images used when a config names none. Pinned, so a rebuild is the same stack. */
-const DEFAULT_IMAGES = { core: "fluxiq-cloud/core", caddy: "caddy:2.10-alpine", mailpit: "axllent/mailpit:v1.33.1", stripeMock: "stripe/stripe-mock:v0.205.0" };
+const DEFAULT_IMAGES = { core: "fluxiq-cloud/core", runner: "fluxiq-cloud/runner", caddy: "caddy:2.10-alpine", mailpit: "axllent/mailpit:v1.33.1", stripeMock: "stripe/stripe-mock:v0.205.0" };
 
 /**
  * Validates a config file's text (schema, then the profile rules) and answers
@@ -21,7 +21,7 @@ export function parseCloudConfig(text: string, configFile: string): CloudConfig 
   const schemaIssues = checkAgainstSchema(raw, CLOUD_CONFIG_SCHEMA as unknown as SchemaNode);
   if (schemaIssues.length > 0) throw new CloudConfigError(file, schemaIssues);
   const value = raw as CloudConfigFile;
-  const ruleIssues = [...checkModeRules(value), ...checkProfileRules(value), ...checkBillingRules(value)];
+  const ruleIssues = [...checkModeRules(value), ...checkProfileRules(value), ...checkBillingRules(value), ...checkEnvironmentRules(value)];
   if (ruleIssues.length > 0) throw new CloudConfigError(file, ruleIssues);
 
   const configDir = path.dirname(path.resolve(configFile));
@@ -52,7 +52,19 @@ export function parseCloudConfig(text: string, configFile: string): CloudConfig 
     billing: resolveBilling(value),
     sinks: { mail: value.sinks?.mail ?? false, payments: value.sinks?.payments ?? false, mailUiPort: value.sinks?.mailUiPort ?? 8025 },
     secretsDir: value.secrets?.dir === undefined ? `${stateDir}/secrets` : at(value.secrets.dir),
+    environments: resolveEnvironments(value, at),
     images: { ...DEFAULT_IMAGES, ...value.images }
+  };
+}
+
+function resolveEnvironments(value: CloudConfigFile, at: (relative: string) => string): CloudEnvironments | null {
+  const environments = value.environments;
+  if (environments === undefined) return null;
+  return {
+    runnerContext: at(environments.runner.context),
+    runnerDockerfile: environments.runner.dockerfile ?? "deploy/runner/Dockerfile",
+    clientDomain: environments.runner.domain ?? "web-automation",
+    limits: { memory: environments.limits?.memory ?? "1g", cpus: environments.limits?.cpus ?? "1", pids: environments.limits?.pids ?? 512 }
   };
 }
 

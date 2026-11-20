@@ -436,16 +436,21 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: Glo
   registerSecretKeysApi(api, secretKeys, options.secretKeyIdentityAuthority ?? identityAccess, (actor) => ({
     sessionId: actor.sessionId.startsWith(AUTOMATION_STUDIO_PAIRED_CLIENT_SESSION_PREFIX) ? pairedUnlockOf(actor.userId, actor.sessionId) : secretKeys.holdingSession(actor.sessionId, actor.userId) ?? secretKeys.unlockedSessionFor(actor.userId),
     ...holderOf(actor.sessionId)
-  }), async (actor, snapshot) => await modelAccessOf(actor.userId, snapshot), modelProvidersEnabled ? async ({ id, provider, value, lastRotatedAtMs }) => {
-    // The free check of a saved key (t928): the provider says whether it takes the key, with no model call, and
-    // that is the key's last outcome, under the value version the state reads, until a call says otherwise.
-    modelAccessLedger.noteCheck({ id, updatedAtMs: lastRotatedAtMs, lastRotatedAtMs }, await checkAutomationStudioModelKey({ provider, value }));
+  }), async (actor, snapshot) => await modelAccessOf(actor.userId, snapshot), modelProvidersEnabled ? {
+    // The free check of a model key's value (t928), asked BEFORE the value is stored (t950): the provider says whether
+    // it takes the key, with no model call. A refused key is never stored; any other verdict is the stored key's last
+    // outcome, under the value version the state reads, until a call says otherwise.
+    probe: async ({ provider, value }) => await checkAutomationStudioModelKey({ provider, value }),
+    record: ({ id, lastRotatedAtMs }, verdict) => { modelAccessLedger.noteCheck({ id, updatedAtMs: lastRotatedAtMs, lastRotatedAtMs }, verdict); }
   } : undefined);
   // A person's model access reaches their paired clients (`server.model_access_changed`) and the panel's change
   // stream (`modelAccessChanges`) when it may have changed, with no timer: a committed key or choice change, a
   // key's last-call or check outcome, an IAM decision change, or a change of people. A session's person is told
-  // only while enabled with a role, read where the paired program route reads them; all of it goes with `detach`.
+  // only when IAM lets that session read the snapshot, the person read where the paired program route reads them;
+  // all of it goes with `detach`.
   const modelAccessPush = installModelAccessPush({
+    // Each recipient is decided as the Secret Keys snapshot decides that session's own call, so the two never disagree (F4).
+    registry: api,
     gateway: clientGateway.modelAccessPush,
     sources: [{ subscribe: (listener) => secretKeys.onModelKeysChanged(listener) }, modelAccessLedger, { subscribe: (listener) => api.subscribeDecisionChanges(listener) }],
     identity: options.secretKeyIdentityAuthority ?? (async () => identityAccess),

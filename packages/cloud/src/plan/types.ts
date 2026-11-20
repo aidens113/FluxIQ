@@ -56,4 +56,16 @@ export type CloudPlan = {
   /** Where Caddy's local root certificate is exported for clients to pin (tls internal only). */
   exportedCa: string | null;
   mailUi: string | null;
+  /** Dedicated browsers: the runner image Core's docker driver starts, how up builds it, and where Core reads the authority runners trust; null without them. */
+  environments: PlannedEnvironments | null;
+};
+
+/** The runner image of a deployment's dedicated browsers and how it is built. */
+export type PlannedEnvironments = {
+  image: string;
+  context: string;
+  /** Inside the context. */
+  dockerfile: string;
+  /** The secrets volume's name for Caddy's local root, which runners trust; null where public authorities serve. */
+  authoritySecret: string | null;
 };

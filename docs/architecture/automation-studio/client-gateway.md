@@ -570,19 +570,32 @@ Keys' `snapshot` answers kind/provider/enabled, safe availability and ownership
 metadata, with no unlock ticket or key
 name, id, description, metadata or value.
 
-A token may also write its person's own model key (t928): Secret Keys'
+A token may also write its person's own model key (t928, t950): Secret Keys'
 `save-model-key` (`{ provider: "anthropic" | "deepseek", value, name? }`),
-`replace-model-key` (`{ value }`) and `remove-model-key` (`{}`). They are the
-only `program-gated` endpoints a token reaches (`PAIRED_CLIENT_IAM_DECIDED_ENDPOINTS`),
-because they ask for no password, PIN or authenticator code: IAM alone decides,
-with `secrets.manage` on the workspace, so only a person whose role holds it
-can save from a browser, and the endpoint allowlist still keeps every other key
-endpoint (create, rotate, reveal, the default and the assistant's choice,
+`replace-model-key` (`{ value }`) and `remove-model-key` (`{}`). They are
+`authoring`: they ask for no password, PIN, authenticator code or confirmation,
+and each is decided on the caller's own user (`endpointResource.selfUser()`),
+never the workspace or a key the body names, so IAM alone decides. Under
+`local` and `self-hosted` the token must hold `secrets.manage`. Under `service`
+a token's call is decided by its person's policies narrowed by
+`FluxIQBrowserSession`, not by the permissions of its person's legacy identity
+role: `FluxIQUserAccess` grants the three on the person's own user
+(`OwnModelKey`) and the session policy keeps them for the session's own person,
+so a member's browser saves its member's own key. A save from a token never
+takes an empty workspace's assistant key there, since `FluxIQBrowserSession`
+refuses `set-assistant-model`. The endpoint allowlist still keeps every other
+key endpoint (create, rotate, reveal, the default and the assistant's choice,
 offering) away from a token. Each body is rebuilt from those fields alone, and
 each answer is exactly `{ modelAccess }`, rebuilt by the contract reader and
-without the key's id. Each write runs the free provider check before it
-answers, and its change reaches every client through `server.model_access_changed`
-and the panel's `model-access` change event.
+without the key's id. Each write runs the free provider check BEFORE the value
+is stored (t950; so do the panel's `create-key` and `rotate-key`). A key the
+provider refuses, or whose account has no credit, is never stored. The answer is
+a refusal whose code is that outcome (`provider_refused` or `no_credit`), the
+person's previous key and value stay in use, and Activity records a failed write
+of that kind. A provider out of reach (`provider_unreachable`) does not block the
+save: the key is stored and reads that outcome. A stored key's change reaches
+every client through `server.model_access_changed` and the panel's
+`model-access` change event.
 
 `remove-recording-entry` (`runtime.control`, `authoring`) takes
 `{ projectId, recordingId, eventId }` and removes every entry of a recording
@@ -1199,8 +1212,14 @@ reads the Secret Keys snapshot again.
   `installModelAccessPush`, wired in `programs/_shared/runtime.ts`), which
   answers a ready person-paired session's person (`{ sessionId, userId,
   trustedClientId }`) with that person's state as the Secret Keys snapshot
-  answers them on that session, or null for "send nothing" when the person is
-  disabled, gone or roleless (read as the paired program route reads them). It
+  answers them on that session, or null for "send nothing" when that session's
+  own `snapshot` call would be refused: the person is disabled, gone or
+  roleless (read as the paired program route reads them), their role lacks the
+  snapshot's permission, or IAM denies `secrets:Snapshot` to the paired-client
+  actor the route builds (`modelAccessRecipientAllowed`, decided per recipient
+  each time with the snapshot's registered action and resource, without an
+  audit row; a decision that could not be made throws, so nothing is sent). The
+  push and the snapshot therefore never disagree (t950). It
   calls `publish()` whenever model access may have changed: a committed Secret
   Keys change (`SecretKeysService.onModelKeysChanged`), a changed last-call or
   free-check outcome (`AutomationStudioModelAccessLedger.subscribe`), an IAM

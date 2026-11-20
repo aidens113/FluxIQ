@@ -4,7 +4,8 @@ import type { SecretKeysService } from "../runtime/service.ts";
 import type { SecretKeySummary } from "../types.ts";
 import { callerModelAccess, type SecretKeyModelAccessOf, type SecretKeySessionOf } from "./caller-model-access.ts";
 import { SECRET_KEYS_ENDPOINTS, type SaveModelKeyProvider } from "./contracts.ts";
-import { checkSavedModelKey, type SecretKeySavedKeyCheck } from "./saved-key-check.ts";
+import { checkModelKeyBeforeSaving } from "./check-before-saving.ts";
+import type { SecretKeySavedKeyCheck } from "./saved-key-check.ts";
 
 /** What the three model-key writes need from the host besides the service. */
 export type ModelKeyWritePorts = {
@@ -30,16 +31,39 @@ type Refusal = { ok: false; error: string };
 /**
  * `save-model-key`, `replace-model-key` and `remove-model-key`: the key a
  * person's chats use, saved, replaced or removed from the panel or a paired
- * client with nothing but IAM (`secrets.manage`, Write, on the workspace). No
- * password, PIN or authenticator code is asked for. Each answers the caller's
- * model access read after the change; never the value.
+ * client with nothing but IAM. No password, PIN, authenticator code or
+ * confirmation is asked for: the person pressing Save or Remove in their own
+ * settings is the whole act (user, 2026-11-14 and 2026-11-16). Each answers the
+ * caller's model access read after the change; never the value.
+ *
+ * Each is decided on the caller's own user (`endpointResource.selfUser()`),
+ * never on the workspace or on a key named by the payload: the handlers read
+ * nothing but the caller, so there is no other resource they could reach. A
+ * policy grants them per person (`FluxIQUserAccess`'s `OwnModelKey`, and
+ * `FluxIQBrowserSession` for the session's own person).
+ *
+ * They are `authoring`, not `program-gated` or `destructive`: the program runs
+ * no credential check of its own, and removing one's own key withdraws one's
+ * own access as revoking a client does, with nothing of anyone else's removed
+ * (t950).
+ *
+ * Save and replace ask the provider's free check BEFORE the value is stored
+ * (`checkModelKeyBeforeSaving`, t950): a key the provider refuses, or whose
+ * account has no credit, is never stored and the answer is that refusal (its
+ * outcome as the error code, so Activity reads a failed write of that kind and
+ * the panel keeps the typed key); an unreachable provider does not block the
+ * save, and the stored key reads that outcome.
  *
  * Each changes only the caller's own calls. Saving is their own choice of key
- * (`ModelKeySettings.keySavedBy`), never the workspace's assistant key or model,
- * except that the first key saved into a workspace with no assistant key
- * becomes it. Replacing keeps the key's id, so nobody's choice moves; removing
- * drops the caller's own choice, and if it was the workspace's chosen key the
- * workspace is left with none rather than moved onto another person's key.
+ * (`ModelKeySettings.keySavedBy`), never the workspace's assistant key or
+ * model, except that the first key saved into a workspace with no assistant
+ * key becomes it (t928), and only when the saver may choose the workspace's
+ * assistant key at all, decided exactly as `set-assistant-model` is
+ * (`mayChooseForWorkspace`, t950): a member, or a paired browser under
+ * `FluxIQBrowserSession`, never sets a workspace choice by saving. Replacing
+ * keeps the key's id, so nobody's choice moves; removing drops the caller's own
+ * choice, and if it was the workspace's chosen key the workspace is left with
+ * none rather than moved onto another person's key.
  */
 export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistry, service: SecretKeysService, ports: ModelKeyWritePorts): void {
   const access = (actor: ProgramApiActor, answer: boolean) => {
@@ -47,6 +71,14 @@ export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistr
     return callerModelAccess({ service, modelAccessOf: ports.modelAccessOf, keySessionOf: ports.keySessionOf, actor, answer });
   };
   const answered = async (actor: ProgramApiActor): Promise<ProgramApiResponse> => ({ ok: true, payload: { modelAccess: await access(actor, true) } });
+  /** Whether IAM would let the caller choose the workspace's assistant key: `set-assistant-model`'s own registered action, permission and resource. */
+  const mayChooseForWorkspace = async (actor: ProgramApiActor): Promise<boolean> => {
+    const registration = registry.endpoints().find((entry) => entry.programId === "secret-keys" && entry.endpoint === SECRET_KEYS_ENDPOINTS.setAssistantModel);
+    if (!registration?.action) return false;
+    const resources = registration.resource?.of({ programId: "secret-keys", endpoint: registration.endpoint, scope: {}, payload: {}, actor });
+    const decided = await registry.decideUnrecorded({ actor, action: registration.action, permission: registration.permission, ...(resources === undefined ? {} : { resources }), programId: "secret-keys" });
+    return decided.allowed;
+  };
   /** The caller's in-use key when it is their own, or the plain reason it cannot be changed. */
   const ownInUseKey = async (actor: ProgramApiActor, act: keyof typeof REFUSALS): Promise<SecretKeySummary | Refusal> => {
     const id = (await access(actor, false)).key?.id;
@@ -58,9 +90,10 @@ export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistr
     programId: "secret-keys",
     permission: "secrets.manage",
     // Decided by IAM alone: the program adds no credential step, and the registry adds none for this classification.
-    classification: "program-gated",
+    classification: "authoring",
     accessLevel: "Write",
-    resource: endpointResource.workspace(),
+    // The caller's own user: the only thing these handlers act for (t950).
+    resource: endpointResource.selfUser(),
     // Activity says the key was saved, replaced or removed only when it was: the outcome is audited after the handler.
     auditOutcome: true
   } as const;
@@ -78,14 +111,18 @@ export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistr
       if (!ports.modelAccessOf) return { ok: false, error: NO_ACCESS_READING };
       return refusedPlainly(async () => {
         const provider = PROVIDERS[input.provider];
-        // One change notice, given once the free check is recorded: no client reads the new key as ready before the check says.
+        // The free check comes first: a key the provider refuses, or whose account has no credit, is never stored, so
+        // it is never listed, turned on or made the person's choice, and their previous key stays in use (t950).
+        const checked = await checkModelKeyBeforeSaving(ports.checkSavedKey, { kind: "llm", enabled: true, provider: provider.stored }, input.value, "save");
+        if (!checked.ok) return checked;
+        // One change notice, given once the check is recorded: no client reads the new key as ready before the check says.
         await service.holdingModelKeysNotice(async () => {
           const key = await service.createKey({ name: input.name ?? provider.defaultName, value: input.value, kind: "llm", provider: provider.stored, createdBy: actor.userId });
           // The caller's own calls use the key they just saved, and nobody else's change: the workspace's assistant key
           // and model stay as an owner or administrator chose them. Only a workspace with no assistant key at all takes
-          // this first saved key as its own, so a person alone saves and talks with no other step.
-          await service.modelKeys.keySavedBy(key.id, actor.userId);
-          await checkSavedModelKey(ports.checkSavedKey, key, input.value);
+          // this first saved key as its own, and only from a saver who may choose it (t928, t950).
+          await service.modelKeys.keySavedBy(key.id, actor.userId, { mayChooseForWorkspace: await mayChooseForWorkspace(actor) });
+          checked.record(key);
         });
         return answered(actor);
       });
@@ -104,9 +141,12 @@ export function registerModelKeyWriteEndpoints(registry: GlobalProgramApiRegistr
       return refusedPlainly(async () => {
         const key = await ownInUseKey(actor, "replace");
         if ("ok" in key) return key;
+        // Checked before the new value replaces the old: a refused value leaves the key and its value as they were (t950).
+        const checked = await checkModelKeyBeforeSaving(ports.checkSavedKey, key, value, "replace");
+        if (!checked.ok) return checked;
         await service.holdingModelKeysNotice(async () => {
           const replaced = await service.rotateKey({ id: key.id, value, actorUserId: actor.userId });
-          await checkSavedModelKey(ports.checkSavedKey, replaced, value);
+          checked.record(replaced);
         });
         return answered(actor);
       });

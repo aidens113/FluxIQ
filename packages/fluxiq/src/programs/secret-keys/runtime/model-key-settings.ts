@@ -144,14 +144,20 @@ export class ModelKeySettings {
    * chosen one was lost): then this first saved key becomes it, chosen by
    * them. The check and the write happen together, so two first saves at once
    * never both take the workspace. Says whether it became the workspace's key.
+   *
+   * `mayChooseForWorkspace` is whether the saver may choose the workspace's
+   * assistant key at all (the caller decides it as `set-assistant-model` is
+   * decided, t950). When they may not, as a member under `service`, the save is
+   * their own choice alone even in an empty workspace: a person IAM refuses the
+   * workspace's choice never makes it by saving a key.
    */
-  async keySavedBy(keyId: string, userId: string): Promise<{ workspaceKey: boolean }> {
+  async keySavedBy(keyId: string, userId: string, options: { mayChooseForWorkspace?: boolean } = {}): Promise<{ workspaceKey: boolean }> {
     await this.load();
     const key = this.store.get(keyId);
     const refusal = refusalFor(key, "be used for your calls");
     if (refusal) throw new Error(refusal);
     if (key?.createdBy !== userId) throw new Error("Only the person who added a key can choose it for their own calls.");
-    const workspaceKey = !hasWorkspaceKeyBesides(this.record, this.assistantKey(), this.modelKeys(), keyId);
+    const workspaceKey = options.mayChooseForWorkspace !== false && !hasWorkspaceKeyBesides(this.record, this.assistantKey(), this.modelKeys(), keyId);
     this.update({
       personKeyChoices: PersonKeyChoices.chosen(this.record?.personKeyChoices, userId, keyId, this.now()),
       ...(workspaceKey ? { assistantKeyId: keyId, assistantChosenBy: userId, assistantModel: undefined, assistantModelProvider: undefined, noAssistantKey: undefined } : {})

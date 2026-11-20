@@ -6,6 +6,7 @@ import { normalizePeerAddress, type SourceAllowlist } from "../source";
 import { readBearerToken, type ProvisioningTokenVerifier } from "../token";
 import type { ProvisioningListenerServices } from "../types";
 import { formatRequestLogLine } from "./format-request-log-line";
+import { failureKind } from "./failure-kind";
 import { readJsonBody } from "./read-json-body";
 import type { SlidingWindowRateLimiter } from "./sliding-window-rate-limiter";
 import { writeProvisioningAnswer, type ProvisioningAnswerHeaders } from "./write-provisioning-answer";
@@ -20,7 +21,7 @@ export type ProvisioningRequestDeps = {
   retryAfterSeconds: number;
 };
 
-type Outcome = { operation: string | null; status: number; code: string | null };
+type Outcome = { operation: string | null; status: number; code: string | null; failure?: string };
 
 const PARSE_BASE = "http://provisioning-listener.invalid";
 // The contract's code for an unexpected failure; its answer says nothing of the failure.
@@ -35,21 +36,22 @@ const INTERNAL_ERROR_STATUS = PLATFORM_PROVISIONING_ERROR_STATUS[INTERNAL_ERROR_
  * callers); a valid Bearer token (401); a JSON body of at most 64 KiB (400 or
  * 413, `invalid_input`); then the operation, as the website's service identity
  * from that peer. Each request logs one line: operation, status, error code
- * and duration, never a header or the body.
+ * and duration (and an unexpected failure's kind), never a header or the body.
  */
 export function createProvisioningRequestHandler(deps: ProvisioningRequestDeps): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     const startedMs = performance.now();
     const outcome: Outcome = { operation: null, status: INTERNAL_ERROR_STATUS, code: INTERNAL_ERROR_CODE };
     handle(request, response, deps, outcome)
-      .catch(() => {
-        /* best-effort: the failure is answered as a generic 500 and logged as internal_error; its detail is never logged, since it may carry request data */
+      .catch((error: unknown) => {
+        // Answered as a generic 500; the log names only the failure's kind (class and machine code), never its message, which may carry request data.
+        outcome.failure = failureKind(error);
         outcome.status = INTERNAL_ERROR_STATUS;
         outcome.code = INTERNAL_ERROR_CODE;
         answerInternalError(response);
       })
       .finally(() => {
-        deps.log(formatRequestLogLine({ operation: outcome.operation, status: outcome.status, code: outcome.code, durationMs: performance.now() - startedMs }));
+        deps.log(formatRequestLogLine({ operation: outcome.operation, status: outcome.status, code: outcome.code, durationMs: performance.now() - startedMs, ...(outcome.failure === undefined ? {} : { failure: outcome.failure }) }));
       });
   };
 }
@@ -103,7 +105,7 @@ function refuse(response: ServerResponse, outcome: Outcome, code: PlatformProvis
   writeProvisioningAnswer(response, outcome.status, { ok: false, error: { code, message } }, headers);
 }
 
-/** A generic `internal_error` (500): nothing about the failure reaches the caller or the log. */
+/** A generic `internal_error` (500): nothing about the failure reaches the caller, and the log has only its kind. */
 function answerInternalError(response: ServerResponse): void {
   if (response.headersSent) {
     response.destroy();

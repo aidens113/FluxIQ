@@ -1,9 +1,11 @@
 // A write that runs a saved key's free check tells clients of its change
 // once, after the check is recorded (t928, round 3): the live proof saw
 // `ready` pushed at the commit and `provider_refused` about 120 ms later, so a
-// key the provider refuses read ready for a moment. The notice is held for
-// that write alone, given exactly once however the check ends, and never for
-// a write that failed. No timer anywhere; dummy values; in-memory store.
+// key the provider refuses read ready for a moment. Since t950 the provider is
+// asked BEFORE anything is stored: while it is asked the key does not exist
+// and nobody is told; then the store, the recorded verdict and exactly one
+// notice. A refused key is never stored and gives no notice. No timer
+// anywhere; dummy values; in-memory store.
 
 import { describe, expect, it } from "vitest";
 import type { ModelAccessState } from "@fluxiq/contracts/platform";
@@ -14,23 +16,28 @@ import { SecretKeysService } from "../../runtime/service.ts";
 import { WEAK_SCRYPT_PARAMETERS, createMemoryRepository, hostProtectionOptions } from "../../runtime/tests/secret-key-fixtures.ts";
 import type { SecretKeysSnapshot } from "../../types.ts";
 import { registerSecretKeysApi } from "../handlers.ts";
+import type { SecretKeySavedKeyCheck } from "../saved-key-check.ts";
 
 const panel = actor("alice", "admin", adminRole.permissions);
 
-/** A check the test finishes by hand: it resolves, or rejects, when told. */
+/** A check the test finishes by hand: its probe answers, or rejects, when told; `record` notes the verdict kept. */
 function heldCheck() {
   const events: string[] = [];
-  let finish: (outcome: "resolve" | "reject") => void = () => undefined;
+  let finish: (outcome: "resolve" | "reject" | "refuse") => void = () => undefined;
   let started: () => void = () => undefined;
   const begun = new Promise<void>((resolve) => { started = resolve; });
-  const check = async () => {
-    events.push("check started");
-    started();
-    const outcome = await new Promise<"resolve" | "reject">((resolve) => { finish = resolve; });
-    events.push(`check ${outcome}d`);
-    if (outcome === "reject") throw new Error("provider check failed");
+  const check: SecretKeySavedKeyCheck = {
+    probe: async () => {
+      events.push("check started");
+      started();
+      const outcome = await new Promise<"resolve" | "reject" | "refuse">((resolve) => { finish = resolve; });
+      events.push(`check ${outcome}d`);
+      if (outcome === "reject") throw new Error("provider check failed");
+      return outcome === "refuse" ? { outcome: "provider_refused" } : { outcome: "answered" };
+    },
+    record: (_key, verdict) => { events.push(`recorded ${verdict.outcome}`); }
   };
-  return { events, begun, check, finish: (outcome: "resolve" | "reject") => finish(outcome) };
+  return { events, begun, check, finish: (outcome: "resolve" | "reject" | "refuse") => finish(outcome) };
 }
 
 function workspace(options: { protected?: boolean } = {}) {
@@ -53,15 +60,29 @@ function workspace(options: { protected?: boolean } = {}) {
 const notices = (events: readonly string[]) => events.filter((event) => event === "notice").length;
 
 describe("a write that runs the free check", () => {
-  it.each(["resolve", "reject"] as const)("on save-model-key, notifies exactly once, only after the check is recorded (check %ss)", async (outcome) => {
-    const { call, held } = workspace();
+  it.each([
+    ["resolve", "answered"],
+    ["reject", "provider_unreachable"]
+  ] as const)("on save-model-key, asks before storing, then notifies exactly once after the verdict is recorded (check %ss)", async (outcome, recorded) => {
+    const { service, call, held } = workspace();
     const saving = call("save-model-key", { provider: "anthropic", value: "dummy-saved-value" });
     await held.begun;
-    // The key is committed and the assistant chosen, yet nobody has been told.
+    // While the provider is asked, nothing is stored and nobody has been told.
+    expect((await service.snapshot()).keys).toEqual([]);
     expect(notices(held.events)).toBe(0);
     held.finish(outcome);
     expect((await saving).ok).toBe(true);
-    expect(held.events).toEqual(["check started", `check ${outcome}d`, "notice"]);
+    expect(held.events).toEqual(["check started", `check ${outcome}d`, `recorded ${recorded}`, "notice"]);
+  });
+
+  it("stores nothing and tells nobody when the provider refuses the key", async () => {
+    const { service, call, held } = workspace();
+    const saving = call("save-model-key", { provider: "anthropic", value: "dummy-refused-value" });
+    await held.begun;
+    held.finish("refuse");
+    expect(await saving).toMatchObject({ ok: false, errorCode: "provider_refused" });
+    expect(held.events).toEqual(["check started", "check refused"]);
+    expect((await service.snapshot()).keys).toEqual([]);
   });
 
   it.each([
@@ -78,7 +99,7 @@ describe("a write that runs the free check", () => {
     held.finish("resolve");
     const answer = await writing;
     expect(answer.ok, answer.error).toBe(true);
-    expect(held.events).toEqual(["check started", "check resolved", "notice"]);
+    expect(held.events).toEqual(["check started", "check resolved", "recorded answered", "notice"]);
   });
 
   it("holds only its own notice: another write meanwhile notifies at once", async () => {
@@ -91,14 +112,18 @@ describe("a write that runs the free check", () => {
     expect(held.events).toEqual(["check started", "notice"]);
     held.finish("resolve");
     await saving;
-    expect(held.events).toEqual(["check started", "notice", "check resolved", "notice"]);
+    expect(held.events).toEqual(["check started", "notice", "check resolved", "recorded answered", "notice"]);
   });
 
   it("gives no notice for a write that failed, and leaves no hold behind", async () => {
     const { service, call, held } = workspace({ protected: false });
-    const refused = await call("save-model-key", { provider: "anthropic", value: "dummy-refused-value" });
-    expect(refused).toMatchObject({ ok: false });
-    expect(held.events).toEqual([]);
+    const saving = call("save-model-key", { provider: "anthropic", value: "dummy-unstorable-value" });
+    await held.begun;
+    held.finish("resolve");
+    // The provider took it, but this store cannot keep it: the write fails after the check, and nobody is told.
+    expect(await saving).toMatchObject({ ok: false });
+    expect(held.events).toEqual(["check started", "check resolved"]);
+    held.events.length = 0;
     // The next change, outside any write's hold, is told at once.
     await service.modelKeys.setAssistantAllowance(1);
     expect(held.events).toEqual(["notice"]);

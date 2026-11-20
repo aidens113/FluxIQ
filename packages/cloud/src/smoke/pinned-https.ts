@@ -9,7 +9,7 @@ export type PinnedAnswer = { status: number; sessionPairs: string[]; body: strin
  * pairs to send, extra headers, and whether to send the public origin as the
  * Origin (default yes; a provider's webhook sends none).
  */
-export type PinnedCall = { method: "GET" | "POST"; path: string; body?: string; session?: readonly string[]; headers?: Readonly<Record<string, string>>; withOrigin?: boolean };
+export type PinnedCall = { method: "GET" | "POST" | "DELETE"; path: string; body?: string; session?: readonly string[]; headers?: Readonly<Record<string, string>>; withOrigin?: boolean };
 
 /**
  * An HTTPS client for the smoke that trusts only the deployment's exported

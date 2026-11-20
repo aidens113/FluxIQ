@@ -1,8 +1,10 @@
 // @fluxiq-test-group real-sql
 // A person's model access through the host's real composition (t928): saving a key through the Secret Keys API
 // runs the free check and pushes the result to the person's paired client and to the panel's change signal, with
-// no timer; a refusal is still read after a restart; and a Flow call by someone with no key of their own uses a
-// key another person lent the workspace. Keys and passwords are synthetic, and every provider call goes to a
+// no timer; a recorded outcome is still read after a restart; and a Flow call by someone with no key of their own
+// uses a key another person lent the workspace. Since t950 the check runs BEFORE the key is stored: a key the
+// provider refuses is never stored and changes nobody's state, so the outcome a stored key can carry from its
+// check is "unreachable". Keys and passwords are synthetic, and every provider call goes to a
 // stubbed `fetch`.
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -34,12 +36,15 @@ class RecordingSocket implements ClientGatewaySocket {
 
 let fixture: RuntimeAccessFixture;
 let requests: Array<{ url: string; authorization: string | null; apiKey: string | null }>;
-/** How the stubbed provider answers: Anthropic refuses every key, DeepSeek answers a diagnosis. */
+/** How the stubbed Anthropic answers this test's checks: it refuses every key, or cannot be reached. */
+let anthropic: "refuse" | "unreachable" = "refuse";
+/** How the stubbed provider answers: Anthropic as `anthropic` says, DeepSeek a diagnosis. */
 const provider = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const headers = new Headers(init?.headers);
   requests.push({ url, authorization: headers.get("authorization"), apiKey: headers.get("x-api-key") });
   if (url.startsWith("https://api.anthropic.com/")) {
+    if (anthropic === "unreachable") throw new TypeError("fetch failed");
     return new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), { status: 401, headers: { "content-type": "application/json" } });
   }
   return new Response(JSON.stringify({
@@ -52,6 +57,7 @@ beforeEach(async () => {
   vi.stubEnv("FLUXIQ_PROFILE", "local");
   vi.stubEnv("FLUXIQ_SECRET_KEYS_KEYRING_FILE", "");
   requests = [];
+  anthropic = "refuse";
   vi.stubGlobal("fetch", provider);
   fixture = await RuntimeAccessFixture.create();
   // Projects and their Flows live in the v2 layout's SQL stores.
@@ -88,24 +94,33 @@ async function snapshotModelAccess(runtime: GlobalProgramRuntime, login: Login) 
 }
 
 describe("a saved key's model access is pushed with no timer", () => {
-  it("sends the free check's refusal to the person's paired client and tells the panel's signal, never with the key's id or value", async () => {
+  it("sends the free check's outcome to the person's paired client and tells the panel's signal, never with the key's id or value", async () => {
     const runtime = fixture.boot({ modelProvidersEnabled: true });
     const login = await fixture.signIn(runtime);
     const socket = await pairWithSocket(runtime, login);
     let panelHeard = 0;
     runtime.modelAccessChanges.subscribe(() => { panelHeard += 1; });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const sentAtPairing = pushed(socket).length;
 
-    const saved = await runtime.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor: panelActor(login), payload: { provider: "anthropic", value: SAVED_VALUE, name: "Work" } });
-    expect(saved.ok).toBe(true);
-
-    // The free check asked Anthropic with the key, and its refusal is the key's last outcome.
+    // A key Anthropic refuses is checked first and never stored: nobody's state changes, nothing new is sent.
+    const refused = await runtime.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor: panelActor(login), payload: { provider: "anthropic", value: SAVED_VALUE, name: "Work" } });
+    expect(refused).toMatchObject({ ok: false, errorCode: "provider_refused" });
     expect(requests.some((request) => request.url.startsWith("https://api.anthropic.com/") && request.apiKey === SAVED_VALUE)).toBe(true);
-    await vi.waitFor(() => expect(pushed(socket).at(-1)).toMatchObject({ status: "provider_refused", key: { name: "Work", provider: "anthropic" }, lastCall: { outcome: "provider_refused" } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(pushed(socket)).toHaveLength(sentAtPairing);
+    expect(await snapshotModelAccess(runtime, login)).toMatchObject({ status: "no_key" });
+
+    // Anthropic out of reach: the key is saved, and that outcome is its last one.
+    anthropic = "unreachable";
+    const saved = await runtime.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor: panelActor(login), payload: { provider: "anthropic", value: SAVED_VALUE, name: "Work" } });
+    expect(saved.ok, saved.error).toBe(true);
+    await vi.waitFor(() => expect(pushed(socket).at(-1)).toMatchObject({ status: "provider_unreachable", key: { name: "Work", provider: "anthropic" }, lastCall: { outcome: "provider_unreachable" } }));
     expect(panelHeard).toBeGreaterThan(0);
     for (const state of pushed(socket)) expect(state.key?.id).toBeUndefined();
     expect(socket.raw.join("\n")).not.toContain(SAVED_VALUE);
     // The panel reads the same state from the snapshot it is told to read again.
-    expect(await snapshotModelAccess(runtime, login)).toMatchObject({ status: "provider_refused", lastCall: { outcome: "provider_refused" } });
+    expect(await snapshotModelAccess(runtime, login)).toMatchObject({ status: "provider_unreachable", lastCall: { outcome: "provider_unreachable" } });
 
     // Nothing that did not change is sent again, and a closed instance tells no one.
     const sentBefore = pushed(socket).length;
@@ -118,7 +133,8 @@ describe("a saved key's model access is pushed with no timer", () => {
     expect(panelHeard).toBe(heardBefore);
   }, 120_000);
 
-  it("sends one state per save or replace of a refused key, the checked one, never ready first", async () => {
+  it("sends one state per save or replace of a key it cannot check, the checked one, never ready first", async () => {
+    anthropic = "unreachable";
     const runtime = fixture.boot({ modelProvidersEnabled: true });
     const login = await fixture.signIn(runtime);
     const socket = await pairWithSocket(runtime, login);
@@ -135,28 +151,29 @@ describe("a saved key's model access is pushed with no timer", () => {
 
     const afterSave = await write("save-model-key", { provider: "anthropic", value: SAVED_VALUE, name: "Work" });
     expect(afterSave).toHaveLength(1);
-    expect(afterSave[0]).toMatchObject({ status: "provider_refused", lastCall: { outcome: "provider_refused" } });
+    expect(afterSave[0]).toMatchObject({ status: "provider_unreachable", lastCall: { outcome: "provider_unreachable" } });
 
     const afterReplace = await write("replace-model-key", { value: `${SAVED_VALUE}-replaced` });
     expect(afterReplace).toHaveLength(1);
-    expect(afterReplace[0]).toMatchObject({ status: "provider_refused", lastCall: { outcome: "provider_refused" } });
+    expect(afterReplace[0]).toMatchObject({ status: "provider_unreachable", lastCall: { outcome: "provider_unreachable" } });
     expect(pushed(socket).some((state) => state.status === "ready")).toBe(false);
   }, 120_000);
 
-  it("still reads the stored refusal after a restart, with no new check", async () => {
+  it("still reads the stored outcome after a restart, with no new check", async () => {
+    anthropic = "unreachable";
     const first = fixture.boot({ modelProvidersEnabled: true });
     const login = await fixture.signIn(first);
     expect((await first.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor: panelActor(login), payload: { provider: "anthropic", value: SAVED_VALUE } })).ok).toBe(true);
-    expect(await snapshotModelAccess(first, login)).toMatchObject({ status: "provider_refused" });
-    // The ledger writes behind the change; wait until the refusal is in the instance's store.
+    expect(await snapshotModelAccess(first, login)).toMatchObject({ status: "provider_unreachable" });
+    // The ledger writes behind the change; wait until the outcome is in the instance's store.
     const store = modelAccessLedgerStore(path.join(fixture.root, ".fluxiq", "data"));
-    await vi.waitFor(async () => expect(JSON.stringify(await store.read())).toContain("provider_refused"));
+    await vi.waitFor(async () => expect(JSON.stringify(await store.read())).toContain("provider_unreachable"));
     await fixture.close(first);
 
     requests = [];
     const second = fixture.boot({ modelProvidersEnabled: true });
     const again = await fixture.signIn(second);
-    expect(await snapshotModelAccess(second, again)).toMatchObject({ status: "provider_refused", lastCall: { outcome: "provider_refused" } });
+    expect(await snapshotModelAccess(second, again)).toMatchObject({ status: "provider_unreachable", lastCall: { outcome: "provider_unreachable" } });
     expect(requests).toEqual([]);
   }, 120_000);
 });

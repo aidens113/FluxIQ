@@ -106,8 +106,9 @@ describe("the model-access ledger's store in an instance", () => {
   it("finishes a store write already running when the instance closes, before its connections close", async () => {
     const root = await storageRoot();
     vi.stubEnv("FLUXIQ_SECRET_KEYS_KEYRING_FILE", "");
-    // The free check is refused, so the save's outcome is noted, and the ledger starts writing it.
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }), { status: 401, headers: { "content-type": "application/json" } })));
+    // The provider cannot be reached, so the key is saved, its check's outcome is noted, and the ledger starts writing
+    // it (a refused key is never stored at all, t950).
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("fetch failed"); }));
     try {
       open.clear();
       const fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false, modelProvidersEnabled: true });
@@ -115,19 +116,19 @@ describe("the model-access ledger's store in an instance", () => {
       const actor = { sessionId: login.session.id, userId: login.user.id, roleId: login.role.id, permissions: [...login.role.permissions], channel: "panel" as const };
       const saved = await fluxiq.programs.api.call({ programId: "secret-keys", endpoint: "save-model-key", scope: {}, actor, payload: { provider: "anthropic", value: "dummy-close-value" } });
       expect(saved.ok).toBe(true);
-      // Closed at once, while the ledger's write of the refusal is still running.
+      // Closed at once, while the ledger's write of the outcome is still running.
       await fluxiq.close();
       closed = true;
       expect(handlesUnder(root)).toEqual([]);
       expect(afterClose).toEqual([]);
 
-      // The write landed before the close: a new instance reads the refusal with no new check.
+      // The write landed before the close: a new instance reads the outcome with no new check.
       closed = false;
       const again = FluxIQ.create({ rootDir: root, loadEnv: false, modelProvidersEnabled: true });
       try {
         const relogin = await again.programs.identityAccess.authenticate({ username: "admin", password: "admin" });
         const snapshot = await again.programs.api.call<unknown, { modelAccess?: { status: string } }>({ programId: "secret-keys", endpoint: "snapshot", scope: {}, actor: { ...actor, sessionId: relogin.session.id }, payload: {} });
-        expect(snapshot.ok && snapshot.payload?.modelAccess?.status).toBe("provider_refused");
+        expect(snapshot.ok && snapshot.payload?.modelAccess?.status).toBe("provider_unreachable");
       } finally {
         await again.close();
       }

@@ -1,7 +1,10 @@
 import type { CloudConfig } from "../config/index.ts";
 import { CLOUD_PROJECT_LABEL } from "./project-label.ts";
 import { COMMERCE_CONFIG_SECRET, renderCommerceConfig, renderComposeEnv, renderOverride, renderServiceEnv, renderSinks } from "./render/index.ts";
-import type { CloudPlan, PlannedFile, PlannedRenderedFile, PlannedSecret } from "./types.ts";
+import type { CloudPlan, PlannedEnvironments, PlannedFile, PlannedRenderedFile, PlannedSecret } from "./types.ts";
+
+/** The secrets volume's name for Caddy's local root certificate, which a rehearsal's runners trust. Public, not a secret. */
+const RUNNER_AUTHORITY_SECRET = "runner_authority";
 
 /**
  * Plans a deployment from its config: the bundle of files Compose runs (the
@@ -30,15 +33,21 @@ export function buildCloudPlan(config: CloudConfig, packageVersion: string, depl
   const services = ["fluxiq", "caddy", ...(config.sinks.mail ? ["mailpit"] : []), ...(config.sinks.payments ? ["stripe-mock"] : [])];
   const pulledImages = [config.images.caddy, ...(config.sinks.mail ? [config.images.mailpit] : []), ...(config.sinks.payments ? [config.images.stripeMock] : [])];
 
+  const environments: PlannedEnvironments | null = config.environments === null ? null : {
+    image: `${config.images.runner}:${packageVersion}`,
+    context: config.environments.runnerContext,
+    dockerfile: config.environments.runnerDockerfile,
+    authoritySecret: config.tls.mode === "internal" ? RUNNER_AUTHORITY_SECRET : null
+  };
   const commerce = renderCommerceConfig(config);
   const renderedFiles: PlannedRenderedFile[] = commerce === null ? [] : [{ name: COMMERCE_CONFIG_SECRET, bundlePath: "env/commerce.json", content: commerce }];
 
   const files: Record<string, PlannedFile> = {
     "caddy/Caddyfile": { copyFrom: `${deployFilesDir}/caddy/Caddyfile.example` },
-    "compose/cloud.override.yml": { content: renderOverride(config.mode) },
-    "compose/compose.env": { content: renderComposeEnv(config, coreImage, networks.provisioning) },
+    "compose/cloud.override.yml": { content: renderOverride(config.mode, environments !== null) },
+    "compose/compose.env": { content: renderComposeEnv(config, coreImage, networks.provisioning, environments !== null) },
     [baseCompose]: { copyFrom: `${deployFilesDir}/${baseCompose}` },
-    [envFile]: { content: renderServiceEnv(config, publicOrigin, smtpSecret, commerce === null ? null : `/run/secrets/${COMMERCE_CONFIG_SECRET}`) }
+    [envFile]: { content: renderServiceEnv(config, publicOrigin, smtpSecret, commerce === null ? null : `/run/secrets/${COMMERCE_CONFIG_SECRET}`, environments === null ? null : { image: environments.image, network: networks.runners, authorityFile: environments.authoritySecret === null ? null : `/run/secrets/${environments.authoritySecret}` }) }
   };
   for (const file of renderedFiles) files[file.bundlePath] = { content: file.content };
   if (composeFiles.length === 3) files["compose/sinks.compose.yml"] = { content: renderSinks(config.sinks) };
@@ -74,7 +83,8 @@ export function buildCloudPlan(config: CloudConfig, packageVersion: string, depl
     secrets,
     renderedFiles,
     exportedCa: config.tls.mode === "internal" ? `${config.stateDir}/certs/root.crt` : null,
-    mailUi: config.sinks.mail ? `http://127.0.0.1:${config.sinks.mailUiPort}` : null
+    mailUi: config.sinks.mail ? `http://127.0.0.1:${config.sinks.mailUiPort}` : null,
+    environments
   };
 }
 

@@ -18,7 +18,8 @@ import type { SecretKeySummary } from "../types.ts";
 import { unofferedKeyRefusal } from "./unoffered-key-refusal.ts";
 import { createSecretKeyManagementProof, type SecretKeyManagementProof } from "../runtime/access/index.ts";
 import { callerModelAccess, type SecretKeyModelAccessOf, type SecretKeySessionOf } from "./caller-model-access.ts";
-import { checkSavedModelKey, type SecretKeySavedKeyCheck } from "./saved-key-check.ts";
+import { checkModelKeyBeforeSaving } from "./check-before-saving.ts";
+import type { SecretKeySavedKeyCheck } from "./saved-key-check.ts";
 import { registerModelKeyWriteEndpoints } from "./model-key-endpoints.ts";
 
 /** Trusted host identity authority; tenant storage never becomes the account authority. */
@@ -32,7 +33,7 @@ type IdentityAuthoritySource = SecretKeyIdentityAuthority | (() => Promise<Secre
 // password (and authenticator code where one is set), never a PIN.
 // `keySessionOf` names the session a caller acts under (a paired client's is its own) and the holder asking, for the readiness a snapshot carries.
 // `modelAccessOf` is the host's reading of the caller's model access, from the snapshot read for them; it rides on that snapshot as `modelAccess`, and on every answer that changes a key.
-// `checkSavedKey` is the host's free provider check of a model key's new value, run after create-key, rotate-key, save-model-key and replace-model-key.
+// `checkSavedKey` is the host's free provider check of a model key's new value, run BEFORE create-key, rotate-key, save-model-key and replace-model-key store it (t950): a refused value is never stored.
 export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, service: SecretKeysService, identityAccess?: IdentityAuthoritySource, keySessionOf?: SecretKeySessionOf, modelAccessOf?: SecretKeyModelAccessOf, checkSavedKey?: SecretKeySavedKeyCheck): void {
   // A key's owner is the user that created it (`createdBy`, stamped from the
   // acting user on create), so the service already records it and no separate
@@ -82,7 +83,10 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       if (!payload?.name || !payload.value) return { ok: false, error: "name and value are required" };
       if (payload.metadata !== undefined && !isJsonObject(payload.metadata)) return { ok: false, error: "metadata must be a JSON object" };
       return plainRefusal(async () => {
-        // Clients are told of the change once the free check is recorded, never while the new key reads ready unchecked.
+        // The free check runs before anything is stored: a key the provider refuses is never saved (t950).
+        const checked = await checkModelKeyBeforeSaving(checkSavedKey, { kind: payload.kind === "custom" ? "custom" : "llm", enabled: payload.enabled ?? true, provider: payload.provider }, payload.value, "save");
+        if (!checked.ok) return checked;
+        // Clients are told of the change once the check is recorded, never while the new key reads ready unchecked.
         const created = await service.holdingModelKeysNotice(async () => {
           const key = await service.createKey({
             name: payload.name,
@@ -96,7 +100,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
             ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
             createdBy: request.actor?.userId
           });
-          await checkSavedModelKey(checkSavedKey, key, payload.value);
+          checked.record(key);
           return key;
         });
         return { ok: true, payload: await withModelAccess(request.actor, created) };
@@ -148,9 +152,13 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
       const payload = request.payload as RotateSecretKeyRequest | undefined;
       if (!payload?.id || !payload.value) return { ok: false, error: "id and value are required" };
       return plainRefusal(async () => {
+        // Checked before the value replaces the old one: a refused value leaves the key as it was (t950).
+        const current = await service.getKeySummary(payload.id);
+        const checked = current ? await checkModelKeyBeforeSaving(checkSavedKey, current, payload.value, "replace") : { ok: true as const, record: () => undefined };
+        if (!checked.ok) return checked;
         const rotated = await service.holdingModelKeysNotice(async () => {
           const key = await service.rotateKey({ id: payload.id, value: payload.value, actorUserId: request.actor?.userId });
-          await checkSavedModelKey(checkSavedKey, key, payload.value);
+          checked.record(key);
           return key;
         });
         return { ok: true, payload: await withModelAccess(request.actor, rotated) };
@@ -271,7 +279,7 @@ export function registerSecretKeysApi(registry: GlobalProgramApiRegistry, servic
 }
 
 /** A refusal the service words for a person (a missing, disabled or wrong kind of key) becomes the reply's error. */
-async function plainRefusal(run: () => Promise<{ ok: true; payload: unknown }>): Promise<{ ok: true; payload: unknown } | { ok: false; error: string }> {
+async function plainRefusal<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T | { ok: false; error: string }> {
   try {
     return await run();
   } catch (error) {

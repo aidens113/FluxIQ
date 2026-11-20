@@ -16,14 +16,14 @@ what a runner image puts inside one.
 | Piece | State |
 | --- | --- |
 | Record, state machine, durable store, `fake` driver | Built, tested (t938) |
-| `docker` driver, runner image `fluxiq-cloud/runner:<version>` | Later unit |
+| `docker` driver, runner image `fluxiq-cloud/runner:<version>` | Built (t953); local rehearsal only |
 | `vm` driver | Later unit, after the docker driver |
 | `local-process` driver | Later unit, for development only |
 | Tenant-bound enrolment of an environment's client | Built (t943) |
 | Admission by counted plan grants (N paid browsers admit N) | Built (t948) |
-| Hosted composition: controller, cloud admission, IAM resolver | Built (t948); `fake` driver only, refused on `service` |
+| Hosted composition: controller, cloud admission, IAM resolver | Built (t948); `docker` driver from configuration (t953) |
 | Provisioning cascade purge | Wired (t948) |
-| Panel API routes for environments (create, start, stop, delete) | Not built |
+| Panel API routes for environments (list, create, start, stop, delete) | Built (t953) |
 | Remote viewer | Mandatory before launch; later unit |
 
 ## The record
@@ -169,8 +169,35 @@ region an environment runs in is the commerce configuration's `region`
 (default: the one region every dedicated grant names). The driver comes from
 `FLUXIQ_ENVIRONMENT_DRIVER`; only `fake` can be built from configuration, and
 the `service` profile refuses it, so a hosted service creates no environment
-until the `docker` or `vm` driver exists. No panel route calls the controller
-yet.
+until a real driver is configured. The domain the runner's client declares at
+the gateway, which every enrolment ticket is minted for, is named by
+`FLUXIQ_ENVIRONMENT_CLIENT_DOMAIN` (the web extension's is `web-automation`; a
+ticket minted for another domain is refused with `enrolment.domain_mismatch`,
+which the first live run of t953 hit while Core guessed `web`). The driver is
+`FLUXIQ_ENVIRONMENT_DRIVER=docker` with
+`FLUXIQ_ENVIRONMENT_DOCKER_PROJECT`, `_IMAGE` and `_NETWORK` (and optionally
+the runner limits, the host a rehearsal's name resolves to, and the local root
+its runners trust), which `fluxiq-cloud` renders for a rehearsal with
+dedicated browsers.
+
+### The panel routes
+
+`/api/platform/v1/environments` (GET lists, POST creates) and
+`/api/platform/v1/environments/[environmentId]?operationId=<id>` (DELETE;
+the operation id is in the query, since a DELETE's content has no defined
+meaning), `.../start` and `.../stop` (POST) act on the signed-in person's own workspace only, decided by
+the IAM actions `iam:ListEnvironments`, `iam:CreateEnvironment`,
+`iam:StartEnvironment`, `iam:StopEnvironment` and `iam:DeleteEnvironment` on
+the workspace (the account's own administration, like the plans), then again by
+the controller's resolver for the environment itself. Each operation carries
+an `operationId`; a create without an `environmentId` derives one from the
+workspace and the operation, so a retried create is the same browser. Answers:
+402 `environments.plan_required` with the admission's `reason` (no plan, a
+lapsed plan, `entitlement-exhausted` once N paid browsers are held); an
+environment of another workspace answers 404 exactly as a missing one; a
+driver failure is 503 and repeating the operation id finishes it. A server
+that bills nothing answers 404. A create or start answers once the runner's
+client has enrolled at the workspace's gateway.
 
 ## Drivers
 
@@ -187,10 +214,27 @@ may report `stopped`; the controller starts both when `running` is desired.
 - **`local-process`**: one runner process on the engine's machine with its
   own profile directory, for development. It isolates nothing between tenants,
   so the hosted service must refuse it in the `service` deployment mode.
-- **`docker`** (interface I5): the local simulation of production. Each
+- **`docker`** (interface I5, built in t953:
+  `platform/environments/docker/`): the local simulation of production. Each
   environment is one container from `fluxiq-cloud/runner:<version>` on the
   network `<project>_runners`, named `<project>-env-<environmentId>`, with one
-  named volume for its profile. Every Docker resource carries
+  named volume (`...-profile`) for its profile. The driver runs the `docker`
+  command line through an injected runner (Core's image carries the client;
+  only a deployment with dedicated browsers gives Core the engine's socket, in
+  the socket's group). `start` starts the container, then runs
+  `docker exec --interactive <container> fluxiq-runner enrol`: the runner asks
+  for a ticket with a `ticket` line, the driver answers it on that exec's
+  standard input, and the relay reports `connected` once the extension's
+  session is up. A runner that did not enrol is stopped again, so it never looks
+  converged. The runner reaches its gateway through the public origin
+  (`wss://<domain>/client`) as a remote runner would; on a `.localhost`
+  rehearsal its browser maps that name to `host.docker.internal` and trusts
+  the rehearsal's local root (public, passed in its environment). The runner
+  image is built from the extension checkout's `deploy/runner/Dockerfile`
+  (Chromium, the built extension, the browser host's `fluxiq-runner`); its
+  unpacked extension at `/opt/fluxiq/extension` has the id
+  `kknpahmjpoklhjbelapilpkhedbkheck`, which the gateway's allowed origins name.
+  Chromium's own sandbox is off inside the container, which is the sandbox. Every Docker resource carries
   `com.fluxiq.cloud.project=<name>`, and the driver adds
   `com.fluxiq.cloud.environment=<environmentId>` so `inspect` and `release`
   find the container and volume by label. `allocate` creates the volume and
@@ -218,8 +262,7 @@ line 13), and service client authorization refuses every managed-host binding
 (`authorize-binding.ts`, line 6). That is correct while managed hosts are only
 the single-tenant `fluxiq dev --browsers` pool ([managed hosts](./managed-hosts.md#enrolment-and-authority)).
 
-The later unit, after t911 (runtime lease isolation, which rewrites the host
-pool) and t929, makes the tenant's own gateway, the one for the environment's
+Built (t943, and t953 for the docker driver's relay): the tenant's own gateway, the one for the environment's
 workspace, mint the enrolment ticket, bound to that `workspaceId` and
 `environmentId` and minted in the engine's process exactly as managed-host
 tickets are. The driver receives a `takeEnrolmentTicket()` with `start` and

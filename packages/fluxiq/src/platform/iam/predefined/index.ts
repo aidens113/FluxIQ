@@ -5,6 +5,7 @@ export * from "./action-list-statements.ts";
 export * from "./administrator-access.ts";
 export * from "./connected-session.ts";
 export * from "./define-predefined-policy.ts";
+export * from "./own-model-key-actions.ts";
 export * from "./owner-full-access.ts";
 export * from "./predefined-policies.ts";
 export * from "./predefined-policy-definition.ts";
