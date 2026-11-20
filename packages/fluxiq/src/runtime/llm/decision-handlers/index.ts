@@ -14,6 +14,8 @@ export * from "./look-withdrawal.ts";
 export * from "./loop-check.ts";
 export * from "./loop-signal.ts";
 export * from "./refusal-run.ts";
+export * from "./model-decision.ts";
+export * from "./refusal-decision-ask.ts";
 export * from "./refused-repeat.ts";
 export * from "./rerun-result.ts";
 export * from "./searching.ts";

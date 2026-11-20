@@ -54,6 +54,7 @@
 // best-effort: a step log that cannot write never changes or fails a call.
 export * from "./answer-step.ts";
 export * from "./directory.ts";
+export * from "./event-step.ts";
 export * from "./flow-step.ts";
 export * from "./model-step.ts";
 export * from "./note-step.ts";

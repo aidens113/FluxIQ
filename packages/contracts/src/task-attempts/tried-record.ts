@@ -43,18 +43,44 @@ export type AutomationStudioTriedEntry = {
   changes?: ReadonlyArray<{ step: number; change: string }>;
 };
 
+/** Why an attempt climbed to a stronger model (Core's `runtime/llm/role-routing/ladder/state.ts`). */
+export const AUTOMATION_STUDIO_TRIED_ESCALATION_REASONS = Object.freeze(["model_decided", "loop_detected", "no_new_evidence", "loop_persisted", "completion_refused_again", "repair_failed"] as const);
+
+export type AutomationStudioTriedEscalationReason = (typeof AUTOMATION_STUDIO_TRIED_ESCALATION_REASONS)[number];
+
+/** One climb: from which model to which, and why. Model ids are codes. */
+export type AutomationStudioTriedEscalation = { from: string; to: string; reason: AutomationStudioTriedEscalationReason; pattern?: AutomationStudioTaskAttemptLoopPattern };
+
+/** The models an attempt used: the one it started on, and each climb, oldest first. */
+export type AutomationStudioTriedLadder = { base: string; escalations: readonly AutomationStudioTriedEscalation[] };
+
+/** The model's own decisions when told it was repeating itself (Core's `runtime/llm/loop-decision/`). */
+export const AUTOMATION_STUDIO_TRIED_LOOP_DECISIONS = Object.freeze(["continue", "change_approach", "ask_person", "escalate_model", "finish_with_best"] as const);
+
+export type AutomationStudioTriedLoopDecisionKind = (typeof AUTOMATION_STUDIO_TRIED_LOOP_DECISIONS)[number];
+
+/** One decision, by kind, and the repeat it was about. Never the model's words. */
+export type AutomationStudioTriedLoopDecision = { decision: AutomationStudioTriedLoopDecisionKind; pattern?: AutomationStudioTaskAttemptLoopPattern; repeats?: number };
+
 export type AutomationStudioTriedRecord = {
   version: 1;
   tried: readonly AutomationStudioTriedEntry[];
   /** Fresh approaches signalled so far. */
   approaches: number;
+  /** The models the attempt used and why it climbed, once it ran on the model ladder. */
+  ladder?: AutomationStudioTriedLadder;
+  /** The model's decisions about repeats it was told of, oldest first. */
+  decisions?: readonly AutomationStudioTriedLoopDecision[];
 };
 
 export type AutomationStudioTriedRecordParseResult =
   | { ok: true; record: AutomationStudioTriedRecord }
   | { ok: false; issues: string[] };
 
-const RECORD_KEYS: ReadonlySet<string> = new Set(["version", "tried", "approaches"]);
+const RECORD_KEYS: ReadonlySet<string> = new Set(["version", "tried", "approaches", "ladder", "decisions"]);
+const LADDER_KEYS: ReadonlySet<string> = new Set(["base", "escalations"]);
+const ESCALATION_KEYS: ReadonlySet<string> = new Set(["from", "to", "reason", "pattern"]);
+const DECISION_KEYS: ReadonlySet<string> = new Set(["decision", "pattern", "repeats"]);
 const ENTRY_KEYS: ReadonlySet<string> = new Set(["kind", "key", "toolId", "outcome", "times", "pattern", "changes"]);
 const CHANGE_KEYS: ReadonlySet<string> = new Set(["step", "change"]);
 
@@ -80,8 +106,41 @@ function readRecord(value: unknown, issues: Set<string>): AutomationStudioTriedR
   if (!isCount(approaches)) issues.add("tried_record.invalid_approaches");
   if (!Array.isArray(tried) || tried.length > LIMITS.triedMaxEntries) issues.add("tried_record.invalid_tried");
   const entries = Array.isArray(tried) ? tried.map((item) => readEntry(item, issues)) : [];
+  const ladder = value.ladder === undefined ? undefined : readLadder(value.ladder);
+  if (ladder === null) issues.add("tried_record.invalid_ladder");
+  const decisions = value.decisions === undefined ? undefined : readDecisions(value.decisions);
+  if (decisions === null) issues.add("tried_record.invalid_decisions");
   if (issues.size > 0 || !isCount(approaches)) return null;
-  return { version: 1, tried: entries.filter((entry) => entry !== null), approaches };
+  return { version: 1, tried: entries.filter((entry) => entry !== null), approaches, ...(ladder ? { ladder } : {}), ...(decisions ? { decisions } : {}) };
+}
+
+function readLadder(value: unknown): AutomationStudioTriedLadder | null {
+  if (!isPlainRecord(value) || !hasOnlyKeys(value, LADDER_KEYS) || !isCode(value.base)) return null;
+  const { escalations } = value;
+  if (!Array.isArray(escalations) || escalations.length > LIMITS.listMaxEntries) return null;
+  const read: AutomationStudioTriedEscalation[] = [];
+  for (const item of escalations) {
+    if (!isPlainRecord(item) || !hasOnlyKeys(item, ESCALATION_KEYS)) return null;
+    const { from, to, reason, pattern } = item;
+    if (!isCode(from) || !isCode(to) || !isMemberOf(AUTOMATION_STUDIO_TRIED_ESCALATION_REASONS, reason)) return null;
+    if (pattern !== undefined && !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS, pattern)) return null;
+    read.push({ from, to, reason, ...(pattern === undefined ? {} : { pattern }) });
+  }
+  return { base: value.base, escalations: read };
+}
+
+function readDecisions(value: unknown): AutomationStudioTriedLoopDecision[] | null {
+  if (!Array.isArray(value) || value.length > LIMITS.listMaxEntries) return null;
+  const read: AutomationStudioTriedLoopDecision[] = [];
+  for (const item of value) {
+    if (!isPlainRecord(item) || !hasOnlyKeys(item, DECISION_KEYS)) return null;
+    const { decision, pattern, repeats } = item;
+    if (!isMemberOf(AUTOMATION_STUDIO_TRIED_LOOP_DECISIONS, decision)) return null;
+    if (pattern !== undefined && !isMemberOf(AUTOMATION_STUDIO_TASK_ATTEMPT_LOOP_PATTERNS, pattern)) return null;
+    if (repeats !== undefined && !isCount(repeats)) return null;
+    read.push({ decision, ...(pattern === undefined ? {} : { pattern }), ...(repeats === undefined ? {} : { repeats }) });
+  }
+  return read;
 }
 
 function readEntry(value: unknown, issues: Set<string>): AutomationStudioTriedEntry | null {

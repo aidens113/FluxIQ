@@ -1,7 +1,8 @@
 // @fluxiq-test-group real-sql
 // Two rows nobody can tell apart (t870). Refusing is right, and a model that keeps pressing them, each
-// time by a new handle, is caught with money still there, steered onto a different way and the person
-// asked, without waiting (R7: a task ends only with its result, its budget or a Stop): through the real service, with a scripted model and a lending library. A model pressing rows
+// time by a new handle, is caught with money still there and asked to decide how to go on (t962); where
+// it decides to ask the person, they are asked without waiting (R7: a task ends only with its result,
+// its budget or a Stop): through the real service, with a scripted model and a lending library. A model pressing rows
 // that really are new is not a loop (the plan's "what is not a loop"). What a look shows is the script's
 // to read, never Core's.
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +37,22 @@ const sameRowEveryTime = (site: LibrarySite, words: string) => {
   return pressed;
 };
 const shownIn = (request: AutomationStudioLlmTaskRequest) => JSON.stringify(request.context.evidenceLoop?.evidence ?? []);
+/** Core asked the model to decide how to go on about a repeat (t962). */
+const askedToDecide = (shown: string): boolean => shown.includes('"decide":{"tool":"core.loop_decision"');
+/** Waits until `holds`, as the attempt goes on by itself. */
+const waitUntil = async (holds: () => boolean): Promise<void> => {
+  for (let tries = 0; tries < 2_000 && !holds(); tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(holds()).toBe(true);
+};
+/** The model's answer the first time it is asked to decide: ask the person; nothing after. */
+const asksOnce = () => {
+  let asked = false;
+  return (request: AutomationStudioLlmTaskRequest): JsonObject | undefined => {
+    if (asked || !askedToDecide(shownIn(request))) return undefined;
+    asked = true;
+    return toolCall("decide.ask", "core.loop_decision", { decision: "ask_person", question: "Which of the two loans with this title is not renewed yet?" });
+  };
+};
 const started = <Run>(run: Promise<Run>): Promise<Run> => {
   run.catch(() => undefined);
   return run;
@@ -61,9 +78,9 @@ describe("a model that keeps pressing a row it cannot tell from one done", () =>
     expect(holds()).toBe(true);
   };
 
-  // R7 revision: the last rung steers the next round onto a different way and asks without waiting; it never parks.
-  it("asks the person with their money still there, never waits on them, and a Stop ends it, with nothing pressed twice", async () => {
-    const { lane, target, shown, running, decisions } = await stuckLane(() => undefined);
+  // t962: caught, the model is asked to decide; its ask_person asks the person, who is never waited on (R7), and a Stop ends it.
+  it("asks the person, when the model decides so, with their money still there, never waits on them, and a Stop ends it, with nothing pressed twice", async () => {
+    const { lane, target, shown, running, decisions } = await stuckLane(asksOnce());
     const ask = await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
     expect(ask.kind).toBe("open");
     expect(ask.timeoutMs).toBeNull();
@@ -83,14 +100,16 @@ describe("a model that keeps pressing a row it cannot tell from one done", () =>
     expect(target.library.renewals[ATLAS]).toBe(1);
     expect(shown.join()).toContain(ROW_UNCLEAR);
     expect(shown.join()).toContain("Read something that tells these rows apart");
-    expect(Object.values(stopped.answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBeGreaterThanOrEqual(1);
+    expect(shown.some(askedToDecide)).toBe(true);
+    expect(Object.values(stopped.answer.attempt.loopsCaught).reduce((sum, each) => sum + each.askPerson, 0)).toBe(1);
   });
 
   it("a person's answer reaches a later round, on the same budget, and the model can say what it has", async () => {
     const ANSWER = "Say what you have done and what you could not tell apart.";
-    const { lane, target, running } = await stuckLane((request) => shownIn(request).includes(ANSWER) ? complete("I renewed one of the two with this title and could not tell which the other is.") : undefined);
-    const ask = await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
-    await lane.service.conversations.answerAsk({ projectId: lane.projectId, askId: ask.askId, kind: "text", value: ANSWER });
+    const ask = asksOnce();
+    const { lane, target, running } = await stuckLane((request) => shownIn(request).includes(ANSWER) ? complete("I renewed one of the two with this title and could not tell which the other is.") : ask(request));
+    const pending = await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
+    await lane.service.conversations.answerAsk({ projectId: lane.projectId, askId: pending.askId, kind: "text", value: ANSWER });
     const finished = await running;
     expect(finished.answer.attempt.status).toBe("achieved");
     expect(finished.answer.attempt.spend.usd).toBeLessThan(BUDGET_USD);
@@ -101,10 +120,11 @@ describe("a model that keeps pressing a row it cannot tell from one done", () =>
     const { lane, site, target } = await siteLane(cleanups);
     const pressed = sameRowEveryTime(site, `${RENEW} ${ATLAS}`);
     const shown: string[] = [];
+    const ask = asksOnce();
     let at = 0;
     const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), ...Array.from({ length: 300 }, () => (request: AutomationStudioLlmTaskRequest) => {
       shown.push(shownIn(request));
-      return pressed((at += 1));
+      return ask(request) ?? pressed((at += 1));
     })] }));
     await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
     lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
@@ -120,7 +140,9 @@ describe("a model told to read that reads and presses the same again", () => {
     const { lane, site, target } = await siteLane(cleanups, { titles: [ATLAS, ATLAS, BIRDS] });
     const pressed = sameRowEveryTime(site, `${RENEW} ${ATLAS}`);
     let at = 0;
-    const decide = () => {
+    const shown: string[] = [];
+    const decide = (request: AutomationStudioLlmTaskRequest) => {
+      shown.push(shownIn(request));
       at += 1;
       if (at % 2 === 0) return pressed(at);
       // A page that moves between every look, so each read lands on a state never seen.
@@ -128,8 +150,8 @@ describe("a model told to read that reads and presses the same again", () => {
       return runNode(`read.${at}`, READ_LOANS, { recordOutput: LOANS_OUTPUT, asking: at });
     };
     const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
-    await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
-    // Caught with money still there; it goes on spending after (R7), so the row is read at the ask, not later.
+    await waitUntil(() => shown.some(askedToDecide));
+    // Caught with money still there; it goes on spending after, so the row is read when it is caught, not later.
     expect((await keptAttempt(lane.service, lane.projectId, "flow.loans"))?.attempt.spend.usd).toBeLessThan(BUDGET_USD);
     lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
     await running;
@@ -141,10 +163,14 @@ describe("a model told to read that reads and presses the same again", () => {
     const pressed = sameRowEveryTime(site, `${RENEW} ${ATLAS}`);
     let at = 0;
     // Each read is asked differently, so each really runs and mints handles of its own: one asked the same again would be answered from memory.
-    const decide = () => (at += 1) % 2 === 0 ? pressed(at) : runNode(`read.${at}`, READ_LOANS, { recordOutput: LOANS_OUTPUT, asking: at });
+    const shown: string[] = [];
+    const decide = (request: AutomationStudioLlmTaskRequest) => {
+      shown.push(shownIn(request));
+      return (at += 1) % 2 === 0 ? pressed(at) : runNode(`read.${at}`, READ_LOANS, { recordOutput: LOANS_OUTPUT, asking: at });
+    };
     const running = started(lane.attempt({ instruction: LOAN_TASK, ...PERMITTED, maxTotalEstimatedCostUsd: BUDGET_USD, keepLooking: true, script: [readLoans(), pressed(0), ...Array.from({ length: 300 }, () => decide)] }));
-    await pendingAsk(lane.service, lane.projectId, "flow.loans", STUCK);
-    // Caught with money still there; it goes on spending after (R7), so the row is read at the ask, not later.
+    await waitUntil(() => shown.some(askedToDecide));
+    // Caught with money still there; it goes on spending after, so the row is read when it is caught, not later.
     expect((await keptAttempt(lane.service, lane.projectId, "flow.loans"))?.attempt.spend.usd).toBeLessThan(BUDGET_USD);
     lane.service.buildCancellation.cancel(lane.projectId, "flow.loans");
     await running;

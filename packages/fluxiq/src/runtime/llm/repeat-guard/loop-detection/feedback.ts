@@ -47,8 +47,12 @@ function repeated(finding: AutomationStudioLlmLoopFinding): string {
   return `You have made this exact call on this exact page ${finding.repeats} times, and it did not work or changed nothing.`;
 }
 
-/** The note a steer shows the model. The call that showed the loop has run; the next one like it will not, unless it is a lasting act on a loop that never refuses one (`nextRefused`). */
-export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoopFinding, audience: AutomationStudioLlmLoopAudience, nextRefused = true): JsonObject {
+/**
+ * The note a steer shows the model. The call that showed the loop has run; the next one like it will not, unless it is a lasting act on a loop that never refuses one (`nextRefused`).
+ * Where the loop asks the model to decide how to go on (`decide`, `../../loop-decision/ask.ts`), the note carries that ask, with what each repeat came back with, in place of the list of things to do instead.
+ */
+export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoopFinding, audience: AutomationStudioLlmLoopAudience, nextRefused = true, decide?: JsonObject): JsonObject {
+  const then = decide ? String(decide.instruction) : DO_INSTEAD[audience];
   return {
     ok: true,
     code: AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_STEERED_CODE,
@@ -56,8 +60,14 @@ export function automationStudioLlmLoopSteerNote(finding: AutomationStudioLlmLoo
     repeats: finding.repeats,
     toolIds: [...finding.toolIds],
     unchanged: [...finding.unchanged],
-    instruction: `${repeated(finding)} Doing the same again will do the same${nextRefused ? ", and the next one like it will be refused before it runs" : ""}. ${DO_INSTEAD[audience]}`
+    instruction: `${repeated(finding)} Doing the same again will do the same${nextRefused ? `, and the next one like it will be refused before it runs${decide ? " unless you decide to continue" : ""}` : ""}. ${then}`,
+    ...(decide ? { decide } : {})
   };
+}
+
+/** What was repeated, how often and what did not change, in the model's terms: what a fresh round is told it was stopped on. */
+export function automationStudioLlmLoopRepeatedWords(finding: Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "toolIds">): string {
+  return repeated({ ...finding, unchanged: [] }).replace(/: \.$/u, ".");
 }
 
 /** What a call refused on a finding is told, in place of the exact repeat's words. */

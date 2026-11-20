@@ -68,4 +68,17 @@ describe("parseAutomationStudioTriedRecord", () => {
     const hostile = { ...VALID, get tried(): string { throw new Error("no"); } };
     expect(issuesOf(hostile)).toEqual(["tried_record.invalid"]);
   });
+
+  it("carries the models an attempt used and why it climbed, and the model's decisions about repeats, as codes only (t962)", () => {
+    const withLadder = {
+      ...VALID,
+      ladder: { base: "claude-haiku-5-5", escalations: [{ from: "claude-haiku-5-5", to: "claude-sonnet-5-5", reason: "model_decided", pattern: "near_repeat" }, { from: "claude-sonnet-5-5", to: "claude-opus-5-5", reason: "repair_failed" }] },
+      decisions: [{ decision: "escalate_model", pattern: "near_repeat", repeats: 2 }, { decision: "continue" }]
+    };
+    expect(parseAutomationStudioTriedRecord(withLadder)).toEqual({ ok: true, record: withLadder });
+    expect(issuesOf({ ...withLadder, ladder: { ...withLadder.ladder, escalations: [{ from: "claude-haiku-5-5", to: "claude-sonnet-5-5", reason: "felt like it" }] } })).toEqual(["tried_record.invalid_ladder"]);
+    expect(issuesOf({ ...withLadder, ladder: { base: "a model I liked very much!" , escalations: [] } })).toEqual(["tried_record.invalid_ladder"]);
+    expect(issuesOf({ ...withLadder, decisions: [{ decision: "continue", why: "the list loads late" }] })).toEqual(["tried_record.invalid_decisions"]);
+    expect(issuesOf({ ...withLadder, decisions: [{ decision: "give_up" }] })).toEqual(["tried_record.invalid_decisions"]);
+  });
 });
