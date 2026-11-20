@@ -1,8 +1,9 @@
 // @fluxiq-test-group real-sql
 // Covers handle-program-request.ts with program-route.ts: a paired client saves, replaces and removes its person's own model
 // key through the whole route, with a real pairing token from the real client gateway, against the real registry, IAM and key
-// store (t928). Nothing asks for a password, PIN or code; IAM decides (`secrets.manage` on the workspace), so a member's client
-// is refused as the member's login is, and every other key write stays the signed-in person's. Dummy values; no provider calls.
+// store (t928, t950). Nothing asks for a password, PIN or code; IAM decides (`secrets.manage` on the caller's own user), so a
+// member's client is refused as the member's login is, a revoked pairing's token is refused before anything runs, and every
+// other key write stays the signed-in person's. Dummy values; no provider calls.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FluxIQ } from "../../../framework/index.ts";
@@ -106,6 +107,26 @@ describe("a paired client and its person's own model key, through the program ro
       expect(answer.body.ok, endpoint).toBe(false);
       expect(answer.raw, endpoint).not.toContain("dummy-member-value");
     }
+    expect((await runtime.secretKeys.snapshot()).keys).toEqual(before);
+  });
+
+  it("refuses a revoked pairing's token before any handler runs, and writes nothing", async () => {
+    const admin = await fixture.signIn(runtime);
+    const client = await fixture.pair(runtime, admin);
+    const token = { token: client.token };
+    expect((await send("save-model-key", { provider: "anthropic", value: "dummy-before-value" }, token)).status).toBe(200);
+    const before = (await runtime.secretKeys.snapshot()).keys;
+    const { trustedClientId } = await fixture.principal(runtime, client, admin.user.id);
+    expect(await runtime.clientGateway.revokeTrustedClient(trustedClientId)).toBe(true);
+
+    const call = vi.spyOn(runtime.api, "call");
+    for (const [endpoint, payload] of [["save-model-key", { provider: "anthropic", value: "dummy-revoked-value" }], ["replace-model-key", { value: "dummy-revoked-value" }], ["remove-model-key", {}], ["snapshot", {}]] as const) {
+      const answer = await send(endpoint, payload, token);
+      expect(answer.status, endpoint).toBe(401);
+      expect(answer.body.ok, endpoint).toBe(false);
+      expect(answer.raw, endpoint).not.toContain("dummy-revoked-value");
+    }
+    expect(call).not.toHaveBeenCalled();
     expect((await runtime.secretKeys.snapshot()).keys).toEqual(before);
   });
 

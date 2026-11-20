@@ -3,7 +3,7 @@ import type { FluxIQProfile } from "@fluxiq/contracts/platform";
 import { IamRequestAuthorizer, type IamPolicySource } from "../../../platform/iam/authorize/index.ts";
 import { compileIamPolicySet, type CompiledIamPolicySet } from "../../../platform/iam/evaluate/index.ts";
 import { iamPrincipalFrn, iamWorkspaceFrn } from "../../../platform/iam/frn/index.ts";
-import { IAM_SERVICE_GUARDRAIL, resolveIamPredefinedPolicy } from "../../../platform/iam/predefined/index.ts";
+import { IAM_CONNECTED_SESSION, IAM_SERVICE_GUARDRAIL, resolveIamPredefinedPolicy } from "../../../platform/iam/predefined/index.ts";
 import { iamStoreChanges } from "../../../platform/iam/store/index.ts";
 import type { IamAuditSink, IamPolicy, IamPolicySet, IamPrincipal, IamRequestConsent, IamRequestContext, IamRequestVia, IamResource } from "../../../platform/iam/index.ts";
 import { rolePolicyNames } from "../../identity-access/runtime/roles.ts";
@@ -78,8 +78,13 @@ const DISCARD: IamAuditSink = Object.freeze({
  *   depend only on the actor and the registrations, so they are compiled once
  *   and cached; registering an endpoint clears the cache.
  * - `service`: the policies `source` attaches to `user/<userId>`, plus
- *   `FluxIQServiceGuardrail`, plus the permission session for a paired
- *   client only. No source denies everything. Never cached: attachments change.
+ *   `FluxIQServiceGuardrail`, plus `FluxIQBrowserSession` as the session
+ *   policy of a paired client only (t950). A paired browser is decided by its
+ *   person's policies narrowed by that session policy, never by the legacy
+ *   identity role its person maps to (a hosted member is `viewer`, which would
+ *   leave their browser read-only whatever their policies allow). Which
+ *   endpoints a token names at all stays the paired program route's allowlist.
+ *   No source denies everything. Never cached: attachments change.
  */
 export class ProgramIamGate {
   private readonly profile: FluxIQProfile;
@@ -180,7 +185,7 @@ export class ProgramIamGate {
     // A lease's resources change between calls of the same machine. Never
     // reuse a person/role cache entry or a policy from its previous lease.
     if (actor.serviceIdentity !== undefined) return this.compiledMachineSet(actor, principal);
-    if (this.profile === "service") return this.compiledServiceSet(actor, principal, override);
+    if (this.profile === "service") return this.compiledServiceSet(actor, principal);
     const key = [actor.userId, actor.roleId, [...new Set(actor.permissions)].sort().join(","), override === undefined ? "" : `${override.action}=${String(actor.permissions.includes(override.permission))}`].join("\u0001");
     const cached = this.compiledSets.get(key);
     if (cached !== undefined) return { available: true, compiled: cached };
@@ -204,7 +209,7 @@ export class ProgramIamGate {
     }
   }
 
-  private async compiledServiceSet(actor: ProgramApiActor, principal: IamPrincipal, override: ProgramIamActionOverride | undefined): Promise<PreparedPolicies> {
+  private async compiledServiceSet(actor: ProgramApiActor, principal: IamPrincipal): Promise<PreparedPolicies> {
     const source = this.source;
     if (source === undefined) return { available: true, compiled: compileIamPolicySet(NO_POLICIES, principal, this.workspaceId) };
     let resolved: IamPolicySet;
@@ -217,7 +222,8 @@ export class ProgramIamGate {
     }
     return this.compileOrDeny(() => {
       const guardrails = resolved.guardrails.some((policy) => policy.name === IAM_SERVICE_GUARDRAIL.name) ? resolved.guardrails : [...resolved.guardrails, IAM_SERVICE_GUARDRAIL];
-      const sessions = actor.channel === "paired-client" ? [...resolved.sessions, this.permissionPolicy(SESSION_POLICY, "session", actor, override)] : resolved.sessions;
+      const pairedSession = actor.channel === "paired-client" && !resolved.sessions.some((policy) => policy.name === IAM_CONNECTED_SESSION.name);
+      const sessions = pairedSession ? [...resolved.sessions, IAM_CONNECTED_SESSION] : resolved.sessions;
       return { ...resolved, guardrails, sessions };
     }, principal);
   }

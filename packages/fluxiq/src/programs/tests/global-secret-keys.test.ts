@@ -8,7 +8,7 @@ import { testTotpCode } from "./totp-code.ts";
 
 describe("global program services", () => {
   it("creates secret keys without requiring TOTP but requires TOTP to reveal them", async () => {
-    const runtime = createGlobalProgramRuntime();
+    const runtime = createGlobalProgramRuntime(undefined, { modelProvidersEnabled: false });
     const setup = await runtime.identityAccess.beginTotp("admin");
     const code = testTotpCode(setup.secret);
     await runtime.identityAccess.confirmTotp("admin", code);

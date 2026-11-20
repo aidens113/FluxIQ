@@ -118,6 +118,10 @@ describe("FluxIQBrowserSession", () => {
     expect(outcome(decide(ALICE, session, "studio:DeleteProject", ownProject))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:RevealKey", ownKey))).toBe("deny:explicit-deny");
     expect(outcome(decide(ALICE, session, "secrets:CreateKey", workspace))).toBe("deny:implicit-deny");
+    // The person's own model key, on their own user only (t950).
+    expect(outcome(decide(ALICE, session, "secrets:SaveModelKey", { frn: iamPrincipalFrn("user", WS, "alice"), ownerId: "alice" }))).toBe("allow:allowed");
+    expect(outcome(decide(ALICE, session, "secrets:RemoveModelKey", { frn: iamPrincipalFrn("user", WS, "bob"), ownerId: "bob" }))).toBe("deny:implicit-deny");
+    expect(outcome(decide(ALICE, session, "secrets:SaveModelKey", workspace))).toBe("deny:implicit-deny");
     expect(outcome(decide(ALICE, session, "iam:SetPassword", { frn: iamPrincipalFrn("user", WS, "alice") }))).toBe("deny:explicit-deny");
   });
 

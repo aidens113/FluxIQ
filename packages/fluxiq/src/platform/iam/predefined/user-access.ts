@@ -1,4 +1,5 @@
 import { defineIamPredefinedPolicy } from "./define-predefined-policy.ts";
+import { IAM_OWN_MODEL_KEY_ACTIONS } from "./own-model-key-actions.ts";
 import { IAM_USER_WORKSPACE_SETTING_READS } from "./user-workspace-setting-reads.ts";
 import { IAM_WORKSPACE_PATTERNS } from "./workspace-patterns.ts";
 
@@ -82,6 +83,14 @@ const OWN_PANEL_ASSISTANT: readonly string[] = [
  *   declares, and only when `fluxiq:RequestOrigin` is `panel`: a paired
  *   browser's call carries `extension-chat`, so its credential never reaches
  *   them through this statement (the handlers refuse it as well).
+ * - `OwnModelKey`: saving, replacing and removing the key the person's own
+ *   chats use (`IAM_OWN_MODEL_KEY_ACTIONS`), on `user/${fluxiq:PrincipalId}`,
+ *   which each of those endpoints declares as its only resource, from any
+ *   origin: the panel, and the person's paired browser, which
+ *   `FluxIQBrowserSession` narrows to the same three on the same user. Never on
+ *   another person's user or the workspace FRN, so a member never reaches
+ *   another person's key or the workspace's assistant key through them, and a
+ *   save never writes the workspace's choice (t950).
  * - No `ops:*`, `platform:*`: a user never reaches operator programs.
  */
 export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1", [
@@ -137,6 +146,12 @@ export const IAM_USER_ACCESS = defineIamPredefinedPolicy("FluxIQUserAccess", "v1
     Action: [...OWN_PANEL_ASSISTANT],
     Resource: "frn:fluxiq:iam:${fluxiq:WorkspaceId}:user/${fluxiq:PrincipalId}",
     Condition: { StringEquals: { "fluxiq:RequestOrigin": "panel" } }
+  },
+  {
+    Sid: "OwnModelKey",
+    Effect: "Allow",
+    Action: [...IAM_OWN_MODEL_KEY_ACTIONS],
+    Resource: IAM_WORKSPACE_PATTERNS.ownUser
   },
   {
     Sid: "OwnClientCredentials",
