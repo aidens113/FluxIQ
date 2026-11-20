@@ -61,21 +61,21 @@ export function automationStudioAnthropicDeciderPrefix(wire: Record<string, unkn
  * the trail entries `prefix` already holds left out, after the decider's blocks; then its instructions (`judgeSystem`)
  * as a system message, every other member of the decider's request in its place.
  *
- * **Only this attempt's decider.** The judge sees the record of the run that produced this attempt's result, never an
- * earlier attempt's. Every call the prefix's evidence holds must be one of the judge's own trail, which holds every call
- * of this attempt across a resume (`SVC/answer-first/trail/`); otherwise, or with no trail, there is no continuation
- * (`undefined`) and the judge is sent on its own.
+ * **Only this attempt's decider.** Which decider is the judge's own is its caller's to say -- the adapter holds a
+ * decider's prefix under its attempt's key and gives it only to a judge of the same attempt (`../../../llm/anthropic/provider.ts`).
+ * It is not read from the evidence: a decider's evidence also holds Core's own entries (where the page's state routed
+ * the run, notes to the attempt, described nodes, a forward run), which are this attempt's history and no call of its
+ * trail (run-mwohvt8n-a57cad8a, 0021/0022: five route-state entries, and every judge of the run fell back).
  */
-export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStudioAnthropicDeciderPrefix, judgeSystem: string, judgeUser: string): Record<string, unknown> | undefined {
+export function automationStudioAnthropicJudgeContinuation(prefix: AutomationStudioAnthropicDeciderPrefix, judgeSystem: string, judgeUser: string): Record<string, unknown> {
   const payload = JSON.parse(judgeUser) as { context?: { resultSummary?: { trail?: { entries?: { callId?: unknown }[]; [key: string]: unknown } } } };
   const trail = payload.context?.resultSummary?.trail;
-  if (!trail || !Array.isArray(trail.entries) || prefix.callIds.length === 0) return undefined;
-  const own = new Set(trail.entries.flatMap((entry) => (typeof entry.callId === "string" ? [entry.callId] : [])));
-  if (!prefix.callIds.every((callId) => own.has(callId))) return undefined;
-  const held = new Set(prefix.callIds);
-  const shown = trail.entries.filter((entry) => typeof entry.callId !== "string" || !held.has(entry.callId));
-  trail.shownAbove = `${trail.entries.length - shown.length} of the attempt's calls are in its evidence above, each by the callId this trail gives, and are not repeated here.`;
-  trail.entries = shown;
+  if (trail && Array.isArray(trail.entries)) {
+    const held = new Set(prefix.callIds);
+    const shown = trail.entries.filter((entry) => typeof entry.callId !== "string" || !held.has(entry.callId));
+    if (shown.length < trail.entries.length) trail.shownAbove = `${trail.entries.length - shown.length} of the attempt's calls are in its evidence above, each by the callId this trail gives, and are not repeated here.`;
+    trail.entries = shown;
+  }
   const messages: Message[] = [
     { role: "user", content: [...prefix.blocks, { type: "text", text: `\n\n${JSON.stringify(payload)}` }] },
     { role: "system", content: `${JUDGE_TURN}\n\n${judgeSystem}` }
