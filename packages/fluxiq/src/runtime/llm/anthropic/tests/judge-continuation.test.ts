@@ -2,6 +2,9 @@
 // its last cache mark, with the judging appended (`../../../models/providers/anthropic/continuation.ts`). A paid probe
 // showed the judge's own output format makes the whole prefix a cache miss, so the judge keeps the decider's JSON-text
 // format and carries its own outputSchema in its message. No model is called: the fetch is scripted.
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../harness/index.ts";
 import { createAutomationStudioAnthropicProvider } from "../provider.ts";
@@ -13,8 +16,12 @@ type Wire = { model: string; max_tokens: number; system: Block[]; messages: { ro
 const DECISION = { kind: "evidence_tool_decision", summary: "Read the shelf.", decision: { kind: "tool_call", callId: "call.4", toolId: "core.inspect_values", input: { parameters: { shelf: { name: "north" } } } } };
 const VERDICT = { kind: "diagnosis", diagnosis: { answersRequest: "yes", defects: [], checked: [{ row: "Emma", column: "title", value: "Emma" }], answerRecords: { asked: true, siteShows: 1 } }, summary: "The book on the shelf is listed." };
 
-function decider(): AutomationStudioLlmTaskRequest {
+/** Every call of an attempt carries its attempt's key, as the routing stamps it (`../../role-routing/provider.ts`, t967). */
+const ATTEMPT = "attempt.1";
+
+function decider(attemptKey = ATTEMPT): AutomationStudioLlmTaskRequest {
   const task = decisionRequest();
+  task.metadata = { ...task.metadata, attemptKey };
   // Declared, as a bound domain declares them: nothing is denied.
   task.deniedEvidenceKeys = [];
   task.context.evidenceLoop!.evidence = ["call.1", "call.2", "call.3"].map((callId, at) => ({ callId, toolId: "core.run_node", value: { ok: true, page: `Shelf ${at + 1}: Emma, Persuasion, Sanditon.` } }));
@@ -22,8 +29,8 @@ function decider(): AutomationStudioLlmTaskRequest {
 }
 
 /** The judge of the same Flow, its trail holding the attempt's calls and one step of a saved Flow's run (no call id). */
-function judge(callIds: readonly string[], continuesDecider = true): AutomationStudioLlmTaskRequest {
-  const base = request({ taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3", expectedOutput: "diagnosis", deniedEvidenceKeys: [], ...(continuesDecider ? { metadata: { source: "test", continuesDecider: true } } : {}) });
+function judge(callIds: readonly string[], continuesDecider = true, attemptKey = ATTEMPT): AutomationStudioLlmTaskRequest {
+  const base = request({ taskKind: "loop_verification", promptVersion: "automation-studio.loop-verification.v3", expectedOutput: "diagnosis", deniedEvidenceKeys: [], metadata: { source: "test", attemptKey, ...(continuesDecider ? { continuesDecider: true } : {}) } });
   const entries = [...callIds.map((callId, at) => ({ n: at + 1, callId, did: "core.run_node", outcome: "answered" })), { n: callIds.length + 1, did: "catalogue.read", outcome: "succeeded" }];
   const resultSummary = { schemaVersion: "automation-studio.run-result-summary.v1", question: "Was it got?", trail: { note: "how to read it", entries }, totalRecordCount: 1, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, recordSets: [{ datasetId: "result", recordCount: 1, refusedCount: 0, truncated: false, columns: ["title"], columnsWithheld: false, rowsChecked: 0, rowsMissingRequired: 0, missingRequiredColumns: [], sampleRows: [{ title: "Emma" }] }], flowShape: [], withheld: false };
   return { ...base, context: { ...base.context, taskKind: "loop_verification", promptVersion: base.promptVersion, resultSummary: resultSummary as unknown as NonNullable<AutomationStudioLlmTaskRequest["context"]["resultSummary"]> } };
@@ -84,10 +91,34 @@ describe("a judge continuing the decider's conversation", () => {
     expect(JSON.stringify(judged.output_config)).not.toBe(JSON.stringify(sent[0]!.output_config));
   });
 
-  it("is a judge of its own where the decider held is another attempt's: its calls are not all in this judge's trail", async () => {
+  it("is a judge of its own where the decider held is another attempt's, by the attempt's key", async () => {
     const { provider, sent } = adapter();
-    await provider.runTask(decider());
-    await provider.runTask(judge(["call.9", "call.10"])).catch(() => undefined);
+    await provider.runTask(decider("attempt.1"));
+    await provider.runTask(judge(["call.1", "call.2", "call.3"], true, "attempt.2")).catch(() => undefined);
     expect(sent[1]!.messages).toHaveLength(1);
+  });
+
+  // t967: run-mwohvt8n-a57cad8a's judges fell back and nothing said why. Each judge's step meta now says.
+  it("says in its step meta whether it continued the decider, and why not where it did not", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "t967-step-log-"));
+    const before = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+    process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
+    try {
+      const { provider } = adapter();
+      await provider.runTask(decider());
+      await provider.runTask(judge(["call.1"]));
+      await provider.runTask(judge(["call.1"], true, "attempt.2")).catch(() => undefined);
+      await provider.runTask(judge(["call.1"], false)).catch(() => undefined);
+      const metas = readdirSync(directory).filter((folder) => folder.endsWith("-judge")).sort().map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { continuation?: unknown });
+      expect(metas.map((meta) => meta.continuation)).toEqual([
+        { used: true, reason: "continues_the_decider" },
+        { used: false, reason: "no_decider_request_held_for_this_attempt_on_this_model" },
+        { used: false, reason: "no_decision_in_this_attempt" }
+      ]);
+    } finally {
+      if (before === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;
+      else process.env.FLUXIQ_LLM_STEP_LOG_DIR = before;
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

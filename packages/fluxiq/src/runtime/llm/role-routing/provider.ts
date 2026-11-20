@@ -57,7 +57,7 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
   const estimateCostUsd = explore.estimateCostUsd;
   return {
     metadata: explore.metadata,
-    runTask: async (request, execution) => await servedBy(request).runTask(request, execution),
+    runTask: async (request, execution) => await servedBy(request).runTask(automationStudioLlmRequestOfAttempt(request), execution),
     servedBy,
     ...(distinct.some((provider) => provider.whenReady) ? { whenReady: async (request: AutomationStudioLlmTaskRequest, execution?: { signal?: AbortSignal }) => await servedBy(request).whenReady?.(request, execution) } : {}),
     // Whichever model waits for a person, the attempt hears it.
@@ -79,6 +79,27 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
     } : {}),
     ...(estimateCostUsd ? { estimateCostUsd: (tokens: { inputTokens: number; outputTokens: number }) => estimateCostUsd.call(explore, tokens) } : {})
   };
+}
+
+/** Each attempt's own key, by its ladder: one ladder per attempt record, and every call of the attempt runs inside its frame (`./ladder/frame.ts`). */
+const ATTEMPT_KEYS = new WeakMap<object, string>();
+let attemptKeys = 0;
+
+/**
+ * `request`, said to be of the attempt whose ladder frame it is made in (`metadata.attemptKey`, t967): what lets a model's
+ * adapter tell its attempt's conversation from any other's -- a judge continuing its decider's cached conversation
+ * (`../anthropic/provider.ts`). A call made outside every attempt's frame carries none. Never sent to a model.
+ */
+function automationStudioLlmRequestOfAttempt(request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest {
+  const ladder = automationStudioLlmModelLadderFrame();
+  if (!ladder) return request;
+  let key = ATTEMPT_KEYS.get(ladder);
+  if (key === undefined) {
+    attemptKeys += 1;
+    key = `attempt.${attemptKeys}`;
+    ATTEMPT_KEYS.set(ladder, key);
+  }
+  return { ...request, metadata: { ...request.metadata, attemptKey: key } };
 }
 
 /** The provider a role is served by on the ladder: its start rung plus the rungs climbed, at most the top. Outside every ladder frame, its start rung. */

@@ -9,9 +9,12 @@
 // it, by the domain's declared view keys. A step that ran a child Flow is followed by that Flow's own steps, in order.
 // Whole: nothing is cut (`../../step-changes.ts` says what the diff lines are).
 //
-// **But the host's raw capture of the page is not sent twice (t965).** A step's `outputs` may carry
-// the host's own capture of the page it left -- every element with its bounds, frame and viewport --
-// beside the domain's view of that same page in `found.view`. Live run `run-mwodpw10-3d5748ab`
+// **But the host's raw capture of the page is not sent twice (t965, t967).** A step's `outputs` may
+// carry the host's own capture of a page -- every element with its bounds, frame and viewport -- that
+// the domain's views show: the page it left, in `found.view`, or, for a step that moved to another
+// page, the page it started on, which the step before it shows as its own view. Live run
+// `run-mwohvt8n-a57cad8a` (judge 0029): a press that opened a listing kept a 190 KB capture of the
+// search page it was pressed on, since the rule matched only the page the view after it was of. Live run `run-mwodpw10-3d5748ab`
 // (judge 0117): three such captures, about 1.1 MB each against a 17 KB view, made a 2.2 MB
 // request the provider refused. So where the attempt has the domain's view after it, the capture
 // of the same page in its outputs is left out and said to be shown as the view: an object in
@@ -35,7 +38,7 @@ type TracedAttempt = {
   failure?: { code?: string | undefined } | undefined;
   skipped?: unknown;
   childTrace?: { attempts?: readonly TracedAttempt[] | undefined } | undefined;
-  stateRefs?: { stateDiff?: JsonObject; afterAction?: { summary?: JsonObject | undefined } } | undefined;
+  stateRefs?: { stateDiff?: JsonObject; beforeAction?: { summary?: JsonObject | undefined }; afterAction?: { summary?: JsonObject | undefined } } | undefined;
 };
 
 /** A node of the Flow, as far as this reads it. */
@@ -65,8 +68,10 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
   const changed = diff ? Object.fromEntries((["added", "removed"] as const).flatMap((key) => (typeof diff[key] === "string" && (diff[key] as string).trim() ? [[key, diff[key]!]] : []))) : {};
   const after = attempt.stateRefs?.afterAction?.summary;
   const view = after ? Object.fromEntries(keys.filter((key) => Object.hasOwn(after, key)).map((key) => [key, after[key]!])) : {};
-  const address = Object.keys(view).length && typeof after?.location === "string" ? pageAddress(after.location) : undefined;
-  const outputs = attempt.outputs && Object.keys(attempt.outputs).length ? (address ? withoutCapture(attempt.outputs as JsonValue, address) : (attempt.outputs as JsonValue)) : undefined;
+  // The pages the domain's views show around this step: the one it left and the one it started on (header).
+  const before = attempt.stateRefs?.beforeAction?.summary;
+  const addresses = new Set(Object.keys(view).length ? [after?.location, before?.location].flatMap((location) => (typeof location === "string" && location.trim() ? [pageAddress(location)] : [])) : []);
+  const outputs = attempt.outputs && Object.keys(attempt.outputs).length ? (addresses.size ? withoutCapture(attempt.outputs as JsonValue, addresses) : (attempt.outputs as JsonValue)) : undefined;
   const found: JsonObject = {
     ...(outputs !== undefined ? { outputs } : {}),
     ...(attempt.message?.trim() ? { message: attempt.message.trim() } : {}),
@@ -82,8 +87,8 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
   };
 }
 
-/** What stands in for the host's capture of the page, which `found.view` shows (header). */
-const CAPTURE_SHOWN_AS_VIEW = "[the host's capture of the page this step left: shown as found.view]";
+/** What stands in for the host's capture of a page the views show (header). */
+const CAPTURE_SHOWN_AS_VIEW = "[the host's capture of the page: shown as a view, this step's or the one before it]";
 
 /** An address as a page names it, its fragment and a closing slash apart. */
 function pageAddress(address: string): string {
@@ -96,10 +101,10 @@ function pageAddress(address: string): string {
  * read it, every element and its geometry, which `found.view` shows as the domain reads it. The outermost such object
  * goes, with all it holds; the answer around it stays.
  */
-function withoutCapture(value: JsonValue, address: string, insideAnswer = false): JsonValue {
-  if (Array.isArray(value)) return value.map((item) => withoutCapture(item, address, insideAnswer));
+function withoutCapture(value: JsonValue, addresses: ReadonlySet<string>, insideAnswer = false): JsonValue {
+  if (Array.isArray(value)) return value.map((item) => withoutCapture(item, addresses, insideAnswer));
   if (value === null || typeof value !== "object") return value;
-  const names = Object.values(value).some((member) => typeof member === "string" && pageAddress(member) === address);
+  const names = Object.values(value).some((member) => typeof member === "string" && addresses.has(pageAddress(member)));
   if (names && insideAnswer) return CAPTURE_SHOWN_AS_VIEW;
-  return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, withoutCapture(member, address, insideAnswer || names)]));
+  return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, withoutCapture(member, addresses, insideAnswer || names)]));
 }
