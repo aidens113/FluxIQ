@@ -31,6 +31,7 @@ import { automationStudioAnswerFirstResultLoopCopies, automationStudioAnswerFirs
 import { automationStudioAnswerFirstResultVersionOf } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstStatedToggle } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstAccounting } from "./accounting.ts";
+import { automationStudioAnswerFirstStepsWithResultProcessing } from "../result-processing/index.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 export type AutomationStudioAnswerFirstDraftOutcome =
@@ -43,6 +44,8 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
     // A caller's input values become the Flow's inputs before anything is assembled, so the draft and the steps the task keeps (`./remember.ts`, after this) both hold the bindings (`../flow-run/input-bound-steps.ts`).
     if (input.caller?.inputs) run.steps = automationStudioAnswerFirstInputBoundSteps(run.steps, input.caller.inputs);
     withoutLoopCopies(run);
+    // The result's processing goes into its output steps' record outputs, so the Flow its steps assemble to applies it (`./result-processing.ts`, t970).
+    run.steps = automationStudioAnswerFirstStepsWithResultProcessing(run);
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary }, projectId: input.projectId, flowId: input.flowId, registry: input.registry, resolution: input.resolution, size: input.size, binding: input.binding,
       permissionFor: () => async () => ({ permitted: true, missing: [], requestId: null }),

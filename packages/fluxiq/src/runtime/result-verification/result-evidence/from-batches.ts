@@ -13,6 +13,8 @@ export function automationStudioResultEvidenceFromBatches(input: {
   const working: AutomationStudioResultEvidenceBundle["working"][number][] = [];
   const looks: AutomationStudioResultEvidencePage[] = [];
   const missing: Array<{ datasetId: string; batchKey?: string }> = [];
+  /** The latest stored processing account (t970): each publication is the whole answer, so its account is the answer's. */
+  let processing: AutomationStudioResultEvidenceBundle["processing"];
   const datasets = new Set(input.datasets);
   for (const entry of input.entries ?? []) {
     if (!datasets.has(entry.datasetId)) continue;
@@ -30,6 +32,7 @@ export function automationStudioResultEvidenceFromBatches(input: {
     coverage.push(...declared.coverage);
     working.push(...declared.working);
     looks.push(...declared.looks);
+    if (isObject(bundle.processing)) processing = declared.processing;
   }
   for (const datasetId of datasets) if (!(input.entries ?? []).some((entry) => entry.datasetId === datasetId)) missing.push({ datasetId });
   // A capture with no later pager verdict states only the places actually recorded. No ended/completeness is invented.
@@ -42,7 +45,7 @@ export function automationStudioResultEvidenceFromBatches(input: {
     coverage.push({ step, version: reads.at(-1)!.version, places, first, ...(places.length ? { last: { place: places.at(-1)! } } : {}) });
   }
   const columns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
-  return { pages, coverage, working, looks, ...(!columns.cutShort && columns.length ? { answerContract: { columns: [...columns] } } : {}), ...(missing.length ? { missingEvidence: missing } : {}) };
+  return { pages, coverage, working, looks, ...(!columns.cutShort && columns.length ? { answerContract: { columns: [...columns] } } : {}), ...(processing ? { processing } : {}), ...(missing.length ? { missingEvidence: missing } : {}) };
 }
 
 function isObject(value: unknown): value is JsonObject { return typeof value === "object" && value !== null && !Array.isArray(value); }

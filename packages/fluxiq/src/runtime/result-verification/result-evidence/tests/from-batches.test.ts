@@ -32,6 +32,13 @@ describe("source batch evidence after processing", () => {
     expect(bundle.pages[0]?.rows[0]?.title).toHaveLength(8000);
     expect(bundle.coverage[0]?.last?.paging).toEqual({ verdict: "ended", reason: "No further item" });
   });
+  it("carries the stored processing account to a finished run's judge (t970): the declaration and the rows each filter left out", () => {
+    const processing = { declared: { where: [{ field: "title", contains: "cover", not: true }] }, collected: 3, leftOut: 1, repeats: 0, cut: 0, kept: 2, filters: [{ condition: "title not contains \"cover\"", leftOut: 1, leftOutOnlyByThis: ["Table with cover"] }] };
+    const stored = entry([{ title: "Chair" }, { title: "Bench" }, { title: "Table with cover" }]);
+    const bundle = automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...stored, evidence: { ...stored.evidence, processing } }] });
+    expect(bundle.processing).toEqual(processing);
+    expect(automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [entry()] })).not.toHaveProperty("processing");
+  });
   it.each([{ pages: [] }, { ...entry().evidence, pages: [{ ...page(), kept: 2 }] }, { ...entry().evidence, pages: [{ ...page(), rows: ["not a row"], kept: 1 }] }])("rejects corrupt evidence instead of presenting it as a valid empty page", (evidence) => {
     expect(() => automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ datasetId: "answer", batchKey: "bad", evidence: evidence as JsonObject }] })).toThrow(/evidence is invalid/u);
   });

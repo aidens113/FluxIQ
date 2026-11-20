@@ -166,10 +166,8 @@ export class AutomationStudioProjectRunDatasetStore {
    * key outside the stored schema, or when the run has no `runtime_runs` row.
    * A `startsOver` batch clears the dataset as `replace` does and also takes on
    * its own schema and declaration, so neither is compared with the earlier pass's.
-   * A batch carrying another `process` declaration than the dataset's keeps every
-   * collected row and makes its declaration the dataset's (t970): until then a
-   * changed declaration threw, so a result's processing could not change within
-   * a run without reading its pages again.
+   * A batch with another `process` declaration makes it the dataset's, keeping
+   * every collected row (t970); until then a changed one threw.
    */
   async appendBatch(input: AutomationStudioRunDatasetBatch): Promise<AutomationStudioRunDatasetSummary> {
     const runId = requiredId(input.runId, "run");

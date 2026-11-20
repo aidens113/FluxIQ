@@ -56,7 +56,7 @@ import {
 } from "./evidence-loop/index.ts";
 import { automationStudioLlmFailedDecisionFeedback, automationStudioLlmFailedDecisionUsage } from "./failed-decision/index.ts";
 import { automationStudioLlmEvidenceLoopInAttempt } from "./attempt-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceOfStep } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, AUTOMATION_STUDIO_LLM_SET_RESULT_PROCESSING_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceOfStep } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -470,7 +470,7 @@ async function evidenceLoop(untraced: AutomationStudioLlmEvidenceLoopInput): Pro
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = !member && decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}), ...(rerunPlace ? { rerunPlace } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
+    const draftChanged = !member && decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && decision.toolId !== AUTOMATION_STUDIO_LLM_SET_RESULT_PROCESSING_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}), ...(rerunPlace ? { rerunPlace } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     if (!member) {
       automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
       if (authoring) automationStudioFlowDraftDropReversals(draftSteps);
