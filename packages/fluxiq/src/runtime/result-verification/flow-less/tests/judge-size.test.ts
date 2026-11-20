@@ -12,15 +12,15 @@ const YES = { answersRequest: "yes", checked: [{ row: "Desk 2", column: "free", 
 /** A window that holds about 900 KB at bytes / 3, and about 540 KB at the judge's conservative 1.8, less its framing. */
 const LIMITS = { maxInputTokens: 300_000, maxOutputTokens: 4_000, maxTotalTokens: 304_000 };
 /** A page the trail shows whole: about 200 KB of plain words. */
-const PAGE = "Desk 12 by the north windows is free on Thursday. ".repeat(4_000);
+const page = (floor: number) => `Floor ${floor}: ` + "Desk 12 by the north windows is free on Thursday. ".repeat(4_000);
 
 const summary = (): AutomationStudioFlowLessSummary => ({
   instructions: "Reserve a free desk in the reading room for Thursday and tell me which desk it was.",
   rows: { totalRows: 1, truncated: false, columns: [{ id: "desk", label: "Desk" }, { id: "free", label: "free" }], rows: [{ desk: "Desk 2", free: "yes" }] },
   acts: [],
-  // Three pages the trail shows whole, about 600 KB, and one small answer.
+  // Three different pages (an identical repeat is a reference since t978) the trail shows whole, about 600 KB, and one small answer.
   trail: [
-    ...[1, 2, 3].map((floor) => ({ did: "page.read", outcome: "answered", where: `https://library.example/desks?floor=${floor}`, found: { page: PAGE } })),
+    ...[1, 2, 3].map((floor) => ({ did: "page.read", outcome: "answered", where: `https://library.example/desks?floor=${floor}`, found: { page: page(floor) } })),
     { did: "page.read", outcome: "answered", found: { rows: 1 } }
   ]
 });

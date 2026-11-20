@@ -4,12 +4,14 @@
 // an attempt's calls (`./of/call.ts`), a finished run's traced attempts (`./of/attempts.ts`) and a build test's
 // observations (`./of/observations.ts`).
 //
-// **Nothing is cut.** Every step is shown, with everything its answer held. Only where a request would not fit the
+// **Nothing is cut.** Every step is shown, with everything its answer held; only a page view an earlier step already
+// showed, byte for byte, is a reference to it (`./repeats.ts`, t978). Only where a request would not fit the
 // judging model's window are steps' findings summarised, and after everything else (`./fitting.ts`, and the
 // Flow-less judge's own `../flow-less/window-fitting.ts`).
 
 import type { AutomationStudioResultTrail, AutomationStudioResultTrailShownStep, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import { AUTOMATION_STUDIO_RESULT_TRAIL_NOTE } from "./note.ts";
+import { automationStudioResultTrailRepeatsOnce } from "./repeats.ts";
 import { automationStudioResultTrailScreened } from "./screen.ts";
 
 /** The trail a judge is shown, or none for no steps; `withheld` where anything in it was screened. Absent `deniedEvidenceKeys`, nobody declared them, and nothing is carried. */
@@ -44,5 +46,5 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
       ...(found !== undefined ? { found } : {})
     };
   });
-  return { trail: { note: AUTOMATION_STUDIO_RESULT_TRAIL_NOTE, entries: shown }, withheld };
+  return { trail: { note: AUTOMATION_STUDIO_RESULT_TRAIL_NOTE, entries: automationStudioResultTrailRepeatsOnce(shown) }, withheld };
 }
