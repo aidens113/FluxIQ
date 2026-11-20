@@ -12,4 +12,5 @@ export { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
 export { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 export { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 export { automationStudioFlowLessSummaryDigest } from "./summary-digest.ts";
+export { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
 export type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";

@@ -70,7 +70,7 @@ describe("a look after the acts, as evidence for the check", () => {
     expect(judged[0]).not.toHaveProperty("looked");
   });
 
-  it("shows every distinct look, none of them cut", async () => {
+  it("shows every distinct look, none of them cut (t963: no cap)", async () => {
     const looks = Array.from({ length: 10 }, (_, index) => ({ where: `http://127.0.0.1:5000/page/${index}/`, found: `${index} ${"word ".repeat(400)}`.trim() }));
     const { check, judged } = made(() => looks);
     await check.check({ summary: "Done." });

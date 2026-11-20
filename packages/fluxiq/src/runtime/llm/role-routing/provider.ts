@@ -19,9 +19,19 @@ export type AutomationStudioLlmProviderLadder = {
  * the price of the model that served it, under the attempt's one purse.
  *
  * **On a ladder** (`ladder`, t962), a role on it is served on its start rung plus the rungs the
- * attempt has climbed (`./ladder/frame.ts`), never past the top: every role steps up one rung per
- * climb, so a judge configured stronger stays stronger. The provider tells the attempt's ladder
- * which models the explore role climbs as it serves, which is how a climb names its models.
+ * attempt has climbed (`./ladder/frame.ts`), never past the top: the decider and the repair step up
+ * one rung per climb. The provider tells the attempt's ladder which models the explore role climbs
+ * as it serves, which is how a climb names its models.
+ *
+ * **The judge stays on its start rung, unless it continues the decider's conversation (t965).** A
+ * climb says the decider could not get there on its model; it says nothing of how hard the result is
+ * to check. Live run `run-mwodpw10-3d5748ab`: the judge climbed with the decider to Opus and read a
+ * 211k-token trail uncached at $0.87 a check (0091, 0092). So a judge is served on its own start rung
+ * however far the attempt has climbed -- a saved Flow's replay, a finished run, a trial -- except a
+ * judge that continues the decider's own cached conversation (`metadata.continuesDecider`, the
+ * completion check of an attempt whose decider has decided): a cache belongs to its model, so that
+ * judge runs where the decider stands now and reads the decider's history from its cache, at a tenth
+ * of the price or less (`../../models/providers/anthropic/continuation.ts`).
  *
  * A role with no provider of its own, or the explore model's own, is served by
  * the explore model; where every role is and there is no ladder, this is the explore
@@ -41,7 +51,7 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
   const pick = ladder ? laddered(ladder, byRole) : (role: AutomationStudioLlmModelRole) => byRole[role];
   // A role's own provider may route again; what serves is where routing stops.
   const servedBy = (request: AutomationStudioLlmTaskRequest): AutomationStudioLlmProvider => {
-    const provider = pick(automationStudioLlmModelRoleOf(request));
+    const provider = pick(automationStudioLlmModelRoleOf(request), request.metadata?.continuesDecider === true);
     return provider.servedBy?.(request) ?? provider;
   };
   const estimateCostUsd = explore.estimateCostUsd;
@@ -72,14 +82,18 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
 }
 
 /** The provider a role is served by on the ladder: its start rung plus the rungs climbed, at most the top. Outside every ladder frame, its start rung. */
-function laddered(ladder: AutomationStudioLlmProviderLadder, byRole: Readonly<Record<AutomationStudioLlmModelRole, AutomationStudioLlmProvider>>): (role: AutomationStudioLlmModelRole) => AutomationStudioLlmProvider {
+function laddered(ladder: AutomationStudioLlmProviderLadder, byRole: Readonly<Record<AutomationStudioLlmModelRole, AutomationStudioLlmProvider>>): (role: AutomationStudioLlmModelRole, continuesDecider: boolean) => AutomationStudioLlmProvider {
   const top = ladder.tiers.length - 1;
   const climbed = ladder.tiers.slice(ladder.from.explore ?? 0).map((tier) => tier.model);
-  return (role) => {
+  return (role, continuesDecider) => {
+    // A judge continuing the decider's conversation is served on the decider's rung, where its cache is (header).
+    if (role === "judge" && continuesDecider) return laddered(ladder, byRole)("explore", false);
     const start = ladder.from[role];
     if (start === undefined) return byRole[role];
     const frame = automationStudioLlmModelLadderFrame();
     frame?.serve(climbed);
-    return ladder.tiers[Math.min(start + (frame?.level ?? 0), top)]!.provider;
+    // Any other judge never climbs (header).
+    const climb = role === "judge" ? 0 : frame?.level ?? 0;
+    return ladder.tiers[Math.min(start + climb, top)]!.provider;
   };
 }

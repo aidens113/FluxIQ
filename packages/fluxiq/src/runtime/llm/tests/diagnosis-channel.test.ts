@@ -411,7 +411,8 @@ describe("the judge's instruction on an excused step", () => {
 describe("the build-test judge is told a named route is part of what was asked", () => {
   it("says a Flow that starts deeper than the route's first place, or skips a place, does not do what was asked", () => {
     const sentence = "When the person's instructions name a route to follow -- pages, menus or links to go through in order -- a Flow that starts deeper than the route's first place, or skips a place on it, does not do what was asked.";
-    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }).endsWith(sentence)).toBe(true);
+    // Followed only by the trail's calibration, which every judge's instruction ends with (t963).
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })).toContain(`${sentence} resultSummary.trail, where present`);
     expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("name a route to follow");
   });
 });

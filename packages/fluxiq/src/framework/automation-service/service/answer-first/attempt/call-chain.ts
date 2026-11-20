@@ -42,13 +42,19 @@
 // run-mwbkuxqt-c57f42cb's judge was given a read's look as the first 600 characters of the page
 // after the read, which did not hold the line the read returned, and was told it was a cut, so it
 // could not take the line as seen. The same look again is handed on once only, so a repeated look is
-// no new evidence. The completion check screens what it is given and keeps the latest distinct looks
+// no new evidence. The completion check screens what it is given and keeps every distinct look
 // (`../completion/check.ts`).
+//
+// **Every call that reached the domain is handed on as a trail step (`trailed`, t963).** The judge sees
+// everything the attempt did to get its result: each call as it was sent and the domain's whole answer,
+// in the order they ran, before and after any act (`runtime/result-verification/run-trail/of/call.ts`).
+// Only calls that reached the domain: one the gates refused never touched the site.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
+import { automationStudioResultTrailStepOfCall, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
@@ -82,6 +88,8 @@ export function automationStudioAnswerFirstCallChain(input: {
   answered(): void;
   /** A look that found something new, after the first lasting act (header). Absent, nothing is handed on. */
   looked?: ((look: { where: string; found: string }) => void) | undefined;
+  /** Every call that reached the domain, with its answer, in order (header). Absent, nothing is handed on. */
+  trailed?: ((step: AutomationStudioResultTrailStep) => void) | undefined;
 }): Execute {
   const handedOn = new Set<string>();
   const noteLook = (answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult) => {
@@ -103,7 +111,16 @@ export function automationStudioAnswerFirstCallChain(input: {
     } catch {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
-    // The result's line goes on the read's own answer (header).
+    try {
+      if (input.trailed) {
+        const about = described({ toolId: call.toolId, value: call.value });
+        const on = "said" in about && typeof about.said?.target === "string" ? about.said.target : undefined;
+        input.trailed(automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on));
+      }
+    } catch {
+      /* best-effort: the trail is evidence for a later check, never a reason to lose the call's answer */
+    }
+    // The result's line goes on the read's own answer (header); the trail above keeps the domain's answer as it came.
     const recorded = isExecution(answer) ? input.result?.called({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, rows) : undefined;
     const line = rows?.failure ? `The read's rows could not be stored (${rows.failure.code}). They did not enter the result. Recover the read before claiming these rows.` : recorded;
     return isExecution(answer) && line ? withResultNote(answer, line) : answer;

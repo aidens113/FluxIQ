@@ -20,3 +20,4 @@ export * from "./witnesses/index.ts";
 export * from "./route/index.ts";
 export * from "./task-key/index.ts";
 export * from "./task-memory/index.ts";
+export * from "./trail/index.ts";

@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioAttemptActRecord } from "../../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../../runtime/llm/index.ts";
+import type { AutomationStudioResultTrailStep } from "../../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstCallChain } from "../call-chain.ts";
 
 function chain(storageFails = false) {
   const events: string[] = [];
   const stored: JsonObject[] = [];
   const counts = { stepped: 0, answered: 0 };
+  const trail: AutomationStudioResultTrailStep[] = [];
   const execute = automationStudioAnswerFirstCallChain({
     domain: async (call): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
       events.push(`domain:${call.toolId}`);
@@ -33,9 +35,10 @@ function chain(storageFails = false) {
     readRowsKey: "read.extracted",
     describe: undefined,
     stepped: () => { counts.stepped += 1; },
-    answered: () => { counts.answered += 1; }
+    answered: () => { counts.answered += 1; },
+    trailed: (step) => { trail.push(step); }
   });
-  return { execute, events, stored, counts };
+  return { execute, events, stored, counts, trail };
 }
 
 const PRESS = { callId: "press", toolId: "press", value: { target: { handle: "t1" }, consequences: ["delete"] } };
@@ -63,6 +66,21 @@ describe("the attempt's call chain", () => {
     const again = await execute({ ...PRESS, callId: "press.again" });
     expect(again).toMatchObject({ resultCode: "attempt.act_already_done" });
     expect(events.filter((event) => event === "domain:press")).toHaveLength(1);
+  });
+
+  // t963: the judge sees everything the attempt did, so every call that reached the domain is handed on, in order, with its answer.
+  it("hands every call that reached the domain on as a trail step, in order, with its whole answer, and none the gates refused", async () => {
+    const { execute, trail } = chain();
+    await execute({ callId: "look", toolId: "look", value: { node: "page.look", query: "Ada" } });
+    await execute({ callId: "reset", toolId: "core.run_node", value: { node: "n", replay: "reset", from: {} } });
+    await execute({ callId: "no", toolId: "refuse", value: { reason: "first words" } });
+    await execute(PRESS);
+    await execute({ ...PRESS, callId: "press.again" });
+    expect(trail).toEqual([
+      { callId: "look", did: "page.look", asked: { query: "Ada" }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } },
+      { callId: "no", did: "refuse", asked: { reason: "first words" }, outcome: "no", found: { ok: false, code: "no" } },
+      { callId: "press", did: "press", asked: { target: { handle: "t1" }, consequences: ["delete"] }, outcome: "answered", found: { ok: true, read: { extracted: [{ name: "Ada" }] } } }
+    ]);
   });
 
   it("does not take a refused answer for having arrived", async () => {

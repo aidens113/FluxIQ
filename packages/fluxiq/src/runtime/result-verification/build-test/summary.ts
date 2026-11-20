@@ -143,6 +143,7 @@ import { automationStudioRecordReadListKey, automationStudioRecordReadLocation, 
 import { automationStudioResultReadParameters } from "../read-account/index.ts";
 import { automationStudioResultEvidenceFromBatches, automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
 import { automationStudioBuildTestInputs } from "./test-inputs.ts";
+import { automationStudioResultRunTrail, automationStudioResultTrailOfObservations } from "../run-trail/index.ts";
 import { automationStudioReferenceNow } from "../../reference-time/index.ts";
 
 /**
@@ -348,6 +349,10 @@ export function automationStudioBuildTestResultSummary(input: {
   if (ended?.withheld) withheld = true;
   const started = input.startView ? automationStudioResultEndView(input.startView, denied) : undefined;
   if (started?.withheld) withheld = true;
+  // Everything the test did, answer by answer, each whole with the page it showed: the judge reads the trial by it (`../run-trail/`, t963).
+  const actionAt = new Map(proposed.map((step) => [step.position, step.actionId]));
+  const trail = automationStudioResultRunTrail(automationStudioResultTrailOfObservations(input.report?.observations, (position) => actionAt.get(position)), denied);
+  if (trail.withheld) withheld = true;
   // The start view before what varies per test, as a finished run's summary places it (`../result-summary.ts`, t493).
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
@@ -362,6 +367,7 @@ export function automationStudioBuildTestResultSummary(input: {
     buildTest,
     ...(evidence ? { resultEvidence: evidence.value } : {}),
     ...(ended?.endView ? { endView: ended.endView } : {}),
+    ...(trail.trail ? { trail: trail.trail } : {}),
     referenceNow
   };
 }

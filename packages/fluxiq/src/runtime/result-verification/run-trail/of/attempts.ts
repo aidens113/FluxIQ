@@ -1,0 +1,105 @@
+// A run's traced attempts, as trail steps (`../trail.ts`): the engine's own record of each step it ran, in run order,
+// for the check of a finished run (`../../result-summary.ts`, `../../verify.ts`) and for a saved Flow's run inside an
+// attempt (`SVC/answer-first/flow-run/flow-run.ts`, t963), whose result the completion judge then judges.
+//
+// `did` is the step's node definition (the attempt's own, else its node's), else its node id, and `on` its label;
+// `asked` what it was asked to do: its node's parameters, else, for a step with none, what the run handed it (`inputs`); `outcome` how the attempt ended (its status, its route or why it was passed
+// over, and its failure's code where it failed); `found` what it answered (`outputs`, and the engine's `message`),
+// what it changed on the page it stayed on (the domain's `added` and `removed` view lines) and the domain's view after
+// it, by the domain's declared view keys. A step that ran a child Flow is followed by that Flow's own steps, in order.
+// Whole: nothing is cut (`../../step-changes.ts` says what the diff lines are).
+//
+// **But the host's raw capture of the page is not sent twice (t965).** A step's `outputs` may carry
+// the host's own capture of the page it left -- every element with its bounds, frame and viewport --
+// beside the domain's view of that same page in `found.view`. Live run `run-mwodpw10-3d5748ab`
+// (judge 0117): three such captures, about 1.1 MB each against a 17 KB view, made a 2.2 MB
+// request the provider refused. So where the attempt has the domain's view after it, the capture
+// of the same page in its outputs is left out and said to be shown as the view: an object in
+// `outputs` that names the page the view is of (`location`), by any member, inside an answer that
+// names it too -- the outermost such, with all it holds. What the step answered around it -- its
+// validation, its rows, where it moved -- stays whole. A step with no view after it keeps its
+// outputs as they are.
+
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
+
+/** One traced attempt, as far as this reads it. */
+type TracedAttempt = {
+  nodeId: string;
+  definitionId?: string | undefined;
+  route?: string | undefined;
+  status?: string | undefined;
+  inputs?: Readonly<Record<string, unknown>> | undefined;
+  outputs?: Readonly<Record<string, unknown>> | undefined;
+  message?: string | undefined;
+  failure?: { code?: string | undefined } | undefined;
+  skipped?: unknown;
+  childTrace?: { attempts?: readonly TracedAttempt[] | undefined } | undefined;
+  stateRefs?: { stateDiff?: JsonObject; afterAction?: { summary?: JsonObject | undefined } } | undefined;
+};
+
+/** A node of the Flow, as far as this reads it. */
+type Node = { id: string; definitionId?: string | undefined; label?: string | undefined; parameterValues?: JsonObject | undefined };
+
+export function automationStudioResultTrailOfAttempts(attempts: readonly TracedAttempt[] | undefined, nodes: readonly Node[], viewKeys: readonly string[] | undefined): AutomationStudioResultTrailStep[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const keys = (viewKeys ?? []).filter((key) => !key.includes("."));
+  const steps: AutomationStudioResultTrailStep[] = [];
+  const walk = (list: readonly TracedAttempt[] | undefined): void => {
+    for (const attempt of list ?? []) {
+      steps.push(stepOf(attempt, byId.get(attempt.nodeId), keys));
+      walk(attempt.childTrace?.attempts);
+    }
+  };
+  walk(attempts);
+  return steps;
+}
+
+function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly string[]): AutomationStudioResultTrailStep {
+  const failed = attempt.failure?.code;
+  const parameters = node?.parameterValues && Object.keys(node.parameterValues).length ? node.parameterValues : undefined;
+  const asked = parameters ?? (attempt.inputs && Object.keys(attempt.inputs).length ? (attempt.inputs as JsonValue) : undefined);
+  const outcome = [attempt.status, attempt.route ? `route ${attempt.route}` : undefined, attempt.skipped !== undefined && attempt.skipped !== false ? "passed over" : undefined, failed ? `failure ${failed}` : undefined]
+    .filter((part): part is string => typeof part === "string" && part.length > 0).join(", ");
+  const diff = attempt.stateRefs?.stateDiff;
+  const changed = diff ? Object.fromEntries((["added", "removed"] as const).flatMap((key) => (typeof diff[key] === "string" && (diff[key] as string).trim() ? [[key, diff[key]!]] : []))) : {};
+  const after = attempt.stateRefs?.afterAction?.summary;
+  const view = after ? Object.fromEntries(keys.filter((key) => Object.hasOwn(after, key)).map((key) => [key, after[key]!])) : {};
+  const address = Object.keys(view).length && typeof after?.location === "string" ? pageAddress(after.location) : undefined;
+  const outputs = attempt.outputs && Object.keys(attempt.outputs).length ? (address ? withoutCapture(attempt.outputs as JsonValue, address) : (attempt.outputs as JsonValue)) : undefined;
+  const found: JsonObject = {
+    ...(outputs !== undefined ? { outputs } : {}),
+    ...(attempt.message?.trim() ? { message: attempt.message.trim() } : {}),
+    ...(Object.keys(changed).length ? { changed } : {}),
+    ...(Object.keys(view).length ? { view } : {})
+  };
+  return {
+    did: attempt.definitionId ?? node?.definitionId ?? attempt.nodeId,
+    ...(node?.label ? { on: node.label } : {}),
+    ...(asked ? { asked } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(Object.keys(found).length ? { found } : {})
+  };
+}
+
+/** What stands in for the host's capture of the page, which `found.view` shows (header). */
+const CAPTURE_SHOWN_AS_VIEW = "[the host's capture of the page this step left: shown as found.view]";
+
+/** An address as a page names it, its fragment and a closing slash apart. */
+function pageAddress(address: string): string {
+  return address.trim().replace(/#.*$/u, "").replace(/\/+$/u, "");
+}
+
+/**
+ * `value` with the host's capture of the page at `address` left out (header): an object naming that page inside an
+ * answer that already names it -- the answer says where it was, and the capture beside it is the page as the host
+ * read it, every element and its geometry, which `found.view` shows as the domain reads it. The outermost such object
+ * goes, with all it holds; the answer around it stays.
+ */
+function withoutCapture(value: JsonValue, address: string, insideAnswer = false): JsonValue {
+  if (Array.isArray(value)) return value.map((item) => withoutCapture(item, address, insideAnswer));
+  if (value === null || typeof value !== "object") return value;
+  const names = Object.values(value).some((member) => typeof member === "string" && pageAddress(member) === address);
+  if (names && insideAnswer) return CAPTURE_SHOWN_AS_VIEW;
+  return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, withoutCapture(member, address, insideAnswer || names)]));
+}

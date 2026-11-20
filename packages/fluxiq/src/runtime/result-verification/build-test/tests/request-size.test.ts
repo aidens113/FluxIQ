@@ -68,23 +68,33 @@ async function requestSent(observedStateKeys?: readonly string[]): Promise<Autom
 const observed = (request: AutomationStudioLlmTaskRequest, step: number): JsonObject =>
   request.context.resultSummary?.buildTest?.steps.find((item) => item.step === step)?.observed as JsonObject;
 
+// Since t963 the judge also sees the trail: every observation in order, its evidence whole, page views included (user,
+// 2026-11-19: the judge sees everything that happened). The per-step account beside it stays as lean as before, and the
+// bound is now that account's, not the request's.
+const stepsOf = (request: AutomationStudioLlmTaskRequest): string => JSON.stringify(request.context.resultSummary?.buildTest?.steps ?? []);
+
 describe("the judge's request on run 36's test", () => {
-  it("stays under its bound, which the views the domain declared would take it far past", async () => {
-    const lean = JSON.stringify(await requestSent(VIEW_KEYS)).length;
-    // With every other cut and no view key declared it is 23,089: the views
-    // two steps share are named, and the four that differ are sent.
-    const viewed = JSON.stringify(await requestSent()).length;
+  it("keeps the per-step account under its bound, which the views the domain declared would take it far past", async () => {
+    const lean = stepsOf(await requestSent(VIEW_KEYS)).length;
+    // With no view key declared, the steps' observations carry the views again.
+    const viewed = stepsOf(await requestSent()).length;
     expect(lean).toBeLessThan(BOUND);
-    expect(viewed).toBeGreaterThan(BOUND + 2 * 3_019);
+    expect(viewed).toBeGreaterThan(lean + 2 * 3_019);
   });
 
-  it("sends the page the test ended on once, beside the steps: the last step's view and no other", async () => {
+  it("sends the page the test ended on beside the steps, and every page the test saw in the trail, each whole and in order", async () => {
     const request = await requestSent(VIEW_KEYS);
-    const ended = (request.context.resultSummary as AutomationStudioRunResultSummaryWithEndView | undefined)?.endView;
+    const summary = request.context.resultSummary as AutomationStudioRunResultSummaryWithEndView | undefined;
     const last = fixture.report.observations.at(-1)!;
-    expect(ended).toEqual({ after: 11, view: { page: (last.evidence as JsonObject).page } });
-    // A page view's second line, as JSON writes it: one view in the whole request.
-    expect(JSON.stringify(request).split("\\nURL ").length - 1).toBe(1);
+    expect(summary?.endView).toEqual({ after: 11, view: { page: (last.evidence as JsonObject).page } });
+    const pages = fixture.report.observations.flatMap((observation) => typeof (observation.evidence as JsonObject).page === "string" ? [(observation.evidence as JsonObject).page as string] : []);
+    const trailed = (summary?.trail?.entries ?? []).flatMap((entry) => {
+      const page = (entry.found as JsonObject | undefined)?.page;
+      return typeof page === "string" ? [page] : [];
+    });
+    expect(trailed).toEqual(pages);
+    // A page view's second line, as JSON writes it: the end view once, and each page in the trail once.
+    expect(JSON.stringify(request).split("\\nURL ").length - 1).toBe(1 + pages.length);
   });
 
   it("sends no observation with a page view or Core's bookkeeping in it", async () => {

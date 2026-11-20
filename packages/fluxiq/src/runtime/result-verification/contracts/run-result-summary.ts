@@ -6,6 +6,7 @@ import type { AutomationStudioResultComputedFact } from "./computed-facts.ts";
 import type { AutomationStudioResultEarlierAdvice } from "./earlier-advice.ts";
 import type { AutomationStudioResultFlowStepSummary } from "./flow-step-summary.ts";
 import type { AutomationStudioResultReadAccount } from "./read-account.ts";
+import type { AutomationStudioResultTrail } from "./run-trail.ts";
 import type { AutomationStudioResultTaskChecklist } from "./task-checklist.ts";
 
 /**
@@ -159,6 +160,11 @@ export type AutomationStudioRunResultSummary = {
    * verdict. Absent when there are none.
    */
   siteChangeFindings?: AutomationStudioTrialChangeFinding[];
+  /**
+   * Everything the run or the test did, in the order it ran, each step with what the domain answered: every look,
+   * read and act (`../run-trail/`, t963). The judge reads the final data by it. Absent where Core holds no such record.
+   */
+  trail?: AutomationStudioResultTrail;
   /**
    * The facts Core settled before any judge was asked (`../computed-facts/`,
    * framework plan P5): set by `../verify.ts` on the judge's copy only, and

@@ -4,7 +4,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
-import type { AutomationStudioResultEndView } from "../contracts/index.ts";
+import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 import type { AutomationStudioResultEvidenceBundle } from "../result-evidence/index.ts";
 
@@ -24,7 +24,7 @@ export type AutomationStudioFlowLessSummary = {
   endView?: AutomationStudioResultEndView;
   /** The same reading of the site before the first lasting act and at the end: the change is what is judged. */
   witnesses?: { before?: JsonObject; after?: JsonObject };
-  /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and a short screened cut of what was found, the latest few. */
+  /** What looks at the site found after the first lasting act, from each call's own answer and never a model's words: where (the page's address) and what was found, screened line by line; every distinct look, never cut. */
   looked?: readonly { where: string; found: string }[];
   /**
    * For a result made of rows: one entry per read that makes up the list, oldest first, with where it read (the view of
@@ -32,6 +32,12 @@ export type AutomationStudioFlowLessSummary = {
    * own conditions left out (`leftOut`, `./read-left-out.ts`). The rows may come from pages the end view is not on.
    */
   readPages?: readonly { where?: string; place?: string; kept: number; rows?: readonly JsonObject[]; leftOut?: AutomationStudioFlowLessReadLeftOut }[];
+  /**
+   * Every call the attempt made on the site, in the order it made them, each with the domain's own answer: Core's record
+   * of every look, read and act (`../run-trail/`, t963), from the attempt's call chain and never a model's words. The judge
+   * reads the result by it. Absent, none was handed on.
+   */
+  trail?: readonly AutomationStudioResultTrailStep[];
   /** The person asked for it to be done once more (a Run again): the judge is told so (`./asked-again.ts`). Only a route sets it, never a model. */
   askedAgain?: true;
 };
@@ -59,6 +65,13 @@ export type AutomationStudioFlowLessJudgeInput = {
    * request to by size. A routed judge model's own limits, said on its provider, still win (`../../llm/harness/served-limits.ts`).
    */
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits> | undefined;
+  /**
+   * The attempt's decider has decided at least once, so this judge continues the decider's own cached conversation
+   * (t965): it is served on the decider's current model, and where the model's adapter holds the decider's latest
+   * request, sent as that request's cached prefix with the judging appended
+   * (`../../models/providers/anthropic/continuation.ts`). Absent, a judge of its own on the attempt's base model.
+   */
+  continuesDecider?: boolean | undefined;
   /** The whole check's deadline. Absent, the verification deadline for `timeoutMs`. */
   deadlineMs?: number | undefined;
   /** How long this work has waited for a person: the deadline does not count it. Absent, nothing. */

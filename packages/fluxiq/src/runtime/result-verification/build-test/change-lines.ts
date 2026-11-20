@@ -14,15 +14,15 @@
 // line terms (the web domain's `node-run/press-effect/page-changes.ts`), its
 // own cap already applied and said as a last `and N more changes`.
 //
-// **What the judge is sent.** At most `CHANGE_LINES_MAX` lines: the ones
-// naming the control the step acted on -- a line quoting one of the step's own
-// words -- first; then a text that now reads otherwise (`t932 "2" was "1"`),
-// which is where a quantity, a count or a total the step set is said, since a
-// "+" or "-" has no word long enough to quote; then the rest in the domain's
-// order. How many more there were, the domain's own count included, is
-// `changedNotShown`. Each line is cut to `CHANGE_LINE_CHARS`, has any
-// locator-shaped run redacted, and is dropped, as withheld, when it is shaped
-// like a credential. Which answers carry lines at all, and what else of them is
+// **What the judge is sent.** Every line, whole (t963: the 3-line, 160-character
+// cap hid what a run changed from the judge): the ones naming the control the
+// step acted on -- a line quoting one of the step's own words -- first; then a
+// text that now reads otherwise (`t932 "2" was "1"`), which is where a
+// quantity, a count or a total the step set is said, since a "+" or "-" has no
+// word long enough to quote; then the rest in the domain's order. How many more
+// the domain itself left out, by its own count, is `changedNotShown`. Each line
+// has any locator-shaped run redacted, and is dropped, as withheld, when it is
+// shaped like a credential. Which answers carry lines at all, and what else of them is
 // sent, is `./observation.ts`'s to decide; it screens the result again.
 
 import type { JsonValue } from "../../../core/index.ts";
@@ -31,10 +31,6 @@ import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } fr
 /** The member of a replayed step's answer that says what it changed. The domain writes the same word. */
 export const AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY = "changed";
 
-/** The most change lines one answer is sent: the acted control's, then a value's, then the first others. */
-
-/** The longest change line sent; a view line is far shorter. */
-
 /** The domain's own last line when it capped its list (`page-changes.ts`). */
 const DOMAIN_MORE = /^and (\d+) more changes?$/u;
 
@@ -42,7 +38,7 @@ const DOMAIN_MORE = /^and (\d+) more changes?$/u;
 const READS_OTHERWISE = / was "/u;
 
 /**
- * One answer's recorded change lines (its `changed` member), bounded as above.
+ * One answer's recorded change lines (its `changed` member), ordered as above, every one.
  * `words` are the step's own words, as its row's `target` gives them. No
  * `value` when nothing sendable is left.
  */
@@ -57,20 +53,18 @@ export function automationStudioBuildTestChangeLines(recorded: JsonValue | undef
       more += Number(domainMore[1]);
       return [];
     }
-    const cut = line.trim();
-    if (screenAutomationStudioLlmEvidence(cut, []).secretShaped) {
+    const whole = line.trim();
+    if (screenAutomationStudioLlmEvidence(whole, []).secretShaped) {
       withheld = true;
       return [];
     }
-    const kept = automationStudioWithoutLocators(cut);
-    if (kept !== cut) withheld = true;
+    const kept = automationStudioWithoutLocators(whole);
+    if (kept !== whole) withheld = true;
     return [kept];
   });
   if (!lines.length) return { withheld };
   const quoted = words.filter((word) => word.length > 1).map((word) => `"${word}"`);
   const rank = (line: string): number => quoted.some((word) => line.includes(word)) ? 0 : READS_OTHERWISE.test(line) ? 1 : 2;
   const ordered = lines.map((line, at) => ({ line, at, rank: rank(line) })).sort((a, b) => a.rank - b.rank || a.at - b.at).map((entry) => entry.line);
-  const shown = ordered;
-  const notShown = ordered.length - shown.length + more;
-  return { value: { changed: shown, ...(notShown > 0 ? { changedNotShown: notShown } : {}) }, withheld };
+  return { value: { changed: ordered, ...(more > 0 ? { changedNotShown: more } : {}) }, withheld };
 }

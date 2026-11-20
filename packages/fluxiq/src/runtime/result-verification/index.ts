@@ -46,6 +46,7 @@ export * from "./repair-directive.ts";
 export * from "./request-rows/index.ts";
 export * from "./result-summary.ts";
 export * from "./run-outcome.ts";
+export * from "./run-trail/index.ts";
 export * from "./standing-no/index.ts";
 export * from "./standing-no-record/index.ts";
 export * from "./step-changes.ts";

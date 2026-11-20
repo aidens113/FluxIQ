@@ -44,6 +44,7 @@ import { automationStudioLlmLoopAttemptRecord } from "../../../../../runtime/llm
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS } from "../../../../../runtime/automation-parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, flowBootstrapPhaseFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioFlowLessJudge, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
 import { automationStudioRunOverrides, runWithAutomationStudioRunOverrides } from "../../../../../runtime/run-overrides/index.ts";
 import { automationStudioLlmStepLogScope } from "../../../../../runtime/llm/step-log/index.ts";
 import { automationStudioAnswerFirstAttemptStoreOf } from "../attempt-store/index.ts";
@@ -207,6 +208,9 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier, keep: (before) => befores.keep(attemptId, before) });
   // What the model's own looks found after the first lasting act: the chain hands each new one on, the check bounds, screens and judges it (`./call-chain.ts`).
   const looked: { where: string; found: string }[] = [];
+  // Everything the attempt did, for its judge: every call the chain sent to the domain with its answer (`./call-chain.ts`), and every step
+  // a saved Flow's run made (`./flow-stage.ts`), held across a resume so a carried-on attempt's judge still sees all of it (`../trail/`, t963).
+  const trail = automationStudioAnswerFirstTrailsOf(input.owner).of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined });
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
     rows: async () => result.rows(),
@@ -216,6 +220,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
     witnesses: () => witnesses.readings(),
     looked: () => looked,
+    trail: () => trail,
     readPages: () => result.readPages(),
     resultEvidence: () => result.evidence(),
     askedAgain: again !== undefined || carried?.askedAgain === true,
@@ -229,6 +234,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     judge: (summary) => automationStudioFlowLessJudge({
       personHeldMs: () => run.waitedMs,
       summary, provider: input.provider.provider, projectId, flowId, runId, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys ?? [],
+      // Once the decider has decided, the judge continues its cached conversation on its current model; a saved Flow's replay judged before any decision has a judge of its own (t965).
+      ...(run.decidedAt !== undefined ? { continuesDecider: true } : {}),
       ...(input.provider.timeoutMs !== undefined ? { timeoutMs: input.provider.timeoutMs } : {}),
       // The judge's request is built to the attempt model's window, as every round's is; a routed judge model's own window still wins (`runtime/llm/harness/served-limits.ts`).
       ...(input.provider.tokenLimits ? { tokenLimits: input.provider.tokenLimits } : {}),
@@ -252,7 +259,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     describe: describe ? (call) => describe({ projectId, flowId, ...call }) : undefined,
     stepped: () => { run.liveSteps += 1; },
     answered: () => { run.arrived = true; },
-    looked: (look) => { looked.push(look); }
+    looked: (look) => { looked.push(look); },
+    trailed: (step) => { trail.push(step); }
   }));
   const ground = input.permissionGround;
   const permissions = automationStudioFlowBootstrapActionPermissions({
@@ -276,7 +284,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     input, ports: automationStudioAnswerFirstAttemptPorts(input.owner), store, memory: opening.memory,
     taskId: opening.taskId, route: opening.route, startedFrom: opening.startedFrom, startedWith: carried?.startedWith ?? opening.steps, path: carried?.path ?? "explore", decidedAfterRun: carried?.decidedAfterRun ?? false, forwardPassed: new Set(), askedAgain: again !== undefined || carried?.askedAgain === true,
     attemptId, ordinal: opening.ordinal, runId, startedAtMs: carried?.startedAtMs ?? now, segmentStartedAtMs: now, ...(carried ? { prior: carried.prior } : {}),
-    record, tried, asked, sink, result, session: ending, witnesses, completion, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
+    record, tried, asked, sink, result, session: ending, witnesses, completion, trail, permissions, options: arrived ? input.continuingOptions() : input.harnessOptions,
     steps: [...opening.steps], usage: { estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     liveSteps: carried?.prior.liveSteps ?? 0, arrived, loopsCaught: carried?.loopsCaught ?? automationStudioTaskAttemptNoLoopsCaught(), backoffs: 0, waitedMs: 0, askPerson: false
   };

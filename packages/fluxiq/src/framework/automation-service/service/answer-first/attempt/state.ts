@@ -2,6 +2,7 @@
 // must survive a fresh start (the act record, the rows, what was tried, the draft) and the
 // counts its row reports. A round is thrown away; this is not.
 
+import type { AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioTaskAttemptLoopsCaught, AutomationStudioTaskAttemptPath } from "@fluxiq/contracts/automation";
 import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
@@ -70,6 +71,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   session: AutomationStudioAnswerFirstSession;
   witnesses: AutomationStudioAnswerFirstWitnesses;
   completion: AutomationStudioAnswerFirstCompletionCheck;
+  /** Everything the attempt did on the site, for its judge: every call its chain sent and every step a saved Flow's run made, held across a resume (`../trail/`, t963). */
+  trail: AutomationStudioResultTrailStep[];
   permissions: AutomationStudioFlowBootstrapActionPermissions;
   /** The domain's tools the chain sends to now: the arrival's until the page has got there, then the ones with no start location. */
   options: AutomationStudioHarnessOptionLoopBinding;

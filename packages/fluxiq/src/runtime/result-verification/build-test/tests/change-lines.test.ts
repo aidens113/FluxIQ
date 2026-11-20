@@ -38,7 +38,7 @@ const summary = () => automationStudioBuildTestResultSummary({
 });
 
 describe("a replayed press's change lines", () => {
-  it("are shown on its row, the lines about the control it pressed first, with every line whole", () => {
+  it("are shown on its row, the lines about the control it pressed first, and every one (t963: no cap)", () => {
     const steps = summary().buildTest!.steps;
     const first = steps.find((step) => step.step === 2)?.observed as JsonObject;
     // The pressed control's lines lead, in the domain's order (the replay knows no handle to tell the two apart), though it wrote the mark last.

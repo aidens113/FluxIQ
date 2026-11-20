@@ -11,8 +11,10 @@
 // **Two copies.** `read` is a full summary for Core's readers of a verdict, which
 // expect `flowShape`, here empty. `sent` is what the model sees, which leaves that
 // key out and adds the acts, the model's words, the witnesses, what looks found after the acts
-// (screened again, `lookedShown`, and never cut) and, on a repeat the person asked
-// for, what that means (`./asked-again.ts`): the summary's type
+// (screened again, `lookedShown`, and never cut), on a repeat the person asked
+// for, what that means (`./asked-again.ts`), the declared result's provenance (`resultEvidence`,
+// `../result-evidence/`, t905), and, first after the question, the trail of everything the
+// attempt did (`../run-trail/`, t963): the summary's type
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
 
@@ -21,6 +23,7 @@ import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultEndView } from "../result-summary.ts";
 import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
+import { automationStudioResultRunTrail } from "../run-trail/index.ts";
 import { automationStudioJudgeCriteriaText, automationStudioOverriddenText } from "../../run-overrides/index.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "./asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
@@ -46,8 +49,11 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const acts = summary.acts.map((act) => ({ what: words(act.what), where: words(act.where), classes: [...act.classes], state: act.state }));
   const looked = lookedShown(summary.looked ?? []);
   const readPages = automationStudioFlowLessReadPagesShown(summary, words, deniedEvidenceKeys);
+  // The declared result's own pages, coverage, working reads and looks (`../result-evidence/`, t905): the final data's provenance, screened value by value.
   const resultEvidence = summary.resultEvidence ? automationStudioResultEvidenceScreen(summary.resultEvidence, deniedEvidenceKeys) : undefined;
-  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld || resultEvidence?.withheld === true;
+  // Everything the attempt did, each step with what the site answered, screened member by member (`../run-trail/`, t963).
+  const trail = automationStudioResultRunTrail(summary.trail, deniedEvidenceKeys);
+  const withheld = (rows?.withheld ?? false) || ended.withheld || before.withheld || after.withheld || answer.withheld || acts.some((act) => act.what.withheld || act.where.withheld) || looked.withheld || readPages.withheld || resultEvidence?.withheld === true || trail.withheld;
   const read: AutomationStudioRunResultSummary = {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: rows?.set.recordCount ?? 0,
@@ -64,9 +70,12 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
   const criteria = automationStudioJudgeCriteriaText();
   // The question is an open section (`judge.question`): a run may add to it or put its own in its place.
   const question = automationStudioOverriddenText("prompt", "judge.question", AUTOMATION_STUDIO_FLOW_LESS_QUESTION);
+  // The trail right after the question (t965): the same bytes from one check of an attempt to the next while the attempt only adds to it,
+  // so the provider reads it back from cache (`../../models/providers/anthropic/trail-cache-content.ts`); what changes comes after it.
   const sent = {
     question: criteria ? `${question}\n\n${criteria}` : question,
     ...(summary.askedAgain ? { askedAgain: AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } : {}),
+    ...(trail.trail ? { trail: trail.trail } : {}),
     ...shown,
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),

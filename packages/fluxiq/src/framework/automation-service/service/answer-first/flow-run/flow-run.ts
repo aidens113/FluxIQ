@@ -40,6 +40,13 @@
 // a person's Run again included: that press empties the act record, not the states. What this run
 // sees flip goes to the same record, for the draft this attempt saves.
 //
+// **What the run did is handed on to the attempt's trail (t963).** The judge of the attempt's result sees
+// everything that produced it, and a saved Flow's run reaches the site through the engine, not the attempt's call
+// chain: so every step the engine traced, a child Flow's included, goes to `trail` once the run returns, with what it
+// ran with, what it answered and the page after it (`runtime/result-verification/run-trail/of/attempts.ts`). Live
+// run `run-mwo3dp11-a47a032d`'s third attempt ran its saved Flow, date sort and all, and its judges, shown none of
+// it, said no sort was recorded (0331-0510).
+//
 // **How human the run acts is resolved by precedence** (`resolveHumanness`): a caller's own level, then the
 // task's stored level, then the run Flow's stored level, then the request's starting value. With none of them
 // the options carry no level, which is today's path exactly. A stored 0 wins over a starting value.
@@ -59,6 +66,7 @@ import { runWithAutomationStudioDomainReadings } from "../../../../../runtime/do
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../../../../runtime/flow-authoring/bootstrap/verification/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
+import { automationStudioResultTrailOfAttempts } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioFlowHumanness } from "../../flow-settings/index.ts";
 import type { AutomationStudioInputUseEntry } from "../../input-basis/index.ts";
 import { automationStudioAnswerFirstReplayScope, type AutomationStudioAnswerFirstReplayScope } from "../caller/index.ts";
@@ -176,6 +184,12 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   }
   // A press whose answer the engine then failed on its checks may not have taken: without this it reads as landed, and a repair's retry is told it already happened.
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
+  // Everything the run did, for the attempt's judge (header): evidence for a later check, never a reason to lose the run's own answer.
+  try {
+    if (ports.trail && executed.trace?.attempts.length) ports.trail.add(automationStudioResultTrailOfAttempts(executed.trace.attempts, executed.graph?.nodes ?? [], ports.trail.viewKeys));
+  } catch {
+    /* best-effort: the trail is evidence for a later check, as the call chain's is (`../attempt/call-chain.ts`) */
+  }
   ports.permissions.exploredToggles?.trial(executed.trace?.attempts ?? [], executed.graph);
   const executableSource = ports.sourceAuthority || saved.candidateId ? await source.finish(baseDependencyDigest) : undefined;
   return { reachedEnd: executed.receipt.status === "succeeded", code: executed.code, trace: executed.trace, graph: executed.graph, ...(askedNobody ? { askedNobody } : {}), ...(executableSource ? { executableSource } : {}) };
