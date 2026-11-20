@@ -202,6 +202,7 @@ import { automationStudioResultVerdict } from "./verdict/index.ts";
 import { automationStudioResultAdviceKept, automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { automationStudioResultFirstAskConfirmed, automationStudioResultModelSaid } from "./first-ask/index.ts";
 import { emitAutomationStudioActivity } from "../automation-activity/index.ts";
+import { automationStudioResultTrailFitting } from "./run-trail/index.ts";
 
 /**
  * Core's codes for a run that was not verified, and why. Never a verdict.
@@ -467,6 +468,8 @@ async function askOnce(
     instructions: [...request.instructions],
     ...(request.runDetail ? { runDetail: request.runDetail } : {}),
     resultSummary: judged,
+    // Where the judging model's window cannot hold it whole, the first shorter form that fits: the views first, the trail and the final data last (`./run-trail/fitting.ts`, t963).
+    resultSummaryFitting: automationStudioResultTrailFitting(judged),
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
     provider,

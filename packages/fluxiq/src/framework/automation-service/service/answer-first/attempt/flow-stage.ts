@@ -74,6 +74,8 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
     },
     arrived: () => { run.arrived = true; },
+    // What the run did, to the attempt's trail for its judge (`../flow-run/flow-run.ts`, t963).
+    trail: { viewKeys: input.harnessOptions.observedStateKeys, add: (steps) => { run.trail.push(...steps); } },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
     // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).
     ...(input.personAsk ? { personCheck: { port: input.personAsk.port, stopped: () => { personStopped = true; }, waiting: (state: "started" | "ended", waitedMs: number) => {

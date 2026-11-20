@@ -54,11 +54,23 @@
 // completion after was refused as the same evidence, because the summary held no look. So what the
 // attempt's looks found after the first lasting act (`looked`, from Core's record of each call's
 // answer, `../attempt/call-chain.ts`) is in the summary, and so in its digest: a look that found
-// something new is new evidence, and the same look again is not. The judge is given the latest few
-// distinct looks, each whole -- a look cut short is one a judge cannot take as seen (run-mwbkuxqt-c57f42cb:
+// something new is new evidence, and the same look again is not. The judge is given every
+// distinct look, each whole -- a look cut short is one a judge cannot take as seen (run-mwbkuxqt-c57f42cb:
 // a line the read returned whole reached the judge only as a cut, so every check said unsure) -- and
 // screened line by line as a judge's own words are, so a credential-shaped line never reaches the
 // judge and the rest of what was found still does.
+//
+// **The judge sees everything the attempt did (t963; user, 2026-11-19: "the judge is supposed to see
+// everything that happened during the run to get the final data, then make a judgement off that and
+// the final data").** Run `run-mwo3dp11-a47a032d`'s 19 checks were each shown seven rows, one end page
+// and the reads' labels, and refused right rows 14 times for what the attempt had done and they could
+// not see: the site's own sort, where paging ended, a condition shown beside every kept row. So the
+// summary carries the trail (`trail`): every call the attempt's chain answered, in order, each with the
+// domain's whole answer, and every step a saved Flow's run made (`../attempt/call-chain.ts`,
+// `../flow-run/flow-run.ts`, `runtime/result-verification/run-trail/`), held across a resume
+// (`../trail/`). It is not in the digest itself: what in it bears on the result reaches the digest
+// through the rows, the reads' accounts, the acts and the looks after an act, so a throwaway look
+// between two identical completions is not new evidence (`summary-digest.ts` there).
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -66,7 +78,7 @@ import { automationStudioAnswerFirstKeepBackJudge } from "../../../../../runtime
 import { automationStudioFlowBootstrapInstructionAsk } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
 import { automationStudioLlmStepLogNote, type AutomationStudioLlmEvidenceCompletionCheck } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError } from "../../../../../runtime/models/failures/index.ts";
-import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioFlowLessScreenedWords, automationStudioFlowLessSummaryDigest, type AutomationStudioFlowLessJudgement, type AutomationStudioFlowLessSummary, type AutomationStudioResultEndView, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstCallerCheck } from "../../flow-bootstrap-commands/index.ts";
 import type { AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstScreenedNote } from "../task-memory/index.ts";
@@ -96,8 +108,6 @@ const BY_CALLER_CHECK = "The caller's own check of the result.";
 
 /** Rows are the summary's own shape, and a rough four characters to a token sizes the judge's hold. */
 const CHARS_PER_TOKEN = 4;
-/** The latest distinct looks the judge is shown, each whole (header). */
-const LOOKS_SHOWN = 6;
 /** Stands in for a line, or an address, the screen dropped whole. */
 const WITHHELD = "(withheld)";
 
@@ -150,6 +160,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
   looked?: (() => readonly Look[]) | undefined;
+  /** Every call the attempt's chain answered, in order, with the domain's answer (header, `../attempt/call-chain.ts`). Absent, none. */
+  trail?: (() => readonly AutomationStudioResultTrailStep[]) | undefined;
   /** The reads the result's rows came from, with where each read and how many rows it kept (`../rows/sink-type.ts`, `readPages`). Absent, none. */
   readPages?: (() => NonNullable<AutomationStudioFlowLessSummary["readPages"]>) | undefined;
   /** The person pressed Run again: the judge is told it is a repeat they asked for, and judges this attempt's own change. */
@@ -272,6 +284,7 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
   const witnesses = input.witnesses();
   const looked = shownLooks(input.looked?.() ?? []);
   const readPages = input.readPages?.() ?? [];
+  const trail = input.trail?.() ?? [];
   return {
     instructions: input.instructions,
     ...(rows.datasetId !== undefined ? { rows: { totalRows: rows.totalRows, truncated: rows.truncated, columns: rows.columns, rows: rows.rows } } : {}),
@@ -281,11 +294,12 @@ async function summaryOf(input: Parameters<typeof automationStudioAnswerFirstCom
     ...(Object.keys(witnesses).length ? { witnesses } : {}),
     ...(looked.length ? { looked } : {}),
     ...(rows.datasetId !== undefined && readPages.length ? { readPages } : {}),
+    ...(trail.length ? { trail: [...trail] } : {}),
     ...(input.askedAgain === true ? { askedAgain: true as const } : {})
   };
 }
 
-/** The latest few distinct looks, each whole and screened (header). A look already shown keeps its place, so seeing it again changes nothing. */
+/** Every distinct look, each whole and screened (header). A look already shown keeps its place, so seeing it again changes nothing. */
 function shownLooks(looks: readonly Look[]): Look[] {
   const kept = new Map<string, Look>();
   for (const look of looks) {
@@ -293,7 +307,7 @@ function shownLooks(looks: readonly Look[]): Look[] {
     const key = JSON.stringify([shown.where, shown.found]);
     if (!kept.has(key)) kept.set(key, shown);
   }
-  return [...kept.values()].slice(-LOOKS_SHOWN);
+  return [...kept.values()];
 }
 
 /** One line through the screen a judge's own words pass: a credential-shaped line is dropped whole, a locator in one rewritten. */

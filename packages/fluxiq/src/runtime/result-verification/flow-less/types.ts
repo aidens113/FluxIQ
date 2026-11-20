@@ -4,7 +4,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
-import type { AutomationStudioResultEndView } from "../contracts/index.ts";
+import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
 
 /** What an attempt got, with no Flow behind it. */
@@ -29,6 +29,12 @@ export type AutomationStudioFlowLessSummary = {
    * own conditions left out (`leftOut`, `./read-left-out.ts`). The rows may come from pages the end view is not on.
    */
   readPages?: readonly { where?: string; place?: string; kept: number; rows?: readonly JsonObject[]; leftOut?: AutomationStudioFlowLessReadLeftOut }[];
+  /**
+   * Every call the attempt made on the site, in the order it made them, each with the domain's own answer: Core's record
+   * of every look, read and act (`../run-trail/`, t963), from the attempt's call chain and never a model's words. The judge
+   * reads the result by it. Absent, none was handed on.
+   */
+  trail?: readonly AutomationStudioResultTrailStep[];
   /** The person asked for it to be done once more (a Run again): the judge is told so (`./asked-again.ts`). Only a route sets it, never a model. */
   askedAgain?: true;
 };
