@@ -42,7 +42,7 @@ export async function contractGate({ repositoryRoot, branch, dryRun = false, not
   if (failures.length > 0) {
     const named = failures.map(({ test }) => `${test.package}/${test.file} (${test.guards})`).join("; ");
     const rerun = [...new Set(failures.map(({ group, test }) => `pnpm --dir ${group.package} exec vitest run ${test.file}`))].join(" && ");
-    throw new Error(`Contract test(s) failed, so task ${branch} was not merged: ${named}. Reproduce with: ${rerun}. If the prompt text or budget changed on purpose, re-pin it deliberately: update the expected text or budget in that test file in this task, commit it beside the change, and run finish again; otherwise fix the change. --skip-checks does not waive this gate. The checkout is left on ${branch}, which now carries the integration merge.`);
+    throw new Error(`Contract test(s) failed, so task ${branch} was not merged: ${named}. Reproduce with: ${rerun}. If the prompt text or budget changed on purpose, re-pin it deliberately: update the expected text or budget in that test file in this task, commit it beside the change, and run finish again; otherwise fix the change. --skip-checks does not waive this gate. ${branch} keeps the integration merge for the retry; the main checkout is not left on it.`);
   }
 
   return { ran: true, commands, files, passed: true };
