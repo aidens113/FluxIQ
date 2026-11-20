@@ -13,8 +13,9 @@
 // the steps. A person's Run again learns nothing new of which state is wanted: what it flipped, it
 // flipped because it was told to, so a step keeps what it had.
 //
-// **The saved Flow reads what the answer was read as** (lane t905). The answer is the output step's current version
-// (`../result/`): a Flow whose read of it lost its conditions or columns is refused here and kept as steps, never saved
+// **The saved Flow reads what the answer was read as** (lane t905). The answer is the output step's current version,
+// after the steps appending to its output before it (`../result/output-group.ts`): a Flow whose read of any of them lost
+// its conditions or columns is refused here and kept as steps, never saved
 // to hand the next attempt another list (`../result/output-saved.ts`, run-mwcess01). And a read the result folded into a
 // paging loop's read step (the same list read the same way, D2), with the press that only moved that list on for it, is
 // left out: it is the loop's own work done again by hand, and saved after the loop it stops the Flow on a press with
@@ -54,8 +55,10 @@ export async function automationStudioAnswerFirstSaveDraft(run: AutomationStudio
       automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${[...verdict.codes, ...verdict.issues.map((issue) => `${issue.code} at ${issue.path}`)].join(", ") || "no code given"}`);
       return { kind: "kept", why: "not_assembled", codes: verdict.codes };
     }
-    const held = automationStudioAnswerFirstResultOutputSaved(run.result.port.outputStep(), savedReads(run, verdict));
-    if (!held.ok) {
+    // Every step whose rows are the answer must be held: the output step, and the steps appending to its output before it.
+    const reads = savedReads(run, verdict);
+    const held = run.result.port.outputGroup().map((step) => automationStudioAnswerFirstResultOutputSaved(step, reads)).find((each) => !each.ok);
+    if (held && !held.ok) {
       automationStudioLlmStepLogNote(`The draft was refused and kept as steps only: ${held.code}. ${held.said}`);
       return { kind: "kept", why: "not_assembled", codes: [held.code] };
     }

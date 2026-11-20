@@ -11,14 +11,14 @@
 //
 // Every look that kept rows is named; looks that kept none are counted. Nothing is cut.
 import { automationStudioAnswerFirstResultCoverage } from "./coverage.ts";
-import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
+import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import { automationStudioAnswerFirstResultWords as words } from "./statement-words.ts";
 import type { AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 
 export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudioAnswerFirstResultLedger, answerRows?: number): string {
-  const output = automationStudioAnswerFirstResultOutputStep(ledger);
-  const sentences = [output ? `Result: ${resultWords(ledger, output, answerRows)}.` : `Result: no rows: ${ledger.steps.length ? "every read step in the draft is marked intermediate" : "the draft has no read step yet"}.`];
-  const working = ledger.steps.filter((step) => step !== output).sort((one, other) => one.position - other.position);
+  const group = automationStudioAnswerFirstResultOutputGroup(ledger);
+  const sentences = [group.length ? `Result: ${resultWords(ledger, group, answerRows)}.` : `Result: no rows: ${ledger.steps.length ? "every read step in the draft is marked intermediate" : "the draft has no read step yet"}.`];
+  const working = ledger.steps.filter((step) => !group.includes(step)).sort((one, other) => one.position - other.position);
   if (working.length) sentences.push(`Working reads, not the answer: ${working.map((step) => `${words.step(step)} (${words.pageCount(step.pages.length)}, ${words.rows(words.keptCount(step))})`).join(", ")}.`);
   const holding = ledger.looks.filter((look) => look.kept.length > 0);
   const empty = ledger.looks.length - holding.length;
@@ -27,19 +27,29 @@ export function automationStudioAnswerFirstResultHeader(ledger: AutomationStudio
   return sentences.join(" ");
 }
 
-function resultWords(ledger: AutomationStudioAnswerFirstResultLedger, output: AutomationStudioAnswerFirstResultStep, answerRows?: number): string {
-  const parts = [`${words.step(output)} (${words.version(output)})`];
-  if (!output.pages.length) parts[0] += `, 0 rows: v${output.version} has read no page yet`;
-  else parts[0] += `, ${words.rows(answerRows ?? words.keptCount(output))} over ${words.pageCount(output.pages.length)}: ${words.pages(output.pages)}`;
-  if (answerRows !== undefined && answerRows !== words.keptCount(output)) parts.push(`${words.rows(words.keptCount(output))} kept before result processing`);
-  const columns = columnWords(ledger, output);
+function resultWords(ledger: AutomationStudioAnswerFirstResultLedger, group: readonly AutomationStudioAnswerFirstResultStep[], answerRows?: number): string {
+  const kept = group.reduce((sum, step) => sum + words.keptCount(step), 0);
+  // Steps appending to one output (`./output-group.ts`) are each named with their own pages, then the rows in all.
+  const parts = group.length === 1
+    ? [stepWords(group[0]!, answerRows ?? kept)]
+    : [...group.map((step, index) => `${index ? "then " : ""}${stepWords(step, words.keptCount(step))}`), `each appending to one record output, ${words.rows(answerRows ?? kept)} in all`];
+  if (answerRows !== undefined && answerRows !== kept) parts.push(`${words.rows(kept)} kept before result processing`);
+  const columns = columnWords(ledger, group);
   if (columns) parts.push(columns);
-  const coverage = coverageWords(output);
-  if (coverage) parts.push(coverage);
+  for (const step of group) {
+    const coverage = coverageWords(step);
+    if (coverage) parts.push(group.length === 1 ? coverage : `${words.step(step)}: ${coverage}`);
+  }
   return parts.join("; ");
 }
 
-function columnWords(ledger: AutomationStudioAnswerFirstResultLedger, output: AutomationStudioAnswerFirstResultStep): string | undefined {
+/** A step of the result by its version and pages, with `rows` as its count. */
+function stepWords(step: AutomationStudioAnswerFirstResultStep, rows: number): string {
+  const named = `${words.step(step)} (${words.version(step)})`;
+  return step.pages.length ? `${named}, ${words.rows(rows)} over ${words.pageCount(step.pages.length)}: ${words.pages(step.pages)}` : `${named}, 0 rows: v${step.version} has read no page yet`;
+}
+
+function columnWords(ledger: AutomationStudioAnswerFirstResultLedger, group: readonly AutomationStudioAnswerFirstResultStep[]): string | undefined {
   const contract = ledger.contract;
   if (!contract.sure) {
     const named = contract.columns.length ? `the request names ${contract.columns.join(", ")}, and perhaps` : "perhaps";
@@ -47,7 +57,7 @@ function columnWords(ledger: AutomationStudioAnswerFirstResultLedger, output: Au
     return `columns not certain: ${named} ${contract.maybe.length ? maybe : "more"}`;
   }
   if (contract.columns.length) return `columns ${contract.columns.join(", ")}`;
-  const read = Object.keys(output.reads.fields);
+  const read = [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
   return read.length ? `columns as read: ${read.join(", ")}` : undefined;
 }
 

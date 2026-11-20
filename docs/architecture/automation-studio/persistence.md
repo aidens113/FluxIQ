@@ -73,6 +73,16 @@ rechecks scope, current revision, stored values and producer references. Runtime
 leases expose isolated execution copies, serialize only their reference and release
 their live copy on close. Per-operation cancellation preserves its original reason;
 an already-started storage commit may finish, but cancellation returns no receipt.
+
+The service's graph-entry adapter (`service/input-basis/execution/`) is the trusted
+producer for a run's root inputs. Each layer the run assembled is observed in its own
+slot, the entry's producer id followed by the layer's role, and the entry's revision
+names those layer revisions in overlay order; scope authority admits only the run's
+own project, task and principal. A layer slot answers secrecy only for exactly the
+authenticated layer's values, and the entry only for exactly their overlay and issued
+producers. A `revision` origin reopens a binding this owner issued earlier, so its
+values never leave the owner's private snapshots for a new kind of record. Every
+origin is authenticated before the first write, so an unknown origin writes nothing.
 This foundation proves a stored normal binding only: engine-use evidence, secret
 continuity and replay admission require their own integration.
 
@@ -607,6 +617,18 @@ A run's event stream holds the kinds `run_summary`, `route_decision`,
 `subflow_execution`, `action_attempt`, `recovery_attempt`,
 `handler_execution` (one lifecycle handler that ran, folded into the detail's
 `handlerExecutions` by `executionId`) and `intervention`.
+
+The runtime stream store (`framework/persistence/automation/project/runtime-stream-store.ts`)
+writes a batch of events as consecutive chunks of at most 2,000 events each (the
+`maxEvents` default), so a long run's detail (a 10,000-action run) is never refused as
+one oversized chunk. Every action row is built, and so validated, before the first
+chunk is written; each chunk is then followed by its own action rows and by moving the
+run's `last_event_sequence` and action count past it. Splitting is by event count only:
+a 2,000-event chunk over the chunk byte limit is still refused. Reading a run back for
+its detail or for the next save (`readRunForUpdate`, `saveFlowRunDetail`) reads every
+event, 500 per page, with no total cap; a cap once read a long run short and its next
+save appended the missing events again. An action page row's `order` is the action's
+own order from its detail record; the stream sequence stays in `metadata.eventSequence`.
 
 The migrations are additive. The full `get-flow-router` endpoint remains only
 for runtime execution, mutation internals, exports, and documented legacy

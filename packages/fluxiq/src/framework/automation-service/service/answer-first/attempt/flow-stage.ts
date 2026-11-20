@@ -33,9 +33,18 @@
 //
 // **The row is written once the first step goes out**, so a process that dies mid-run leaves an
 // attempt that can be seen and carried on. Not before: a run that sent nothing did not happen.
+//
+// **The run's root inputs are sealed where their origin is known** (t905 unit B): it opens one input-use session over
+// the layers it assembles, scoped to the attempt's project, task and authenticated principal (`inputUseOf`), and keeps
+// the session's observation, a sealed reference or an unknown code and never a value, on `flowRun.inputUse`. An origin
+// nothing authenticates stays unknown. Either way the run does and answers exactly what it would without it.
 
+import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
-import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf, automationStudioAnswerFirstSourceAuthority } from "../flow-run/index.ts";
+import type { AutomationStudioInputScope } from "../../../../../runtime/input-basis/index.ts";
+import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../flow-bootstrap-commands/index.ts";
+import { AutomationStudioInputUseExecutions } from "../../input-basis/index.ts";
+import { automationStudioAnswerFirstFlowRun, automationStudioAnswerFirstFlowRunEngineOf, automationStudioAnswerFirstSourceAuthority, type AutomationStudioAnswerFirstFlowRunPorts } from "../flow-run/index.ts";
 import type { AutomationStudioAnswerFirstSavedFlow } from "../task-memory/index.ts";
 import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
@@ -43,6 +52,9 @@ import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 
 type FlowRun = NonNullable<AutomationStudioAnswerFirstAttemptRun["flowRun"]>;
+
+/** The producer the run's input evidence is issued under in the durable input owner (`../../input-basis/`). */
+const INPUT_USE_PRODUCER = "answer-first.flow-run";
 
 /** What a completion by a whole run says of itself: the check reads no more of it than its answer and notes, and it has neither. */
 const WHOLE_RUN = "The saved Flow ran from its start to its end.";
@@ -66,9 +78,12 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   // The task's own level as it stands now, a person's change since the attempt opened included; unread, it reads as none and the next source decides (`../flow-run/flow-run.ts`).
   const kept = await automationStudioAnswerFirstBestEffort(() => run.memory.get(input.projectId, run.taskId));
   const taskHumanness = kept.ok ? kept.value?.humanness : undefined;
+  const evidence: { inputUse?: AutomationStudioInputUseObservation } = {};
+  const inputUse = inputUseOf(run, (observation) => { evidence.inputUse = observation; });
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
     ...(taskHumanness !== undefined ? { storedHumanness: { task: taskHumanness } } : {}),
+    inputUse,
     stepped: () => {
       run.liveSteps += 1;
       if (run.liveSteps === sentBefore + 1) void automationStudioAnswerFirstKeep(run);
@@ -83,7 +98,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
       void automationStudioAnswerFirstKeep(run);
     } } } : {})
   }, saved);
-  const flowRun: FlowRun = { outcome, wentOut: run.liveSteps > sentBefore };
+  const flowRun: FlowRun = { outcome, wentOut: run.liveSteps > sentBefore, ...(evidence.inputUse ? { inputUse: evidence.inputUse } : {}) };
   run.flowRun = flowRun;
   if (run.arrived) run.options = input.continuingOptions();
   await automationStudioAnswerFirstKeep(run);
@@ -110,6 +125,22 @@ function endedBy(run: AutomationStudioAnswerFirstAttemptRun): AutomationStudioAn
   if (run.completion.state.achieved) return "achieved";
   if (run.completion.state.takenUnverified) return "taken_unverified";
   return run.completion.state.purseRefused || run.input.creation.purse.refusal !== undefined ? "budget_out" : undefined;
+}
+
+/**
+ * The run's graph-entry input authority (t905 unit B, `../../input-basis/execution/`), under a scope from the attempt's
+ * authenticated owners only: its project, its task, and the principal the generation was made for (`caller.actorUserId`:
+ * the signed-in person's own id, which the server sets from the authenticated session in
+ * `../../flow-bootstrap-requests/generate.ts`, or a FluxNode's owner). It is read with the reader the service read the
+ * request with before the attempt opened (`readAutomationStudioFlowBootstrapGenerationRequest`), so it cannot fail here;
+ * if it ever did, the stage's best effort would leave the rounds to go on. No request body names any part of the scope.
+ */
+function inputUseOf(run: AutomationStudioAnswerFirstAttemptRun, observed: (observation: AutomationStudioInputUseObservation) => void): NonNullable<AutomationStudioAnswerFirstFlowRunPorts["inputUse"]> {
+  const { stores } = run.input;
+  const principalId = readAutomationStudioFlowBootstrapGenerationRequest(run.input.request as Record<string, unknown>).caller.actorUserId;
+  const scope: AutomationStudioInputScope = { projectId: run.input.projectId, taskId: run.taskId, principalId, producerId: INPUT_USE_PRODUCER };
+  const executions = AutomationStudioInputUseExecutions.of({ projectPaths: stores.paths, projects: stores.projects, runDatasets: stores.datasets });
+  return { open: (entry) => executions.open(scope, entry), observed };
 }
 
 function declaresLasting(step: AutomationStudioFlowDraftStep): boolean {

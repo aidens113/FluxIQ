@@ -11,6 +11,7 @@ import { automationStudioAnswerFirstResultEmptyRefusal } from "./empty-refusal.t
 import { automationStudioAnswerFirstResultHeader } from "./header.ts";
 import { automationStudioAnswerFirstResultApply, automationStudioAnswerFirstResultLedger } from "./ledger.ts";
 import { automationStudioAnswerFirstResultLookLine } from "./look-line.ts";
+import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
 import type { AutomationStudioAnswerFirstResultEvent, AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 
@@ -21,6 +22,8 @@ export type AutomationStudioAnswerFirstResultPort = {
   header(answerRows?: number): string;
   /** The output step, which the ending and the keep read back. */
   outputStep(): AutomationStudioAnswerFirstResultStep | undefined;
+  /** The steps whose pages are the answer, in draft order, the output step last (`./output-group.ts`). */
+  outputGroup(): readonly AutomationStudioAnswerFirstResultStep[];
   /** The answer's rows under the contract (`./answer.ts`). */
   answer(): AutomationStudioAnswerFirstResultAnswer;
   /** The completion refusal for an empty result, or `undefined` when it holds rows (`./empty-refusal.ts`). */
@@ -49,6 +52,7 @@ export function automationStudioAnswerFirstResultPort(instruction: string): Auto
     },
     header: (answerRows) => automationStudioAnswerFirstResultHeader(ledger, answerRows),
     outputStep: () => automationStudioAnswerFirstResultOutputStep(ledger),
+    outputGroup: () => automationStudioAnswerFirstResultOutputGroup(ledger),
     answer: () => automationStudioAnswerFirstResultAnswer(ledger),
     emptyRefusal: () => automationStudioAnswerFirstResultEmptyRefusal(ledger),
     ledger: () => ledger,

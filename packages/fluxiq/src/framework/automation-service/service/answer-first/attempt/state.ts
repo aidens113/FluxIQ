@@ -3,6 +3,7 @@
 // counts its row reports. A round is thrown away; this is not.
 
 import type { AutomationStudioTaskAttemptLoopsCaught, AutomationStudioTaskAttemptPath } from "@fluxiq/contracts/automation";
+import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
@@ -36,8 +37,12 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   startedWith: readonly AutomationStudioFlowDraftStep[];
   /** How it is going at the task, as its row says. Settled at the ending (`./path.ts`). */
   path: AutomationStudioTaskAttemptPath;
-  /** The saved Flow's run, where one was tried: what came of it, whether anything really went out, and what the judge said of a whole run. */
-  flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure" } | undefined;
+  /**
+   * The saved Flow's run, where one was tried: what came of it, whether anything really went out, what the judge said of
+   * a whole run, and the run's graph-entry input evidence where a session was opened (`./flow-stage.ts`): a sealed
+   * reference or an unknown code, never a value.
+   */
+  flowRun?: { outcome: AutomationStudioAnswerFirstFlowRunOutcome; wentOut: boolean; judged?: "yes" | "no" | "unsure"; inputUse?: AutomationStudioInputUseObservation | undefined } | undefined;
   /** A round has made a decision since the saved Flow's run (`./path.ts`). */
   decidedAfterRun: boolean;
   /** A person pressed Run again (`../run-again/`): its record started empty; its run still checks each stated control before it presses. */

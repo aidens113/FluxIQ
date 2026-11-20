@@ -36,7 +36,8 @@ export type AutomationStudioAnswerFirstAttemptInput = {
     flows: Pick<AutomationStudioFlowPaths, "flowDirectory">;
     projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">;
     drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save"> & Partial<Pick<AutomationStudioFlowCandidateDraftStore, "getAuthoritative" | "getVerificationSource">>;
-    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage">;
+    // The immutable snapshots are where a saved Flow's run seals its root inputs (`./flow-stage.ts`, `../../input-basis/`).
+    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage" | "createImmutableSnapshot" | "readImmutableSnapshotPage">;
     openSession(input: { runId: string; metadata: NonNullable<AutomationStudioRuntimeSession["metadata"]> }): Promise<AutomationStudioRuntimeSession>;
     writeSession(session: AutomationStudioRuntimeSession): Promise<void>;
   };

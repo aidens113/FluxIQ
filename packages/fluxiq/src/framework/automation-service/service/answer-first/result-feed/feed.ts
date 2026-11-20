@@ -16,6 +16,9 @@
 //   first ran it, kept across its reruns (`standsFor`), so a call's page and the draft's step meet under one id.
 // - **A carry-on** (`carried`): the rows an earlier segment found, as the output step's page, marked carried.
 //
+// **Steps appending to one named output are one answer** (`../result/output-group.ts`): the output step's pages after
+// theirs, as a run of the saved Flow fills that output. Each keeps its own pages, version and coverage.
+//
 // **A row repeated whole is one row** in the answer (a feed that pins one row to every page), as the store's default
 // processing dedupes a run's rows: never a cut, only the same row once.
 //
@@ -37,6 +40,7 @@ import { automationStudioAnswerFirstResultPort, automationStudioAnswerFirstResul
 import { automationStudioAnswerFirstProcessedRows, automationStudioAnswerFirstReadSchema, type AutomationStudioAnswerFirstRowCall, type AutomationStudioAnswerFirstRowsStored, type AutomationStudioAnswerFirstRowsSummary } from "../rows/index.ts";
 import { automationStudioAnswerFirstResultIntermediate, automationStudioAnswerFirstResultReadOfBatch, automationStudioAnswerFirstResultReadOfCall, automationStudioAnswerFirstResultVersionOf } from "./read-of.ts";
 import { automationStudioAnswerFirstStoredDatasetId } from "../rows/index.ts";
+import { automationStudioAnswerFirstResultWritesOf } from "./writes-of.ts";
 
 /** What the latest decision says its call is: a step the draft adds as it runs, or a rerun of a kept step. Absent: a look. */
 export type AutomationStudioAnswerFirstResultIntent =
@@ -65,7 +69,7 @@ export type AutomationStudioAnswerFirstResultFeed = {
   slot(): string;
   /** The answer, as the completion check, the attempt's row and the ending read it. */
   rows(): AutomationStudioAnswerFirstRowsSummary;
-  /** The output step's pages, as the judge is told them. */
+  /** The result's pages (the output step's, after those of the steps appending to its output), as the judge is told them. */
   readPages(): ReadPages;
   /** Every contributing page, its current conditions and coverage, the sure column contract and working evidence. */
   evidence(): AutomationStudioResultEvidenceBundle;
@@ -109,7 +113,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     if (step.id !== undefined) ids.set(step.id, id);
     return id;
   };
-  const refOf = (step: AutomationStudioFlowDraftStep): AutomationStudioAnswerFirstResultStepRef => ({ id: idOf(step), position: step.position, intermediate: automationStudioAnswerFirstResultIntermediate(step.input) });
+  const refOf = (step: AutomationStudioFlowDraftStep): AutomationStudioAnswerFirstResultStepRef => withWrites({ id: idOf(step), position: step.position, intermediate: automationStudioAnswerFirstResultIntermediate(step.input) }, step.input);
   const isLook = (source: string | undefined): boolean => source !== undefined && port.ledger().looks.some((look) => look.source === source);
   /** A kept step that reads a list: one the ledger met, one written with a read's columns, or a look the draft took. */
   const isReadStep = (step: AutomationStudioFlowDraftStep): boolean => step.disposition === "kept" && step.effect === "observe" && automationStudioFlowDraftStepIsAction(step)
@@ -120,15 +124,18 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   };
 
   const rows = (): AutomationStudioAnswerFirstRowsSummary => {
-      const output = port.outputStep();
+      // The output step, after the steps appending to its output before it (`../result/output-group.ts`).
+      const group = port.outputGroup();
+      const output = group.at(-1);
       if (!output) return EMPTY;
       const answer = port.answer();
-      const sources = output.pages.map((page) => page.source);
+      const pages = group.flatMap((step) => step.pages);
+      const sources = pages.map((page) => page.source);
       const datasetId = automationStudioAnswerFirstStoredDatasetId("step", output.id, output.version);
       if (!sources.length) return EMPTY;
       // A row repeated whole on two pages is one row, as the store's default processing counts it.
-      const columns = answer.columns.length ? answer.columns : Object.keys(output.reads.fields);
-      const shaped = processed(output.pages.flatMap((page) => page.kept), columns, processes.get(output.id));
+      const columns = answer.columns.length ? answer.columns : [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
+      const shaped = processed(pages.flatMap((page) => page.kept), columns, processes.get(output.id));
       return { datasetId, totalRows: shaped.rows.length, truncated: sources.some((source) => truncated.has(source)), columns: shaped.columns, rows: shaped.rows };
   };
   const record = (events: readonly AutomationStudioAnswerFirstResultEvent[], before = rows().totalRows): string | undefined => port.record(events, { before, after: () => rows().totalRows });
@@ -152,7 +159,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       intent = undefined;
       if (now?.kind === "add") declare(call.callId, call.value);
       if (now?.kind === "rerun") declare(idOf(now.step), call.value);
-      if (now?.kind === "add") return record([{ kind: "page", step: { id: call.callId, position: now.position, intermediate: now.intermediate }, read }], before);
+      if (now?.kind === "add") return record([{ kind: "page", step: withWrites({ id: call.callId, position: now.position, intermediate: now.intermediate }, call.value), read }], before);
       if (now?.kind === "rerun") return record([{ kind: "page", step: refOf(now.step), read }], before);
       return record([{ kind: "look", read }], before);
     },
@@ -207,8 +214,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     rows,
     readPages() {
-      const output = port.outputStep();
-      return (output?.pages ?? []).map((page) => ({
+      return port.outputGroup().flatMap((step) => step.pages).map((page) => ({
         ...(page.where === undefined ? {} : { where: page.where }),
         ...(page.place === undefined ? {} : { place: page.place }),
         kept: page.kept.length,
@@ -221,18 +227,27 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     evidence() {
       const ledger = port.ledger();
-      const output = port.outputStep();
+      // Every step whose pages are the answer, each page and coverage under its own step and version.
+      const group = port.outputGroup();
       const page = (read: AutomationStudioAnswerFirstResultRead, step: string, version: number, position?: number): AutomationStudioResultEvidencePage => ({ source: read.source, step, version, ...(position === undefined ? {} : { position }), conditions: read.version.conditions, fields: read.version.fields, ...(read.version.listKey === undefined ? {} : { listKey: read.version.listKey }), ...(read.where === undefined ? {} : { where: read.where }), ...(read.place === undefined ? {} : { place: read.place }), kept: read.kept.length, rows: read.kept, ...(read.leftOut === undefined ? {} : { leftOut: read.leftOut }), ...(read.carried ? { carried: true } : {}) });
-      const coverage = output ? automationStudioAnswerFirstResultCoverage(output) : undefined;
       return {
-        pages: output?.pages.map((read) => page({ ...read, version: output.reads }, output.id, output.version, output.position)) ?? [],
-        coverage: output && coverage ? [{ step: output.id, version: output.version, places: coverage.places, first: coverage.first, ...(coverage.last ? { last: { place: coverage.last.place, ...(coverage.last.paging ? { paging: coverage.last.paging } : {}) } } : {}) }] : [],
+        pages: group.flatMap((output) => output.pages.map((read) => page({ ...read, version: output.reads }, output.id, output.version, output.position))),
+        coverage: group.map((output) => {
+          const coverage = automationStudioAnswerFirstResultCoverage(output);
+          return { step: output.id, version: output.version, places: coverage.places, first: coverage.first, ...(coverage.last ? { last: { place: coverage.last.place, ...(coverage.last.paging ? { paging: coverage.last.paging } : {}) } } : {}) };
+        }),
         ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
-        working: ledger.steps.filter((step) => step !== output).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
+        working: ledger.steps.filter((step) => !group.includes(step)).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
         looks: ledger.looks.map((read) => page(read, "look", 1))
       };
     },
   };
+}
+
+/** `ref` with the named output `input` writes, where it names one (`./writes-of.ts`). */
+function withWrites(ref: AutomationStudioAnswerFirstResultStepRef, input: JsonObject): AutomationStudioAnswerFirstResultStepRef {
+  const writes = automationStudioAnswerFirstResultWritesOf(input);
+  return writes ? { ...ref, writes } : ref;
 }
 
 /** What a pass that moves a list on said when there was nothing more: the domain answers `route: "ended"` with its words. */

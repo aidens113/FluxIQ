@@ -1,7 +1,9 @@
 // What a Flow run needs, and nothing else of the attempt, so it can be tested alone and the
 // driver can adapt its own state (`../attempt/state.ts`). Every member is read when it is needed.
 
+import type { AutomationStudioGraphInputUseSession, AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../../../flows/authoring/model/index.ts";
+import type { AutomationStudioInputUseEntry } from "../../input-basis/index.ts";
 import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
@@ -53,6 +55,16 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   engine(): AutomationStudioAnswerFirstFlowRunEngine;
   /** Current persisted candidate/original-source authority. Absent legacy owners still run, with unknown identity. */
   sourceAuthority?: AutomationStudioAnswerFirstSourceAuthority | undefined;
+  /**
+   * Graph-entry input evidence (`../../input-basis/execution/`), where this port's owner opted in: `open` gives one
+   * explicit session over the layers this run actually assembled, under the scope the owner resolved from its own
+   * authenticated owners (`AutomationStudioInputUseExecutions.of(service).open`); `observed` is told the run's one closed observation, a
+   * reference and location or an unknown code, never a value. Absent, the run is exactly as it was, with no evidence work.
+   */
+  inputUse?: {
+    open(entry: AutomationStudioInputUseEntry): AutomationStudioGraphInputUseSession;
+    observed(observation: AutomationStudioInputUseObservation): void;
+  } | undefined;
   /**
    * Where a check only a person can clear is put to them, and `waiting` told while it stands
    * (`./person-check-port.ts`). Absent, nobody can be asked, and a step meeting one ends the run.

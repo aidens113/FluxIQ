@@ -93,21 +93,38 @@ function rowsOf(run: AutomationStudioAnswerFirstAttemptRun, rows: AutomationStud
  * Lab alike. So the run's datasets are processed here too, best-effort as an ending's are. It is undone by the next
  * read's batch, which makes the dataset collected rows again, and the ending processes it once more.
  *
- * The row is written first: its rows are the sink's own account, which processing does not change, and a wait's row
- * must show as soon as the question does. A wait that awaits this (`./rounds.ts`, the stuck question) asks only once
- * both are done.
+ * **At a wait the datasets are processed before the row is written**, so whoever sees the waiting row reads a dataset
+ * that already serves what the row says. Written first, a reader that saw the row could read the dataset before its
+ * processing ended (lane t905, `./tests/keep.test.ts` under load). The row is built after processing, from the run as it
+ * then stands: a wait that ended meanwhile is not written back as waiting. Processing that fails still costs only
+ * itself: the row is written, and the keep answers with that failure. A wait that awaits this (`./rounds.ts`, the
+ * stuck question) asks only once both are done.
  */
 export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswerFirstAttemptRun): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
     const waiting = run.waitingFor !== undefined;
     run.result.draft(run.steps);
     await run.sink.publish(run.result.rows(), run.result.evidence());
+    const processing = waiting ? await processed(run) : { ok: true as const };
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
     await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...automationStudioAnswerFirstReplayKept(run.completion.state) });
-    if (waiting) await run.input.stores.datasets.processEndedRunDatasets({ projectId: run.input.projectId, runId: run.runId });
+    return processing;
+  } catch (error) {
+    return failed(error);
+  }
+}
+
+/** The run's datasets processed, best-effort: a failure is answered, never thrown, so the row is still written. */
+async function processed(run: AutomationStudioAnswerFirstAttemptRun): Promise<{ ok: true } | { ok: false; errorName: string }> {
+  try {
+    await run.input.stores.datasets.processEndedRunDatasets({ projectId: run.input.projectId, runId: run.runId });
     return { ok: true };
   } catch (error) {
-    return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };
+    return failed(error);
   }
+}
+
+function failed(error: unknown): { ok: false; errorName: string } {
+  return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };
 }

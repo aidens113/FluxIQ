@@ -14,6 +14,7 @@ export * from "./holder.ts";
 export * from "./ledger.ts";
 export * from "./look-line.ts";
 export * from "./loop-copies.ts";
+export * from "./output-group.ts";
 export * from "./output-saved.ts";
 export * from "./output-step.ts";
 export * from "./page-set.ts";

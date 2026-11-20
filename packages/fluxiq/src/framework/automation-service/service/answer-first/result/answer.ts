@@ -1,5 +1,6 @@
-// The answer's rows: every row the output step's current version kept, page by page in place order, holding the
-// contract's columns (I5) and nothing else.
+// The answer's rows: every row the output step's current version kept, page by page in place order, after the rows of
+// the steps appending to the same output before it (`./output-group.ts`), holding the contract's columns (I5) and
+// nothing else.
 //
 // Run-mwb2kkv5: the read kept `link`, which the request never named, and the answer kept it too. Where the contract is
 // sure and every named column is one the read holds (by its name, or the same name written with other case, spaces,
@@ -8,16 +9,16 @@
 // throw away a column that may be the named one under another name, which only the judge can weigh. An unsure or
 // empty contract narrows nothing.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
+import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import type { AutomationStudioAnswerFirstResultLedger } from "./types.ts";
 
 export type AutomationStudioAnswerFirstResultAnswer = { rows: JsonObject[]; columns: readonly string[]; unmatched: readonly string[] };
 
 export function automationStudioAnswerFirstResultAnswer(ledger: AutomationStudioAnswerFirstResultLedger): AutomationStudioAnswerFirstResultAnswer {
-  const output = automationStudioAnswerFirstResultOutputStep(ledger);
-  if (!output) return { rows: [], columns: [...ledger.contract.columns], unmatched: [] };
-  const kept = output.pages.flatMap((page) => page.kept);
-  const held = [...new Set([...Object.keys(output.reads.fields), ...kept.flatMap((row) => Object.keys(row))])];
+  const group = automationStudioAnswerFirstResultOutputGroup(ledger);
+  if (!group.length) return { rows: [], columns: [...ledger.contract.columns], unmatched: [] };
+  const kept = group.flatMap((step) => step.pages.flatMap((page) => page.kept));
+  const held = [...new Set([...group.flatMap((step) => Object.keys(step.reads.fields)), ...kept.flatMap((row) => Object.keys(row))])];
   const contract = ledger.contract;
   if (!contract.sure || !contract.columns.length) return { rows: [...kept], columns: held, unmatched: [] };
   const matched = contract.columns.map((column) => held.find((key) => key === column) ?? held.find((key) => loose(key) === loose(column)));

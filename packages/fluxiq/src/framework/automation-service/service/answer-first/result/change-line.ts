@@ -3,14 +3,16 @@
 // page=1 (12), page=2 (5) left the result; v2 has read no page yet." Pages that leave are always named, with their
 // counts (run-mwafor01, where a read became the whole result and nothing said so). No change is no line: `undefined`.
 import { automationStudioAnswerFirstResultPlaceLabels } from "./place-label.ts";
-import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
+import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import { automationStudioAnswerFirstResultWords as words } from "./statement-words.ts";
 import { automationStudioAnswerFirstResultStepHolder } from "./holder.ts";
 import type { AutomationStudioAnswerFirstResultLedger, AutomationStudioAnswerFirstResultPage, AutomationStudioAnswerFirstResultStep } from "./types.ts";
 
 export function automationStudioAnswerFirstResultChangeLine(before: AutomationStudioAnswerFirstResultLedger, after: AutomationStudioAnswerFirstResultLedger, counts?: { before: number; after: number }): string | undefined {
-  const outputBefore = automationStudioAnswerFirstResultOutputStep(before);
-  const outputAfter = automationStudioAnswerFirstResultOutputStep(after);
+  const groupBefore = automationStudioAnswerFirstResultOutputGroup(before);
+  const groupAfter = automationStudioAnswerFirstResultOutputGroup(after);
+  const outputBefore = groupBefore.at(-1);
+  const outputAfter = groupAfter.at(-1);
   const parts: string[] = [];
   for (const taken of after.taken.filter((each) => !before.taken.some((earlier) => earlier.source === each.source))) {
     const step = automationStudioAnswerFirstResultStepHolder(after, taken.stepId);
@@ -19,7 +21,7 @@ export function automationStudioAnswerFirstResultChangeLine(before: AutomationSt
   const matched = new Set<AutomationStudioAnswerFirstResultStep>();
   for (const earlier of before.steps) {
     const later = successor(after, earlier);
-    const where = earlier === outputBefore ? "the result" : "its working read";
+    const where = groupBefore.includes(earlier) ? "the result" : "its working read";
     if (!later) {
       parts.push(`step ${earlier.position} left the draft${earlier.pages.length ? `, and its ${words.pages(earlier.pages)} left ${where}` : ""}`);
       continue;
@@ -40,13 +42,25 @@ export function automationStudioAnswerFirstResultChangeLine(before: AutomationSt
       parts.push(`step ${folded.position} reads the same list as step ${later.position} with the same conditions and fields, so its pages are step ${later.position}'s`);
     }
   }
-  const outputNow = outputBefore ? successor(after, outputBefore) : undefined;
-  if (outputAfter && outputNow !== outputAfter) parts.push(`the result is now ${words.step(outputAfter)}'s${outputBefore ? ` (it was step ${outputBefore.position}'s)` : ""}`);
+  // The result's steps: the output step, after any steps appending to the same output (`./output-group.ts`).
+  const groupNow = groupBefore.map((step) => successor(after, step));
+  const sameGroup = groupNow.length === groupAfter.length && groupNow.every((step, index) => step === groupAfter[index]);
+  if (outputAfter && !sameGroup) parts.push(`the result is now ${whose(groupAfter, words.step)}${outputBefore ? ` (it was ${whose(groupBefore, (step) => `step ${step.position}`)})` : ""}`);
   if (!outputAfter && outputBefore) parts.push("no read step is the result now");
-  const rowsBefore = counts?.before ?? (outputBefore ? words.keptCount(outputBefore) : 0);
-  const rowsAfter = counts?.after ?? (outputAfter ? words.keptCount(outputAfter) : 0);
+  const rowsBefore = counts?.before ?? kept(groupBefore);
+  const rowsAfter = counts?.after ?? kept(groupAfter);
   if (!parts.length && rowsBefore === rowsAfter) return undefined;
   return `result ${rowsBefore} → ${words.rows(rowsAfter)}${parts.length ? `: ${parts.join("; ")}` : ""}.`;
+}
+
+/** Whose rows the result is: one step's, or the steps' that append to one output, in turn. */
+function whose(group: readonly AutomationStudioAnswerFirstResultStep[], named: (step: AutomationStudioAnswerFirstResultStep) => string): string {
+  return group.length === 1 ? `${named(group[0]!)}'s` : `${group.map(named).join(" then ")}'s, each appending to one record output`;
+}
+
+/** The rows the result's steps hold. */
+function kept(group: readonly AutomationStudioAnswerFirstResultStep[]): number {
+  return group.reduce((sum, step) => sum + words.keptCount(step), 0);
 }
 
 /** The step of `after` holding what `earlier` held: the same draft step, or the one a folded step it held now holds. */

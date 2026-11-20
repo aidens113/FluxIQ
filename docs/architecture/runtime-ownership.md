@@ -62,10 +62,47 @@ produced. Late cleanup failure cannot create an unhandled rejection or replace t
 settled execution. With no input-use handle, ordinary execution keeps its timing and
 input behavior.
 
-This internal foundation has no service producer adapter or replay exemption. It
-does not prove later resolved/default/wired/refreshed node inputs, secret continuity,
-durable child occurrence identity, result correctness or whole-execution equivalence.
-Those require their own authenticated consumption and service integration.
+The service's producer adapter, `framework/automation-service/service/input-basis/execution`,
+is the only authority wired to it. A run opts in by opening one session through the
+typed seam `AutomationStudioInputUseExecutions.of(service)`, which reads only the
+service's public project paths, project store and run datasets (so `service.ts` gains
+nothing), with a scope its own authenticated owners resolved and the
+layers it actually assembled (`inherited`, then `caller`); nothing is attached by
+default, and a run with no session adds no await. A root entry seals only when its
+exact effective dictionary is the overlay of those layers and every layer's declared
+origin authenticates: `request` is the operation's own authenticated channel, and
+`revision` (a root input from an earlier run) must reopen as the current head of its
+slot, under the same project, task and principal, with an execution copy exactly equal
+to the layer. Each layer is issued in its own owner slot and becomes the entry's
+producer, so a changed layer advances the entry even when the effective values are
+equal, and a layer changed during the run withdraws the seal at completion. A layer
+with no origin, an unattributed key, root declared defaults, a stale, forged or
+foreign revision, an active secret context and a seeded continuation all stay unknown;
+nothing is inferred from a value's shape or from its looking nonsecret. `flow-run`
+reports its run's closed observation through its optional `inputUse` port, and
+`runtime-session/graph-options.ts` carries a session's port and forwards every extra
+field the engine adds to a native dispatch, so a later per-attempt port reaches the
+native runtime without editing that wrapper.
+
+Answer First's saved-Flow stage (`service/answer-first/attempt/flow-stage.ts`) is the
+production caller that opts in. Its scope comes from authenticated owners only:
+the attempt's project, its task id, the principal the generation was made for
+(`caller.actorUserId`, which the server sets from the authenticated session in
+`flow-bootstrap-requests/generate.ts`, or a FluxNode's owner, read with the same
+validator the service read the request with), and the producer id
+`answer-first.flow-run`. No request body names any part of the scope. The stage keeps
+the closed observation, a sealed reference or an unknown code and never a value, on
+`flowRun.inputUse`. Caller inputs therefore seal as the caller layer's single producer,
+while a run inside a run-secret context (a FluxNode run with a secret input) seals
+nothing; either way the run executes and answers exactly as it would without a
+session.
+
+The adapter grants no child fork: a child's inputs come from values produced after
+entry, and no durable child-occurrence slot or callee-to-executable correspondence
+exists to authenticate them. Nothing here is a replay exemption. It does not prove
+later resolved/default/wired/refreshed node inputs, secret continuity, durable child
+occurrence identity, result correctness or whole-execution equivalence. Those require
+their own authenticated consumption and service integration.
 
 ## FluxNode execution identity
 

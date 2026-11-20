@@ -209,16 +209,17 @@ describe("the latest read of a list is the result", () => {
     expect(titles(resultRows(attempt))).toEqual(["Birds of the Coast", "Atlas of Rivers"]);
   });
 
-  // Changed by lane t905: the result is one list, its output step's (design (e): a join is not designed), and a record
-  // output's `append` names no step. Two views read as two steps leave the last one's rows as the result.
-  it("the model says `append` across two views under one name: the result is the last view's step", async () => {
+  // Two draft read steps appending to one named output are one answer, as the saved Flow's run fills that output
+  // (`../result/output-group.ts`). Dev's expectation, which lane t905 had changed to the last step alone; restored by
+  // finish-branches/t905-related-fixes with `server/fluxnode-api/tests/sdk-acceptance.test.ts` test 3, the same rule.
+  it("the model says `append` across two views under one name: it asked for both, in order", async () => {
     const library = fakeLibrary(["Atlas of Rivers"]);
     library.address = "library://account/branch-one";
     const attempt = await attemptOf(library, [read("one", output("everything", "append")), after(library, () => {
       library.address = "library://account/branch-two";
       library.loans = [loan("Birds of the Coast")];
     }, "two", output("everything", "append"))]);
-    expect(titles(resultRows(attempt))).toEqual(["Birds of the Coast"]);
+    expect(titles(resultRows(attempt))).toEqual(["Atlas of Rivers", "Birds of the Coast"]);
   });
 
   it("the model says `replace` on rows the list has never held: a filter no row of it survived", async () => {

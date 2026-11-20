@@ -54,11 +54,15 @@ describe("a FluxNode run is an Answer First attempt", () => {
     const said: string[] = [];
     // At most one loan: a read of every loan with an "o" finds three, which the type refuses.
     const spec = findLoansSpec({ outputs: { type: "object", properties: { loans: { type: "array", minItems: 1, maxItems: 1, items: { type: "object", properties: { title: { type: "string" }, due: { type: "string" } }, required: ["title", "due"] } } }, required: ["loans"] } });
+    // Changed by lane t905 (mvp-launch-plan/reports/result-evidence-design.md; `answer-first/result/output-group.ts`): the answer is what the saved Flow fills, where a second read appending to `loans` keeps the first read's rows, so the model drops the "o" read, the step its draft shows in the result, and then reads Birds.
     const run = await lane.run({ spec, inputs: { title: "Birds" } }, {
       script: [findLoans("o"), complete("Found the loans."), (request) => {
         said.push(JSON.stringify(request.context.evidenceLoop?.evidence ?? null));
-        return findLoans("Birds", "find.birds");
-      }, complete("Found the loan.")],
+        const draft = request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.flow_draft")?.value as { steps?: { step: number; inResult: boolean }[] } | undefined;
+        const read = draft?.steps?.find((line) => line.inResult);
+        if (!read) throw new Error("the draft shows no step in the result to drop");
+        return { kind: "amend_draft", amendments: [{ step: read.step, change: "drop" }] };
+      }, findLoans("Birds", "find.birds"), complete("Found the loan.")],
       answers: passing
     });
     expectContractShapes(run);

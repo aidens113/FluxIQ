@@ -30,7 +30,9 @@ export function automationStudioAnswerFirstResultStepSet(
     const moved: AutomationStudioAnswerFirstResultStep = { ...holder, folded: holder.folded.map((folded) => (folded.id === ref.id ? { id: folded.id, position: ref.position } : folded)) };
     return { ledger: automationStudioAnswerFirstResultWithStep(ledger, moved), holderId: holder.id };
   }
-  const placed: AutomationStudioAnswerFirstResultStep = { ...holder, position: ref.position, intermediate: ref.intermediate ?? holder.intermediate };
+  // The output it writes is the step's as now referenced: an amendment that names another output, or none, changes it.
+  const { writes: _written, ...unwritten } = holder;
+  const placed: AutomationStudioAnswerFirstResultStep = { ...unwritten, position: ref.position, intermediate: ref.intermediate ?? holder.intermediate, ...(ref.writes ? { writes: ref.writes } : {}) };
   if (!automationStudioAnswerFirstResultSameReading(holder.reads, version, "may be unsaid")) {
     const next: AutomationStudioAnswerFirstResultStep = { ...placed, version: holder.version + 1, reads: version, pages: [] };
     return { ledger: automationStudioAnswerFirstResultWithStep(ledger, next), holderId: holder.id };
@@ -46,7 +48,7 @@ export function automationStudioAnswerFirstResultStepSet(
 function added(ledger: AutomationStudioAnswerFirstResultLedger, ref: AutomationStudioAnswerFirstResultStepRef, version: AutomationStudioAnswerFirstResultVersion): { ledger: AutomationStudioAnswerFirstResultLedger; holderId: string } {
   const into = sameListAs(ledger, version, ref.id);
   if (into) return folded(ledger, into, ref);
-  const step: AutomationStudioAnswerFirstResultStep = { id: ref.id, position: ref.position, intermediate: ref.intermediate ?? false, folded: [], version: 1, reads: version, pages: [] };
+  const step: AutomationStudioAnswerFirstResultStep = { id: ref.id, position: ref.position, intermediate: ref.intermediate ?? false, ...(ref.writes ? { writes: ref.writes } : {}), folded: [], version: 1, reads: version, pages: [] };
   return { ledger: { ...ledger, steps: [...ledger.steps, step] }, holderId: ref.id };
 }
 

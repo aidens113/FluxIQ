@@ -2,13 +2,15 @@
 // says why the result is empty, names every look that kept rows, and gives the one-call fix, `take`. A look is never
 // made the result on the model's behalf: which read is the answer is the model's to say. `undefined` when the result
 // holds rows. Whether the request wants rows is the caller's to know (`instruction-ask.ts` answers it).
-import { automationStudioAnswerFirstResultOutputStep } from "./output-step.ts";
+import { automationStudioAnswerFirstResultOutputGroup } from "./output-group.ts";
 import { automationStudioAnswerFirstResultWords as words } from "./statement-words.ts";
 import type { AutomationStudioAnswerFirstResultLedger } from "./types.ts";
 
 export function automationStudioAnswerFirstResultEmptyRefusal(ledger: AutomationStudioAnswerFirstResultLedger): string | undefined {
-  const output = automationStudioAnswerFirstResultOutputStep(ledger);
-  if (output && words.keptCount(output) > 0) return undefined;
+  // Steps appending to the output before it are the result too (`./output-group.ts`): rows in any of them are rows.
+  const group = automationStudioAnswerFirstResultOutputGroup(ledger);
+  if (group.some((step) => words.keptCount(step) > 0)) return undefined;
+  const output = group.at(-1);
   const why = !output
     ? (ledger.steps.length ? "every read step in the draft is marked intermediate" : "the draft has no read step")
     : (output.pages.length ? `${words.step(output)} (v${output.version}) kept no rows on ${words.pages(output.pages)}` : `${words.step(output)} (v${output.version}) has read no page yet`);

@@ -35,8 +35,15 @@ export type AutomationStudioAnswerFirstResultRead = {
   carried?: boolean;
 };
 
-/** A draft read step as the draft names it: its stable id, its position now, and whether the model marked it a working read. */
-export type AutomationStudioAnswerFirstResultStepRef = { id: string; position: number; intermediate?: boolean };
+/**
+ * The named record output a read step writes its rows to, as its `recordOutput` declares it: the dataset, and whether
+ * the step appends to it (`writeMode: "append"`) or starts it over. Steps that append to one output are one answer
+ * (`./output-group.ts`), as a run of the saved Flow fills that output.
+ */
+export type AutomationStudioAnswerFirstResultWrites = { datasetId: string; append: boolean };
+
+/** A draft read step as the draft names it: its stable id, its position now, whether the model marked it a working read, and the output it writes. */
+export type AutomationStudioAnswerFirstResultStepRef = { id: string; position: number; intermediate?: boolean; writes?: AutomationStudioAnswerFirstResultWrites };
 
 /** Everything that can change the result, as plain data. Each is one row of the design's operations table. */
 export type AutomationStudioAnswerFirstResultEvent =
@@ -71,6 +78,8 @@ export type AutomationStudioAnswerFirstResultStep = {
   id: string;
   position: number;
   intermediate: boolean;
+  /** The named record output the step writes, as its latest reference said it. Absent: none named. */
+  writes?: AutomationStudioAnswerFirstResultWrites;
   /** Draft steps folded into this one: same `listKey`, conditions and fields. Their pages are this step's. */
   folded: readonly { id: string; position: number }[];
   /** The version's number, from 1: a changed version is the next number. */

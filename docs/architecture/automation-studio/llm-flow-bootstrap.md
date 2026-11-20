@@ -1038,8 +1038,17 @@ evidence starts the ladder again. With nobody to ask the attempt waits (`waiting
 `stuck_in_a_loop`) and spends nothing more, since a refusal is never worth a budget; a person who says keep
 going carries it on. An empty balance at the judge ends the attempt as a budget-out, as it does at a
 decision, and is never read as "not judged". **The draft's read steps declare the result**
-(`service/answer-first/result/` and `result-feed/`). The last non-intermediate read step supplies
-the answer. Reads of one domain-declared list under the same conditions and fields fold into
+(`service/answer-first/result/` and `result-feed/`). The answer is what the saved Flow would
+produce, the **output group** (`result/output-group.ts`): the last non-intermediate read step
+(the output step) and, where its `recordOutput` appends, every earlier non-intermediate draft
+read step writing the same named record output, in draft order, back to and including the last
+one that starts that output over (any write mode but `append`). A step naming no output, or an
+output step that does not append, is the answer alone. Looks never join the group, and a read
+the model drops from the draft leaves it, so a second read appended after a refused answer keeps
+the first read's rows exactly as the saved Flow would; the model drops or replaces the first read
+to change that. Each group step must be saved with the draft (`attempt/draft-save.ts`), and the
+header, change line, look line, empty refusal and published rows all read this one group.
+Reads of one domain-declared list under the same conditions and fields fold into
 that step; changing its conditions or fields starts a new version. A read replaces only its
 own domain-declared place, and unknown place remains unknown. Call parameters, addresses,
 overlapping row values and smaller counts never choose result membership. A read outside
