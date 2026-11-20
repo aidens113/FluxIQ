@@ -4,3 +4,4 @@ export { AUTOMATION_STUDIO_LLM_MODEL_LADDER, automationStudioLlmModelLadderRung 
 export { automationStudioLlmModelLadder, type AutomationStudioLlmModelEscalation, type AutomationStudioLlmModelLadder, type AutomationStudioLlmModelLadderData, type AutomationStudioLlmModelLadderReason } from "./state.ts";
 export { runWithAutomationStudioLlmModelLadder, automationStudioLlmModelLadderFrame } from "./frame.ts";
 export { automationStudioLlmModelLadderClimb } from "./climb.ts";
+export { automationStudioLlmAttemptKey } from "./attempt-key.ts";

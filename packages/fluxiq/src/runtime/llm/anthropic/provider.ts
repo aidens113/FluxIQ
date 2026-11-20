@@ -8,6 +8,7 @@ import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure 
 import { automationStudioAnthropicRequest } from "./request.ts";
 import { automationStudioAnthropicDeciderPrefix, automationStudioAnthropicJudgeContinuation, automationStudioAnthropicReadReply, type AutomationStudioAnthropicDeciderPrefix } from "../../models/providers/anthropic/index.ts";
 import { automationStudioLlmTaskMessages } from "../provider-task/index.ts";
+import { automationStudioLlmAttemptKey } from "../role-routing/index.ts";
 import { estimateAutomationStudioAnthropicCostUsd } from "./pricing.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../../models/limits/index.ts";
 import { automationStudioAnthropicTaskAnswer } from "./task-answer.ts";
@@ -59,9 +60,10 @@ export function createAutomationStudioAnthropicProvider(options: AutomationStudi
  * the decider's conversation (`metadata.continuesDecider`) is sent as that request's cached prefix with the judging
  * appended (`../../models/providers/anthropic/continuation.ts`), in the decider's JSON-text format.
  *
- * **Its own attempt's decider, by the attempt's key.** Every call of an attempt is stamped with its attempt's key by the
- * routing (`metadata.attemptKey`, `../role-routing/provider.ts`), and a decider's prefix is held under it: a judge
- * continues only the prefix held under its own key, so it never continues another attempt's conversation. Run
+ * **Its own attempt's decider, by the attempt's key.** The key is the attempt's own, read from the attempt's frame as the
+ * call is sent (`../role-routing/ladder/attempt-key.ts`; t971: a key stamped on the request on the way never reached a
+ * harness call, which goes to this provider directly), and a decider's prefix is held under it: a judge continues only
+ * the prefix held under its own key, so it never continues another attempt's conversation. Run
  * run-mwohvt8n-a57cad8a's judges all fell back under t965's rule, which asked every call of the prefix's evidence to be
  * in the judge's trail, and Core's own entries in that evidence never are.
  *
@@ -73,7 +75,7 @@ const DECIDERS_HELD = 8;
 type Prepared = ReturnType<typeof automationStudioAnthropicRequest> & { continuation?: { used: boolean; reason: string } };
 
 function continued(request: AutomationStudioLlmTaskRequest, prepared: ReturnType<typeof automationStudioAnthropicRequest>, model: AutomationStudioAnthropicModel, deciders: Map<string, AutomationStudioAnthropicDeciderPrefix>): Prepared {
-  const key = typeof request.metadata?.attemptKey === "string" ? request.metadata.attemptKey : undefined;
+  const key = automationStudioLlmAttemptKey() ?? (typeof request.metadata?.attemptKey === "string" ? request.metadata.attemptKey : undefined);
   if (request.context.evidenceLoop) {
     const prefix = key !== undefined && prepared.format.jsonText ? automationStudioAnthropicDeciderPrefix(JSON.parse(prepared.body) as Record<string, unknown>) : undefined;
     if (key !== undefined) {
