@@ -11,6 +11,8 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
 import { automationStudioRuntimeRepeatStoppedTrace } from "../repeat/index.ts";
 import type { AutomationStudioInvocationOptions } from "../frames/index.ts";
 import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
+import { AutomationStudioGraphInputUseIntegration as InputUse } from "../input-use/index.ts";
+import { automationStudioRunSecrets } from "../../../runtime/run-secrets/index.ts";
 
 /** What one call hands across its boundary. */
 export type AutomationStudioCallBoundaryRequest = {
@@ -57,6 +59,12 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
     const value = callInputs[binding.valueKey];
     if (value !== undefined) childInputs[binding.targetPortId] = value;
   }
+  const parentInputUse = InputUse.accepts(parentOptions.inputUse) ? parentOptions.inputUse : undefined;
+  // Full private data, retained before request.frame projects item identity fields. The originals are
+  // checked against the parent run's captured rows first: those cross uncopied, with unknown input use.
+  const inputHandoff = parentInputUse && !automationStudioRunSecrets()
+    ? InputUse.handoff(parentInputUse, { inputs: childInputs, declaredInputDefaults, contract, bindings, callInputs })
+    : { status: "unknown" as const, code: "active_secrets" as const };
   const now = parentOptions.now?.() ?? Date.now();
   const ownDeadline = contract.executionDefaults?.timeoutMs ? now + contract.executionDefaults.timeoutMs : undefined;
   const deadlineAt = Math.min(parentOptions.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
@@ -67,16 +75,27 @@ export async function automationStudioCallAcrossBoundary(request: AutomationStud
   // "No start node is available in this flow." A partial run's stop node is the
   // root's too: a child node sharing its id runs on. And the parent's frame is
   // the parent's: the child runs as a frame of its own.
-  const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation, ...childBase } = parentOptions;
+  const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, invocation: _parentInvocation, inputUse: _parentInputUsePort, ...childBase } = parentOptions;
   // The child's defaults come from its declared interface: authored, not supplied (`trace-withholding.ts`, `supply`).
-  const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...request.childOverrides, inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
+  const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, ...(request.childOverrides?.currentSubflowId !== undefined ? { currentSubflowId: request.childOverrides.currentSubflowId } : {}), inputs: childInputs, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
   let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
   let childFrame: AutomationStudioInvocationOptions | undefined;
   let childUncertain = false;
   for (let attempt = 0; attempt < Math.max(1, request.maxAttempts); attempt += 1) {
     await parentOptions.commandRun?.checkpoint();
     const framed = childFrame = request.frame(childInputs);
-    childTrace = await runAutomationStudioChildWithBounds((signal) => request.runChild({ ...childOptions, signal, ...(framed ? { invocation: framed } : {}) }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun, parentOptions.startTimer);
+    childTrace = await runAutomationStudioChildWithBounds((signal) => {
+      const ordinary = { ...childOptions, signal, ...(framed ? { invocation: framed } : {}) };
+      if (!parentInputUse) return request.runChild(ordinary);
+      return (async () => {
+        const childInputUse = await InputUse.child(parentInputUse, inputHandoff, parentOptions.invocation, framed, signal, automationStudioRunSecrets() !== undefined);
+        try {
+          return await request.runChild({ ...ordinary, inputUse: childInputUse });
+        } finally {
+          InputUse.close(childInputUse);
+        }
+      })();
+    }, boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun, parentOptions.startTimer);
     childUncertain = childTrace.status === "failed" && childTrace.failure?.code === "run.outcome_uncertain";
     // The child already failed closed on an unresolved lasting act. A whole
     // child retry or a latched run's checkpoint cannot settle that act.

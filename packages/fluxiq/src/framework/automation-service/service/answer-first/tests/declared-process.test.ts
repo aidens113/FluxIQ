@@ -13,10 +13,10 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
 
 const NAMES = ["Atlas of Rivers", "Birds of the Coast", "Clockmaking"];
-const declared = (process: JsonObject) => runNode("read", READ_LOANS, { recordOutput: { datasetId: "loans", process } });
+const declared = (process: JsonObject) => runNode("read", READ_LOANS, { recordOutput: { datasetId: "loans", process } }, [], { add: true });
 
 async function answered(process: JsonObject | undefined) {
-  const attempt = await scriptedAttempt({ library: fakeLibrary(), script: [process ? declared(process) : runNode("read", READ_LOANS, {}), complete("Listed.")] }, cleanups);
+  const attempt = await scriptedAttempt({ library: fakeLibrary(), script: [process ? declared(process) : runNode("read", READ_LOANS, {}, [], { add: true }), complete("Listed.")] }, cleanups);
   if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
   const judges = attempt.requests.filter((request) => request.taskKind === "loop_verification");
   const shown = judges.length ? /"sampleRows":(\[.*?\])/u.exec(JSON.stringify(judges.at(-1)!.context)) : null;
@@ -44,7 +44,7 @@ describe("a read's own declared process", () => {
   });
 
   it("a later read of the same list declaring another sort wins, though the store keeps its first processing", async () => {
-    const sorted = (id: string, order: string) => runNode(id, READ_LOANS, { shape: id, recordOutput: { datasetId: "loans", process: { sort: [{ field: "title", order }] } } });
+    const sorted = (id: string, order: string) => runNode(id, READ_LOANS, { shape: id, recordOutput: { datasetId: "loans", process: { sort: [{ field: "title", order }] } } }, [], { add: true });
     const attempt = await scriptedAttempt({ library: fakeLibrary(), script: [sorted("one", "asc"), sorted("two", "desc"), complete("Listed.")] }, cleanups);
     if (attempt.answered.status !== "answered") throw new Error(`expected an answer, got ${attempt.answered.status}`);
     expect(attempt.answered.result?.rows?.previewRows?.map((row) => row.title)).toEqual([...NAMES].reverse());

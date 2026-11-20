@@ -35,6 +35,7 @@ import { automationStudioRuntimeRepeatGuard } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatStoppedTrace } from "./repeat/index.ts";
 import { automationStudioRuntimeRepeatTraceProvenance } from "./repeat/index.ts";
 import type { AutomationStudioRuntimeRepeatSample } from "./repeat/index.ts";
+import { AutomationStudioGraphInputUseIntegration as InputUse, type AutomationStudioGraphInputUseFrame } from "./input-use/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -145,7 +146,7 @@ async function runGraphFromSeed(
   } catch (error) {
     await options.commandRun?.stop("executor.graph_stopped");
     const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
-    return {
+    const trace: AutomationStudioGraphExecutionTrace = {
       status: "failed",
       startedAt,
       ...(referenceNow !== undefined && referenceNow !== startedAt ? { referenceNow } : {}),
@@ -155,6 +156,8 @@ async function runGraphFromSeed(
       effects: [],
       message: `The run stopped on an unhandled fault (${fault.code}): ${automationStudioThrownErrorText(error) || "no reason was reported"}.`
     };
+    if (InputUse.accepts(options.inputUse)) InputUse.recordFailure(options.inputUse, trace);
+    return trace;
   }
 }
 
@@ -167,10 +170,32 @@ async function runGraphToTrace(
 ): Promise<AutomationStudioGraphExecutionTrace> {
   // A run's secret inputs travel beside it, never in its inputs (`runtime/run-secrets/`); here they answer a
   // binding to their name like any input, and an input the run was given by that name wins.
+  const suppliedInputs = options.inputs ?? {};
   const secrets = automationStudioRunSecrets();
   if (secrets) options = { ...options, inputs: { ...secrets, ...(options.inputs ?? {}) } };
+  const port = InputUse.accepts(options.inputUse) ? options.inputUse : undefined;
+  try {
+    const inputUse = port ? await InputUse.enter(port, flow.flowId, options, suppliedInputs, secrets !== undefined, seed !== undefined) : undefined;
+    const prepared = inputUse?.inputs;
+    return await runGraphWithInputs(flow, prepared ? { ...options, inputs: prepared } : options, startedAt, seed, onExecutedTrace, inputUse);
+  } finally {
+    if (port) InputUse.close(port);
+  }
+}
+
+/** Input preparation is optional evidence; every path below runs with the dictionary it actually consumes. */
+async function runGraphWithInputs(
+  flow: AutomationStudioFlowDocument,
+  options: AutomationStudioGraphExecutionOptions,
+  startedAt: number,
+  seed: AutomationStudioGraphRunSeed | undefined,
+  onExecutedTrace: ((executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void) | undefined,
+  inputUse: AutomationStudioGraphInputUseFrame | undefined
+): Promise<AutomationStudioGraphExecutionTrace> {
   const withholding = automationStudioTraceWithholding();
   const runState = automationStudioRunState(options);
+  // Before any node runs: a child handoff asks this run's own record owner which originals it captured.
+  inputUse?.own(runState.records);
   const repeatTraceProvenance = automationStudioRuntimeRepeatTraceProvenance.frame(options.invocation);
   if (seed) seedRunState(runState, seed);
   // Every run input is run-time data of unknown sensitivity whether or not a
@@ -184,7 +209,7 @@ async function runGraphToTrace(
   const timing = automationStudioStepTiming();
   const start = async () => {
     try {
-      return await executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, timing, seed);
+      return await executeAutomationStudioGraph(flow, options, startedAt, withholding, runState, lifecycle, repeatTraceProvenance, timing, seed, inputUse);
     } finally {
       timing.end();
     }
@@ -218,6 +243,7 @@ async function runGraphToTrace(
   capturedBySavedTrace.set(saved, runState.records.captured());
   // A step's page address the saved trace withheld, read back by a trial act alone (`./executed-locations/`, t738).
   automationStudioExecutedLocations.remember(defended, saved);
+  if (inputUse) await inputUse.complete(defended, saved);
   onExecutedTrace?.(defended, saved);
   return saved;
 }
@@ -301,14 +327,15 @@ async function executeAutomationStudioGraph(
   lifecycle: AutomationStudioStepLifecycleFrame,
   repeatTraceProvenance: ReturnType<typeof automationStudioRuntimeRepeatTraceProvenance.frame>,
   timing: AutomationStudioStepTiming,
-  seed?: AutomationStudioGraphRunSeed
+  seed?: AutomationStudioGraphRunSeed,
+  inputUse?: AutomationStudioGraphInputUseFrame
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are
   // withheld, and a host that supplies them again gets the real ones back.
-  const values: Record<string, JsonValue> = seed ? { ...seed.values, ...(options.inputs ?? {}) } : { ...(options.inputs ?? {}) };
+  const values: Record<string, JsonValue> = seed ? { ...seed.values, ...(options.inputs ?? {}) } : inputUse ? inputUse.initialize(options.inputs ?? {}) : { ...(options.inputs ?? {}) };
   const effects: AutomationStudioGraphExecutionTrace["effects"] = seed ? [...seed.effects] : [];
   const regionTransitions: NonNullable<AutomationStudioGraphExecutionTrace["regionTransitions"]> = seed ? [...seed.regionTransitions] : [];
   const nodesById = new Map(flow.nodes.map((node) => [node.id, node]));

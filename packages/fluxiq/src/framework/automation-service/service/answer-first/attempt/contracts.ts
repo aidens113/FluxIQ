@@ -4,6 +4,7 @@
 
 import type { AutomationStudioRuntimeSession } from "../../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioAnswerFirstFlowWriter } from "../apply-proven/index.ts";
+import type { AutomationStudioAnswerFirstSourceOwner } from "../flow-run/index.ts";
 import type { AutomationStudioFlowCandidateDraftStore } from "../../candidate-drafts/index.ts";
 import type { AutomationStudioBuildRouting } from "../../../route-state/index.ts";
 import type { AutomationStudioRunDatasets } from "../../datasets/index.ts";
@@ -29,13 +30,14 @@ export type AutomationStudioAnswerFirstAttemptInput = {
    */
   humanness?: number | undefined;
   /** The service, as the key of its per-service stores and ports (`../attempt-store/store-of.ts`, `./ports.ts`), and by what applying a proven Flow calls on it (`../apply-proven/flow-writer.ts`). */
-  owner: AutomationStudioAnswerFirstFlowWriter;
+  owner: AutomationStudioAnswerFirstFlowWriter & Partial<AutomationStudioAnswerFirstSourceOwner>;
   stores: {
     paths: Pick<AutomationStudioProjectPaths, "root" | "projectFile">;
     flows: Pick<AutomationStudioFlowPaths, "flowDirectory">;
     projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">;
-    drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save">;
-    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage">;
+    drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save"> & Partial<Pick<AutomationStudioFlowCandidateDraftStore, "getAuthoritative" | "getVerificationSource">>;
+    // The immutable snapshots are where a saved Flow's run seals its root inputs (`./flow-stage.ts`, `../../input-basis/`).
+    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage" | "createImmutableSnapshot" | "readImmutableSnapshotPage">;
     openSession(input: { runId: string; metadata: NonNullable<AutomationStudioRuntimeSession["metadata"]> }): Promise<AutomationStudioRuntimeSession>;
     writeSession(session: AutomationStudioRuntimeSession): Promise<void>;
   };

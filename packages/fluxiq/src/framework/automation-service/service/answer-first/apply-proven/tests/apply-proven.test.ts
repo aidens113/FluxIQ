@@ -195,11 +195,14 @@ describe("nothing is applied", () => {
   it("for a run judged no, or an attempt with any model decision", async () => {
     const { lane } = await appliedLane(cleanups);
     await lane.attempt(firstAttempt);
-    const judged = await lane.attempt({ judge: [judgedNo("Not what was asked.")], script: [readLoans("again", {}), complete("Listed by hand.")] });
-    expect(judged.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
+    // Changed by lane t905: a hand read that is the result is a draft step (D1). After a whole run judged no, the Flow
+    // changed and every step ran, which `../../attempt/path.ts` calls a repair; a repair is still applied only once its
+    // own next whole run proves it, so nothing is. The broken run below is still an exploration, as it was.
+    const judged = await lane.attempt({ judge: [judgedNo("Not what was asked.")], script: [readLoans("again"), complete("Listed by hand.")] });
+    expect(judged.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_repair" });
     expect(await changesOn(lane)).toEqual([]);
     lane.target.page = "elsewhere";
-    const broke = await lane.attempt({ script: [readLoans("again", {}), complete("Listed by hand.")] });
+    const broke = await lane.attempt({ script: [readLoans("again"), complete("Listed by hand.")] });
     expect(broke.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
     expect(await changesOn(lane)).toEqual([]);
     expect(await stepsInTheFlow(lane)).toEqual([]);

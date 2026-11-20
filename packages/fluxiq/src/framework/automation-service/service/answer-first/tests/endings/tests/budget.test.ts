@@ -74,9 +74,16 @@ describe("a budget gone ends it, with the best result", () => {
 
 describe("a draft that could not be assembled", () => {
   it("costs the draft and not the result: the result is returned, and it is said honestly", async () => {
+    const holds = "domain.library.read_holds";
     const attempt = await scriptedAttempt({
-      // A call kept out of the draft: there is no step to assemble a Flow from.
-      script: [runNode("read", READ_LOANS, {}, [], {}), complete("Listed.")]
+      // A read the draft holds of a node the project's library does not: the domain answers it as a read of the loans,
+      // and no Flow can be assembled from it. (A read kept out of the draft is a look, never the result: lane t905, D1.)
+      fault: (call, library) => call.value.node !== holds ? undefined : {
+        kind: "llm_evidence_tool_execution", effectApplied: true,
+        evidence: { read: { extracted: library.loans.map((loan) => ({ ...loan })) } },
+        draft: { actionId: holds, effect: "observe", proposes: true, input: call.value, ranWith: { node: holds, parameters: {}, consequences: [] } }
+      },
+      script: [runNode("read", holds, {}, [], { add: true }), complete("Listed.")]
     }, cleanups);
     const answer = expectReached(attempt);
     expect(answer.result?.rows?.totalRows).toBe(3);

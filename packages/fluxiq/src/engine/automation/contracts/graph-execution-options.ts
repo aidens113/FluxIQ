@@ -11,6 +11,8 @@ import type { AutomationStudioRecoveryBudget, AutomationStudioGraphExecutionTrac
 import type { AutomationStudioTargetRefreshResolution } from "../../../runtime/automation-host/contracts/index.ts";
 
 export type AutomationStudioGraphExecutionOptions = {
+  /** Optional private graph-entry evidence; never changes run admission or node behavior. */
+  inputUse?: import("../input-use/index.ts").AutomationStudioGraphInputUsePort;
   commandRun?: import("../command-scope/index.ts").AutomationStudioExecutorCommandRun;
   startNodeId?: string;
   /**

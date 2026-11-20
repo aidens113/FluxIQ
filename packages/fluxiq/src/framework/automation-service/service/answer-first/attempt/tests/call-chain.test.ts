@@ -8,7 +8,7 @@ import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../..
 import type { AutomationStudioResultTrailStep } from "../../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstCallChain } from "../call-chain.ts";
 
-function chain() {
+function chain(storageFails = false) {
   const events: string[] = [];
   const stored: JsonObject[] = [];
   const counts = { stepped: 0, answered: 0 };
@@ -23,7 +23,7 @@ function chain() {
     sink: {
       fromCall: async (call, answer) => {
         stored.push({ toolId: call.toolId, kind: answer.kind });
-        return undefined;
+        return storageFails ? { rows: [], invalidCount: 0, truncated: false, failure: { code: "answer_first.rows_not_stored" } } : undefined;
       }
     },
     witnesses: {
@@ -88,5 +88,14 @@ describe("the attempt's call chain", () => {
     await execute({ callId: "no", toolId: "refuse", value: { reason: "first words" } });
     await execute({ callId: "no.2", toolId: "refuse", value: { reason: "other words" } });
     expect(counts).toEqual({ stepped: 2, answered: 0 });
+  });
+
+  it("tells the model when capture fails while preserving the domain's applied-act receipt", async () => {
+    const { execute, events } = chain(true);
+    const answer = await execute(PRESS);
+    expect(answer).toMatchObject({ effectApplied: true, evidence: { resultNote: expect.stringContaining("answer_first.rows_not_stored") } });
+    expect(answer).toMatchObject({ evidence: { resultNote: expect.stringContaining("did not enter the result") } });
+    expect(await execute({ ...PRESS, callId: "retry" })).toMatchObject({ resultCode: "attempt.act_already_done" });
+    expect(events.filter((event) => event === "domain:press")).toHaveLength(1);
   });
 });

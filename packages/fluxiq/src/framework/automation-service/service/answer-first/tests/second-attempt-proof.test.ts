@@ -261,7 +261,7 @@ describe("limits on a saved Flow's run go on to the result", () => {
     const flow = await lane.service.getFlow(lane.projectId, "flow.loans");
     await lane.service.saveFlow({ projectId: lane.projectId, flow: { ...flow!, executionDefaults: { timeoutMs: 400 } } });
     over(({ nodeId }) => nodeId === READ_LOANS ? new Promise(() => undefined) : undefined);
-    const second = await lane.attempt({ ...again, script: [readLoans("again", {}), complete("Listed them.")] });
+    const second = await lane.attempt({ ...again, script: [readLoans("again"), complete("Listed them.")] });
     expect(toldTo(second.decisions[0])?.flowRun).toMatchObject({ stoppedAt: READ_STEP, happened: expect.stringMatching(/time this Flow is allowed/u) });
     expect(second.answer.attempt).toMatchObject({ status: "achieved", path: "run_flow_then_explore" });
     expect(second.answer.result?.rows?.totalRows).toBe(4);

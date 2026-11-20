@@ -62,12 +62,13 @@ const STEP_PATH = /^draft\.steps\.(\d+)(?:\.|$)/u;
 /** The check asks a summary of a completed result; nothing reads it here. */
 const SUMMARY = "The saved steps of this task.";
 
-export async function automationStudioAnswerFirstFlowRunAssemble(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "input">, steps: readonly AutomationStudioFlowDraftStep[]): Promise<AutomationStudioAnswerFirstFlowRunAssembly> {
+export async function automationStudioAnswerFirstFlowRunAssemble(ports: Pick<AutomationStudioAnswerFirstFlowRunPorts, "input">, steps: readonly AutomationStudioFlowDraftStep[], compilerHint?: string | undefined): Promise<AutomationStudioAnswerFirstFlowRunAssembly> {
   const { input } = ports;
   const declared = new Map<string, AutomationStudioActionDeclaration[]>();
   try {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
-      result: { summary: SUMMARY }, projectId: input.projectId, flowId: input.flowId, registry: input.registry, resolution: input.resolution, size: input.size, binding: input.binding,
+      // The recorded summary is only a compiler input; the identity check must still match the COMPLETE stamped plan.
+      result: { summary: compilerHint ?? SUMMARY }, projectId: input.projectId, flowId: input.flowId, registry: input.registry, resolution: input.resolution, size: input.size, binding: input.binding,
       permissionFor: ({ ref }) => async (declaration) => {
         declared.set(ref, [...(declared.get(ref) ?? []), declaration]);
         return { permitted: true, missing: [], requestId: null };

@@ -48,7 +48,8 @@ describe("an attempt waiting for a person", () => {
     const page = await service.runDatasets.getRunDatasetPage({ projectId, runId: rows!.runId, datasetId: rows!.datasetId, limit: 200 });
     expect(page?.rows).toHaveLength(3);
     expect(page?.summary.recordCount).toBe(3);
-    expect(page?.summary.processing).toMatchObject({ collected: 6, duplicates: 3, kept: 3 });
+    // Changed by lane t905, D1 (mvp-launch-plan/reports/result-evidence-design.md): read.2 has no `add`, so it is a look, never the result, and the result's dataset holds the rows once.
+    expect(page?.summary.processing).toMatchObject({ collected: 3, duplicates: 0, kept: 3 });
     service.buildCancellation.cancel(projectId, flowId);
     await generating;
   });

@@ -134,6 +134,7 @@ describe("a step whose check a person cleared", () => {
     expect(trace.values.rows).toBe("narrowed");
     const [met, pressed] = attemptsOf(trace, "filter");
     expect(met).toMatchObject({ status: "failed", failure: { code: CHECK.code, effect: "unacted" }, ask: { status: "answered", route: "success", personNeeded: true } });
+    expect(met).toMatchObject({ personContinuation: { kind: "rerun", reason: "unacted" } });
     expect(pressed?.status).toBe("succeeded");
     expect(person.asks).toBe(1);
   });
@@ -152,6 +153,7 @@ describe("a step whose check a person cleared", () => {
     expect(trace.status).toBe("succeeded");
     expect(page.executed).toEqual(["filter", "filter", "read"]);
     expect(trace.values.rows).toBe("narrowed");
+    expect(attemptsOf(trace, "filter")[0]).toMatchObject({ personContinuation: { kind: "rerun", reason: "unacted" } });
   });
 
   it("presses again when the press was made but the page shows its effect gone after the reload", async () => {
@@ -164,6 +166,7 @@ describe("a step whose check a person cleared", () => {
     expect(page.executed).toEqual(["filter", "filter", "read"]);
     expect(trace.values.rows).toBe("narrowed");
     expect(attemptsOf(trace, "filter")[0]?.effectCheck?.result).toBe("not_landed");
+    expect(attemptsOf(trace, "filter")[0]).toMatchObject({ personContinuation: { kind: "rerun", reason: "effect_not_landed" } });
   });
 
   it("does not press again when the page shows the press's effect held, since pressing a filter twice takes it off", async () => {
@@ -177,6 +180,7 @@ describe("a step whose check a person cleared", () => {
     expect(page.presses).toBe(1);
     expect(trace.values.rows).toBe("narrowed");
     expect(attemptsOf(trace, "filter")[0]?.effectCheck?.result).toBe("landed");
+    expect(attemptsOf(trace, "filter")[0]).toMatchObject({ personContinuation: { kind: "effect_landed" } });
   });
 
   it("goes on from a plain press that was made and says nothing of what it leaves: its address carries it", async () => {
@@ -190,6 +194,7 @@ describe("a step whose check a person cleared", () => {
     expect(page.presses).toBe(1);
     expect(trace.values.rows).toBe("narrowed");
     expect(attemptsOf(trace, "filter")[0]?.effectCheck).toBeUndefined();
+    expect(attemptsOf(trace, "filter")[0]).toMatchObject({ personContinuation: { kind: "unverified", reason: "no_expected_state" } });
   });
 
   it("holds a lasting act the check answered when the page cannot show whether it landed, and never makes it again", async () => {
@@ -204,6 +209,7 @@ describe("a step whose check a person cleared", () => {
     expect(page.executed).toEqual(["filter"]);
     expect(page.presses).toBe(1);
     expect(attemptsOf(trace, "filter")[0]?.effectCheck?.result).toBe("unknown");
+    expect(attemptsOf(trace, "filter")[0]).toMatchObject({ personContinuation: { kind: "outcome_uncertain" } });
   });
 
   it("reads again when a read met the check, rather than going on with nothing read", async () => {
@@ -229,5 +235,6 @@ describe("a step whose check a person cleared", () => {
     expect(trace.status).toBe("succeeded");
     expect(page.executed).toEqual(["filter", "read", "read"]);
     expect(trace.values.rows).toBe("narrowed");
+    expect(attemptsOf(trace, "read")[0]).toMatchObject({ personContinuation: { kind: "rerun", reason: "repeat_cannot_act" } });
   });
 });

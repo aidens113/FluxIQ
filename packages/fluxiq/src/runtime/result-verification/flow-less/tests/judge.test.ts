@@ -16,6 +16,7 @@ import { automationStudioFlowLessJudge } from "../judge.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_ASKED_AGAIN } from "../asked-again.ts";
 import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "../question.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessSummary } from "../types.ts";
+import type { AutomationStudioResultEvidenceBundle } from "../../result-evidence/index.ts";
 
 const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 };
 const BOOKED: AutomationStudioAttemptAct = { id: "act.1", what: "Booked the hall for the choir", where: "the bookings page", classes: ["create_new"], state: "landed" };
@@ -88,6 +89,14 @@ describe("the Flow-less judge's answer", () => {
     expect(judged.unanswered).toBeUndefined();
     expect(seen).toHaveLength(1);
     expect(seen[0]?.taskKind).toBe("loop_verification");
+  });
+
+  it("sends every contributing page and long source value with its step version and coverage", async () => {
+    const rows = Array.from({ length: 45 }, (_, index) => ({ title: index === 44 ? "Whole source words ".repeat(120) : `Record ${index}` }));
+    const evidence: AutomationStudioResultEvidenceBundle = { pages: [{ source: "page.one", step: "reader", version: 2, conditions: [], fields: { title: "title_field" }, place: "page=1", kept: 45, rows, carried: true }], coverage: [{ step: "reader", version: 2, places: ["page=1"], first: "read" }], answerContract: { columns: ["title"] }, working: [{ step: "lookup", kept: 3 }], looks: [] };
+    const { provider, seen } = scripted(YES);
+    await judge(provider, { summary: summary({ resultEvidence: evidence }) });
+    expect(seen[0]?.context.resultSummary?.resultEvidence).toEqual(evidence);
   });
 
   it("says no on a no, with the judge's reading, in one call", async () => {

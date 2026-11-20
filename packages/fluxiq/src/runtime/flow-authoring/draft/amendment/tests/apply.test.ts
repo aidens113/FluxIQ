@@ -11,6 +11,29 @@ function steps(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("amending the draft", () => {
+  it("adopts the executed read named by its call and preserves that read's declared input", () => {
+    const draft: AutomationStudioFlowDraftStep[] = [1, 2].map((position) => ({
+      position, id: `read.${position}`, iteration: position, callId: `call.${position}`, actionId: "read", effect: "observe", proposes: true,
+      input: { fields: [{ name: "title" }], where: [{ field: "available", is: position === 2 }] }, effectApplied: true, disposition: "taken"
+    }));
+    const before = structuredClone(draft);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "take", call: "call.2" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[0]).toEqual(before[0]);
+    expect(draft[1]).toEqual({ ...before[1], disposition: "kept" });
+  });
+
+  it("never substitutes a numbered step for a missing or superseded call", () => {
+    const draft: AutomationStudioFlowDraftStep[] = [
+      { position: 1, id: "old", iteration: 1, callId: "old.call", replacedBy: "fresh", actionId: "read", input: {}, effect: "observe", proposes: true, effectApplied: true, disposition: "taken" },
+      { position: 2, id: "fresh", iteration: 2, callId: "fresh.call", actionId: "read", input: {}, effect: "observe", proposes: true, effectApplied: true, disposition: "taken" }
+    ];
+    const before = structuredClone(draft);
+    for (const call of ["missing.call", "old.call"]) {
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "take", call }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "no_such_step" }] });
+      expect(draft).toEqual(before);
+    }
+  });
+
   it("can route and bind a checked candidate without inventing executed instance proof", () => {
     const draft = steps();
     const original = structuredClone(draft[1]!);

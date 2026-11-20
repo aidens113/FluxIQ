@@ -214,7 +214,7 @@ describe("run detail preservation", () => {
     expectAnnotated(await service.getFlowRunDetail(projectId, runId), annotation);
   });
 
-  it("fails a save the typed store refuses over a run it holds, and keeps a run it never held in the legacy detail", async () => {
+  it("fails configured typed-store refusals on both existing runs and first writes", async () => {
     const service = createService({ dataDir: tempRoot, seedFixture: false });
     const project = await service.createProject({ name: "Refused saves" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.refused-saves", name: "Refused saves" });
@@ -239,13 +239,11 @@ describe("run detail preservation", () => {
     await expect(service.getFlowRunDetail(project.id, "run.held")).resolves.toMatchObject({ summary: { actionAttemptCount: 0 }, metadata: { llmGate: { invoked: true } } });
     await expect(readFile(path.join(projectRoot(project.id), "runtime", "runs", "run.held", "run.json"), "utf8")).rejects.toThrow(/ENOENT/);
 
-    // A run the store never held is still listed from its summary row, and read from the legacy detail.
-    await expect(service.saveFlowRunDetail(saved("run.never-held", [refused], { llmGate: { invoked: false } }))).resolves.toMatchObject({ summary: { runId: "run.never-held" } });
-    await expect(service.getFlowRunDetail(project.id, "run.never-held")).resolves.toMatchObject({ actionAttempts: [{ attemptId: "attempt with spaces" }], metadata: { llmGate: { invoked: false } } });
-    const listed = await service.listFlowRunSummaries({ projectId: project.id, flowId: flow.flowId, limit: 25, offset: 0 });
-    expect(listed.runs.map((run) => run.runId).sort()).toEqual(["run.held", "run.never-held"]);
-    // Once the store can hold it, the run moves over with what the legacy detail recorded.
-    await service.saveFlowRunDetail(saved("run.never-held", [], {}));
-    await expect(service.getFlowRunDetail(project.id, "run.never-held")).resolves.toMatchObject({ actionAttempts: [{ attemptId: "attempt with spaces" }], metadata: { llmGate: { invoked: false } } });
+    // A first-write refusal also reaches the caller; no legacy detail can hide the missing SQL parent.
+    await expect(service.saveFlowRunDetail(saved("run.never-held", [refused], { llmGate: { invoked: false } }))).rejects.toThrow("Invalid action attempt ID.");
+    await expect(readFile(path.join(projectRoot(project.id), "runtime", "runs", "run.never-held", "run.json"), "utf8")).rejects.toThrow(/ENOENT/);
+    // A corrected write succeeds without reviving the refused action from a hidden legacy copy.
+    await service.saveFlowRunDetail(saved("run.never-held", [], { llmGate: { invoked: false } }));
+    await expect(service.getFlowRunDetail(project.id, "run.never-held")).resolves.toMatchObject({ actionAttempts: [], metadata: { llmGate: { invoked: false } } });
   });
 });

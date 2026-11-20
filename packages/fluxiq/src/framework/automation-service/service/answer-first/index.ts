@@ -10,6 +10,8 @@ export * from "./completion/index.ts";
 export * from "./flow-run/index.ts";
 export * from "./interrupted/index.ts";
 export * from "./loop-signal/index.ts";
+export * from "./result/index.ts";
+export * from "./result-feed/index.ts";
 export * from "./rows/index.ts";
 export * from "./run-again/index.ts";
 export * from "./run-acts/index.ts";
