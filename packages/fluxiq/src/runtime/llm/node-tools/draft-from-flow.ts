@@ -97,7 +97,7 @@ import type { JsonObject } from "../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../flows/authoring/model/index.ts";
 import { automationNodeOutputReference, getAutomationNodeDefinition, rewriteAutomationNodeStatePaths } from "../../../framework/automation-service/nodes/index.ts";
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../flow-authoring/draft/index.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-authoring/draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftSettleLoopCovered, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-authoring/draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-authoring/draft/scheduled-candidate/index.ts";
 import { automationStudioAuthoredPaceMs } from "../../../engine/automation/pacing/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
@@ -225,6 +225,12 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
     if (startedOn) startedOnByStepId[id] = structuredClone(startedOn);
     automationStudioFlowDraftScheduleCandidate(steps.at(-1)!, node.id, startedOn, input.declarationRequired?.(node.definitionId, parameters) ?? true);
   }
+  // A node after a loop that only does the loop's last act again leaves the
+  // re-authored Flow (`../../flow-authoring/draft/loop-covered/`, t975): a Flow
+  // saved with a press of Next page after the loop that presses it until the
+  // list ends stopped on that press in every replay, and every repair carried
+  // it back. Its node then keeps no key (`automationStudioFlowDraftPlanNodeIds`).
+  automationStudioFlowDraftSettleLoopCovered(steps);
   return { steps, nodeIdByStepId, startedOnByStepId };
 }
 

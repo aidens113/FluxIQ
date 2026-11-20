@@ -8,10 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../flows/authoring/model/index.ts";
-import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../framework/automation-service/nodes/index.ts";
-import { assembleAutomationStudioFlowDraftPlan } from "../../../flow-authoring/bootstrap/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../framework/automation-service/nodes/index.ts";
+import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowBootstrapPlan } from "../../../flow-authoring/bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-authoring/bootstrap/plan/tests/index.ts";
-import { automationStudioFlowDraftReplayable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
+import { applyAutomationStudioFlowDraftAmendments, automationStudioFlowDraftReplayable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
+import { recordedApprenticesDraft } from "../../../flow-authoring/draft/loop-covered/tests/recorded-draft.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../draft-step.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run/index.ts";
@@ -573,5 +574,66 @@ describe("a Flow's do-while read back as the repeat it was written from", () => 
     nested.edges.push(wire("e13", "inner", "body", "next", "in"));
     for (const flow of [branching, strayRepeat, failedExit, otherSetting, noExit, nested]) expect(plain(flow)).toEqual({ pass: true, repeats: false });
     expect(plain(drawn())).toEqual({ pass: false, repeats: true });
+  });
+});
+
+// t975, F4: the saved Flow of run `run-mwouhs7i-b22d9399` ran its page loop to
+// the end and then pressed Next page again, on a list with no page left: Next
+// page answered `ended`, which nothing after the loop routes, and every replay
+// stopped there (`executor.graph.unmatched_route`). Each repair read that Flow
+// back as a draft and assembled the stray press again. Built here from the
+// build's recorded draft (`../../../flow-authoring/draft/loop-covered/tests/recorded-draft.ts`).
+describe("a Flow saved with its loop's last act done again after the loop", () => {
+  // The web fixture plus a next-page node that answers `ended` when there is no further page, as the domain declares it.
+  const ENDED: AutomationNodePort = { id: "ended", label: "Ended", valueType: "any", role: "branch" };
+  function nextPage(): AutomationStudioNodeDefinition {
+    const definitions = webDomainNodeDefinitionsFixture();
+    const click = definitions.find((definition) => definition.id === "web.output.dom-click")!;
+    // It names the list it moves on by the read's handle, as the run's step did: `{"nextPage": {"list": "extraction.2"}}`.
+    const list = definitions.find((definition) => definition.id === "web.output.dom-extract_list")!.parameters.find((parameter) => parameter.id === "extractList")!;
+    return {
+      ...click, id: "web.output.dom-next_page", label: "Next Page", description: "Go to the list's next page, and answer ended when there is none.",
+      parameters: [{ ...list, id: "nextPage", label: "Next page", required: false }], outputs: [...click.outputs, ENDED]
+    };
+  }
+  const paged = new AutomationStudioNodeRegistry();
+  for (const definition of [...webDomainNodeDefinitionsFixture(), nextPage()]) paged.register(definition);
+  const scope = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+
+  const assembled = (steps: readonly AutomationStudioFlowDraftStep[]) =>
+    assembleAutomationStudioFlowDraftPlan({ steps: steps.filter(automationStudioFlowDraftStepIsProposed), write: automationStudioFlowBootstrapDraftNodeStep, registry: paged, resolution: scope, summary: "Read every apprentice" });
+
+  /** The plan's one Subflow as the saved Flow's nodes and edges. */
+  function saved(plan: AutomationStudioFlowBootstrapPlan): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    const subflow = plan.subflows[0]!;
+    return {
+      nodes: subflow.nodes.map((each) => ({ id: `node.${each.key}`, definitionId: each.definitionId, ...(each.parameters ? { parameterValues: each.parameters } : {}) })),
+      edges: subflow.edges.map((each) => ({ id: each.key, sourceNodeId: `node.${each.source.nodeKey}`, targetNodeId: `node.${each.target.nodeKey}`, sourcePortId: each.source.portId, targetPortId: each.target.portId }))
+    };
+  }
+
+  const LOOP = ["web.output.browser-navigate", "web.output.dom-click", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list", "web.output.dom-next_page", "builtin.control.merge"];
+
+  it("saves a Flow that ends at the loop's exit once the build writes the loop", () => {
+    const steps = recordedApprenticesDraft();
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "repeat", while: 9 }])).toEqual({ applied: 1, refused: [] });
+    const plan = assembled(steps);
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(plan.plan!.subflows[0]!.nodes.map((each) => each.definitionId)).toEqual(LOOP);
+  });
+
+  it("a repair of the Flow saved before the fix reads the stray presses back out of it", () => {
+    // The Flow as it was saved: the loop written, and steps 10 and 11 still kept after it.
+    const old = recordedApprenticesDraft();
+    old.find((step) => step.position === 6)!.routing = { kind: "repeat", through: "d9", while: "d9" };
+    const before = assembled(old).plan!;
+    expect(before.subflows[0]!.nodes.map((each) => each.definitionId)).toEqual([...LOOP, "web.output.dom-next_page", "web.output.dom-next_page"]);
+
+    const seed = automationStudioFlowDraftSeedFromFlow(saved(before));
+    const strays = seed.steps.filter((step) => step.coveredBy !== undefined);
+    expect(strays.map((step) => [seed.nodeIdByStepId[step.id!], step.disposition])).toEqual([["node.s8", "dropped"], ["node.s9", "dropped"]]);
+    const repaired = assembled(seed.steps);
+    expect(repaired.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(repaired.plan!.subflows[0]!.nodes.map((each) => each.definitionId)).toEqual(LOOP);
   });
 });

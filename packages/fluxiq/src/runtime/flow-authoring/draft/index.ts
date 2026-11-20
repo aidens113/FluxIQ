@@ -35,6 +35,8 @@ export * from "./flow-inputs.ts";
 export * from "./flow-signature.ts";
 export * from "./full-run-required.ts";
 export * from "./interruption.ts";
+// An act a loop already does, kept again right after the loop, leaves the Flow (t975).
+export * from "./loop-covered/index.ts";
 export * from "./opener.ts";
 export * from "./reversal.ts";
 // What the Flow does to its result's collected rows, set apart from its steps (t970).
