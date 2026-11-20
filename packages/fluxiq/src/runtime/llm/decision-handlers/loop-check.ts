@@ -26,6 +26,7 @@
 // repeat climbs only where no model is asked to decide, since there escalating is the model's
 // choice (`escalate_model`).
 
+import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, automationStudioFlowDraftStepWordsOf } from "../../flow-authoring/draft/index.ts";
@@ -69,7 +70,7 @@ export function automationStudioLlmEvidenceLoopAmendmentKey(amendments: unknown)
 /** Tells the model and the person, and puts it on the run's record. */
 function steer(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, finding: AutomationStudioLlmLoopFinding): void {
   const decides = context.toolIds.has(AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
-  const decide = decides ? automationStudioLlmLoopDecisionAsk(context.loops.cameBack(finding)) : undefined;
+  const decide = decides ? automationStudioLlmLoopDecisionAsk(context.loops.cameBack(finding), automationStudioLlmEvidenceLoopDecisionOptions(context)) : undefined;
   const note = automationStudioLlmLoopSteerNote(finding, context.input.draft === false ? "undrafted" : "drafted", finding.pattern !== "same_act" || context.input.loopSignal !== undefined, decide);
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CHECK_TOOL_ID);

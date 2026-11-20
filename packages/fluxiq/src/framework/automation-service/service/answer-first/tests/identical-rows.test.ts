@@ -44,13 +44,22 @@ const waitUntil = async (holds: () => boolean): Promise<void> => {
   for (let tries = 0; tries < 2_000 && !holds(); tries += 1) await new Promise((resolve) => setTimeout(resolve, 10));
   expect(holds()).toBe(true);
 };
-/** The model's answer the first time it is asked to decide: ask the person; nothing after. */
+/** Core offers ask_person only as a last resort (t969): after the model changed approach, and the ladder climbed or had nothing to climb. */
+const askOffered = (shown: string): boolean => /"offered":\[[^\]]*"ask_person"/u.test(shown);
+/** The model's answers when asked to decide: change approach first, since asking the person is not offered yet; and, once it is, ask the person, naming what is impossible; nothing after. */
 const asksOnce = () => {
+  let changed = false;
   let asked = false;
   return (request: AutomationStudioLlmTaskRequest): JsonObject | undefined => {
-    if (asked || !askedToDecide(shownIn(request))) return undefined;
+    const shown = shownIn(request);
+    if (asked || !askedToDecide(shown)) return undefined;
+    if (!askOffered(shown)) {
+      if (changed) return undefined;
+      changed = true;
+      return toolCall("decide.change", "core.loop_decision", { decision: "change_approach", approach: "Read something that tells these two rows apart before pressing again." });
+    }
     asked = true;
-    return toolCall("decide.ask", "core.loop_decision", { decision: "ask_person", question: "Which of the two loans with this title is not renewed yet?" });
+    return toolCall("decide.ask", "core.loop_decision", { decision: "ask_person", question: "Which of the two loans with this title is not renewed yet?", why: "Two loans share one title and nothing on the page tells them apart, so only the person can say which one is meant." });
   };
 };
 const started = <Run>(run: Promise<Run>): Promise<Run> => {
