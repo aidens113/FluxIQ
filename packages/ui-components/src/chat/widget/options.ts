@@ -3,6 +3,7 @@
 import type { ChatComposerOptions } from "../conversation/index.ts";
 import type { ChatActivitySource } from "../feed/index.ts";
 import type { ChatAskPort, ChatAttachmentPort, ChatOpenControlFactory, ChatThreadsOptions, ChatWelcome } from "../ports/index.ts";
+import type { ModelKeyHostAction } from "../../model-access/index.ts";
 import type { TurnMeta } from "../view/index.ts";
 
 /** How a client mounts the chat. */
@@ -25,6 +26,11 @@ export type ChatWidgetOptions = {
    * chat does not reach into the host. Absent, the model-key line has no link and an ask's Open FluxIQ is empty.
    */
   openControl?: ChatOpenControlFactory;
+  /**
+   * The key card's host actions (change the model, how to update, open FluxIQ's key page). Absent, each
+   * presses the Open FluxIQ control. The card re-reads the key itself for "Try now".
+   */
+  onModelKeyAction?: (action: ModelKeyHostAction) => void;
   /**
    * The owner key the chat starts under, so a first status with the same key is not a change of owner.
    * With `threads`, leave it out: the first status is what scopes the latest chat to the host's project.

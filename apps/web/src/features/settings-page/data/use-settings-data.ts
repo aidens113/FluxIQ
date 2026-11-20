@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { assistantModelPayload, newKeyPayload, removeKey, type NewKeyForm, type RemoveOutcome, type RemoveProof, type SettingsKey, type SettingsModelChoices, type SettingsPort } from "../model";
+import { assistantModelPayload, removeKey, replaceKey, type RemoveOutcome, type SettingsKey, type SettingsModelChoices, type SettingsPort } from "../model";
 
 export type SettingsAllowance = { allowanceUsd: number; chosen: boolean; defaultUsd: number };
 
@@ -19,8 +19,12 @@ export type SettingsData = {
   offer(keyId: string, offered: boolean): Promise<string>;
   saveAssistant(pick: { keyId: string; model: string }): Promise<string>;
   saveAllowance(usd: number | null): Promise<string>;
-  addKey(form: NewKeyForm): Promise<string>;
-  remove(keyId: string, proof?: RemoveProof): Promise<RemoveOutcome>;
+  /** Replaces a key's value in one call; a key needs no password. */
+  replace(keyId: string, value: string): Promise<string>;
+  /** Removes a key in one call; a key needs no password. */
+  remove(keyId: string): Promise<RemoveOutcome>;
+  /** Reads the keys and choices again, for a change made elsewhere on the page. */
+  reload(): Promise<void>;
 };
 
 const NO_CHOICES: SettingsModelChoices = { defaultKeyId: null, assistantKeyId: null, assistantModel: null, assistantProvider: null, assistantAllowanceUsd: null };
@@ -83,11 +87,16 @@ export function useSettingsData(port: SettingsPort, options: SettingsDataOptions
     offer: (keyId, offered) => change(() => port.call("secret-keys", "offer-key", { id: keyId, offered })),
     saveAssistant: (pick) => change(() => port.call("secret-keys", "set-assistant-model", assistantModelPayload(pick))),
     saveAllowance: (usd) => change(() => port.call("automation-studio", "set-panel-assistant-allowance", { allowanceUsd: usd })),
-    addKey: (form) => change(() => port.call("secret-keys", "create-key", newKeyPayload(form))),
-    remove: async (keyId, proof) => {
-      const outcome = await removeKey(port, keyId, proof);
+    replace: async (keyId, value) => {
+      const failure = await replaceKey(port, keyId, value);
+      if (!failure) await refresh();
+      return failure;
+    },
+    remove: async (keyId) => {
+      const outcome = await removeKey(port, keyId);
       if (outcome.kind === "removed") await refresh();
       return outcome;
-    }
+    },
+    reload: refresh
   };
 }

@@ -5,6 +5,9 @@
   background: transparent;
   color: var(--accent-text);
   padding: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   text-align: left;
   cursor: pointer;
 }
@@ -21,6 +24,8 @@
 }
 
 .summary-strip div {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: grid;
   gap: var(--space-xs);
   border: 1px solid var(--divider);

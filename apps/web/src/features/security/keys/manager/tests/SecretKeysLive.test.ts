@@ -1,55 +1,47 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SecretKeySummary } from "fluxiq/secret-keys";
-import { canSubmitAuth, filterSecretKeys, providerRuntimeSupport, secretRevealIsStale } from "../SecretKeysLive";
+import { filterSecretKeys } from "../SecretKeysLive";
 
 const keys: SecretKeySummary[] = [
-  { id: "openai", name: "Primary model", kind: "llm", provider: "OpenAI", scope: "flow", scopeRef: "billing", description: "", enabled: true, createdAtMs: 1, updatedAtMs: 2, lastRotatedAtMs: 2, metadata: { model: "gpt-5" } },
-  { id: "custom", name: "Warehouse token", kind: "custom", provider: "Internal", scope: "global", description: "", enabled: false, createdAtMs: 1, updatedAtMs: 3, lastRotatedAtMs: 3 }
+  { id: "site", name: "Shop login", kind: "custom", provider: "Example Shop", scope: "flow", scopeRef: "billing", description: "", enabled: true, createdAtMs: 1, updatedAtMs: 2, lastRotatedAtMs: 2 },
+  { id: "custom", name: "Warehouse key", kind: "custom", provider: "Internal", scope: "global", description: "", enabled: false, createdAtMs: 1, updatedAtMs: 3, lastRotatedAtMs: 3 }
 ];
+const source = () => readFileSync(new URL("../SecretKeysLive.tsx", import.meta.url), "utf8");
+const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/(^|[^:])\/\/.*$/gmu, "$1");
 
 describe("SecretKeysLive view model", () => {
-  it("combines search, type, and status filters over friendly metadata", () => {
-    expect(filterSecretKeys(keys, "gpt-5", "llm", "enabled").map((key) => key.id)).toEqual(["openai"]);
-    expect(filterSecretKeys(keys, "warehouse", "custom", "disabled").map((key) => key.id)).toEqual(["custom"]);
-    expect(filterSecretKeys(keys, "billing", "custom", "all")).toEqual([]);
-  });
-
-  it("distinguishes built-in, local, and host-required providers", () => {
-    expect(providerRuntimeSupport("DeepSeek").label).toBe("Built-in provider");
-    expect(providerRuntimeSupport("Anthropic")).toMatchObject({ label: "Built-in provider", detail: expect.stringContaining("Anthropic (Claude)") });
-    expect(providerRuntimeSupport("OpenAI").label).toBe("Custom adapter required");
-    expect(providerRuntimeSupport("Ollama").label).toBe("Local provider");
-    expect(providerRuntimeSupport("Private LLM").label).toBe("Custom adapter required");
-  });
-
-  it("invalidates reveals when a key changes or disappears", () => {
-    expect(secretRevealIsStale(keys[0]!, keys[0])).toBe(false);
-    expect(secretRevealIsStale(keys[0]!, { ...keys[0]!, lastRotatedAtMs: 4 })).toBe(true);
-    expect(secretRevealIsStale(keys[0]!, undefined)).toBe(true);
+  it("combines search and status filters over friendly details, including where it is used", () => {
+    expect(filterSecretKeys(keys, "billing", "enabled").map((key) => key.id)).toEqual(["site"]);
+    expect(filterSecretKeys(keys, "warehouse", "disabled").map((key) => key.id)).toEqual(["custom"]);
+    expect(filterSecretKeys(keys, "everywhere", "all").map((key) => key.id)).toEqual(["custom"]);
+    expect(filterSecretKeys(keys, "billing", "disabled")).toEqual([]);
   });
 
   it("loads real Domain and per-project Flow scope options lazily", () => {
-    const source = readFileSync(new URL("../SecretKeysLive.tsx", import.meta.url), "utf8");
     const catalog = readFileSync(new URL("../scope-catalog/useSecretScopeCatalog.ts", import.meta.url), "utf8");
     expect(catalog).toContain('fetch("/api/programs"');
     expect(catalog).toContain('api.get<{ projects:');
     expect(catalog).toContain('"list-flow-summaries", { projectId }');
-    expect(source).toContain('label="Project"');
+    expect(source()).toContain('label="Project"');
   });
 
-  it("does not require 2FA when authorizing creation", () => {
-    const user = { id: "admin", username: "admin", displayName: "Admin", roleId: "admin", permissions: [], pinConfigured: true, totpEnabled: true };
-    const auth = { password: "password", pin: "1234", totp: "" };
-    expect(canSubmitAuth(auth, user, false)).toBe(true);
-    expect(canSubmitAuth(auth, user)).toBe(false);
+  it("asks for no password or two-step code to add, update, replace or remove", () => {
+    const text = withoutComments(source());
+    expect(text).not.toMatch(/authorizationPassword|authorizationTotp|AuthorizationFields|canSubmitAuth|Your password/u);
   });
 
-  it("routes create, update, rotate, reveal, and delete through the operation gate", () => {
-    const source = readFileSync(new URL("../SecretKeysLive.tsx", import.meta.url), "utf8");
-    expect(source).toContain("operation.run(name");
-    for (const operation of ["create-key", "update-key", "rotate-key", "reveal-key", "delete-key"]) {
-      expect(source).toContain(`mutate("${operation}"`);
-    }
+  it("routes create, update, replace and remove through the operation gate, and has no reveal", () => {
+    const text = source();
+    expect(text).toContain("operation.run(name");
+    for (const operation of ["create-key", "update-key", "rotate-key", "delete-key"]) expect(text).toContain(`mutate("${operation}"`);
+    expect(text).not.toContain("reveal-key");
+  });
+
+  it("offers no AI key type, no PIN and none of the old wording to a person", () => {
+    const text = withoutComments(source());
+    expect(text).not.toMatch(/\bPIN\b|pinConfigured|authorizationPin/u);
+    expect(text).not.toContain('value="llm"');
+    expect(text).not.toMatch(/Reveal (for|temporarily|secret)|Rotate (value|secret)|Authorize|Scope reference|Secret Key|credential|encrypted/iu);
   });
 });

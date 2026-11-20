@@ -1,4 +1,4 @@
-export function emptyCredentialEdit(kind: "password" | "pin") {
+export function emptyCredentialEdit(kind: "password") {
   return {
     kind,
     value: "",

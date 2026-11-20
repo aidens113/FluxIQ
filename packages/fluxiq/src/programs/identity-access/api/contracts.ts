@@ -142,3 +142,15 @@ export const IDENTITY_RECASE_ERRORS = {
   /** `username` is missing, not a string, or not the caller's current name ignoring case: a different name is not changed here. */
   notCaseOnly: "identity.recase_not_case_only"
 } as const;
+
+/**
+ * The named refusal of a person's own sign-in security (`begin-totp`,
+ * `confirm-totp`, `disable-totp`, `revoke-session`) in an instance whose
+ * people sign in through another directory (a hosted tenant workspace,
+ * `IdentityDirectoryDelegation`): there it acts only on the caller, because
+ * a person's sign-in is not this workspace's to change.
+ */
+export const IDENTITY_DIRECTORY_ERRORS = {
+  /** The request names another person, or a session that is not the caller's own. */
+  selfOnly: "identity.directory_self_only"
+} as const;

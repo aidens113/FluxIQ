@@ -64,3 +64,12 @@ describe("sendInvite and applyMemberChange", () => {
     expect(await applyMemberChange("identity", { action: "remove", userId: "u1" }, { password: "dummy" }, port)).toMatchObject({ kind: "refused" });
   });
 });
+
+describe("an invite answer", () => {
+  it("carries the invite link only when the server returns one", async () => {
+    const { outcomeOfAnswer } = await import("../outcome-of-answer");
+    expect(outcomeOfAnswer(200, { ok: true, payload: { userId: "u1" } })).toEqual({ kind: "done" });
+    expect(outcomeOfAnswer(200, { ok: true, payload: { userId: "u1", inviteUrl: "https://panel.test/welcome?x=1" } })).toEqual({ kind: "done", link: "https://panel.test/welcome?x=1" });
+    expect(outcomeOfAnswer(200, { ok: true, payload: { inviteUrl: 5 } })).toEqual({ kind: "done" });
+  });
+});

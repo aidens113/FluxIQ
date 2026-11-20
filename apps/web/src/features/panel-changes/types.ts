@@ -25,6 +25,8 @@ export type PanelChangeListener = {
   conversation?(conversationId: string): void;
   /** Read project `projectId`'s live activity again. */
   activity?(projectId: string): void;
+  /** Read the caller's model access (the Secret Keys snapshot) again. */
+  modelAccess?(): void;
 };
 
 /** The page's one change stream, shared by every reader on it. */
@@ -37,7 +39,7 @@ export type PanelChangesPort = {
 };
 
 /** The events `GET /api/panel/changes` sends. */
-export type PanelChangeEventType = "gateway" | "conversation" | "activity";
+export type PanelChangeEventType = "gateway" | "conversation" | "activity" | "model-access";
 
 /** The part of an `EventSource` the connection uses, so a test can stand in for it. */
 export type PanelChangeEventStream = {

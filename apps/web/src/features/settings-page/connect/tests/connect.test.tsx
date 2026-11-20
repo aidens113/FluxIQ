@@ -35,10 +35,11 @@ describe("connectInfo", () => {
 });
 
 describe("PairedClientsList", () => {
-  it("offers Forget for a client that is no longer active", () => {
+  it("folds a client that is no longer active under Removed (n), with nothing to remove", () => {
     const rows = [{ trustedClientId: "t1", name: "Old", clientType: "browser", status: "revoked", approvedAt: 1, lastUsedAt: 1 }];
     const html = renderToStaticMarkup(createElement(PairedClientsList, { rows, now: 5, onForget: async () => "done" as const, onDone: () => undefined }));
-    expect(html).toContain("Forget");
+    expect(html).toContain("Removed (1)");
+    expect(html).not.toContain("Remove access");
   });
 });
 
@@ -84,7 +85,8 @@ describe("ConnectClientSection", () => {
     expect(text).toContain("wss://panel.test/client");
     expect(text).toContain("Edge");
     expect(text).toContain("Laptop");
-    expect(buttons(renderer, "Forget")).toHaveLength(1);
+    expect(buttons(renderer, "Remove access")).toHaveLength(0);
+    expect(text).toContain("Removed (1)");
   });
 
   it("approves through the existing route", async () => {
@@ -97,14 +99,14 @@ describe("ConnectClientSection", () => {
   it("dismisses through the existing route", async () => {
     const calls = stub(true);
     const renderer = await render();
-    await act(async () => { buttons(renderer, "Dismiss")[0]!.props.onClick(); });
+    await act(async () => { buttons(renderer, "Decline")[0]!.props.onClick(); });
     expect(calls.some((call) => call.url === "/api/client-gateway/dismiss-pairing")).toBe(true);
   });
 
   it("shows an error with a retry when the gateway cannot be read", async () => {
     stub(false);
     const renderer = await render();
-    expect(JSON.stringify(renderer.toJSON())).toContain("Could not read the connection details");
+    expect(JSON.stringify(renderer.toJSON())).toContain("Could not read your devices");
     expect(buttons(renderer, "Try again")).toHaveLength(1);
   });
 });
@@ -180,5 +182,22 @@ describe("ConnectClientSection live updates", () => {
     expect(JSON.stringify(renderer.toJSON())).toContain("Live updates are off");
     await act(async () => { buttons(renderer, "Reconnect")[0]!.props.onClick(); });
     expect(FakeEventSource.last).not.toBe(first);
+  });
+});
+
+describe("Devices and apps layout", () => {
+  it("lists waiting requests first, then connected ones, the how-to steps, and keeps the JSON behind Technical details", async () => {
+    stub(true);
+    const renderer = await render();
+    const text = JSON.stringify(renderer.toJSON());
+    const order = ["Waiting for your approval", "Connected browsers and apps", "Connect another browser", "Technical details"].map((heading) => text.indexOf(heading));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const flat = (node: any): string => node.children.map((child: any) => typeof child === "string" ? child : flat(child)).join("");
+    const details = renderer.root.findAll((node) => node.type === "details" && flat(node).includes("Technical details"));
+    expect(details).toHaveLength(1);
+    expect(flat(details[0]!)).toContain("/.well-known/fluxiq");
+    expect(text.indexOf("/.well-known/fluxiq")).toBeGreaterThan(text.indexOf("Technical details"));
+    expect(text).toContain("Open the FluxIQ extension and choose Connect.");
   });
 });

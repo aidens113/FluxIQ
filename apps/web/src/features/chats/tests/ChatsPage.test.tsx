@@ -7,19 +7,37 @@ import { describe, expect, it, vi } from "vitest";
 const shared = vi.hoisted(() => ({
   projectId: undefined as string | undefined,
   answers: [] as Array<{ ok: boolean; error?: string; payload?: unknown }>,
-  calls: [] as Array<Record<string, unknown>>
+  calls: [] as Array<Record<string, unknown>>,
+  panelThreads: [] as unknown[],
+  panelCalls: 0,
+  listener: undefined as undefined | { conversation?(id: string): void; opened?(): void }
 }));
 
 vi.mock("next/link", () => ({ default: (props: { href: string; children?: React.ReactNode }) => React.createElement("a", { href: props.href }, props.children) }));
 vi.mock("../../automation-studio/data/use-program-transport", () => ({
   useProgramTransport: () => ({
-    post: async (_endpoint: string, payload: Record<string, unknown>) => {
+    post: async (endpoint: string, payload: Record<string, unknown>) => {
+      if (endpoint === "list-panel-threads") {
+        shared.panelCalls += 1;
+        return { ok: true, payload: { conversations: shared.panelThreads } };
+      }
       shared.calls.push(payload);
       return shared.answers.shift() ?? { ok: true, payload: { conversations: [] } };
     }
   })
 }));
 vi.mock("../../automation-studio/project", () => ({ useProjectList: () => ({ state: "ready", projects: [{ id: "p1", name: "Shop" }], reload: () => undefined, add: () => undefined }) }));
+vi.mock("../../panel-changes", () => ({
+  sharedPanelChanges: () => ({
+    subscribe: (listener: typeof shared.listener) => {
+      shared.listener = listener;
+      listener?.opened?.();
+      return () => { shared.listener = undefined; };
+    },
+    status: () => "live",
+    reopen: () => undefined
+  })
+}));
 vi.mock("../../panel-shell", () => ({
   PublishPanelPage: () => null,
   usePanelContext: () => ({ context: { page: "chats", projectId: shared.projectId }, dispatch: () => undefined, read: () => ({}) })
@@ -36,6 +54,8 @@ const button = (renderer: ReturnType<typeof create>, label: string) =>
 async function mount(projectId?: string) {
   shared.projectId = projectId;
   shared.calls.length = 0;
+  shared.panelCalls = 0;
+  shared.panelThreads = [];
   let renderer!: ReturnType<typeof create>;
   await act(async () => { renderer = create(<ChatsPage />); });
   await settle();
@@ -71,5 +91,37 @@ describe("the Chats page", () => {
     await act(async () => { button(renderer, "Show older chats").props.onClick(); });
     await settle();
     expect(shared.calls[1]).toMatchObject({ limit: 50 });
+  });
+  it("lists the person's assistant threads, which belong to no project", async () => {
+    shared.answers = [{ ok: true, payload: { conversations: [] } }];
+    const { subject: _subject, ...flat } = record("a1");
+    const panel = { ...flat, projectId: "panel", subjectKind: "panel", subjectId: "panel", title: "Assistant chat" };
+    const renderer = await mount();
+    shared.panelThreads = [panel];
+    shared.answers = [{ ok: true, payload: { conversations: [] } }];
+    await act(async () => { shared.listener?.conversation?.("a1"); });
+    await settle();
+    expect(text(renderer)).toContain("Assistant chat");
+    expect(text(renderer)).not.toContain("There are no chats here yet");
+  });
+  it("keeps assistant threads out of one project's list", async () => {
+    shared.answers = [{ ok: true, payload: { conversations: [record("c1")] } }];
+    await mount("p1");
+    expect(shared.panelCalls).toBe(0);
+  });
+  it("reads the list again when a conversation changes, without a second read on subscribing", async () => {
+    shared.answers = [{ ok: true, payload: { conversations: [{ ...record("c1"), turnCount: 10 }] } }];
+    const renderer = await mount("p1");
+    expect(shared.calls).toHaveLength(1);
+    expect(text(renderer)).toContain('"10"," ","messages"');
+    shared.answers = [{ ok: true, payload: { conversations: [{ ...record("c1"), turnCount: 12 }] } }];
+    await act(async () => { shared.listener?.conversation?.("c1"); });
+    await settle();
+    expect(shared.calls).toHaveLength(2);
+    expect(text(renderer)).toContain('"12"," ","messages"');
+    shared.answers = [{ ok: true, payload: { conversations: [{ ...record("c1"), turnCount: 13 }] } }];
+    await act(async () => { shared.listener?.opened?.(); });
+    await settle();
+    expect(text(renderer)).toContain('"13"," ","messages"');
   });
 });

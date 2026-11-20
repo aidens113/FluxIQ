@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
 import type { CurrentUser } from "../programs/types";
-import { notifyProjectsChanged, PublishPanelPage, usePanelContext } from "../panel-shell";
+import { PublishPanelPage, usePanelContext } from "../panel-shell";
 import { useProgramTransport } from "../automation-studio/data/use-program-transport";
 import { createAutomationProjectCatalogStore, useAutomationStoreSelector } from "../automation-studio/stores";
 import { createAutomationStudioUiStore } from "../automation-studio/workspace/studio-ui-store";
 import type { AutomationStudioProject, AutomationStudioProjectCategory } from "../automation-studio/hierarchy/model";
 import { AutomationProjectCatalogSurface, useAutomationProjectCatalogLoader } from "../automation-studio/project";
+import { useProjectsChangedSync } from "./use-projects-changed-sync";
 import "./projects-page.css";
 
 /** Creating, renaming and moving a project asks for no PIN in the panel; only deleting does, and it is not offered here. */
@@ -25,14 +26,15 @@ export function ProjectsPage() {
   if (!uiRef.current) uiRef.current = createAutomationStudioUiStore();
   const catalog = catalogRef.current;
   const refresh = useAutomationProjectCatalogLoader(studio, catalog);
-  const error = useAutomationStoreSelector(catalog, (state) => state.error);
   // A create, rename or removal here changes the catalog; the top bar and the dock read the list again.
   const projects = useAutomationStoreSelector(catalog, (state) => state.projects);
+  // A project made elsewhere (the top bar picker) shows here at once, without a reload.
+  const announce = useProjectsChangedSync(() => void refresh());
   const seen = useRef<unknown>(null);
   useEffect(() => {
-    if (seen.current !== null && seen.current !== projects) notifyProjectsChanged();
+    if (seen.current !== null && seen.current !== projects) announce();
     seen.current = projects;
-  }, [projects]);
+  }, [projects, announce]);
   const open = useCallback((projectId: string) => {
     dispatch({ type: "project", projectId });
     router.push("/flows");
@@ -40,11 +42,6 @@ export function ProjectsPage() {
   return (
     <div className="projects-page">
       <PublishPanelPage page="projects" />
-      {error ? (
-        <p className="projects-error" role="alert">
-          The projects could not be loaded: {error} <button type="button" onClick={() => void refresh()}>Try again</button>
-        </p>
-      ) : null}
       <AutomationProjectCatalogSurface
         api={studio}
         catalog={catalog}

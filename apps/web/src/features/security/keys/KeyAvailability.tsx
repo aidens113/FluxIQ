@@ -1,24 +1,24 @@
 import type { KeyRow } from "../model";
 
-/** Saved-key metadata, without promising that a provider has accepted its value. */
+/** Whether FluxIQ can still open a saved login or key, in plain words. It never claims a provider accepted it. */
 export function KeyAvailability({ row }: { row: KeyRow | undefined }) {
   const state = row?.availability;
-  let words = "Availability not known";
+  let words = "Not known";
   if (row?.enabled === false) words = "Turned off";
-  else if (state?.state === "available") words = "Available";
+  else if (state?.state === "available") words = "Saved";
   else if (state?.state === "unavailable") {
     switch (state.code) {
       case "legacy_recovery_required":
-        words = "Sign in to the panel once to upgrade this key, or add it again";
+        words = "FluxIQ can't open it any more. Replace it.";
         break;
       case "host_protection_unavailable":
-        words = "Host key protection unavailable";
+        words = "This FluxIQ server can't open saved keys";
         break;
       case "ciphertext_invalid":
-        words = "Saved key could not be read";
+        words = "FluxIQ can't read it. Replace it.";
         break;
       case "upgrade_required":
-        words = "FluxIQ update required";
+        words = "FluxIQ needs an update";
         break;
     }
   }

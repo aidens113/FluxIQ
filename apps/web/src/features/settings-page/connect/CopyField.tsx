@@ -15,9 +15,9 @@ export function CopyField(props: { label: string; value: string | undefined; mul
     }
   }
   return (
-    <div className="settings-copy">
-      <span className="settings-copy-label">{props.label}</span>
-      {value ? (props.multiline ? <pre className="settings-copy-value">{value}</pre> : <code className="settings-copy-value">{value}</code>) : <span className="settings-copy-value">{props.missing}</span>}
+    <div className="devices-copy">
+      <span className="devices-copy-label">{props.label}</span>
+      {value ? (props.multiline ? <pre className="devices-copy-value">{value}</pre> : <code className="devices-copy-value">{value}</code>) : <span className="devices-copy-value">{props.missing}</span>}
       <button type="button" className="button" disabled={!value} onClick={() => void copy()} aria-label={`Copy ${props.label}`}>Copy</button>
       {copied === "yes" ? <span role="status">Copied.</span> : null}
       {copied === "no" ? <span role="alert">Could not copy. Select the text and copy it yourself.</span> : null}

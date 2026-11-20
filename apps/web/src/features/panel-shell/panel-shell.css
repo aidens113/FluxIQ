@@ -1,6 +1,6 @@
 /* The panel's frame. Wide: rail | page | assistant, under a top bar.
    Phone (up to 720px): the rail is a bottom tab bar of two rows and the assistant a
-   full-height sheet behind a round button. Nothing here may scroll the page sideways.
+   full-height sheet behind an "Ask" bar that sits in the layout above the tab bar, so it never covers page content. Nothing here may scroll the page sideways.
    Sizes that repeat are tokens on `.panel-shell`; spacing and radii are the panel's own tokens. */
 
 .panel-shell {
@@ -8,7 +8,6 @@
   --panel-dock-width: 360px;
   --panel-tap: 40px;
   --panel-tab-bar-height: calc(var(--panel-tap) * 2);
-  --panel-ask-size: 52px;
   display: grid;
   grid-template-columns: var(--panel-rail-width) minmax(0, 1fr) var(--panel-dock-width);
   grid-template-rows: auto minmax(0, 1fr);
@@ -97,13 +96,13 @@
 @media (max-width: 720px) {
   .panel-shell {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas: "top" "page" "rail";
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "top" "page" "ask" "rail";
   }
-  .panel-topbar { flex-wrap: wrap; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); }
-  .panel-topbar-facts { margin-left: 0; gap: var(--space-md); }
-  /* Room under the last row for the Ask button, so it never covers content. */
-  .panel-page { padding: var(--space-lg) var(--space-lg) calc(var(--panel-ask-size) + var(--space-xl)); }
+  /* The bar is always two rows here (brand and project, then the facts), so it is reserved at its final height: the page no longer drops 40px when the facts mount. */
+  .panel-topbar { flex-wrap: wrap; align-content: flex-start; gap: var(--space-sm); padding: var(--space-sm) var(--space-lg); min-height: calc(var(--space-sm) * 3 + (var(--space-xl) + var(--space-sm)) * 2 + var(--border-width)); }
+  .panel-topbar-facts { flex: 1 1 100%; min-height: calc(var(--space-xl) + var(--space-sm)); margin-left: 0; gap: var(--space-md); }
+  .panel-page { padding: var(--space-lg); }
 
   /* Eight places do not fit 390px (or 320px) in one row at a readable size: the bar is a grid of four per row, so every place is always visible and a tap away. */
   .panel-rail { border-right: 0; border-top: 1px solid var(--divider); padding: 0; overflow: hidden; }
@@ -129,22 +128,27 @@
   }
   .panel-dock[data-open="true"] { visibility: visible; }
   .panel-dock-close { display: inline-flex; align-items: center; }
+  /* A bar of its own between the page and the tab bar, not a button floating over rows. */
   .panel-dock-button {
-    position: fixed;
-    right: var(--space-lg);
-    bottom: calc(var(--panel-tab-bar-height) + var(--space-lg));
-    z-index: 70;
+    grid-area: ask;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--panel-ask-size);
-    height: var(--panel-ask-size);
+    width: 100%;
+    min-height: var(--panel-tap);
     border: 0;
-    border-radius: 50%;
+    border-top: var(--border-width) solid var(--divider);
     background: var(--accent);
     color: var(--accent-ink);
     font-weight: 700;
-    box-shadow: var(--shadow);
   }
   .panel-dock-button[aria-expanded="true"] { display: none; }
 }
+
+/* The account menu in the top bar. */
+.panel-account { position: relative; }
+.panel-account-button { min-height: 32px; padding: 0 var(--space-md); border: 1px solid var(--divider); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.panel-account-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; display: grid; min-width: 11rem; padding: 4px; border: 1px solid var(--divider); border-radius: 8px; background: var(--surface, Canvas); box-shadow: 0 6px 20px rgb(0 0 0 / 0.18); }
+.panel-account-menu > a, .panel-account-menu > button { display: block; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.panel-account-menu > a:hover, .panel-account-menu > button:hover:not(:disabled) { background: var(--hover, rgb(127 127 127 / 0.15)); }
+.panel-account-problem { padding: 6px 10px; color: var(--danger); font-size: 0.85rem; }

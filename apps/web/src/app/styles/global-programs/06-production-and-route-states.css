@@ -15,6 +15,10 @@
   padding: 5px 8px;
 }
 
+.production-parameter-grid select {
+  min-height: var(--select-height);
+}
+
 .production-run-detail {
   display: grid;
   gap: var(--space-sm);

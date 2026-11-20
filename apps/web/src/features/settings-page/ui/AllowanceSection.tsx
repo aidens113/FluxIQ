@@ -31,15 +31,17 @@ export function AllowanceSection(props: { data: SettingsData }) {
     <section aria-labelledby="settings-allowance">
       <h2 id="settings-allowance">Spending per message</h2>
       <p>Each message you send the assistant may use up to {allowanceWords(allowance.allowanceUsd)} of your AI provider&rsquo;s credit. When a message reaches that amount the assistant stops and tells you. {allowance.chosen ? "You chose this amount." : `This is the usual amount, ${allowanceWords(allowance.defaultUsd)}.`}</p>
-      <form onSubmit={(event) => {
+      <form className="settings-allowance-form" onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}>
         <label className="field"><span className="field-label">Allowance in dollars</span><input inputMode="decimal" value={shown} placeholder={allowanceWords(allowance.defaultUsd)} onChange={(event) => setText(event.target.value)} /></label>
-        <button type="submit" className="button primary">Save</button>
-        <button type="button" className="button" onClick={() => void resetToUsual()}>Use the usual amount</button>
+        <div className="settings-actions">
+          <button type="submit" className="button primary">Save</button>
+          <button type="button" className="button" onClick={() => void resetToUsual()}>Use the usual amount</button>
+        </div>
       </form>
-      <p role="status">{status}</p>
+      <p role="status" className="settings-saved">{status}</p>
     </section>
   );
 }

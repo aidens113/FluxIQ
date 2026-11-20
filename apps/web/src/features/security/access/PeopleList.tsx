@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
+import { ACCOUNT_ROLES, roleOfIdentityRole } from "../../accounts";
 import { ConfirmButton } from "../confirm";
 import type { ChangeResult } from "../data";
 import type { AccessRows, SessionRow } from "../model";
+
+/** A role in words: its name and what it can do, never the list of permission ids behind it. */
+function roleWords(roleId: string): string {
+  const role = ACCOUNT_ROLES[roleOfIdentityRole(roleId)];
+  return `${role.label}. ${role.summary}`;
+}
 
 function Sessions(props: { sessions: SessionRow[]; onRevoke: (digest: string) => Promise<ChangeResult>; onDone: () => void }) {
   if (props.sessions.length === 0) return <span className="security-muted">Not signed in anywhere.</span>;
@@ -10,7 +17,7 @@ function Sessions(props: { sessions: SessionRow[]; onRevoke: (digest: string) =>
       {props.sessions.map((session) => (
         <li key={session.digest} className="security-session">
           <span className="security-muted">Signed in, ends {session.expiresAt === undefined ? "at an unknown time" : new Date(session.expiresAt).toLocaleString()}</span>
-          <ConfirmButton label="Sign out" question="Sign this session out?" confirmLabel="Sign out" onConfirm={() => props.onRevoke(session.digest)} onDone={props.onDone} />
+          <ConfirmButton label="End session" question="End this sign-in session?" confirmLabel="End session" onConfirm={() => props.onRevoke(session.digest)} onDone={props.onDone} />
         </li>
       ))}
     </ul>
@@ -32,8 +39,8 @@ export function PeopleList(props: { access: AccessRows; onRevoke: (digest: strin
           {people.map((person) => (
             <li key={person.id} className="security-row">
               <span className="security-title">{person.name}</span>
-              <span className="security-muted">{person.username} · role {person.roleId}{person.enabled ? "" : " · turned off"}</span>
-              {person.permissions.length > 0 ? <span className="security-muted">Can: {person.permissions.join(", ")}</span> : null}
+              <span className="security-muted">{`${person.username}${person.enabled ? "" : " · turned off"}`}</span>
+              <span className="security-muted">{roleWords(person.roleId)}</span>
               <Sessions sessions={person.sessions} onRevoke={props.onRevoke} onDone={props.onDone} />
               {props.actions?.(person.id) ?? null}
             </li>

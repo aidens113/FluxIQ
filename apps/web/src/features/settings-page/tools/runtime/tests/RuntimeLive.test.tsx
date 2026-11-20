@@ -53,7 +53,7 @@ afterEach(async () => {
 describe("Read-only Runtime workspace", () => {
   it("mounts Runtime from real program composition and makes only one initial snapshot read", async () => {
     await act(async () => { renderer = create(<SettingsToolView toolId="runtime" user={{} as CurrentUser} />); });
-    expect(text()).toContain("Global runtime inventory");
+    expect(text()).toContain("What the engine is running");
     expect(mocked.current.get).toHaveBeenCalledTimes(1);
     expect(mocked.current.get.mock.calls[0]![0]).toBe("snapshot");
     expect(mocked.current.post).not.toHaveBeenCalled();
@@ -64,9 +64,9 @@ describe("Read-only Runtime workspace", () => {
     await mount();
     expect(text()).toContain("Runtime unavailable");
     expect(text()).not.toContain("synthetic-private-error");
-    expect(text()).not.toContain("Global runtime inventory");
+    expect(text()).not.toContain("What the engine is running");
     await click("Retry Runtime");
-    expect(text()).toContain("Global runtime inventory");
+    expect(text()).toContain("What the engine is running");
   });
 
   it("labels deferred initial load and retained snapshot stale after refresh failure", async () => {
@@ -79,7 +79,7 @@ describe("Read-only Runtime workspace", () => {
     await click("Refresh Runtime");
     expect(text()).toContain("Client 0");
     expect(text()).toContain("Displayed snapshot is stale");
-    expect(text()).toContain("Snapshot loaded at");
+    expect(text()).toContain("as of");
     expect(text()).not.toContain("do not display me");
   });
 

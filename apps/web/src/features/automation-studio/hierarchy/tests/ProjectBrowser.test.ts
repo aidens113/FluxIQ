@@ -57,15 +57,36 @@ describe("AutomationProjectBrowser", () => {
     expect(markup).not.toContain("automation-project-tile");
   });
 
-  it("labels catalog recovery as Retry when loading failed", () => {
+  it("says plainly that the list could not be loaded, offers one Try again, and shows no empty state under the failure", () => {
     const markup = renderToStaticMarkup(createElement(AutomationProjectBrowser, {
-      categories: [], dragOverCategoryId: null, loaded: true, projects: [], status: "Projects could not be loaded.",
+      categories: [], dragOverCategoryId: null, loaded: true, projects: [], status: "boom: raw server text",
       onCreateCategory: () => undefined, onCreateProject: () => undefined, onDeleteCategory: () => undefined,
       onDeleteProject: () => undefined, onDragLeaveCategory: () => undefined, onDragOverCategory: () => undefined,
       onDrop: () => undefined, onOpenProject: () => undefined, onRefresh: () => undefined,
       onRenameCategory: () => undefined, onRenameProject: () => undefined
     }));
-    expect(markup).toContain("Retry");
-    expect(markup).not.toContain(">Refresh<");
+    expect(markup).toContain("The projects could not be loaded.");
+    expect(markup.match(/Try again/gu)).toHaveLength(1);
+    expect(markup).not.toContain("boom");
+    expect(markup).not.toContain("Retry");
+    expect(markup).not.toContain("No projects yet");
+    expect(markup).not.toContain("No projects in this category");
+  });
+
+  it("shows one empty state, not two, when there are no projects, and no 'No description' filler on a row", () => {
+    const props = {
+      categories: [], dragOverCategoryId: null, loaded: true, status: "",
+      onCreateCategory: () => undefined, onCreateProject: () => undefined, onDeleteCategory: () => undefined,
+      onDeleteProject: () => undefined, onDragLeaveCategory: () => undefined, onDragOverCategory: () => undefined,
+      onDrop: () => undefined, onOpenProject: () => undefined, onRefresh: () => undefined,
+      onRenameCategory: () => undefined, onRenameProject: () => undefined
+    };
+    const empty = renderToStaticMarkup(createElement(AutomationProjectBrowser, { ...props, projects: [] }));
+    expect(empty).toContain("No projects yet");
+    expect(empty).not.toContain("No projects in this category");
+    const project: AutomationStudioProject = { id: "p1", name: "Shop", description: "", categoryId: null, createdAt: 1, updatedAt: 1_700_000_000_000 };
+    const one = renderToStaticMarkup(createElement(AutomationProjectBrowser, { ...props, projects: [project] }));
+    expect(one).toContain("Shop");
+    expect(one).not.toContain("No description");
   });
 });

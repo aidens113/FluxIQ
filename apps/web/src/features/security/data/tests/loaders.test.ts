@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProgramCommandTransport } from "../../../automation-studio/data/program-transport";
-import { forgetPairedClient, loadAccess, loadKeyRows, loadPairedClients, revokeSession } from "../index";
+import { forgetPairedClient, loadAccess, loadPairedClients, revokeSession } from "../index";
 
 const signal = new AbortController().signal;
 
@@ -19,26 +19,6 @@ function transport(answer: Answer, calls: Array<[string, unknown]> = []): Progra
 }
 
 afterEach(() => vi.unstubAllGlobals());
-
-describe("loadKeyRows", () => {
-  it("shapes the keys and carries no value", async () => {
-    const answer = { ok: true, payload: { keys: [
-      { id: "k1", name: "Work", provider: "Anthropic", kind: "llm", enabled: true, availability: { state: "unavailable", code: "legacy_recovery_required", private: "SECRET" }, createdAtMs: 5, lastRevealedAtMs: 9, value: "sk-SECRET", sealed: { ciphertext: "SECRET" } },
-      { id: "k2", name: "Home", kind: "llm", enabled: true, availability: { state: "available" }, createdAtMs: 6 },
-      { name: "no id" }
-    ] } };
-    const result = await loadKeyRows(transport(answer), signal);
-    expect(result).toEqual({ state: "ready", data: [
-      { id: "k1", name: "Work", provider: "Anthropic", addedAt: 5, lastRevealedAt: 9, enabled: true, availability: { state: "unavailable", code: "legacy_recovery_required" } },
-      { id: "k2", name: "Home", provider: "llm", addedAt: 6, lastRevealedAt: undefined, enabled: true, availability: { state: "available" } }
-    ] });
-    expect(JSON.stringify(result)).not.toContain("SECRET");
-  });
-  it("reports a refusal as denied and any other failure as a throw", async () => {
-    expect(await loadKeyRows(transport({ ok: false, status: 403 }), signal)).toEqual({ state: "denied" });
-    await expect(loadKeyRows(transport({ ok: false, status: 500 }), signal)).rejects.toThrow();
-  });
-});
 
 describe("loadAccess", () => {
   it("joins people, role permissions and sessions by digest", async () => {

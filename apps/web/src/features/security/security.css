@@ -1,13 +1,13 @@
-.security { display: grid; gap: 16px; min-width: 0; align-content: start; }
-.security h1 { margin: 0; overflow-wrap: anywhere; font-size: 1.4rem; }
+.security { display: grid; gap: var(--space-4); min-width: 0; align-content: start; }
+.security h1 { margin: 0; overflow-wrap: anywhere; font-size: var(--font-size-page-title, 24px); }
 .security h2, .security h3 { margin: 0; }
-.security-section { display: grid; gap: 12px; min-width: 0; }
+.security-section { display: grid; gap: var(--space-3); min-width: 0; }
 .security-note { margin: 0; opacity: 0.85; }
 .security-error { color: var(--danger); opacity: 1; }
-.security-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.security-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .security-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 10px 12px; border: 1px solid var(--divider); border-radius: 8px; overflow-wrap: anywhere; }
 .security-title { font-weight: 600; }
-.security-muted { opacity: 0.75; font-size: 0.9rem; }
+.security-muted { color: var(--muted); font-size: var(--font-size-body-small, 13px); }
 .security-state { font-weight: 600; }
 .security-state[data-tone="ok"] { color: var(--success); }
 .security-state[data-tone="warn"] { color: var(--warning); }
@@ -33,3 +33,15 @@
   .security .status-badge-pill { padding: 2px 6px; }
 }
 .security .identity-access-workspace > :is(button, .button), .security .secret-keys-workspace > :is(button, .button) { justify-self: start; }
+
+/* The tab bar under the Security heading. */
+/* One row at every width: the tabs scroll sideways inside the bar on a phone rather than wrapping to a second line. */
+.security-tabs { display: flex; flex-wrap: nowrap; gap: var(--space-1); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--divider); }
+.security-tab { flex: none; white-space: nowrap; padding: var(--space-2) var(--space-3); border-radius: 6px 6px 0 0; color: inherit; text-decoration: none; border-bottom: 2px solid transparent; }
+.security-tab:hover { background: var(--hover, rgb(127 127 127 / 0.12)); }
+.security-tab[aria-current="page"] { font-weight: 600; border-bottom-color: var(--accent, currentColor); }
+.security-removed > summary { cursor: pointer; }
+
+/* Remove access: the confirm step is the same size and weight as its neighbours; red marks it without shouting. */
+.security-action .button.danger { background: transparent; color: var(--danger-text); border: 1px solid var(--danger); font-size: inherit; font-weight: inherit; }
+.security-action .button.danger:hover:not(:disabled) { background: var(--danger-soft); }

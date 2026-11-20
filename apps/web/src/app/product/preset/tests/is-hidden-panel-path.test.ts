@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { isHiddenPanelPath } from "../is-hidden-panel-path";
+import { SECURITY_TOOLS } from "../../../../features/settings-page/model";
+import { OWN_SETTINGS_PAGES, isHiddenPanelPath } from "../is-hidden-panel-path";
 import { PANEL_PRESETS } from "../panel-presets";
 
 describe("isHiddenPanelPath", () => {
@@ -24,9 +25,24 @@ describe("isHiddenPanelPath", () => {
     expect(isHiddenPanelPath("/settings", data)).toBe(false);
   });
 
+  it("lets the panel's own settings pages through on every preset, Saved logins included", () => {
+    for (const preset of Object.values(PANEL_PRESETS)) {
+      expect(isHiddenPanelPath("/settings/saved-logins", preset)).toBe(false);
+      expect(isHiddenPanelPath("/settings/saved-logins/anything", preset)).toBe(false);
+    }
+    expect(isHiddenPanelPath("/settings/saved-loginsx", data)).toBe(true);
+  });
+
   it("never hides the always-reachable screens or API routes", () => {
     for (const preset of Object.values(PANEL_PRESETS)) {
       for (const path of ["/", "/security", "/security/sign-in", "/settings", "/api/runs", "/welcome"]) expect(isHiddenPanelPath(path, preset)).toBe(false);
     }
+  });
+});
+
+describe("the panel's own settings pages", () => {
+  it("are exactly the Settings page's own tools under /settings/", () => {
+    const own = SECURITY_TOOLS.filter((tool) => tool.href.startsWith("/settings/")).map((tool) => tool.href);
+    expect([...OWN_SETTINGS_PAGES].sort()).toEqual([...own].sort());
   });
 });
