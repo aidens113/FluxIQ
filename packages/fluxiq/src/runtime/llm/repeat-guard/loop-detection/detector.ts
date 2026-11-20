@@ -19,6 +19,16 @@
 // - A cycle is the last block of calls equal to the block before it, up to four
 //   calls long and across pages, with nothing new in its last pass.
 // - No progress is a window of such calls, whatever they were.
+// - A success again is one call (same tool, same input as above) that went through and
+//   came back with the same result as the last time, with no new row read since: a replay
+//   that ends normally every time and gets nowhere (t969, run-mwoi785f-ebe09067, `core.run_flow`
+//   seven times). Nothing refuses a call that succeeds, and each lands an act or a page, so
+//   by the facts above it looks like work; the same result is what says it is not. The same
+//   result is the same answer, or the same ending on the same page with the same code, and it
+//   is told only where the work stands at the same place each time (another product's page is
+//   another target, as for a lasting act). A
+//   result that changed (a new row, a new page) starts it again, and it is told as a near
+//   repeat of a success (`succeeded`), never refused unless the model decided to change approach.
 // - The same fix is a Flow the draft already stood at, come back by an edit, or a
 //   submission already made. It is read off the attempt's record, so it still
 //   holds after a fresh context (`./attempt-record.ts`).
@@ -63,7 +73,7 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmLoopAttemptRecord } from "./attempt-record.ts";
-import { AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD, AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT, AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW, AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, AUTOMATION_STUDIO_LLM_LOOP_SINGLE_CYCLE_AT } from "./limits.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD, AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT, AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW, AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT, AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT, AUTOMATION_STUDIO_LLM_LOOP_SINGLE_CYCLE_AT } from "./limits.ts";
 import { automationStudioLlmEvidenceTimingFree, type AutomationStudioLlmEvidenceTimingOf } from "../timing-free.ts";
 import { automationStudioLlmLoopCallKey, automationStudioLlmLoopDigest, automationStudioLlmLoopRanKey } from "./meaningful-input.ts";
 import type { AutomationStudioLlmLoopAmendment, AutomationStudioLlmLoopAskedRepeats, AutomationStudioLlmLoopCall, AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopUnchanged } from "./types.ts";
@@ -123,6 +133,9 @@ export function automationStudioLlmLoopDetector(options: {
   const contextsSeen = new Map<string, Set<string>>();
   const near = new Map<string, NearEntry>();
   const amendmentsLed = new Map<string, string>();
+  // Each call that succeeded, by how it was asked: how often with the same result, where the rows and drafts stood, and when it last ran.
+  const successes = new Map<string, { runs: number; answer: string | undefined; code: string | undefined; after: string | undefined; place: string | undefined; rowsAt: number; draftsAt: number; tick: number; toolId: string; callId: string }>();
+  let tick = 0;
   // What a call as written ran as, by where it was written; and each lasting act, by what it ran as and by how it was written.
   const ranAsHere = new Map<string, string>();
   /** Calls that did nothing and said which act they stand for, by act, whatever page they came from: a page that moves by itself is no way round one (header). */
@@ -165,6 +178,8 @@ export function automationStudioLlmLoopDetector(options: {
   const nearFinding = (entry: NearEntry): AutomationStudioLlmLoopFinding => ({ pattern: "near_repeat", repeats: entry.runs, toolIds: [entry.toolId], unchanged: NOTHING_NEW, ...(entry.callId ? { callId: entry.callId } : {}) });
   const windowFinding = (): AutomationStudioLlmLoopFinding => ({ pattern: "no_progress", repeats: window.count, toolIds: [...window.toolIds], unchanged: NOTHING_NEW, ...(window.callId ? { callId: window.callId } : {}) });
 
+  const successFinding = (entry: { runs: number; toolId: string; callId: string }): AutomationStudioLlmLoopFinding => ({ pattern: "near_repeat", repeats: entry.runs, toolIds: [entry.toolId], unchanged: ["page", "rows"], callId: entry.callId, succeeded: true });
+
   /** The longest-standing block at the tail of the calls, whose last pass brought nothing. */
   const cycle = (): { finding: AutomationStudioLlmLoopFinding; keys: ReadonlySet<string> } | undefined => {
     // One call again and again from page to page: a toggle. On one page that is a near repeat.
@@ -205,6 +220,8 @@ export function automationStudioLlmLoopDetector(options: {
       const page = state ?? last;
       const written = callKey(toolId, input, context);
       const key = ranAsHere.get(at(written, page)) ?? written;
+      const succeeded = successes.get(key);
+      if (succeeded && succeeded.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT && succeeded.rowsAt === rowsSeen.size && succeeded.draftsAt === draftsStoodAt.size && tick - succeeded.tick < AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW) return successFinding(succeeded);
       if (lifted(key, page, toolId)) return undefined;
       const entry = near.get(at(key, page));
       if (entry && entry.runs >= AUTOMATION_STUDIO_LLM_LOOP_NEAR_REPEAT_AT) return nearFinding(entry);
@@ -259,7 +276,20 @@ export function automationStudioLlmLoopDetector(options: {
         if (times >= AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT && times > (asked ?? 0)) sameAct = { pattern: "same_act", repeats: times, toolIds: [call.toolId], unchanged: ["rows"], callId: call.callId };
       }
       if (call.placeAfter !== undefined) place = call.placeAfter;
-      const progressed = !sameAct && (newState || newRows || newDraft || newContext || newAct);
+      // A success again: counted over every call that went through, progress or not, because what makes it work look like progress is the very act or page it landed (header).
+      tick += 1;
+      for (const [where, entry] of successes) if (tick - entry.tick >= AUTOMATION_STUDIO_LLM_LOOP_NO_PROGRESS_WINDOW) successes.delete(where);
+      let sameSuccess: AutomationStudioLlmLoopFinding | undefined;
+      if (call.refused || call.exempt === true || look || call.fix === true || call.answer === undefined) successes.delete(key);
+      else {
+        const before = successes.get(key);
+        const same = before !== undefined && !newRows && before.rowsAt === rowsSeen.size && before.draftsAt === draftsStoodAt.size && before.place === call.placeAfter
+          && (before.answer === call.answer || (call.stateAfter !== undefined && before.after === call.stateAfter && before.code === call.resultCode));
+        const entry = { runs: same ? before.runs + 1 : 1, answer: call.answer, code: call.resultCode, after: call.stateAfter, place: call.placeAfter, rowsAt: rowsSeen.size, draftsAt: draftsStoodAt.size, tick, toolId: call.toolId, callId: call.callId };
+        successes.set(key, entry);
+        if (entry.runs >= AUTOMATION_STUDIO_LLM_LOOP_SAME_SUCCESS_AT) sameSuccess = successFinding(entry);
+      }
+      const progressed = !sameAct && !sameSuccess && (newState || newRows || newDraft || newContext || newAct);
       let sameFix: AutomationStudioLlmLoopFinding | undefined;
       if (call.fix === true) {
         // Only a submission known not to have worked: one accepted and never judged may well come back.
@@ -275,6 +305,11 @@ export function automationStudioLlmLoopDetector(options: {
         tokens.push({ key, state: state ?? "", toolId: call.toolId, progressed: true, callId: call.callId, look });
         tokens = tokens.slice(-AUTOMATION_STUDIO_LLM_LOOP_MAX_CYCLE_PERIOD * 3);
         return { progressed: true, ...(sameFix ? { finding: sameFix } : {}) };
+      }
+      if (sameSuccess) {
+        record.tried({ kind: "call", key, toolId: call.toolId, outcome: "applied" });
+        record.caught(key, "near_repeat");
+        return { progressed: false, finding: sameSuccess };
       }
       // Told, and no other pattern's to count: what refuses it, where anything does, is the ladder's reading of this one.
       if (sameAct) {
@@ -362,6 +397,7 @@ export function automationStudioLlmLoopDetector(options: {
       return { progressed: false, finding: { pattern: "same_fix", repeats: stood.times, toolIds: ["amend_draft"], unchanged: ["draft"] } };
     },
     moved() {
+      successes.clear();
       last = undefined;
       tokens = [];
       progress();

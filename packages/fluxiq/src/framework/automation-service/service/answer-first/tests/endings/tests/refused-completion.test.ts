@@ -7,9 +7,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../../core/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../../../../../runtime/llm/index.ts";
-import type { AutomationStudioService } from "../../../../../service.ts";
 import { complete, fakeLibrary, READ_LOANS, runNode, scriptedAttempt, toolCall } from "../../fake-library.ts";
-import { decisions, expectEnded, expectReached, held, heldAtSteer, judgeCalls, judgedNo, keptAttempt, noWaiting, pendingAsk } from "../support.ts";
+import { decisions, expectEnded, expectReached, judgeCalls, judgedNo, keptAttempt, noWaiting } from "../support.ts";
 
 vi.setConfig({ testTimeout: 180_000 });
 
@@ -32,28 +31,21 @@ const asks = (loopsCaught: Record<string, { askPerson: number }>) => Object.valu
 const shownEntry = (request: AutomationStudioLlmTaskRequest, toolId: string): JsonObject | undefined => request.context.evidenceLoop?.evidence.find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const told = (request: AutomationStudioLlmTaskRequest): string => JSON.stringify(request.context.evidenceLoop?.evidence);
 
-/** The words of the question as the thread shows them. */
-async function askWords(service: AutomationStudioService, projectId: string, flowId: string, askId: string): Promise<string> {
-  const [conversation] = await service.conversations.listConversations({ projectId, subject: { kind: "flow", id: flowId } });
-  const thread = conversation ? await service.conversations.getConversation({ projectId, conversationId: conversation.conversationId }) : null;
-  const turn = thread?.turns.find((each) => each.ask?.askId === askId) as { text?: string } | undefined;
-  return turn?.text ?? "";
-}
+/** Asking the person is a last resort (t969): core offers it only after a changed approach and a climb. */
+const askOffered = (request: AutomationStudioLlmTaskRequest): boolean => /"offered":\[[^\]]*"ask_person"/u.test(told(request));
+const CHANGE: JsonObject = { decision: "change_approach", approach: "Check the list against the page again before completing." };
 
 describe("three refused completions in a row", () => {
-  // t962: the ladder never asks the person by itself; told it is repeating, the model decides, and its own ask_person is what asks.
-  it("are steered and the model asked to decide; its ask_person posts its own question without waiting, and a fresh round is steered on, with money left", async () => {
-    const hold = held();
-    const steer = heldAtSteer();
-    const QUESTION = "Should the loans be listed by due date or by title?";
-    const generating = scriptedAttempt({
-      ...largeContext,
-      wrapProvider: (provider) => steer.wrap(largeContext.wrapProvider(provider)),
-      before: (service, project) => {
-        noWaiting()(service);
-        hold.before(service, project);
-      },
+  // t969: asking the person is a last resort, so the first time the model is asked to decide it is not offered, and the model keeps going by its own choice.
+  it("are steered and the model asked to decide; asking the person is not offered yet, its change of approach is carried out, nobody is asked, and it goes on until its budget is gone", async () => {
+    let offeredAtTheDecision: boolean | undefined;
+    const attempt = await scriptedAttempt({
+      before: noWaiting(),
+      usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.02 },
+      resolver: { maxTotalEstimatedCostUsd: 0.5 },
+      wrapProvider: (provider) => ({ ...provider, estimateCostUsd: () => 0.02 }),
       judge: [judgedNo(REASON)],
+      keepLooking: true,
       script: [
         read(),
         complete("Listed."),
@@ -64,87 +56,19 @@ describe("three refused completions in a row", () => {
         },
         (request) => {
           expect(told(request)).toContain("core.loop_decision");
-          return toolCall("decide.1", "core.loop_decision", { decision: "ask_person", question: QUESTION });
+          offeredAtTheDecision = askOffered(request);
+          expect(told(request)).toContain("genuinely impossible under their instructions");
+          return toolCall("decide.0", "core.loop_decision", CHANGE);
         },
-        complete("Never reached: the person stops it first."),
-        complete("Never reached either.")
+        ...Array.from({ length: 200 }, (_, index) => complete(`Listed, take ${index}.`))
       ]
     }, cleanups);
-    const { service, projectId, flowId } = await hold.ready();
-    // The model is asked again on a fresh round, steered onto a different way, while the question is open.
-    const steered = await steer.steered;
-    expect(told(steered)).toContain("Take a different way to the result");
-    expect(told(steered)).toContain("Do not wait for them");
-    const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
-    expect(ask.timeoutMs).toBeNull();
-    expect(ask.kind).toBe("open");
-    // The model's own question leads, then what is stuck and what it holds, in the person's words.
-    const words = await askWords(service, projectId, flowId, ask.askId);
-    expect(words).toContain(QUESTION);
-    expect(words).toContain("3 rows");
-    expect(words).toContain("the result I have keeps being refused");
-    expect(words).not.toMatch(/answer_first|near_repeat|same_evidence|stuck_in_a_loop|core\./u);
-    expect(words).toContain("I carry on meanwhile");
-    const kept = await keptAttempt(service, projectId, flowId);
-    expect(kept?.attempt.status).toBe("working");
-    expect(kept?.attempt).not.toHaveProperty("waitingFor");
-    expect(nearRepeats(kept!.attempt.loopsCaught)).toEqual({ steered: 1, refused: 1, changeApproach: 0, askPerson: 1 });
-    expect(kept?.tried.decisions).toEqual([{ decision: "ask_person", pattern: "near_repeat", repeats: 2 }]);
-    // The instruction's reading, the read, the judged completion and the refused one: well short of the purse.
-    expect(kept!.attempt.spend.usd).toBeLessThan(PURSE_USD / 4);
-    // Their Stop is the build's own: it ends the task, with what it had, and closes the question.
-    service.buildCancellation.cancel(projectId, flowId);
-    steer.release();
-    const attempt = await generating;
-    const answer = expectEnded(attempt, "stopped_by_person");
+    const answer = expectEnded(attempt, "budget_out");
+    expect(answer.attempt).not.toHaveProperty("waitingFor");
+    expect(asks(answer.attempt.loopsCaught)).toBe(0);
+    expect(offeredAtTheDecision).toEqual(false);
+    // Refused completions over the same evidence are never judged again.
     expect(judgeCalls(attempt)).toHaveLength(1);
-    expect(answer.result?.rows?.totalRows).toBe(3);
-    expect(answer.attempt.spend.usd).toBeLessThan(1);
-    expect(attempt.said.some((line) => line.includes("Noticed it was repeating itself"))).toBe(true);
-    expect(attempt.said.some((line) => line.includes("Decided how to go on"))).toBe(true);
-  });
-
-  it("a person answering the model's question, while the task goes on, guides a later round to its result", async () => {
-    const hold = held();
-    const steer = heldAtSteer();
-    const library = fakeLibrary();
-    const notes: string[] = [];
-    const ANSWER = "There are more further down the list.";
-    const generating = scriptedAttempt({
-      ...largeContext,
-      wrapProvider: (provider) => steer.wrap(largeContext.wrapProvider(provider)),
-      library,
-      before: (service, project) => {
-        noWaiting()(service);
-        hold.before(service, project);
-      },
-      judge: [judgedNo(REASON)],
-      script: [
-        read(),
-        complete("Listed."),
-        complete("Listed, again."),
-        toolCall("decide.1", "core.loop_decision", { decision: "ask_person", question: "Is the list longer than what I see?" }),
-        // The steered round, held until the person has answered: its note was written before the answer.
-        complete("Listed, still."),
-        (request) => {
-          notes.push(JSON.stringify(shownEntry(request, "core.attempt_note")));
-          library.loans.push({ title: "Dams and Weirs", due: "2030-01-09" });
-          return read("read.more");
-        },
-        complete("Listed them all.")
-      ]
-    }, cleanups);
-    const { service, projectId, flowId } = await hold.ready();
-    await steer.steered;
-    const ask = await pendingAsk(service, projectId, flowId, "stuck_in_a_loop");
-    await service.conversations.answerAsk({ projectId, askId: ask.askId, kind: "text", value: ANSWER });
-    steer.release();
-    const attempt = await generating;
-    const answer = expectReached(attempt);
-    expect(answer.result?.rows?.totalRows).toBe(4);
-    expect(judgeCalls(attempt)).toHaveLength(2);
-    expect(notes.some((note) => note.includes(ANSWER) && note.includes("personSaid"))).toBe(true);
-    expect(asks(answer.attempt.loopsCaught)).toBe(1);
   });
 
   it("with nobody to ask, and a model that never decides, it is stopped and steered each time, posts nothing, and goes on until its budget is gone", async () => {
