@@ -1,6 +1,6 @@
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../harness/index.ts";
 import type { AutomationStudioLlmModelRole } from "./kind-roles.ts";
-import { automationStudioLlmModelLadderFrame } from "./ladder/index.ts";
+import { automationStudioLlmAttemptKey, automationStudioLlmModelLadderFrame } from "./ladder/index.ts";
 import { automationStudioLlmModelRoleOf } from "./request-role.ts";
 
 /**
@@ -81,25 +81,14 @@ export function automationStudioLlmProviderRoutedByRole(providers: { explore: Au
   };
 }
 
-/** Each attempt's own key, by its ladder: one ladder per attempt record, and every call of the attempt runs inside its frame (`./ladder/frame.ts`). */
-const ATTEMPT_KEYS = new WeakMap<object, string>();
-let attemptKeys = 0;
-
 /**
- * `request`, said to be of the attempt whose ladder frame it is made in (`metadata.attemptKey`, t967): what lets a model's
- * adapter tell its attempt's conversation from any other's -- a judge continuing its decider's cached conversation
- * (`../anthropic/provider.ts`). A call made outside every attempt's frame carries none. Never sent to a model.
+ * `request`, said to be of the attempt whose frame it is made in (`metadata.attemptKey`), for a caller that reads the
+ * request rather than the frame. Adapters read the frame themselves (`./ladder/attempt-key.ts`): the harness calls the
+ * serving model's provider directly, so this is not the path a harness call takes. Never sent to a model.
  */
 function automationStudioLlmRequestOfAttempt(request: AutomationStudioLlmTaskRequest): AutomationStudioLlmTaskRequest {
-  const ladder = automationStudioLlmModelLadderFrame();
-  if (!ladder) return request;
-  let key = ATTEMPT_KEYS.get(ladder);
-  if (key === undefined) {
-    attemptKeys += 1;
-    key = `attempt.${attemptKeys}`;
-    ATTEMPT_KEYS.set(ladder, key);
-  }
-  return { ...request, metadata: { ...request.metadata, attemptKey: key } };
+  const key = automationStudioLlmAttemptKey();
+  return key === undefined ? request : { ...request, metadata: { ...request.metadata, attemptKey: key } };
 }
 
 /** The provider a role is served by on the ladder: its start rung plus the rungs climbed, at most the top. Outside every ladder frame, its start rung. */
