@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({ current: undefined as unknown, afterReload: vi.fn(), create: vi.fn(), open: vi.fn(), flush: vi.fn(), sequence: 0 }));
 
 vi.mock("node:fs", async importOriginal => ({ ...await importOriginal<typeof import("node:fs")>(), mkdirSync: vi.fn() }));
-vi.mock("fluxiq/database-manager", () => ({ SQLiteRepository: class {} }));
+vi.mock("fluxiq/database-manager", async (importOriginal) => ({ ...(await importOriginal<typeof import("fluxiq/database-manager")>()), SQLiteRepository: class {} }));
 vi.mock("fluxiq/platform", async importOriginal => ({
   ...await importOriginal<typeof import("fluxiq/platform")>(),
   createPlatformServices: state.create,

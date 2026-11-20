@@ -506,6 +506,16 @@ over the same repository sees a write on its next read. No record ever holds a
 password, a hash of one, a key, a session id or a raw link token. Writes are
 last-writer-wins per record.
 
+**Connections.** `PlatformRecords.put` and `IamRecords.put` are one repository
+operation (the repository's `put` keeps a row's creation time itself), so a write
+opens its database once. The web server composes one `SQLiteConnectionPool` per
+platform composition and passes it to both SQLite repositories, which share
+`global.sqlite`; each provisioning operation (and so each deletion-sweep pass)
+runs inside `pool.keepWhile`, so a request opens each database file once (the
+platform file and the new workspace's IAM file for `createAccount`) instead of
+once per read or write, and every handle closes when the operation ends.
+`closePlatformServices` closes any that remain.
+
 | Record | Id | Holds |
 | --- | --- | --- |
 | Account | `account/<userId>` | Email (trimmed, lower-cased, unique), display name, external id, identities, status (`active`, `disabled`, `deleted`), origin, sign-in times, a scheduled deletion |

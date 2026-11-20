@@ -27,7 +27,7 @@ vi.mock("../../key-sessions", () => ({ closeKeySessionServices: async () => unde
 vi.mock("../../connect", () => ({ closeConnectServices: async () => undefined }));
 vi.mock("../../browser-trust", () => ({ closeBrowserTrustRepository: async () => undefined, getBrowserTrustRepository: () => ({ listActiveForUser: async () => [] }) }));
 vi.mock("../../commerce", () => ({ getCommerceBilling: async () => null }));
-vi.mock("fluxiq/database-manager", () => ({ SQLiteRepository: class { constructor(readonly options: unknown) {} } }));
+vi.mock("fluxiq/database-manager", async (importOriginal) => ({ ...(await importOriginal<typeof import("fluxiq/database-manager")>()), SQLiteRepository: class { constructor(readonly options: unknown) {} } }));
 vi.mock("fluxiq/platform", async (importOriginal) => ({
   ...(await importOriginal<typeof import("fluxiq/platform")>()),
   createPlatformServices: async (options: PlatformServicesOptions) => {
