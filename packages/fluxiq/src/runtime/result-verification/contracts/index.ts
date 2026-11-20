@@ -47,3 +47,4 @@ export * from "./repair.ts";
 export * from "./verification.ts";
 export * from "./verification-reading.ts";
 export * from "./computed-facts.ts";
+export * from "./run-trail.ts";

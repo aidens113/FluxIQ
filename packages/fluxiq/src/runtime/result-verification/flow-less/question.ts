@@ -21,8 +21,11 @@ export const AUTOMATION_STUDIO_FLOW_LESS_QUESTION = [
   "Where a leftOut set gives sameLabelKept, each label named there is also the label of a row a read kept: the site showed two items under that label, the kept one met every condition of its read and the one in this set did not, so the label being both kept and left out is not one item both kept and dropped.",
   "Judge the change, not the absolute state: a place that held 3 before and 4 after has had 1 added, which is what asking to add 1 asks, and its total of 4 is no defect. What already held before is not credit for anything done here.",
   "answerText is the model's own words and proves nothing by itself: where it says something, look for it in the rows, the acts and the views.",
-  "How it was done is not in question, and anything said elsewhere about parts of a record that are not in this summary does not count here: nothing is wrong because it is not shown.",
-  "Answer yes only when what was asked for was got; no when this evidence shows it was not, naming in observed what is wrong or missing; unknown when this evidence cannot tell.",
+  // The trail (t963, run-mwo3dp11-a47a032d): a judge shown no record of how the rows were got refused right rows 14 times
+  // for a condition with no column, a sort it could not see and paging it could not see end. How to read it is the
+  // trail's own `note` (`../run-trail/note.ts`), shared with every other judge.
+  "trail, where given, is how it was got: all that was done on the site for this result, in order, each with what the site answered there, read as trail.note says. It is evidence, as the rows and the views are. Anything said elsewhere about parts of a record that are not in this summary does not count here: nothing is wrong because it is not shown.",
+  "Answer yes when what was asked for was got, by the final data and what the trail shows of how they were got; no only on a concrete contradiction in this evidence, naming in observed the row, value, act or asked-for part that is wrong or missing; unknown only when nothing in this evidence bears on a part of what was asked, naming that part. A condition the trail shows held is met even where no column of the rows says it.",
   // The reply's schema lets `act_wrong` go without the one field a reply here cannot fill, and the harness then refuses the whole reply (`../../llm/verification-defects/well-formed.ts`).
   "In diagnosis.defects, list an act that was done wrongly as kind other, naming in row what it was done to."
 ].join(" ");

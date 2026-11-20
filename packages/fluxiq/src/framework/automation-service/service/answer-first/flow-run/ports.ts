@@ -6,6 +6,7 @@ import type { AutomationStudioAttemptActRecord } from "../../../../../runtime/an
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
 import type { AutomationStudioDomainReadings } from "../../../../../runtime/domain-readings/index.ts";
 import type { AutomationStudioFlowBootstrapActionPermissions } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
+import type { AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import type { AutomationStudioAnswerFirstAttemptInput } from "../attempt/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
@@ -45,6 +46,12 @@ export type AutomationStudioAnswerFirstFlowRunPorts = {
   stepped(): void;
   /** The run moved the page, so the attempt carries on from where it left it. */
   arrived(): void;
+  /**
+   * Where what the run did goes for the attempt's judge (t963): every step the engine traced, in order, with what it
+   * ran with, what it answered and the domain's view after it, by the domain's declared view keys (`./flow-run.ts`).
+   * Absent, nothing is handed on.
+   */
+  trail?: { viewKeys?: readonly string[] | undefined; add(steps: readonly AutomationStudioResultTrailStep[]): void } | undefined;
   /** Called inside the run's own care, so a service with no engine reads as a run that could not start. */
   engine(): AutomationStudioAnswerFirstFlowRunEngine;
   /**

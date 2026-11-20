@@ -1,0 +1,296 @@
+{
+ "source": "run-mwo3dp11-a47a032d steps 0239-0267 (flow), 0269 (held, page left)",
+ "steps": [
+  {
+   "recordedStep": 239,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s1",
+   "definitionId": "web.output.browser-navigate",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 240,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s2",
+   "definitionId": "web.output.dom-click",
+   "status": "ended"
+  },
+  {
+   "recordedStep": 241,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s3",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 242,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s4",
+   "definitionId": "web.output.dom-click",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 243,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s5",
+   "definitionId": "web.output.dom-click",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 244,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s6",
+   "definitionId": "web.output.dom-click",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 245,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s7",
+   "definitionId": "web.output.browser-navigate",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 246,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s8",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 247,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s9",
+   "definitionId": "builtin.control.repeat",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 248,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s10",
+   "definitionId": "web.output.dom-extract_list",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 249,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s11",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 250,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s8",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 251,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s9",
+   "definitionId": "builtin.control.repeat",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 252,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s10",
+   "definitionId": "web.output.dom-extract_list",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 253,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s11",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 254,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s8",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 255,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s9",
+   "definitionId": "builtin.control.repeat",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 256,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s10",
+   "definitionId": "web.output.dom-extract_list",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 257,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s11",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 258,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s8",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 259,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s9",
+   "definitionId": "builtin.control.repeat",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 260,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s10",
+   "definitionId": "web.output.dom-extract_list",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 261,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s11",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 262,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s8",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 263,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s9",
+   "definitionId": "builtin.control.repeat",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 264,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s10",
+   "definitionId": "web.output.dom-extract_list",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 265,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s11",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 266,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s12",
+   "definitionId": "builtin.control.merge",
+   "status": "succeeded"
+  },
+  {
+   "recordedStep": 267,
+   "nodeId": "node.bootstrap.54a4e8ab64a3f530.main.s13",
+   "definitionId": "web.output.dom-next_page",
+   "status": "succeeded"
+  }
+ ],
+ "held": [
+  {
+   "node": "web.output.browser-navigate",
+   "parameters": {
+    "url": "http://127.0.0.1:60066/scenarios/job-board/"
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-click",
+   "parameters": {
+    "timeoutMs": 10000,
+    "target": {
+     "handle": "t39"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-click",
+   "parameters": {
+    "target": {
+     "handle": "t26"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-click",
+   "parameters": {
+    "target": {
+     "handle": "t88"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-click",
+   "parameters": {
+    "target": {
+     "handle": "t290"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.browser-navigate",
+   "parameters": {
+    "url": "http://127.0.0.1:60066/scenarios/job-board/jobs"
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-extract_list",
+   "parameters": {
+    "extractList": {
+     "handle": "extraction.5",
+     "fields": {
+      "title": "article_css-05ipuw4_div_css-0kfwm7q_h2_css-0wf1m42_a",
+      "link": "article_css-05ipuw4_div_css-0kfwm7q_h2_css-0wf1m42_a_url",
+      "company": "article_css-05ipuw4_div_css-1d93xaz_span_1",
+      "location": "article_css-05ipuw4_div_css-1d93xaz_span_2",
+      "salary": "article_css-05ipuw4_div_css-0wdoslq",
+      "posted": "article_css-05ipuw4_footer_css-07dals8_span_1",
+      "easily": "article_css-05ipuw4_div_css-0wn2fzh_span_2"
+     },
+     "minItems": 0,
+     "where": [
+      {
+       "field": "location",
+       "contains": "Remote (UK)"
+      },
+      {
+       "field": "easily",
+       "is": "present"
+      },
+      {
+       "field": "salary",
+       "is": "present"
+      }
+     ]
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-next_page",
+   "parameters": {
+    "nextPage": {
+     "list": "extraction.5"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-next_page",
+   "parameters": {
+    "nextPage": {
+     "list": "extraction.6"
+    }
+   },
+   "consequences": []
+  },
+  {
+   "node": "web.output.dom-next_page",
+   "parameters": {
+    "nextPage": {
+     "list": "extraction.6"
+    }
+   },
+   "consequences": []
+  }
+ ],
+ "left": {
+  "location": "http://127.0.0.1:60066/scenarios/job-board/jobs?page=5",
+  "page": "PAGE \"All jobs - Rolefinch\"\nURL ~?page=5   (~ = http://127.0.0.1:60066/scenarios/job-board/jobs)\nVIEW 1280x720 scrolled to y=172 · 56 elements with visible words or a control, in page order · find_on_page searches the rest\nCOVERING t1671 banner\n\n[banner]\nt1672 link \"rolefinch\" /scenarios/job-board/\n[navigation]\nt1674 link \"Find jobs\" same href\nt1675 link \"Company reviews\" ~?page=5\nt1676 link \"Salary guide\" ~?page=5\n[banner]\nt1678 link \"My jobs 2\" /scenarios/job-board/myjobs\nt1680 link \"Sign in\" ~?page=5\nt1681 link \"Employers / Post job\" ~?page=5\n--- above the screen ---\n[main]\nt1686 field[search] \"What\" placeholder \"Job title, keywords or company\" =\"\"\nt1689 field \"Where\" placeholder \"Town, county or \\\"remote\\\"\" =\"\"\nt1690 button \"Find jobs\"\n--- on screen ---\nt1693 button \"Date posted\"\nt1695 button \"Remote\"\nt1697 button \"Salary\"\nt1699 button \"Job type\"\nt1701 h1 \"All jobs\"\nt1702 \"Page 5 of 40 jobs\"\nt1703 \"Sort by: -\"\nt1704 \"relevance\"\nt1705 link \"date\" ~?sort=date\n- 1/3\nt1713 h2 link \"Product Manager, Payments\" /scenarios/job-board/pagead/clk?ad=6dd58f14d3d7291d\nt1714 clickable icon class=\"css-0732x7m\"\nt1718 \"Copperline Payments\"\nt1719 \"London\"\nt1720 \"£85,000 – £95,000 a year\"\nt1722 \"Full-time\"\nt1724 \"Own payouts for our largest marketplace customers.\"\n[contentinfo]\n- 1/3\nt1726 \"Posted 3 days ago\"\nt1727 \"Sponsored\"\n[main]\n- 2/3\nt1732 h2 link \"Technical Writer\" /scenarios/job-board/viewjob?jk=b81d28f55b7e47ea\nt1733 clickable icon class=\"css-0732x7m\"\nt1737 \"Parsec Grid\"\nt1738 \"Remote (UK)\"\nt1739 \"£50,000 – £58,000 a year\"\nt1741 \"Full-time\"\nt1742 \"Easily apply\"\nt1744 \"Explain grid balancing to engineers, installers and regulators.\"\n[contentinfo]\n- 2/3\nt1746 \"Posted 12 days ago\"\n[main]\n- 3/3\nt1751 h2 link \"Senior Frontend Engineer (React)\" /scenarios/job-board/pagead/clk?ad=fbc770e9a1e12cab\nt1752 clickable icon class=\"css-0732x7m\"\nt1756 \"Verity Legal Tech\"\nt1757 \"Remote (UK)\"\nt1758 \"£70,000 – £85,000 a year\"\nt1760 \"Full-time\"\nt1762 \"Build the review tools lawyers use to mark up 2,000-page bundles.\"\n[contentinfo]\n- 3/3\nt1764 \"Posted 1 day ago\"\nt1765 \"Sponsored\"\n--- below the fold ---\n[navigation]\nt1767 link \"Previous\" ~?page=4\nt1768 link \"1\" ~\nt1769 link \"2\" ~?page=2\nt1770 link \"3\" ~?page=3\nt1771 link \"4\" ~?page=4\nt1772 \"5\"\n[main]\nt1774 select \"Jobs per page\" =\"10\" [10|25|50]\n--- on screen ---\n[complementary]\nt1776 \"Select a job to see its details\"\n--- below the fold ---\n[contentinfo]\nt1777 \"© 2026 Rolefinch Ltd · Cookies, privacy and terms · Rolefinch is a fictional job board used for testing.\"\n--- on screen ---\n[page]\nt1818 clickable icon class=\"bubble\""
+ }
+}

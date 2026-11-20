@@ -3,6 +3,7 @@
 // before the branch: an edit to a judge's words is a decision, and this makes it a visible one.
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { runWithAutomationStudioRunOverrides } from "../../run-overrides/index.ts";
 import { automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
 
 const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -20,9 +21,15 @@ describe("the Flow-less branch of a verification's instruction", () => {
     expect(automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true, buildTest: true })).toBe(automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true }));
   });
 
-  it("leaves every other call's text byte for byte", () => {
-    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification"))).toBe("3b1f0faccbed038f4142da2400aa7688e3f806abdffbcf1308117744b6224cfe");
-    expect(digest(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }))).toBe("79d66e75bd2422f2c66fd87570c916fed4f06908368e97be4961526e38c9bd15");
+  it("leaves every other call's text byte for byte, but for the trail's calibration every judge now ends with (t963)", () => {
+    const flowLess = automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true });
+    const calibration = ` ${flowLess.slice(flowLess.indexOf("resultSummary.trail, where present"))}`;
+    const run = automationStudioDiagnosisPromptInstruction("loop_verification");
+    const test = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(run.endsWith(calibration)).toBe(true);
+    expect(test.endsWith(calibration)).toBe(true);
+    expect(digest(run.slice(0, -calibration.length))).toBe("3b1f0faccbed038f4142da2400aa7688e3f806abdffbcf1308117744b6224cfe");
+    expect(digest(test.slice(0, -calibration.length))).toBe("79d66e75bd2422f2c66fd87570c916fed4f06908368e97be4961526e38c9bd15");
     expect(digest(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"))).toBe("e7b43626fd5b1a784513f5dfd9bf3e4884160a553736ca8f1b9536b5dc63e39b");
     expect(automationStudioDiagnosisPromptInstruction("runtime_diagnosis", { flowLess: true })).toBe(automationStudioDiagnosisPromptInstruction("runtime_diagnosis"));
   });
@@ -50,5 +57,44 @@ describe("what the Flow-less judge is told of a yes on rows (t875)", () => {
     expect(added.length).toBeGreaterThan(100);
     const WORDS = /\bstores?\b|shop|marketplace|retail|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|profile|resume|vacanc|apply|friend|basket|cart\b|towel|watchlist|bid\b|coupon|connection|invitation|saved item|giveaway|quote|job|role|digest|rating|colour|size\b|quantity/iu;
     expect(added.match(WORDS)?.[0]).toBeUndefined();
+  });
+});
+
+// t963 J2: every judge's own system instruction says how to read the trail and how strict to be, not only the trail's
+// note: a finished run's, a build test's and an attempt's with no Flow, after the part a run may override, and in words
+// that name no realistic scenario, site, task or answer.
+const KINDS = [["a finished run", {}], ["a build test", { buildTest: true }], ["an attempt with no Flow", { flowLess: true }]] as const;
+const SENTENCES = [
+  "resultSummary.trail, where present, is Core's own record of all that was done on the target to get this result",
+  "never require a row to carry a field the request did not ask for as a column",
+  "An order is met where the rows keep the order of a list the trail shows the target had sorted that way",
+  "until the target answered that there is no further page",
+  "Answer no only on a concrete contradiction"
+];
+
+describe("the judges' calibration", () => {
+  it.each(KINDS)("is in the system instruction of %s", (_name, judged) => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", judged);
+    for (const sentence of SENTENCES) expect(prompt).toContain(sentence);
+  });
+
+  it.each(KINDS)("stays when a run replaces the verification wording, for %s", (_name, judged) => {
+    const prompt = runWithAutomationStudioRunOverrides({ prompts: { "judge.verification": { mode: "replace", text: "Judge only the rows." } } }, () => automationStudioDiagnosisPromptInstruction("loop_verification", judged));
+    expect(prompt).toContain("Judge only the rows.");
+    expect(prompt).toContain(SENTENCES[0]);
+  });
+
+  it("is not given to a task that is no judge", () => {
+    expect(automationStudioDiagnosisPromptInstruction("runtime_diagnosis")).not.toContain(SENTENCES[0]);
+  });
+
+  it("names no realistic scenario, site, task or this run's answer", () => {
+    const SCENARIOS = ["everything-store", "crossborder-marketplace", "bigbox-retail", "job-board", "local-classifieds", "auction-marketplace", "photo-social", "social-network-feed", "company-website", "professional-network"];
+    const SITE_WORDS = /store|shop|marketplace|retail|bigbox|crossborder|classified|auction|photo|social|network|feed|company|website|professional|product|seller|listing|follow|like\b|post\b|profile|resume|vacanc|apply/iu;
+    const RUN_WORDS = /rolefinch|easily|remote|\buk\b|salary|posting|newest|engineer|careers|\bjobs?\b/iu;
+    const sentence = automationStudioDiagnosisPromptInstruction("loop_verification", { flowLess: true }).split("resultSummary.trail, where present")[1]!.toLowerCase();
+    for (const scenario of SCENARIOS) for (const word of scenario.split("-")) expect(sentence, word).not.toMatch(new RegExp(String.raw`\b${word}\b`, "u"));
+    expect(sentence.match(SITE_WORDS)?.[0]).toBeUndefined();
+    expect(sentence.match(RUN_WORDS)?.[0]).toBeUndefined();
   });
 });

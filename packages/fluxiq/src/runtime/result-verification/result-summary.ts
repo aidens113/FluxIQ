@@ -114,6 +114,7 @@ import { automationStudioResultReadAccounts } from "./read-account/index.ts";
 import { automationStudioResultReturnedValues } from "./returned-values.ts";
 import { automationStudioResultStepChanges } from "./step-changes.ts";
 import { automationStudioResultStepRows } from "./step-rows.ts";
+import { automationStudioResultRunTrail, automationStudioResultTrailOfAttempts } from "./run-trail/index.ts";
 import { automationStudioResultValueReadings } from "./value-readings/index.ts";
 
 /** Stands in, in a row, for a value shaped like a credential or carrying a denied key. */
@@ -270,6 +271,9 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   const read = automationStudioResultValueReadings({ reads: narrowedReads, authoredNodes: accounted.authoredNodes, recordSets: summarizedSets, flowNodes, now: referenceNow });
   const reads = read.reads;
   const recordSets = read.recordSets;
+  // Everything the run did, step by step, with what each answered and the page after it: the judge reads the result by it (`./run-trail/`, t963).
+  const trail = input.sessionAttempts ? automationStudioResultRunTrail(automationStudioResultTrailOfAttempts(input.sessionAttempts, flowNodes, input.observedStateKeys ?? viewKeysOf(input.endView)), input.deniedEvidenceKeys) : undefined;
+  if (trail?.withheld) withheld = true;
   // The start view first: every trial of one build starts from the same reset
   // page, so it is the same bytes in each trial judge's request, and only bytes
   // before the first that differ are served from the provider's cache (t493,
@@ -287,6 +291,7 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     ...(returned.returned ? { returned: returned.returned } : {}),
     withheld,
     ...(ended?.endView ? { endView: ended.endView } : {}),
+    ...(trail?.trail ? { trail: trail.trail } : {}),
     referenceNow
   };
 }

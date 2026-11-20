@@ -56,6 +56,9 @@
 // earlierAdvice sentence and the appended checked stored-cell citation sentence.
 // In t830 only evidence_tool_decision was re-pinned for immutable own-call
 // view references/current-view groups, route baseline/deltas and offered exact-call reuse.
+// In t963 (user, 2026-11-19: the judge sees all the run did plus the final data, and is less
+// strict) both verification pins by one appended paragraph, the trail calibration, after the
+// checked stored-cell sentence.
 // With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
@@ -225,7 +228,8 @@ describe("a verification's system message, on the defects a no rests on (t752)",
       expect(prompt).toContain(`${WORKING_SET} the rows its reads collected on every page`);
       expect(prompt).not.toContain("Each record set holds the run's answer:");
     }
-    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!).endsWith(`${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER} ${CHECKED}`)).toBe(true);
+    // Since t963 the trail calibration follows the checked sentence and ends the message.
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!)).toContain(`${DEFECTS} ${NOT_A_DEFECT} ${RELATION} ${EARLIER} ${CHECKED} resultSummary.trail, where present,`);
   });
 
   it("tells only the build-test judge that a dataset only flagged reads fill is not the answer", () => {
