@@ -630,7 +630,9 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * for any other amendment that cannot be read.
  */
 function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rerun_needs_input" | undefined {
-  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "while", "most", "act", "place"])) return undefined;
+  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "while", "most", "act", "place", "call"])) return undefined;
+  // `take` names an earlier call, not a step, and carries nothing else (`../flow-draft/amendment/types.ts`, `call`).
+  if (item.change === "take" || item.call !== undefined) return item.change === "take" && typeof item.call === "string" && item.call.trim() !== "" && exactKeys(item, ["step", "change", "call"]) && (item.step === undefined || (Number.isSafeInteger(item.step) && (item.step as number) >= 1)) ? { step: (item.step as number | undefined) ?? 0, change: "take", call: item.call.trim() } : undefined;
   if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) return undefined;
   if (!validPlace(item.place)) return undefined;
   if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) return undefined;

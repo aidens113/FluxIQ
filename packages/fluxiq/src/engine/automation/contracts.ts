@@ -401,6 +401,16 @@ export type AutomationStudioNodeAttemptTrace = {
    * `not_landed`.
    */
   effectCheck?: { result: "landed" | "not_landed" | "unknown"; checkedAt: number };
+  /**
+   * How this attempt continued after a person cleared its check. This records the engine's branch,
+   * not an acceptance verdict: a requested rerun is not evidence that it later succeeded, and an
+   * ordinary press allowed to continue has no proof that its effect landed. Absent on older traces.
+   */
+  personContinuation?:
+    | { kind: "effect_landed" }
+    | { kind: "rerun"; reason: "unacted" | "repeat_cannot_act" | "effect_not_landed" }
+    | { kind: "unverified"; reason: "no_expected_state" | "effect_unknown" }
+    | { kind: "outcome_uncertain" };
   /** The lifecycle handler that ran at this attempt, when one did (C3, C5, C11). */
   lifecycle?: AutomationStudioLifecycleTrace;
   /** Where the frame began, on a frame's first attempt only (C2, C11). */
@@ -656,6 +666,8 @@ export type AutomationStudioGraphExecutionTrace = {
  * copy, so it holds `include` fields only, in schema order.
  */
 export type AutomationStudioRecordBatch = {
+  /** Private capture provenance for verification, kept beside a batch and excluded from Data/export cells. */
+  evidence?: JsonObject;
   nodeId: string;
   attemptId: string;
   /**
@@ -684,6 +696,13 @@ export type AutomationStudioRecordBatch = {
    * read left out as it is told of a read the model made. Never stored with the rows.
    */
   leftOut?: { extraction: JsonObject; parameters?: JsonObject };
+  /**
+   * Which list the read read, as the domain declares it from the site's structure (`records/read/list-key.ts`): two
+   * reads of one list carry one key whatever handle or words they were asked with. Never stored with the rows.
+   */
+  listKey?: string;
+  /** Where in the list the read was, as the domain says its pager said (`records/read/place.ts`: `page=3`, `offset=40`). Never stored with the rows. */
+  place?: string;
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
   /**

@@ -238,7 +238,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
     // event is written, so a refusal never leaves the run half-updated.
     runtimeActionSummaryRows(detail.summary.runId, desired);
     await this.upsertRunSummary(detail.summary);
-    const existing = options.existingEvents ?? await this.readAllRuntimeEvents(detail.summary.runId, 5_000);
+    const existing = options.existingEvents ?? await this.readAllRuntimeEvents(detail.summary.runId);
     const existingIds = new Set(existing.filter((event) => event.eventKind !== "run_summary").map((event) => event.eventId));
     const latestEnvelope = [...existing].reverse().find((event) => event.eventKind === "run_summary")?.payload;
     const nextEnvelope = desired.find((event) => event.eventKind === "run_summary")?.payload;
@@ -284,14 +284,20 @@ export class AutomationStudioProjectRuntimeStreamStore {
     const runId = requiredId(input.runId, "run");
     const firstSequence = await this.getRunLastSequence(runId) + 1;
     const events = normalizeRuntimeEvents(input.events, firstSequence);
-    // Every action row is built, and so validated, before anything is written: a
-    // rejected batch used to leave its chunk behind with the run's sequence
-    // unmoved, and the service then kept a stale detail over the run it wrote.
+    // Every action row is built, and so validated, before anything is written (a rejected batch once left its chunk with
+    // the run's sequence unmoved). A chunk holds at most `maxEvents`, so a longer batch (a 10,000-action run's detail) is
+    // written as consecutive chunks, each with its action rows and the run's sequence moved past it.
     const actionRows = runtimeActionSummaryRows(runId, events);
-    const chunk = await this.chunks.writeChunk({ streamKind: "runtime", streamId: runId, events, maxEvents: input.maxEvents ?? 2_000 });
-    await this.writeActionSummaries(actionRows);
-    await this.lease.database.run("update runtime_runs set last_event_sequence = ?, action_count = action_count + ?, updated_at_ms = ? where run_id = ?", [chunk.lastSequence, events.filter((event) => event.eventKind === "action_attempt").length, Date.now(), runId]);
-    return { events, nextCursor: String(chunk.lastSequence), hasMore: false, lastSequence: chunk.lastSequence };
+    const size = Math.max(1, Math.trunc(input.maxEvents ?? 2_000));
+    let lastSequence = firstSequence - 1;
+    for (let start = 0; start === 0 || start < events.length; start += size) {
+      const part = events.slice(start, start + size);
+      const chunk = await this.chunks.writeChunk({ streamKind: "runtime", streamId: runId, events: part, maxEvents: size });
+      await this.writeActionSummaries(actionRows.filter((row) => row[1] > lastSequence && row[1] <= chunk.lastSequence));
+      await this.lease.database.run("update runtime_runs set last_event_sequence = ?, action_count = action_count + ?, updated_at_ms = ? where run_id = ?", [chunk.lastSequence, part.filter((event) => event.eventKind === "action_attempt").length, Date.now(), runId]);
+      lastSequence = chunk.lastSequence;
+    }
+    return { events, nextCursor: String(lastSequence), hasMore: false, lastSequence };
   }
 
   async listRuntimeEvents(input: { runId: string; afterSequence?: unknown; limit?: unknown; includePayload?: boolean }): Promise<AutomationStudioRuntimeEventPage> {
@@ -320,7 +326,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
   async readRunForUpdate(runId: string, options: { includeCollections?: boolean } = {}): Promise<{ detail: AutomationStudioFlowRunDetail | null; events: AutomationStudioRuntimeStreamEvent[] | null }> {
     const summary = await this.getRunSummary(runId);
     if (!summary) return { detail: null, events: null };
-    const events = await this.readAllRuntimeEvents(runId, 5_000);
+    const events = await this.readAllRuntimeEvents(runId);
     return { detail: await this.runDetailFromStream(summary, events, options), events };
   }
 
@@ -362,7 +368,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
     if (cursor) { where.push("(sequence > ? or (sequence = ? and attempt_id > ?))"); params.push(cursor.sequence, cursor.sequence, cursor.attemptId); }
     const [totalRow, rows] = await Promise.all([
       this.lease.database.get<{ total: number }>("select count(*) as total from runtime_action_summaries where run_id = ?", [runId]),
-      this.lease.database.all<RuntimeActionSummaryRow>(`select run_id, sequence, attempt_id, node_id, definition_id, status, route, comparison_status, message_summary, started_at_ms, finished_at_ms, duration_ms, evidence_count, error_summary, ${automationStudioRuntimeActionRowFrame.select} from runtime_action_summaries where ${where.join(" and ")} order by sequence, attempt_id limit ? offset ?`, [...params, limit + 1, offset])
+      this.lease.database.all<RuntimeActionSummaryRow>(`select run_id, sequence, attempt_id, node_id, definition_id, status, route, comparison_status, message_summary, started_at_ms, finished_at_ms, duration_ms, evidence_count, error_summary, json_extract(detail_json, '$.order') as action_order, ${automationStudioRuntimeActionRowFrame.select} from runtime_action_summaries where ${where.join(" and ")} order by sequence, attempt_id limit ? offset ?`, [...params, limit + 1, offset])
     ]);
     const pageRows = rows.slice(0, limit);
     const last = pageRows.at(-1);
@@ -495,16 +501,15 @@ export class AutomationStudioProjectRuntimeStreamStore {
     return row?.last_event_sequence ?? 0;
   }
 
-  private async readAllRuntimeEvents(runId: string, maxEvents: number): Promise<AutomationStudioRuntimeStreamEvent[]> {
+  private async readAllRuntimeEvents(runId: string): Promise<AutomationStudioRuntimeStreamEvent[]> {
     const events: AutomationStudioRuntimeStreamEvent[] = [];
     let afterSequence = 0;
-    while (events.length < maxEvents) {
-      const page = await this.listRuntimeEvents({ runId, afterSequence, limit: Math.min(500, maxEvents - events.length) });
+    for (;;) { // Every event: read from the first 5,000 alone, a longer run lost its rest and its next save appended it again.
+      const page = await this.listRuntimeEvents({ runId, afterSequence, limit: 500 });
       events.push(...page.events);
-      if (!page.hasMore || page.lastSequence <= afterSequence) break;
+      if (!page.hasMore || page.lastSequence <= afterSequence) return events;
       afterSequence = page.lastSequence;
     }
-    return events;
   }
 
   private async writeActionSummaries(rows: RuntimeActionSummaryInsertRow[]): Promise<void> {
@@ -539,7 +544,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
 
 type RuntimeRunRow = { run_id: string; flow_id: string; flow_revision: number; status: AutomationStudioFlowRunStatus; queued_at_ms: number; started_at_ms: number | null; finished_at_ms: number | null; action_count: number; effect_count: number; error_count: number; adaptation_count: number; last_event_sequence: number; updated_at_ms: number; summary_json: string };
 // The frame columns are read only by a page (`listRunActions`); other reads leave them absent.
-type RuntimeActionSummaryRow = Parameters<typeof automationStudioRuntimeActionRowFrame.fields>[0] & { run_id: string; sequence: number; attempt_id: string; node_id: string; definition_id: string; status: string; route: string | null; comparison_status: string | null; message_summary: string | null; started_at_ms: number; finished_at_ms: number | null; duration_ms: number | null; evidence_count: number; error_summary: string | null };
+type RuntimeActionSummaryRow = Parameters<typeof automationStudioRuntimeActionRowFrame.fields>[0] & { action_order?: unknown; run_id: string; sequence: number; attempt_id: string; node_id: string; definition_id: string; status: string; route: string | null; comparison_status: string | null; message_summary: string | null; started_at_ms: number; finished_at_ms: number | null; duration_ms: number | null; evidence_count: number; error_summary: string | null };
 type RecordingRow = { description: string | null; recording_id: string; name: string; task_id: string | null; domain_id: string | null; status: string; started_at_ms: number; ended_at_ms: number | null; event_count: number; action_count: number; state_snapshot_count: number; updated_at_ms: number };
 type StateSnapshotRow = { snapshot_id: string; source_kind: string; source_id: string; sequence: number; captured_at_ms: number; state_object_id: string | null; screenshot_object_id: string | null; previous_snapshot_id: string | null; digest: string; metadata_json: string };
 type StatePathRow = { snapshot_id: string; namespace: string; path: string; value_type: string; scalar_text: string | null; scalar_number: number | null; scalar_boolean: number | null; value_object_id: string | null };
@@ -704,7 +709,7 @@ function actionSummaryFromRow(row: RuntimeActionSummaryRow): AutomationStudioFlo
     attemptId: row.attempt_id,
     nodeId: row.node_id,
     definitionId: row.definition_id,
-    order: row.sequence,
+    order: Number.isSafeInteger(row.action_order) ? row.action_order as number : row.sequence, // its own, as its detail holds it
     status: row.status as AutomationStudioFlowRunActionAttemptRecord["status"],
     startedAt: row.started_at_ms,
     ...(row.route !== null ? { route: row.route } : {}),

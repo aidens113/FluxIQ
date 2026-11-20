@@ -5,6 +5,8 @@
 // (the Wait node reads a missing `random` as no jitter, and a missing
 // `startTimer` leaves the region timeout on the executor's real timer).
 import { describe, expect, it } from "vitest";
+import { AutomationStudioGraphInputUseSession } from "../../../../../engine/automation/input-use/index.ts";
+import type { AutomationStudioNativeNodeRuntime } from "../../../../../runtime/native-nodes/index.ts";
 import { AutomationStudioVirtualClock, automationStudioLiveRunEnvironment, createAutomationStudioScopedRunEnvironment } from "../../../environment/index.ts";
 import { automationStudioRunGraphOptions } from "../graph-options.ts";
 
@@ -72,5 +74,37 @@ describe("a run's executor options and its environment", () => {
     expect(automationStudioRunGraphOptions({ ...base(), humanness: 60 }).humanness).toBe(60);
     expect(automationStudioRunGraphOptions({ ...base(), humanness: 0 }).humanness).toBe(0);
     expect(automationStudioRunGraphOptions(base())).not.toHaveProperty("humanness");
+  });
+});
+
+describe("a run's input-use transport (t905 unit B)", () => {
+  const native = (calls: unknown[][]) => ({
+    getRuntimeCapabilities: () => [], getTargetHooks: () => undefined, listDefinitions: () => [],
+    resolveActionEffect: () => undefined, resolveTargetRefresh: () => undefined,
+    execute: async (...args: unknown[]) => {
+      calls.push(args);
+      return undefined;
+    }
+  }) as unknown as AutomationStudioNativeNodeRuntime;
+  const node = { id: "native", definitionId: "synthetic.native" };
+
+  it("carry the run's graph-entry input-use port, and no key when the run opened none", () => {
+    const session = new AutomationStudioGraphInputUseSession({ open: async () => ({ status: "unknown", code: "authority_unavailable" }), child: async () => ({ status: "unknown", code: "authority_unavailable" }) });
+    try {
+      expect(automationStudioRunGraphOptions({ ...base(), inputUse: session.port }).inputUse).toBe(session.port);
+      expect(automationStudioRunGraphOptions(base())).not.toHaveProperty("inputUse");
+    } finally { session.close(); }
+  });
+
+  it("forward every field the engine adds to a native dispatch, and call exactly as before when it adds none", async () => {
+    const calls: unknown[][] = [];
+    const options = automationStudioRunGraphOptions({ ...base(), nativeNodeRuntime: native(calls) });
+    const signal = new AbortController().signal, hostContext = { capabilityIds: [], sideEffectClass: "none" as const };
+    await options.nativeNodeExecutor!({ node, inputs: { query: "lamps" }, signal, hostContext });
+    const port = Object.freeze({ opaque: true });
+    await options.nativeNodeExecutor!({ node, inputs: { query: "lamps" }, signal, hostContext, nodeUse: port } as Parameters<NonNullable<typeof options.nativeNodeExecutor>>[0]);
+    expect(calls).toEqual([[node, { query: "lamps" }, signal, hostContext], [node, { query: "lamps" }, signal, hostContext, { nodeUse: port }]]);
+    expect(calls[0]).toHaveLength(4);
+    expect((calls[1]![4] as { nodeUse: unknown }).nodeUse).toBe(port);
   });
 });

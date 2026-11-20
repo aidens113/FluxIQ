@@ -1,11 +1,17 @@
 // One model decision of an attempt, as the template's (`../../../service.ts`'s evidence round) with
-// three differences.
+// four differences.
 //
 // **The role's guidance on the provider** (`../../../../../runtime/answer-first/guidance/`), through
 // the seam the project supervisor's takes.
 //
 // **A fresh round's note in front of the evidence.** It is constant for the round, so every
 // request stays a byte prefix of the next, and being a `core.` entry it is read as Core's.
+//
+// **The result's header in a fixed slot, as the current view is carried** (lane t905, design (b)1): Core's
+// own entry, last in the window and worked out from the attempt's one result on every request
+// (`../result-feed/`), so it cannot go stale. The draft is read into the result first, so the header is
+// about the draft this request shows. What the decision says its call is (added, a rerun of a kept
+// step, or a look) is told to the result before the call runs.
 //
 // **A silent model service is waited out in place.** The loop would give up after three
 // unanswered calls and lose its evidence window, and all a new round could do is look again at
@@ -16,11 +22,12 @@
 import { automationStudioAnswerFirstNext } from "../../../../../runtime/answer-first/keep-going/index.ts";
 import { automationStudioActivityDecisionReason } from "../../../../../runtime/automation-activity/index.ts";
 import { flowBootstrapHarnessFailure } from "../../../../../runtime/flow-authoring/bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../../../../runtime/llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../../../../runtime/llm/index.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmUnusableDecisionError } from "../../../../../runtime/llm/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderErrorCode } from "../../../../../runtime/models/failures/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_COMPLETION_SCHEMA } from "../completion/index.ts";
+import { automationStudioAnswerFirstResultIntermediate, type AutomationStudioAnswerFirstResultIntent } from "../result-feed/index.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import { automationStudioAnswerFirstSay } from "./say.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
@@ -28,6 +35,8 @@ import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
 const BALANCE_CODE = "llm.provider_balance_exhausted";
 const SERVER_ERROR_CODE = "llm.provider_http_error";
 const NOTE_TOOL_ID = "core.attempt_note";
+/** The fixed slot the result's header rides in (header). */
+const RESULT_TOOL_ID = "core.result";
 
 type Decide = AutomationStudioLlmEvidenceLoopInput["decide"];
 
@@ -39,7 +48,9 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
     input.cancellation.checkpoint();
     input.creation.endIfReadingRefused();
     run.decidedAt = iteration;
-    const window = round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }, ...evidence] : evidence;
+    run.result.draft(run.steps);
+    const slot = { callId: RESULT_TOOL_ID, toolId: RESULT_TOOL_ID, value: { result: run.result.slot() } };
+    const window = [...(round.note ? [{ callId: `${NOTE_TOOL_ID}.${round.ordinal}`, toolId: NOTE_TOOL_ID, value: round.note }] : []), ...evidence, slot];
     const shown = input.routing.shown(window, denied);
     for (;;) {
       const decision = await input.runHarness({
@@ -57,6 +68,7 @@ export function automationStudioAnswerFirstDecide(run: AutomationStudioAnswerFir
         run.backoffs = 0;
         run.decidedAfterRun = true;
         run.claim = decision.response.decision.kind === "tool_call" ? decision.response.decision.act : undefined;
+        run.result.expect(intentOf(run, decision.response.decision));
         // What this spent is on the row before it can act, so a process that dies leaves it counted.
         await automationStudioAnswerFirstKeep(run);
         return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
@@ -88,4 +100,16 @@ function counted(run: AutomationStudioAnswerFirstAttemptRun, decision: Automatio
   run.usage.inputTokens += decision.usage?.inputTokens ?? 0;
   run.usage.outputTokens += decision.usage?.outputTokens ?? 0;
   run.usage.totalTokens += decision.usage?.totalTokens ?? 0;
+}
+
+/** What a decision says its call is, for the result (header): a call added as it runs, a rerun of a step in the Flow, or a look. */
+function intentOf(run: AutomationStudioAnswerFirstAttemptRun, decision: AutomationStudioLlmEvidenceLoopDecision): AutomationStudioAnswerFirstResultIntent | undefined {
+  if (decision.kind === "tool_call") {
+    const added = decision.add === true || decision.act !== undefined || decision.place !== undefined;
+    return added ? { kind: "add", position: run.steps.length + 1, intermediate: automationStudioAnswerFirstResultIntermediate(decision.input) } : undefined;
+  }
+  if (decision.kind !== "amend_draft") return undefined;
+  const rerun = decision.amendments.find((amendment) => amendment.change === "rerun");
+  const step = rerun ? run.steps.find((each) => each.position === rerun.step) : undefined;
+  return step?.disposition === "kept" ? { kind: "rerun", step } : undefined;
 }

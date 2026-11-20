@@ -1,5 +1,3 @@
-import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioDatasetSnapshots } from "./snapshots.ts";
 import {
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_FORMATS,
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_LIMITS,
@@ -9,6 +7,7 @@ import {
   type AutomationStudioRunDatasetPage,
   type AutomationStudioRunDatasetSummary
 } from "@fluxiq/contracts/automation";
+import type { JsonObject } from "../../../../core/index.ts";
 import {
   AutomationStudioProjectRunDatasetStore,
   type AutomationStudioProjectDatabasePool,
@@ -19,6 +18,7 @@ import {
 import type { AutomationStudioRecordBatch } from "../../executor/index.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";
 import { automationStudioRunDatasetExportBody } from "./export-body.ts";
+import { AutomationStudioDatasetSnapshots } from "./snapshots.ts";
 import { automationStudioRunDatasetExportEncoder, type AutomationStudioRunDatasetExportEncoder } from "./export-encoder.ts";
 import { automationStudioRecordSchemaDigest } from "./schema-digest.ts";
 import type {
@@ -60,15 +60,6 @@ export class AutomationStudioRunDatasets {
     this.snapshots = new AutomationStudioDatasetSnapshots(projects, pool);
   }
 
-  /** Snapshot source occurrences independently of a run. Only the returned opaque id belongs in task memory. */
-  createImmutableSnapshot(input: { projectId: string; rows: readonly { occurrenceId: string; row: JsonObject }[] }) {
-    return this.snapshots.create(input);
-  }
-
-  readImmutableSnapshotPage(input: { projectId: string; snapshotId: string; cursor?: string; limit?: number }) {
-    return this.snapshots.page(input);
-  }
-
   /**
    * The `onRecordBatch` hook for one run. Each batch opens the store, stores its
    * rows under its `batchKey` with the digest of its stored schema, and closes
@@ -78,6 +69,20 @@ export class AutomationStudioRunDatasets {
    */
   recordBatchHandler(projectId: string, runId: string): (batch: AutomationStudioRecordBatch) => Promise<AutomationStudioRunDatasetSummary> {
     return (batch) => this.storeBatch(projectId, runId, batch, false);
+  }
+
+  /** Snapshot source occurrences independently of a run. Only the returned opaque id belongs in task memory. */
+  createImmutableSnapshot(input: { projectId: string; rows: readonly { occurrenceId: string; row: JsonObject }[] }) {
+    return this.snapshots.create(input);
+  }
+
+  readImmutableSnapshotPage(input: { projectId: string; snapshotId: string; cursor?: string; limit?: number }) {
+    return this.snapshots.page(input);
+  }
+
+  /** Verification-only provenance, separate from the public dataset page/export. */
+  readRunDatasetEvidence(input: { projectId: string; runId: string }): Promise<Array<{ datasetId: string; batchKey: string; evidence?: JsonObject }>> {
+    return this.withProjectStore(input.projectId, (store) => store.readBatchEvidence(input.runId));
   }
 
   /**
@@ -318,6 +323,7 @@ export class AutomationStudioRunDatasets {
     const store = await this.openStore(projectId);
     try {
       return await store.appendBatch({
+        evidence: batch.evidence,
         runId,
         datasetId: batch.datasetId,
         label: batch.label,

@@ -1,24 +1,19 @@
 // Barrel for the answer-first rows: reading a read's rows, the sink that stores
-// them under the run, the rules for a re-read and for which dataset is the result,
-// and the session they sit under. The directory's driver exports it (`../index.ts`, not here).
+// them under the run, explicit answer publication and the session they sit under.
+// Result membership and page replacement belong to ../result/.
 export { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 export { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
 export { automationStudioAnswerFirstCopyRows } from "./copied-rows.ts";
-export { automationStudioAnswerFirstReadDatasetId } from "./dataset-of-read.ts";
 export { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
+export { automationStudioAnswerFirstStoredDatasetId } from "./dataset-id.ts";
 export { automationStudioAnswerFirstSession } from "./exploration-session.ts";
 export { automationStudioAnswerFirstReadRows } from "./found-rows.ts";
-export { automationStudioAnswerFirstListAfterRead } from "./list-after-read.ts";
-export type { AutomationStudioAnswerFirstListPage } from "./list-page.ts";
 export type { AutomationStudioAnswerFirstSession } from "./open-exploration-session.ts";
 export { automationStudioAnswerFirstPageWord } from "./page-word.ts";
 export { automationStudioAnswerFirstProcessedRows } from "./processed-rows.ts";
-export { automationStudioAnswerFirstReadEvidenceOf } from "./read-evidence.ts";
+export { automationStudioAnswerFirstReadEvidenceOf, automationStudioAnswerFirstBatchLeftOut } from "./read-evidence.ts";
 export type { AutomationStudioAnswerFirstReadEvidence } from "./read-evidence-type.ts";
-export { automationStudioAnswerFirstResultChangeTold, type AutomationStudioAnswerFirstResultChange } from "./result-change.ts";
-export { automationStudioAnswerFirstResultDataset } from "./result-dataset.ts";
 export { automationStudioAnswerFirstRowSink } from "./row-sink.ts";
-export { automationStudioAnswerFirstRowTies } from "./row-ties.ts";
 export type { AutomationStudioAnswerFirstRowCall, AutomationStudioAnswerFirstRowsStored } from "./rows-call.ts";
 export type { AutomationStudioAnswerFirstRowsSummary } from "./rows-summary.ts";
 export type { AutomationStudioAnswerFirstRowSinkInput } from "./sink-input.ts";

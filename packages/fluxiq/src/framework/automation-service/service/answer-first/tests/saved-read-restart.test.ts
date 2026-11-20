@@ -87,7 +87,7 @@ describe("attempt 2 after Core restarted", () => {
     await before.attempt({ script: [namingItsList(), complete("Listed.")] });
     await before.service.close();
     const after = await laterAttempts(cleanups, { restart: before.restart(), domain: aDomain(false) });
-    const second = await after.attempt({ script: [readLoans("again", {}), complete("Listed.")] });
+    const second = await after.attempt({ script: [readLoans("again"), complete("Listed.")] });
     expect(after.said.join("\n")).not.toContain("web.handle.unknown");
     expect((await after.kept())?.attempts.at(-1)?.route).toBe("repair");
     expect(second.decisions.length).toBeGreaterThan(0);

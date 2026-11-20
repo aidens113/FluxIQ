@@ -12,7 +12,7 @@ const runThatFailed = (failing: { position: number; happened: string } | undefin
   flowRun: { outcome: { kind: "ran", steps: [{ position: 1, ran: true }], ...(failing ? { failing } : {}) } },
   record: new AutomationStudioAttemptActRecord(),
   tried: { data: () => ({ tried: [], approaches: 0 }) },
-  sink: { summary: () => ({ totalRows: 0, columns: [] }) },
+  result: { rows: () => ({ totalRows: 0, columns: [] }) },
   completion: { state: {} }
 }) as unknown as AutomationStudioAnswerFirstAttemptRun;
 
@@ -37,7 +37,7 @@ describe("the note on a failed saved step", () => {
 });
 
 describe("the note on a list that started over or got smaller", () => {
-  const withRows = (rows: object) => ({ ...runThatFailed(undefined), sink: { summary: () => ({ totalRows: 3, columns: [{ id: "title", label: "Title" }], ...rows }) } }) as unknown as AutomationStudioAnswerFirstAttemptRun;
+  const withRows = (rows: object) => ({ ...runThatFailed(undefined), result: { rows: () => ({ totalRows: 3, columns: [{ id: "title", label: "Title" }], ...rows }) } }) as unknown as AutomationStudioAnswerFirstAttemptRun;
   const kept = (run: AutomationStudioAnswerFirstAttemptRun) => automationStudioAnswerFirstRoundNote(run, undefined)?.rowsKept as Record<string, unknown>;
 
   it("says the latest read replaced the list, and that it got smaller, in words that name no site and no task", () => {

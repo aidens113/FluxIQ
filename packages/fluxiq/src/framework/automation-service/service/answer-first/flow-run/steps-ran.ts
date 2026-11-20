@@ -102,7 +102,7 @@ export function automationStudioAnswerFirstFlowRunStepsRan(input: Input): Ran {
     position: place.position,
     ...(place.label ? { label: place.label } : {}),
     ...ranOf(attempts.filter((entry) => entry.attempt.nodeId === place.nodeId).map((entry) => entry.attempt), place, watch),
-    ...deviationsOf(place.nodeId === undefined ? [] : raw.filter((attempt) => attempt.nodeId === place.nodeId))
+    ...deviationsOf(raw, place.nodeId)
   }));
   if (ended.reachedEnd) return { kind: "ran", reachedEnd: true, steps: steps.map((step, index) => emptyRepeatBody(step, placed[index]!, input.saved, steps, emptyLoopBodies(ended))) };
   const failing = failingOf(input, placed, steps);
@@ -182,9 +182,43 @@ function ranOf(attempts: readonly AutomationStudioNodeAttemptTrace[], place: Pla
  * (`../completion/replay-stands.ts`): a check a person cleared, whether or not the step ran again
  * after it, and each attempt a retry asked for.
  */
-function deviationsOf(attempts: readonly AutomationStudioNodeAttemptTrace[]): Pick<AutomationStudioAnswerFirstFlowRunStep, "personCleared" | "retries"> {
-  const retries = attempts.filter((attempt) => attempt.retry !== undefined).length;
-  return { ...(attempts.some(personCleared) ? { personCleared: true as const } : {}), ...(retries > 0 ? { retries } : {}) };
+function deviationsOf(attempts: readonly AutomationStudioNodeAttemptTrace[], nodeId: string | undefined): Pick<AutomationStudioAnswerFirstFlowRunStep, "personCleared" | "personClearances" | "retries"> {
+  const own = nodeId === undefined ? [] : attempts.filter((attempt) => attempt.nodeId === nodeId);
+  const retries = own.filter((attempt) => attempt.retry !== undefined).length;
+  const personClearances: NonNullable<AutomationStudioAnswerFirstFlowRunStep["personClearances"]> = [];
+  for (const [index, attempt] of attempts.entries()) {
+    if (nodeId === undefined || attempt.nodeId !== nodeId || !personCleared(attempt)) continue;
+    const resolution = continuationOf(attempt.personContinuation);
+    const next = attempts[index + 1];
+    const rerun = resolution.kind === "rerun" && next !== undefined && next.nodeId === attempt.nodeId
+      && next.definitionId === attempt.definitionId && next.status === "succeeded" && next.skipped === undefined
+      && next.repair === undefined && sameFrame(attempt.framePath, next.framePath);
+    personClearances.push({
+      attemptId: attempt.attemptId,
+      resolution,
+      ...(rerun ? { rerunAttemptId: next.attemptId } : {})
+    });
+  }
+  return {
+    ...(own.some(personCleared) ? { personCleared: true as const } : {}),
+    ...(personClearances.length ? { personClearances } : {}),
+    ...(retries > 0 ? { retries } : {})
+  };
+}
+
+/** Only the engine's closed record travels; old/malformed words and extra saved fields prove nothing. */
+function continuationOf(value: AutomationStudioNodeAttemptTrace["personContinuation"]): NonNullable<AutomationStudioAnswerFirstFlowRunStep["personClearances"]>[number]["resolution"] {
+  if (value?.kind === "effect_landed" || value?.kind === "outcome_uncertain") return { kind: value.kind };
+  if (value?.kind === "rerun" && (value.reason === "unacted" || value.reason === "repeat_cannot_act" || value.reason === "effect_not_landed")) return { kind: "rerun", reason: value.reason };
+  if (value?.kind === "unverified" && (value.reason === "no_expected_state" || value.reason === "effect_unknown")) return { kind: "unverified", reason: value.reason };
+  return { kind: "unknown" };
+}
+
+/** A calling frame is part of a step's identity; another invocation of the same node is no proof of this rerun. */
+function sameFrame(one: readonly string[] | undefined, other: readonly string[] | undefined): boolean {
+  const left = one ?? [];
+  const right = other ?? [];
+  return left.length === right.length && left.every((frame, index) => frame === right[index]);
 }
 
 /** The person pressed Continue at a check this step met, and the run went on down its `success` route (header). */

@@ -1,5 +1,7 @@
 // What a saved Flow's run came to, for the attempt to read (`../attempt/`). A run that failed is
 // an answer, not an ending: the attempt carries on from it. `happened` is Core's words only.
+import type { AutomationStudioNodeAttemptTrace } from "../../../../../engine/automation/contracts.ts";
+import type { AutomationStudioAnswerFirstExecutableSource } from "./execution-identity.ts";
 
 export type AutomationStudioAnswerFirstFlowRunStep = {
   /** The step's position in the saved draft: what the model and the attempt's row call it. */
@@ -16,6 +18,16 @@ export type AutomationStudioAnswerFirstFlowRunStep = {
   skipped?: AutomationStudioAnswerFirstFlowRunSkip;
   /** A check only a person could clear met this step, and the run went on after they cleared it. */
   personCleared?: true;
+  /**
+   * Each cleared check, with an unknown outcome when no valid engine branch was recorded. A rerun's link
+   * names only the immediately following successful attempt of the same node/definition/frame.
+   * It grants no replay exception and says nothing yet about executable/input identity.
+   */
+  personClearances?: {
+    attemptId: string;
+    resolution: NonNullable<AutomationStudioNodeAttemptTrace["personContinuation"]> | { kind: "unknown" };
+    rerunAttemptId?: string;
+  }[];
   /** Attempts the step took past its first, over every pass of it. Absent when none. */
   retries?: number;
 };
@@ -36,6 +48,8 @@ export type AutomationStudioAnswerFirstFlowRunOutcome =
     kind: "ran";
     /** The Flow ran from its start to its end. Whether that is the person's result is the judge's. */
     reachedEnd: boolean;
+    /** Exact current saved source/executable correspondence only; no input-frame proof or replay exemption. Absent legacy metadata is unknown. */
+    executableSource?: AutomationStudioAnswerFirstExecutableSource;
     /** Every step of the Flow, by position. A step left out of the plan is absent. */
     steps: AutomationStudioAnswerFirstFlowRunStep[];
     /** Where it stopped, whenever it did not reach the end. */

@@ -37,7 +37,7 @@ describe("a read that answered the rows its conditions rejected", () => {
     await sink.fromCall(call("call.2", "web.read", { target: "list", recordOutput: { datasetId: "page_two" } }), rejectedAnswer(many, `${HALL}&page=2`));
     await sink.fromCall(call("call.3"), rejectedAnswer(many, `${HALL}&page=3`));
     expect(store.batches).toHaveLength(1);
-    expect(sink.summary()).toMatchObject({ totalRows: 2, rows: [item(1), item(2)] });
+    expect(sink.summary("read.call.1")).toMatchObject({ totalRows: 2, rows: [item(1), item(2)] });
     expect(sink.readsAnswered()).toBe(3);
   });
 });

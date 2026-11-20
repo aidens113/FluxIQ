@@ -1,0 +1,12 @@
+export type { AutomationStudioInputRevision } from "./reference.ts";
+export type { AutomationStudioInputScope } from "./scope.ts";
+export type { AutomationStudioInputProducer } from "./producer.ts";
+export type { AutomationStudioInputUnknownCode } from "./unknown.ts";
+export type { AutomationStudioInputRead } from "./read.ts";
+export type { AutomationStudioNormalInputLease } from "./lease.ts";
+export type { AutomationStudioInputSnapshotReference } from "./snapshot.ts";
+export type { AutomationStudioInputHead } from "./head.ts";
+export type { AutomationStudioInputState } from "./state.ts";
+export type { AutomationStudioInputBasisStorage } from "./storage.ts";
+export type { AutomationStudioInputProducerOwner } from "./authority.ts";
+export type { AutomationStudioInputBasisOwnerPorts } from "./ports.ts";

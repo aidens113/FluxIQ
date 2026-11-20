@@ -6,7 +6,7 @@ import type { AutomationStudioFlowDraftAmendmentChange } from "./changes.ts";
 
 /** One edit to one step of the draft. */
 export type AutomationStudioFlowDraftAmendment = {
-  /** The step's position in the draft as the model was shown it, counting from 1. */
+  /** The step's position in the draft as the model was shown it, counting from 1. `take` names a call instead, and carries 0 here when it named no step. */
   step: number;
   change: AutomationStudioFlowDraftAmendmentChange;
   /** Settings to carry on the step. Merged over whatever it already had. */
@@ -66,6 +66,12 @@ export type AutomationStudioFlowDraftAmendment = {
    * clears no condition, as one carrying `act` does not.
    */
   place?: string;
+  /**
+   * `take` only: the id of an earlier call whose read is to be a step of the Flow, as the evidence names it. The step
+   * that call ran is put in the Flow as `add` puts one, with no new act on the page: the rows its real read kept become
+   * the step's page of the result (lane t905, D1: a read not in the draft is a look, and never the result).
+   */
+  call?: string;
 };
 
 /**
