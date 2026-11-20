@@ -5,5 +5,6 @@ export * from "./schema.ts";
 export * from "./schema-misses.ts";
 export * from "./stream.ts";
 export * from "./messages.ts";
+export * from "./no-thinking.ts";
 export * from "./request-body.ts";
 export * from "./reply/index.ts";

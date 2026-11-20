@@ -10,8 +10,15 @@
 // Content-free by construction: digests, Core's tool ids, closed codes, and for
 // an amendment its step number and change kind, which a fresh context can be
 // told. Never a row, a page's text, a typed value or a word the model wrote.
+//
+// **It owns the attempt's model ladder** (`../../role-routing/ladder/`, t962): one record per
+// attempt is what makes a climb sticky for the attempt and a new attempt start on its base rung.
+// A seed brings the ladder back only where it carries one: a carried-on attempt is the same
+// attempt.
 
-import type { AutomationStudioLlmLoopPattern } from "./types.ts";
+import { automationStudioLlmModelLadder, type AutomationStudioLlmModelLadder, type AutomationStudioLlmModelLadderData } from "../../role-routing/ladder/state.ts";
+import type { AutomationStudioLlmLoopDecisionKind } from "../../loop-decision/index.ts";
+import type { AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopPattern } from "./types.ts";
 
 /** How a thing that was tried came out when it was last tried. */
 export type AutomationStudioLlmLoopTriedOutcome = "failed" | "changed_nothing" | "applied" | "undone";
@@ -31,12 +38,24 @@ export type AutomationStudioLlmLoopTriedEntry = {
   changes?: ReadonlyArray<{ step: number; change: string }>;
 };
 
+/** One decision the model made about a caught repeat (`../../decision-handlers/loop-decision.ts`): its kind and the repeat it was about, codes only. */
+export type AutomationStudioLlmLoopDecided = { decision: AutomationStudioLlmLoopDecisionKind; pattern?: AutomationStudioLlmLoopPattern; repeats?: number };
+
+/** What the last loop stopped repeated: the finding a fresh round is steered off (`./watch.ts`). */
+export type AutomationStudioLlmLoopStoppedOn = Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "toolIds">;
+
 /** The record as data, for the attempt row and the next attempt. */
 export type AutomationStudioLlmLoopAttemptRecordData = {
   version: 1;
   tried: readonly AutomationStudioLlmLoopTriedEntry[];
   /** Fresh approaches signalled so far (`./watch.ts`). */
   approaches: number;
+  /** The models the attempt climbed, and why, once its provider is on the ladder. */
+  ladder?: AutomationStudioLlmModelLadderData;
+  /** The model's decisions about caught repeats, oldest first. */
+  decisions?: readonly AutomationStudioLlmLoopDecided[];
+  /** What the latest stopped loop repeated, for the round after it; not kept on the attempt's row. */
+  stoppedOn?: AutomationStudioLlmLoopStoppedOn;
 };
 
 export type AutomationStudioLlmLoopAttemptRecord = {
@@ -51,12 +70,27 @@ export type AutomationStudioLlmLoopAttemptRecord = {
   /** A fresh approach was signalled; answers how many have been. */
   approachChanged(): number;
   readonly approaches: number;
+  /** The model decided how to go on about a caught repeat. */
+  decided(decision: AutomationStudioLlmLoopDecided): void;
+  /** A loop was stopped on this finding: the next fresh round is told what it repeated. */
+  stopped(finding: AutomationStudioLlmLoopStoppedOn): void;
+  /** A repeat was caught and the model told of it, by the watch or by a completion refused again: what a decision about it is about. */
+  noted(finding: AutomationStudioLlmLoopFinding): void;
+  /** The repeat caught last, in this attempt; not kept on its row. */
+  readonly lastNoted: AutomationStudioLlmLoopFinding | undefined;
+  /** The attempt's model ladder. */
+  readonly ladder: AutomationStudioLlmModelLadder;
   data(): AutomationStudioLlmLoopAttemptRecordData;
 };
 
-export function automationStudioLlmLoopAttemptRecord(seed?: AutomationStudioLlmLoopAttemptRecordData): AutomationStudioLlmLoopAttemptRecord {
+/** A record, from `seed` where the attempt carries one; `options.ladder` shares a ladder already climbing (a loop run inside another). */
+export function automationStudioLlmLoopAttemptRecord(seed?: AutomationStudioLlmLoopAttemptRecordData, options?: { ladder?: AutomationStudioLlmModelLadder | undefined }): AutomationStudioLlmLoopAttemptRecord {
   const entries = new Map<string, AutomationStudioLlmLoopTriedEntry>((seed?.tried ?? []).map((entry) => [entry.key, { ...entry }]));
   let approaches = seed?.approaches ?? 0;
+  let stoppedOn: AutomationStudioLlmLoopStoppedOn | undefined;
+  let lastNoted: AutomationStudioLlmLoopFinding | undefined;
+  const decisions: AutomationStudioLlmLoopDecided[] = (seed?.decisions ?? []).map((decided) => ({ ...decided }));
+  const ladder = options?.ladder ?? automationStudioLlmModelLadder(seed?.ladder);
   return {
     known: (key) => entries.get(key),
     tried(entry) {
@@ -74,6 +108,20 @@ export function automationStudioLlmLoopAttemptRecord(seed?: AutomationStudioLlmL
     },
     approachChanged: () => (approaches += 1),
     get approaches() { return approaches; },
-    data: () => ({ version: 1, tried: [...entries.values()].map((entry) => ({ ...entry })), approaches })
+    noted(finding) {
+      lastNoted = { ...finding, toolIds: [...finding.toolIds], unchanged: [...finding.unchanged] };
+    },
+    get lastNoted() { return lastNoted; },
+    decided(decided) {
+      decisions.push({ ...decided });
+    },
+    stopped(finding) {
+      stoppedOn = { pattern: finding.pattern, repeats: finding.repeats, toolIds: [...finding.toolIds] };
+    },
+    ladder,
+    data: () => {
+      const climbed = ladder.data();
+      return { version: 1, tried: [...entries.values()].map((entry) => ({ ...entry })), approaches, ...(climbed ? { ladder: climbed } : {}), ...(decisions.length ? { decisions: decisions.map((decided) => ({ ...decided })) } : {}), ...(stoppedOn ? { stoppedOn: { ...stoppedOn, toolIds: [...stoppedOn.toolIds] } } : {}) };
+    }
   };
 }

@@ -123,10 +123,40 @@ runs once, and is caught as soon as it has.
 and the person sees a step (`llm_evidence_loop.loop_steered`). Refuse: the next call
 that continues it is refused before it runs, through the guard's own path, so it
 is recorded `llm_evidence_loop.repeat_refused` with the pattern as its reason and
-counts in the same run of refusals. A cycle's refusal falls on its acts: a look in it costs nothing and may be what the page needs after a reload, and a look that came to nothing starts again from nothing once an act has landed. Change approach, then ask the person: both are
+counts in the same run of refusals. A cycle's refusal falls on its acts: a look in it costs nothing and may be what the page needs after a reload, and a look that came to nothing starts again from nothing once an act has landed. Change approach is
 a typed signal to a caller that gave `loopSignal` (`AutomationStudioLlmLoopSignal`),
 raised after three refusals or further findings with no progress, or when refusals
-in a row would stall the round. Progress ends the incident at any step, but for a
+in a row would stall the round; it is the last rung however often it comes, and the
+watch never asks the person by itself (t962, run-mwo3dp11-a47a032d, where an "ask the
+person" rung was raised nine times while the attempt looped on one model for 34
+minutes).
+
+**The model decides how to go on** (user, 2026-11-19). A loop whose caller gave
+`loopSignal` is offered `core.loop_decision` (`runtime/llm/loop-decision/`) from its
+first decision. A steer then names the repeat, how many times, and what each repeat
+came back with (`decide.cameBack`, the calls' result codes), and asks for one decision:
+`continue` (with `why`) ends the incident, so the repeat may run and a further catch
+asks again with the count; `change_approach` (with `approach`) keeps the repeat
+refused; `ask_person` (with one plain `question`) raises the `ask_person` signal with
+the model's question, which the attempt posts and does not wait for; `escalate_model`
+climbs the model ladder; `finish_with_best` (with `result`) goes to the completion
+check as any completion does. The loop carries it out
+(`decision-handlers/model-decision.ts`); each goes on the attempt's record
+(`decisions`), into a `NNNN-loop_decision` step folder and into the chat. Detection
+alone never stops anything; the purse still ends the task.
+
+**The model ladder** (t962, `runtime/llm/role-routing/ladder/`). An attempt's calls start
+on its base model -- the run's named model, else Haiku 5.5 where nothing named one on a
+Claude key -- and climb one rung at a time (Haiku, Sonnet, Opus), sticky for the
+attempt, on: the model's own `escalate_model`; a completion refused again over unchanged
+evidence; a repair round that ends without the result; a window of no progress; and a
+round stopped on refusals. Where no model is asked to decide (no `loopSignal`), any
+steer climbs. Each climb is a `NNNN-escalate` step folder (`from`, `to`, `reason`,
+`pattern`) and goes on the attempt's row (`tried.ladder`). Every evidence loop runs
+inside its attempt's ladder frame (`runtime/llm/attempt-loop/`), so the routed provider
+serves each call on the rung the attempt stands on; each role climbs from its own start,
+and a role off the ladder stays where it is. A new attempt, with a new record, starts on
+its base again; a zero-call replay makes no call to route. Progress ends the incident at any step, but for a
 lasting act, whose refusal stands until a new row or an undo.
 
 **What it never does.** It adds refusals and notes and removes none. It lifts
@@ -148,8 +178,9 @@ caller owns one record per attempt and hands it to each loop and stage. It holds
 digests, Core's tool ids, closed outcomes and an edit's step numbers and change
 kinds, never a value or a word the model wrote, and `data()` is plain JSON for the
 attempt row and for `seed` on the next attempt. It is how the same fix is known
-after a fresh context, and how many fresh approaches have been tried: past two,
-the signal is `ask_person`.
+after a fresh context, how many fresh approaches have been tried, what the last stopped
+loop repeated (`stoppedOn`, which the next round is told with the words to take a
+different approach), the attempt's model ladder, and the model's loop decisions.
 
 **What a run reports.** Rows in the trace (`automationStudioLlmLoopsCaught`, by
 pattern, with no new row member, so every rebuilder already carries them), and in

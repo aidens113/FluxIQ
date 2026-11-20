@@ -7,12 +7,22 @@
 //    was about, is refused before it runs, through the same path as the repeat
 //    guard's refusals (`../../decision-handlers/refused-repeat.ts`), so it counts
 //    in the same run of refusals.
-// 3. **Change approach**, 4. **ask the person.** Both need a caller that can
-//    start a fresh context or wait for a person, so each is only a typed signal
-//    (`./types.ts`), raised when refusing has not worked. Every fresh approach
-//    goes on the attempt's record, and past
-//    `AUTOMATION_STUDIO_LLM_LOOP_APPROACHES_BEFORE_ASKING` the signal is
-//    `ask_person`.
+// 3. **Change approach.** It needs a caller that can start a fresh context, so
+//    it is only a typed signal (`./types.ts`), raised when refusing has not
+//    worked. Every fresh approach goes on the attempt's record with what it
+//    repeated, which the next round is steered off. It is the last rung, however
+//    often it comes, and climbs the model ladder one rung
+//    (`../../decision-handlers/loop-signal.ts`); at the top a loop that comes back
+//    is stopped and steered again until the purse ends it. The watch never asks
+//    the person on its own (t962, run-mwo3dp11-a47a032d: an "ask the person" rung
+//    here was raised nine times while the attempt looped on one model for 34 minutes).
+//
+// **The model decides** (user, 2026-11-19). Where the loop offers `core.loop_decision`
+// (`../../loop-decision/`), a steer asks the model to decide how to go on, told what
+// it repeated, how often and what each repeat came back with (`cameBack`), and the
+// loop carries its decision out (`decided`): `continue` ends the incident, so the
+// repeat may run and a further catch asks again with the count; `change_approach`
+// keeps the repeat refused; `escalate_model` and `finish_with_best` end the incident.
 //
 // **A lasting act done again is refused only on the new path.** A caller with no
 // `loopSignal` has no way to act on what a refusal leads to, and a task may really
@@ -31,8 +41,11 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceTimingOf } from "../timing-free.ts";
 import { automationStudioLlmLoopAttemptRecord, type AutomationStudioLlmLoopAttemptRecord } from "./attempt-record.ts";
 import { automationStudioLlmLoopDetector } from "./detector.ts";
-import { AUTOMATION_STUDIO_LLM_LOOP_APPROACHES_BEFORE_ASKING, AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE } from "./limits.ts";
-import { AUTOMATION_STUDIO_LLM_LOOP_PATTERNS, type AutomationStudioLlmLoopAmendment, type AutomationStudioLlmLoopAskedRepeats, type AutomationStudioLlmLoopCall, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopPattern, type AutomationStudioLlmLoopSignal } from "./types.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE } from "./limits.ts";
+import { AUTOMATION_STUDIO_LLM_LOOP_PATTERNS, type AutomationStudioLlmLoopAmendment, type AutomationStudioLlmLoopAskedRepeats, type AutomationStudioLlmLoopCall, type AutomationStudioLlmLoopCameBack, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopPattern, type AutomationStudioLlmLoopSignal } from "./types.ts";
+
+/** Calls remembered for what they came back with: more than any finding's repeats. */
+const CAME_BACK_KEPT = 24;
 
 /** What the ladder has done so far in one loop: the count the run reports, by pattern. */
 export type AutomationStudioLlmLoopTally = {
@@ -66,6 +79,12 @@ export type AutomationStudioLlmLoopWatch = {
   signalAnswered(): void;
   /** Whether an incident stands: a steer given still applies. */
   engaged(): boolean;
+  /** The finding standing, where an incident does. */
+  standing(): AutomationStudioLlmLoopFinding | undefined;
+  /** What each of the calls a finding is about came back with, oldest first. */
+  cameBack(finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopCameBack[];
+  /** The model decided how to go on (`../../decision-handlers/loop-decision.ts`): `change_approach` keeps the repeat refused, anything else ends the incident. */
+  decided(decision: "continue" | "change_approach" | "escalate_model" | "finish_with_best"): void;
   tally(): AutomationStudioLlmLoopTally;
   readonly record: AutomationStudioLlmLoopAttemptRecord;
 };
@@ -89,9 +108,11 @@ export function automationStudioLlmLoopWatch(options: {
   let standing: AutomationStudioLlmLoopFinding | undefined;
   // The guard has refused since the last progress: one incident of its own, which the guard's own run of refusals stalls as it always has.
   let guardStanding = false;
+  const came: AutomationStudioLlmLoopCameBack[] = [];
 
   const found = (finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopFinding | undefined => {
     standing = finding;
+    record.noted(finding);
     // A lasting act done again is always told, wherever the ladder stands.
     if (finding.pattern === "same_act") {
       caught.same_act += 1;
@@ -128,11 +149,8 @@ export function automationStudioLlmLoopWatch(options: {
     guardStanding = false;
   };
   const signal = (finding: AutomationStudioLlmLoopFinding): AutomationStudioLlmLoopSignal => {
-    if (record.approaches >= AUTOMATION_STUDIO_LLM_LOOP_APPROACHES_BEFORE_ASKING) {
-      tally.askPerson += 1;
-      return { ...finding, kind: "ask_person", approaches: record.approaches };
-    }
     tally.changeApproach += 1;
+    record.stopped(finding);
     return { ...finding, kind: "change_approach", approaches: record.approachChanged() };
   };
   return {
@@ -149,6 +167,8 @@ export function automationStudioLlmLoopWatch(options: {
       return repeating && rung !== "clear" ? refusing(repeating) : undefined;
     },
     ran(call, guarded) {
+      came.push({ callId: call.callId, toolId: call.toolId, came: call.resultCode ?? (call.refused ? "refused" : call.effectApplied ? "applied" : "changed_nothing") });
+      if (came.length > CAME_BACK_KEPT) came.shift();
       const { finding, progressed } = detector.ran(call, guarded);
       if (progressed && !finding) cleared();
       return finding ? found(finding) : undefined;
@@ -184,6 +204,13 @@ export function automationStudioLlmLoopWatch(options: {
       strikes = 0;
     },
     engaged: () => rung !== "clear",
+    standing: () => standing,
+    cameBack: (finding) => came.filter((call) => finding.toolIds.includes(call.toolId)).slice(-Math.max(1, finding.repeats)).map((call) => ({ ...call })),
+    decided(decision) {
+      if (decision !== "change_approach") return cleared();
+      rung = "refusing";
+      strikes = 0;
+    },
     tally: () => ({ caught: { ...caught }, ...tally })
   };
 }

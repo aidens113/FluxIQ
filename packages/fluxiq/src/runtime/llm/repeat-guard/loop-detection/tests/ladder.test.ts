@@ -468,7 +468,7 @@ describe("the ladder's last steps: a signal the caller answers", () => {
   /** Reworded presses of a covered control, every one. */
   const rewording = () => scripted((index) => index > 16 ? { kind: "complete", result: { done: true } } : call(index, "press", { target: "Close", reason: `attempt ${index}` }));
 
-  it("a caller that answers continue goes on, is told change_approach, and past two fresh approaches ask_person", async () => {
+  it("a caller that answers continue goes on, and is told change_approach each time: the watch never asks the person by itself (t962)", async () => {
     const signals: AutomationStudioLlmLoopSignal[] = [];
     const decide = rewording();
     const executeTool = coveredButton();
@@ -480,9 +480,10 @@ describe("the ladder's last steps: a signal the caller answers", () => {
     await expect(loop(decide, executeTool, { loopSignal })).resolves.toMatchObject({ ok: true });
 
     expect(executeTool).toHaveBeenCalledTimes(2);
-    expect(signals.map((signal) => signal.kind).slice(0, 3)).toEqual(["change_approach", "change_approach", "ask_person"]);
+    expect(signals.map((signal) => signal.kind).slice(0, 3)).toEqual(["change_approach", "change_approach", "change_approach"]);
     expect(signals[0]).toMatchObject({ pattern: "near_repeat", toolIds: ["press"], approaches: 1 });
     expect(signals[1]).toMatchObject({ approaches: 2 });
+    expect(signals[2]).toMatchObject({ approaches: 3 });
   });
 
   it("a caller that answers end stops the round where it stands, as a stall does", async () => {
@@ -521,7 +522,8 @@ describe("the ladder's last steps: a signal the caller answers", () => {
     await run();
     await run();
 
-    expect(kinds).toEqual(["change_approach", "change_approach", "ask_person"]);
+    expect(kinds).toEqual(["change_approach", "change_approach", "change_approach"]);
+    expect(record.data().stoppedOn).toMatchObject({ pattern: "near_repeat", toolIds: ["press"] });
   });
 });
 

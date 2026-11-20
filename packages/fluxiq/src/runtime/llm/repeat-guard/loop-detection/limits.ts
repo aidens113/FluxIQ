@@ -19,15 +19,9 @@ export const AUTOMATION_STUDIO_LLM_LOOP_SAME_ACT_AT = 2;
 /** Refusals, or further findings after them, in one incident before the ladder's next step: as many as refused repeats in a row end a round. */
 export const AUTOMATION_STUDIO_LLM_LOOP_REFUSALS_BEFORE_CHANGE = 3;
 
-/** Fresh approaches that may loop too before the work stops and asks the person. */
-export const AUTOMATION_STUDIO_LLM_LOOP_APPROACHES_BEFORE_ASKING = 2;
-
 /**
  * Completions refused in a row over the same evidence that call for a fresh round. Low, because
  * nothing refuses one before it is paid for: each is a whole context, about $0.14 on a long run
  * (`run-mw37vz9n-a77a02c2`). Only the path that can act on it reads these.
  */
 export const AUTOMATION_STUDIO_LLM_LOOP_REFUSED_COMPLETIONS_BEFORE_CHANGE = 2;
-
-/** And that stop the work to ask the person, whatever approaches it has had. */
-export const AUTOMATION_STUDIO_LLM_LOOP_REFUSED_COMPLETIONS_BEFORE_ASKING = 3;

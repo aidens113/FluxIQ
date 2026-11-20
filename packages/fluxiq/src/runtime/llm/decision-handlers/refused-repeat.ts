@@ -25,6 +25,7 @@ import {
   type AutomationStudioLlmEvidenceRepeatedOutcome
 } from "../repeat-guard/index.ts";
 import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
+import { automationStudioLlmEvidenceRefusalDecisionAsk } from "./refusal-decision-ask.ts";
 import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
 import { automationStudioLlmEvidenceStallRecovery, type AutomationStudioLlmEvidenceStallOutcome } from "./stall-recovery.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
@@ -50,11 +51,24 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
   if (stop) return stop;
   // A loop that drafts nothing -- a project's supervisor, a reset -- is never told a Flow so far is tested and judged (t591).
   const candidate = context.input.discoveryOnly === true;
-  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow, candidate, undrafted: !candidate && context.input.draft === false, recallOffered: context.toolIds.has(AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID) });
+  // Where the model decides how to go on (`./refusal-decision-ask.ts`), a refused repeat asks for that decision too.
+  const note = automationStudioLlmEvidenceRefusalDecisionAsk(context, automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow, candidate, undrafted: !candidate && context.input.draft === false, recallOffered: context.toolIds.has(AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID) }), decision.toolId, earlier, inARow);
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, value: note });
   return { kind: "continue" };
+}
+
+/**
+ * The round stops here, now, under `issueCode`: the stall its caller built, thrown where decision
+ * errors propagate, else the loop's own ending. What a model's own `ask_person` ends its round with
+ * once the caller has taken the question (`./model-decision.ts`).
+ */
+export function automationStudioLlmEvidenceStallNow(context: AutomationStudioLlmEvidenceDecisionHandlerContext, issueCode: string): AutomationStudioLlmEvidenceLoopResult {
+  const stop = automationStudioLlmEvidenceRepeatStall(context, issueCode);
+  if (stop.kind === "end") return stop.result;
+  if (stop.kind === "stalled" && context.input.propagateDecisionErrors) throw stop.error;
+  return failure(context.draftSteps, "llm_evidence_loop.repeat_without_progress", context.trace, context.accounting);
 }
 
 /**
