@@ -40,6 +40,9 @@ import type { AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 /** The failure category a domain reports when only a person can go on. */
 const PERSON_NEEDED_CATEGORY = "user_intervention_required";
 
+/** The route Continue settles the ask down: the ask's `granted` route (`runtime/parking/person-needed-ask.ts`). */
+const PERSON_CLEARED_ROUTE = "success";
+
 /** How many times in a row, with no step succeeding between, one run asks a person before it stops asking and ends. */
 export const AUTOMATION_STUDIO_PERSON_NEEDED_ASKS_PER_RUN = 3;
 
@@ -106,6 +109,16 @@ export function automationStudioPersonNeededStep(input: {
  * is the last attempt of the run, so whatever reads a run's failure off its
  * attempts still reads `user_intervention_required`; the message says it again
  * in words, and says what the person did.
+ *
+ * **Continue is never an ending.** It settles the ask down `success`, and a
+ * node with no `success` edge is a frame's last step, whose end decides how the
+ * frame ends. Until t972 Continue matched here too, as an answered ask down the
+ * route asked about, and was told as "the person pressed Stop": a saved Flow
+ * whose last step met a check the person then cleared ended failed. In live run
+ * `run-mwoq9g4l-dbd69bd6` the replays of attempts 2 and 3 met the traffic screen
+ * at their last step, a next page, the person cleared it, and each run stopped
+ * there as though they had pressed Stop, so the attempt went back to the model
+ * to repair a Flow that had done its work.
  */
 export function automationStudioPersonNeededEnding(
   attempts: readonly AutomationStudioNodeAttemptTrace[],
@@ -115,6 +128,7 @@ export function automationStudioPersonNeededEnding(
   const attempt = latestAttemptOf(attempts, node.id);
   const ask = attempt?.ask;
   if (!attempt || !ask?.personNeeded || ask.route !== route) return undefined;
+  if (ask.status === "answered" && ask.route === PERSON_CLEARED_ROUTE) return undefined;
   if (ask.status === "expired") return endingMessage(node, attempt, "nobody answered in time");
   if (ask.status === "answered") return endingMessage(node, attempt, "the person pressed Stop");
   return undefined;
