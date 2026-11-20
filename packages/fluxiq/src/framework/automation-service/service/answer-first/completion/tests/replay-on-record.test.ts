@@ -4,6 +4,7 @@
 // otherwise, and a FluxNode's `judge: always` always asking.
 
 import { describe, expect, it } from "vitest";
+import { AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS } from "../../../../../../api-contracts/automation.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_ON_RECORD_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS, automationStudioAnswerFirstCompletionCheck, automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation, type AutomationStudioAnswerFirstReplayRecord } from "../index.ts";
 
 const COLUMNS = ["title", "price"];
@@ -47,13 +48,24 @@ describe("whether a replay stands on its own record", () => {
       ["step_failed", [step({ ran: "failed" }), { shape: SHAPE }]],
       ["step_routed", [step({ ran: "skipped", skipped: "routed_elsewhere" }), { shape: SHAPE }]],
       ["act_not_done", [step({ ran: "skipped", skipped: "absent_not_done" }), { shape: SHAPE }]],
-      ["check_cleared", [step({ personCleared: true }), { shape: SHAPE }]],
       ["step_retried", [step({ retries: 1 }), { shape: SHAPE }]],
       ["shape_unknown", [replay({ saved: { label: "confirmed", provenWhole: true } }), { shape: SHAPE }]],
       ["shape_differs", [replay(), { shape: { columns: ["title"], empty: false } }]]
     ];
     expect(cases.map(([deviation]) => deviation)).toEqual([...AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS]);
     for (const [deviation, args] of cases) expect(automationStudioAnswerFirstReplayStands(...args), deviation).toEqual({ stands: false, deviation });
+  });
+
+  it("stands when a check a person cleared met a step, the last step included, and the run went on as saved (t972)", () => {
+    // run-mwoq9g4l-dbd69bd6's hubs Flow: the traffic screen at a filter and at the last step's next page, each cleared.
+    const cleared = replay({ steps: [{ position: 1, ran: "passed" }, { position: 2, ran: "passed", personCleared: true }, { position: 3, ran: "passed" }, { position: 4, ran: "passed", personCleared: true }] });
+    expect(automationStudioAnswerFirstReplayStands(cleared, { shape: SHAPE })).toEqual({ stands: true });
+    // The word stays in the contract for attempts stored before t972, and the rule no longer names it.
+    expect(AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS).not.toContain("check_cleared");
+    expect(AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS).toContain("check_cleared");
+    // What the clear left still counts: a step that failed after it, or one a retry was asked for.
+    expect(automationStudioAnswerFirstReplayStands(step({ personCleared: true, retries: 1 }), { shape: SHAPE })).toEqual({ stands: false, deviation: "step_retried" });
+    expect(automationStudioAnswerFirstReplayStands(replay({ reachedEnd: false, steps: [{ position: 1, ran: "passed", personCleared: true }] }), { shape: SHAPE })).toEqual({ stands: false, deviation: "run_not_whole" });
   });
 
   it("judges a replay that read nothing where the accepted run read rows, and the reverse", () => {
@@ -92,6 +104,14 @@ describe("a completion that closes a replay", () => {
     return { check, judged: () => judged };
   }
 
+  it("accepts with no judge call a replay a person cleared a check in, at its last step too (t972)", async () => {
+    const { check, judged } = made(replay({ steps: [{ position: 1, ran: "passed", personCleared: true }, { position: 2, ran: "passed", personCleared: true }] }));
+    expect(await check.check({ summary: "The saved Flow ran from its start to its end." })).toEqual({ ok: true });
+    expect(judged()).toBe(0);
+    expect(check.state).toMatchObject({ achieved: true, onRecord: true, timesChecked: 1 });
+    expect(check.state.deviation).toBeUndefined();
+  });
+
   it("accepts a replay that ran as saved with no judge call, as one check of its record", async () => {
     const { check, judged } = made(replay());
     expect(await check.check({ summary: "The saved Flow ran from its start to its end." })).toEqual({ ok: true });
@@ -102,10 +122,10 @@ describe("a completion that closes a replay", () => {
   });
 
   it("asks the judge once for a replay that deviated, and says why", async () => {
-    const { check, judged } = made(step({ personCleared: true }));
+    const { check, judged } = made(step({ retries: 1 }));
     expect(await check.check({ summary: "The saved Flow ran from its start to its end." })).toEqual({ ok: true });
     expect(judged()).toBe(1);
-    expect(check.state).toMatchObject({ achieved: true, deviation: "check_cleared", timesChecked: 1 });
+    expect(check.state).toMatchObject({ achieved: true, deviation: "step_retried", timesChecked: 1 });
     expect(check.state.onRecord).toBeUndefined();
   });
 

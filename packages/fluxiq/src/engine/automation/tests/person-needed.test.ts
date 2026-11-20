@@ -166,6 +166,37 @@ describe("a step that meets something only a person can get past", () => {
     expect(trace.message).toContain("the person pressed Stop");
   });
 
+  it("reaches the Flow's end on Continue when the check met its last step, which has no edge on (F18)", async () => {
+    // `run-mwoq9g4l-dbd69bd6`: a saved Flow's last step, a next page, met the traffic screen; the person cleared it and
+    // pressed Continue, and the run ended failed "the person pressed Stop", sending a finished Flow back to the model.
+    const host = pageHost(new Set(["check"]));
+    const flow = pageFlow(["read", "check"]);
+    const lastStep = { ...flow, edges: flow.edges.filter((edge) => edge.sourceNodeId !== "check"), nodes: flow.nodes.filter((node) => node.id !== "done") };
+    const { asked, port } = inPlacePort(AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION);
+
+    const trace = await runAutomationStudioGraph(lastStep, { ...host.options, parking: port });
+
+    expect(trace.status, trace.message).toBe("succeeded");
+    expect(asked).toHaveLength(1);
+    // The press the check answered was made: it is not made again, and nothing else runs.
+    expect(host.executed).toEqual(["read", "check"]);
+    expect(trace.message ?? "").not.toContain("pressed Stop");
+    const check = attemptOf(trace, "check")!;
+    expect(check.ask).toMatchObject({ status: "answered", route: "success", personNeeded: true });
+    expect(check.recoveryDecision).toBeUndefined();
+  });
+
+  it("reaches the Flow's End on Continue when the check met the step before it", async () => {
+    const host = pageHost(new Set(["check"]));
+    const { port } = inPlacePort(AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION);
+
+    const trace = await runAutomationStudioGraph(pageFlow(["read", "check"]), { ...host.options, parking: port });
+
+    expect(trace.status, trace.message).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "read", "check", "done"]);
+    expect(host.executed).toEqual(["read", "check"]);
+  });
+
   it("takes a failed route the Flow authored, as every ask does", async () => {
     const host = pageHost(new Set(["check"]));
     const flow = pageFlow(["check", "read"], [{ id: "e.check.failed", sourceNodeId: "check", targetNodeId: "done", sourcePortId: "failed", targetPortId: "in" }]);
@@ -241,6 +272,21 @@ describe("a run parked durably on a person-needed ask", () => {
     expect(run.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "check", "read", "done"]);
     expect(host.executed).toEqual(["check", "read"]);
     expect(attemptOf(run, "check")?.ask).toMatchObject({ askId: trace.parked!.ask.askId, status: "answered", route: "success", personNeeded: true });
+  });
+
+  it("resumes to the Flow's end on Continue when the parked step is its last, with no edge on (F18)", async () => {
+    const host = pageHost(new Set(["check"]));
+    const full = pageFlow(["read", "check"]);
+    const flow = { ...full, edges: full.edges.filter((edge) => edge.sourceNodeId !== "check"), nodes: full.nodes.filter((node) => node.id !== "done") };
+    const trace = await runAutomationStudioGraph(flow, { ...host.options, parking: { open: () => undefined } });
+    expect(trace.status).toBe("waiting");
+
+    const resumed = await resumeAutomationStudioGraph({ flow, trace, resumption: { kind: "answer", answer: choice(trace.parked!.ask.askId, AUTOMATION_STUDIO_PERSON_NEEDED_DONE_OPTION) }, options: host.options });
+
+    expect(resumed.outcome).toBe("resumed");
+    const run = (resumed as { trace: AutomationStudioGraphExecutionTrace }).trace;
+    expect(run.status, run.message).toBe("succeeded");
+    expect(host.executed).toEqual(["read", "check"]);
   });
 
   it.each([

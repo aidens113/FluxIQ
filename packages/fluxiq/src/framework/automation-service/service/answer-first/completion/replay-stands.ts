@@ -16,7 +16,6 @@
 //   step_failed          a step failed or was never reached
 //   step_routed          the page sent the run to another step than the saved order
 //   act_not_done         a step was passed over and what it does was not done
-//   check_cleared        a check only a person could clear met a step, and the run went on after it
 //   step_retried         a step took more than its first attempt: the page was not as it was
 //   shape_unknown        the accepted run's read shape was not kept, so nothing to compare with
 //   shape_differs        the rows read are not in the accepted run's shape (other columns, or rows
@@ -27,6 +26,16 @@
 // whose page never arose because the act before it was already done. The saved Flow wrote each of
 // these ways on itself.
 //
+// **A check a person cleared is no deviation (t972).** It is the site asking the person, not the Flow
+// or the page changing under it, and the engine has already settled the step it met
+// (`engine/automation/person-cleared.ts`): a step whose act was not made ran again and its own record
+// says how that went (a failure, a retry), one whose act was made went on, and a lasting act nothing
+// could settle stopped the run as Outcome uncertain, which reads as `run_not_whole` here. Until t972 it
+// was `check_cleared` and sent every such replay to the judge: on a site that puts its traffic screen in
+// front of every third results load, every replay of a saved Flow spent a judge call on a run that had
+// gone exactly as saved. The contract keeps the word, because attempts stored before t972 carry it;
+// nothing writes it now.
+//
 // **The quality guard** is the Lab's own oracle, which needs no model: a replay series per realistic
 // task must keep its right-answer rate (`docs/working/task-speed-plan.md`, S9). The rule's risk is a
 // site whose data changed under an unchanged structure; the shape check catches a read that came back
@@ -35,10 +44,13 @@
 import { AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS, type AutomationStudioTaskReplayDeviation } from "../../../../../api-contracts/automation.ts";
 import type { AutomationStudioAnswerFirstReadShape, AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 
-/** Every deviation the rule names, in the order it is checked (header): the contract's closed words, since an attempt's outcome carries them (t897). */
-export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS = AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS;
+/** The contract's word that stored attempts may still carry and this rule no longer names (header, t972). */
+type NoLongerNamed = "check_cleared";
 
-export type AutomationStudioAnswerFirstReplayDeviation = AutomationStudioTaskReplayDeviation;
+export type AutomationStudioAnswerFirstReplayDeviation = Exclude<AutomationStudioTaskReplayDeviation, NoLongerNamed>;
+
+/** Every deviation the rule names, in the order it is checked (header): the contract's closed words, since an attempt's outcome carries them (t897). */
+export const AUTOMATION_STUDIO_ANSWER_FIRST_REPLAY_DEVIATIONS: readonly AutomationStudioAnswerFirstReplayDeviation[] = AUTOMATION_STUDIO_TASK_REPLAY_DEVIATIONS.filter((deviation): deviation is AutomationStudioAnswerFirstReplayDeviation => deviation !== "check_cleared");
 
 export function automationStudioAnswerFirstReplayStands(
   record: AutomationStudioAnswerFirstReplayRecord,
@@ -55,7 +67,6 @@ export function automationStudioAnswerFirstReplayStands(
   if (steps.length === 0 || steps.some((step) => step.ran === "failed" || step.ran === "not_reached")) return deviated("step_failed");
   if (steps.some((step) => step.ran === "skipped" && (step.skipped === undefined || step.skipped === "routed_elsewhere"))) return deviated("step_routed");
   if (steps.some((step) => step.skipped === "absent_not_done")) return deviated("act_not_done");
-  if (steps.some((step) => step.personCleared === true)) return deviated("check_cleared");
   if (steps.some((step) => (step.retries ?? 0) > 0)) return deviated("step_retried");
   const accepted = record.saved.shape;
   if (!accepted) return deviated("shape_unknown");
