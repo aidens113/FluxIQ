@@ -3,7 +3,7 @@ import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 import { automationStudioJudgeEvidenceFinding, type AutomationStudioJudgeEvidenceFinding } from "../../judge-evidence/index.ts";
 import { automationStudioStoredJudgeFinding } from "../../judge-evidence/index.ts";
 import { automationStudioProjectJudgeEvidence } from "../../judge-evidence/index.ts";
-import type { AutomationStudioResultTrailSemanticOptions } from "../semantic/options.ts";
+import type { AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
