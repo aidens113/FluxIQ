@@ -74,9 +74,12 @@ it("normalizes rejected new metadata to null without erasing actual results/effe
   await io.store.save("project", "flow", record());
   const file = path.join(io.root, "answer-attempts.json");
   const original = JSON.parse(await readFile(file, "utf8"));
+  expect(original.version).toBe(1);
+  expect(original.data.attempts).toHaveLength(1);
   expect(Object.hasOwn((await io.open().get("project", "flow", "attempt"))!, "judgeEvidence")).toBe(false);
   for (const invalid of [null, { version: 2, trail: [] }, { version: 1, trail: [{ did: "bad", found: { page: RAW } }] }]) {
-    const held = structuredClone(original); held.attempts[0].judgeEvidence = invalid;
+    const held = structuredClone(original);
+    held.data.attempts[0].judgeEvidence = invalid;
     await writeFile(file, JSON.stringify(held));
     const reopened = (await io.open().get("project", "flow", "attempt"))!;
     expect(reopened.result).toEqual(record().result);
