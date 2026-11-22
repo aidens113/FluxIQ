@@ -85,7 +85,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there" | "repeat_never_ends";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there" | "repeat_never_ends" | "holds_a_repeat" | "span_holds_routing";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -101,9 +101,31 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * a `through`: that step, so the telling can say where it stands once the
    * listing is moved before the act (live run `run-murz83zy-5030820f`, R8).
    * `repeat_taken_off`, when the span no longer holds together: the step its
-   * span ran through.
+   * span ran through. `span_holds_routing`: the last step of the span that
+   * holds the second routed step (`./repeat-hold.ts`, t981).
    */
   through?: number;
+  /**
+   * `holds_a_repeat` and `span_holds_routing` only (`./repeat-hold.ts`, t981):
+   * the step carrying the repeat -- the one whose `over` or span's last step
+   * the refused drop or exploratory was, or the one whose span the refused
+   * routing would leave holding a second routed step -- in the draft's shown
+   * numbers.
+   */
+  repeat?: number;
+  /**
+   * `holds_a_repeat` only: which part of that repeat the step is -- `over`,
+   * the step it repeats over, or `through`, the last step of its span.
+   */
+  holds?: "over" | "through";
+  /** `holds_a_repeat` only: that repeat runs its span again while its last step succeeds, so its last step is named by `while`. */
+  whileLoop?: true;
+  /**
+   * `span_holds_routing` only: the step inside the span that says when it runs
+   * as well as the span's first step, in the draft's shown numbers. It is the
+   * refused step itself when the refused routing was written inside the span.
+   */
+  routed?: number;
   /**
    * `repeat_taken_off` only: why the repeat on `step`, over `over`, could not
    * stand once the decision's moves were done -- `over_after`, the step it

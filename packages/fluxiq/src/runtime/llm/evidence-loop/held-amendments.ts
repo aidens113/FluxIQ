@@ -107,7 +107,8 @@ export function automationStudioLlmEvidenceHeldAmendments(
         applied += result.applied;
         refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off"
           ? takenOffAsWritten(refusal, shown, written)
-          : refusal.reason === "act_not_done_there" || refusal.reason === "repeat_never_ends" ? claimAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
+          : refusal.reason === "act_not_done_there" || refusal.reason === "repeat_never_ends" || refusal.reason === "holds_a_repeat" || refusal.reason === "span_holds_routing"
+            ? heldRefusalAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
       }
       return { applied, refused };
     }
@@ -115,11 +116,10 @@ export function automationStudioLlmEvidenceHeldAmendments(
 }
 
 /**
- * An `act_not_done_there` or a `repeat_never_ends` from a held amendment, its sentence and `instead`
- * renumbered from the draft the amendment was applied to into the numbers the
- * model wrote.
+ * A held claim or repeat-invariant refusal, its sentence and step references
+ * renumbered from the draft it was applied to into the numbers the model wrote.
  */
-function claimAsWritten(
+function heldRefusalAsWritten(
   refusal: AutomationStudioFlowDraftAmendmentRefusal,
   shown: ReadonlyMap<number, AutomationStudioFlowDraftStep>,
   written: (step: AutomationStudioFlowDraftStep) => number
@@ -131,7 +131,10 @@ function claimAsWritten(
   return {
     ...refusal,
     ...(refusal.said === undefined ? {} : { said: automationStudioFlowDraftSaidInNumbers(refusal.said, number) }),
-    ...(refusal.instead === undefined ? {} : { instead: number(refusal.instead) })
+    ...(refusal.instead === undefined ? {} : { instead: number(refusal.instead) }),
+    ...(refusal.repeat === undefined ? {} : { repeat: number(refusal.repeat) }),
+    ...(refusal.through === undefined ? {} : { through: number(refusal.through) }),
+    ...(refusal.routed === undefined ? {} : { routed: number(refusal.routed) })
   };
 }
 

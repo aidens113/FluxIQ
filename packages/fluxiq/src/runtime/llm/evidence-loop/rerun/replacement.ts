@@ -53,8 +53,10 @@ export function automationStudioLlmEvidenceRerunReplaced(
   const rerun = steps[steps.length - 1];
   if (!replaced || !rerun || rerun === replaced || !automationStudioFlowDraftStepIsProposable(rerun)) return;
   const wasInFlow = replaced.disposition === "kept";
-  applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
-  if (!options.takesItsPlace) return;
+  if (!options.takesItsPlace) {
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
+    return;
+  }
   if (wasInFlow) rerun.disposition = "kept";
   // Only a step that changes something does an act (`../../flow-draft/amendment/`,
   // `act_on_a_read`). An act a read carried -- live run 36 named a1 on a rerun
@@ -95,12 +97,17 @@ export function automationStudioLlmEvidenceRerunReplaced(
   // the withdrawn attempt, kept listed as the receipt of what was replaced,
   // moves to the end -- where the rerun was appended -- linked to its rerun
   // (header, `run-musp474o-e0ed7432`).
-  replaced.replacedBy = to;
   const at = steps.indexOf(replaced);
   steps.splice(steps.indexOf(rerun), 1);
   steps.splice(at, 1, rerun);
   steps.push(replaced);
   steps.forEach((step, index) => { step.position = index + 1; });
+  // Rebind and place the successful rerun first: withdrawing a source while
+  // a repeat still names it must be refused (`draft/amendment/repeat-hold`).
+  // Set replacedBy afterwards so the internal withdrawal is not treated as
+  // a model amendment of a superseded attempt.
+  applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
+  replaced.replacedBy = to;
 }
 
 /** A routing statement with every reference to one step moved to another. */

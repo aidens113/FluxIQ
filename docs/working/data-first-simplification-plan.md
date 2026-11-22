@@ -50,6 +50,15 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 
 ## Work Ledger
 
+### 2026-11-22 - Independent repeat-repair acceptance
+- Agent: Senior supervisor.
+- Changed: t981 repeat-safe amendments, rerun reference/order repair, refusal feedback and architecture note; package version 0.50.4. Parent synced through accepted judge unit.
+- Validation: `pnpm --filter fluxiq exec vitest run src/runtime/flow-authoring/draft/amendment/tests src/runtime/flow-authoring/draft/loop-covered/tests/loop-covered.test.ts src/runtime/llm/evidence-loop/tests/rerun-replacement.test.ts src/runtime/llm/evidence-loop/tests/held-amendments.test.ts src/runtime/llm/tests/draft-amendment-feedback.test.ts src/runtime/llm/draft-amendment-feedback/tests/repeat-refusal.test.ts src/runtime/llm/decision-handlers/tests/refusal-way-out.test.ts src/runtime/flow-authoring/bootstrap/tests/evidence-loop-steps.test.ts src/runtime/flow-authoring/bootstrap/authoring/tests/draft-routing.test.ts --maxWorkers=1 --minWorkers=1 --fileParallelism=false` -> 16 files, 281/281 tests passed, 67.68 seconds.
+- Validation: `node scripts/structure-audit.mjs` -> passed (563 warnings, 909 baselined). `pnpm --filter fluxiq check` -> exit 0, rebuilt changed package inputs in 87,253 ms; no live/full-sweep acceptance claimed.
+- Outcome: Accepted by lead narrow checks; paired integration follows.
+- Follow-up: finish paired task after remaining gate; P5 replay continuity follows.
+
+
 ### 2026-11-22 ? Judge integrated and next lanes dispatched
 - Agent: Senior supervisor.
 - Changed: t979 merged into both dev branches; t982 extraction and t983 fixed-model implementations active in isolated paired trees. t981 checkpointed and synced for lead verification.

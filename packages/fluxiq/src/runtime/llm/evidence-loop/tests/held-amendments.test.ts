@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../../flow-authoring/draft/index.ts";
+import { applyAutomationStudioFlowDraftAmendments } from "../../../flow-authoring/draft/index.ts";
 import { automationStudioLlmEvidenceHeldAmendments } from "../held-amendments.ts";
 import { automationStudioLlmEvidenceRerunReplaced } from "../rerun/index.ts";
 
@@ -43,6 +44,30 @@ const decision5 = [
 ];
 
 describe("an amendment naming the step its decision reruns", () => {
+  it.each(["drop", "optional"] as const)("renumbers a held %s refusal's repeat references after another step moved", (change) => {
+    const entry = (id: string, position: number): AutomationStudioFlowDraftStep => ({
+      id, position, iteration: position, actionId: "node", input: { id }, effect: "mutate", proposes: true, effectApplied: true, disposition: "kept"
+    });
+    const steps = [entry("start", 1), entry("source", 2), entry("head", 3), entry("last", 4), entry("other", 5)];
+    steps[1]!.effect = "observe";
+    steps[2]!.routing = { kind: "repeat", over: "source", through: "last" };
+    const position = change === "drop" ? 2 : 4;
+    const replaced = steps[position - 1]!;
+    const held = automationStudioLlmEvidenceHeldAmendments([{ step: position, change: "rerun" }, { step: position, change }], steps, position);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 5, change: "reorder", to: 1 }]);
+    const rerun = { ...entry("fresh", 6), effect: replaced.effect };
+    steps.push(rerun);
+    automationStudioLlmEvidenceRerunReplaced(steps, replaced, { takesItsPlace: true });
+    expect(steps.find((step) => step.id === "head")!.position).toBe(4);
+    expect(held.settle(steps, rerun)).toEqual({
+      applied: 0, refused: [change === "drop"
+        ? { step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" }
+        : { step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 4 }]
+    });
+    expect(rerun.disposition).toBe("kept");
+    expect(rerun.routing).toBeUndefined();
+  });
+
   it("lands on the step that replaced it once the rerun has worked", async () => {
     const { result } = await run("worked", decision5);
     // The rerun d4 stands where step 2 stood, in the Flow and doing a1; d3 keeps its number, and
