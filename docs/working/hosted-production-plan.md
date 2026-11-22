@@ -1,9 +1,9 @@
 # Hosted Production Plan
 
-Status: Active
-Status detail: W5 hosted-panel continuation passes focused functional, type, structure and generated-reference gates; merged into dev with the 70-test contract gate passing. Deployment acceptance remains open.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-17
-Last updated: 2026-11-11
+Last updated: 2026-11-22
 Owner: Lane lead hosted-production-planner (plan); the senior supervisor agent owns execution
 Scope: Core side of running FluxIQ in production as one codebase with three deployments (getfluxiq.com, local, self-hosted): identity and account provisioning, IAM-style permissions on every surface, extension sign-in, gateway transport, tenancy and storage, panel extension points, bring-your-own-key model calls, deployment, security, tests, release cut. Browser, store, website, local simulation and Lab work is in the paired document.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/hosted-production-plan.md
@@ -12,6 +12,8 @@ Related: [package boundaries](../architecture/package-boundaries.md), [current s
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: W5 hosted-panel continuation passes focused functional, type, structure and generated-reference gates; merged into dev with the 70-test contract gate passing. Deployment acceptance remains open.
 
 **What is true now, 2026-10-30.** Profiles, platform/IAM/provisioning foundations, gateway hardening and C0 closure are merged.
 C1 workspace lifecycle and E/D5 product foundations are merged (E: Core4a522cd8/downstream6c88f928);70 merge-contract tests pass. C2/C3 caller migration/routing are next.

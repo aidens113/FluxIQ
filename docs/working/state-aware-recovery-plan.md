@@ -1,9 +1,9 @@
 # State-Aware Recovery Plan - Core contracts
 
-Status: Active
-Status detail: Planned 2026-10-09; R1-R4 implemented across t385-t392 (t392 uncommitted at this writing), provider-free proofs pass; live validation is next.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-09
-Last updated: 2026-10-09
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: The domain-neutral contracts for invocation frames and Call Subflow, subflow contracts (interface, entries, checkpoints, success check), lifecycle handlers and their scopes, continuations and dispositions, the integrated recovery ladder with safe state routing, one recovery incident and budget per failure, fact conditions, the requirement gate, traces, and the candidate-script grammar and unit repair that author them. Browser observation, command reconciliation, chat wording, the Lab and the schedule are owned downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/state-aware-recovery-plan.md
@@ -12,6 +12,8 @@ Related: [automation-studio architecture](../architecture/automation-studio.md),
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Planned 2026-10-09; R1-R4 implemented across t385-t392 (t392 uncommitted at this writing), provider-free proofs pass; live validation is next.
 
 **What this is.** The Core half of a plan to let a saved Flow begin from different valid page states, survive
 known interruptions through scoped handlers, try a known alternative, and resume locally without calling a model;

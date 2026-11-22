@@ -1,7 +1,7 @@
 # Data-First Simplification: Core Execution
 
 Status: Active
-Status detail: All three P0 fixes accepted and integrated in both repositories; paired push follows. Fixed-model combined acceptance, retained extraction, automatic processing and recorded proof active.
+Status detail: P0 and fixed-model P4 accepted, integrated and pushed in both repositories. Retained extraction, automatic processing and recorded proof active.
 Created: 2026-11-22
 Last updated: 2026-11-22
 Owner: Senior supervisor agent
@@ -11,46 +11,55 @@ Related: [FluxNodes](./fluxnode-plan.md), [Answer First](./answer-first-plan.md)
 
 ## Current State
 
-**2026-11-22 integration checkpoint:** t979 judge, t981 repeat repair and t976 start-only permission are accepted and integrated in both dev branches. Permission lead acceptance: 161 Core tests, 66 Lab tests, 13 catalog tests, types/builds/audits, then mandatory Core merge contracts 70/70. Fixed-model t983 includes permission source and is integrated after 140/140 combined tests, typecheck/build/audit and merge contracts 70/70. P1 extraction consumes t984 retainedRows seam 2c4099965 (lead 25/25 tests, source-symbol provenance preserved). P2 exact field binder and automatic readiness work, plus t986 strict recorded-trace wrapper/CLI/preflight, are active. No paid/full-sweep/live-browser acceptance yet. Detailed downstream plan and task reports remain authoritative for lane status.
+**Execution active, 2026-11-22.** The paired downstream Data-First Simplification Plan is the approved plan of record. The user requested agents and durable progress; lead owns integration, shared documents and verification. Reports below are claims until independently checked.
 
-The downstream paired plan is the approved plan of record (2026-11-20).
-The user requested execution with agents and durable progress on 2026-11-22.
-P0 resumes interrupted paired task trees under C:/Users/osrs_/FluxStuff/fxwork/.
+| Unit | Accepted evidence / current state | Next |
+| --- | --- | --- |
+| P0 t979 judge recovery | Integrated and pushed; lead 125/125 tests, types/audit and 70/70 merge contracts. Same-model recovery preserves paid receipts. | Included in combined parent checks. |
+| P0 t981 repeat-safe repair | Integrated and pushed; lead 281/281 tests, types/audit and 70/70 merge contracts. | Recorded replay acceptance remains later. |
+| P0 t976 start-only permission | Integrated and pushed; lead 161 Core, 66 Lab and 13 catalog tests, types/builds/audits, 70/70 merge contracts. | Included in fixed-model checks. |
+| P4 t983 fixed model | Integrated and pushed, fluxiq 0.51.0; lead 140/140 combined tests, types/build/audit and 70/70 merge contracts. One starting model survives repair/replay; Haiku default. | Do not reopen completed model/permission units. |
+| P1 t982 retained extraction | Core frozen and lead-accepted: 111 retention/store/rows/public-export tests and 69 schema-contract tests. Published package metadata contracts 0.23.0 / fluxiq 0.52.0; five-library build passes, no registry publication. | Downstream focused fixture/type/audit corrections, paired integration. |
+| P2 t984 automatic processing | Lead 77/77 and79/79 independent tests pass; accepted P1 synced. Initial runtime check cancelled before admission for gate diagnosis. Worker corrects source restoration/strict metadata and model-authored stamp rejection before a new freeze. | Validate clock/originals/schema/publication, then serial P6 checkpoint handoff; no current runtime acceptance yet. |
+| P5 t985 replay continuity | F24 successful unchanged retry no longer invalidates replay proof. Lead combined 55/55 tests, types and audit pass. Source checkpointed, not integrated. F23 exact target/repair cause unproven. | Finish recorded diagnosis; never infer zero calls from null counts or no saved repairs from partial evidence. |
+| P6 t987 smaller judge | p0_repair implements approved neutral sent-copy projector and downstream semantic projection. Shared service.ts/run-attempt.ts forwarding remains P2-owned until handoff. | All three trail sources retain full rows/accounts/effects; invalid evidence gives an explicit meaningful-read gap, intentional capture omission alone does not. |
+| S1/S2/S6 t986 offline proof | Public strict trace scope passes worker 11 tests/types/audit/build; lead acceptance pending. Runner types/build pass. F25 has 57 verified artifacts but an open trace; original binding/capture correlation is under investigation. | Named owner tests, actual public-entry preflight/capture and exact recorded parity. Prefixes are not whole-task acceptance. |
+| S7 t988 one plan | Integrated both sides. Only this implementation plan stays Active; historical unresolved work preserved in paused plans and five exact archives. Downstream structure gate and Core 70/70 contracts pass. | Paired dev backup with this refreshed state. |
+| S8 shared heavy gate | Installed Merit dev47dbc88 passed suites94/94/native smoke; later t986 refresh failed EPERM before build. Five other unstarted jobs cancelled normally for quiet diagnosis. Root isolated fix/heavy-lock-contention prepares atomic lock-name retirement; active source unchanged. | Owning regression queued for memory; no new worker heavy jobs or admission overrides. |
 
-| Task | Worker | Owned change | Acceptance |
-| --- | --- | --- | --- |
-| t976 | p0_permission | Declare consequential act classes in chat interpretation; ask once at start; retain grants/refusals; close all mid-Flow permission paths | Start-only permission, no added chat model call, continuation/repair/legacy/project tests plus downstream Lab |
-| t979 | p0_judge | Recover unreadable replies on the same model; native standalone format and accurate feedback | Judge recovery/cancel/purse tests plus affected framework mocks |
-| t981 | p0_repair | Refuse invalid repeat amendments and rebind reruns before withdrawal | Recorded-failure-shaped tests, valid assembly and rerun regression |
+Stable retained-row interface: JsonObject plus RecordSchema/RecordBatch; optional semanticType and mark, actual JSON valueType, validated identity primaryKey. Keep original values and all safe fields; process.columns alone selects display. Exclusions remain authoritative, overflow explicit, detector samples never replace row truth. Core owns neutral storage/processing/judging/replay; DOM, browser and Lab stay downstream. Internal collected/answer paging differs from public projected output. Migration0040 keeps private exclusions and explicit full-answer readiness; legacy projected rows are never guessed into full rows.
 
-Workers own only their task trees and reports; lead owns shared documents, verification and git.
-Written briefs are in the downstream main checkout's data-first-simplification-plan/briefs/.
-Reports are in each downstream task tree's data-first-simplification-plan/reports/.
-**t979 lead acceptance, 2026-11-22:** after synchronizing current dev (including
-t978 trail deduplication), the lead ran 12 focused files: 125/125 tests passed
-in 87.51 s. `pnpm --filter fluxiq check` passed in 72.209 s. This covers same-model
-native fallback, billed malformed replies, aggregate purse, settled spend at
-deadline and parent trail-size compatibility. Source is checkpointed at 0.50.3;
-final structure/merge gates remain. No paid runs or full sweeps launched.
+Automatic processing uses exact field IDs or unique labels, deterministic selection once, framework-stamped source/revision/bindings and explicit missing evidence. Preserve each runtime-run's actual start/end timestamps; one processingReferenceTimeMs anchors to the logical attempt's first actual session and persists in internal attempt metadata/runtime summary_json through carry-on. Missing/invalid carried references are unavailable/repairable, never current-time guesses. New interpretation omission is explicitly missing processing, not legacy bypass; null is N/A and process:{} is valid. No fuzzy schema guesses, new terminal failure, or model ladder. Action-row selection remains distinct from broad collection.
 
-After P0: establish a retained-row contract before parallel extraction and processing work.
-The lead froze that contract on 2026-11-22 after source discovery: keep JsonObject
-rows and RecordSchema/RecordBatch; optional RecordField semanticType
-(text/number/currency/count/date/datetime/url/id/flag) and mark (badge/flag/state);
-valueType is the actual JSON type and primaryKey the validated identity fields.
-Keep original display values; shared parsers derive typed comparisons against the
-run reference time. Parsed column samples are not row truth. Full safe schemas
-survive live/saved bindings and replay; process.columns alone selects display.
-Explicit exclusions stay authoritative and schema overflow must not silently trim.
-Implementation is active in paired t982; worker reports the schema seam stable with 60 record-set tests and contracts typecheck passing. Lead acceptance remains pending. P4 compatibility preserves historical
-attempt records and attempt identity, but old escalation cannot change serving;
-automation defaults to Haiku and all its roles retain its explicit starting model.
-Core owns domain-neutral storage, processing, judging, models and replay.
-Browser reads/DOM extraction and Lab scenarios remain downstream.
-Build, repair and judging stay on Haiku; no model escalation.
-Paid acceptance follows provider-free proofs, four attempts per task and the $50 campaign ceiling.
+No paid calls, browser acceptance or completed full FluxIQ sweep. A default t988 finish inadvertently started pnpm check after contracts; lead stopped only that identified owned check during script tests, verified its processes gone, then finished with the prior narrow document audit and mandatory contracts. The interrupted check is not a pass. No main promotion. Final paid acceptance requires provider-free proofs, four attempts, predecessor Flow continuation and zero calls on attempts2-4, within the approved total$50 ceiling.
+
+Assignments: p0_repair owns P1 downstream then P6; p0_permission owns P2 runtime after its finished S8 source report; p0_judge owns offline proof. Root owns P5, verification, documentation and git. Main downstream briefs and task-local reports under data-first-simplification-plan/ are the handoff. Main user edits remain untouched.
 
 ## Work Ledger
+
+### 2026-11-22 - Admission recovered and working records checked
+- Validation: isolated Merit owning lock suite ->8/8 passed,8,458.7401ms under unchanged gate; fix branchdc731ce pushed, not installed. Full shared-tool checks in progress. Memory recovered without an admission override.
+- Validation: gated `node scripts/structure-audit.mjs --rule working-docs --update` in both main repositories ->passed; Core907/downstream551 baseline entries unchanged and indexes refreshed. Product runtime acceptance remains pending.
+
+### 2026-11-22 - Quiet diagnosis and serialized P2/P6 ownership
+- All five remaining pre-admission jobs cancelled normally; gate then reported holders[]/queue[]. No validator had begun. Root isolated Merit fix/heavy-lock-contention prepares atomic rename-before-delete and owner-only cleanup; owning regression is queued for memory, not passed. Active gate unchanged.
+- P2 fixes its reviewed source/metadata defects before a new validation snapshot and owns the minimal model-decision reserved-stamp refusal. P3 prompt prose remains separate. No model-authored trust flag is accepted.
+- Real FluxNode direct entry has no chat interpretation. P2 may resolve a still-missing first declaration in the existing evidence loop: explicit action-only null with why, or captured-schema-backed data criteria. Never erase existing conditions or add a model call just for interpretation; real FluxNode persistence/replay acceptance is required.
+- P6 must persist validated semantic findings/source references where needed; ephemeral symbols do not survive checkpoints. Disjoint call-chain/flow-stage/flow-run adapters approved. P2 still owns attempt-store, keep/ending, carry-on and run-attempt; additive checkpoint hunks wait for serial handoff.
+- P6 Core WIPc0244a44d then accepted P1/current dev sync5eb0e2975 are checkpointed, not validated/integrated. Unknown current privacy declarations must not turn into an empty exclusion policy when reopening findings. Isolated Merit lock-fix WIPdc731ce is likewise unverified and not installed.
+- Validation: isolated Merit `git diff --check` -> exit0; gated owning lock tests queued, no test output/admission. No product/browser/paid acceptance.
+
+### 2026-11-22 - Shared gate failure before Core library refresh
+- t986 queued refresh exited1 on EPERM opening v2/admission.lock before slot admission; no Core command ran. Current0.52 dependency freshness remains unverified.
+- Validation: unchanged heavy-slot status -> holders empty, five remaining tickets, physical available1,831,096,320 bytes. readJson tolerates only ENOENT; Windows concurrent read/delete is a hypothesis requiring reproduction, not a confirmed diagnosis. No gate source or lock state manually changed.
+- Workers hold new heavy submissions while root investigates; existing jobs remain queued and independent source work continues. Prior service-stop denial and asynchronous headroom question remain unresolved.
+
+### 2026-11-22 - Runtime implementation and semantic evidence contract
+- P2 first runtime snapshot is frozen with six owning test files queued; additional disjoint tests cover exact original pages, pending metadata, interpretation and retained-schema save/replay. Actual runtime timestamps remain unchanged; processingReferenceTimeMs is separate persisted logical-attempt state.
+- P6 projection precedes legacy bookkeeping stripping so UUID/date/number row facts survive. Immutable source envelopes carry validated schema; domain projection cannot erase framework answer accounts, action status or uncertain effects. Missing semantic evidence uses existing unsure/model_unconfirmed and meaningful-read continuation, not an invented Flow failure or terminal outcome.
+- S3 read-only discovery is recorded in downstream t986 report. A separate generic pre/post dependency-impact engine is proposed in Core, downstream owns recording registry/admission/dispatch. Neither the gate nor complete historical task captures exists yet; original F25 read-boundary proof cannot substitute for whole-task evidence.
+- Lead review identified P2 missing-original restoration being cleared by any new read and incomplete validation in the new persisted bundle reader. Worker acknowledged both and is adding disjoint regressions before source fixes after the frozen snapshot. Missing-page resolution must follow exact sources/groups; a partial read cannot erase the gap. These findings remain open.
+- Validation: shared gate status showed no holders, six queued checks and 1,900,220,416 physical bytes available. No admission override, new test result, browser run or paid call. Source work continues while awaiting memory.
 
 ### 2026-11-22 ? Fixed-model paired integration
 

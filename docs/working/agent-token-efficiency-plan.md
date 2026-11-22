@@ -1,9 +1,9 @@
 # Agent Token Efficiency Plan
 
-Status: Active
-Status detail: Core's obligations are done: CLAUDE.md loads AGENTS.md, the working-docs audit checks Current State length and ledger validation, and the delegation rule and return contract are mirrored. Kept Active until the paired plan closes.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-10
-Last updated: 2026-10-30
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of the plan to keep the senior supervisor agent's context small on every project: a `CLAUDE.md` that loads `AGENTS.md`, the mirrored delegation rule and worker return contract, and the `working-docs` audit extension that Core owns.
 Paired document: `../!FluxIQWebExtension/docs/working/agent-token-efficiency-plan.md`
@@ -16,6 +16,8 @@ the paired downstream document. This document does not restate it.
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Core's obligations are done: CLAUDE.md loads AGENTS.md, the working-docs audit checks Current State length and ledger validation, and the delegation rule and return contract are mirrored. Kept Active until the paired plan closes.
 
 **Final 2026-10-30 refresh:** MeritPrompts source is `d96e347`. Both runtime
 installations were refreshed; Codex now includes the final routing policy:
