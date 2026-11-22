@@ -96,7 +96,7 @@ const ROW_PORT = "item";
  * each kept row of every page: the sentence says so, and says what does work.
  * A row loop inside another repeat is told it too, with how a growing list is read (t738).
  */
-const NO_ROW_LOOP_IN_PAGE_LOOP = "A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list. To keep rows across pages, read every page in one `repeat while` span and keep the rows the instruction asks for with the listing's `extractList.where`; a condition the rows do not print is usually one of the site's own filters, set before that span. To act on each row, do it on the rows one listing reads, with `repeat over:` that listing.";
+const NO_ROW_LOOP_IN_PAGE_LOOP = "A repeat inside a repeat is not supported, so a Flow cannot act on each kept row of every page of a paged list. To keep data across pages, read the required pages in one `repeat while` span. With declared automatic task processing, retain safe candidate rows and let that processing select the answer; otherwise use the listing's `extractList.where` or supported saved-result processing. A condition absent from row evidence needs a matching site filter or another real source. To act on each row, do it on the rows one listing reads, with `repeat over:` that listing.";
 
 /** One step of the draft, already written down in the caller's vocabulary. */
 export type AutomationStudioFlowDraftRoutedStep = {

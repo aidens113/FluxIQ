@@ -255,3 +255,10 @@ describe("the Flow script format's row across a call", () => {
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT.split("\n").filter((line) => line.includes("`input: row`"))).toEqual(["A part that acts on one row of a list its caller goes through declares `input: row`, and the step that calls it inside `repeat over:` gives it `row: $row`: the part's presses then stay in that row, and the row is looked for again before each."]);
   });
 });
+
+
+it("keeps automatic current answers and saved processing separate from action target selection", () => {
+  expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("Declared automatic task processing shapes the current answer");
+  expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("Neither result-processing path changes which rows a repeat visits");
+  expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("Requested output columns select the answer view");
+});
