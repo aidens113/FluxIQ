@@ -55,6 +55,23 @@ function scripted(script: Script): { provider: AutomationStudioLlmProvider; seen
   };
 }
 
+/** `first` on the first call, `then` on every later one: a check asked again after a reply it could not read (t979). */
+function scriptedThen(first: Script, then: Script): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
+  const one = scripted(first);
+  const later = scripted(then);
+  const seen: AutomationStudioLlmTaskRequest[] = [];
+  return {
+    seen,
+    provider: {
+      ...one.provider,
+      runTask: async (request, execution) => {
+        seen.push(request);
+        return await (seen.length === 1 ? one : later).provider.runTask(request, execution);
+      }
+    }
+  };
+}
+
 /** One diagnosis per call, in order; the last repeats. */
 function scriptedInOrder(answers: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
   const seen: AutomationStudioLlmTaskRequest[] = [];
@@ -203,43 +220,44 @@ describe("the Flow-less judge's answer", () => {
 describe("a call that gave nothing", () => {
   const notJudged = { verdict: "not_judged", unanswered: true };
 
-  it("is not judged when the reply could not be read", async () => {
-    const { provider, seen } = scripted({ thrown: new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Reply was not JSON.", false) });
-    const judged = await judge(provider);
-    expect(judged).toMatchObject(notJudged);
-    expect(judged.reason).toContain("the judge's reply could not be read");
-    expect(seen).toHaveLength(1);
+  // t979: a reply that arrived and could not be read is asked again until one is read (`./judge-unreadable.test.ts`).
+  it("asks again when the reply could not be read, and reads the answer it then gives", async () => {
+    const { provider, seen } = scriptedThen({ thrown: new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Reply was not JSON.", false) }, YES);
+    expect((await judge(provider)).verdict).toBe("yes");
+    expect(seen).toHaveLength(2);
   });
 
-  it("is not judged when the reply is of no shape the harness reads", async () => {
-    const { provider, seen } = scripted({ reply: { response: "yes", usage: USAGE } });
-    expect(await judge(provider)).toMatchObject(notJudged);
-    expect(seen).toHaveLength(1);
+  it("asks again when the reply is of no shape the harness reads", async () => {
+    const { provider, seen } = scriptedThen({ reply: { response: "yes", usage: USAGE } }, YES);
+    expect((await judge(provider)).verdict).toBe("yes");
+    expect(seen).toHaveLength(2);
   });
 
-  it("is not judged on a no listing no defect, which the harness calls unreadable (t752)", async () => {
-    const { provider, seen } = scripted({ answer: { answersRequest: "no", observed: "Wrong." } });
-    expect(await judge(provider)).toMatchObject(notJudged);
-    expect(seen).toHaveLength(1);
+  it("asks again on a no listing no defect, which the harness calls unreadable (t752)", async () => {
+    const { provider, seen } = scriptedThen({ answer: { answersRequest: "no", observed: "Wrong." } }, NO);
+    expect((await judge(provider)).verdict).toBe("no");
+    expect(seen).toHaveLength(2);
   });
 
-  it("is not judged on an act_wrong with nothing in `step`, which the question steers a judge away from", async () => {
-    const { provider, seen } = scripted({ answer: { answersRequest: "no", observed: "Wrong date.", defects: [{ kind: "act_wrong", row: "13 May", requestWords: "first free Tuesday" }] } });
-    expect(await judge(provider)).toMatchObject(notJudged);
-    expect(seen).toHaveLength(1);
+  it("asks again on an act_wrong with nothing in `step`, which the question steers a judge away from", async () => {
+    const { provider, seen } = scriptedThen({ answer: { answersRequest: "no", observed: "Wrong date.", defects: [{ kind: "act_wrong", row: "13 May", requestWords: "first free Tuesday" }] } }, NO);
+    expect((await judge(provider)).verdict).toBe("no");
+    expect(seen).toHaveLength(2);
     expect(AUTOMATION_STUDIO_FLOW_LESS_QUESTION).toContain("as kind other");
   });
 
   it("is not judged on a reply that never says yes, no or unknown", async () => {
-    const { provider, seen } = scripted({ answer: { observed: "Looks fine." } });
+    const { provider, seen } = scriptedThen({ answer: { observed: "Looks fine." } }, YES);
     expect(await judge(provider)).toMatchObject(notJudged);
     expect(seen).toHaveLength(1);
   });
 
-  it("reads a reply cut off after its verdict from its whole fields, and a cut yes that fails them gave no answer (t653)", async () => {
+  it("reads a reply cut off after its verdict from its whole fields, and a cut yes that fails them gave no answer and is asked again (t653, t979)", async () => {
     const cut = (diagnosis: Record<string, unknown>) => ({ reply: { response: { kind: "diagnosis", summary: "Reply cut off.", diagnosis, truncatedAfterVerdict: true }, usage: USAGE } });
     expect((await judge(scripted(cut({ answersRequest: "yes", ...ON_ROWS })).provider)).verdict).toBe("yes");
-    expect(await judge(scripted(cut({ answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] })).provider)).toMatchObject(notJudged);
+    const again = scriptedThen(cut({ answersRequest: "yes", checked: [{ row: "13 May", column: "free", value: "maybe" }] }), YES);
+    expect((await judge(again.provider)).verdict).toBe("yes");
+    expect(again.seen).toHaveLength(2);
   });
 
   it("is not judged on a timeout, and is not asked again", async () => {
@@ -302,8 +320,9 @@ describe("a call that gave nothing", () => {
     expect(seen).toHaveLength(0);
   });
 
+  // A reply it could not read is the one answer asked again (t979, `./judge-unreadable.test.ts`).
   it("calls the runner once, whatever it answers", async () => {
-    for (const script of [YES, NO, UNSURE, { reply: { response: "yes" } }]) {
+    for (const script of [YES, NO, UNSURE]) {
       const { provider } = scripted(script);
       const run = vi.fn(runAutomationStudioLlmHarness);
       await judge(provider, { run });

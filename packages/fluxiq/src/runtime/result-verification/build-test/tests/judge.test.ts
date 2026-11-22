@@ -72,7 +72,7 @@ describe("a judged no carries the judge's reading to the repair", () => {
     const verdict = await judge(ACCEPT_FRIENDS, { verify: fixture.verify })({ summary, budget: { maxCostUsd: 0.2 } });
     expect(verdict).toMatchObject({ verdict: "no", observed: "The accepted request has four mutual friends.", expected: "At least five mutual friends.", advice: "Fix the condition.", findings: [] });
     expect(fixture.seen[0]?.summary.buildTest?.steps[3]?.observed).toEqual({ rows: [{ name: "Amara Osei", mutual: "23 mutual friends" }], itemsSeen: 4 });
-    expect(fixture.seen[0]?.maxEstimatedCostUsd).toBe(0.1);
+    expect(fixture.seen[0]?.maxEstimatedCostUsd).toBe(0.2);
   });
 
   it("maps a refuted cart result to no", async () => {
@@ -164,7 +164,7 @@ describe("the verdict mapping", () => {
     const calls: AutomationStudioResultVerificationRequest[] = [];
     const verify = async (request: AutomationStudioResultVerificationRequest) => { calls.push(request); return report(answered("answers", "model")); };
     await judge(PICKUP_CART, { verify })({ summary: run40Summary(), budget: { maxCostUsd: 0.07 } });
-    expect(calls[0]).toMatchObject({ maxEstimatedCostUsd: 0.035, deniedEvidenceKeys: DENIED, projectId: "project-1", flowId: "flow-1" });
+    expect(calls[0]).toMatchObject({ maxEstimatedCostUsd: 0.07, deniedEvidenceKeys: DENIED, projectId: "project-1", flowId: "flow-1" });
     expect(calls[0]?.runId).toMatch(/^build-test\./u);
   });
 
@@ -356,11 +356,11 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
     expect(seen).toHaveLength(2);
     expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 }, firstAskConfirmed: true });
-    // The first ask's evidence both times, the converse question on the confirming call's copy (t691, `../../agreement/ask-again.ts`), each call under half of what the build has left.
+    // The first ask's evidence both times, the converse question on the confirming call's copy (t691, `../../agreement/ask-again.ts`), each call under the shared remaining budget.
     const { recheck, ...confirming } = seen[1]!.context.resultSummary!;
     expect({ ...seen[1]!.context, resultSummary: confirming }).toEqual(seen[0]?.context);
     expect(recheck).toContain("converse question");
-    expect(seen.map((call) => call.maxEstimatedCostUsd)).toEqual([0.1, 0.1]);
+    expect(seen.map((call) => call.maxEstimatedCostUsd)).toEqual([0.2, 0.2]);
   });
 
   it("yes, then no, is unknown carrying the no's reading, so the build repairs instead of finishing", async () => {

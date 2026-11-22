@@ -1,6 +1,7 @@
 // One decision's amendments, applied to the draft in place (`./index.ts` says
 // what each change means and why the draft is edited this way).
 import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
+import { automationStudioFlowDraftSettleLoopCovered } from "../loop-covered/index.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
@@ -12,6 +13,7 @@ import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
 import type { AutomationStudioFlowDraftAmendmentChange } from "./changes.ts";
 import { automationStudioFlowDraftAmendmentMove } from "./move.ts";
 import { automationStudioFlowDraftAmendmentRoute } from "./route.ts";
+import { automationStudioFlowDraftHoldRepeatSteps, automationStudioFlowDraftSettleSpanRouting, automationStudioFlowDraftSpanChangeRefusal, type AutomationStudioFlowDraftWrittenRouting } from "./repeat-hold.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON, automationStudioFlowDraftReplacingStep } from "./replaced-attempt.ts";
 import {
   automationStudioFlowDraftSettleWrittenRepeats,
@@ -106,6 +108,8 @@ export function applyAutomationStudioFlowDraftAmendments(
     return there ? shown.number(there) : position;
   };
   const written: AutomationStudioFlowDraftWrittenRepeat[] = [];
+  // Every routing the decision wrote, checked against the spans once its moves are done (`./repeat-hold.ts`, t981).
+  const routedNow: AutomationStudioFlowDraftWrittenRouting[] = [];
   let movedStep = false;
   // Each step's way to its page as the decision found it, and the steps it took out (`./strand-check.ts`).
   const reachBefore = automationStudioFlowDraftReach(steps);
@@ -215,6 +219,11 @@ export function applyAutomationStudioFlowDraftAmendments(
     }
     if (amendment.change === "reorder") {
       const to = shown.step(amendment.to);
+      const spanRefusal = to === undefined ? undefined : automationStudioFlowDraftSpanChangeRefusal(steps, step, amendment, shown, { to });
+      if (spanRefusal) {
+        refused.push(spanRefusal);
+        continue;
+      }
       if (automationStudioFlowDraftAmendmentMove(steps, step, to, amendment.settings)) {
         applied += 1;
         if (to !== step) movedStep = true;
@@ -241,6 +250,7 @@ export function applyAutomationStudioFlowDraftAmendments(
         applied += 1;
         // Checked once the decision's moves are done (`./repeat-revalidation.ts`).
         if (step.routing?.kind === "repeat") written.push({ step, routing: step.routing, amendment, previous, settings });
+        if (step.routing) routedNow.push({ step, routing: step.routing, amendment, previous, settings });
       } else refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
       continue;
     }
@@ -299,6 +309,13 @@ export function applyAutomationStudioFlowDraftAmendments(
       if (!actOnRead && !claimRefusal) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
+    const spanRefusal = disposition === "kept" && (changesDisposition || moves)
+      ? automationStudioFlowDraftSpanChangeRefusal(steps, step, amendment, shown, { keep: true, to: place, clearsRouting, act })
+      : undefined;
+    if (spanRefusal) {
+      refused.push(spanRefusal);
+      continue;
+    }
     const leavesFlow = disposition !== "kept" && step.disposition === "kept";
     if (leavesFlow) withdrawn.push({ step, named: amendment.step, disposition: step.disposition, settings: step.settings });
     step.disposition = disposition;
@@ -334,11 +351,27 @@ export function applyAutomationStudioFlowDraftAmendments(
   const reach = automationStudioFlowDraftStrandCheck(steps, reachBefore, withdrawn, shown);
   applied -= reach.takenBack;
   refused.push(...reach.refused);
+  // A drop of the listing a repeat in the Flow walks, or of its span's last step,
+  // is put back and refused: the repeat would name a step the Flow does not run
+  // (t981, `./repeat-hold.ts`, `run-mwp1jqze-388b466c`).
+  const holds = automationStudioFlowDraftHoldRepeatSteps(steps, withdrawn, shown);
+  applied -= holds.takenBack;
+  refused.push(...holds.refused);
+  // Check the final kept span after refused withdrawals have been restored:
+  // withdrawing a routed member cannot hide it from the body check (t981).
+  const spans = automationStudioFlowDraftSettleSpanRouting(steps, routedNow, shown);
+  applied -= spans.takenBack;
+  refused.push(...spans.refused);
   // A kept half whose partner really left the Flow -- dropped or marked exploratory,
   // and not put back by the strand check -- would flip the control the wrong way
   // (live run `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so
   // a drop put back never takes its partner out with it (`../reversal.ts`).
   if (reversalAfterCheck || withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
+  // A step kept right after a loop that already does its act leaves the Flow, and one
+  // taken out for that comes back once no loop covers it, once every repeat and move of
+  // the decision stands (`../loop-covered/`, t975: the press of Next page kept after the
+  // loop that presses it until the list ends, which stopped every replay).
+  automationStudioFlowDraftSettleLoopCovered(steps);
   const moved = movedActs(claims);
   return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
 }

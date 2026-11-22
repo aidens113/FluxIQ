@@ -125,12 +125,15 @@ describe("a verification check that did not come back", () => {
   // reply looped a sentence until it was cut off at 8,192 tokens, and that
   // unread reply was recorded as a refutation. A reply that arrived and could
   // not be read is a spent call (`../../llm/failure-disposition.ts`), so it is
-  // asked once more, as a temporary fault is.
+  // asked again -- since t979 with a note of what could not be read.
   it("is asked again after a reply cut off at the length limit, and the answer it then gives stands", async () => {
     const { provider, seen } = scripted([{ fault: "truncated" }, { answer: NO }, { answer: NO }]);
     const report = await verify(provider);
     expect(seen).toHaveLength(3);
-    expect(seen[1]?.context.resultSummary).toEqual(seen[0]?.context.resultSummary);
+    // The same evidence, and only the note on what could not be read added, last.
+    const { unreadableReply, ...rest } = seen[1]!.context.resultSummary!;
+    expect(rest).toEqual(seen[0]?.context.resultSummary);
+    expect(unreadableReply).toContain("it reached the reply length limit and was cut off");
     expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", basis: "model", calls: 2 });
     expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [2, undefined]]);
   });
@@ -142,12 +145,14 @@ describe("a verification check that did not come back", () => {
     expect(report.outcome).toMatchObject({ verdict: "does_not_answer", calls: 2 });
   });
 
-  it("asks an unreadable check only once more: two cut-off replies give no answer, never a third call", async () => {
-    const { provider, seen } = scripted([{ fault: "truncated" }, { fault: "truncated" }, { answer: NO }]);
+  // t979 (F25, `run-mwoznmcq-cd1d4618`): one more ask was all an unreadable check got. It is asked again until a reply
+  // is read; no count ends it (`./judge-reply/tests/unreadable-reply.test.ts` has the note, the climb and what still ends it).
+  it("asks an unreadable check again until it is read: three cut-off replies, then the answer, which stands", async () => {
+    const { provider, seen } = scripted([{ fault: "truncated" }, { fault: "truncated" }, { fault: "malformed" }, { answer: NO }, { answer: NO }]);
     const report = await verify(provider);
-    expect(seen).toHaveLength(2);
-    expect(report.outcome).toMatchObject({ verdict: "unsure", basis: "model_unavailable", failureCode: "llm.provider_output_truncated" });
-    expect(report.interventions).toHaveLength(2);
+    expect(seen).toHaveLength(5);
+    expect(report.outcome).toMatchObject({ verdict: "does_not_answer", basis: "model", calls: 2 });
+    expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [1, 3], [1, 4], [2, undefined]]);
   });
 
   it("is not asked again after a refused key", async () => {
@@ -254,11 +259,21 @@ describe("a verification held to the request's own words", () => {
 
   it("shares its ask allowance with a temporary fault instead of adding another correction ask", async () => {
     const deficient = yesSaying("no quotation supplied");
-    const { provider, seen } = scripted([{ fault: "truncated" }, { answer: deficient }, { answer: deficient }, { answer: deficient }]);
+    const { provider, seen } = scripted([{ fault: "timeout" }, { answer: deficient }, { answer: deficient }, { answer: deficient }]);
     const report = await held(provider, { confirmAnswer: true });
     expect(seen).toHaveLength(4);
     expect(report.outcome).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
     expect(report.interventions.map((entry) => [entry.metadata?.verificationCheck, entry.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [2, undefined], [2, 2]]);
+  });
+
+  // t979: a readable reply after an unreadable one is read as a first readable reply would be, so it keeps its correction ask.
+  it("does not count an unreadable reply against that allowance: the readable reply after it keeps its correction ask", async () => {
+    const deficient = yesSaying("no quotation supplied");
+    const { provider, seen } = scripted([{ fault: "truncated" }, { answer: deficient }, { answer: deficient }, { answer: deficient }, { answer: deficient }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(seen).toHaveLength(5);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    expect(report.interventions.map((entry) => [entry.metadata?.verificationCheck, entry.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [1, 3], [2, undefined], [2, 2]]);
   });
 
   it("does not turn an evidence correction into permission to ignore a genuine no", async () => {

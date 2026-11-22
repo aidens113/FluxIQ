@@ -1,4 +1,4 @@
-// How a judge reads the trail, and how strict it is to be (t963, J2), said once beside every trail
+// How a judge reads the trail, and how strict it is to be (t963, J2; the sameAs sentence t978), said once beside every trail
 // (`./trail.ts`), so the completion check, a finished run's check and a build's trial read it alike.
 //
 // **Why.** Live run `run-mwo3dp11-a47a032d`: 19 completion checks were shown seven correct rows, one end page
@@ -17,7 +17,7 @@
 
 /** The trail's reading, in Core's words. */
 export const AUTOMATION_STUDIO_RESULT_TRAIL_NOTE = [
-  "trail is Core's own record of all that was done on the site to get this result, in the order it ran: every look at a page, every read and every act, each with what it was asked to do (asked), how it ended (outcome), where it was (where) and what the site answered there (found), whole. It is evidence from the site itself, as the rows and the views are, and the final data are what it came to.",
+  "trail is Core's own record of all that was done on the site to get this result, in the order it ran: every look at a page, every read and every act, each with what it was asked to do (asked), how it ended (outcome), where it was (where) and what the site answered there (found), whole, except that a member of found that is byte-identical to the same member of an earlier entry is shown as { \"sameAs\": id } instead, where id is that earlier entry's callId (or n:N for the entry numbered N where it has none): the value is exactly the one in that entry. It is evidence from the site itself, as the rows and the views are, and the final data are what it came to.",
   "Judge the result from the trail and the final data together. What the trail shows the site did or showed counts: a sort, a filter or a search the site applied, the page each row was read from and what that page showed beside it, the conditions a read kept rows by, and where paging ended.",
   "A condition the person asked for is met where the trail shows it held for the rows kept, whether on the page a row was read from, by a filter the site applied, or by a condition the read kept rows by. Never require a row to carry a field the person did not ask for as a column of the answer.",
   "An order the person asked for is met where the rows keep the order of a site list the trail shows the site had sorted that way, and of the pages in the order they were read.",

@@ -18,7 +18,7 @@
 // has no field for those and the channel carries it whole
 // (`../../llm/harness/context-packet.ts`), so it is cast at this one place.
 
-import type { JsonObject } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultEndView } from "../result-summary.ts";
@@ -85,7 +85,33 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
     ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {})
   };
-  return { read, sent: sent as unknown as AutomationStudioRunResultSummary };
+  return { read, sent: jsonForm(sent) as unknown as AutomationStudioRunResultSummary };
+}
+
+/**
+ * What is sent, as the JSON the request carries (t974, F22). Every part above comes from values held in memory -- a read's
+ * account, a page's view, the trail -- and a value JSON has no form for, left anywhere in the summary, has the provider
+ * refuse the whole request before it is sent (`../../llm/provider-task/unbounded-json.ts`): an `undefined` array item in
+ * `resultEvidence` did, and every completion of three live runs was then "not judged" with no judge call. So the summary
+ * leaves here in the form JSON gives it, the form the store and the step log already show: an `undefined` or function
+ * member left out, an array item with no JSON form `null`, a number that is not finite `null`. Nothing is cut or reordered.
+ */
+function jsonForm(value: unknown, holding: Set<object> = new Set()): JsonValue | undefined {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "object" || holding.has(value)) return undefined;
+  holding.add(value);
+  try {
+    if (Array.isArray(value)) return Array.from(value, (item) => jsonForm(item, holding) ?? null);
+    const shown: JsonObject = {};
+    for (const [key, member] of Object.entries(value)) {
+      const kept = jsonForm(member, holding);
+      if (kept !== undefined) shown[key] = kept;
+    }
+    return shown;
+  } finally {
+    holding.delete(value);
+  }
 }
 
 function words(text: string): { text: string; withheld: boolean } {

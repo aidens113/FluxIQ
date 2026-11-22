@@ -95,6 +95,11 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       // A refused bind names its parameter, in the model's own key names.
       ...(refusal.parameter === undefined ? {} : { parameter: refusal.parameter }),
       ...(refusal.copyOf === undefined ? {} : { copyOf: refusal.copyOf }),
+      ...(refusal.repeat === undefined ? {} : { repeat: refusal.repeat }),
+      ...(refusal.holds === undefined ? {} : { holds: refusal.holds }),
+      ...(refusal.whileLoop === undefined ? {} : { whileLoop: refusal.whileLoop }),
+      ...(refusal.reason === "span_holds_routing" && refusal.through !== undefined ? { through: refusal.through } : {}),
+      ...(refusal.routed === undefined ? {} : { routed: refusal.routed }),
       // An act claimed on a step that did something else: the act, the judge's sentence and the step that names it (W1).
       ...(refusal.reason === "act_not_done_there" && refusal.act !== undefined ? { act: refusal.act } : {}),
       ...(refusal.reason === "act_not_done_there" && refusal.said !== undefined ? { said: refusal.said } : {}),

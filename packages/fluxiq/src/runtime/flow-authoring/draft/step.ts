@@ -231,6 +231,15 @@ export type AutomationStudioFlowDraftStep = {
    */
   cancels?: string;
   /**
+   * The id of the last step of the loop right before this one, set when Core
+   * took this step out of the Flow because that loop already does its act
+   * (`./loop-covered/`, t975): a press of Next page kept after a loop that
+   * presses Next page until the list ends. Cleared when the step is put back
+   * because no loop covers it any longer. The draft entry says why the step is
+   * out (`./entry.ts`, `out`).
+   */
+  coveredBy?: string;
+  /**
    * What the call names, in the domain's words, kept when the step was
    * appended: the draft line shows it as `does` (`./entry.ts`).
    *

@@ -334,7 +334,8 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   const bounded = await automationStudioResultVerificationWithinDeadline({
     ...(input.verificationDeadlineMs !== undefined ? { deadlineMs: input.verificationDeadlineMs } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
-    judge: async () => await runVerification(input, completedChecks.record)
+    // The deadline's signal, so a check still asking when the deadline passes stops (`./deadline.ts`, t979).
+    judge: async (ended) => await runVerification({ ...input, signal: ended }, completedChecks.record)
   });
   const retainedInterventions = completedChecks.finish();
   const report: AutomationStudioRuntimeSessionVerificationReport = bounded.settled

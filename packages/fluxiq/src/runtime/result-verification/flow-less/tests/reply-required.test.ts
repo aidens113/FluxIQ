@@ -23,15 +23,19 @@ const DIAGNOSIS_YES = {
 const DIAGNOSIS_NO = { ...DIAGNOSIS_YES, answersRequest: "no", observed: "The shelf shows 3 pieces.", defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "every piece" }], answerRecords: { asked: true, siteShows: 3 } };
 const reply = (diagnosis: Record<string, unknown>) => ({ kind: "diagnosis", diagnosis, confidence: 0.9, summary: "Judged." });
 
-/** What the judge concludes from one scripted reply, repeated on any re-ask: its verdict and how many calls it took. */
-async function concluded(response: Record<string, unknown>): Promise<{ verdict: string; calls: number; seen: AutomationStudioLlmTaskRequest[] }> {
+/**
+ * What the judge concludes from one scripted reply: its verdict and how many calls it took. A re-ask is answered with
+ * `then` (the sound reply), so a reply the judge could not read, which it asks again until one is read (t979), shows as
+ * a second call.
+ */
+async function concluded(response: Record<string, unknown>, then: Record<string, unknown> = response): Promise<{ verdict: string; calls: number; seen: AutomationStudioLlmTaskRequest[] }> {
   const seen: AutomationStudioLlmTaskRequest[] = [];
   const provider: AutomationStudioLlmProvider = {
     metadata: { provider: "mock", model: "debug-model" },
     estimateCostUsd: () => 0.001,
     runTask: async (request: AutomationStudioLlmTaskRequest) => {
       seen.push(request);
-      return { response, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
+      return { response: seen.length === 1 ? response : then, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
     }
   };
   const judged = await automationStudioFlowLessJudge({ summary, provider, run: runAutomationStudioLlmHarness, projectId: "project-1", flowId: "flow-1", deniedEvidenceKeys: [] });
@@ -48,7 +52,7 @@ async function needed(full: Record<string, unknown>, keys: readonly string[], dr
   const sound = await concluded(full);
   const found: string[] = [];
   for (const key of keys) {
-    const got = await concluded(drop(key));
+    const got = await concluded(drop(key), full);
     if (got.verdict !== sound.verdict || got.calls !== sound.calls) found.push(key);
   }
   return found;

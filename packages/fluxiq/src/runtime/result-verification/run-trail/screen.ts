@@ -54,6 +54,9 @@ export function automationStudioResultTrailScreened(value: JsonValue | undefined
       }
       return shown;
     }
+    // A value JSON has no form for is left out, as an `undefined` member is: one kept would have the provider refuse the whole request unsent (t974).
+    const scalar: unknown = item;
+    if (typeof scalar === "function" || typeof scalar === "symbol" || typeof scalar === "bigint" || scalar === undefined) return undefined;
     return typeof item === "number" && !Number.isFinite(item) ? null : item;
   };
   if (value === undefined) return { withheld: false };

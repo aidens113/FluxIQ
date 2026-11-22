@@ -88,13 +88,18 @@ describe("the judge's request on run 36's test", () => {
     const last = fixture.report.observations.at(-1)!;
     expect(summary?.endView).toEqual({ after: 11, view: { page: (last.evidence as JsonObject).page } });
     const pages = fixture.report.observations.flatMap((observation) => typeof (observation.evidence as JsonObject).page === "string" ? [(observation.evidence as JsonObject).page as string] : []);
-    const trailed = (summary?.trail?.entries ?? []).flatMap((entry) => {
+    // Since t978 a page view an earlier entry already showed, byte for byte, is `{ sameAs }` naming that entry (`n:<n>`, observations have no callId).
+    const entries = summary?.trail?.entries ?? [];
+    const trailed = entries.flatMap((entry) => {
       const page = (entry.found as JsonObject | undefined)?.page;
-      return typeof page === "string" ? [page] : [];
+      if (typeof page === "string") return [page];
+      const same = (page as { sameAs?: string } | undefined)?.sameAs;
+      const first = same?.startsWith("n:") ? (entries[Number(same.slice(2)) - 1]?.found as JsonObject | undefined)?.page : undefined;
+      return typeof first === "string" ? [first] : [];
     });
     expect(trailed).toEqual(pages);
-    // A page view's second line, as JSON writes it: the end view once, and each page in the trail once.
-    expect(JSON.stringify(request).split("\\nURL ").length - 1).toBe(1 + pages.length);
+    // A page view's second line, as JSON writes it: the end view once, and each distinct page in the trail once.
+    expect(JSON.stringify(request).split("\\nURL ").length - 1).toBe(1 + new Set(pages).size);
   });
 
   it("sends no observation with a page view or Core's bookkeeping in it", async () => {
