@@ -257,7 +257,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     sourceUnavailable(reason, originalEvidence) {
       const current = baseEvidence();
       const original = readAutomationStudioAnswerFirstResultEvidence(originalEvidence ?? current);
-      if (original) { replacements.restore(original.sourceReplacements); replacements.remember(original.pages); }
+      if (original) {
+        replacements.restore(original.sourceReplacements);
+        replacements.remember(original.pages);
+      }
       sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined, datasets);
     },
     collectionReplaced(receipt) {
