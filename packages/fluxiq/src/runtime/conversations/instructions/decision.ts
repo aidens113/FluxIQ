@@ -1,3 +1,4 @@
+import type { AutomationStudioFlowTaskProcessing } from "../../flow-authoring/draft/index.ts";
 // What a person's message became: something to do, one question back, or a
 // plain answer.
 //
@@ -98,10 +99,12 @@ export type AutomationStudioConversationInterpretation = {
    * which asks about the gated ones once when it starts.
    */
   taskActs?: string[];
+  /** Instruction-level data conditions, passed internally to the attempt. Null explicitly declares an action-only task. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
 };
 
 /** What the endpoint answers with after a person's turn, beside the turn itself. */
-export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd" | "pricedCalls" | "taskActs"> & {
+export type AutomationStudioConversationResponse = Omit<AutomationStudioConversationInterpretation, "costUsd" | "pricedCalls" | "taskActs" | "taskProcessing"> & {
   /** The turn Core wrote in answer: the reply, the question, what it is doing, or the confirmation it asks for. */
   turnId: string;
   /** Set when the invocation waits for the person's confirmation; the ask's id. */

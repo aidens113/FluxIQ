@@ -28,6 +28,7 @@ import {
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
+  automationStudioAuthoredProcessingIssue,
   type AutomationStudioFlowDraftAmendmentChange,
   type AutomationStudioFlowDraftBindingContext
 } from "../flow-authoring/draft/index.ts";
@@ -515,6 +516,7 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown, binding
     };
   }
   if (value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
+    if (amendmentsProcessingIssue(value.amendments)) return undefined;
     const amendments = readAmendments(value.amendments);
     if (amendments) return { kind: "amend_draft", amendments, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
@@ -548,6 +550,8 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE = "llm_eviden
  */
 export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): string[] | undefined {
   if (isRecord(value) && value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
+    const processingIssue = amendmentsProcessingIssue(value.amendments);
+    if (processingIssue) return [processingIssue];
     if (readAmendments(value.amendments) || !Array.isArray(value.amendments)) return undefined;
     return value.amendments.some((item) => readAmendment(item) === "rerun_needs_input") ? [AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE] : undefined;
   }
@@ -591,6 +595,8 @@ function validPlace(value: unknown): boolean {
  */
 function readNodeCall(toolId: string, input: JsonObject, binding?: AutomationStudioFlowDraftBindingContext): { input: JsonObject; written: boolean } | { refused: string[] } {
   if (toolId !== RUN_NODE_TOOL_ID) return { input, written: false };
+  const processingIssue = automationStudioAuthoredProcessingIssue(input);
+  if (processingIssue) return { refused: [processingIssue] };
   const parameters = input.parameters;
   if (input[WRITE_KEY] !== true) {
     return automationStudioFlowDraftHoldsBinding(parameters) ? { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE] } : { input, written: false };
@@ -602,6 +608,17 @@ function readNodeCall(toolId: string, input: JsonObject, binding?: AutomationStu
     return { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE, ...translated.refused.map(({ path, reason }) => bindingRefusedCode(path, reason))] };
   }
   return { input: { ...input, parameters: translated.parameters }, written: true };
+}
+
+/** Only authored record-output configuration, never arbitrary row/payload fields with the same name. Internal saved replay does not enter this model parser. */
+function amendmentsProcessingIssue(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const issue = automationStudioAuthoredProcessingIssue(item.input) ?? automationStudioAuthoredProcessingIssue(item.settings);
+    if (issue) return issue;
+  }
+  return undefined;
 }
 
 /** One refused binding as a code naming its reason and, where the path can travel as a code, where it sits. */

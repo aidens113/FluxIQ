@@ -16,10 +16,11 @@ import type { AutomationStudioBootstrapAdaptationMode } from "../../../../../run
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "../../../../../runtime/action-permission-requests/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../../../../runtime/llm/index.ts";
 import { humannessSchema } from "@fluxiq/contracts/automation";
+import { readAutomationStudioFlowTaskProcessing, type AutomationStudioFlowTaskProcessing } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "../field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls", "taskActs", "humanness"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd", "interpretationCalls", "taskActs", "taskProcessing", "humanness"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -41,6 +42,7 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   interpretationCalls?: number;
   /** What the chat's reading declared the task will cause (t976). Absent when nothing was declared. */
   taskActs?: AutomationStudioActionConsequence[];
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
 };
 
 /**
@@ -77,6 +79,8 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     throw new Error("Flow Bootstrap generation interpretation call count must be a whole, non-negative number.");
   }
   const humanness = unsafeInput.humanness;
+  const taskProcessing = unsafeInput.taskProcessing === undefined ? undefined : readAutomationStudioFlowTaskProcessing(unsafeInput.taskProcessing);
+  if (unsafeInput.taskProcessing !== undefined && taskProcessing === undefined) throw new Error("Flow Bootstrap generation task processing is invalid.");
   if (humanness !== undefined && !humannessSchema.safeParse(humanness).success) throw new Error("Flow Bootstrap generation humanness must be a whole number from 0 to 100.");
   return {
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
@@ -89,6 +93,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
     ...(humanness === undefined ? {} : { humanness: humanness as number }),
     ...(unsafeInput.taskActs === undefined ? {} : { taskActs: parseAutomationStudioPermittedConsequences(unsafeInput.taskActs) }),
+    ...(taskProcessing === undefined ? {} : { taskProcessing }),
     caller: {
       actorUserId: requiredBootstrapCommandId(caller.actorUserId, "actor user"),
       actorSessionId: requiredBootstrapCommandId(caller.actorSessionId, "actor session")

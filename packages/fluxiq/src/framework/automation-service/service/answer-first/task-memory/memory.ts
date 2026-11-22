@@ -3,12 +3,15 @@ import type { AutomationStudioAnswerFirstAttemptProvenance } from "./provenance.
 import type { AutomationStudioAnswerFirstSavedFlow } from "./saved-flow.ts";
 import type { AutomationStudioAnswerFirstTaskActs } from "./task-acts.ts";
 import type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";
+import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 
 /** Everything kept for one task. */
 export type AutomationStudioAnswerFirstTaskMemory = {
   taskId: string;
   /** The provider model chosen when this task first resolved successfully; retained across later attempts. */
   startingModel?: string;
+  /** The one instruction declaration retained across attempts; absent only on pre-declaration saved tasks. */
+  processing?: AutomationStudioAnswerFirstProcessingDeclaration;
   /** The person's own name for the task, set by renaming it. Absent: the task is told by its Flow's name. */
   title?: string;
   /**

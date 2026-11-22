@@ -196,6 +196,7 @@ export async function buildAutomationStudioFlowFromConversation(
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
     ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }),
     ...(context.taskActs === undefined ? {} : { taskActs: context.taskActs }),
+    ...(context.taskProcessing === undefined ? {} : { taskProcessing: context.taskProcessing }),
     ...(context.humanness === undefined ? {} : { humanness: context.humanness })
   });
   if (!response.ok) return failedBuild(response);
@@ -255,6 +256,7 @@ export async function automationStudioConversationAnswerFirstAttempt(context: Au
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd }),
     ...(context.interpretationCalls === undefined ? {} : { interpretationCalls: context.interpretationCalls }),
     ...(context.taskActs === undefined ? {} : { taskActs: context.taskActs }),
+    ...(context.taskProcessing === undefined ? {} : { taskProcessing: context.taskProcessing }),
     ...(context.humanness === undefined ? {} : { humanness: context.humanness })
   });
   if (!response.ok) return failedBuild(response);

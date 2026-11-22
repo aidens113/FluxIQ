@@ -25,6 +25,8 @@ import { AutomationStudioAnswerFirstAttemptLocator } from "./locator.ts";
 import type { AutomationStudioAnswerFirstAttemptRecord } from "./record.ts";
 import { AutomationStudioAnswerFirstAttemptsUnreadable } from "./unreadable.ts";
 import { automationStudioAnswerFirstReplayVerdictRead } from "./replay-verdict.ts";
+import { readAutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
+import { readAutomationStudioAnswerFirstResultEvidence } from "../result-feed/index.ts";
 
 const STORE_FILE = "answer-attempts.json";
 const KIND = "answer_first_attempts";
@@ -60,6 +62,9 @@ export class AutomationStudioAnswerFirstAttemptStore {
 
   /** Writes this attempt, in its place if it is there already and at the end if not. */
   async save(projectId: string, flowId: string, record: AutomationStudioAnswerFirstAttemptRecord): Promise<void> {
+    if (record.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(record.processingReferenceTimeMs) || record.processingReferenceTimeMs < 0)) throw new Error("Invalid processing reference time.");
+    if (record.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(record.processing)) throw new Error("Invalid processing declaration.");
+    if (record.resultEvidence !== undefined && !readAutomationStudioAnswerFirstResultEvidence(record.resultEvidence)) throw new Error("Invalid result page provenance.");
     await this.queued(projectId, flowId, async () => {
       const attempts = (await this.readOrSetAside(projectId, flowId))?.attempts ?? [];
       const at = attempts.findIndex((each) => each.attempt.attemptId === record.attempt.attemptId);
@@ -142,7 +147,12 @@ function readStored(value: JsonObject, projectId: string, flowId: string): Store
 
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown };
+  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown };
+  if (held.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(held.processingReferenceTimeMs) || (held.processingReferenceTimeMs as number) < 0)) return undefined;
+  const processing = held.processing === undefined ? undefined : readAutomationStudioAnswerFirstProcessingDeclaration(held.processing);
+  if (held.processing !== undefined && processing === undefined) return undefined;
+  const resultEvidence = held.resultEvidence === undefined ? undefined : readAutomationStudioAnswerFirstResultEvidence(held.resultEvidence);
+  if (held.resultEvidence !== undefined && resultEvidence === undefined) return undefined;
   const attempt = parseAutomationStudioTaskAttempt(held.attempt);
   if (!attempt.ok) return undefined;
   const tried = parseAutomationStudioTriedRecord(held.tried);
@@ -156,6 +166,9 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
   if (held.replay !== undefined && replay === undefined) return undefined;
   return {
     attempt: attempt.attempt,
+    ...(held.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: held.processingReferenceTimeMs as number }),
+    ...(processing === undefined ? {} : { processing }),
+    ...(resultEvidence === undefined ? {} : { resultEvidence }),
     tried: tried.record,
     ...(result?.ok ? { result: result.result } : {}),
     ...(held.steps !== undefined ? { steps: held.steps as AutomationStudioAnswerFirstAttemptRecord["steps"] & object } : {}),

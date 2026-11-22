@@ -10,7 +10,7 @@
 // leaves the preview the attempt's row holds, which is rows it really read, under-counted at worst.
 
 import { createHash } from "node:crypto";
-import type { AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary, AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
+import { parseAutomationStudioRecordSchema, type AutomationStudioRunDatasetPage, type AutomationStudioRunDatasetSummary, type AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import { stableJson } from "../../stable-json.ts";
@@ -49,8 +49,9 @@ async function fromStore(input: Input, stored: NonNullable<Input["stored"]>): Pr
     do {
       const page = await stored.page({ datasetId: dataset.datasetId, limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
       if (!page) break;
+      if (!page.rows.length && !parseAutomationStudioRecordSchema(page.schema).ok) throw new Error("The empty source has no validated retained schema.");
       const rows = page.rows.filter((row) => !seen.has(stableJson(row)) && Boolean(seen.add(stableJson(row))));
-      if (rows.length) await copy(input, stored.runId, dataset.datasetId, part, page.schema, rows, { label: dataset.label, truncated: dataset.truncated });
+      if (rows.length || part === 0 && page.rows.length === 0) await copy(input, stored.runId, dataset.datasetId, part, page.schema, rows, { label: dataset.label, truncated: dataset.truncated });
       copied += rows.length;
       part += 1;
       cursor = page.nextCursor ?? undefined;

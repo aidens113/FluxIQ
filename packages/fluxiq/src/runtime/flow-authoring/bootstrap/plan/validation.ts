@@ -44,7 +44,7 @@ import { layoutNodes } from "./layout.ts";
 import { correctAutomationStudioFlowBootstrapPlanNames } from "./name-correction.ts";
 import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
-import { automationStudioFlowBootstrapRecordOutputIssueDetail, automationStudioFlowBootstrapRecordOutputIssueMessage, automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
+import { automationStudioFlowBootstrapRecordOutputIssueDetail, automationStudioFlowBootstrapRecordOutputIssueMessage, automationStudioFlowBootstrapRecordOutputIssues, automationStudioFlowBootstrapRecordOutputStaticValue } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
 import { automationStudioFlowBootstrapRouteIssues } from "./route-validation.ts";
 import {
@@ -231,7 +231,8 @@ function validateParameters(values: JsonObject, definition: AutomationStudioNode
       if (parameter.allowStateBinding === false || !value.$state.path.trim() || namesOutput) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", parameterPath));
       continue;
     }
-    const nestedBindingPath = invalidStateBindingPath(value, parameter.allowStateBinding !== false, parameterPath, 0);
+    const validationValue = recordOutput ? automationStudioFlowBootstrapRecordOutputStaticValue(value) : value;
+    const nestedBindingPath = invalidStateBindingPath(validationValue, parameter.allowStateBinding !== false, parameterPath, 0);
     if (nestedBindingPath) issues.push(error("bootstrap.invalid_state_binding", "Parameter does not allow this state binding.", nestedBindingPath));
     // Null is how a record output saves nothing, on the nodes that read it so.
     if (recordOutput && value === null) {
@@ -248,7 +249,7 @@ function validateParameters(values: JsonObject, definition: AutomationStudioNode
     // is held to the schema the node publishes for the parameter, field by field
     // (`../parameter-schema/`): each misfit in Core's sentence, with the field
     // and what the schema allows there as its detail.
-    const contractCodes = contract && !nestedBindingPath ? contractIssueCodes(contract, definition.id, parameter.id, value) : [];
+    const contractCodes = contract && !nestedBindingPath ? contractIssueCodes(contract, definition.id, parameter.id, validationValue) : [];
     const misfits = contractCodes.length ? [] : automationStudioParameterSchemaMisfits({ definition, parameterId: parameter.id, value });
     if (misfits.length) {
       for (const misfit of misfits) {

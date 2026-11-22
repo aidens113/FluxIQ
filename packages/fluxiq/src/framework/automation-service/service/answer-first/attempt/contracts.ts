@@ -19,6 +19,7 @@ import type { AutomationStudioFlowBootstrapSizeLimits, automationStudioFlowBoots
 import type { automationStudioFlowBootstrapDraftActs, AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmHarnessInput, AutomationStudioLlmNodeDescriptions, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceLoopLimits } from "../../../../../runtime/loop-limits/index.ts";
 import type { AutomationStudioParkingPort } from "../../../../../runtime/automation-parking/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../../runtime/flow-authoring/draft/index.ts";
 
 export type AutomationStudioAnswerFirstAttemptInput = {
   /** The generate call's own input: what the answer is held under for a Stop (`./stop-answer.ts`). */
@@ -37,7 +38,7 @@ export type AutomationStudioAnswerFirstAttemptInput = {
     projects: Pick<AutomationStudioProjectStore, "ensureProjectStructure">;
     drafts: Pick<AutomationStudioFlowCandidateDraftStore, "save"> & Partial<Pick<AutomationStudioFlowCandidateDraftStore, "getAuthoritative" | "getVerificationSource">>;
     // The immutable snapshots are where a saved Flow's run seals its root inputs (`./flow-stage.ts`, `../../input-basis/`).
-    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage" | "createImmutableSnapshot" | "readImmutableSnapshotPage">;
+    datasets: Pick<AutomationStudioRunDatasets, "available" | "recordBatchHandler" | "restartedPass" | "deleteRunDatasets" | "processEndedRunDatasets" | "listRunDatasetsForVerification" | "getRunDatasetPage" | "createImmutableSnapshot" | "readImmutableSnapshotPage"> & Partial<Pick<AutomationStudioRunDatasets, "readRunDatasetEvidence">>;
     openSession(input: { runId: string; metadata: NonNullable<AutomationStudioRuntimeSession["metadata"]> }): Promise<AutomationStudioRuntimeSession>;
     writeSession(session: AutomationStudioRuntimeSession): Promise<void>;
   };
@@ -53,6 +54,8 @@ export type AutomationStudioAnswerFirstAttemptInput = {
   authority: ReturnType<typeof automationStudioFlowBootstrapInstructionAuthority>;
   /** What the chat's reading declared the task will cause (t976): the gated ones are asked about once, when the attempt starts. Absent when nothing was declared. */
   taskActs?: readonly string[] | undefined;
+  /** New interpretation metadata: explicit null is action-only; {} is missing data declaration. Only persisted old tasks retain undefined legacy behavior. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing | undefined;
   /** The permission gate's input but its executor, which this attempt's call chain supplies (`./call-chain.ts`). */
   permissionGround: Omit<Parameters<typeof automationStudioFlowBootstrapActionPermissions>[0], "executeTool">;
   /** Where a person-only check or a stuck attempt's question goes. Absent, there is nobody to ask. */

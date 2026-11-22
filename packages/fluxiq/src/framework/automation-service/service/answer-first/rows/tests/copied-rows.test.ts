@@ -37,6 +37,23 @@ function storedWith(pages: Record<string, readonly AutomationStudioRunDatasetPag
 }
 
 describe("copying a run's rows", () => {
+  it("preserves a known empty source identity and validated full schema as one zero-row batch", async () => {
+    const first = sinkOf();
+    const stored = storedWith({ empty: [[]] }, ["empty"]);
+    expect(await automationStudioAnswerFirstCopyRows({ sink: first.sink, stored, shown: undefined })).toEqual({ ok: true, rows: 0 });
+    expect(first.batches).toHaveLength(1);
+    expect(first.batches[0]).toMatchObject({ datasetId: "empty", schema: SCHEMA, rows: [], writeMode: "append" });
+    const again = sinkOf();
+    await automationStudioAnswerFirstCopyRows({ sink: again.sink, stored, shown: undefined });
+    expect(again.batches[0]?.batchKey).toBe(first.batches[0]?.batchKey);
+    const absent = sinkOf();
+    await automationStudioAnswerFirstCopyRows({ sink: absent.sink, stored: storedWith({}, ["empty"]), shown: undefined });
+    expect(absent.batches).toEqual([]);
+    const invalid = sinkOf();
+    const invalidStore = { ...stored, page: async () => ({ summary: summary("empty"), schema: null, rows: [], nextCursor: null } as unknown as AutomationStudioRunDatasetPage) };
+    expect(await automationStudioAnswerFirstCopyRows({ sink: invalid.sink, stored: invalidStore, shown: undefined })).toEqual({ ok: false, rows: 0 });
+    expect(invalid.batches).toEqual([]);
+  });
   it("goes under the same ids with the result's dataset last, a row repeated whole once, and a page to a batch", async () => {
     const { sink, batches } = sinkOf();
     // The store lists most recently written first.

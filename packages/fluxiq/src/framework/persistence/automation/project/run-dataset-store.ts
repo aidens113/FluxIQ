@@ -24,7 +24,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administr
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
-import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, automationStudioRunDatasetRowOfColumns, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
+import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, automationStudioRunDatasetProcessingReference, automationStudioRunDatasetRowOfColumns, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
 import { automationStudioRunDatasetBatchReceipt, readAutomationStudioRunDatasetSchema as storedSchema, reconcileAutomationStudioRunDatasetSchema, serializedAutomationStudioRunDatasetRows as serializedRows } from "./run-dataset-schema/index.ts";
 
 /** One stored row: a JSON object keyed by the stored schema's field ids. */
@@ -565,9 +565,19 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
     [runId, datasetId]
   );
   // Relative dates are judged at the run's own start, the instant its page reads used, so processing again later (a repair re-run) keeps the same rows. A `now` the caller gives wins.
-  const started = nowGiven ? undefined : await sql.get<{ started_at_ms: number | null }>("select started_at_ms from runtime_runs where run_id = ?", [runId]);
-  const answer = automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), started?.started_at_ms ?? now);
+  const process = processDeclaration(dataset.process_json);
+  const automatic = process?.declaration?.version === 1;
+  const started = nowGiven && !automatic ? undefined : await sql.get<{ started_at_ms: number | null; summary_json: string }>("select started_at_ms, summary_json from runtime_runs where run_id = ?", [runId]);
+  const reference = automatic ? automationStudioRunDatasetProcessingReference(started) : started?.started_at_ms ?? now;
+  const answer = automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, process, reference);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
+  if ("unavailable" in answer) {
+    // Missing evidence invalidates a previously-ready answer in this same transaction. Collected originals remain available for repair.
+    await sql.run("update run_datasets set processing_json = null, processed_at_ms = null, answer_rows_retained = 0 where run_id = ? and dataset_id = ?", [runId, datasetId]);
+    const pending = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
+    if (pending) await upsertCatalog(sql, pending, 0);
+    return;
+  }
   await insertRows(sql, "run_dataset_answer_rows", runId, datasetId, answer.rows);
   await sql.run("update run_datasets set processing_json = ?, processed_at_ms = ?, answer_rows_retained = 1 where run_id = ? and dataset_id = ?", [JSON.stringify(answer.account), now, runId, datasetId]);
   const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
