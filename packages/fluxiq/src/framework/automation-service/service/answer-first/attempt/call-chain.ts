@@ -54,7 +54,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioAttemptActAnswerRead, automationStudioAttemptActGate, type AutomationStudioAttemptActRecord } from "../../../../../runtime/answer-first/act-record/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
-import { automationStudioResultTrailStepOfCall, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
+import { automationStudioResultTrailStepOfCall, type AutomationStudioResultTrailStep, type AutomationStudioResultTrailSemanticOptions } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
@@ -87,19 +87,21 @@ export function automationStudioAnswerFirstCallChain(input: {
   /** A call was answered and not refused: the page has got to where the work starts. */
   answered(): void;
   /** A look that found something new, after the first lasting act (header). Absent, nothing is handed on. */
-  looked?: ((look: { where: string; found: string }) => void) | undefined;
+  looked?: ((look: { where: string; found: string; callId?: string }) => void) | undefined;
   /** Every call that reached the domain, with its answer, in order (header). Absent, nothing is handed on. */
-  trailed?: ((step: AutomationStudioResultTrailStep) => void) | undefined;
+  trailed?: ((step: AutomationStudioResultTrailStep) => void | Promise<void>) | undefined;
+  /** Explicitly forwards the bound projector and current privacy declaration; absent keeps old chain callers compatible. */
+  judgeEvidence?: AutomationStudioResultTrailSemanticOptions | undefined;
 }): Execute {
   const handedOn = new Set<string>();
-  const noteLook = (answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult) => {
+  const noteLook = (answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult, callId: string) => {
     if (!input.looked || input.record.acts().length === 0) return;
     const look = lookOf(answer, input.readRowsKey);
     if (!look) return;
     const key = JSON.stringify([look.where, look.found]);
     if (handedOn.has(key)) return;
     handedOn.add(key);
-    input.looked(look);
+    input.looked(input.judgeEvidence?.judgeEvidenceVersion === 1 ? { ...look, callId } : look);
   };
   const stored: Execute = async (call) => {
     input.stepped();
@@ -107,7 +109,7 @@ export function automationStudioAnswerFirstCallChain(input: {
     if (!refusedAnswer(answer)) input.answered();
     const rows = isExecution(answer) ? await input.sink.fromCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer) : undefined;
     try {
-      noteLook(answer);
+      noteLook(answer, call.callId);
     } catch {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
@@ -115,7 +117,7 @@ export function automationStudioAnswerFirstCallChain(input: {
       if (input.trailed) {
         const about = described({ toolId: call.toolId, value: call.value });
         const on = "said" in about && typeof about.said?.target === "string" ? about.said.target : undefined;
-        input.trailed(automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on));
+        await input.trailed(automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on, input.judgeEvidence));
       }
     } catch {
       /* best-effort: the trail is evidence for a later check, never a reason to lose the call's answer */

@@ -30,6 +30,8 @@ import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 import { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
+import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../../llm/harness-options/index.ts";
+import { automationStudioResultJudgeSummary } from "../judge-evidence/index.ts";
 
 /** Stands in for a value that may not be sent, as a finished run's rows say it. */
 const WITHHELD_VALUE = "[withheld]";
@@ -40,7 +42,7 @@ const ANSWER_NOTE = "The model's own words, not evidence.";
 /** The rows' one record set has no dataset id here: the writer's result names the real one. */
 const SET_ID = "result";
 
-export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioFlowLessSummary, deniedEvidenceKeys: readonly string[]): { read: AutomationStudioRunResultSummary; sent: AutomationStudioRunResultSummary } {
+export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioFlowLessSummary, deniedEvidenceKeys: readonly string[], semantic?: { projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined; judgeEvidenceVersion?: 1 | undefined }): { read: AutomationStudioRunResultSummary; sent: AutomationStudioRunResultSummary } {
   const rows = summary.rows ? screenedSet(summary.rows, deniedEvidenceKeys) : undefined;
   const ended = summary.endView ? automationStudioResultEndView(summary.endView, deniedEvidenceKeys) : { withheld: false };
   const before = witness(summary.witnesses?.before, deniedEvidenceKeys);
@@ -85,7 +87,9 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
     ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {})
   };
-  return { read, sent: jsonForm(sent) as unknown as AutomationStudioRunResultSummary };
+  const sendable = jsonForm(sent) as unknown as AutomationStudioRunResultSummary;
+  const projected = automationStudioResultJudgeSummary(sendable, { ...automationStudioJudgeEvidenceCapability(semantic), projectJudgeEvidence: semantic?.projectJudgeEvidence, deniedEvidenceKeys });
+  return { read: { ...read, ...(projected.evidenceProjection === undefined ? {} : { evidenceProjection: projected.evidenceProjection }) }, sent: projected };
 }
 
 /**
@@ -125,7 +129,7 @@ function words(text: string): { text: string; withheld: boolean } {
  * handled only by `./window-fitting.ts`, which names what it summarised), and an
  * address or a line of what was found that a screen dropped is said as withheld, here or earlier.
  */
-function lookedShown(looks: readonly { where: string; found: string }[]): { looks: { where: string; found: string }[]; withheld: boolean } {
+function lookedShown(looks: readonly { where: string; found: string; callId?: string }[]): { looks: { where: string; found: string; callId?: string }[]; withheld: boolean } {
   let withheld = false;
   const line = (text: string): string => {
     if (!text.trim()) return text;
@@ -133,7 +137,7 @@ function lookedShown(looks: readonly { where: string; found: string }[]): { look
     if (screened.withheld || screened.text === WITHHELD_WORDS) withheld = true;
     return screened.text;
   };
-  const shown = looks.map((look) => ({ where: line(look.where), found: look.found.split("\n").map(line).join("\n") }));
+  const shown = looks.map((look) => ({ where: line(look.where), found: look.found.split("\n").map(line).join("\n"), ...(look.callId === undefined ? {} : { callId: line(look.callId) }) }));
   return { looks: shown, withheld };
 }
 

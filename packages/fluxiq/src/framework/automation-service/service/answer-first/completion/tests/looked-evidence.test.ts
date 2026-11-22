@@ -7,7 +7,7 @@ import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { AutomationStudioFlowLessSummary } from "../../../../../../runtime/result-verification/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS, AUTOMATION_STUDIO_ANSWER_FIRST_SAME_EVIDENCE_CODE, automationStudioAnswerFirstCompletionCheck } from "../index.ts";
 
-type Look = { where: string; found: string };
+type Look = { where: string; found: string; callId?: string };
 
 const purse: Parameters<typeof automationStudioAnswerFirstCompletionCheck>[0]["purse"] = { keepBackForJudging: () => undefined };
 const ACT: AutomationStudioAttemptAct = { id: "act.1", what: "Moved two items into a new folder", where: "Saved items", classes: ["create_new"], state: "landed" };
@@ -35,6 +35,12 @@ function made(looks: () => readonly Look[]) {
 }
 
 describe("a look after the acts, as evidence for the check", () => {
+  it("preserves an actual optional Core call id without inventing one for legacy looks", async () => {
+    const looks: Look[] = [{ where: FOLDER, found: "An actual current look", callId: "core.issued.find.1" }, { where: FOLDER, found: "An older look" }];
+    const { check, judged } = made(() => looks);
+    await check.check({ summary: "Done." });
+    expect(judged[0]?.looked).toEqual(looks);
+  });
   it("refuses the same looks again without a judge, and judges again once a look found something new, carrying it", async () => {
     const looks: Look[] = [{ where: "http://127.0.0.1:5000/all/", found: "1 match for \"maker\"\nt12 link \"maker\" at the top" }];
     const { check, judged } = made(() => looks);

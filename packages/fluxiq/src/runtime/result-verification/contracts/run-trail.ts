@@ -1,4 +1,5 @@
-import type { JsonValue } from "../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/finding.ts";
 
 /**
  * One thing a run or an attempt did on its target, from Core's own record of it (`../run-trail/`, t963): a look at a
@@ -17,6 +18,10 @@ export type AutomationStudioResultTrailStep = {
   outcome?: string | undefined;
   where?: string | undefined;
   found?: JsonValue | undefined;
+  /** Actual framework status/failure/effect facts; a domain projector cannot overwrite them. */
+  framework?: JsonObject | undefined;
+  /** Private, versioned semantic checkpoint. Request construction reads/rescreens it and never sends this beside raw findings. */
+  judgeEvidence?: AutomationStudioJudgeEvidenceFinding | undefined;
 };
 
 /**

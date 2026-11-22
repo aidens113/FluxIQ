@@ -69,6 +69,7 @@ import {
 } from "../unreadable-asks/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow } from "../run-trail/index.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
+import { automationStudioJudgeEvidenceCapability } from "../../llm/harness-options/index.ts";
 
 /** Where the call's intervention says it came from, and what gives it the Flow-less schema (`../../llm/verification-checked/reply-required.ts`). */
 const SOURCE = AUTOMATION_STUDIO_LLM_FLOW_LESS_JUDGE_SOURCE;
@@ -107,7 +108,8 @@ function automationStudioFlowLessJudgeDeadline(deadlineMs: number, heldMs: (() =
 }
 
 export async function automationStudioFlowLessJudge(input: AutomationStudioFlowLessJudgeInput): Promise<AutomationStudioFlowLessJudgement> {
-  const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys);
+  if (input.deniedEvidenceKeys === undefined) return { verdict: "unsure", reason: "The current evidence privacy declaration is unavailable, so this result remains unconfirmed.", checkedWhat: "Required semantic evidence could not be disclosed under an unknown privacy declaration." };
+  const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys, { ...automationStudioJudgeEvidenceCapability(input), projectJudgeEvidence: input.projectJudgeEvidence });
   // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;

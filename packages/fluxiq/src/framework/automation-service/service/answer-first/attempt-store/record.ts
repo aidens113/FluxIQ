@@ -2,7 +2,8 @@ import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult, Automatio
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
-import type { AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioResultEvidenceBundle, AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 
 /** One attempt as it is kept beside its Flow (`./store.ts`). */
@@ -16,6 +17,10 @@ export type AutomationStudioAnswerFirstAttemptRecord = {
   resultEvidence?: AutomationStudioResultEvidenceBundle;
   /** Exact still-tracked publications from this segment. An incomplete optional snapshot preserves a tracking gap independently of the task/source record. */
   publications?: ReturnType<AutomationStudioAnswerFirstRowSink["publicationState"]>;
+  /** Validated semantic journal. Null records explicitly rejected metadata; absence alone is legacy. */
+  judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null;
+  /** Historical coverage uncertainty survives restart; null is explicitly unreadable issue metadata. */
+  judgeEvidenceIssue?: AutomationStudioAnswerFirstJudgeEvidenceIssue | null;
   /** Absent only until there is one; a budget-out or an achieved attempt has one. */
   result?: AutomationStudioTaskResult;
   tried: AutomationStudioTriedRecord;

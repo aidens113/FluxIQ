@@ -12,6 +12,8 @@ export const AUTOMATION_STUDIO_RESULT_VERDICT_CODES = Object.freeze({
   unsure: "core.result.verdict_unsure",
   silent: "core.result.verdict_absent",
   unavailable: "core.result.verdict_unavailable",
+  /** Required semantic evidence was unavailable; an affirmative reply cannot fill that gap. */
+  semanticEvidenceMissing: "core.result.semantic_evidence_missing",
   disagree: "core.result.verdicts_disagree",
   unconfirmed: "core.result.refutation_unconfirmed",
   /** A no whose every reason Core's own record refutes, asked once more and still not standing (`../refuted-no/`, t607): unsure. */

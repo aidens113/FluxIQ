@@ -1,6 +1,7 @@
 import type { AutomationStudioFlowInstruction } from "../../../../flows/authoring/model/index.ts";
 import type { AutomationStudioSubflowScope, AutomationStudioSubflowTrialPreparingPort, AutomationStudioSubflowTrialRequest, AutomationStudioSubflowTrialResult } from "../../../../runtime/flow-authoring/bootstrap/subflow-candidate/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider } from "../../../../runtime/llm/index.ts";
+import { automationStudioJudgeEvidenceCapability } from "../../../../runtime/llm/harness-options/index.ts";
 import { AutomationStudioHostLeaseScope, type AutomationStudioHostResourceScheduler, type AutomationStudioProjectBuildRecordStore, type AutomationStudioProjectBuildRef } from "../../../../runtime/project-agents/index.ts";
 import { automationStudioBuildTestJudge } from "../../../../runtime/result-verification/index.ts";
 import { AutomationStudioOfflineTrialInstallation, automationStudioOfflineFirstSubflow } from "../offline-first/index.ts";
@@ -104,7 +105,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       const entry = AutomationStudioProjectBuildTaskChecklist.entry(summary, scope.predecessors.length ? input.proposals.predecessors(scope) : []);
       return await automationStudioBuildTestJudge({
         provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId, entry !== undefined)],
-        deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
+        deniedEvidenceKeys: binding.deniedEvidenceKeys, projectJudgeEvidence: binding.projectJudgeEvidence, ...automationStudioJudgeEvidenceCapability(binding), projectId, flowId, signal: input.judge.signal
       })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry, possiblyLasting) });
     }
   };

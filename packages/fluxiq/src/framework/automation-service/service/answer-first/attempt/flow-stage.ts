@@ -51,6 +51,8 @@ import { automationStudioAnswerFirstBestEffort } from "./best-effort.ts";
 import { automationStudioAnswerFirstKeep } from "./keep.ts";
 import type { AutomationStudioAnswerFirstRoundsEnding } from "./rounds.ts";
 import type { AutomationStudioAnswerFirstAttemptRun } from "./state.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../trail/index.ts";
+import { automationStudioAnswerFirstSay } from "./say.ts";
 
 type FlowRun = NonNullable<AutomationStudioAnswerFirstAttemptRun["flowRun"]>;
 
@@ -96,6 +98,8 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
   const taskHumanness = kept.ok ? kept.value?.humanness : undefined;
   const evidence: { inputUse?: AutomationStudioInputUseObservation } = {};
   const inputUse = inputUseOf(run, (observation) => { evidence.inputUse = observation; });
+  const journal = automationStudioAnswerFirstTrailsOf(input.owner);
+  const semantic = { ...journal.capability(run.trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const outcome = await automationStudioAnswerFirstFlowRun({
     input, runId: run.runId, record: run.record, sink: run.sink, result: run.result, permissions: run.permissions,
     starting: async (classes) => {
@@ -110,7 +114,14 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
     },
     arrived: () => { run.arrived = true; },
     // What the run did, to the attempt's trail for its judge (`../flow-run/flow-run.ts`, t963).
-    trail: { viewKeys: input.harnessOptions.observedStateKeys, add: (steps) => { run.trail.push(...steps); } },
+    trail: { viewKeys: input.harnessOptions.observedStateKeys, semantic, add: async (steps) => {
+      run.trail.push(...steps);
+      const checkpoint = journal.checkpoint(run.trail, run.witnesses.readings(), semantic);
+      if (checkpoint !== undefined) {
+        try { journal.recovered(run.trail, await run.store.saveJudgeEvidence(input.projectId, input.flowId, run.attemptId, checkpoint, { sourceOwner: journal.sourceOwner(run.trail) })); }
+        catch { automationStudioAnswerFirstSay("Part of the record was not written", "The Flow's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }
+      }
+    } },
     engine: () => automationStudioAnswerFirstFlowRunEngineOf(input),
     sourceAuthority: automationStudioAnswerFirstSourceAuthority({ projectId: input.projectId, flowId: input.flowId, owner: input.owner, drafts: input.stores.drafts }),
     // A check only a person can clear is put to them on the Flow's thread, and the attempt says it waits for one while it stands (`../flow-run/person-check-port.ts`).

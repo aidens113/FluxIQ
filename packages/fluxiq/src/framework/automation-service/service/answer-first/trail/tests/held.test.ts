@@ -6,6 +6,21 @@ import { automationStudioAnswerFirstTrailsOf } from "../index.ts";
 const FIRST = { did: "catalogue.read", outcome: "answered" };
 
 describe("an attempt's trail across a resume", () => {
+  it("issues source authority only for a new uninterrupted journal and never restores it from valid metadata", () => {
+    const journal = automationStudioAnswerFirstTrailsOf({});
+    const trail = journal.of("attempt.source-owner", { carriedOn: false, askedAgain: false });
+    const owner = journal.sourceOwner(trail);
+    expect(owner).toBeDefined();
+    trail.push({ did: "example.read", judgeEvidence: { version: 1, role: "data", evidence: { observed: 1 }, missing: [], withheld: false } });
+    const checkpoint = journal.checkpoint(trail, {}, { judgeEvidenceVersion: 1, deniedEvidenceKeys: [] })!;
+    expect(journal.sourceOwner(journal.of("attempt.source-owner", { carriedOn: true, askedAgain: false, judgeEvidence: checkpoint }))).toBe(owner);
+    const reopened = automationStudioAnswerFirstTrailsOf({});
+    const restored = reopened.of("attempt.source-owner", { carriedOn: true, askedAgain: false, judgeEvidence: JSON.parse(JSON.stringify(checkpoint)) });
+    expect(reopened.sourceOwner(restored)).toBeUndefined();
+    const later = reopened.checkpoint(restored, {}, { judgeEvidenceVersion: 1, deniedEvidenceKeys: [] })!;
+    expect(later.revision).toBeGreaterThan(checkpoint.revision);
+    expect(reopened.sourceOwner(restored)).toBeUndefined();
+  });
   it("is the same trail on a carry-on, so what came before the resume is still in it", () => {
     const trails = automationStudioAnswerFirstTrailsOf({});
     const opened = trails.of("attempt.1", { carriedOn: false, askedAgain: false });
