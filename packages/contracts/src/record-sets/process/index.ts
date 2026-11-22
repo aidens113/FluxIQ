@@ -13,6 +13,7 @@ export * from "./condition/index.ts";
 export * from "./date-bound.ts";
 export * from "./date-within.ts";
 export * from "./derive.ts";
+export type { AutomationStudioRecordProcessingDeclaration } from "./declaration/index.ts";
 export * from "./field-comparison.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";

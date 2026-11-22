@@ -11,6 +11,8 @@ export function bindAutomationStudioRecordProcessing(value: unknown, schema: Aut
     const parsed = parseAutomationStudioRecordProcessing(value, schema);
     return parsed.ok ? { ...parsed, bindings: {} } : { ...parsed, unresolved: [] };
   }
+  // Binding is the untrusted instruction/amendment boundary; persisted stamps are read by the parser.
+  if (Object.hasOwn(value, "declaration")) return { ok: false, issues: ["record_output.process_declaration_framework_owned"], unresolved: [] };
   const bound = new Map<string, string>();
   const unresolved = new Map<string, { field: string; reason: "missing" | "ambiguous" | "excluded" }>();
   const derived = new Set(Array.isArray(value.derive) ? value.derive.flatMap((entry) =>
