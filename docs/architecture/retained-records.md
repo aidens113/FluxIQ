@@ -9,6 +9,9 @@ unchanged. Shared pure parsers interpret each actual row value; relative dates
 use the run reference time. A detector's parsed column sample is never a value
 for other rows. A validated `primaryKey` declares identity; arbitrary shared
 links are not identity evidence.
+Browser-safe clients validate and project schemas through
+`fluxiq/components/automation`'s public `parseAutomationStudioRecordSchema` and
+`storedAutomationStudioRecordSchema` exports, sharing the contract parser.
 
 Requested columns are a presentation view over retained rows. Hidden filter,
 ordering, identity and mark fields remain available to deterministic processing
