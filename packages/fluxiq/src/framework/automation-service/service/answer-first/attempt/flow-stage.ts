@@ -40,6 +40,7 @@
 // nothing authenticates stays unknown. Either way the run does and answers exactly what it would without it.
 
 import type { AutomationStudioInputUseObservation } from "../../../../../engine/automation/input-use/index.ts";
+import { automationStudioProcessingInputs } from "../../../../../components/automation/index.ts";
 import { automationStudioFlowDraftDeclaresLasting, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioInputScope } from "../../../../../runtime/input-basis/index.ts";
 import { readAutomationStudioFlowBootstrapGenerationRequest } from "../../flow-bootstrap-commands/index.ts";
@@ -70,6 +71,22 @@ export async function automationStudioAnswerFirstFlowStage(run: AutomationStudio
 }
 
 async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<AutomationStudioAnswerFirstSavedFlow, "steps" | "stepsDigest" | "stated" | "candidateId">, start?: (classes: readonly string[]) => Promise<void>): Promise<AutomationStudioAnswerFirstRoundsEnding | undefined> {
+  // Saved routing (repeat/on_failed included) references siblings in this flat array.
+  // Check every contributing configuration before an earlier lasting action can run.
+  for (const step of saved.steps) {
+    const nested = step.input.parameters;
+    const parameters = nested && typeof nested === "object" && !Array.isArray(nested) ? nested : step.input;
+    const output = parameters.recordOutput;
+    if (!output || typeof output !== "object" || Array.isArray(output)) continue;
+    const process = output.process;
+    if (!process || typeof process !== "object" || Array.isArray(process) || !Object.hasOwn(process, "declaration")) continue;
+    const current = automationStudioProcessingInputs({ process, schema: output.schema, inputs: run.input.caller?.inputs });
+    if (!current.ok) {
+      run.flowRun = { outcome: { kind: "not_assembled", codes: ["answer_first.processing_inputs_unavailable"] }, wentOut: false };
+      run.path = "explore";
+      return undefined;
+    }
+  }
   const { input } = run;
   const sentBefore = run.liveSteps;
   let personStopped = false;

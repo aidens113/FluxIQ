@@ -1,5 +1,6 @@
 import { automationStudioConversationCommandPort, type AutomationStudioConversationCommandContext } from "../../../../runtime/conversations/index.ts";
 import type { AutomationStudioConversationRequest, AutomationStudioConversationRequestDependencies } from "./types.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../../../runtime/flow-authoring/draft/index.ts";
 
 /**
  * What a conversation command runs with, for this request: the registry,
@@ -11,7 +12,7 @@ import type { AutomationStudioConversationRequest, AutomationStudioConversationR
 export function commandContext(
   dependencies: AutomationStudioConversationRequestDependencies,
   request: AutomationStudioConversationRequest,
-  target: { projectId: string; conversationId: string; startLocation: string | null; attachedRecordingId?: string | undefined; interpretationCostUsd?: number | undefined; interpretationCalls?: number | undefined; taskActs?: string[] | undefined; humanness?: number | undefined }
+  target: { projectId: string; conversationId: string; startLocation: string | null; attachedRecordingId?: string | undefined; interpretationCostUsd?: number | undefined; interpretationCalls?: number | undefined; taskActs?: string[] | undefined; taskProcessing?: AutomationStudioFlowTaskProcessing | undefined; humanness?: number | undefined }
 ): AutomationStudioConversationCommandContext | null {
   if (!request.actor) return null;
   const conversations = dependencies.service.conversations;
@@ -32,6 +33,7 @@ export function commandContext(
     ...(target.interpretationCalls === undefined ? {} : { interpretationCalls: target.interpretationCalls }),
     // What the reading declared the task will cause, for its one question when it starts (`commands/build.ts`, t976).
     ...(target.taskActs === undefined ? {} : { taskActs: target.taskActs }),
+    ...(target.taskProcessing === undefined ? {} : { taskProcessing: target.taskProcessing }),
     // The person's humanness for the build or run the command starts (`commands/build.ts`, `commands/run-flow.ts`).
     ...(target.humanness === undefined ? {} : { humanness: target.humanness })
   };

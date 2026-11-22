@@ -46,7 +46,12 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   await run.witnesses.atEnd();
   const flushed = await flushedRecord(run);
   run.result.draft(run.steps);
-  await run.sink.publish(run.result.rows(), run.result.evidence());
+  let withheld = true;
+  if (run.result.readiness().state === "missing-evidence") {
+    try { await run.sink.withhold(); }
+    catch { withheld = false; } // Completion already refuses this state; a storage failure cannot add a terminal ending.
+  }
+  else await run.sink.publish(run.result.rows(), run.result.evidence());
   const sessionEnded = await endedSession(run, ending);
   // Read back for what it does to the store: the run's datasets are processed for the Data window and an export. The answer is the attempt's one result (`../result-feed/`), the draft's output step.
   await run.sink.readBack();
@@ -63,7 +68,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   const candidateId = draft.kind === "saved" ? draft.record.candidateId : undefined;
   const remembered = await automationStudioAnswerFirstRemember(run, ending, { label: checked.result?.label ?? "unverified", candidateId, stated: draft.kind === "saved" ? draft.stated : automationStudioAnswerFirstHeldStated(run), spend: { calls: checked.attempt.spend.calls, usd: checked.attempt.spend.usd }, atMs: checked.attempt.endedAtMs ?? Date.now() });
   const applied = await automationStudioAnswerFirstApplyProven(run, ending, draft.kind === "saved" ? { record: draft.record } : {});
-  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I have the result, but part of what goes with it could not be written down.");
+  if (!flushed.ok || !sessionEnded.ok || !saved.ok || !remembered.ok || !applied.ok || !withheld) automationStudioAnswerFirstSay("Part of the record was not written", "Part of the attempt's record could not be written down.");
   const answer: AutomationStudioGenerateFlowBootstrapAdaptationAnswered = {
     projectId: input.projectId,
     flowId: input.flowId,
@@ -112,6 +117,8 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
   try {
     await run.store.save(run.input.projectId, run.input.flowId, {
       attempt: checked.attempt,
+      ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
+      ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
       ...(checked.result ? { result: checked.result } : {}),
       tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()),
       ...(candidateId === undefined ? {} : { candidateId }),

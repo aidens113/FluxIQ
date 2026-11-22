@@ -11,6 +11,8 @@
 // or the answer's `columns` when it names them, so a row is dropped only when it
 // carries nothing the answer would show that an earlier row did not. A key over
 // a link column would merge distinct rows that share one link.
+// Explicit automatic mode uses a complete declared identity, with whole-original
+// fallback, and withholds an answer while required evidence is unavailable.
 //
 // **Processing the answer again gives the same rows**: every step keeps what it
 // kept, the sort is stable, and `parseAutomationStudioRecordProcessing` refuses a
@@ -51,14 +53,16 @@
 // does, on the account's `filters`. The answer is each kept row's own stored
 // values: a derived column is never in it.
 
-import { automationStudioRecordAnyOfFields, automationStudioRecordAnyOfHolds, automationStudioRecordAnyOfText } from "./any-of.ts";
+import { automationStudioRecordAnyOfFields, automationStudioRecordAnyOfText } from "./any-of.ts";
+import { automationStudioRecordAutomaticIdentity } from "./automatic-identity.ts";
 import { cellOf, cellText } from "./cell-text.ts";
 import { automationStudioRecordConditionComparesDates } from "./compares-dates.ts";
 import { automationStudioRecordConditionHolds, automationStudioRecordConditionText } from "./condition/index.ts";
 import { automationStudioRecordDerivedValues } from "./derive.ts";
-import { automationStudioRecordFieldComparisonFields, automationStudioRecordFieldComparisonHolds, automationStudioRecordFieldComparisonText } from "./field-comparison.ts";
+import { automationStudioRecordFieldComparisonFields, automationStudioRecordFieldComparisonText } from "./field-comparison.ts";
 import { AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS } from "./processing-vocabulary.ts";
 import { parseAutomationStudioRecordCondition } from "./parse-condition.ts";
+import { automationStudioRecordProcessingFilterChecks, automationStudioRecordRequiredValueIssue, type AutomationStudioRecordProcessingMissingEvidence, type AutomationStudioAutomaticRecordProcessRowsResult } from "./readiness/index.ts";
 import { readAutomationStudioRecordConditionDate } from "./row-date.ts";
 import { automationStudioRecordRowIdentity } from "./row-identity.ts";
 import { sortAutomationStudioRecordRows } from "./sort-rows.ts";
@@ -96,7 +100,11 @@ export type AutomationStudioRecordProcessRowsInput = {
   process?: AutomationStudioRecordProcessing;
   /** Epoch milliseconds that relative dates ("3 days ago") are measured back from. */
   now: number;
+  /** Absent preserves saved processing's existing identity and missing-value semantics. */
+  mode?: "legacy";
 };
+
+export type AutomationStudioAutomaticRecordProcessRowsInput = Omit<AutomationStudioRecordProcessRowsInput, "mode"> & { mode: "automatic" };
 
 export type AutomationStudioRecordProcessRowsResult = {
   /** The answer, as fresh objects in answer order. */
@@ -106,9 +114,12 @@ export type AutomationStudioRecordProcessRowsResult = {
   account: AutomationStudioRecordProcessingAccount;
 };
 
-/** The answer and its account. Leaves the input unmodified. */
-export function processAutomationStudioRecordRows(input: AutomationStudioRecordProcessRowsInput): AutomationStudioRecordProcessRowsResult {
+/** One evaluator; automatic declarations require readable evidence before returning answer rows. */
+export function processAutomationStudioRecordRows(input: AutomationStudioAutomaticRecordProcessRowsInput): AutomationStudioAutomaticRecordProcessRowsResult;
+export function processAutomationStudioRecordRows(input: AutomationStudioRecordProcessRowsInput): AutomationStudioRecordProcessRowsResult;
+export function processAutomationStudioRecordRows(input: AutomationStudioRecordProcessRowsInput | AutomationStudioAutomaticRecordProcessRowsInput): AutomationStudioRecordProcessRowsResult | AutomationStudioAutomaticRecordProcessRowsResult {
   const process = input.process ?? {};
+  const automatic = input.mode === "automatic";
   const storedFields = input.schema.fields.filter((field) => field.handling !== "exclude").map((field) => field.id);
   const wholeRow = process.columns ?? storedFields;
   const identityKey = process.dedupe === false ? undefined : process.dedupe?.by ?? wholeRow;
@@ -117,31 +128,67 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   const derive = process.derive ?? [];
   const working = derive.length === 0 ? input.rows : input.rows.map((row) => ({ ...row, values: automationStudioRecordDerivedValues(row.values, derive, input.now) }));
   const stored = new Map<AutomationStudioRecordCollectedRow, AutomationStudioRecordCollectedRow>(working.map((row, index) => [row, input.rows[index]!]));
+  const positions = new Map<string, number>();
+  const sources = new Map(working.map((row) => {
+    const batch = JSON.stringify([row.nodeId, row.batchKey]);
+    const position = positions.get(batch) ?? 0;
+    positions.set(batch, position + 1);
+    return [row, { nodeId: row.nodeId, batchKey: row.batchKey, row: position }] as const;
+  }));
 
   const where = process.where ?? [];
   const groups = process.anyOf ?? [];
   const comparisons = process.compare ?? [];
   // Every filter in order: the `where` conditions, then the groups, then the comparisons (header).
-  const filters: ReadonlyArray<(values: Readonly<Record<string, unknown>>) => boolean> = [
-    ...where.map((condition) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordConditionHolds(condition, cellOf(values, condition.field), input.now)),
-    ...groups.map((group) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordAnyOfHolds(group, values, input.now)),
-    ...comparisons.map((comparison) => (values: Readonly<Record<string, unknown>>) => automationStudioRecordFieldComparisonHolds(comparison, values, input.now))
-  ];
+  const filters = automationStudioRecordProcessingFilterChecks(process, input.now, automatic);
+  const readings = working.map((row) => filters.map((check) => check(row.values)));
   // Which filters each row fails, by position: a row failing none is in the answer's running.
-  const failed = working.map((row) => filters.flatMap((holds, index) => (holds(row.values) ? [] : [index])));
+  const failed = readings.map((row) => row.flatMap((reading, index) => reading.holds ? [] : [index]));
+  if (automatic) {
+    const missingEvidence = readings.flatMap((row, at): AutomationStudioRecordProcessingMissingEvidence[] => {
+      // A known false conjunct already excludes this occurrence; unknowns cannot change that.
+      if (row.some((reading) => !reading.holds && reading.missing.length === 0)) return [];
+      return row.flatMap((reading) => reading.missing.map((issue) => ({ ...issue, source: sources.get(working[at]!)! })));
+    });
+    if (missingEvidence.length) return { state: "missing-evidence", missingEvidence };
+  }
   const matching = working.filter((_row, index) => failed[index]!.length === 0);
 
+  const primaryKey = input.schema.primaryKey;
+  const automaticKey = process.dedupe === false ? [] : process.dedupe?.by ??
+    (primaryKey?.length && primaryKey.every((field) => storedFields.includes(field)) ? primaryKey : []);
+  const identityOf = (row: AutomationStudioRecordCollectedRow): string | undefined => automatic
+    ? automationStudioRecordAutomaticIdentity(row.values, stored.get(row)!.values, automaticKey, storedFields)
+    : automationStudioRecordRowIdentity(row.values, identityKey ?? wholeRow);
   const seen = new Set<string>();
   const distinct = identityKey === undefined ? matching : matching.filter((row) => {
-    const identity = automationStudioRecordRowIdentity(row.values, identityKey);
+    const identity = identityOf(row);
     if (identity === undefined) return true;
     if (seen.has(identity)) return false;
     seen.add(identity);
     return true;
   });
 
+  if (automatic) {
+    const missingEvidence = (process.sort ?? []).flatMap((key, index): AutomationStudioRecordProcessingMissingEvidence[] => {
+      const kind = key.as === undefined || key.as === "auto" ? automationStudioRecordAutoSortKind(distinct.map((row) => cellOf(row.values, key.field)), input.now) : key.as;
+      return distinct.flatMap((row) => {
+        const reason = automationStudioRecordRequiredValueIssue(cellOf(row.values, key.field), kind, input.now);
+        const derived = derive.find((field) => field.id === key.field);
+        return reason ? [{ operator: "sort" as const, index, field: key.field, ...(derived ? { from: derived.from } : {}), reason, source: sources.get(row)! }] : [];
+      });
+    });
+    if (missingEvidence.length) return { state: "missing-evidence", missingEvidence };
+  }
   const sorted = sortAutomationStudioRecordRows(distinct, process.sort ?? [], input.now);
   const limited = process.limit === undefined ? sorted : sorted.slice(0, process.limit);
+  if (automatic) {
+    const missingEvidence = (process.columns ?? []).flatMap((field, index): AutomationStudioRecordProcessingMissingEvidence[] => limited.flatMap((row) => {
+      const reason = automationStudioRecordRequiredValueIssue(cellOf(stored.get(row)!.values, field), "value", input.now);
+      return reason ? [{ operator: "columns" as const, index, field, reason, source: sources.get(row)! }] : [];
+    }));
+    if (missingEvidence.length) return { state: "missing-evidence", missingEvidence };
+  }
   const retainedRows = limited.map((row) => retainedRow(stored.get(row)!.values, storedFields));
   const rows = retainedRows.map((row) => answerRow(row, process.columns));
 
@@ -151,7 +198,7 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
     filteredOut: input.rows.length - matching.length,
     cut: sorted.length - limited.length,
     kept: rows.length,
-    passes: passesOf(working, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by)
+    passes: passesOf(working, process.dedupe === false || process.dedupe === undefined ? wholeRow : process.dedupe.by, automatic ? identityOf : undefined)
   };
   const labelFields = process.columns ?? storedFields;
   if (where.length) account.conditions = conditionAccounts(where, working, failed, labelFields, input.now);
@@ -165,7 +212,8 @@ export function processAutomationStudioRecordRows(input: AutomationStudioRecordP
   if (rows.length === 0) account.keptNone = true;
   const minRows = process.minRows ?? AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault;
   if (rows.length < minRows) account.belowMinRows = minRows;
-  return { rows, retainedRows, account };
+  if (!automatic) return { rows, retainedRows, account };
+  return rows.length || process.minRows === 0 ? { state: "ready", rows, retainedRows, account } : { state: "empty", reason: input.rows.length ? "no_matches" : "uncollected", account };
 }
 
 /** Each condition's rejected and alone counts, and the rows it alone left out, each label once, in capture order (header). */
@@ -342,7 +390,7 @@ function answerRow(values: Readonly<Record<string, unknown>>, columns: readonly 
  * over every collected row, before `where`, since it measures what a pass
  * brought rather than what the answer kept.
  */
-function passesOf(rows: readonly AutomationStudioRecordCollectedRow[], key: readonly string[]): AutomationStudioRecordProcessingPass[] {
+function passesOf(rows: readonly AutomationStudioRecordCollectedRow[], key: readonly string[], identityOf?: (row: AutomationStudioRecordCollectedRow) => string | undefined): AutomationStudioRecordProcessingPass[] {
   const passes: AutomationStudioRecordProcessingPass[] = [];
   const byBatch = new Map<string, AutomationStudioRecordProcessingPass>();
   const perNode = new Map<string, number>();
@@ -358,7 +406,7 @@ function passesOf(rows: readonly AutomationStudioRecordCollectedRow[], key: read
       passes.push(pass);
     }
     pass.rows += 1;
-    const identity = automationStudioRecordRowIdentity(row.values, key);
+    const identity = identityOf === undefined ? automationStudioRecordRowIdentity(row.values, key) : identityOf(row);
     if (identity === undefined || !seen.has(identity)) pass.newRows += 1;
     if (identity !== undefined) seen.add(identity);
   }

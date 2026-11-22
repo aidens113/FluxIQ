@@ -24,6 +24,7 @@ import type { AutomationStudioAnswerFirstCallerOptions, AutomationStudioAnswerFi
 import { fluxNodeActScope } from "./act-scope/index.ts";
 import { fluxNodeCallerKey } from "./caller-key.ts";
 import type { FluxNodeCheckBridge } from "./events/index.ts";
+import { fluxNodeOutputRequiresRows } from "./outputs/index.ts";
 
 const CONSEQUENCES: Readonly<Record<FluxNodeActClass, readonly AutomationStudioActionConsequence[]>> = Object.freeze({
   change: ["modify_existing", "create_new"],
@@ -33,7 +34,7 @@ const CONSEQUENCES: Readonly<Record<FluxNodeActClass, readonly AutomationStudioA
 });
 
 export type FluxNodeCallerOptionsInput = {
-  spec: Pick<FluxNodeSpec, "name" | "scope" | "hasCheck">;
+  spec: Pick<FluxNodeSpec, "name" | "scope" | "hasCheck" | "outputs">;
   specHash: string;
   runId: string;
   /** The execution the run's lasting acts belong to (`./act-scope/`). Absent, the run's own. */
@@ -58,6 +59,7 @@ export function fluxNodeCallerOptions(input: FluxNodeCallerOptionsInput): Automa
   const actScope = input.actScope ?? fluxNodeActScope({ runId: input.runId });
   return {
     taskKey: input.taskKey ?? fluxNodeCallerKey({ name: spec.name, specHash, ...(options.mode === "explore" ? { explore: actScope } : { pinned: input.pinned }) }),
+    ...(fluxNodeOutputRequiresRows(spec.outputs, input.inputs) ? { requiresDataOutput: true as const } : {}),
     actScope,
     ...(options.model === undefined ? {} : { model: options.model }),
     budgetUsd: options.budgetUsd,

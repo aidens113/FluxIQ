@@ -5,6 +5,7 @@
 // the shapes and the transcript bound live here beside the steps they feed.
 
 import type { AutomationStudioPanelCapability } from "../../../framework/automation-service/panel-capabilities/index.ts";
+import type { AutomationStudioFlowTaskProcessing } from "../../flow-authoring/draft/index.ts";
 import type { AutomationStudioConversationPersonTurnRequest } from "../conversations.ts";
 import type { AutomationStudioConversationTurn } from "../turn.ts";
 import type { AutomationStudioConversationFlowReference, AutomationStudioConversationOnScreen, AutomationStudioConversationResponse } from "./decision.ts";
@@ -56,6 +57,8 @@ export type AutomationStudioConversationInstructionAnswer = {
   interpretationCalls?: number;
   /** What the reading declared the task will cause (`./acts.ts`, t976). Never sent to the client: the handler hands it to the command the turn runs. */
   taskActs?: string[];
+  /** The reading's data declaration; internal command metadata, never part of the client response. */
+  taskProcessing?: AutomationStudioFlowTaskProcessing;
 };
 
 

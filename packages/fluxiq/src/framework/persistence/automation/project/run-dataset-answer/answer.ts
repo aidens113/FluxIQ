@@ -2,6 +2,7 @@ import {
   processAutomationStudioRecordRows,
   type AutomationStudioRecordProcessing,
   type AutomationStudioRecordProcessingAccount,
+  type AutomationStudioRecordProcessingMissingEvidence,
   type AutomationStudioRecordSchema
 } from "@fluxiq/contracts/automation";
 import type { AutomationStudioRunDatasetCollectedRow, AutomationStudioRunDatasetRowInsert } from "./types.ts";
@@ -15,13 +16,19 @@ const SOURCE_ROW = Symbol("run dataset source row");
  * account. The same evaluator selection supplies complete original allowed
  * fields and the private source symbol before presentation projects columns.
  */
-export function automationStudioRunDatasetAnswer(collected: readonly AutomationStudioRunDatasetCollectedRow[], schema: AutomationStudioRecordSchema, process: AutomationStudioRecordProcessing | undefined, now: number): { rows: AutomationStudioRunDatasetRowInsert[]; account: AutomationStudioRecordProcessingAccount } {
-  const result = processAutomationStudioRecordRows({
+export function automationStudioRunDatasetAnswer(collected: readonly AutomationStudioRunDatasetCollectedRow[], schema: AutomationStudioRecordSchema, process: AutomationStudioRecordProcessing | undefined, now: number | undefined): { rows: AutomationStudioRunDatasetRowInsert[]; account: AutomationStudioRecordProcessingAccount } | { unavailable: true; reason: string; missingEvidence?: AutomationStudioRecordProcessingMissingEvidence[] } {
+  const automatic = process?.declaration?.version === 1;
+  if (automatic && (!Number.isSafeInteger(now) || (now as number) < 0)) return { unavailable: true, reason: "processing_reference_missing" };
+  const input = {
     rows: collected.map((row) => ({ values: Object.assign(JSON.parse(row.row_json) as Record<string, unknown>, { [SOURCE_ROW]: row }), nodeId: row.node_id, batchKey: row.batch_key })),
     schema,
     ...(process === undefined ? {} : { process }),
-    now
-  });
+    now: now ?? Date.now()
+  };
+  const result = automatic ? processAutomationStudioRecordRows({ ...input, mode: "automatic" }) : processAutomationStudioRecordRows(input);
+  if ("state" in result && result.state === "missing-evidence") return { unavailable: true, reason: "processing_evidence_missing", missingEvidence: result.missingEvidence };
+  // A known empty selection is completely materialized, independently of minRows/task success.
+  if ("state" in result && result.state === "empty") return { rows: [], account: result.account };
   const rows = result.retainedRows.map((row, index): AutomationStudioRunDatasetRowInsert => {
     const source = (row as { [SOURCE_ROW]?: AutomationStudioRunDatasetCollectedRow })[SOURCE_ROW];
     if (source === undefined) throw new Error("Run dataset processing lost an answer row's source row.");

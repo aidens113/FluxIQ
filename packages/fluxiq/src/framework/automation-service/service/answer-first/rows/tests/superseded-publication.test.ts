@@ -19,6 +19,29 @@ const setup = (refuse: Set<string> = new Set()) => {
 };
 
 describe("a superseded publication", () => {
+  it("withholds this attempt's earlier answer and carried publications while keeping raw captures", async () => {
+    const { sink, retired } = setup();
+    await sink.fromCall(call("raw"), liveAnswer([item(1)]));
+    await sink.publish(answer("step.ready.v1", [item(1)]));
+    sink.carried("step.carried.v1");
+    sink.carried("read.unrelated");
+    await sink.withhold();
+    expect(retired).toEqual(["step.ready.v1", "step.carried.v1"]);
+    expect(sink.summary("step.ready.v1").rows).toEqual([]);
+    expect(sink.summary("read.raw").rows).toEqual([item(1)]);
+    await sink.withhold();
+    expect(retired).toHaveLength(2);
+  });
+  it("reports a partial retirement failure, forgets only successful removals, and retries the rest", async () => {
+    const { sink, retired } = setup(new Set(["step.second.v1"]));
+    sink.carried("step.first.v1");
+    sink.carried("step.second.v1");
+    sink.carried("step.third.v1");
+    await expect(sink.withhold()).rejects.toThrow("store unavailable");
+    expect(retired).toEqual(["step.first.v1"]);
+    await sink.withhold();
+    expect(retired).toEqual(["step.first.v1", "step.second.v1", "step.third.v1"]);
+  });
   it("is retired once the new one is stored, and a capture never is", async () => {
     const { sink, store, retired } = setup();
     await sink.fromCall(call("first"), liveAnswer([item(1)]));

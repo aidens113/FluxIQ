@@ -35,9 +35,9 @@ export type FluxNodeShapedOutputs = { outputs?: JsonValue; lineage: DataLineage[
 const MOST_LINEAGE = 1000;
 const ID_UNSAFE = /[^A-Za-z0-9._:-]/gu;
 
-export function fluxNodeShapedOutputs(type: JsonTypeSchema | undefined, sources: FluxNodeOutputSources): FluxNodeShapedOutputs {
+export function fluxNodeShapedOutputs(type: JsonTypeSchema | undefined, sources: FluxNodeOutputSources, onRowsRequired?: () => void): FluxNodeShapedOutputs {
   const lineage: DataLineage[] = [];
-  const shaper = new Shaper(sources, lineage);
+  const shaper = new Shaper(sources, lineage, onRowsRequired);
   const outputs = type === undefined || isAny(type) ? shaper.undeclared() : shaper.shape(type, "");
   return { ...(outputs === undefined ? {} : { outputs }), lineage: lineage.length > MOST_LINEAGE ? coarse(lineage) : lineage };
 }
@@ -45,7 +45,7 @@ export function fluxNodeShapedOutputs(type: JsonTypeSchema | undefined, sources:
 class Shaper {
   private readonly rows: readonly JsonObject[];
 
-  constructor(private readonly sources: FluxNodeOutputSources, private readonly lineage: DataLineage[]) {
+  constructor(private readonly sources: FluxNodeOutputSources, private readonly lineage: DataLineage[], private readonly onRowsRequired?: () => void) {
     this.rows = sources.rows?.rows ?? [];
   }
 
@@ -79,6 +79,7 @@ class Shaper {
       this.lineage.push({ pointer, runId: this.sources.runId, source: { kind: "input", pointer: `/${escapePointer(name)}` } });
       return structuredClone(this.sources.inputs[name] as JsonValue);
     }
+    this.onRowsRequired?.();
     if (this.rows.length !== 1) return undefined;
     const field = this.fieldOf(name);
     if (field === undefined || !Object.hasOwn(this.rows[0]!, field)) return undefined;
@@ -87,6 +88,7 @@ class Shaper {
   }
 
   private scalar(type: JsonTypeSchema, pointer: string): JsonValue | undefined {
+    this.onRowsRequired?.();
     const columns = this.sources.rows?.columns ?? [];
     if (this.rows.length !== 1 || columns.length !== 1 || !Object.hasOwn(this.rows[0]!, columns[0]!.id)) return undefined;
     this.traceRow(pointer, 0);
@@ -95,6 +97,7 @@ class Shaper {
 
   /** Every row, cut to the item's properties when it declares some, else to the stored columns. */
   private records(item: JsonTypeSchema | undefined, pointer: string): JsonValue[] {
+    this.onRowsRequired?.();
     const properties = item?.properties;
     return this.rows.map((row, index) => {
       this.traceRow(`${pointer}/${index}`, index);

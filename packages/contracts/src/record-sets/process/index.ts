@@ -6,12 +6,14 @@
 // `run-mvswewhy-e4e469d4`). `cell-text.ts` is internal and not re-exported.
 export * from "./account-without-evidence.ts";
 export * from "./any-of.ts";
+export * from "./binding/index.ts";
 export * from "./compares-dates.ts";
 export * from "./count-unsortable-rows.ts";
 export * from "./condition/index.ts";
 export * from "./date-bound.ts";
 export * from "./date-within.ts";
 export * from "./derive.ts";
+export type { AutomationStudioRecordProcessingDeclaration } from "./declaration/index.ts";
 export * from "./field-comparison.ts";
 export * from "./parse-condition.ts";
 export * from "./parse-processing.ts";
@@ -19,6 +21,7 @@ export * from "./process-rows.ts";
 export * from "./processing-vocabulary.ts";
 export * from "./read-date.ts";
 export * from "./read-number.ts";
+export type { AutomationStudioAutomaticRecordProcessRowsResult, AutomationStudioRecordProcessingMissingEvidence } from "./readiness/index.ts";
 export * from "./row-date.ts";
 export * from "./row-identity.ts";
 export * from "./sort-rows.ts";

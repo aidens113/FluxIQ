@@ -113,6 +113,15 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       published.set(answer.datasetId, fingerprint);
       await retireSuperseded(answer.datasetId);
     },
+    async withhold() {
+      for (const datasetId of [...published.keys()]) {
+        // A real persistence owner supplies retire. With no persistent store, forget only our in-memory publication.
+        await input.retire?.(datasetId);
+        published.delete(datasetId);
+        datasets.delete(datasetId);
+        batches.delete(datasetId);
+      }
+    },
     carried(datasetId) {
       if (datasetId.startsWith(PUBLICATION_PREFIX) && !published.has(datasetId)) published.set(datasetId, CARRIED);
     },

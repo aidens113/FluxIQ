@@ -22,20 +22,27 @@ export async function automationStudioAnswerFirstSession(input: AutomationStudio
   runId: string;
   attemptId: string;
   now?: () => number;
+  /** Omitted on a fresh attempt; null explicitly preserves unavailable provenance on an old carry-on. */
+  processingReferenceTimeMs?: number | null;
 }): Promise<AutomationStudioAnswerFirstSession> {
   const now = input.now ?? Date.now;
   const marker = { attemptId: input.attemptId };
   const opened = await input.openSession({ runId: input.runId, metadata: { explorationAttempt: marker } });
   const startedAt = now();
-  await input.writeSession({ ...opened, status: "running", startedAt });
+  if (!Number.isSafeInteger(startedAt) || startedAt < 0) throw new Error("Invalid session start time.");
+  const reference = input.processingReferenceTimeMs === undefined ? startedAt : input.processingReferenceTimeMs;
+  if (reference !== null && (!Number.isSafeInteger(reference) || reference < 0)) throw new Error("Invalid processing reference time.");
+  const metadata: JsonObject = { ...(opened.metadata ?? {}), processingReferenceTimeMs: reference };
+  await input.writeSession({ ...opened, status: "running", startedAt, metadata });
   let ended = false;
   return {
     session: opened,
+    startedAt,
+    processingReferenceTimeMs: reference,
     async end(status) {
       if (ended) return;
       ended = true;
-      const metadata: JsonObject = { ...(opened.metadata ?? {}), explorationAttempt: { ...marker, end: status } };
-      await input.writeSession({ ...opened, status, startedAt, finishedAt: now(), metadata });
+      await input.writeSession({ ...opened, status, startedAt, finishedAt: now(), metadata: { ...metadata, explorationAttempt: { ...marker, end: status } } });
     }
   };
 }

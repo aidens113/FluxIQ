@@ -1,10 +1,18 @@
 import type { AutomationStudioTaskAttempt, AutomationStudioTaskResult, AutomationStudioTriedRecord } from "@fluxiq/contracts/automation";
 import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.ts";
+import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
+import type { AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
 
 /** One attempt as it is kept beside its Flow (`./store.ts`). */
 export type AutomationStudioAnswerFirstAttemptRecord = {
   attempt: AutomationStudioTaskAttempt;
+  /** One immutable reference anchored to the logical attempt's first actual session start, independent of resumed segment timing. */
+  processingReferenceTimeMs?: number;
+  /** The declaration as this segment last kept it, including any explicit evidenced amendment. */
+  processing?: AutomationStudioAnswerFirstProcessingDeclaration;
+  /** Exact current source-page provenance, also while data readiness prevents an answer publication. One latest snapshot replaces this attempt's prior checkpoint. */
+  resultEvidence?: AutomationStudioResultEvidenceBundle;
   /** Absent only until there is one; a budget-out or an achieved attempt has one. */
   result?: AutomationStudioTaskResult;
   tried: AutomationStudioTriedRecord;

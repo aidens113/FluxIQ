@@ -89,6 +89,7 @@ import { automationStudioAnswerFirstReadShapeOf } from "./read-shape.ts";
 import type { AutomationStudioAnswerFirstReplayRecord } from "./replay-record.ts";
 import { automationStudioAnswerFirstReplayStands, type AutomationStudioAnswerFirstReplayDeviation } from "./replay-stands.ts";
 import { automationStudioAnswerFirstReplayVerdictNote } from "./replay-verdict.ts";
+import type { AutomationStudioAnswerFirstResultReadiness } from "../result-feed/index.ts";
 
 /** A check that gave no answer: nothing was refused, so its words when it comes again differ (`AUTOMATION_STUDIO_ANSWER_FIRST_REFUSED_WORDS`). */
 export const AUTOMATION_STUDIO_ANSWER_FIRST_NOT_JUDGED_CODE = "answer_first.not_judged";
@@ -160,6 +161,8 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
   readsRan(): boolean;
   /** Why a result with no rows is refused where a look holds rows the draft could take (`../result-feed/feed.ts`); `undefined` where it is not. Absent, never. */
   emptyResult?: (() => string | undefined) | undefined;
+  /** Declared data tasks must have a current processed answer before any success path. Action-only tasks explicitly report N/A. */
+  processingReadiness?: (() => AutomationStudioAnswerFirstResultReadiness | Promise<AutomationStudioAnswerFirstResultReadiness>) | undefined;
   endView(): Promise<AutomationStudioResultEndView | undefined>;
   witnesses(): { before?: JsonObject; after?: JsonObject };
   /** What the attempt's looks found after the first lasting act, oldest first (header). Absent, none. */
@@ -201,10 +204,20 @@ export function automationStudioAnswerFirstCompletionCheck(input: {
       const rows = await input.rows();
       const acts = input.acts();
       state.held = { rows, acts: acts.length };
+      const readiness = await input.processingReadiness?.();
+      if (readiness?.state === "missing-evidence") {
+        state.achieved = false;
+        state.takenUnverified = undefined;
+        state.onRecord = undefined;
+        state.confirmedBy = undefined;
+        return refused(readiness.code, readiness.reason);
+      }
+      // A ready declared empty dataset has real source/schema evidence and explicitly permits zero rows. Its normal caller/judge check still decides task success.
+      const readyData = readiness?.state === "ready" && rows.datasetId !== undefined;
       // Rows a look kept are not the result: the model is told which, and the one call that makes one a draft step (lane t905, D1).
-      const empty = rows.totalRows === 0 && (asks.records || (acts.length === 0 && answerText === undefined)) ? input.emptyResult?.() : undefined;
+      const empty = !readyData && rows.totalRows === 0 && (asks.records || (acts.length === 0 && answerText === undefined)) ? input.emptyResult?.() : undefined;
       if (empty !== undefined) return refused(EMPTY_RESULT, empty);
-      if (rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
+      if (!readyData && rows.totalRows === 0 && acts.length === 0 && answerText === undefined) return refused(NOTHING, "You have nothing to check yet: no read has returned a row, no lasting act is on the record, and you gave no answer. Get the result first, and complete when you have it.");
       if (asks.records && rows.totalRows === 0 && !input.readsRan()) return refused(ROWS_NOT_READ,WORDS.rowsNotRead(asks.quote));
       const summary = await summaryOf(input, rows, acts, answerText);
       const digest = automationStudioFlowLessSummaryDigest(summary);
