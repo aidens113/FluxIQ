@@ -24,7 +24,7 @@
 // `./settle.ts`'s; a covered step joining the Flow is refused as a second copy
 // of the loop's last step (`../second-copy.ts`, rule (d)).
 import type { JsonValue } from "../../../../core/index.ts";
-import { automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "../routing.ts";
+import { automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftRoutingReferences, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "../routing.ts";
 import { automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 
 type Step = AutomationStudioFlowDraftStep;
@@ -38,6 +38,11 @@ type Step = AutomationStudioFlowDraftStep;
  */
 export function automationStudioFlowDraftLoopCoveringStep(steps: readonly Step[], step: Step): Step | undefined {
   if (step.routing !== undefined || !automationStudioFlowDraftStepIsProposable(step)) return undefined;
+  // A later repeat may use this result as its source. Covering the step
+  // would orphan that reference even though its own act matches the loop's.
+  const id = automationStudioFlowDraftStepId(step);
+  if (steps.some((other) => other !== step && automationStudioFlowDraftStepIsProposed(other)
+    && other.routing !== undefined && automationStudioFlowDraftRoutingReferences(other.routing).includes(id))) return undefined;
   const ordered = [...steps].sort((a, b) => a.position - b.position);
   const at = ordered.indexOf(step);
   const last = (at < 0 ? ordered : ordered.slice(0, at)).filter(automationStudioFlowDraftStepIsProposed).at(-1);

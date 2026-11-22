@@ -102,6 +102,18 @@ describe("Flow Bootstrap evidence steps: refused amendments", () => {
     expect(step?.amendmentRefusals).toEqual(["7:not_a_kept_step"]);
   });
 
+  it("publishes and reads back repeat-preservation refusals", () => {
+    const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
+      amendmentsRefused: [
+        { step: 2, reason: "holds_a_repeat", repeat: 3, holds: "over" },
+        { step: 4, reason: "span_holds_routing", repeat: 3, through: 4, routed: 4 }
+      ]
+    })]);
+    expect(step?.amendmentsRefused).toEqual([{ step: 2, reason: "holds_a_repeat" }, { step: 4, reason: "span_holds_routing" }]);
+    expect(step?.amendmentRefusals).toEqual(["2:holds_a_repeat", "4:span_holds_routing"]);
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
+  });
+
   it("publishes at most the refusals one decision can carry", () => {
     const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({
       amendmentsRefused: Array.from({ length: 20 }, (_item, index) => ({ step: index + 1, reason: "already_so" as const }))

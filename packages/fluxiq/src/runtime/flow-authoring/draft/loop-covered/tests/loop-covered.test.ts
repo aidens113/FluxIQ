@@ -15,6 +15,20 @@ const inFlow = (steps: readonly AutomationStudioFlowDraftStep[]): number[] => st
 const at = (steps: readonly AutomationStudioFlowDraftStep[], position: number): AutomationStudioFlowDraftStep => steps.find((step) => step.position === position)!;
 
 describe("the recorded apprentices draft", () => {
+  it("keeps a duplicate next press when another kept repeat names it as its source", () => {
+    const steps = recordedApprenticesDraft();
+    const following = structuredClone(at(steps, 11));
+    following.id = "d13";
+    following.position = 13;
+    following.input = { different: true };
+    following.routing = { kind: "repeat", over: "d10", through: "d13" };
+    steps.push(following);
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 6, change: "repeat", while: 9 }])).toEqual({ applied: 1, refused: [] });
+    expect(at(steps, 10).disposition).toBe("kept");
+    expect(at(steps, 10).coveredBy).toBeUndefined();
+    expect(automationStudioFlowDraftLoopCoveringStep(steps, at(steps, 10))).toBeUndefined();
+  });
+
   it("before the loop, the three kept presses are all in the Flow and nothing covers them", () => {
     const steps = recordedApprenticesDraft();
     expect(inFlow(steps)).toEqual([1, 3, 6, 9, 10, 11]);

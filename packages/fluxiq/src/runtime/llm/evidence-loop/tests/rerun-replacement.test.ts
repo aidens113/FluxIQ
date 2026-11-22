@@ -71,6 +71,34 @@ describe("a rerun taking the replaced step's place", () => {
   const step = (id: string, position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep =>
     ({ id, position, iteration: position, actionId: "node", input: {}, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", ...over });
 
+  it("rebinds a repeated head's own endpoint before withdrawing its replaced attempt", () => {
+    const steps = [
+      step("source", 1, { effect: "observe" }),
+      step("old", 2, { routing: { kind: "repeat", over: "source", through: "old" } }),
+      step("fresh", 3, { disposition: "taken" })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([["source", "kept"], ["fresh", "kept"], ["old", "dropped"]]);
+    expect(steps[1]!.routing).toEqual({ kind: "repeat", over: "source", through: "fresh" });
+    expect(steps[2]!.routing).toBeUndefined();
+  });
+
+  it("places the rerun of an unbounded loop endpoint before settling duplicates after that loop", () => {
+    const steps = [
+      step("start", 1),
+      step("read", 2, { effect: "observe", routing: { kind: "repeat", through: "next", while: "next" } }),
+      step("next", 3, { input: { target: "next" } }),
+      step("duplicate", 4, { input: { target: "next" } }),
+      step("fresh", 5, { input: { target: "next" }, disposition: "taken" })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[2], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([
+      ["start", "kept"], ["read", "kept"], ["fresh", "kept"], ["duplicate", "dropped"], ["next", "dropped"]
+    ]);
+    expect(steps[1]!.routing).toEqual({ kind: "repeat", through: "fresh", while: "fresh" });
+    expect(steps[3]!.coveredBy).toBe("fresh");
+  });
+
   it("carries the routing, and every statement naming the old step names the rerun", () => {
     // d15 lists the rows, d16 acts on each (repeat over d15), and d15 is rerun as d17.
     const steps = [
