@@ -9,6 +9,6 @@ import type { AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary 
  */
 export type AutomationStudioAnswerFirstRowReader = {
   listDatasets(): Promise<AutomationStudioRunDatasetSummary[]>;
-  getPage(input: { datasetId: string; limit: number; cursor?: string }): Promise<AutomationStudioRunDatasetPage | null>;
+  getPage(input: { datasetId: string; limit: number; cursor?: string; retained?: "answer" }): Promise<(AutomationStudioRunDatasetPage & { displayColumns?: { id: string; label: string }[] }) | null>;
   process?(): Promise<void>;
 };
