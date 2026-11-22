@@ -5,7 +5,8 @@ import { readAutomationStudioAnswerFirstResultEvidence } from "./read-evidence.t
 import { automationStudioAnswerFirstStoredDatasetId } from "../rows/index.ts";
 
 type Missing = NonNullable<AutomationStudioResultEvidenceBundle["missingEvidence"]>[number];
-type Held = { reason: string; original: AutomationStudioResultEvidenceBundle | undefined; replacements: Map<number, AutomationStudioResultEvidencePage>; remaining: Set<number>; missing: Missing[]; unidentified: boolean; datasets: ReadonlyMap<string, string> };
+type Collection = { listKey?: string; where?: string };
+type Held = { reason: string; original: AutomationStudioResultEvidenceBundle | undefined; replacements: Map<number, AutomationStudioResultEvidencePage>; remaining: Set<number>; missing: Missing[]; unidentified: boolean; datasets: ReadonlyMap<string, string>; associations: ReadonlyMap<string, readonly Collection[]> };
 
 /** Missing originals are resolved by their exact read association, never by any later read or a guessed page position. */
 export function automationStudioAnswerFirstResultSourceState() {
@@ -18,8 +19,14 @@ export function automationStudioAnswerFirstResultSourceState() {
     reason: () => unavailable() ? held!.reason : undefined,
     hold(reason: string, original: AutomationStudioResultEvidenceBundle, current: AutomationStudioResultEvidenceBundle, preserveRestored: boolean, datasets: ReadonlyMap<string, string>) {
       const parsed = readAutomationStudioAnswerFirstResultEvidence(original);
-      held = { reason, original: parsed, replacements: new Map(), remaining: new Set(parsed?.pages.map((_, index) => index)), missing: [...(parsed?.missingEvidence ?? [])], unidentified: !parsed?.pages.length, datasets: new Map(datasets) };
-      parsed?.pages.forEach((page, index) => {
+      const missing = [...(parsed?.missingEvidence ?? [])];
+      const observed = current.pages.filter((page) => missing.some((ref) => associated(ref, page, datasets))).map((page) => ({ ...structuredClone(page), ...(datasets.has(page.source) ? { datasetId: datasets.get(page.source)! } : {}) }));
+      // These are actual current pages from the referenced dataset, not reconstructed missing originals.
+      // Keep their unresolved references so persistence records the partial evidence without claiming readiness.
+      const recorded = parsed && !parsed.pages.length && observed.length ? { ...parsed, pages: observed } : parsed;
+      const associations = new Map(missing.map((ref) => [stableJson(ref), [...(recorded?.pages ?? []), ...current.pages].filter((page) => associated(ref, page, datasets)).flatMap((page) => page.listKey === undefined && page.where === undefined ? [] : [{ ...(page.listKey === undefined ? {} : { listKey: page.listKey }), ...(page.where === undefined ? {} : { where: page.where }) }])]));
+      held = { reason, original: recorded, replacements: new Map(), remaining: new Set(recorded?.pages.map((_, index) => index)), missing, unidentified: !parsed?.pages.length, datasets: new Map(datasets), associations };
+      recorded?.pages.forEach((page, index) => {
         const exact = preserveRestored ? current.pages.filter((entry) => entry.carried === true && entry.invalidCount === 0 && entry.source === page.source && entry.step === page.step && entry.version === page.version && entry.place === page.place && entry.where === page.where && sameRead(page, { conditions: entry.conditions, fields: entry.fields, ...(entry.listKey === undefined ? {} : { listKey: entry.listKey }) }) && stableJson(entry.rows) === stableJson(page.rows)) : [];
         if (exact.length === 1) { held!.replacements.set(index, structuredClone(exact[0]!)); held!.remaining.delete(index); settle(page); }
       });
@@ -29,7 +36,7 @@ export function automationStudioAnswerFirstResultSourceState() {
       held = undefined;
       const missing = current.pages.filter((page) => page.invalidCount !== 0);
       if (!missing.length) return;
-      held = { reason: `Contributing source validation is incomplete: ${missing.map((page) => `${page.source} (step ${page.step}, version ${page.version}: ${page.invalidCount === undefined ? "validation count unknown" : `${page.invalidCount} original rows rejected by schema`})`).join("; ")}. Retain the safe originals and repair/re-read the exact affected source; an unrelated read cannot replace it.`, original: structuredClone(current), replacements: new Map(), remaining: new Set(), missing: [], unidentified: false, datasets: new Map(datasets) };
+      held = { reason: `Contributing source validation is incomplete: ${missing.map((page) => `${page.source} (step ${page.step}, version ${page.version}: ${page.invalidCount === undefined ? "validation count unknown" : `${page.invalidCount} original rows rejected by schema`})`).join("; ")}. Retain the safe originals and repair/re-read the exact affected source; an unrelated read cannot replace it.`, original: structuredClone(current), replacements: new Map(), remaining: new Set(), missing: [], unidentified: false, datasets: new Map(datasets), associations: new Map() };
       current.pages.forEach((page, index) => page.invalidCount === 0 ? held!.replacements.set(index, structuredClone(page)) : held!.remaining.add(index));
     },
     replace(step: string, read: AutomationStudioAnswerFirstResultRead, datasetId: string | undefined): number | undefined {
@@ -46,10 +53,13 @@ export function automationStudioAnswerFirstResultSourceState() {
     },
     /** A verified complete fresh collection supersedes unavailable originals; it never claims they were restored. */
     supersede(current: AutomationStudioResultEvidenceBundle): boolean {
-      if (!unavailable()) return false;
+      if (!unavailable() || !current.pages.length) return false;
       const previous = held?.original?.pages ?? [];
-      const identities = (key: "listKey" | "where") => [...new Set(previous.flatMap((page) => page[key] === undefined ? [] : [page[key]!]))];
-      if (["listKey", "where"].some((key) => identities(key as "listKey" | "where").some((value) => !current.pages.some((page) => page[key as "listKey" | "where"] === value)))) return false;
+      if (previous.some((prior) => !current.pages.some((page) => sameCollection(prior, page)))) return false;
+      for (const ref of held!.missing) {
+        const associated = held!.associations.get(stableJson(ref));
+        if (!associated?.length || associated.some((prior) => !current.pages.some((page) => sameCollection(prior, page)))) return false;
+      }
       held = undefined;
       return true;
     },
@@ -60,6 +70,15 @@ export function automationStudioAnswerFirstResultSourceState() {
       return { ...structuredClone(original), ...(held.missing.length ? { missingEvidence: structuredClone(held.missing) } : {}), pages: original.pages.map((page, index) => structuredClone(held!.replacements.get(index) ?? page)) };
     }
   };
+}
+
+/** Keep each known source tuple together; a new capture's opaque dataset id need not equal the old one. */
+function sameCollection(prior: Collection, page: Collection): boolean {
+  return (prior.listKey !== undefined || prior.where !== undefined) && (prior.listKey === undefined || prior.listKey === page.listKey) && (prior.where === undefined || prior.where === page.where);
+}
+
+function associated(ref: Missing, page: AutomationStudioResultEvidencePage, datasets: ReadonlyMap<string, string>): boolean {
+  return (page.datasetId ?? datasets.get(page.source)) === ref.datasetId && (ref.batchKey === undefined || ref.batchKey === page.source || ref.batchKey === `read/${encodeURIComponent(page.source)}`);
 }
 
 function matchesSource(ref: Missing, page: AutomationStudioResultEvidencePage, datasetId: string | undefined): boolean {
