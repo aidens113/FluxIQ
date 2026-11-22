@@ -17,7 +17,7 @@ The downstream web-extension index is at `F:\!FluxIQWebExtension\docs\working\RE
 | Document | Owner | Lines | Scope | Paired downstream |
 | --- | --- | --- | --- | --- |
 | [agent-working-doc-protocol.md](./agent-working-doc-protocol.md) | Senior supervisor agent | 521 | How the supervisor and workers use `docs/working/` as durable memory and as the coordination substrate for multi-agent work. | `agent-working-doc-protocol.md` |
-| [data-first-simplification-plan.md](./data-first-simplification-plan.md) | Senior supervisor agent | 177 | Shared Flow authoring, permissions, judging, retained data, deterministic processing and replay for FluxNodes and extension clients. | `data-first-simplification-plan.md` |
+| [data-first-simplification-plan.md](./data-first-simplification-plan.md) | Senior supervisor agent | 183 | Shared Flow authoring, permissions, judging, retained data, deterministic processing and replay for FluxNodes and extension clients. | `data-first-simplification-plan.md` |
 
 ## Paused
 
