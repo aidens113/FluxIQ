@@ -1,15 +1,17 @@
 # Breadth Round Core Integration
 
-Status: Active
-Status detail: Positive corpus87/108;11acceptedtasks/8sites. Classifiedsfurniture exact7x4/wholeoracle/judge/separatezero replay accepted. Canonicalreset r6 exactdata/zero replay but paidjury disagreed, held. PhotoPriya failed90calls/nofullanswer. Labpaidcheckoverlap fix independently verified50cases and sameinput23calls; no blind retry/empty acceptance.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-17
-Last updated: 2026-10-18
+Last updated: 2026-11-22
 Owner: Codex senior supervisor
 Scope: Domain-neutral storage, reset authorization, result verification and target preservation required by the downstream breadth round. Browser tests, scenarios and install proof remain downstream.
 Paired document: `breadth-forty-tasks-plan.md` in FluxIQWebExtension
 Related: [automation-project-agents-plan.md](./automation-project-agents-plan.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Positive corpus87/108;11acceptedtasks/8sites. Classifiedsfurniture exact7x4/wholeoracle/judge/separatezero replay accepted. Canonicalreset r6 exactdata/zero replay but paidjury disagreed, held. PhotoPriya failed90calls/nofullanswer. Labpaidcheckoverlap fix independently verified50cases and sameinput23calls; no blind retry/empty acceptance.
 
 The user authorized continuing the downstream breadth handoff with live tests. The downstream paired document owns executable briefs, browser scenarios, evidence and install proof.
 

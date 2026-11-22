@@ -1,15 +1,17 @@
 # t911 takeover, phase 1 (worker report)
 
-Status: Active
-Status detail: Phase 2 under way: dev merged into the branch (t924, t927, t929), conflicts resolved, t911's unfinished durable-settlement gaps being fixed; the lead concludes the merge.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-11-17
-Last updated: 2026-11-18
+Last updated: 2026-11-22
 Owner: Senior supervisor agent (written by its worker-heavy worker for t911)
 Scope: Taking over Codex's t911 runtime lease isolation in Core: what it set out to do, what is done and unfinished, the dev merge forecast, and the storage layout questions met on the way.
 Paired document: none
 Related: [FluxNode plan](./fluxnode-plan.md), [t911 brief](./fluxnode-plan/reports/codex-t911-lease-brief.md), [Codex's t911 report](./fluxnode-plan/reports/codex-t911-lease-isolation.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Phase 2 under way: dev merged into the branch (t924, t927, t929), conflicts resolved, t911's unfinished durable-settlement gaps being fixed; the lead concludes the merge.
 
 - Phase 1 (goal, state, conflict forecast, storage layout questions) is done; see below.
 - Phase 2: dev is merged into `task/t911-runtime-lease-isolation`, and the three conflicts are resolved by

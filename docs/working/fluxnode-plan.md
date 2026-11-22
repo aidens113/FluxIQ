@@ -1,9 +1,9 @@
 # FluxNode, Flows And The MVP Seal
 
-Status: Active
-Status detail: Revised 2026-11-09 with the user's second direction; execution started the same day (Wave 1).
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-11-09
-Last updated: 2026-11-12
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: The framework pivot. FluxNode becomes Core's main offering (a scoped automation a developer declares in code and runs on Core's engine). "Subflow" retires, so everything is a Flow in a project's folders. Data pipelines become first-class. One key-based access system covers every client. The panel is redesigned for setup, monitoring, security and an easy editor, with a panel-wide assistant. Simulated Android, Linux and Windows test environments are built, and the cloud comes later. The extension's finish, the managed browser host and the web Lab lane are owned by the paired document.
 Paired document: `C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-seal-plan.md`
@@ -12,6 +12,8 @@ Related: [Answer First](./answer-first-plan.md), [hosted production](./hosted-pr
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Revised 2026-11-09 with the user's second direction; execution started the same day (Wave 1).
 
 **P2c lease isolation in progress (2026-11-12).** Task t911 reproduced both cross-instance strictness and lease-stamp leaks in two real model-disabled runtimes. Lead independently passed 14 authority/adapter tests (1.29s); product wiring and truthful terminal known-unsent settlement are now approved and underway. Legacy string callbacks retain their contract. The dependent extension adapter checkout is task t912, prepared in isolation; its source has not yet been assigned. This is not real-runtime acceptance or phase-4 multi-runtime service selection.
 
