@@ -112,7 +112,12 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
     const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
     const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
-    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...(judgeEvidence === undefined ? {} : { judgeEvidence }), ...automationStudioAnswerFirstReplayKept(run.completion.state) });
+    const kept = { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...(judgeEvidence === undefined ? {} : { judgeEvidence }), ...automationStudioAnswerFirstReplayKept(run.completion.state) };
+    const sourceOwner = journal.sourceOwner(run.trail);
+    if (judgeEvidence !== undefined && sourceOwner !== undefined) {
+      await run.store.save(run.input.projectId, run.input.flowId, kept, { sourceOwner });
+      journal.recovered(run.trail, await run.store.saveJudgeEvidence(run.input.projectId, run.input.flowId, run.attemptId, judgeEvidence, { sourceOwner }));
+    } else await run.store.save(run.input.projectId, run.input.flowId, kept);
     const declaration = run.result.processingDeclaration();
     if (declaration !== undefined) await run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, processing: declaration }), { scoped: run.input.caller?.actScope !== undefined });
     return processing;

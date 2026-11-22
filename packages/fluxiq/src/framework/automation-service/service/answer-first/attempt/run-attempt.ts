@@ -229,7 +229,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   // Everything the attempt did, for its judge: every call the chain sent to the domain with its answer (`./call-chain.ts`), and every step
   // a saved Flow's run made (`./flow-stage.ts`), held across a resume so a carried-on attempt's judge still sees all of it (`../trail/`, t963).
   const journal = automationStudioAnswerFirstTrailsOf(input.owner);
-  const trail = journal.of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined, ...(carried && Object.hasOwn(carried, "judgeEvidence") ? { judgeEvidence: carried.judgeEvidence ?? null } : {}) });
+  const trail = journal.of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined, ...(carried && Object.hasOwn(carried, "judgeEvidence") ? { judgeEvidence: carried.judgeEvidence ?? null } : {}), ...(carried && Object.hasOwn(carried, "judgeEvidenceIssue") ? { judgeEvidenceIssue: carried.judgeEvidenceIssue ?? null } : {}) });
   const judgeEvidence = { ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
@@ -294,7 +294,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
       trail.push(step);
       const checkpoint = journal.checkpoint(trail, witnesses.readings(), judgeEvidence);
       if (checkpoint !== undefined) {
-        try { await store.saveJudgeEvidence(projectId, flowId, attemptId, checkpoint); }
+        try { journal.recovered(trail, await store.saveJudgeEvidence(projectId, flowId, attemptId, checkpoint, { sourceOwner: journal.sourceOwner(trail) })); }
         catch { automationStudioAnswerFirstSay("Part of the record was not written", "The call's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }
       }
     }

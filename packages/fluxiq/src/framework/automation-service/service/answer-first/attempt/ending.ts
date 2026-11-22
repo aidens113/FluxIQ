@@ -118,7 +118,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
   try {
     const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
     const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
-    await run.store.save(run.input.projectId, run.input.flowId, {
+    const kept = {
       attempt: checked.attempt,
       ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
       ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
@@ -130,7 +130,12 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
       ...automationStudioAnswerFirstReplayKept(run.completion.state),
       // Always: they are what the next attempt seeds from, and what a carry-on goes on from.
       steps: run.steps
-    });
+    };
+    const sourceOwner = journal.sourceOwner(run.trail);
+    if (judgeEvidence !== undefined && sourceOwner !== undefined) {
+      await run.store.save(run.input.projectId, run.input.flowId, kept, { sourceOwner });
+      journal.recovered(run.trail, await run.store.saveJudgeEvidence(run.input.projectId, run.input.flowId, run.attemptId, judgeEvidence, { sourceOwner }));
+    } else await run.store.save(run.input.projectId, run.input.flowId, kept);
     return { ok: true };
   } catch (error) {
     return { ok: false, errorName: error instanceof Error ? error.name : "unknown" };

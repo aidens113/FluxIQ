@@ -12,6 +12,8 @@
 import { automationStudioMakeJudgeCheckpoint, type AutomationStudioJudgeEvidenceCheckpoint, type AutomationStudioResultTrailSemanticOptions, type AutomationStudioResultTrailStep } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioJudgeEvidenceCapability } from "../../../../../runtime/llm/harness-options/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/judge-evidence-issue.ts";
+import { automationStudioAnswerFirstJournalOwners } from "./source-owner.ts";
 
 /** The most attempts whose trail is held per service: the oldest goes first. */
 const MOST_HELD = 32;
@@ -25,10 +27,12 @@ const NOT_HELD: AutomationStudioResultTrailStep = {
 
 export type AutomationStudioAnswerFirstTrails = {
   /** The trail `attemptId` adds to: the one held for it on a carry-on, a fresh one otherwise. */
-  of(attemptId: string, opening: { carriedOn: boolean; askedAgain: boolean; judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null }): AutomationStudioResultTrailStep[];
+  of(attemptId: string, opening: { carriedOn: boolean; askedAgain: boolean; judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null; judgeEvidenceIssue?: AutomationStudioAnswerFirstJudgeEvidenceIssue | null }): AutomationStudioResultTrailStep[];
   capability(trail: readonly AutomationStudioResultTrailStep[], binding: { judgeEvidenceVersion?: 1 | undefined } | undefined): { judgeEvidenceVersion?: 1 | undefined };
   checkpoint(trail: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject }, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioJudgeEvidenceCheckpoint | undefined;
   witnesses(trail: readonly AutomationStudioResultTrailStep[], current: { before?: JsonObject; after?: JsonObject }): { before?: JsonObject; after?: JsonObject };
+  sourceOwner(trail: readonly AutomationStudioResultTrailStep[]): object | undefined;
+  recovered(trail: AutomationStudioResultTrailStep[], proof: { recoveredReceipt: string; revision: number } | undefined): void;
 };
 
 const HELD = new WeakMap<object, AutomationStudioAnswerFirstTrails>();
@@ -39,6 +43,7 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
   if (known) return known;
   const trails = new Map<string, AutomationStudioResultTrailStep[]>();
   const checkpoints = new WeakMap<readonly AutomationStudioResultTrailStep[], AutomationStudioJudgeEvidenceCheckpoint | null>();
+  const sourceOwners = new WeakMap<readonly AutomationStudioResultTrailStep[], object>();
   const made: AutomationStudioAnswerFirstTrails = {
     of(attemptId, opening) {
       const earlier = opening.carriedOn && !opening.askedAgain ? trails.get(attemptId) : undefined;
@@ -46,6 +51,16 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
       const stored = carried && Object.hasOwn(opening, "judgeEvidence");
       const invalid: AutomationStudioResultTrailStep = { did: "core.judge_checkpoint_unreadable", outcome: "not_held", judgeEvidence: { version: 1, missing: ["judge_evidence.checkpoint_invalid"], withheld: true } };
       const trail = earlier ?? (stored ? opening.judgeEvidence === null || opening.judgeEvidence === undefined ? [invalid] : structuredClone(opening.judgeEvidence.trail) : carried ? [NOT_HELD] : []);
+      const issuePresent = carried && Object.hasOwn(opening, "judgeEvidenceIssue");
+      if (!earlier && !carried) sourceOwners.set(trail, automationStudioAnswerFirstJournalOwners.create());
+      if (issuePresent) {
+        const issue = opening.judgeEvidenceIssue;
+        const receipt = issue?.receipt;
+        const recovered = issue?.recoveredAtRevision;
+        const did = recovered === undefined ? "core.judge_journal_coverage" : "core.judge_journal_recovered";
+        const known = trail.some((step) => step.did === did && (step.judgeEvidence?.evidence as JsonObject | undefined)?.receipt === receipt);
+        if (!known) trail.push(recovered !== undefined && receipt !== undefined ? recoveredStep(receipt, recovered) : { did, judgeEvidence: { version: 1, role: "observation", evidence: { coverage: "historical_incomplete", ...(receipt === undefined ? {} : { receipt }), code: issue?.code ?? "checkpoint_issue_invalid", ...(issue === null || issue === undefined ? {} : { revision: issue.revision }), note: "Core could not safely keep all historical semantic evidence at this boundary. Prior facts remain actual; an omitted call or witness has no invented outcome. Judge any independently complete current proof, and require the relevant missing state/data rather than treating this historical warning as success." }, missing: [], withheld: false } });
+      }
       const current = checkpoints.get(trail);
       if (stored && (current == null || (opening.judgeEvidence != null && opening.judgeEvidence.revision > current.revision))) checkpoints.set(trail, opening.judgeEvidence ?? null);
       if (earlier && stored && opening.judgeEvidence == null) trail.push(invalid);
@@ -72,8 +87,18 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
     witnesses(trail, current) {
       const before = checkpoints.get(trail)?.witnesses?.before;
       return { ...current, ...(before === undefined ? {} : { before: { judgeEvidence: before } }) };
+    },
+    sourceOwner: (trail) => sourceOwners.get(trail),
+    recovered(trail, proof) {
+      if (proof === undefined || sourceOwners.get(trail) === undefined) return;
+      if (trail.some((step) => step.did === "core.judge_journal_recovered" && (step.judgeEvidence?.evidence as JsonObject | undefined)?.receipt === proof.recoveredReceipt)) return;
+      trail.push(recoveredStep(proof.recoveredReceipt, proof.revision));
     }
   };
   HELD.set(owner, made);
   return made;
+}
+
+function recoveredStep(receipt: string, revision: number): AutomationStudioResultTrailStep {
+  return { did: "core.judge_journal_recovered", judgeEvidence: { version: 1, role: "observation", evidence: { coverage: "recovered", receipt, recoveredAtRevision: revision, note: "Core successfully saved the complete semantic snapshot from the same uninterrupted source owner and resolved this exact historical storage warning. Earlier history remains recorded. This storage proof does not establish any domain effect or task success; current state and data still require verification." }, missing: [], withheld: false } };
 }

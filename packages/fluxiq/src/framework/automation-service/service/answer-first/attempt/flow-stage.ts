@@ -118,7 +118,7 @@ async function stage(run: AutomationStudioAnswerFirstAttemptRun, saved: Pick<Aut
       run.trail.push(...steps);
       const checkpoint = journal.checkpoint(run.trail, run.witnesses.readings(), semantic);
       if (checkpoint !== undefined) {
-        try { await run.store.saveJudgeEvidence(input.projectId, input.flowId, run.attemptId, checkpoint); }
+        try { journal.recovered(run.trail, await run.store.saveJudgeEvidence(input.projectId, input.flowId, run.attemptId, checkpoint, { sourceOwner: journal.sourceOwner(run.trail) })); }
         catch { automationStudioAnswerFirstSay("Part of the record was not written", "The Flow's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }
       }
     } },

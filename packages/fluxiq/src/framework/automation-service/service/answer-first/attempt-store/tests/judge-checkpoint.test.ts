@@ -127,7 +127,10 @@ it("requires full equality for an equal revision and refuses metadata atomically
   const before = await io.open().get("project", "flow", "attempt");
   for (const conflict of [{ ...original, trail: [{ ...original.trail[0]!, framework: { effectApplied: false } }] }, { ...original, trail: [{ ...original.trail[0]!, judgeEvidence: { version: 1 as const, role: "action" as const, evidence: { updated: false }, missing: [], withheld: false } }] }, { ...original, witnesses: { after: { version: 1 as const, role: "observation" as const, evidence: { updated: false }, missing: [], withheld: false } } }]) {
     await expect(io.store.saveJudgeEvidence("project", "flow", "attempt", conflict)).rejects.toThrow("revision conflict");
-    expect(await io.open().get("project", "flow", "attempt")).toEqual(before);
+    const marked = (await io.open().get("project", "flow", "attempt"))!;
+    const { judgeEvidenceIssue, ...unchanged } = marked;
+    expect(unchanged).toEqual(before);
+    expect(judgeEvidenceIssue).toMatchObject({ code: "checkpoint_conflict", revision: original.revision });
     const result = { ...record().result!, checkedWhat: "A separately saved actual result" };
     await expect(io.store.save("project", "flow", { ...record(), result, judgeEvidence: conflict })).rejects.toThrow("actual attempt data was saved");
     const kept = (await io.open().get("project", "flow", "attempt"))!;

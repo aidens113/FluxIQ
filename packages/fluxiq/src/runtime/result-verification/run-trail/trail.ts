@@ -31,14 +31,15 @@ export function automationStudioResultRunTrail(steps: readonly AutomationStudioR
     return typeof shown === "string" && shown ? shown : undefined;
   };
   const shown = steps.map((step, at): AutomationStudioResultTrailShownStep => {
+    const hasSemantic = Object.hasOwn(step, "judgeEvidence");
     const on = words(step.on);
     const asked = screened(step.asked);
     const outcome = words(step.outcome);
     const where = words(step.where);
     const found = screened(step.found);
-    const callId = step.judgeEvidence === undefined ? words(step.callId) : automationStudioResultEvidenceScreen({ ...(step.callId === undefined ? {} : { callId: step.callId }) }, deniedEvidenceKeys).value.callId;
+    const callId = !hasSemantic ? words(step.callId) : automationStudioResultEvidenceScreen({ ...(step.callId === undefined ? {} : { callId: step.callId }) }, deniedEvidenceKeys).value.callId;
     const framework = step.framework === undefined ? undefined : automationStudioResultEvidenceScreen(step.framework, deniedEvidenceKeys);
-    const semantic = step.judgeEvidence === undefined ? undefined : automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedEvidenceKeys);
+    const semantic = hasSemantic ? automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedEvidenceKeys) : undefined;
     withheld ||= framework?.withheld === true || semantic?.ok === false || (semantic?.ok === true && semantic.finding.withheld);
     return {
       n: at + 1,

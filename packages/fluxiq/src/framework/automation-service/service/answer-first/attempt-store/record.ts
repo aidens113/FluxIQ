@@ -3,6 +3,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-
 import type { AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import type { AutomationStudioResultEvidenceBundle, AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";
 
 /** One attempt as it is kept beside its Flow (`./store.ts`). */
 export type AutomationStudioAnswerFirstAttemptRecord = {
@@ -15,6 +16,8 @@ export type AutomationStudioAnswerFirstAttemptRecord = {
   resultEvidence?: AutomationStudioResultEvidenceBundle;
   /** Validated semantic journal. Null records explicitly rejected metadata; absence alone is legacy. */
   judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null;
+  /** Historical coverage uncertainty survives restart; null is explicitly unreadable issue metadata. */
+  judgeEvidenceIssue?: AutomationStudioAnswerFirstJudgeEvidenceIssue | null;
   /** Absent only until there is one; a budget-out or an achieved attempt has one. */
   result?: AutomationStudioTaskResult;
   tried: AutomationStudioTriedRecord;

@@ -145,10 +145,29 @@ records neither publish nor process rows. Older revisions cannot replace newer
 metadata, regardless of trail length. Equal revisions require full semantic
 equality; conflicts preserve the prior journal. A full-row metadata conflict is
 reported after keeping the actual task/result/processing/source fields, while
-a metadata-only conflict changes nothing. Absence is legacy;
+a metadata-only conflict preserves those fields and the prior journal, adding
+only the durable coverage warning before reporting refusal. Absence is legacy;
 explicitly unreadable new metadata becomes null while actual results/effects
 survive. Resume restores the logical before witness and takes its current after
 from fresh evidence, rather than offering a historical after as current state.
+
+A private `judgeEvidenceIssue` records a Core-issued opaque receipt, boundary
+revision and code when new metadata is rejected. A restarted journal exposes
+incomplete historical coverage as a Core fact, without inventing an omitted
+outcome or equating the warning with task failure. Required current state,
+projection and data readiness still govern completion. An undefined or malformed
+issue remains explicitly unknown. Neither a higher revision nor an arbitrary
+read resolves it.
+
+Only a genuinely new uninterrupted journal receives a memory-only source-owner
+token; valid restored checkpoints receive none. The store may set the exact
+receipt's `recoveredAtRevision` only after a successfully saved newer complete
+snapshot from the eligible original owner. The field is a verified storage
+receipt, not an exposed reset flag or domain-effect proof. Ordinary saves cannot
+manufacture it. Actual store recovery emits a resolution fact immediately and
+on reopen, retaining the earlier warning as history. New rejection rotates to a
+new unresolved receipt; an unclaimed foreign update cannot retain stale clearing
+authority. Tokens, callbacks and raw captures are never persisted.
 
 Stored semantic summaries are read as semantic findings, not projected a second
 time. Unknown/malformed new formats cannot route to legacy raw rendering. A
