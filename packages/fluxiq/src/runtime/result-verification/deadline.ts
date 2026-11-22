@@ -29,6 +29,12 @@
 // The abandoned promise is deliberately left to settle on its own. Nothing is
 // written from it: the caller discards its value, and the only writes a
 // verification makes happen after this returns.
+//
+// **But it is told to stop asking (t979).** A check whose replies cannot be
+// read is asked again until one is read (`./verify.ts`), with no count, so an
+// abandoned verification that went on asking would go on paying with nobody to
+// read its answer. The judge is handed a signal that aborts when the deadline
+// passes or the caller cancels; a judge that passes it to its calls stops there.
 
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK } from "./verify.ts";
 
@@ -73,22 +79,31 @@ export type AutomationStudioResultVerificationBounded<TValue> =
 export async function automationStudioResultVerificationWithinDeadline<TValue>(input: {
   deadlineMs?: number | undefined;
   signal?: AbortSignal | undefined;
-  judge: () => Promise<TValue>;
+  /** Handed a signal that aborts once the deadline passes or `signal` aborts (header, t979). */
+  judge: (ended: AbortSignal) => Promise<TValue>;
 }): Promise<AutomationStudioResultVerificationBounded<TValue>> {
   const deadlineMs = input.deadlineMs ?? AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS;
-  const judged = judge(input.judge);
+  const ended = new AbortController();
+  if (input.signal?.aborted) ended.abort();
+  const judged = judge(() => input.judge(ended.signal));
   if (!(deadlineMs > 0) && !input.signal) return await judged;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
   const expired = new Promise<AutomationStudioResultVerificationBounded<TValue>>((resolve) => {
     if (deadlineMs > 0) {
-      timer = setTimeout(() => resolve({ settled: false, reason: "timed_out" }), deadlineMs);
+      timer = setTimeout(() => {
+        ended.abort();
+        resolve({ settled: false, reason: "timed_out" });
+      }, deadlineMs);
       // A verification deadline must never be the reason a process stays alive.
       timer.unref?.();
     }
     if (input.signal?.aborted) resolve({ settled: false, reason: "aborted" });
     else if (input.signal) {
-      onAbort = () => resolve({ settled: false, reason: "aborted" });
+      onAbort = () => {
+        ended.abort();
+        resolve({ settled: false, reason: "aborted" });
+      };
       input.signal.addEventListener("abort", onAbort, { once: true });
     }
   });

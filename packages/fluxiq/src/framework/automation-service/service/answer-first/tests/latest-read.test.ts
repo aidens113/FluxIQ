@@ -258,7 +258,7 @@ describe("the latest read of a list is the result", () => {
 
   it("the judge refuses the first order, the model sorts and reads, and the second check sees the new order", async () => {
     const library = fakeLibrary();
-    const attempt = await attemptOf(library, [read("first"), complete("Listed."), after(library, () => library.loans.reverse(), "sorted")], { judge: [judgeReply("no")] });
+    const attempt = await attemptOf(library, [read("first"), complete("Listed."), after(library, () => library.loans.reverse(), "sorted")], { judge: [judgeReply("no", { observed: "The loans are not in the order asked for.", defects: [{ kind: "other", row: NAMES[0], requestWords: "every loan" }] })] });
     expect(titles(resultRows(attempt))).toEqual([...NAMES].reverse());
     expect(attempt.requests.filter((request) => request.taskKind === "loop_verification")).toHaveLength(2);
   });

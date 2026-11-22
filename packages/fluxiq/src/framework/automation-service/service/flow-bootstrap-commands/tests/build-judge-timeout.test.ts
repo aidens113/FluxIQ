@@ -20,7 +20,8 @@ function scripted(): { provider: AutomationStudioLlmProvider; seen: AutomationSt
       metadata: { provider: "mock", model: "debug-model" },
       runTask: async (request: AutomationStudioLlmTaskRequest) => {
         seen.push(request);
-        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: "No step reads a price." } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } };
+        // A no naming its defect: one naming none is a reply the harness cannot read, asked again until one is read (t979).
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: "No step reads a price.", defects: [{ kind: "asked_missing", row: "rows not read", requestWords: "the price of every product" }] } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } };
       }
     }
   };

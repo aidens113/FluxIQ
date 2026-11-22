@@ -20,6 +20,23 @@ When supplied but absent, failed or timed out, its answer is not replaced with
 that ordinary observation. More complete evidence does not itself establish that
 the original instruction was fulfilled; the existing result checks remain.
 
+## Unreadable judge replies and accounting
+
+Core's result-verification runtime retries an unreadable, sent judge reply with
+feedback explaining the format problem. A judge continuing the decision
+conversation switches to its native standalone response format after the first
+unreadable reply, keeping the same model. Malformed output never authorizes
+success or changes the model. Cancellation and the existing check deadline stop
+further requests.
+
+Retries share the caller's build or run purse. A standalone build-test judge
+given a remaining budget opens the same existing purse mechanism for the whole
+check, so retries and confirmations cannot each spend that budget independently.
+The harness returns screened billed usage even when the provider reply is
+malformed; unbilled refusals remain unbilled. Completed receipts remain in the
+check's reported spend if a later request times out. An unresolved in-flight
+request is not counted as a known completed charge.
+
 ## Authoring mode
 
 Result accounts may include an optional passive condition-observation companion

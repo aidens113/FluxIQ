@@ -8,12 +8,23 @@
 // because a yes there finishes a build and a no fails a run. Here a yes labels a
 // result "checked once" (D9, t296: one yes once finished a build on wrong rows), and a
 // no or an unsure goes back to the model with its reason, which keeps looking. So
-// nothing here asks again, except that a yes whose citations Core refutes is asked again, within the same check, with Core's sentences and what a valid citation is, until the same refuted citations come back (then it is unsure).
+// nothing here asks again, except that a yes whose citations Core refutes is asked again, within the same check, with Core's sentences and what a valid citation is, until the same refuted citations come back (then it is unsure), and that a reply which could not be read is asked again until one is (below, t979).
 // A yes here must also stand on the rows the result holds (`yesOnRows`, `../cited-yes/records-yes.ts`, t875): one
 // that cites none of them, says nothing of the records asked, or counts other records on the site than the rows held
 // is refuted the same way, so a judge that only forgot to cite or count gets its chance to. A transport fault the provider's retry policy retries
 // inside the call (`../../llm/provider-retry/`) is one question still: no answer came
 // back to be weighed.
+//
+// **A reply that arrived and could not be read is asked again until one is read (t979).** Live run
+// `run-mwoznmcq-cd1d4618` (F25): two of four Haiku judge replies (0047, 0053) were `llm.provider_malformed_response`
+// at HTTP 200 -- a long diagnosis whose JSON, nested as text in the decider's `result_json` transport, collapsed part-way
+// through -- and with no answer the check was not judged and the attempt had to decide again to be asked again. Such a
+// check is now asked again within this one call of the judge (`../unreadable-asks/`): every such ask carries a short
+// note of what could not be read, last in what it is shown; a judge continuing the decider's conversation is, after its
+// first unreadable reply, asked on its own request in its own native answer format on the same model, which nests no
+// JSON as text at all. Every re-ask stays on the same model. No count ends it: the purse, the attempt's budget and this
+// check's own deadline do, the deadline as `not_judged` for time as before. A refused key, an empty balance and a
+// purse's refusal are not asked again. A readable reply is read exactly as a first one is.
 //
 // **Reused, by import:** the harness and `taskKind: "loop_verification"`, the deadline
 // (`../deadline.ts`), the reply reading and its fail-closed rule (`../verdict/`,
@@ -47,6 +58,15 @@ import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict }
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import { automationStudioFlowLessJudgedSummary } from "./judged-summary.ts";
 import { automationStudioFlowLessSummaryFitting } from "./window-fitting.ts";
+import { automationStudioLlmUnreadableReplySaid } from "../../models/failures/index.ts";
+import {
+  automationStudioResultSummaryWithUnreadableNote,
+  automationStudioResultUnreadableAsks,
+  automationStudioResultUnreadableReplySaid,
+  automationStudioResultUnreadableRouting,
+  automationStudioResultUnreadableTurn,
+  type AutomationStudioResultUnreadableStep
+} from "../unreadable-asks/index.ts";
 import { AUTOMATION_STUDIO_RESULT_SIZE_REFUSED, automationStudioResultSummaryFormForWindow } from "../run-trail/index.ts";
 import type { AutomationStudioFlowLessJudgeInput, AutomationStudioFlowLessJudgement, AutomationStudioFlowLessSummary } from "./types.ts";
 
@@ -103,6 +123,9 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
   const formsOf = (summary: AutomationStudioRunResultSummary) => [summary, ...automationStudioFlowLessSummaryFitting(summary)];
   let forms = formsOf(sentNow);
   let form = automationStudioResultSummaryFormForWindow(forms, input.tokenLimits, Buffer.byteLength(input.summary.instructions, "utf8"));
+  // This check's unreadable replies: the note and the request its next ask carries (header, t979).
+  const unreadable = automationStudioResultUnreadableAsks({ continuesDecider: input.continuesDecider === true });
+  const noted = (shown: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary => (unreadable.said === undefined ? shown : automationStudioResultSummaryWithUnreadableNote(shown, unreadable.said));
   try {
     for (;;) {
       const bounded = await automationStudioResultVerificationWithinDeadline({
@@ -114,16 +137,18 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
           flowId: input.flowId,
           ...(input.runId ? { runId: input.runId } : {}),
           instructions: [asked(input)],
-          resultSummary: forms[form]!,
+          // After an unreadable reply, each form carries the note on what could not be read, last (`../unreadable-asks/note.ts`).
+          resultSummary: noted(forms[form]!),
           // Where the judging model's window cannot hold even that, the harness sends a shorter form still, each saying what it summarised (`./window-fitting.ts`).
-          resultSummaryFitting: forms.slice(form + 1),
+          resultSummaryFitting: forms.slice(form + 1).map(noted),
           deniedEvidenceKeys: input.deniedEvidenceKeys,
           provider: input.provider,
           ...(callMs !== undefined ? { timeoutMs: callMs } : {}),
           ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
           signal,
-          // A judge continuing the decider's conversation says so, for its routing and its adapter (`./types.ts`, t965).
-          metadata: { source: SOURCE, expectedOutput: "diagnosis", ...(input.continuesDecider ? { continuesDecider: true } : {}) }
+          // A judge continuing the decider's conversation says so, for its routing and its adapter (`./types.ts`, t965), until
+          // an unreadable reply sends it standalone on the same model (header, t979).
+          metadata: { source: SOURCE, expectedOutput: "diagnosis", ...automationStudioResultUnreadableRouting(unreadable, input.continuesDecider === true) }
         })
       });
       if (input.signal?.aborted) throw input.signal.reason ?? cancelled();
@@ -137,6 +162,13 @@ export async function automationStudioFlowLessJudge(input: AutomationStudioFlowL
         continue;
       }
       const got = reading(bounded.value, read, input.summary);
+      // Unreadable: asked again with the note, on the same model (header, t979).
+      if (got.unread !== undefined) {
+        automationStudioFlowLessUnreadableNoted(unreadable.unread(got.unread), got.unread);
+        await automationStudioResultUnreadableTurn();
+        continue;
+      }
+      unreadable.readable();
       if (!got.refuted) return got.judgement;
       const key = [...got.refuted].sort().join("|");
       if (tried.has(key)) return got.judgement;
@@ -155,8 +187,19 @@ function refusedForSize(result: AutomationStudioLlmTaskResult): boolean {
   return !result.ok && result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === AUTOMATION_STUDIO_RESULT_SIZE_REFUSED);
 }
 
-/** A judgement, and where it is an unsure for citations Core refuted, Core's sentences for them (the re-ask's grounds). */
-type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonly string[] };
+/**
+ * A judgement, and where it is an unsure for citations Core refuted, Core's sentences for them (the re-ask's grounds);
+ * where the reply arrived and could not be read, what could not be read (`unread`, header, t979).
+ */
+type Reading = { judgement: AutomationStudioFlowLessJudgement; refuted?: readonly string[]; unread?: string };
+
+/** A check asked again after an unreadable reply, said in the run's step log: Core's words only, never the reply. */
+function automationStudioFlowLessUnreadableNoted(step: AutomationStudioResultUnreadableStep, said: string): void {
+  const how = step === "standalone"
+    ? "so it is asked again on its own request, in its own answer format, on the same model"
+    : "so it is asked again on the same model with a note saying what could not be read";
+  automationStudioLlmStepLogNote(`The judge's reply could not be read (${said}), ${how}.`);
+}
 
 function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRunResultSummary, summary: AutomationStudioFlowLessSummary): Reading {
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
@@ -165,6 +208,9 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
     const code = error?.code;
     if (result.diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.code === BALANCE_CODE)) return { judgement: { verdict: "not_judged", reason: NO_BALANCE, emptyBalance: true } };
     if (code !== undefined && PURSE_CODES.has(code)) return { judgement: { verdict: "not_judged", reason: PURSE_REFUSED, refusedByPurse: true } };
+    // A reply that arrived and could not be read is asked again (header, t979).
+    const unread = result.providerInvocation === "not_attempted" ? undefined : automationStudioResultUnreadableReplySaid(result.diagnostics);
+    if (unread !== undefined) return { judgement: unanswered(read, code), unread };
     // Refused before it was sent: no provider step records it, so this does (t974).
     if (result.providerInvocation === "not_attempted") {
       // A context that is not JSON is refused in Core's fixed words, so where it is not is found here (`../../llm/provider-task/unbounded-json.ts`).
@@ -183,7 +229,8 @@ function reading(result: AutomationStudioLlmTaskResult, read: AutomationStudioRu
     yesOnRows: true
   });
   if (verdict.basis === "model_silent") return { judgement: { verdict: "not_judged", reason: NO_ANSWER, unanswered: true } };
-  if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return { judgement: unanswered(read, "llm.provider_output_truncated") };
+  // A cut yes its whole fields do not carry was cut off before it could be read, and is asked again as any unreadable reply is (t979).
+  if (cut && response.diagnosis?.answersRequest === "yes" && verdict.verdict !== "answers") return { judgement: unanswered(read, "llm.provider_output_truncated"), unread: automationStudioLlmUnreadableReplySaid({ issueCodes: ["llm.provider_output_truncated"] }) };
   if (verdict.verdict === "answers") return { judgement: { verdict: "yes", reason: "It was judged to be what was asked for.", checkedWhat: checked(summary) } };
   if (verdict.verdict === "does_not_answer") {
     const said = readingWords(verdict.repair?.judgement);

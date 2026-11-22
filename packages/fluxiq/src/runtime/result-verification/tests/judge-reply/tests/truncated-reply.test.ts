@@ -130,20 +130,22 @@ describe("a judge reply cut off before its verdict was whole", () => {
     expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [2, undefined]]);
   });
 
-  it("gives no answer when cut inside its diagnosis twice, and is never a refutation", async () => {
-    const report = await verify([cutInside(NO), cutInside(NO), whole(NO)]);
-    expect(report.calls).toBe(2);
-    expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure", basis: "model_unavailable", failureCode: "llm.provider_output_truncated" });
+  // t979: a check whose reply could not be read is asked again until one is read, never by a count.
+  it("is asked again as often as it is cut inside its diagnosis, and the answer then given stands", async () => {
+    const report = await verify([cutInside(NO), cutInside(NO), whole(NO), whole(NO)], false, true);
+    expect(report.calls).toBe(4);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", calls: 2 });
+    expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [1, 3], [2, undefined]]);
   });
 
-  it("does not take a yes whose required quotes sit in the cut summary: unavailable, and asked again", async () => {
+  it("does not take a yes whose required quotes sit in the cut summary: it gave no answer, and is asked again until it does", async () => {
     const quotesInSummary = cutAfter(YES_BARE, `${QUOTES} `);
-    const report = await verify([quotesInSummary, quotesInSummary, whole(NO)]);
-    expect(report.calls).toBe(2);
-    // Neither a yes nor a held yes nor a refuted one: what it owed may be in what was cut.
-    expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure", basis: "model_unavailable", failureCode: "llm.provider_output_truncated" });
+    const report = await verify([quotesInSummary, quotesInSummary, whole(YES_QUOTING)]);
+    expect(report.calls).toBe(3);
+    // Neither yes was taken: what each owed may be in what was cut. The whole yes after them is.
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "answers" });
     expect(report.outcome).not.toHaveProperty("exclusionEvidenceMissing");
-    expect(cut(report)).toEqual([true, true]);
+    expect(cut(report)).toEqual([true, true, false]);
   });
 
   it("takes the yes the re-ask then gives whole, quotes and all", async () => {

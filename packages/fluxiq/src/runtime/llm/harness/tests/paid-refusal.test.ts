@@ -35,6 +35,8 @@ describe("what a refused reply is charged", () => {
 
     expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm.provider_output_invalid");
     expect(COST_USD).toBeGreaterThan(0);
+    expect(result.usage?.estimatedCostUsd).toBeCloseTo(COST_USD, 12);
+    expect(result.intervention.tokenUsage).toEqual(result.usage);
     expect(ledger.snapshot(RUN)).toMatchObject({ calls: 1, inputTokens: 1_433, outputTokens: 187, totalTokens: 1_620, pendingCalls: 0 });
     expect(ledger.snapshot(RUN).estimatedCostUsd).toBeCloseTo(COST_USD, 12);
     expect(ledger.callRecords(RUN).calls[0]?.charged).toMatchObject({ tokens: "reported", cost: "reported", estimatedCostUsd: COST_USD });
@@ -68,6 +70,8 @@ describe("what a refused reply is charged", () => {
     expect(ledger.snapshot(RUN)).toMatchObject({ calls: 1, inputTokens: 1_433, outputTokens: 187, totalTokens: 1_620 });
     expect(ledger.snapshot(RUN).estimatedCostUsd).toBeCloseTo(COST_USD, 12);
     expect(purse.spentUsd()).toBeCloseTo(COST_USD, 12);
+    expect(result.usage).toEqual(usage);
+    expect(result.intervention.tokenUsage).toEqual(usage);
   });
 });
 
