@@ -180,6 +180,21 @@ forward pass; a reused call id cannot assign a newer tuple to an older occurrenc
 Repeated indistinguishable durable tuples remain ambiguous. Receipts never clear
 a lasting or uncertain effect, a binding/privacy failure, or missing current state.
 
+Receipt-based resolutions are revalidated on current request/checkpoint copies,
+including resolved findings reopened from disk. Every intermediate and terminal
+tuple must remain unambiguous across the journal, and a terminal must identify
+exactly one known-valid current page. Lost authority restores only codes whose
+latest resolution depended on that receipt, preserving the earlier repair fact
+and independent original-source resolutions. Valid rechecks add no duplicate
+history. The sourceProof accessor supplies current pages/receipts without another
+processing evaluation.
+
+Core's held-before finding and wrappers explicitly carry an existing private
+input association through their own in-memory copies. Successful findings are
+rescreened under the current denied keys without another domain projection. JSON
+or history cannot recreate that association. Witness reads hold independent Core
+snapshots so a host reusing one mutable object cannot rewrite the logical before.
+
 Flow-less witnesses keep Core-owned call/act pairs observed between their reads.
 The exact association survives semantic checkpoint/reopen, while a restored after
 stays historical and a new act invalidates the current after. Association proves

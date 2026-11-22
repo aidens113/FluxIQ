@@ -17,6 +17,7 @@ import { automationStudioAnswerFirstJournalOwners } from "./source-owner.ts";
 import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/origins.ts";
 import type { AutomationStudioResultEvidenceSourceRef } from "../../../../../runtime/result-verification/result-evidence/index.ts";
 import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/witness-association.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../../../../runtime/result-verification/judge-evidence/retry.ts";
 
 type Witnesses = { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
 
@@ -95,7 +96,9 @@ export function automationStudioAnswerFirstTrailsOf(owner: object): AutomationSt
       const before = saved?.before;
       const prior = saved?.association;
       const association = current.association === undefined ? prior === undefined ? undefined : { version: 1 as const, before: structuredClone(prior.before), after: [] } : { ...current.association, before: [...(prior?.before ?? []), ...current.association.before].filter((ref, at, all) => all.findIndex((other) => other.callId === ref.callId && other.actId === ref.actId) === at) };
-      return { ...current, ...(before === undefined ? {} : { before: { judgeEvidence: before } }), ...(association === undefined ? {} : { association }) };
+      const wrapper = before === undefined ? undefined : { judgeEvidence: before };
+      if (before !== undefined && wrapper !== undefined) AutomationStudioJudgeEvidenceRetry.carry(before, wrapper);
+      return { ...current, ...(wrapper === undefined ? {} : { before: wrapper }), ...(association === undefined ? {} : { association }) };
     },
     sourceRecorded: (trail, refs, call) => AutomationStudioJudgeEvidenceOrigins.recorded(trail, refs, call),
     sourceOwner: (trail) => sourceOwners.get(trail),

@@ -1,5 +1,5 @@
-// The Flow-less judge on a model of its own whose window is far smaller than what an attempt got (W3, t899): the
-// request is built to the judging model's window, what does not fit is summarised and says so, and the check is
+// The Flow-less judge keeps the task's starting model, whose window can be smaller than what an attempt got:
+// the request is built to that model's window, what does not fit is summarised and says so, and the check is
 // judged rather than refused by size. Through the real harness with scripted models: no model is called. The fixture
 // is a kind of site no realistic scenario uses (a lending library's reading room).
 import { describe, expect, it } from "vitest";
@@ -52,17 +52,17 @@ const summaryOf = (request: AutomationStudioLlmTaskRequest | undefined) => reque
 
 describe("a judge on a model with a smaller window than the evidence", () => {
   it("is sent a request that fits its window, says what was summarised, and returns a verdict", async () => {
-    const explored: AutomationStudioLlmTaskRequest[] = [];
+    const obsoleteJudge: AutomationStudioLlmTaskRequest[] = [];
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    const provider = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", 1_000_000, explored), judge: automationStudioLlmProviderWithTokenLimits(model("small-judge", SMALL.maxTotalTokens, seen), SMALL) });
+    const provider = automationStudioLlmProviderRoutedByRole({ explore: automationStudioLlmProviderWithTokenLimits(model("starting-small-model", SMALL.maxTotalTokens, seen), SMALL), judge: model("obsolete-judge", 1_000_000, obsoleteJudge) });
 
     const judgement = await judged(provider);
 
     expect(judgement).toMatchObject({ verdict: "yes" });
-    expect(explored).toHaveLength(0);
+    expect(obsoleteJudge).toHaveLength(0);
     expect(seen).toHaveLength(1);
     const request = seen[0]!;
-    // Built to the judging model's limits, not the explorer's, and inside them.
+    // Built to the same starting model's actual limits and inside them.
     expect(request.tokenLimits).toEqual(SMALL);
     expect(request.context.instructions.tokenBudget).toBe(SMALL.maxInputTokens);
     expect(request.estimatedInputTokens + SMALL.maxOutputTokens).toBeLessThanOrEqual(SMALL.maxTotalTokens);
@@ -89,11 +89,13 @@ describe("a judge on a model with a smaller window than the evidence", () => {
   // which alone is past this model's window, and no form can fit: it is not judged only once every form was refused.
   it("is asked again with each shorter form, once, when its own adapter refuses by size, and is not judged only when none is left", async () => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    const provider = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", 1_000_000, []), judge: model("small-judge", SMALL.maxTotalTokens, seen) });
+    const obsoleteJudge: AutomationStudioLlmTaskRequest[] = [];
+    const provider = automationStudioLlmProviderRoutedByRole({ explore: model("starting-small-model", SMALL.maxTotalTokens, seen), judge: model("obsolete-judge", 1_000_000, obsoleteJudge) });
 
     const judgement = await judged(provider);
 
     expect(judgement).toMatchObject({ verdict: "not_judged", unanswered: true });
+    expect(obsoleteJudge).toHaveLength(0);
     expect(seen.length).toBeGreaterThan(1);
     expect(summaryOf(seen[0])?.summarised).toBeUndefined();
     const sizes = seen.map((request) => request.estimatedInputTokens);
@@ -107,10 +109,14 @@ describe("a judge whose window holds the evidence", () => {
   it("gets the evidence unchanged, exactly as an unrouted judge sends it", async () => {
     const routedSeen: AutomationStudioLlmTaskRequest[] = [];
     const plainSeen: AutomationStudioLlmTaskRequest[] = [];
-    const routed = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", 1_000_000, []), judge: automationStudioLlmProviderWithTokenLimits(model("large-judge", LARGE.maxTotalTokens, routedSeen), LARGE) });
+    const obsoleteJudge: AutomationStudioLlmTaskRequest[] = [];
+    const routed = automationStudioLlmProviderRoutedByRole({ explore: automationStudioLlmProviderWithTokenLimits(model("starting-large-model", LARGE.maxTotalTokens, routedSeen), LARGE), judge: model("obsolete-judge", SMALL.maxTotalTokens, obsoleteJudge) });
 
     expect(await judged(routed)).toMatchObject({ verdict: "yes" });
-    expect(await judged(model("large-judge", 1_000_000, plainSeen))).toMatchObject({ verdict: "yes" });
+    expect(await judged(automationStudioLlmProviderWithTokenLimits(model("starting-large-model", LARGE.maxTotalTokens, plainSeen), LARGE))).toMatchObject({ verdict: "yes" });
+    expect(obsoleteJudge).toHaveLength(0);
+    expect(routedSeen).toHaveLength(1);
+    expect(plainSeen).toHaveLength(1);
 
     const whole = automationStudioFlowLessJudgedSummary(summary(), DENIED).sent;
     expect(routedSeen[0]?.context.resultSummary).toEqual(whole);

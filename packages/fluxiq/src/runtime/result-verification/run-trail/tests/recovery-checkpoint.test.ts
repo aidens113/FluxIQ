@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioJudgeEvidenceProjector } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 import { automationStudioFlowLessJudgedSummary } from "../../flow-less/judged-summary.ts";
+import type { AutomationStudioFlowLessSummary } from "../../flow-less/types.ts";
 import { automationStudioResultVerdict } from "../../verdict/index.ts";
 import { automationStudioMakeJudgeCheckpoint, automationStudioReadJudgeCheckpoint } from "../checkpoint/index.ts";
 import { automationStudioAnswerFirstTrailsOf } from "../../../../framework/automation-service/service/answer-first/trail/index.ts";
@@ -10,6 +13,41 @@ const OPTIONS = { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [], proj
 const step = (): AutomationStudioResultTrailStep => ({ did: "actual.update", callId: REF.callId, judgeAct: REF, framework: { effectApplied: true }, judgeEvidence: { version: 1, role: "action", evidence: { control: "Save" }, missing: ["example.action_response_missing"], withheld: true } });
 
 describe("durable source/witness recovery authority", () => {
+  it("carries exact before-input authority only through Core's held wrappers, rescreens successful evidence and loses it on JSON restart", () => {
+    const original = { checked: false, newlyPrivate: "OLD_ALLOWED_STATE_CELL", page: "PRIVATE_BEFORE_CAPTURE" };
+    const actual = step();
+    actual.judgeEvidence = { version: 1, role: "action", evidence: { control: "Save" }, missing: [], withheld: false };
+    const journal = automationStudioAnswerFirstTrailsOf({});
+    const trail = journal.of("attempt", { carriedOn: false, askedAgain: false });
+    trail.push(actual);
+    const before = journal.checkpoint(trail, { before: original }, { judgeEvidenceVersion: 1, deniedEvidenceKeys: [] })!;
+    let beforeCalls = 0;
+    const projector: AutomationStudioJudgeEvidenceProjector = (input) => {
+      const value = (input.evidence as JsonObject).evidence as JsonObject;
+      if (input.phase === "before") {
+        beforeCalls += 1;
+        expect(value.checked).toBe(false);
+        expect(value.page).toBe("PRIVATE_BEFORE_CAPTURE");
+      }
+      return { role: "observation", evidence: { checked: value.checked!, newlyPrivate: value.newlyPrivate ?? "CURRENT_ALLOWED_STATE_CELL" } };
+    };
+    const make = (readings: ReturnType<typeof journal.witnesses>): AutomationStudioFlowLessSummary => ({ instructions: "Save the preference", acts: [{ id: REF.actId, what: "Saved preference", where: "Settings", classes: ["modify_existing"], state: "landed" }], trail, witnesses: readings });
+    const first = automationStudioFlowLessJudgedSummary(make(journal.witnesses(trail, { after: { checked: true } })), [], { ...OPTIONS, projectJudgeEvidence: projector });
+    expect(first.sent.evidenceProjection?.missing).toEqual([]);
+    expect(beforeCalls).toBe(1);
+    expect(JSON.stringify(first.sent)).not.toContain("PRIVATE_BEFORE_CAPTURE");
+    const screened = automationStudioFlowLessJudgedSummary(make(journal.witnesses(trail, { after: { checked: true } })), ["newlyPrivate"], { ...OPTIONS, projectJudgeEvidence: projector });
+    expect(screened.sent.evidenceProjection?.missing).toEqual([]);
+    expect(beforeCalls).toBe(1);
+    expect(JSON.stringify(screened.sent)).not.toContain("OLD_ALLOWED_STATE_CELL");
+    expect(original.newlyPrivate).toBe("OLD_ALLOWED_STATE_CELL");
+    const restarted = automationStudioAnswerFirstTrailsOf({});
+    const restored = restarted.of("attempt", { carriedOn: true, askedAgain: false, judgeEvidence: automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(before)))! });
+    const reopened = automationStudioFlowLessJudgedSummary({ ...make(restarted.witnesses(restored, { after: { checked: true } })), trail: restored }, [], { ...OPTIONS, projectJudgeEvidence: projector });
+    expect(reopened.sent.evidenceProjection?.missing).toContainEqual({ source: "witnesses.before", codes: ["judge_evidence.projector_missing"] });
+    expect(beforeCalls).toBe(1);
+  });
+
   it("roundtrips only exact actual call/act associations and never reuses the old after on restart", () => {
     const checkpoint = automationStudioMakeJudgeCheckpoint([step()], { before: { semanticStatus: "before" }, after: { semanticStatus: "after" }, association: { version: 1, before: [REF], after: [REF] } }, OPTIONS);
     const reopened = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(checkpoint)))!;

@@ -77,6 +77,20 @@ describe("automationStudioAnswerFirstWitnesses", () => {
     expect(witnesses.readings().after).toEqual({ version: 2 });
   });
 
+  it("holds distinct Core snapshots when a host reuses the same mutable object for both sides", async () => {
+    const shared = { checked: false };
+    const witnesses = automationStudioAnswerFirstWitnesses({ read: async (side) => {
+      shared.checked = side === "after";
+      return shared;
+    } });
+    await witnesses.beforeFirstLastingAct();
+    await witnesses.atEnd();
+    expect(witnesses.readings().before).toEqual({ checked: false });
+    expect(witnesses.readings().after).toEqual({ checked: true });
+    shared.checked = false;
+    expect(witnesses.readings().after).toEqual({ checked: true });
+  });
+
   it("does not manufacture a before association for an unread or carried-missing side, or for a reused call id", async () => {
     for (const earlier of [undefined, {}]) {
       const witnesses = automationStudioAnswerFirstWitnesses({ read: async (side) => side === "before" ? undefined : { current: true }, ...(earlier === undefined ? {} : { earlier }) });

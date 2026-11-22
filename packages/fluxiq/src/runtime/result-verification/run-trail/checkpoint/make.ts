@@ -14,9 +14,10 @@ import { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudge
 /** Private checkpoint from actual ordered findings; safe existing cells are rescreened when a current policy is known. */
 export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation }, options: AutomationStudioResultTrailSemanticOptions, prior?: AutomationStudioJudgeEvidenceCheckpoint): AutomationStudioJudgeEvidenceCheckpoint {
   const read = (value: unknown): AutomationStudioJudgeEvidenceFinding => {
-    if (options.deniedEvidenceKeys === undefined) return automationStudioStoredJudgeFinding(value) ?? gap("judge_evidence.finding_invalid");
-    const result = automationStudioJudgeEvidenceFinding(value, options.deniedEvidenceKeys);
-    return result.ok ? result.finding : gap(result.code);
+    const result = options.deniedEvidenceKeys === undefined ? undefined : automationStudioJudgeEvidenceFinding(value, options.deniedEvidenceKeys);
+    const finding = result === undefined ? automationStudioStoredJudgeFinding(value) ?? gap("judge_evidence.finding_invalid") : result.ok ? result.finding : gap(result.code);
+    if (value !== null && typeof value === "object") AutomationStudioJudgeEvidenceRetry.carry(value, finding);
+    return finding;
   };
   const trail = steps.map((step): AutomationStudioJudgeEvidenceCheckpoint["trail"][number] => {
     const original = Object.hasOwn(options, "judgeEvidenceVersion") && options.judgeEvidenceVersion !== 1 ? gap("judge_evidence.version_invalid") : Object.hasOwn(step, "judgeEvidence") ? read(step.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence({ source: "legacy", definitionId: step.did, evidence: { evidence: step.found ?? null, ...(step.callId === undefined ? {} : { source: { callId: step.callId } }) } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
@@ -38,6 +39,7 @@ export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationSt
       const input = { source: "state" as const, phase, evidence: { evidence: raw } };
       const finding = Object.hasOwn(raw, "judgeEvidence") ? read(raw.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence(input, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
       if (!Object.hasOwn(raw, "judgeEvidence") && finding.missing.length > 0) AutomationStudioJudgeEvidenceRetry.remember(raw, input);
+      AutomationStudioJudgeEvidenceRetry.carry(raw, finding);
       kept[phase] = finding;
     }
   }

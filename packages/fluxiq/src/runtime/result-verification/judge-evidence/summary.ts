@@ -8,6 +8,7 @@ import { automationStudioShownJudgeFinding } from "./shown.ts";
 import { automationStudioReadJudgeEvidenceFormat } from "./format.ts";
 import { automationStudioReadJudgeEvidenceHistory } from "./history.ts";
 import { automationStudioReadJudgeWitnessAssociation } from "./witness-association.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "./retry.ts";
 
 /** One semantic request copy for Flow-less, completed-run and build judges; original rows/accounts/private evidence remain untouched. */
 export function automationStudioResultJudgeSummary(summary: AutomationStudioRunResultSummary, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioRunResultSummary {
@@ -56,7 +57,8 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
   const project = (source: string, value: JsonValue, phase?: "before" | "after"): JsonObject => {
     const durable = object(value);
     const reopened = durable && Object.hasOwn(durable, "judgeEvidence") ? automationStudioJudgeEvidenceFinding(durable.judgeEvidence, options.deniedEvidenceKeys) : tagged ? automationStudioShownJudgeFinding(value, options.deniedEvidenceKeys) : undefined;
-    const finding = invalidFormat ? { missing: ["judge_evidence.version_invalid"], withheld: true } : reopened ? reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true } : automationStudioProjectJudgeEvidence({ source: phase === undefined ? "legacy" : "state", evidence: { evidence: value }, ...(phase === undefined ? {} : { phase }) }, projector, options.deniedEvidenceKeys);
+    const carrier = value !== null && typeof value === "object" ? value : undefined;
+    const finding = invalidFormat ? { missing: ["judge_evidence.version_invalid"], withheld: true } : reopened ? reopened.ok ? carrier === undefined ? reopened.finding : AutomationStudioJudgeEvidenceRetry.finding(carrier, reopened.finding, options) : { missing: [reopened.code], withheld: true } : automationStudioProjectJudgeEvidence({ source: phase === undefined ? "legacy" : "state", evidence: { evidence: value }, ...(phase === undefined ? {} : { phase }) }, projector, options.deniedEvidenceKeys);
     if (finding.missing.length) gaps.push({ source, codes: finding.missing });
     withheld ||= finding.withheld;
     const history = "history" in finding ? automationStudioReadJudgeEvidenceHistory(finding.history) : undefined;

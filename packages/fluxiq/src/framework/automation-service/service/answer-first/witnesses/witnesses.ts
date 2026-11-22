@@ -70,8 +70,10 @@ export function automationStudioAnswerFirstWitnesses(input: AutomationStudioAnsw
       const observedGeneration = generation;
       const covered = side === "after" ? [...settled.values()] : [];
       try {
-        const reading = await input.read(side);
-        if (reading === undefined) return unread();
+        const given = await input.read(side);
+        if (given === undefined) return unread();
+        // Core owns the captured value; a host reusing its mutable object cannot rewrite the logical before.
+        const reading = structuredClone(given);
         if (side === "before" || observedGeneration === generation) {
           readings[side] = reading;
           if (side === "after") association.after = covered;

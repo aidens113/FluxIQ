@@ -87,6 +87,83 @@ describe("producer-owned exact source replacement recovery", () => {
     expect(shown.trail?.entries.every((step) => (step.found as JsonObject).history === undefined)).toBe(true);
   });
 
+  it.each(["middle", "terminal"] as const)("keeps an earlier valid receipt held when its %s tuple is later reused, including checkpoint/reopen", (which) => {
+    const middle = { ...NEW, source: "read.middle", datasetId: "dataset.middle" };
+    const metadata = { version: 1, receipts: [{ kind: "page", from: [OLD], to: [middle] }, { kind: "page", from: [middle], to: [NEW] }] };
+    const reused = which === "middle" ? middle : NEW;
+    const occurrences: AutomationStudioResultTrailStep[] = [gap(), ...[1, 2].map((at) => ({ did: "actual.read", callId: `actual.occurrence.${at}`, judgeSources: [reused], judgeEvidence: { version: 1 as const, role: "data" as const, evidence: { rows: 1 }, missing: [], withheld: false } }))];
+    const input = summary(occurrences, metadata);
+    expect(automationStudioResultJudgeSummary(input, OPTIONS).evidenceProjection?.missing).toContainEqual({ source: OLD.source, codes: ["example.schema_missing"] });
+    const checkpoint = automationStudioMakeJudgeCheckpoint(occurrences, {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const reopened = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(checkpoint)))!;
+    expect(reopened.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+    expect(automationStudioResultJudgeSummary(summary(reopened.trail, metadata), OPTIONS).evidenceProjection?.missing).toContainEqual({ source: OLD.source, codes: ["example.schema_missing"] });
+  });
+
+  it.each([0, 1, undefined])("requires a unique terminal page even beside another identical tuple with validation count %j", (invalidCount) => {
+    const input = summary([gap()]);
+    const originalPage = (input.resultEvidence!.pages as JsonObject[])[0]!;
+    input.resultEvidence!.pages = [originalPage, { ...originalPage, ...(invalidCount === undefined ? {} : { invalidCount }) }];
+    if (invalidCount === undefined) delete (input.resultEvidence!.pages as JsonObject[])[1]!.invalidCount;
+    expect(automationStudioResultJudgeSummary(input, OPTIONS).evidenceProjection?.missing).toHaveLength(1);
+    const checkpoint = automationStudioMakeJudgeCheckpoint([gap()], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const reopened = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(checkpoint)))!;
+    expect(reopened.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+  });
+
+  it.each([["middle", false], ["terminal", false], ["middle", true], ["terminal", true]] as const)("revalidates an already-resolved persisted receipt after %s tuple reuse, including neutral marker=%j", (which, neutral) => {
+    const original = gap();
+    if (neutral) original.judgeEvidence = { version: 1, missing: ["judge_evidence.projection_failed"], withheld: true };
+    const code = original.judgeEvidence!.missing[0]!;
+    const middle = { ...NEW, source: "read.middle", datasetId: "dataset.middle" };
+    const metadata = { version: 1, receipts: [{ kind: "page", from: [OLD], to: [middle] }, { kind: "page", from: [middle], to: [NEW] }] };
+    const input = summary([original], metadata);
+    const first = automationStudioMakeJudgeCheckpoint([original], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const closed = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(first)))!;
+    expect(closed.trail[0]?.judgeEvidence?.missing).toEqual([]);
+    const idempotent = automationStudioMakeJudgeCheckpoint(closed.trail, {}, { ...OPTIONS, resultEvidence: input.resultEvidence }, closed);
+    expect(idempotent.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+    const target = which === "middle" ? middle : NEW;
+    const reused: AutomationStudioResultTrailStep[] = [...closed.trail, ...[1, 2].map((at) => ({ did: "actual.read", callId: `later.actual.${at}`, judgeSources: [target], judgeEvidence: { version: 1 as const, role: "data" as const, evidence: { rows: 1 }, missing: [], withheld: false } }))];
+    const later = automationStudioMakeJudgeCheckpoint(reused, {}, { ...OPTIONS, resultEvidence: input.resultEvidence }, closed);
+    expect(later.trail[0]?.judgeEvidence?.missing).toEqual([code]);
+    expect(later.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+    const reopened = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(later)))!;
+    const shown = automationStudioResultJudgeSummary(summary(reopened.trail, metadata), OPTIONS);
+    expect(shown.evidenceProjection?.missing).toContainEqual({ source: OLD.source, codes: [code] });
+    expect(shown.recordSets).toEqual(input.recordSets);
+    expect(shown.resultEvidence).toEqual(input.resultEvidence);
+  });
+
+  it("reopens only receipt-resolved codes on later duplicated current pages and clears them idempotently when exact authority returns", () => {
+    const input = summary([gap()]);
+    const first = automationStudioMakeJudgeCheckpoint([gap()], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const closed = automationStudioReadJudgeCheckpoint(JSON.parse(JSON.stringify(first)))!;
+    const duplicated = structuredClone(input.resultEvidence!);
+    const page = (duplicated.pages as JsonObject[])[0]!;
+    duplicated.pages = [page, structuredClone(page)];
+    const held = automationStudioMakeJudgeCheckpoint(closed.trail, {}, { ...OPTIONS, resultEvidence: duplicated }, closed);
+    expect(held.trail[0]?.judgeEvidence?.missing).toEqual(["example.schema_missing"]);
+    expect(held.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+    const recovered = automationStudioMakeJudgeCheckpoint(held.trail, {}, { ...OPTIONS, resultEvidence: input.resultEvidence }, held);
+    expect(recovered.trail[0]?.judgeEvidence?.missing).toEqual([]);
+    expect(recovered.trail[0]?.judgeEvidence?.history).toEqual(first.trail[0]?.judgeEvidence?.history);
+  });
+
+  it("keeps independent original-source resolutions and unrelated observation gaps separate from receipt revalidation", () => {
+    const input = summary([gap()]);
+    const first = automationStudioMakeJudgeCheckpoint([gap()], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    const sourceHistory = structuredClone(first.trail[0]!.judgeEvidence!.history!);
+    const original = first.trail[0]!;
+    original.judgeEvidence = { ...original.judgeEvidence!, history: [...original.judgeEvidence!.history!, { codes: ["example.schema_missing"], by: "original-source" }] };
+    const independent = automationStudioMakeJudgeCheckpoint([original], {}, OPTIONS, first);
+    expect(independent.trail[0]?.judgeEvidence?.missing).toEqual([]);
+    expect(independent.trail[0]?.judgeEvidence?.history).toEqual(original.judgeEvidence.history);
+    const neutral: AutomationStudioResultTrailStep = { ...first.trail[0]!, judgeEvidence: { ...first.trail[0]!.judgeEvidence!, role: "observation", missing: ["example.unrelated_observation_missing"], history: sourceHistory } };
+    const stillMissing = automationStudioMakeJudgeCheckpoint([neutral], {}, { ...OPTIONS, resultEvidence: input.resultEvidence });
+    expect(stillMissing.trail[0]?.judgeEvidence?.missing).toEqual(["example.unrelated_observation_missing"]);
+  });
+
   it("does not let data receipts erase a lasting or uncertain mixed effect, even beside linked generic before/after views", () => {
     for (const framework of [{ effectApplied: true }, { effectApplied: false, failure: { category: "expected_state_missing", code: "example.uncertain", retryable: false, stage: "confirmation", effect: "ambiguous" } }]) {
       for (const linked of [false, true]) {
