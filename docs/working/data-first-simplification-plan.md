@@ -1,7 +1,7 @@
 # Data-First Simplification: Core Execution
 
 Status: Active
-Status detail: All three P0 fixes accepted and integrated in both repositories; paired push follows. Fixed-model combined acceptance, retained extraction, automatic processing and recorded proof active.
+Status detail: P0 and fixed-model P4 accepted, integrated and pushed in both repositories. Retained extraction, automatic processing and recorded proof active.
 Created: 2026-11-22
 Last updated: 2026-11-22
 Owner: Senior supervisor agent
@@ -11,7 +11,7 @@ Related: [FluxNodes](./fluxnode-plan.md), [Answer First](./answer-first-plan.md)
 
 ## Current State
 
-**2026-11-22 integration checkpoint:** t979 judge, t981 repeat repair and t976 start-only permission are accepted and integrated in both dev branches. Permission lead acceptance: 161 Core tests, 66 Lab tests, 13 catalog tests, types/builds/audits, then mandatory Core merge contracts 70/70. Fixed-model t983 includes permission source and is integrated after 140/140 combined tests, typecheck/build/audit and merge contracts 70/70. P1 extraction consumes t984 retainedRows seam 2c4099965 (lead 25/25 tests, source-symbol provenance preserved). P2 exact field binder and automatic readiness work, plus t986 strict recorded-trace wrapper/CLI/preflight, are active. No paid/full-sweep/live-browser acceptance yet. Detailed downstream plan and task reports remain authoritative for lane status.
+**2026-11-22 integration checkpoint:** Both dev branches pushed through Core 4ddfe98a5 and downstream 93cda7b0d. P1 source checkpoint 3b85dd9d0 is synced with permission/P4 and awaiting final public-export validation. P2 lead independent checks passed 77/77 operator tests and 79/79 provenance/automatic/binder tests; provenance checkpoint 8c86122d0 is on its task branch, runtime integration still held for P1.  t979 judge, t981 repeat repair and t976 start-only permission are accepted and integrated in both dev branches. Permission lead acceptance: 161 Core tests, 66 Lab tests, 13 catalog tests, types/builds/audits, then mandatory Core merge contracts 70/70. Fixed-model t983 includes permission source and is integrated after 140/140 combined tests, typecheck/build/audit and merge contracts 70/70. P1 extraction consumes t984 retainedRows seam 2c4099965 (lead 25/25 tests, source-symbol provenance preserved). P2 exact field binder and automatic readiness work, plus t986 strict recorded-trace wrapper/CLI/preflight, are active. No paid/full-sweep/live-browser acceptance yet. Detailed downstream plan and task reports remain authoritative for lane status.
 
 The downstream paired plan is the approved plan of record (2026-11-20).
 The user requested execution with agents and durable progress on 2026-11-22.
