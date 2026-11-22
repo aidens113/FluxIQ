@@ -1,10 +1,14 @@
 import { isPlainRecord } from "./is-plain-record.ts";
 import {
   AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS,
+  AUTOMATION_STUDIO_RECORD_FIELD_MARKS,
+  AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES,
   AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS,
   AUTOMATION_STUDIO_RECORD_VALUE_TYPES,
   type AutomationStudioRecordField,
   type AutomationStudioRecordFieldHandling,
+  type AutomationStudioRecordFieldMark,
+  type AutomationStudioRecordSemanticType,
   type AutomationStudioRecordSchema,
   type AutomationStudioRecordValueType
 } from "./schema.ts";
@@ -19,9 +23,11 @@ export type AutomationStudioRecordSchemaParseResult =
   | { ok: false; issues: string[] };
 
 const SCHEMA_KEYS: ReadonlySet<string> = new Set(["schemaVersion", "fields", "primaryKey"]);
-const FIELD_KEYS: ReadonlySet<string> = new Set(["id", "label", "valueType", "required", "handling"]);
+const FIELD_KEYS: ReadonlySet<string> = new Set(["id", "label", "valueType", "required", "handling", "semanticType", "mark"]);
 const VALUE_TYPES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_VALUE_TYPES);
 const HANDLINGS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS);
+const SEMANTIC_TYPES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_SEMANTIC_TYPES);
+const MARKS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_FIELD_MARKS);
 const RESERVED_FIELD_IDS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.reservedFieldIds);
 
 /**
@@ -111,7 +117,7 @@ function parseField(value: unknown, allowEncrypt: boolean, issues: Set<string>):
   }
   const found: string[] = [];
   if (!Object.keys(value).every((key) => FIELD_KEYS.has(key))) found.push("record_schema.unknown_field_key");
-  const { id, label, valueType, required, handling } = value;
+  const { id, label, valueType, required, handling, semanticType, mark } = value;
   if (typeof id !== "string" || !AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.fieldIdPattern.test(id)) found.push("record_schema.invalid_field_id");
   else if (RESERVED_FIELD_IDS.has(id)) found.push("record_schema.reserved_field_id");
   if (!isLabel(label)) found.push("record_schema.invalid_field_label");
@@ -119,11 +125,15 @@ function parseField(value: unknown, allowEncrypt: boolean, issues: Set<string>):
   if (required !== undefined && typeof required !== "boolean") found.push("record_schema.invalid_required");
   if (handling !== undefined && !isHandling(handling)) found.push("record_schema.invalid_handling");
   if (handling === "encrypt" && !allowEncrypt) found.push("record_schema.encrypt_unavailable");
+  if (semanticType !== undefined && !isSemanticType(semanticType)) found.push("record_schema.invalid_semantic_type");
+  if (mark !== undefined && !isMark(mark)) found.push("record_schema.invalid_mark");
   for (const issue of found) issues.add(issue);
   if (found.length > 0 || typeof id !== "string" || !isLabel(label) || !isValueType(valueType)) return null;
   const field: AutomationStudioRecordField = { id, label, valueType };
   if (typeof required === "boolean") field.required = required;
   if (isHandling(handling)) field.handling = handling;
+  if (isSemanticType(semanticType)) field.semanticType = semanticType;
+  if (isMark(mark)) field.mark = mark;
   return field;
 }
 
@@ -163,4 +173,12 @@ function isValueType(value: unknown): value is AutomationStudioRecordValueType {
 
 function isHandling(value: unknown): value is AutomationStudioRecordFieldHandling {
   return typeof value === "string" && HANDLINGS.has(value);
+}
+
+function isSemanticType(value: unknown): value is AutomationStudioRecordSemanticType {
+  return typeof value === "string" && SEMANTIC_TYPES.has(value);
+}
+
+function isMark(value: unknown): value is AutomationStudioRecordFieldMark {
+  return typeof value === "string" && MARKS.has(value);
 }

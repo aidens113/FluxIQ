@@ -10,6 +10,23 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe("storedAutomationStudioRecordSchema", () => {
+  it("retains semantic and occurrence-mark metadata while removing every excluded field", () => {
+    const schema: AutomationStudioRecordSchema = deepFreeze({
+      schemaVersion: "0.1",
+      fields: [
+        { id: "id", label: "Id", valueType: "string", semanticType: "id" },
+        { id: "price", label: "Price", valueType: "string", semanticType: "currency" },
+        { id: "promoted", label: "Promoted", valueType: "boolean", semanticType: "flag", mark: "badge" },
+        { id: "private", label: "Private", valueType: "string", semanticType: "id", handling: "exclude" }
+      ],
+      primaryKey: ["id"]
+    });
+    const stored = storedAutomationStudioRecordSchema(schema);
+    expect(stored).toEqual({ schemaVersion: "0.1", fields: schema.fields.slice(0, 3), primaryKey: ["id"] });
+    expect(JSON.stringify(stored)).not.toContain("private");
+    expect(stored.fields[0]).not.toBe(schema.fields[0]);
+  });
+
   it("removes exclude fields, keeps order and every other field, and leaves the input unmodified", () => {
     const input: AutomationStudioRecordSchema = deepFreeze({
       schemaVersion: "0.1",

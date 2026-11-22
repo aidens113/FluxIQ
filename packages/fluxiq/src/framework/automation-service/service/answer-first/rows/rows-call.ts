@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 
 /** One tool call of the exploration: its id, the tool, and the input it was sent. The input is never a source of rows. */
 export type AutomationStudioAnswerFirstRowCall = { callId: string; toolId: string; value: JsonObject };
@@ -7,12 +8,14 @@ export type AutomationStudioAnswerFirstRowCall = { callId: string; toolId: strin
 export type AutomationStudioAnswerFirstRowsStored = {
   /** The rows stored, as the schema kept them. Empty when none were or the store failed. */
   rows: JsonObject[];
+  /** The full validated retained schema; presentation columns are separate. */
+  schema?: AutomationStudioRecordSchema;
   datasetId?: string;
   /** Rows the schema refused. */
   invalidCount: number;
   /** True when the read returned more rows than were kept. */
   truncated: boolean;
   /** Present when the rows could not be stored: a code and an error name, never the error's words or a value. */
-  failure?: { code: "answer_first.rows_not_stored" | "answer_first.rows_no_columns"; errorName?: string };
+  failure?: { code: "answer_first.rows_not_stored" | "answer_first.rows_no_columns" | "answer_first.rows_invalid_schema"; errorName?: string; issues?: string[] };
 };
 
