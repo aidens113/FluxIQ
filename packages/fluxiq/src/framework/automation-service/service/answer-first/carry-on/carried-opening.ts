@@ -11,6 +11,7 @@ import type { AutomationStudioAnswerFirstCarryOnHold } from "./hold.ts";
 import type { AutomationStudioAnswerFirstAttemptPrior } from "./prior.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import type { AutomationStudioResultEvidenceBundle } from "../../../../../runtime/result-verification/index.ts";
+import type { AutomationStudioAnswerFirstAttemptRecord } from "../attempt-store/index.ts";
 
 export type AutomationStudioAnswerFirstCarriedOpening = {
   route: AutomationStudioAnswerFirstRoute;
@@ -19,6 +20,7 @@ export type AutomationStudioAnswerFirstCarriedOpening = {
   processingReferenceTimeMs?: number;
   processing?: AutomationStudioAnswerFirstProcessingDeclaration;
   resultEvidence?: AutomationStudioResultEvidenceBundle;
+  publications?: AutomationStudioAnswerFirstAttemptRecord["publications"];
   steps: AutomationStudioFlowDraftStep[];
   startedWith: AutomationStudioFlowDraftStep[];
   startedFrom?: AutomationStudioAnswerFirstAttemptProvenance["startedFrom"];
@@ -48,6 +50,7 @@ export function automationStudioAnswerFirstCarriedOpening(hold: AutomationStudio
     ...(before.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: before.processingReferenceTimeMs }),
     ...(before.processing === undefined ? {} : { processing: structuredClone(before.processing) }),
     ...(before.resultEvidence === undefined ? {} : { resultEvidence: structuredClone(before.resultEvidence) }),
+    ...(before.publications === undefined ? {} : { publications: structuredClone(before.publications) }),
     steps,
     startedWith: startedWith(steps, kept, provenance),
     ...(provenance?.startedFrom ? { startedFrom: provenance.startedFrom } : {}),

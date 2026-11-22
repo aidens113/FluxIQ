@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_RECORD_VALUE_TYPES,
   AUTOMATION_STUDIO_RECORD_WRITE_MODES,
@@ -7,16 +7,16 @@ import {
   canonicalBuiltinAutomationNodeDefinitions,
   parseAutomationStudioRecordOutput,
   type AutomationStudioNodeDefinition
-} from "../../../../../framework/automation-service/nodes/index.ts";
+} from "../../../../../../framework/automation-service/nodes/index.ts";
 import {
   automationStudioFlowBootstrapRecordOutputContract,
   automationStudioFlowBootstrapRecordOutputIssueDetail,
   automationStudioFlowBootstrapRecordOutputIssueMessage,
   automationStudioFlowBootstrapRecordOutputIssues,
   automationStudioFlowBootstrapSuppliedRecordsPath
-} from "../record-output-contract.ts";
-import { automationStudioFlowBootstrapParameterTextAccount } from "../parameter-text.ts";
-import { webDomainNodeDefinitionsFixture } from "./web-domain-definitions-fixture.ts";
+} from "../../record-output-contract.ts";
+import { automationStudioFlowBootstrapParameterTextAccount } from "../../parameter-text.ts";
+import { webDomainNodeDefinitionsFixture } from "../web-domain-definitions-fixture.ts";
 
 // A live Flow creation wrote the list extraction's record output three times
 // and was refused each time for keys the record-set parser does not take: the

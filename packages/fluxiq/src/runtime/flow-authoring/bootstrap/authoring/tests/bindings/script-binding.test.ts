@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { automationStudioScriptBinding } from "../script-binding.ts";
+import { automationStudioScriptBinding } from "../../script-binding.ts";
 
 const scope = { labelKeys: new Map<string, string>(), elsewhere: () => false };
 

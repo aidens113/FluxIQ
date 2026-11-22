@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, encodeAutomationStudioRecordsCsvHeader, encodeAutomationStudioRecordsCsvRows, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioProjectRunDatasetStore, runDatasetSummariesForRun, type AutomationStudioRunDatasetBatch, type AutomationStudioRunDatasetRow } from "../run-dataset-store.ts";
-import { AutomationStudioProjectRuntimeStreamStore } from "../runtime-stream-store.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../../administration.ts";
+import { AutomationStudioProjectDatabasePool } from "../../database.ts";
+import { AutomationStudioProjectRunDatasetStore, runDatasetSummariesForRun, type AutomationStudioRunDatasetBatch, type AutomationStudioRunDatasetRow } from "../../run-dataset-store.ts";
+import { AutomationStudioProjectRuntimeStreamStore } from "../../runtime-stream-store.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../schema-migrations.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once

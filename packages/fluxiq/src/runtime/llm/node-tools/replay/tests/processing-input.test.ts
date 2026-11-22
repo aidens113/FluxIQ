@@ -5,7 +5,7 @@ import { automationStudioFlowDraftReplayPassCall } from "../span.ts";
 import { automationStudioFlowDraftReplaySteps } from "../draft.ts";
 
 const parameters: JsonObject = { recordOutput: { schema: { schemaVersion: "0.1", fields: [{ id: "date", label: "Date", valueType: "string" }] }, process: { where: [{ field: "date", atMost: { $state: { path: "latest", fallback: "2030-01-02" } }, as: "date" }], declaration: { version: 1, source: "a".repeat(64), revision: 1, bindings: { date: "date" } } } } };
-const step: AutomationStudioFlowDraftStep = { id: "read", position: 1, disposition: "kept", proposes: true, effect: "observe", toolId: "core.run_node", actionId: "fixture.read", input: { node: "fixture.read", parameters }, ranWith: { node: "fixture.read", parameters }, replay: { from: { location: "fixture://records" } } };
+const step: AutomationStudioFlowDraftStep = { id: "read", position: 1, iteration: 1, disposition: "kept", proposes: true, effect: "observe", toolId: "core.run_node", actionId: "fixture.read", input: { node: "fixture.read", parameters }, ranWith: { node: "fixture.read", parameters }, replay: { from: { location: "fixture://records" } } };
 
 describe("forward processing template dispatch", () => {
   it("does not use fallback or coincident prior-node state when caller input is missing", () => {
@@ -15,7 +15,10 @@ describe("forward processing template dispatch", () => {
   });
   it("forwards actual caller inputs through core.run_flow's existing draft walker", async () => {
     const sent: JsonObject[] = [];
-    const run = async (callerInputs?: Record<string, string>) => automationStudioFlowDraftReplaySteps({ steps: [step], run: [step], callIdOf: () => "call", reanchor: false, executeTool: async ({ value }) => { sent.push(value); return { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: {}, resultCode: "core.replay.replayed" }; }, forward: { rowDone: () => false, stepDone: () => false, callerInputs } });
+    const run = async (callerInputs?: Record<string, string>) => automationStudioFlowDraftReplaySteps({ steps: [step], run: [step], callIdOf: () => "call", reanchor: false, executeTool: async ({ value }) => {
+      sent.push(value);
+      return { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: {}, resultCode: "core.replay.replayed" };
+    }, forward: { rowDone: () => false, stepDone: () => false, callerInputs } });
     await run();
     expect(sent).toEqual([]);
     await run({ latest: "2030-01-03" });

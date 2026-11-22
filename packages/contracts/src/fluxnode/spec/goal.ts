@@ -5,7 +5,7 @@
 import type { JsonObject, JsonValue } from "../../core.ts";
 import type { FluxNodeParseResult } from "../issue/index.ts";
 import { canonicalJson } from "../json/index.ts";
-import { FLOW_INPUT_IDENTIFIER } from "../flow/input-identifier.ts";
+import { FLOW_INPUT_IDENTIFIER } from "../flow/input-identifier/index.ts";
 
 /** One piece of a goal: literal text, or a placeholder naming an input. */
 export type FluxNodeGoalPart = { text: string } | { input: string };

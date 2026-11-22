@@ -117,6 +117,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
   try {
     await run.store.save(run.input.projectId, run.input.flowId, {
       attempt: checked.attempt,
+      publications: run.sink.publicationState(),
       ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
       ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
       ...(checked.result ? { result: checked.result } : {}),

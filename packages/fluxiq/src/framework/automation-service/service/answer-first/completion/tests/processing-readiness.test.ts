@@ -10,9 +10,15 @@ for (const success of ["caller", "off", "replay", "judge"] as const) it(`checks 
     instructions: "List the records.", rows: async () => ({ datasetId: "result", totalRows: 1, truncated: false, columns: [{ id: "title", label: "Title" }], rows: [{ title: "A" }] }),
     acts: () => [], readsRan: () => true, processingReadiness: () => readiness, endView: async () => undefined, witnesses: () => ({}),
     purse: { keepBackForJudging: () => undefined }, say: () => undefined,
-    ...(success === "caller" ? { confirm: { judge: "auto" as const, check: async () => { checked += 1; return true; } } } : success === "off" ? { confirm: { judge: "off" as const } } : {}),
+    ...(success === "caller" ? { confirm: { judge: "auto" as const, check: async () => {
+      checked += 1;
+      return true;
+    } } } : success === "off" ? { confirm: { judge: "off" as const } } : {}),
     ...(success === "replay" ? { replay: () => ({ saved: { label: "confirmed" as const, provenWhole: true, shape: { columns: ["title"], empty: false } }, reachedEnd: true, repaired: false, steps: [{ position: 1, ran: "passed" as const }] }) } : {}),
-    judge: async () => { judged += 1; return { verdict: "yes", reason: "Correct", checkedWhat: "Rows" }; }
+    judge: async () => {
+      judged += 1;
+      return { verdict: "yes", reason: "Correct", checkedWhat: "Rows" };
+    }
   });
   const refused = await check.check({ answer: "Done." });
   expect(refused).toMatchObject({ ok: false, issueCodes: ["answer_first.processing_evidence_missing"] });

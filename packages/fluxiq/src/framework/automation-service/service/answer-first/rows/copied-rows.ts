@@ -26,6 +26,8 @@ type Input = {
   stored: { runId: string; list(): Promise<AutomationStudioRunDatasetSummary[]>; page(input: { datasetId: string; limit: number; cursor?: string }): Promise<AutomationStudioRunDatasetPage | null> } | undefined;
   /** What the attempt's row shows as its result. */
   shown: AutomationStudioTaskResultRows | undefined;
+  /** Reports only actual successful writes, so private publication ownership can follow the copied dataset. */
+  copied?: ((receipt: { fromRunId: string; fromDatasetId: string; datasetId: string }) => void) | undefined;
 };
 
 /** Copies them. Whether all of it went: a failure costs what was not copied, and the caller says so. */
@@ -86,4 +88,5 @@ async function copy(input: Input, fromRunId: string, datasetId: string, part: nu
     invalidCount: how.invalidCount ?? 0,
     truncated: how.truncated
   });
+  input.copied?.({ fromRunId, fromDatasetId: datasetId, datasetId });
 }

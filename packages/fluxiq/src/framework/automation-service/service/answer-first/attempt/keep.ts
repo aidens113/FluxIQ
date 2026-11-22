@@ -109,7 +109,7 @@ export async function automationStudioAnswerFirstKeep(run: AutomationStudioAnswe
     const processing = waiting ? await processed(run) : { ok: true as const };
     const attempt = automationStudioAnswerFirstAttemptAs(run, run.waitingFor ? { status: "waiting_for_person", waitingFor: run.waitingFor } : { status: "working" });
     const result = automationStudioAnswerFirstResultAs(run, run.result.rows());
-    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...automationStudioAnswerFirstReplayKept(run.completion.state) });
+    await run.store.save(run.input.projectId, run.input.flowId, { attempt, result, publications: run.sink.publicationState(), tried: automationStudioAnswerFirstTriedAsContract(run.tried.data()), steps: run.steps, ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }), ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }), ...automationStudioAnswerFirstReplayKept(run.completion.state) });
     const declaration = run.result.processingDeclaration();
     if (declaration !== undefined) await run.memory.update(run.input.projectId, run.taskId, (current) => ({ ...current, processing: declaration }), { scoped: run.input.caller?.actScope !== undefined });
     return processing;

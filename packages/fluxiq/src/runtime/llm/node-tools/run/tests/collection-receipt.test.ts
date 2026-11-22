@@ -3,7 +3,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../../flow-authoring/d
 import { runAutomationStudioFlowDraftPart } from "../flow-part.ts";
 
 const ran = { node: "fixture.read", parameters: {} };
-const step: AutomationStudioFlowDraftStep = { id: "read", callId: "read", position: 1, disposition: "kept", proposes: true, effect: "observe", input: ran, ranWith: ran, replay: { from: { location: "fixture://records" } }, toolId: "core.run_node", actionId: "fixture.read" };
+const step: AutomationStudioFlowDraftStep = { id: "read", callId: "read", position: 1, iteration: 1, disposition: "kept", proposes: true, effect: "observe", input: ran, ranWith: ran, replay: { from: { location: "fixture://records" } }, toolId: "core.run_node", actionId: "fixture.read" };
 
 describe("fresh-collection receipt production", () => {
   it("carries the actual calls and a new existing-read watermark even when a later invocation reuses call ids", async () => {
@@ -27,7 +27,8 @@ describe("fresh-collection receipt production", () => {
     await runAutomationStudioFlowDraftPart(failed);
     expect(completed).not.toHaveBeenCalled();
     started.mockClear();
-    const controller = new AbortController(); controller.abort();
+    const controller = new AbortController();
+    controller.abort();
     await runAutomationStudioFlowDraftPart({ ...failed, signal: controller.signal });
     expect(started).not.toHaveBeenCalled();
     expect(completed).not.toHaveBeenCalled();

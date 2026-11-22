@@ -33,6 +33,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const datasets = new Map<string, Stored>();
   const batches = new Map<string, Map<string, IndexedBatch>>();
   const published = new Map<string, string>();
+  let publicationTrackingComplete = true;
   let readsAnswered = 0;
   let publication = 0;
   const summary = (datasetId?: string): AutomationStudioAnswerFirstRowsSummary => {
@@ -122,6 +123,8 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
         batches.delete(datasetId);
       }
     },
+    publicationState: () => ({ version: 1, knownDatasetIds: [...published.keys()], complete: publicationTrackingComplete }),
+    publicationsUnavailable() { publicationTrackingComplete = false; },
     carried(datasetId) {
       if (datasetId.startsWith(PUBLICATION_PREFIX) && !published.has(datasetId)) published.set(datasetId, CARRIED);
     },

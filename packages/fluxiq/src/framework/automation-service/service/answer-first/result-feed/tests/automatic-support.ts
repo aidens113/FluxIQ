@@ -23,7 +23,7 @@ export function automaticFeed(process: JsonValue | undefined = {}, reference: nu
     const checked = validateAutomationStudioRecords(rows, schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
     const fields = Object.fromEntries(schema.fields.filter((field) => field.handling !== "exclude").map((field) => [field.id, `.${field.id}`]));
     const value: JsonObject = { node: "fixture.read", parameters: { read: { fields } } };
-    const step = { id: source, callId: source, position: steps.length + 1, disposition: "kept", proposes: true, effect: "observe", input: value, toolId: "core.run_node", actionId: "fixture.read" } as AutomationStudioFlowDraftStep;
+    const step: AutomationStudioFlowDraftStep = { id: source, callId: source, position: steps.length + 1, iteration: steps.length + 1, disposition: "kept", proposes: true, effect: "observe", input: value, toolId: "core.run_node", actionId: "fixture.read" };
     steps.push(step);
     const storedSchema = { ...schema, fields: schema.fields.filter((field) => field.handling !== "exclude") };
     sources.set(`read.${source}`, { schema: storedSchema, rows: checked.rows });

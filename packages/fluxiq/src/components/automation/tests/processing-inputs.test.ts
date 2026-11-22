@@ -35,7 +35,7 @@ describe("current processing inputs", () => {
   });
   it("requires canonical full schema even when no input is bound", () => {
     expect(automationStudioProcessingInputs({ process, inputs: { latest: "2030-01-03" } })).toMatchObject({ ok: false, missingPaths: ["recordOutput.schema"] });
-    expect(automationStudioProcessingInputs({ process: { declaration: process.declaration }, inputs: {} })).toMatchObject({ ok: false, missingPaths: ["recordOutput.schema"] });
+    expect(automationStudioProcessingInputs({ process: { declaration: process.declaration! }, inputs: {} })).toMatchObject({ ok: false, missingPaths: ["recordOutput.schema"] });
   });
   it.each([{ $state: { path: "other", fallback: "2030-01-03" } }, { $step: "read.date" }, [{ $state: { path: "other" } }]])("never reinterprets binding-shaped caller data as configuration: %j", (latest) => {
     expect(automationStudioProcessingInputs({ process, schema, inputs: { latest, other: "2030-01-09" } })).toMatchObject({ ok: false, missingPaths: ["latest"] });

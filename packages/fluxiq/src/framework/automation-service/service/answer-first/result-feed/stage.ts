@@ -91,7 +91,10 @@ export function automationStudioAnswerFirstDataStage(initial: AutomationStudioAn
       if (!parsed.ok) return { ok: false, reason: `${parsed.issues.join(", ")}. ${parsed.unresolved.map((field) => `${field.field}: ${field.reason}`).join("; ")}` };
       const currentValues = declaration.task === null || declaration.task.process === undefined ? undefined : automationStudioAnswerFirstProcessingInputs(declaration.task.process, inputs);
       const current = currentValues?.ok ? automationStudioAnswerFirstBoundProcessing(currentValues.resolved, schema, declaration) : undefined;
-      const withoutStamp = (value: AutomationStudioRecordProcessing) => { const { declaration: _stamp, ...criteria } = value; return criteria; };
+      const withoutStamp = (value: AutomationStudioRecordProcessing) => {
+        const { declaration: _stamp, ...criteria } = value;
+        return criteria;
+      };
       const bindingPaths = (value: ReturnType<typeof automationStudioAnswerFirstProcessingInputs>) => value.ok ? value.bindings.map(({ path, name }) => ({ path, name })) : [];
       if (current?.ok && stableJson(withoutStamp(current.processing)) === stableJson(withoutStamp(parsed.processing)) && stableJson(currentValues ? bindingPaths(currentValues) : []) === stableJson(bindingPaths(values))) return { ok: true, changed: false };
       if (!why?.trim()) return { ok: false, reason: "A processing amendment needs why naming the changed source evidence or the person's correction. Existing conditions remain held until an explicit amendment is justified." };
