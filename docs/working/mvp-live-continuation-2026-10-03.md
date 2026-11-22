@@ -1,15 +1,17 @@
 # MVP live continuation and Claude handoff
 
-Status: Active
-Status detail: A7/B6 independently debugged failures; focused repair/accounting fixes verified. Source frozen for A8/B7 gated checkpoints; no accepted live reuse.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-03
-Last updated: 2026-10-03
+Last updated: 2026-11-22
 Owner: Codex senior supervisor
 Scope: Generic Core contracts and fixes required by live build/judge/playback/repair/reuse acceptance; downstream owns Lab/scenarios/browser work.
 Paired document: ../!FluxIQWebExtension/docs/working/mvp-live-continuation-2026-10-03.md
 Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: A7/B6 independently debugged failures; focused repair/accounting fixes verified. Source frozen for A8/B7 gated checkpoints; no accepted live reuse.
 
 **Live release.** Gated downstream476b52d7/Core0ecdec16: A8 passed initial runtime4facts/45priced/.056566776/rootexit0, accepted10nodegraph; B7 failed45priced/.060199992/workerexit1/no executablegraph. Both complete six-stage endings independently reviewed, paid/public inspection sessions stopped; A screenshot badge discrepancy source-confirmed intentional stale header with updated authoritative flyout facts. Two unchanged provider-disabled A reuses85247/2328 PASS/exit0, explicitzero/modeldisabled/storedkeypreserved/exacttaskgoal; full parent/subflow/graph/router unchanged aftereach. All paid/inspection sessions stopped. Source freeze can end for next written fixes; normal UI defaults independent. B binding projection affordance investigation and D shared-reader preflight readonly.
 

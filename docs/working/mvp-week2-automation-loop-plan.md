@@ -1,9 +1,9 @@
 # MVP Week 2 Automation Loop Plan (Core share)
 
-Status: Active
-Status detail: Executing 2026-09-20. The downstream live-first campaign has proved the created-Flow runtime path; Core's empty-result verification fix is ready to integrate.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-15
-Last updated: 2026-09-20
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of the downstream MVP Week 2 automation loop (Phases 2.1-2.9): the runtime recovery coordinator, recovery context, deterministic diagnosis gate, recovery plan and trace, bounded runtime exploration, the recovery verdict, adaptation reduction, confidence tiers, persistence, resume, per-attempt adaptation provenance, and a test-only scripted provider for the Testing Lab.
 Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week2-automation-loop-plan.md`
@@ -12,6 +12,8 @@ Related: [automation studio](../architecture/automation-studio.md), [code struct
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Executing 2026-09-20. The downstream live-first campaign has proved the created-Flow runtime path; Core's empty-result verification fix is ready to integrate.
 
 **Update, 2026-09-20:** the 2026-09-15 snapshot below is historical and the
 paired downstream document is authoritative for current sequencing. Phases

@@ -937,11 +937,8 @@
       "packages/fluxiq/src/flows/authoring/model/actions.ts": 1
     },
     "working-docs": {
-      "docs/working/ui-ux-upgrade-audit-plan.md": 6007,
       "docs/working/llm-assisted-deterministic-automation-expansion-plan.md": 3466,
       "docs/working/automation-studio-live-refactor-plan.md": 2781,
-      "docs/working/automation-studio-render-data-separation-plan.md": 2740,
-      "docs/working/automation-studio-scalable-data-architecture-plan.md": 1383,
       "docs/working/automation-studio-fast-ui-cache-plan.md": 1320,
       "docs/working/web-panel-ui-ux-functionality-audit-plan.md": 1223,
       "docs/working/codebase-audit-remediation-plan.md": 1201,
@@ -950,7 +947,6 @@
       "docs/working/flow-initialization-router-ui-plan.md": 1065,
       "docs/working/runtime-kernel-plan.md": 1050,
       "docs/working/node-state-evidence-view-plan.md": 979,
-      "docs/working/adaptive-flow-training-roadmap.md": 969,
       "docs/working/automation-studio-data-flow-refactor-plan.md": 934,
       "docs/working/flow-unification-and-scriptability-plan.md": 830
     }
