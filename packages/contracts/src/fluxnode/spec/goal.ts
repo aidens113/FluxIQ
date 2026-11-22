@@ -5,8 +5,7 @@
 import type { JsonObject, JsonValue } from "../../core.ts";
 import type { FluxNodeParseResult } from "../issue/index.ts";
 import { canonicalJson } from "../json/index.ts";
-
-const PLACEHOLDER_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+import { FLOW_INPUT_IDENTIFIER } from "../flow/input-identifier.ts";
 
 /** One piece of a goal: literal text, or a placeholder naming an input. */
 export type FluxNodeGoalPart = { text: string } | { input: string };
@@ -37,7 +36,7 @@ export function readFluxNodeGoal(goal: string): FluxNodeGoalReading {
     } else if (char === "{") {
       const close = goal.indexOf("}", index + 1);
       const name = close < 0 ? "" : goal.slice(index + 1, close);
-      if (close < 0 || !PLACEHOLDER_NAME.test(name)) {
+      if (close < 0 || !FLOW_INPUT_IDENTIFIER.test(name)) {
         problems.push(`The "{" at character ${index + 1} does not start a placeholder such as {query}; write "{{" for a literal brace.`);
         index += 1;
       } else {

@@ -51,6 +51,36 @@ beforeEach(async () => {
 });
 afterEach(async () => { await store.close(); await pool.closeAll(); await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); });
 
+it("withholds a previously-ready valid subset across restart until its exact rejected-source batch is repaired or genuinely replaced", async () => {
+  const process = processOf({ where: [{ field: "promoted", equals: "false" }], columns: ["title"] });
+  const safe = { id: "a", title: "A", promoted: false };
+  const repaired = { id: "b", title: "B", promoted: false };
+  await store.appendBatch(batch({ process, rows: [safe] }));
+  await store.processRunDatasets("run");
+  expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([safe]);
+  // The upstream validator kept this safe original and rejected one other occurrence; rejected values are never fabricated/stored.
+  await store.appendBatch(batch({ process, rows: [safe], invalidCount: 1 }));
+  await store.processRunDatasets("run");
+  await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("not ready");
+  expect(await sql("select invalid_count, answer_rows_retained from run_datasets where dataset_id = 'items'")).toEqual([{ invalid_count: 1, answer_rows_retained: 0 }]);
+  expect(await sql("select count(*) as retained from run_dataset_answer_rows")).toEqual([{ retained: 0 }]);
+  await store.close(); store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
+  await store.processRunDatasets("run");
+  await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("not ready");
+  expect((await store.getPage({ ...ids, retained: "collected" }))?.rows).toEqual([safe]);
+  await store.appendBatch(batch({ process, rows: [safe, repaired], invalidCount: 0 }));
+  await store.processRunDatasets("run");
+  expect(await sql("select invalid_count from run_datasets where dataset_id = 'items'")).toEqual([{ invalid_count: 0 }]);
+  expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([safe, repaired]);
+  await store.appendBatch(batch({ process, attemptId: "bad-other", batchKey: "bad-other", rows: [], invalidCount: 1 }));
+  await store.processRunDatasets("run");
+  await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("not ready");
+  await store.appendBatch(batch({ process, attemptId: "complete-pass", batchKey: "complete-pass", startsOver: true, rows: [safe, repaired], invalidCount: 0 }));
+  await store.processRunDatasets("run");
+  expect(await sql("select invalid_count from run_datasets where dataset_id = 'items'")).toEqual([{ invalid_count: 0 }]);
+  expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([safe, repaired]);
+});
+
 it("saved replay uses the same original reference/selection and full originals after reopening, preserving actual segment timestamps", async () => {
   const process = processOf({ where: [{ field: "promoted", equals: "false" }, { field: "date", atLeast: "2030-01-09", atMost: "2030-01-10", as: "date" }], sort: [{ field: "price", order: "asc", as: "number" }], columns: ["title"] });
   const promoted = { id: "a", title: "Promoted A", price: "$1", date: "1 day ago", promoted: true, secret: "excluded" };

@@ -97,6 +97,8 @@ export async function automationStudioAnswerFirstRound(run: AutomationStudioAnsw
     forwardRun: {
       ...automationStudioAttemptActForward(run.record),
       ...(input.caller?.inputs === undefined ? {} : { callerInputs: input.caller.inputs }),
+      started: () => run.result.port.ledger().seq,
+      completed: (receipt) => run.result.collectionReplaced({ ...receipt, steps: run.steps }),
       // Which steps forward runs got through, for the attempt's path (`./path.ts`): a pass answered as one, whether it ran or checked a step already done.
       passed: (step, _row, answer) => {
         // A pass of a draft read step is that step's page; a pass that moves a loop's list on says its paging (`../result-feed/feed.ts`).

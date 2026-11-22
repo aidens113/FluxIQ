@@ -1,10 +1,9 @@
 import { parseAutomationStudioRecordProcessing, parseAutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
-import { isJsonValue } from "@fluxiq/contracts/fluxnode";
+import { FLOW_INPUT_IDENTIFIER, isJsonValue } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { resolveAutomationNodeParameterValues } from "./parameter-bindings.ts";
 
 const VALUE_KEYS = new Set(["atLeast", "atMost", "lessThan", "greaterThan", "equals", "within", "contains", "startsWith", "endsWith", "matches"]);
-const INPUT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
 
 /** Resolve a processing template from actual caller inputs only. Test fallbacks are static examples and never evidence that a current input exists. */
 export function automationStudioProcessingInputs(input: { process: JsonValue; inputs?: Readonly<Record<string, JsonValue>> | undefined; schema?: JsonValue | undefined }):
@@ -21,7 +20,7 @@ export function automationStudioProcessingInputs(input: { process: JsonValue; in
     if (Object.hasOwn(value, "$state")) {
       const binding = value.$state;
       const name = object(binding) ? binding.path : undefined;
-      if (!allowed(path) || Object.keys(value).length !== 1 || !object(binding) || Object.keys(binding).some((key) => key !== "path" && key !== "fallback") || typeof name !== "string" || !INPUT_NAME.test(name) || name === "item") {
+      if (!allowed(path) || Object.keys(value).length !== 1 || !object(binding) || Object.keys(binding).some((key) => key !== "path" && key !== "fallback") || typeof name !== "string" || !FLOW_INPUT_IDENTIFIER.test(name) || name === "item") {
         missingPaths.push(`recordOutput.process.${path.join(".")}`);
         issues.push(`Processing ${path.join(".")} must bind an allowed value to one real caller input, never a row, step, field name or arbitrary state path.`);
         return value;

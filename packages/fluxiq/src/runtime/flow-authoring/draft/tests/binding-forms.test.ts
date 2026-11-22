@@ -44,7 +44,7 @@ describe("translating the model's binding forms", () => {
 
   it("refuses malformed forms by the path they sit at", () => {
     const { refused, parameters } = automationStudioFlowDraftTranslateBindings({
-      a: { $input: "Query", test: "x" },
+      a: { $input: "Query.Name", test: "x" },
       b: { $input: "item", test: "x" },
       c: { $input: "query" },
       d: { $input: "query", test: "x", extra: true },
@@ -54,7 +54,7 @@ describe("translating the model's binding forms", () => {
       h: { $row: "name", $input: "name", test: "x" },
       i: [{ $input: "q", test: null }],
       j: { $input: "q", test: { $row: "name" } },
-      k: { $input: "a".repeat(33), test: "x" },
+      k: { $input: "has space", test: "x" },
       l: { $row: "x".repeat(65) }
     });
     expect(refused).toEqual(["a", "b", "c", "d", "e", "f", "g", "h", "i.0", "j", "k", "l"].map((path) => ({ path, reason: "malformed" })));
@@ -69,6 +69,20 @@ describe("translating the model's binding forms", () => {
       c: { $row: "product-name" }
     });
     expect(refused).toEqual([]);
+  });
+
+  it.each(["latest_date", "UpperCase", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__"])("roundtrips an exact public identifier %s without inherited access or mutation", (name) => {
+    const inputs = Object.fromEntries([[name, "current"]]);
+    const before = Object.getPrototypeOf(inputs);
+    const translated = automationStudioFlowDraftTranslateBindings({ value: { $input: name, test: "example" } });
+    expect(translated.refused).toEqual([]);
+    expect(automationStudioFlowDraftStoredBindingKind(translated.parameters.value)).toEqual({ kind: "input", name, test: "example" });
+    expect(resolveAutomationNodeParameterValues(translated.parameters, inputs)).toEqual({ values: { value: "current" }, missingPaths: [] });
+    expect(Object.keys(inputs)).toEqual([name]);
+    expect(inputs[name]).toBe("current");
+    expect(Object.getPrototypeOf(inputs)).toBe(before);
+    const required = { value: { $state: { path: name } } };
+    expect(resolveAutomationNodeParameterValues(required, {}).missingPaths).toEqual([name]);
   });
 });
 

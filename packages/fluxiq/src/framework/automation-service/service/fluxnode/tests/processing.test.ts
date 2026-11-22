@@ -34,20 +34,20 @@ describe("real FluxNode processing entry", () => {
     }
   });
 
-  it("requires data classification, resolves current inputs on the same key, and replays saved criteria without model calls", async () => {
+  it.each(["latest_date", "LatestDate"])("resolves current %s on the same FluxNode key and replays saved criteria without model calls", async (inputName) => {
     const lane = await fluxNodeLane(cleanups);
-    const spec = findLoansSpec({ name: "library.due-window", goal: "List my loans due on or after 2030-01-02 and no later than {latest}. Return title and due in page order.", inputs: { type: "object", properties: { latest: { type: "string" } }, required: ["latest"] }, hasCheck: false, options: { judge: "off" } });
-    const process: JsonObject = { where: [{ field: "due", atLeast: "2030-01-02", atMost: { $input: "latest", test: "2030-01-02" }, as: "date" }], columns: ["title", "due"] };
-    const first = await lane.run({ spec, inputs: { latest: "2030-01-02" } }, { script: [declare(null, "Incorrect action-only claim: this must be refused because typed outputs require rows."), complete(), findLoans(""), declare(process, "The requested date window uses the caller's explicit latest input; the lower date is a fixed instruction constant."), complete("Listed.")] });
+    const spec = findLoansSpec({ name: "library.due-window", goal: `List my loans due on or after 2030-01-02 and no later than {${inputName}}. Return title and due in page order.`, inputs: { type: "object", properties: { [inputName]: { type: "string" } }, required: [inputName] }, hasCheck: false, options: { judge: "off" } });
+    const process: JsonObject = { where: [{ field: "due", atLeast: "2030-01-02", atMost: { $input: inputName, test: "2030-01-02" }, as: "date" }], columns: ["title", "due"] };
+    const first = await lane.run({ spec, inputs: { [inputName]: "2030-01-02" } }, { script: [declare(null, "Incorrect action-only claim: this must be refused because typed outputs require rows."), complete(), findLoans(""), declare(process, "The requested date window uses the caller's explicit latest input; the lower date is a fixed instruction constant."), complete("Listed.")] });
     expect(first.result).toMatchObject({ status: "achieved", path: "explored" });
     expect(first.result.outputs).toEqual({ loans: [{ title: "Birds of the Coast", due: "2030-01-02" }] });
     const original = await kept(lane, spec.name);
     expect(original?.processing?.task).toEqual({ process });
-    expect(JSON.stringify(original?.best?.steps)).toContain('"$state":{"path":"latest","fallback":"2030-01-02"}');
+    expect(JSON.stringify(original?.best?.steps)).toContain(JSON.stringify({ $state: { path: inputName, fallback: "2030-01-02" } }));
     expect(JSON.stringify(original?.best?.steps)).toContain('"atLeast":"2030-01-02"');
     for (const latest of ["2030-01-03", "2030-01-02", "2030-01-03"]) {
       await lane.restartCore();
-      const replay = await lane.run({ name: spec.name, inputs: { latest } });
+      const replay = await lane.run({ name: spec.name, inputs: { [inputName]: latest } });
       expect(replay.result).toMatchObject({ status: "achieved", path: "replayed", flowId: first.result.flowId, specHash: first.result.specHash, cost: { calls: 0 } });
       expect(replay.asked).toHaveLength(0);
       expect(replay.result.outputs).toEqual({ loans: [{ title: "Birds of the Coast", due: "2030-01-02" }, ...(latest.endsWith("03") ? [{ title: "Clockmaking", due: "2030-01-03" }] : [])] });

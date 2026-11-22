@@ -39,7 +39,7 @@ import { parseAutomationStudioRecordProcessing, type AutomationStudioRecordProce
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import type { AutomationStudioRecordBatch } from "../../../../../engine/automation/contracts.ts";
-import { automationStudioFlowDraftStepIsAction, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
+import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction, type AutomationStudioFlowDraftStep } from "../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../runtime/llm/index.ts";
 import type { AutomationStudioFlowLessSummary, AutomationStudioResultEvidenceBundle, AutomationStudioResultEvidencePage, AutomationStudioResultEvidenceProcessing } from "../../../../../runtime/result-verification/index.ts";
 import { automationStudioAnswerFirstResultCoverage } from "../result/index.ts";
@@ -79,6 +79,8 @@ export type AutomationStudioAnswerFirstResultFeed = {
   /** Restore only the original contributing evidence pages and their copied retained schemas. */
   restored(entries: readonly { step: AutomationStudioFlowDraftStep; read: AutomationStudioAnswerFirstResultRead; version: number; schema: AutomationStudioRecordSchema; datasetId?: string; leftOut?: AutomationStudioResultEvidencePage["leftOut"] }[]): void;
   sourceUnavailable(reason: string, originalEvidence?: AutomationStudioResultEvidenceBundle | undefined): void;
+  /** Internal forward-walk receipt: a complete fresh collection may supersede unavailable originals. */
+  collectionReplaced(receipt: { from: number; to: number; callIds: readonly string[]; readSince: number; steps: readonly AutomationStudioFlowDraftStep[] }): JsonObject | undefined;
   /** The draft as it now stands. */
   draft(steps: readonly AutomationStudioFlowDraftStep[]): void;
   /** The fixed slot's words for the next request: the header, and what changed since the last request away from a call. */
@@ -154,7 +156,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   const isLook = (source: string | undefined): boolean => source !== undefined && port.ledger().looks.some((look) => look.source === source);
   /** A kept step that reads a list: one the ledger met, one written with a read's columns, or a look the draft took. */
   const isReadStep = (step: AutomationStudioFlowDraftStep): boolean => step.disposition === "kept" && step.effect === "observe" && automationStudioFlowDraftStepIsAction(step)
-    && (automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step)) !== undefined || Object.keys(automationStudioAnswerFirstResultVersionOf(step.input).fields).length > 0 || isLook(step.callId));
+    && (automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step)) !== undefined || Object.keys(automationStudioAnswerFirstResultVersionOf(step.input).fields).length > 0 || automationStudioAnswerFirstResultWritesOf(step.input) !== undefined || isLook(step.callId));
   const stored = (source: string, datasetId: string | undefined, cut: boolean, schema?: AutomationStudioRecordSchema): void => {
     carriedLeftOut.delete(source);
     carriedVersions.delete(source);
@@ -165,7 +167,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   const retainedSchema = () => automationStudioAnswerFirstResultSchema(port.outputGroup().flatMap((step) => step.pages).map((page) => ({ source: page.source, schema: schemas.get(page.source) })));
   const refreshed = (step: string, read: AutomationStudioAnswerFirstResultRead): void => {
     if (!schemas.has(read.source)) return;
-    const version = sourceState.replace(step, read);
+    const holder = automationStudioAnswerFirstResultStepHolder(port.ledger(), step)?.id ?? step;
+    const version = sourceState.replace(holder, read, datasets.get(read.source));
     if (version !== undefined) carriedVersions.set(read.source, version);
   };
 
@@ -186,6 +189,8 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       const columns = answer.columns.length ? answer.columns : [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
       const schema = retainedSchema();
       if (stage.active()) {
+        sourceState.validate(baseEvidence(false), datasets);
+        if (sourceState.reason() !== undefined) return EMPTY;
         const evaluated = stage.evaluate({ ...(schema.ok ? { schema: schema.schema } : { schemaIssues: schema.issues }), rows: group.flatMap((step) => step.pages.flatMap((page) => page.kept.map((values) => ({ values, nodeId: step.id, batchKey: page.source })))), columns, askedColumns: port.ledger().contract.sure ? port.ledger().contract.columns : undefined });
         if (evaluated.processing && evaluated.account) account = { declared: evaluated.processing, account: evaluated.account };
         return evaluated.summary ? { datasetId, totalRows: evaluated.summary.rows.length, truncated: sources.some((source) => truncated.has(source)), ...evaluated.summary } : EMPTY;
@@ -202,13 +207,13 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     return account ? { processing: automationStudioAnswerFirstProcessingEvidence(account.declared, account.account) } : {};
   };
 
-  const baseEvidence = (): AutomationStudioResultEvidenceBundle => {
+  const baseEvidence = (processed = true): AutomationStudioResultEvidenceBundle => {
     const ledger = port.ledger();
     // Every step whose pages are the answer, each page and coverage under its own step and version.
     const group = port.outputGroup();
     const page = (read: AutomationStudioAnswerFirstResultRead, step: string, version: number, position?: number): AutomationStudioResultEvidencePage => {
       const leftOut = carriedLeftOut.get(read.source) ?? read.leftOut;
-      return { source: read.source, step, version: carriedVersions.get(read.source) ?? version, ...(position === undefined ? {} : { position }), conditions: read.version.conditions, fields: read.version.fields, ...(read.version.listKey === undefined ? {} : { listKey: read.version.listKey }), ...(read.where === undefined ? {} : { where: read.where }), ...(read.place === undefined ? {} : { place: read.place }), kept: read.kept.length, rows: read.kept, ...(leftOut === undefined ? {} : { leftOut }), ...(read.carried ? { carried: true } : {}) };
+      return { source: read.source, ...(datasets.has(read.source) ? { datasetId: datasets.get(read.source)! } : {}), step, version: carriedVersions.get(read.source) ?? version, ...(position === undefined ? {} : { position }), conditions: read.version.conditions, fields: read.version.fields, ...(read.version.listKey === undefined ? {} : { listKey: read.version.listKey }), ...(read.where === undefined ? {} : { where: read.where }), ...(read.place === undefined ? {} : { place: read.place }), kept: read.kept.length, rows: read.kept, ...(read.invalidCount === undefined ? {} : { invalidCount: read.invalidCount }), ...(leftOut === undefined ? {} : { leftOut }), ...(read.carried ? { carried: true } : {}) };
     };
     return {
       pages: group.flatMap((output) => output.pages.map((read) => page({ ...read, version: output.reads }, output.id, output.version, output.position))),
@@ -219,7 +224,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       ...(ledger.contract.sure && ledger.contract.columns.length ? { answerContract: { columns: ledger.contract.columns } } : {}),
       working: ledger.steps.filter((step) => !group.includes(step)).map((step) => ({ step: step.id, position: step.position, ...(step.reads.listKey === undefined ? {} : { listKey: step.reads.listKey }), kept: step.pages.reduce((sum, read) => sum + read.kept.length, 0) })),
       looks: ledger.looks.map((read) => page(read, "look", 1)),
-      ...processingEvidence()
+      ...(processed ? processingEvidence() : {})
     };
   };
 
@@ -227,7 +232,32 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     port,
     idOf,
     processingDeclaration: stage.declaration,
-    sourceUnavailable(reason, originalEvidence) { const current = baseEvidence(); sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined); },
+    sourceUnavailable(reason, originalEvidence) { const current = baseEvidence(); sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined, datasets); },
+    collectionReplaced(receipt) {
+      if (!stage.active() || sourceState.reason() === undefined) return undefined;
+      const refuse = (said: string): JsonObject => ({ replaced: false, code: "answer_first.collection_replacement_incomplete", said });
+      const group = port.outputGroup();
+      const pages = group.flatMap((step) => step.pages);
+      const invoked = new Set(receipt.callIds);
+      if (!Number.isSafeInteger(receipt.readSince) || receipt.readSince < 0 || !pages.length || pages.some((page) => page.seq < receipt.readSince || !invoked.has(page.source) || page.carried || page.invalidCount !== 0 || !schemas.has(page.source))) return refuse("A replacement needs actual fresh read occurrences from this one forward invocation, each with its full retained schema and known zero rejected originals. Older pages, even with reused call ids, cannot supply it.");
+      if (!retainedSchema().ok) return refuse("The fresh collection's complete retained schemas are unavailable or disagree.");
+      const members = receipt.steps.filter((step) => step.disposition === "kept" && group.some((held) => automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step))?.id === held.id));
+      if (group.some((held) => !members.some((step) => automationStudioAnswerFirstResultStepHolder(port.ledger(), idOf(step))?.id === held.id))) return refuse("A contributing read is not identified in this actual kept forward draft.");
+      const positions = members.map((step) => step.position);
+      for (const step of members) {
+        if (step.routing?.kind !== "repeat") continue;
+        const through = step.routing.through;
+        const end = receipt.steps.find((item) => automationStudioFlowDraftStepId(item) === through);
+        if (!end) return refuse("The collection's declared paging boundary is unavailable.");
+        positions.push(end.position);
+      }
+      if (!positions.length || positions.some((position) => position < receipt.from || position > receipt.to)) return refuse("The successful forward range must include the contributing reads and their declared paging boundaries.");
+      const current = baseEvidence(false);
+      if (current.coverage.length !== group.length || current.coverage.some((coverage) => coverage.first !== "read" || coverage.last?.paging?.verdict !== "ended")) return refuse("A finished walk is not a complete collection. Re-read from the actual first site page and observe pagination ending for each contributing group. An opaque/unplaced start remains unknown; a data limit with global ordering does not prove collection completeness.");
+      if (!sourceState.supersede(current)) return refuse("The complete fresh collection does not match the known original source/list identity. Do not substitute an unrelated collection.");
+      told("A complete fresh collection superseded unavailable original evidence; it was collected now, not restored.");
+      return { replaced: true, kind: "fresh_collection", sources: pages.map((page) => page.source), readSince: receipt.readSince };
+    },
     boundProcessing() { rows(); return sourceState.reason() === undefined ? stage.processing() : undefined; },
     storedProcessing() { rows(); return sourceState.reason() === undefined ? stage.storedProcessing() : undefined; },
     readiness() { rows(); const missing = sourceState.reason(); return missing !== undefined && stage.active() ? { state: "missing-evidence", code: "answer_first.processing_source_missing", reason: missing } : legacyRefusal === undefined ? stage.readiness() : { state: "missing-evidence", code: "answer_first.processing_invalid", reason: legacyRefusal }; },
@@ -251,7 +281,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     },
     called(call, answer, storedRows) {
       const before = rows().totalRows;
-      const read = storedRows && !storedRows.failure ? automationStudioAnswerFirstResultReadOfCall(call, answer, storedRows.rows, input.readRowsKey) : undefined;
+      const read = storedRows && !storedRows.failure ? automationStudioAnswerFirstResultReadOfCall(call, answer, storedRows.rows, input.readRowsKey, undefined, storedRows.invalidCount) : undefined;
       if (read) stored(call.callId, storedRows?.datasetId, storedRows?.truncated === true, storedRows?.schema);
       if (typeof call.value.replay === "string") {
         if (call.value.replay !== "reset") pass = read ? { read } : {};

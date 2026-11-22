@@ -124,7 +124,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const evidence = { pages: [{ source: "capture.one", step: "read", version: 1, fields: { title: ".name" }, conditions: [], rows: items(2), kept: 2, place: "page=1" }], coverage: [], working: [], looks: [] };
     await store.appendBatch(batch({ rows: items(2), evidence }));
     await store.processRunDatasets("run.a");
-    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount, evidence }]);
     await store.close();
     const reopened = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
     fixture!.store = reopened;
@@ -132,7 +132,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect((await reopened.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(2));
     // A retried batch that genuinely carries no provenance must not inherit an older snapshot.
     await reopened.appendBatch(batch({ rows: items(1) }));
-    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey }]);
+    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount }]);
   });
 
   it("rolls back replacement rows and their evidence together when the provenance write fails", async () => {
@@ -143,7 +143,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     try { await lease.database.run("create trigger refuse_evidence_update before insert on run_dataset_batches when new.evidence_json is not null begin select raise(abort, 'fixture refuses evidence'); end"); } finally { await lease.release(); }
     await expect(store.appendBatch(batch({ writeMode: "replace", rows: items(3), evidence: { pages: [{ source: "replacement" }] } }))).rejects.toThrow(/fixture refuses evidence/u);
     expect((await store.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(1));
-    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount, evidence }]);
   });
 
   it("assigns ordinals 1..N on the first append and continues from N+1", async () => {

@@ -6,6 +6,23 @@ const page = (rows: JsonObject[] = []) => ({ source: "capture.one", step: "reade
 const entry = (rows: JsonObject[] = []) => ({ datasetId: "answer", batchKey: "capture.one", evidence: { pages: [page(rows)], coverage: [], working: [], looks: [] } });
 
 describe("source batch evidence after processing", () => {
+  it("preserves observed raw dataset association and whole-dataset missing provenance through publication evidence", () => {
+    const raw = entry([{ title: "Safe original" }]);
+    const evidence = { ...raw.evidence, pages: [{ ...raw.evidence.pages[0]!, datasetId: "shared.raw", invalidCount: 0 }], missingEvidence: [{ datasetId: "shared.raw" }] };
+    const result = automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...raw, evidence }] });
+    expect(result.pages[0]).toMatchObject({ datasetId: "shared.raw", invalidCount: 0 });
+    expect(result.missingEvidence).toEqual([{ datasetId: "shared.raw" }]);
+    for (const datasetId of ["", " ", 4, null]) expect(() => automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...raw, evidence: { ...evidence, pages: [{ ...evidence.pages[0]!, datasetId }] } }] })).toThrow("dataset provenance");
+  });
+  it("preserves actual source validation counts and keeps legacy absence unknown", () => {
+    const raw = entry([{ title: "Safe original" }]);
+    const evidence = { ...raw.evidence, pages: [{ ...raw.evidence.pages[0]!, invalidCount: 2 }] };
+    expect(automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...raw, evidence }] }).pages[0]?.invalidCount).toBe(2);
+    expect(automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [raw] }).pages[0]).not.toHaveProperty("invalidCount");
+    for (const invalidCount of [-1, 0.5, "0", null, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [{ ...raw, evidence: { ...raw.evidence, pages: [{ ...raw.evidence.pages[0]!, invalidCount }] } }] })).toThrow("validation provenance");
+    }
+  });
   it("uses the source records, never an invented association with processed row counts", () => {
     const raw = [{ title: "B" }, { title: "A" }, { title: "A" }];
     const bundle = automationStudioResultEvidenceFromBatches({ datasets: ["answer"], entries: [entry(raw)], instructionText: "Give columns title." });

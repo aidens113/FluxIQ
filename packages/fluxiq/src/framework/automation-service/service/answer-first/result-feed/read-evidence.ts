@@ -31,11 +31,11 @@ const text = (value: unknown): value is string => typeof value === "string";
 const identity = (value: unknown): boolean => text(value) && value.trim().length > 0;
 
 function page(value: unknown): boolean {
-  return shape(value, ["source", "step", "version", "conditions", "fields", "kept", "rows"], ["position", "listKey", "where", "place", "leftOut", "carried"])
+  return shape(value, ["source", "step", "version", "conditions", "fields", "kept", "rows"], ["datasetId", "position", "listKey", "where", "place", "leftOut", "carried", "invalidCount"])
     && identity(value.source) && identity(value.step) && positive(value.version) && list(value.conditions, isJsonValue) && isJsonObject(value.fields)
     && count(value.kept) && list(value.rows, isJsonObject) && value.kept === value.rows.length
-    && optional(value, "position", positive) && optional(value, "listKey", text) && optional(value, "where", text) && optional(value, "place", text)
-    && optional(value, "carried", (entry) => typeof entry === "boolean") && optional(value, "leftOut", leftOut);
+    && optional(value, "datasetId", identity) && optional(value, "position", positive) && optional(value, "listKey", text) && optional(value, "where", text) && optional(value, "place", text)
+    && optional(value, "carried", (entry) => typeof entry === "boolean") && optional(value, "leftOut", leftOut) && optional(value, "invalidCount", count);
 }
 
 function coverage(value: unknown): boolean {

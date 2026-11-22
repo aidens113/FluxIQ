@@ -56,6 +56,10 @@ export type AutomationStudioFlowDraftReplayAnsweredCall = NonNullable<ReturnType
 export type AutomationStudioFlowDraftReplayForward = {
   /** Actual nonsecret caller inputs, separate from prior node output/row state. Absent is unknown. */
   callerInputs?: Readonly<Record<string, JsonValue>> | undefined;
+  /** Existing next-read sequence, sampled before this actual invocation. Never model input. */
+  started?(): number;
+  /** Only a successful un-aborted walk issues this receipt; the result owner still verifies actual coverage and occurrences. */
+  completed?(receipt: { from: number; to: number; callIds: readonly string[]; readSince: number }): JsonObject | undefined;
   /** This row already took its lasting act: the pass is excluded, nothing is sent for it. */
   rowDone(row: JsonObject): boolean;
   /** This step's own lasting act already landed: it is checked, never sent again. */

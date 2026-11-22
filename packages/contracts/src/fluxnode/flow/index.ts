@@ -4,5 +4,6 @@
 export * from "./call.ts";
 export * from "./fluxnode-name.ts";
 export * from "./interface.ts";
+export * from "./input-identifier.ts";
 export * from "./path.ts";
 export * from "./placement.ts";

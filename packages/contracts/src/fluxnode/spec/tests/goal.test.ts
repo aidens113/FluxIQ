@@ -21,6 +21,14 @@ describe("readFluxNodeGoal", () => {
 });
 
 describe("fillFluxNodeGoal", () => {
+  it.each(["latest_date", "LatestDate", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__"])("fills own exact identifier %s and never inherited data", (name) => {
+    const inputs = Object.fromEntries([[name, "current"]]);
+    const before = Object.getPrototypeOf(inputs);
+    expect(fillFluxNodeGoal(`Use {${name}}.`, inputs)).toEqual({ ok: true, value: "Use current." });
+    expect(fillFluxNodeGoal(`Use {${name}}.`, {})).toMatchObject({ ok: false, issues: [{ code: "goal.missing_input" }] });
+    expect(Object.keys(inputs)).toEqual([name]);
+    expect(Object.getPrototypeOf(inputs)).toBe(before);
+  });
   it("fills text as written and other values as canonical JSON", () => {
     expect(fillFluxNodeGoal("Find {count} {query} in {where}.", { count: 3, query: "lens hood", where: { b: 1, a: "x" } })).toEqual({ ok: true, value: 'Find 3 lens hood in {"a":"x","b":1}.' });
   });

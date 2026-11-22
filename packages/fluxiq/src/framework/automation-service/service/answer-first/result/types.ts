@@ -26,6 +26,8 @@ export type AutomationStudioAnswerFirstResultRead = {
   place?: string | undefined;
   /** The rows the read's conditions kept, every one. */
   kept: readonly JsonObject[];
+  /** Actual source validation count; absent legacy evidence is unknown, never zero. */
+  invalidCount?: number;
   /** What its conditions saw and did not keep. Evidence, never rows. */
   leftOut?: AutomationStudioFlowLessReadLeftOut | undefined;
   /** The view of the site it read, without what only turns the page. */
@@ -65,6 +67,7 @@ export type AutomationStudioAnswerFirstResultPage = {
   source: string;
   place: string | undefined;
   kept: readonly JsonObject[];
+  invalidCount?: number;
   leftOut: AutomationStudioFlowLessReadLeftOut | undefined;
   where: string | undefined;
   paging: AutomationStudioAnswerFirstResultPaging | undefined;

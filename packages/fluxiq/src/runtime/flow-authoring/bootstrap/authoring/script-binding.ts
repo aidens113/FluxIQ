@@ -85,7 +85,7 @@ function wholeBinding(written: string, parameter: AutomationNodeParameter | unde
     const name = input[1] ?? "";
     const test = input[2]?.trim();
     if (!AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME.test(name) || name === ROW_NAME) {
-      return { refused: `"$input.${name.slice(0, 32)}" is not a Flow input's name: it starts with a lower-case letter, holds only letters and digits, at most 32, and is never "${ROW_NAME}".` };
+      return { refused: `"$input.${name}" is not a bindable Flow input identifier: it starts with an ASCII letter or underscore, holds only ASCII letters, digits and underscores, and is never "${ROW_NAME}".` };
     }
     if (scope.partInputs) {
       if (!scope.partInputs.has(name)) return { refused: `"$input.${name}" is not an input of this part. A part sees only what its caller gives it: declare it with \`input: ${name}\` on the part, and give it on the step that calls the part.` };

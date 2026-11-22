@@ -373,7 +373,7 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
       const evidence = carried.resultEvidence ?? (shown && entries ? automationStudioResultEvidenceFromBatches({ datasets: [shown.datasetId], entries }) : undefined);
       const restored = automationStudioAnswerFirstRestoreResult({ evidence, steps: run.steps, batches: entries ?? [], source: (datasetId) => run.sink.summary(datasetId) });
       if (restored.entries.length) run.result.restored(restored.entries);
-      if (!restored.ok) run.result.sourceUnavailable(restored.reason, evidence);
+      if (!restored.ok) run.result.sourceUnavailable(restored.reason, restored.evidence ?? evidence);
     } catch { run.result.sourceUnavailable("The original contributing page provenance could not be read. Repair its stored reference or collect the full source evidence again; a preview cannot stand in for it."); }
   } else if (shown?.previewRows.length) run.result.carried(run.steps, shown.previewRows, shown.datasetId);
   if (!copied.ok) automationStudioAnswerFirstSay("Part of the record was not written", "I am carrying on, but some of the rows found so far could not be brought along. I will read them again if I need them.");

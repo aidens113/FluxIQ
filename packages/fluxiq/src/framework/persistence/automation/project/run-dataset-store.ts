@@ -349,12 +349,13 @@ export class AutomationStudioProjectRunDatasetStore {
   }
 
   /** Source evidence survives processing and restart. A missing member explicitly marks a legacy/unrecorded batch. */
-  async readBatchEvidence(runId: string): Promise<Array<{ datasetId: string; batchKey: string; evidence?: JsonObject }>> {
-    const rows = await this.lease.database.all<{ dataset_id: string; batch_key: string; evidence_json: string | null }>("select dataset_id, batch_key, evidence_json from run_dataset_batches where run_id = ? order by created_at_ms, rowid", [requiredId(runId, "run")]);
+  async readBatchEvidence(runId: string): Promise<Array<{ datasetId: string; batchKey: string; nodeId: string; invalidCount: number; evidence?: JsonObject }>> {
+    const rows = await this.lease.database.all<{ dataset_id: string; batch_key: string; node_id: string; invalid_count: number; evidence_json: string | null }>("select dataset_id, batch_key, node_id, invalid_count, evidence_json from run_dataset_batches where run_id = ? order by created_at_ms, rowid", [requiredId(runId, "run")]);
     return rows.map((row) => {
       const evidence: unknown = row.evidence_json === null ? undefined : JSON.parse(row.evidence_json);
       if (evidence !== undefined && (typeof evidence !== "object" || evidence === null || Array.isArray(evidence))) throw new Error("Run dataset batch evidence is invalid.");
-      return { datasetId: row.dataset_id, batchKey: row.batch_key, ...(evidence === undefined ? {} : { evidence: evidence as JsonObject }) };
+      if (typeof row.node_id !== "string" || !row.node_id.trim() || !Number.isSafeInteger(row.invalid_count) || row.invalid_count < 0) throw new Error("Run dataset source validation provenance is invalid.");
+      return { datasetId: row.dataset_id, batchKey: row.batch_key, nodeId: row.node_id, invalidCount: row.invalid_count, ...(evidence === undefined ? {} : { evidence: evidence as JsonObject }) };
     });
   }
 
@@ -569,7 +570,8 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
   const automatic = process?.declaration?.version === 1;
   const started = nowGiven && !automatic ? undefined : await sql.get<{ started_at_ms: number | null; summary_json: string }>("select started_at_ms, summary_json from runtime_runs where run_id = ?", [runId]);
   const reference = automatic ? automationStudioRunDatasetProcessingReference(started) : started?.started_at_ms ?? now;
-  const answer = automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, process, reference);
+  const answer = automatic && dataset.invalid_count > 0 ? { unavailable: true as const, reason: "processing_source_invalid" }
+    : automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, process, reference);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
   if ("unavailable" in answer) {
     // Missing evidence invalidates a previously-ready answer in this same transaction. Collected originals remain available for repair.
