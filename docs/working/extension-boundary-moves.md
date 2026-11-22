@@ -1,9 +1,9 @@
 # Extension Boundary Moves
 
-Status: Active
-Status detail: Three downstream lanes (G, H, S) are moving generic gateway-client, tooling, accounting, prompt and single-source code from the web extension into Core; dispatched 2026-10-19, nothing merged yet.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-19
-Last updated: 2026-10-19
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's side of the downstream extension/Core boundary audit's move plan: what Core gains (gateway client protocol, build-cache engine and task rules, run accounting and build lifecycle, generic prompt rules, single sources for activity wording, record-set reading and dedupe/sort, capture and request policy, secret screening) and the compatibility notes for each. The findings, phases and ranked list stay downstream.
 Paired document: `!FluxIQWebExtension/docs/working/extension-core-boundary-audit.md` (findings and move plan); execution hub `!FluxIQWebExtension/docs/working/trace-offline-trials-plan.md` (lane table and briefs)
@@ -12,6 +12,8 @@ Related: [code structure](../architecture/code-structure.md), [trace-offline-tri
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Three downstream lanes (G, H, S) are moving generic gateway-client, tooling, accounting, prompt and single-source code from the web extension into Core; dispatched 2026-10-19, nothing merged yet.
 
 **Approved (user, 2026-10-19):** implement the downstream audit's six-phase move plan with subagents, including the
 tooling policy: Core owns the build-cache engine and the shared task rules, downstream imports them, and any copy

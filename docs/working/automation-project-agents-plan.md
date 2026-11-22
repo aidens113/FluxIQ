@@ -1,9 +1,9 @@
 # Automation Project Agents Plan
 
-Status: Active
-Status detail: A1-A6 delivered; A8 passed and `project` is the product default (t667); the cost gap is closed (t671-t693): `project` passed 10 of 10 on one frozen downstream source at $0.028 a build. User decision 2026-10-13: concurrent agents in Core, the extension one at a time.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-10-13
-Last updated: 2026-10-17
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of FluxIQ's product-level agent system for building an automation: the project supervisor, subflow builder and repair agent roles; the build record, task spec, structure plan, brief, return, allowance, host-resource scheduling and cancellation contracts; per-role tool scopes; assembly through the existing candidate submission, trial and promotion owners. Browser tab ownership, chat rendering and Lab qualification are downstream.
 Paired document: `C:\Users\osrs_\FluxStuff\!FluxIQWebExtension\docs\working\automation-project-agents-plan.md`
@@ -12,6 +12,8 @@ Related: [MVP final month plan](./mvp-final-month-plan.md), [state-aware recover
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: A1-A6 delivered; A8 passed and `project` is the product default (t667); the cost gap is closed (t671-t693): `project` passed 10 of 10 on one frozen downstream source at $0.028 a build. User decision 2026-10-13: concurrent agents in Core, the extension one at a time.
 
 **Built, qualified, the product default, and its cost gap closed (2026-10-17).** The user asked for "a system of
 different agents for managing different parts of a automation project ... the current one we have for actually

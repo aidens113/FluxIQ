@@ -1,9 +1,9 @@
 # Module Size And Structure Governance Plan
 
-Status: Active
-Status detail: Phases 1-8 complete. service.ts 12,482 -> 6,919 lines and 422 -> 224 methods; two body-moves remain that do not reach the runtime/LLM knot.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-10
-Last updated: 2026-09-10
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Preventing unbounded file, class, and directory growth in FluxIQ Core and the downstream web-extension repository, relocating tests to `tests/`, and reorganizing what has already grown past maintainability.
 Paired document: `F:\!FluxIQWebExtension\docs\working\module-size-governance-plan.md`
@@ -16,6 +16,8 @@ this document tracks applying it.
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Phases 1-8 complete. service.ts 12,482 -> 6,919 lines and 422 -> 224 methods; two body-moves remain that do not reach the runtime/LLM knot.
 
 **Phases 1 through 8 have all been executed. One file remains: `service.ts`.**
 Every other oversized source file in either repository has been decomposed,

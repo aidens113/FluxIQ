@@ -1,9 +1,9 @@
 # Repository State Audit
 
-Status: Active
-Status detail: Core audit complete; documented withholding limits, an unsafe storage-less default, and ignored failure routing are confirmed for downstream prioritization.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-13
-Last updated: 2026-09-13
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core-side record for the paired read-only audit of FluxIQ Core and FluxIQWebExtension at their current dev heads.
 Paired document: `F:\!FluxIQWebExtension\docs\working\repository-state-audit.md`
@@ -12,6 +12,8 @@ Related: [Core Week 1 plan](./mvp-week1-web-automation-reliability-plan.md), [wo
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Core audit complete; documented withholding limits, an unsafe storage-less default, and ignored failure routing are confirmed for downstream prioritization.
 
 The audit completed at Core `0a2dc53` and downstream `f3771ac`. Both trees were
 clean and aligned with their local `origin/dev` tracking refs at intake.

@@ -1,9 +1,9 @@
 # MVP Week 1 — Web Automation Reliability Plan (Core share)
 
-Status: Active
-Status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; downstream Week 1 is complete as of 2026-09-15, confirmed by a production-Core pair with no differing run that superseded two disclosed startup exceptions.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-11
-Last updated: 2026-09-15
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Core's share of the downstream web extension's MVP Week 1 plan: the failure-category enum, record, parser, and carriers on the gateway, runtime, dispatch, node, attempt, and LLM-context types; structured-first failure classification; the target-resolution outcome on the attempt trace; loading a domain's panel host through Core's public exports; the structure-audit baseline ratchet; the expectation-evaluator seam (C3, Wave 3); and the two 2026-09-12 element-matcher changes — publishing the matcher for a browser bundle, and charging a missing stable identifier less than a contradicted one.
 Paired document: `F:\!FluxIQWebExtension\docs\working\mvp-week1-web-automation-reliability-plan.md`
@@ -12,6 +12,8 @@ Related: [package boundaries](../architecture/package-boundaries.md), [code stru
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Core's Week 1 code remains unchanged and validated at `e5c9828`; downstream Week 1 is complete as of 2026-09-15, confirmed by a production-Core pair with no differing run that superseded two disclosed startup exceptions.
 
 **Phase: the downstream Week 1 finish, released as `fluxiq` 0.4.0 on
 2026-09-13.** On 2026-09-11 the user directed that changes belonging in Core are

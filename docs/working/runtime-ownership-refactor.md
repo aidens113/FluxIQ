@@ -1,15 +1,17 @@
 # Runtime Ownership And Web Boundary Refactor
 
-Status: Active
-Status detail: First capability group package and focused browser checks pass; paired dev integration next; remaining runtime and final reusable chat UI phases required.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-11-01
-Last updated: 2026-11-02
+Last updated: 2026-11-22
 Owner: Senior supervisor agent
 Scope: Separate framework runtime from Automation Studio ownership and audit all downstream web boundaries.
 Paired document: ../!FluxIQWebExtension/docs/working/runtime-ownership-refactor.md
 Related: [architecture](../architecture/README.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: First capability group package and focused browser checks pass; paired dev integration next; remaining runtime and final reusable chat UI phases required.
 
 User authorized the complete Core/downstream ownership audit and refactor with Core workers, followed by the reusable chat widget package. Work is isolated on paired task/t842-runtime-boundary-refactor branches under C:/Users/osrs_/FluxStuff/fxwork/t842; these belong to the original repositories, not separate cloned histories. Original downstream changes are preserved.
 Core owns neutral framework/runtime mechanisms; downstream owns active browser/DOM/selector/tab interpretation. Existing public entry points forward to canonical implementations for compatibility.
