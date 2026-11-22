@@ -128,7 +128,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string
   "kind", "evidence", "effectApplied", "failure", "actionability", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "ownRetestBound", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "recordSchema", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; recordSchema?: AutomationStudioLlmEvidenceToolExecutionResult["recordSchema"]; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; failure?: AutomationStudioFailureRecord; actionability?: AutomationStudioTargetActionabilityRecord; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; ownRetestBound?: true; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; recordSchema?: Exclude<AutomationStudioLlmEvidenceToolExecutionResult["recordSchema"], undefined>; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
