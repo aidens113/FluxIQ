@@ -95,6 +95,8 @@ export type AutomationStudioAnswerFirstResultFeed = {
   evidence(): AutomationStudioResultEvidenceBundle;
   /** Exact current contributing identities; absence or several matches must remain unknown to consumers. */
   sourceRefs(source: string): readonly AutomationStudioResultEvidenceSourceRef[];
+  /** Current source authority only. Does not evaluate automatic processing or historical fallback pages. */
+  sourceProof(): Pick<AutomationStudioResultEvidenceBundle, "pages" | "sourceReplacements">;
   /** The empty result's refusal, where a look holds rows the draft could take; `undefined` otherwise. */
   emptyRefusal(): string | undefined;
   /** The ledger id of a draft step. */
@@ -421,6 +423,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     evidence() { return replacements.evidence(sourceState.evidence(baseEvidence())); },
     sourceRefs(source) {
       return baseEvidence(false).pages.filter((page) => page.source === source).map((page) => ({ source: page.source, step: page.step, version: page.version, ...(page.datasetId === undefined ? {} : { datasetId: page.datasetId }) }));
+    },
+    sourceProof() {
+      const current = replacements.evidence(baseEvidence(false));
+      return { pages: current.pages, ...(current.sourceReplacements === undefined ? {} : { sourceReplacements: current.sourceReplacements }) };
     },
   };
 }

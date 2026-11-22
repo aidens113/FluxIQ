@@ -16,6 +16,7 @@ it("mints an exact ready-to-ready page receipt from the actual kept read, retain
   reread(p.feed, step, "fresh", [changed], SCHEMA, "page=1");
   expect(p.feed.readiness()).toEqual({ state: "ready" });
   expect(p.feed.evidence().sourceReplacements).toEqual({ version: 1, receipts: [{ kind: "page", from: [source("old")], to: [source("fresh")] }] });
+  expect(p.feed.sourceProof()).toEqual({ pages: p.feed.evidence().pages, sourceReplacements: p.feed.evidence().sourceReplacements });
   expect(p.feed.evidence().pages[0]?.rows).toEqual([changed]);
   expect(p.feed.evidence().processing).toMatchObject({ collected: 1, kept: 1 });
   expect(p.feed.rows().rows).toEqual([changed]);
@@ -32,6 +33,23 @@ it("mints the same authority when an exact reread repairs a rejected original so
   reread(p.feed, step, "fresh", [row], SCHEMA, "page=1");
   expect(p.feed.readiness()).toEqual({ state: "ready" });
   expect(p.feed.evidence().sourceReplacements).toEqual({ version: 1, receipts: [{ kind: "page", from: [source("old")], to: [source("fresh")] }] });
+});
+
+it("reads only current source proof without evaluating rows or substituting held historical pages", () => {
+  const p = automaticFeed({ columns: ["title"] });
+  const step = p.read("old", [row]);
+  const historical = p.feed.evidence();
+  reread(p.feed, step, "fresh", [row], SCHEMA, "page=1");
+  let reads = 0;
+  const original = p.feed.port.outputGroup()[0]!.pages[0]!.kept[0]!;
+  Object.defineProperty(original, "title", { configurable: true, enumerable: true, get: () => { reads += 1; return row.title; } });
+  expect(p.feed.sourceProof().pages[0]?.source).toBe("fresh");
+  expect(reads).toBe(0);
+  Object.defineProperty(original, "title", { configurable: true, enumerable: true, value: row.title });
+  p.feed.sourceUnavailable("Historical evidence still requires recovery.", historical);
+  expect(p.feed.evidence().pages[0]?.source).toBe("old");
+  expect(p.feed.sourceProof().pages[0]?.source).toBe("fresh");
+  expect(p.feed.sourceProof().sourceReplacements?.receipts).toHaveLength(1);
 });
 
 it("does not grant page authority to an unrelated place or an indistinguishable reused source tuple", () => {
