@@ -121,6 +121,8 @@ async function build(input: {
   builderFirst?: (subflowKey: string, evidence: readonly Entry[]) => JsonObject | undefined;
   reset?: (evidence: readonly Entry[]) => JsonObject;
   permittedConsequences?: AutomationStudioActionConsequence[];
+  /** What the chat's reading declared the task will cause (t976): asked about once, when the build's first gate starts. */
+  taskActs?: AutomationStudioActionConsequence[];
   prepareStart?: AutomationStudioServiceOptions["prepareCandidateStart"];
   startState?: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]>["startState"];
   stepControl?: AutomationStudioActionDeclaration["control"];
@@ -170,7 +172,7 @@ async function build(input: {
   const { project, flow } = await blankFixture(service, "active", "isolated");
   return {
     service, firstSeen, latestSeen,
-    run: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(input.permittedConsequences ? { permittedConsequences: input.permittedConsequences } : {}) })
+    run: () => service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, authoringMode: "project", ...(input.permittedConsequences ? { permittedConsequences: input.permittedConsequences } : {}), ...(input.taskActs ? { taskActs: input.taskActs } : {}) })
   };
 }
 
@@ -341,7 +343,7 @@ describe("a dependent builder's entry", () => {
 });
 
 describe("a brief whose parts ask for no lasting act", () => {
-  it("puts its deleting press to the person's gate although the build was permitted it, and tells it a modifying press was outside its brief", async () => {
+  it("refuses its undeclared deleting press without asking again, and tells it a modifying press was outside its brief", async () => {
     const verdicts: Array<{ control: string; permitted: boolean; missing: readonly string[] }> = [];
     const asked: unknown[] = [];
     let rowState = "v:original";
@@ -350,7 +352,8 @@ describe("a brief whose parts ask for no lasting act", () => {
       subflows: [{ key: "main", name: "Main", parts: ["p1"] }]
     };
     const run = await build({
-      plan, permittedConsequences: ["delete", "modify_existing"],
+      // Declared with the task, the delete is asked about once when the build's first gate starts, never at the press (t976).
+      plan, permittedConsequences: ["delete", "modify_existing"], taskActs: ["delete"],
       briefs: [{ kind: "build", subflowKey: "main", parts: ["p1"], entry: { caseId: "observed-current", predecessors: [] }, allowanceUsd: 0.01, maxIterations: 8, permittedActs: [] }],
       startState: async () => ({ state: {}, differs: [], resource: "r:list", scope: "p:list", collections: [{ scope: "p:list", group: "g:list", subjects: ["s:row"], states: { "s:row": rowState } }] }),
       tools: [{ toolId: "press", description: "Press a control on one list", inputSchema: { type: "object", properties: { control: { type: "string" }, item: { type: "string" } } }, effect: "mutate" }],
@@ -379,10 +382,10 @@ describe("a brief whose parts ask for no lasting act", () => {
     vi.spyOn(run.service.conversations, "parkingPort").mockReturnValue(thread);
     await run.run().catch(() => undefined);
 
-    // Remove was put to the person (asked once, declined), although the person permitted the build to delete; Rename ran.
+    // The build's caller already allowed deletion, so its start has nothing to ask. The narrower
+    // brief has no destructive authority of its own and cannot reopen a question mid-build.
     expect(verdicts).toEqual([{ control: "Remove", permitted: false, missing: ["delete"] }, { control: "Rename", permitted: true, missing: [] }]);
-    expect(asked).toHaveLength(1);
-    expect(JSON.stringify(asked[0])).toContain("delete");
+    expect(asked).toHaveLength(0);
     // The refused Remove says nothing about the brief; the Rename that ran is told it was outside it, beside the domain's own evidence.
     const result = (callId: string) => run.latestSeen.main?.find((entry) => entry.callId === callId)?.value as JsonObject | undefined;
     expect(result("remove")).not.toHaveProperty("outsideBrief");

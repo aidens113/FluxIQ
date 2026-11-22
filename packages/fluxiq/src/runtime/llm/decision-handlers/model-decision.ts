@@ -9,8 +9,6 @@
 //   change_approach   the repeat stays refused, and the model goes on the way it named
 //   ask_person        the person is asked the model's own question through the loop's caller
 //                     (`loopSignal`), which ends the round there and carries the attempt on
-//   escalate_model    the attempt climbs one model rung (`../role-routing/ladder/`); at the top it
-//                     is told so and asked to choose again
 //   finish_with_best  its result goes to the completion check as any completion does
 //
 // The repeat guard's refusal of an exact repeat asks for the same decision
@@ -30,7 +28,6 @@ import { emitAutomationStudioActivity } from "../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision, AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID, automationStudioLlmLoopDecisionRead, type AutomationStudioLlmLoopDecision, type AutomationStudioLlmLoopDecisionOptions } from "../loop-decision/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_SIGNAL_CODES, type AutomationStudioLlmLoopFinding, type AutomationStudioLlmLoopSignal } from "../repeat-guard/index.ts";
-import { automationStudioLlmModelLadderClimb } from "../role-routing/index.ts";
 import { automationStudioLlmStepLogEvent } from "../step-log/index.ts";
 import { automationStudioLlmEvidenceLoopDecisionOptions } from "./decision-options.ts";
 import { automationStudioLlmEvidenceLoopRaise } from "./loop-signal.ts";
@@ -50,9 +47,7 @@ type ToolCall = Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_c
 const CODES = Object.freeze({
   carried: "core.loop_decision.carried_out",
   invalid: "core.loop_decision.invalid",
-  top: "core.loop_decision.strongest_model",
   noPerson: "core.loop_decision.no_person",
-  notYet: "core.loop_decision.ask_person_not_offered"
 });
 
 /** What the model is told once each decision is carried out. */
@@ -60,7 +55,6 @@ const CARRIED: Readonly<Record<AutomationStudioLlmLoopDecision["decision"], stri
   continue: "The repeat may run again. If it is caught again, you will be asked again, with how many times it has been.",
   change_approach: "Take the way you named now. The call you repeated stays refused.",
   ask_person: "The person has been asked your question. Their answer comes to you as guidance; do not wait for it.",
-  escalate_model: "A stronger model makes the decisions of this attempt from the next one on.",
   finish_with_best: "Your result is being checked as this attempt's result."
 });
 
@@ -76,12 +70,7 @@ export async function automationStudioLlmEvidenceHandleLoopDecision(context: Aut
   const about = context.loops.standing() ?? context.loops.record.lastNoted;
   // What was on offer when the model was asked, before this decision changes it.
   const options = automationStudioLlmEvidenceLoopDecisionOptions(context);
-  if (read.decision === "escalate_model") {
-    const climbed = automationStudioLlmModelLadderClimb(context.loops.record.ladder, { reason: "model_decided", ...(about ? { pattern: about.pattern } : {}) }, iteration);
-    if (!climbed) return answered(context, iteration, call, { ok: false, code: CODES.top, instruction: `This attempt is already on the strongest model it can use. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with another decision.` });
-  }
   if (read.decision === "ask_person") {
-    if (!options.offered.includes("ask_person")) return answered(context, iteration, call, { ok: false, code: CODES.notYet, offered: [...options.offered], instruction: `Asking the person is for when your own approaches and a stronger model have not worked, and that is not so yet. Call ${AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID} again with one of: ${options.offered.join(", ")}.` });
     return asked(context, iteration, call, read.question, read.why, about, steps, options);
   }
   recorded(context, iteration, read, about, options);
@@ -125,7 +114,6 @@ const CHAT: Readonly<Record<AutomationStudioLlmLoopDecision["decision"], string>
   continue: "that repeating is right here",
   change_approach: "to try a different way",
   ask_person: "to ask you",
-  escalate_model: "to hand this to a stronger model",
   finish_with_best: "to answer with what it has, which is checked now"
 });
 
@@ -133,10 +121,10 @@ function wordsOf(decision: AutomationStudioLlmLoopDecision): string | undefined 
   if (decision.decision === "continue") return decision.why;
   if (decision.decision === "change_approach") return decision.approach;
   if (decision.decision === "ask_person") return decision.question;
-  return decision.decision === "escalate_model" ? decision.why : undefined;
+  return undefined;
 }
 
 function stepFolder(iteration: number, decision: AutomationStudioLlmLoopDecision["decision"], words: string | undefined, about: AutomationStudioLlmLoopFinding | undefined, options: AutomationStudioLlmLoopDecisionOptions): void {
   const summary = `${decision}${about ? ` on ${about.pattern} x${about.repeats}` : ""}`;
-  automationStudioLlmStepLogEvent("loop_decision", { iteration, decision, pattern: about?.pattern ?? null, repeats: about?.repeats ?? null, toolIds: [...(about?.toolIds ?? [])], words: words ?? null, offered: [...options.offered], askPerson: options.askPerson, approachesChanged: options.approachesChanged, climbedOrAtTop: options.climbedOrAtTop }, summary, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
+  automationStudioLlmStepLogEvent("loop_decision", { iteration, decision, pattern: about?.pattern ?? null, repeats: about?.repeats ?? null, toolIds: [...(about?.toolIds ?? [])], words: words ?? null, offered: [...options.offered], askPerson: options.askPerson, approachesChanged: options.approachesChanged }, summary, AUTOMATION_STUDIO_LLM_LOOP_DECISION_TOOL_ID);
 }

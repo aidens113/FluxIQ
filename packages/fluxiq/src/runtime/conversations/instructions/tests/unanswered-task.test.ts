@@ -1,6 +1,6 @@
 // t973: a reply in words is only for conversation. The model's declaration (`intent`) and the shape of
 // its answer decide; the person's words are never read. A reply to a task, or a reply that declares
-// nothing, is asked again one rung up; still a reply, a declared task starts from the open page and
+// nothing, is asked again on the same model; still a reply, a declared task starts from the open page and
 // anything else keeps the model's reply, so the person is never left with nothing.
 
 import { describe, expect, it } from "vitest";
@@ -91,18 +91,18 @@ describe("the interpretation with the check", () => {
     expect(reading).toMatchObject({ attempts: 1, decision: { kind: "invoke", invocation: { capabilityId: "flow.createHere" } } });
   });
 
-  it("climbs once and stays climbed for the turn, then answers with the model's reply when no task was ever declared and none can start", async () => {
+  it("retries on the same model throughout the turn, then answers with the model's reply when no task was ever declared and none can start", async () => {
     const seen: AutomationStudioConversationModelRequest[] = [];
     const reading = await interpretAutomationStudioConversationTurn({ model: scripted(['{"reply": "Hello there."}'], seen), message: "hello", transcript: [], transcriptWithheld: false, context: context({ onScreen: {}, message: "hello" }), limits: QUICK });
     expect(reading).toMatchObject({ source: "model", attempts: 3, decision: { kind: "reply", text: "Hello there." } });
-    expect(seen.map((request) => request.climb)).toEqual([undefined, { reason: "reply_undeclared" }, { reason: "reply_undeclared" }]);
+    expect(seen.map((request) => request.climb)).toEqual([undefined, undefined, undefined]);
   });
 
-  it("settles on the climbed rung's declaration: a task it starts, a conversation it may answer", async () => {
+  it("settles on the same model's corrected declaration: a task it starts, a conversation it may answer", async () => {
     const seen: AutomationStudioConversationModelRequest[] = [];
     const reading = await interpretAutomationStudioConversationTurn({ model: scripted(['{"intent": "task", "reply": "Shall I go ahead?"}', '{"intent": "conversation", "reply": "Nothing to do here."}'], seen), message: "hello", transcript: [], transcriptWithheld: false, context: context({ message: "hello" }), limits: QUICK });
     expect(reading).toMatchObject({ attempts: 2, decision: { kind: "reply", text: "Nothing to do here." } });
-    expect(seen[1]!.climb).toEqual({ reason: "task_answered_in_words" });
+    expect(seen[1]!.climb).toBeUndefined();
     expect(seen[1]!.correction).toContain("A task is never answered in words");
   });
 });

@@ -58,6 +58,9 @@ describe("a saved step whose layer was not there on the replay", () => {
   });
 });
 
+// A check a person cleared is no deviation since t972 (`../../completion/replay-stands.ts`): the engine has
+// settled the step it met, so a replay that went on as saved stands on its record with no judge call.
+// What is kept of each clearance is still exact, for the attempt's outcome and its trail.
 describe("the record of each check a person cleared", () => {
   const cleared = (resolution: object, id = "cleared"): AutomationStudioNodeAttemptTrace => ({
     ...attempt("n2"), attemptId: id, status: "failed", route: "failed",
@@ -68,11 +71,11 @@ describe("the record of each check a person cleared", () => {
     buildPlan: plan, locator, saved: [], ended: { reachedEnd: true, trace: { attempts }, graph } as unknown as Parameters<typeof automationStudioAnswerFirstFlowRunStepsRan>[0]["ended"]
   });
 
-  it("keeps proved landed effects and unverified continuations distinct, while both still require the judge", () => {
+  it("keeps proved landed effects and unverified continuations distinct, and the replay stands on its record (t972)", () => {
     for (const resolution of [{ kind: "effect_landed" }, { kind: "unverified", reason: "no_expected_state" }]) {
       const outcome = outcomeOf([attempt("n1"), cleared(resolution), attempt("n3")]);
       expect(outcome.steps[1]).toMatchObject({ personCleared: true, personClearances: [{ attemptId: "cleared", resolution }] });
-      expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+      expect(stands(outcome.steps)).toEqual({ stands: true });
     }
   });
 
@@ -81,7 +84,7 @@ describe("the record of each check a person cleared", () => {
     const reran = { ...attempt("n2"), attemptId: "reran" };
     const outcome = outcomeOf([attempt("n1"), cleared(resolution), reran, attempt("n3")]);
     expect(outcome.steps[1]).toMatchObject({ personClearances: [{ attemptId: "cleared", resolution, rerunAttemptId: "reran" }] });
-    expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    expect(stands(outcome.steps)).toEqual({ stands: true });
     const unrelated = [
       [attempt("n3"), reran],
       [{ ...reran, definitionId: "another.definition" }],
@@ -106,7 +109,7 @@ describe("the record of each check a person cleared", () => {
     ]);
     Object.assign(first.personContinuation!, { kind: "unverified" });
     expect(outcome.steps[1]?.personClearances?.[0]?.resolution.kind).toBe("rerun");
-    expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    expect(stands(outcome.steps)).toEqual({ stands: true });
   });
 
   it("keeps legacy or malformed clearance evidence unproved and strips extra fields from a closed record", () => {
@@ -115,7 +118,7 @@ describe("the record of each check a person cleared", () => {
     for (const met of [legacy, cleared({ kind: "rerun", reason: "invented" }), cleared({ kind: "invented" })]) {
       const outcome = outcomeOf([attempt("n1"), met, attempt("n3")]);
       expect(outcome.steps[1]?.personClearances).toEqual([{ attemptId: "cleared", resolution: { kind: "unknown" } }]);
-      expect(stands(outcome.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+      expect(stands(outcome.steps)).toEqual({ stands: true });
     }
     const outcome = outcomeOf([attempt("n1"), cleared({ kind: "effect_landed", unrelated: "fixture-private-value" }), attempt("n3")]);
     expect(outcome.steps[1]?.personClearances).toEqual([{ attemptId: "cleared", resolution: { kind: "effect_landed" } }]);
@@ -124,6 +127,6 @@ describe("the record of each check a person cleared", () => {
       { attemptId: "cleared", resolution: { kind: "unknown" } },
       { attemptId: "new", resolution: { kind: "effect_landed" } }
     ]);
-    expect(stands(mixed.steps)).toEqual({ stands: false, deviation: "check_cleared" });
+    expect(stands(mixed.steps)).toEqual({ stands: true });
   });
 });

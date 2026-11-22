@@ -24,7 +24,7 @@ export type AutomationStudioRunOverrides = {
   /** By tool id; the description only. */
   readonly tools?: Readonly<Record<string, AutomationStudioRunTextOverride>>;
   readonly judgeCriteria?: readonly string[];
-  /** A model id per role. */
+  /** Automation starting model in explore; historical judge/repair fields remain readable but do not switch models. */
   readonly models?: { readonly explore?: string; readonly judge?: string; readonly repair?: string };
   /** Read by the engine's pacing (W2): the least gap between two steps. */
   readonly pace?: { readonly minStepGapMs?: number };

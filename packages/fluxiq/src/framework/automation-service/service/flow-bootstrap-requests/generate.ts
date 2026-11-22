@@ -33,6 +33,7 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "mode",
   "interpretationCostUsd",
   "interpretationCalls",
+  "taskActs",
   "humanness"
 ]);
 
@@ -101,6 +102,10 @@ export async function generateFlowBootstrapAdaptationForRequest(
   if (interpretationCalls !== undefined && (!Number.isSafeInteger(interpretationCalls) || (interpretationCalls as number) < 0)) return { ok: false, error: "Flow bootstrap generation request contains an invalid interpretation call count." };
   const humanness = payload.humanness;
   if (humanness !== undefined && !humannessSchema.safeParse(humanness).success) return { ok: false, error: "Flow bootstrap generation request contains an invalid humanness." };
+  // What the chat's reading declared the task will cause (t976): its one question when it starts.
+  let taskActs: AutomationStudioActionConsequence[] | undefined;
+  try { taskActs = payload.taskActs === undefined ? undefined : parseAutomationStudioPermittedConsequences(payload.taskActs); }
+  catch { return { ok: false, error: "Flow bootstrap generation request contains invalid task acts." }; }
   const readiness = flowBootstrapGenerationReadiness(service);
   if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
   // What the person allowed the build's actions to do. Absent is nothing;
@@ -141,6 +146,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
       ...(startLocation === undefined ? {} : { startLocation }),
       ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
       ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
+      ...(taskActs === undefined ? {} : { taskActs }),
       ...(humanness === undefined ? {} : { humanness: humanness as number }),
       // Somebody has just pressed build, so a question this build raises is
       // worth holding it open for: answered, the build carries on with

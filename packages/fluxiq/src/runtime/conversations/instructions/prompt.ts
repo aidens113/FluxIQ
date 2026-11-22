@@ -26,15 +26,22 @@ import type { AutomationStudioConversationWaitingAsk } from "./waiting-ask.ts";
  * the message is (`intent`), a reply is only for conversation, and the one question a dangerous act
  * needs is said to be FluxIQ's own. Core checks the declaration (`./unanswered-task.ts`): a reply to a
  * task, or a reply that declares nothing, is asked for again one rung up.
+ *
+ * **A task also declares what it will do that lasts, in "acts" (t976).** A dangerous act asks the
+ * person one question only when the task starts, never mid-Flow (the user's rule, 2026-11-03 and
+ * 2026-11-10), so the attempt needs the classes before anything acts. This reading already happens,
+ * so the classes come with it and no call is added for them (`./acts.ts`). The words name what each
+ * class covers, in the same terms as the build's own instruction read, and never a site or a task.
  */
 const ANSWER_SHAPE = [
   'Answer with one JSON object and nothing else. It first says what their message is, in "intent":',
   '  "task" -- it asks for something to be done or found: on a website, with a Flow, or in the panel. A question whose answer has to be looked up on a site is a task, and so is a job that deletes, pays, sends or posts.',
   '  "conversation" -- it asks for nothing to be done or found: a greeting, thanks, a remark, or a question about FluxIQ itself or about what you can do.',
   "Then, in the same object, one of:",
-  '  {"intent": "task", "do": "<capability id>", "with": {"<argument>": "<value>"}}   to do it. Leave out any argument you do not know.',
+  '  {"intent": "task", "do": "<capability id>", "with": {"<argument>": "<value>"}, "acts": ["<class>"]}   to do it. Leave out any argument you do not know.',
   '  {"intent": "task", "ask": "<one short question>"}   only when you cannot tell what they want, such as which of several Flows they mean.',
   '  {"intent": "conversation", "reply": "<your answer>"}   only for conversation.',
+  `With "do", "acts" lists what the job will do that lasts, from the person's words alone: "move_money" (pays, buys, orders, books with payment, refunds or transfers), "delete" (deletes, removes, withdraws or cancels something so that it is gone), "send_or_publish" (sends, replies, posts, publishes, shares or submits something others will receive or see), "modify_existing" (changes, edits, moves, marks or saves changes to something already there), "create_new" (adds or makes something new that stays). Give every class the words ask for, and [] when the job only looks, reads or finds.`,
   "A task is never answered with a reply. Start it with the capability that does it, and give it a full effort: start it even when you are unsure how the site is laid out or whether it will work, because the attempt reads the site itself and reports what it found. Ask instead only when it is truly impossible to tell what they want.",
   "Choose the capability that does all of what was asked: when they ask for something to be run, choose the one that runs it, not one that only gets it ready.",
   "Leave projectId out: it is always this project. A Flow goes in flowId, and can be given by its name; FluxIQ finds its id.",

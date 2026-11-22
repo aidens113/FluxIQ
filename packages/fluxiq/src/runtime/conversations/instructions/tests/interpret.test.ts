@@ -100,6 +100,13 @@ function scripted(...answers: unknown[]): AutomationStudioConversationModel & { 
 
 const INSTANT = { now: () => 0, wait: async () => undefined };
 
+it("declares the task's lasting classes in its existing interpretation call", async () => {
+  const model = scripted({ intent: "task", do: "flow.create", with: { name: "Requests" }, acts: ["delete", "send_or_publish"] });
+  const answer = await interpret(model, "Delete the requests and send me the list.");
+  expect(answer).toMatchObject({ attempts: 1, taskActs: ["delete", "send_or_publish"], decision: { kind: "invoke" } });
+  expect(model.requests).toHaveLength(1);
+});
+
 function interpret(model: AutomationStudioConversationModel | null, message: string, overrides: Partial<AutomationStudioConversationDecisionContext> = {}) {
   return interpretAutomationStudioConversationTurn({ model, message, transcript: [], transcriptWithheld: false, context: context(overrides), clock: INSTANT });
 }

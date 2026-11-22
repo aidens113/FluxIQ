@@ -110,7 +110,7 @@ describe.each(RECORDED)("the recorded chat request %s", (runId) => {
     for (const word of recorded.message.split(/\W+/u).filter((token) => token.length > 8)) expect(text.toLowerCase()).not.toContain(` ${word.toLowerCase()} `);
   });
 
-  it("does not let the recorded reply stand: it is asked again one rung up, and the start it gives is taken", async () => {
+  it("does not let the recorded reply stand: it is asked again on the same model, and the start it gives is taken", async () => {
     const seen: AutomationStudioConversationModelRequest[] = [];
     const start = JSON.stringify({ intent: "task", do: "flow.createHere", with: { instruction: recorded.message } });
     const reading = await interpretAutomationStudioConversationTurn({ model: scripted([recorded.reply, start], seen), message: recorded.message, transcript: [], transcriptWithheld: false, context: context(recorded), domainInstructions: recorded.domainText, limits: QUICK });
@@ -118,17 +118,17 @@ describe.each(RECORDED)("the recorded chat request %s", (runId) => {
     expect(reading.decision).toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere", arguments: { instruction: recorded.message } } });
     expect(reading.attempts).toBe(2);
     expect(seen[0]!.climb).toBeUndefined();
-    expect(seen[1]!.climb).toEqual({ reason: "reply_undeclared" });
+    expect(seen[1]!.climb).toBeUndefined();
     expect(seen[1]!.correction).toContain('opens with "intent"');
   });
 
-  it("starts the job when the model declares it a task and still only answers in words, one rung up", async () => {
+  it("starts the job when the model declares it a task and still only answers in words, on the same model", async () => {
     const seen: AutomationStudioConversationModelRequest[] = [];
     const declaredReply = JSON.stringify({ intent: "task", reply: (JSON.parse(recorded.reply) as { reply: string }).reply });
     const reading = await interpretAutomationStudioConversationTurn({ model: scripted([declaredReply], seen), message: recorded.message, transcript: [], transcriptWithheld: false, context: context(recorded), domainInstructions: recorded.domainText, limits: QUICK });
 
     expect(reading.decision).toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere", arguments: { instruction: recorded.message } } });
     expect(reading.source).toBe("model");
-    expect(seen.map((request) => request.climb?.reason)).toEqual([undefined, "task_answered_in_words", "task_answered_in_words"]);
+    expect(seen.map((request) => request.climb?.reason)).toEqual([undefined, undefined, undefined]);
   });
 });

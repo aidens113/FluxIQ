@@ -16,7 +16,7 @@
 // A seed brings the ladder back only where it carries one: a carried-on attempt is the same
 // attempt.
 
-import { automationStudioLlmModelLadder, type AutomationStudioLlmModelLadder, type AutomationStudioLlmModelLadderData } from "../../role-routing/ladder/state.ts";
+import { automationStudioLlmModelLadder, type AutomationStudioLlmModelLadder, type AutomationStudioLlmModelLadderData } from "../../role-routing/ladder/index.ts";
 import type { AutomationStudioLlmLoopDecisionKind } from "../../loop-decision/index.ts";
 import type { AutomationStudioLlmLoopFinding, AutomationStudioLlmLoopPattern } from "./types.ts";
 
@@ -38,8 +38,8 @@ export type AutomationStudioLlmLoopTriedEntry = {
   changes?: ReadonlyArray<{ step: number; change: string }>;
 };
 
-/** One decision the model made about a caught repeat (`../../decision-handlers/loop-decision.ts`): its kind and the repeat it was about, codes only. */
-export type AutomationStudioLlmLoopDecided = { decision: AutomationStudioLlmLoopDecisionKind; pattern?: AutomationStudioLlmLoopPattern; repeats?: number };
+/** Historical decisions, including retired escalation, remain readable. One decision the model made about a caught repeat (`../../decision-handlers/loop-decision.ts`): its kind and the repeat it was about, codes only. */
+export type AutomationStudioLlmLoopDecided = { decision: AutomationStudioLlmLoopDecisionKind | "escalate_model"; pattern?: AutomationStudioLlmLoopPattern; repeats?: number };
 
 /** What the last loop stopped repeated: the finding a fresh round is steered off (`./watch.ts`). */
 export type AutomationStudioLlmLoopStoppedOn = Pick<AutomationStudioLlmLoopFinding, "pattern" | "repeats" | "toolIds">;

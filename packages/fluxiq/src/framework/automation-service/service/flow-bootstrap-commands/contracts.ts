@@ -75,6 +75,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   interpretationCostUsd?: number;
   /** How many priced model calls `interpretationCostUsd` sums, recorded as the Flow spend's "chat" calls. */
   interpretationCalls?: number;
+  /** The consequence classes the chat's reading declared the task will cause (t976): asked about once when the work starts. */
+  taskActs?: AutomationStudioActionConsequence[];
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {
