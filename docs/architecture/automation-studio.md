@@ -1,5 +1,8 @@
 # Automation Studio Architecture
 
+The shared [retained record data contract](retained-records.md) describes full
+field retention, typed metadata, compatible page schemas and durable exclusions.
+
 Automation Studio is the FluxIQ authoring surface for explicit task instructions,
 supporting recordings, generated policy graphs, and runtime debugging. It is a global
 framework program, and a thin one: a controller of the framework that registers

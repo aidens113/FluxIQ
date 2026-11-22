@@ -6,9 +6,7 @@ import {
   AUTOMATION_STUDIO_RECORD_WRITE_MODES,
   AUTOMATION_STUDIO_RUN_DATASET_EXPORT_FORMATS,
   parseAutomationStudioRecordProcessing,
-  parseAutomationStudioRecordSchema,
   automationStudioRecordProcessingAccountWithoutEvidence,
-  storedAutomationStudioRecordSchema,
   type AutomationStudioDatasetRunStatus,
   type AutomationStudioDatasetRunSummary,
   type AutomationStudioDatasetRunSummaryPage,
@@ -26,7 +24,8 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administr
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../schema-migrations.ts";
-import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
+import { automationStudioRecordSchemaOfColumns, automationStudioRunDatasetAnswer, automationStudioRunDatasetRowOfColumns, type AutomationStudioRunDatasetCollectedRow, type AutomationStudioRunDatasetRowInsert } from "./run-dataset-answer/index.ts";
+import { automationStudioRunDatasetBatchReceipt, readAutomationStudioRunDatasetSchema as storedSchema, reconcileAutomationStudioRunDatasetSchema, serializedAutomationStudioRunDatasetRows as serializedRows } from "./run-dataset-schema/index.ts";
 
 /** One stored row: a JSON object keyed by the stored schema's field ids. */
 export type AutomationStudioRunDatasetRow = AutomationStudioRunDatasetPage["rows"][number];
@@ -108,7 +107,6 @@ const SEARCH_MAX_LENGTH = 200;
 const NODE_KEY_MAX_LENGTH = 1_000;
 const BATCH_KEY_MAX_LENGTH = 4_000;
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
-const DIGEST_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/u;
 const AUDIT_EVENT_TYPES: readonly AutomationStudioRunDatasetAuditEventType[] = ["exported", "export_truncated", "export_failed", "deleted"];
 const SUMMARY_COLUMN_NAMES = ["run_id", "dataset_id", "flow_id", "label", "schema_digest", "node_ids_json", "record_count", "invalid_count", "truncated", "updated_at_ms", "processing_json"] as const;
 const SUMMARY_COLUMNS = SUMMARY_COLUMN_NAMES.join(", ");
@@ -122,14 +120,14 @@ const CATALOG_UPSERT_LATEST = CATALOG_LATEST_COLUMNS.map((column) => `${column} 
 
 // record_count counts the collected rows; processing_json, set only while the answer is current, holds the account.
 type RunDatasetSummaryRow = { run_id: string; dataset_id: string; flow_id: string; label: string | null; schema_digest: string; node_ids_json: string; record_count: number; invalid_count: number; truncated: number; updated_at_ms: number; processing_json: string | null };
-type RunDatasetDetailRow = RunDatasetSummaryRow & { schema_json: string; process_json: string | null; processed_at_ms: number | null };
+type RunDatasetDetailRow = RunDatasetSummaryRow & { schema_json: string; process_json: string | null; processed_at_ms: number | null; excluded_field_digests_json: string | null; answer_rows_retained: number };
 type DatasetRunRow = RunDatasetSummaryRow & { run_status: string; run_started_at_ms: number | null };
 type CatalogRow = { flow_id: string; dataset_id: string; label: string | null; latest_run_id: string; latest_updated_at_ms: number; run_count: number; latest_record_count: number; latest_truncated: number; schema_digest: string };
 type AuditRow = { event_id: string; event_type: AutomationStudioRunDatasetAuditEventType; run_id: string; dataset_id: string | null; actor_id: string | null; format: AutomationStudioRunDatasetExportFormat | null; row_count: number; byte_count: number; created_at_ms: number };
 type BatchCountsRow = { row_count: number; invalid_count: number; truncated: number };
 type StoredRow = { ordinal: number; row_json: string };
 type RowsTable = "run_dataset_rows" | "run_dataset_answer_rows";
-const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, schema_json, process_json, processed_at_ms`;
+const DETAIL_COLUMNS = `${SUMMARY_COLUMNS}, schema_json, process_json, processed_at_ms, excluded_field_digests_json, answer_rows_retained`;
 /**
  * The rows runs capture per dataset, stored raw in `project.sqlite` (CD16) and
  * kept as long as the project unless deleted (CD17), with the project catalog
@@ -177,26 +175,38 @@ export class AutomationStudioProjectRunDatasetStore {
     const batchKey = requiredText(input.batchKey, "batch key", BATCH_KEY_MAX_LENGTH);
     const label = optionalLabel(input.label);
     const schema = storedSchema(input.schema);
-    const schemaDigest = requiredDigest(input.schemaDigest);
+    reconcileAutomationStudioRunDatasetSchema({ schema: input.schema, schemaDigest: input.schemaDigest });
     const writeMode = requiredWriteMode(input.writeMode);
     const invalidCount = nonNegativeInteger(input.invalidCount, "Run dataset invalid count");
     if (typeof input.truncated !== "boolean") throw new Error("Run dataset truncated flag must be a boolean.");
     const now = nonNegativeInteger(input.now ?? Date.now(), "Run dataset timestamp");
-    const processJson = processDeclarationJson(input.process, schema);
     const rows = serializedRows(input.rows, schema);
+    const receipt = automationStudioRunDatasetBatchReceipt({ schema: input.schema, process: input.process, rows, label, nodeId, attemptId, invalidCount, truncated: input.truncated, evidence: input.evidence });
     const startsOver = input.startsOver === true;
     return this.lease.database.transaction(async (sql) => {
       const existing = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
-      if (existing && !startsOver && existing.schema_digest !== schemaDigest) throw new Error("Run dataset schema changed within one run.");
+      const reconciled = reconcileAutomationStudioRunDatasetSchema({ schema: input.schema, schemaDigest: input.schemaDigest, existing, startsOver });
+      const schemaDigest = reconciled.schemaDigest;
+      const processJson = processDeclarationJson(input.process, reconciled.schema);
+      const repeated = existing && !startsOver && writeMode === "append" ? await sql.get<BatchCountsRow & { attempt_id: string; node_id: string; evidence_json: string | null; receipt_digest: string | null }>("select attempt_id, node_id, row_count, invalid_count, truncated, evidence_json, receipt_digest from run_dataset_batches where run_id = ? and dataset_id = ? and batch_key = ?", [runId, datasetId, batchKey]) : undefined;
+      if (existing && repeated?.receipt_digest === receipt && existing.schema_digest === schemaDigest && existing.excluded_field_digests_json === reconciled.excludedFieldDigestsJson) return summaryFromRow(existing);
+      if (existing && repeated?.receipt_digest === null && existing.schema_digest === schemaDigest && existing.process_json === processJson
+        && existing.excluded_field_digests_json === reconciled.excludedFieldDigestsJson && repeated.attempt_id === attemptId && repeated.node_id === nodeId && repeated.invalid_count === invalidCount
+        && repeated.evidence_json === (input.evidence === undefined ? null : JSON.stringify(input.evidence))) {
+        const priorRows = await sql.all<{ row_json: string }>("select row_json from run_dataset_rows where run_id = ? and dataset_id = ? and batch_key = ? order by ordinal", [runId, datasetId, batchKey]);
+        if (priorRows.length <= rows.length && repeated.truncated === (input.truncated || rows.length > priorRows.length ? 1 : 0)
+          && priorRows.every((row, index) => canonicalJson(JSON.parse(row.row_json)) === canonicalJson(JSON.parse(rows[index]!)))) return summaryFromRow(existing);
+      }
+      if (existing && !startsOver && (existing.schema_digest !== schemaDigest || existing.excluded_field_digests_json !== reconciled.excludedFieldDigestsJson)) await sql.run("update run_datasets set schema_json = ?, schema_digest = ?, excluded_field_digests_json = ? where run_id = ? and dataset_id = ?", [JSON.stringify(reconciled.schema), schemaDigest, reconciled.excludedFieldDigestsJson, runId, datasetId]);
       // A changed declaration is the dataset's from now on (t970): the collected rows are kept, and the answer is made again from them under it.
       if (existing && !startsOver && existing.process_json !== processJson) await sql.run("update run_datasets set process_json = ? where run_id = ? and dataset_id = ?", [processJson, runId, datasetId]);
-      if (existing && startsOver) await sql.run("update run_datasets set schema_json = ?, schema_digest = ?, process_json = ? where run_id = ? and dataset_id = ?", [JSON.stringify(schema), schemaDigest, processJson, runId, datasetId]);
+      if (existing && startsOver) await sql.run("update run_datasets set schema_json = ?, schema_digest = ?, process_json = ?, excluded_field_digests_json = ? where run_id = ? and dataset_id = ?", [JSON.stringify(schema), schemaDigest, processJson, reconciled.excludedFieldDigestsJson, runId, datasetId]);
       if (!existing) {
         // flow_id is the run's Flow. For an unknown run it would be null, but the run_id guard aborts first.
         await sql.run(
-          `insert into run_datasets (run_id, dataset_id, flow_id, label, schema_json, schema_digest, node_ids_json, record_count, invalid_count, truncated, created_at_ms, updated_at_ms, process_json)
-           values (?, ?, (select flow_id from runtime_runs where run_id = ?), ?, ?, ?, '[]', 0, 0, 0, ?, ?, ?)`,
-          [runId, datasetId, runId, label, JSON.stringify(schema), schemaDigest, now, now, processJson]
+          `insert into run_datasets (run_id, dataset_id, flow_id, label, schema_json, schema_digest, node_ids_json, record_count, invalid_count, truncated, created_at_ms, updated_at_ms, process_json, excluded_field_digests_json)
+           values (?, ?, (select flow_id from runtime_runs where run_id = ?), ?, ?, ?, '[]', 0, 0, 0, ?, ?, ?, ?)`,
+          [runId, datasetId, runId, label, JSON.stringify(schema), schemaDigest, now, now, processJson, reconciled.excludedFieldDigestsJson]
         );
       }
       // The answer is stale once the collected rows change, until the dataset is processed again.
@@ -228,11 +238,11 @@ export class AutomationStudioProjectRunDatasetStore {
       const firstOrdinal = (highest?.ordinal ?? 0) + 1;
       await insertRows(sql, "run_dataset_rows", runId, datasetId, kept.map((rowJson, index) => ({ ordinal: firstOrdinal + index, attemptId, batchKey, rowJson })));
       await sql.run(
-        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms, evidence_json)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `insert into run_dataset_batches (run_id, dataset_id, batch_key, attempt_id, node_id, row_count, invalid_count, truncated, created_at_ms, updated_at_ms, evidence_json, receipt_digest)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          on conflict(run_id, dataset_id, batch_key) do update set attempt_id = excluded.attempt_id, node_id = excluded.node_id, row_count = excluded.row_count,
-           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms, evidence_json = excluded.evidence_json`,
-        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now, input.evidence === undefined ? null : JSON.stringify(input.evidence)]
+           invalid_count = excluded.invalid_count, truncated = excluded.truncated, updated_at_ms = excluded.updated_at_ms, evidence_json = excluded.evidence_json, receipt_digest = excluded.receipt_digest`,
+        [runId, datasetId, batchKey, attemptId, nodeId, kept.length, invalidCount, batchTruncated ? 1 : 0, now, now, input.evidence === undefined ? null : JSON.stringify(input.evidence), receipt]
       );
       recordCount += kept.length;
       invalidTotal += invalidCount;
@@ -244,7 +254,7 @@ export class AutomationStudioProjectRunDatasetStore {
         truncated = truncated || batchTruncated;
       }
       await sql.run(
-        "update run_datasets set label = coalesce(?, label), node_ids_json = ?, record_count = ?, invalid_count = ?, truncated = ?, updated_at_ms = max(updated_at_ms, ?), processing_json = null, processed_at_ms = null where run_id = ? and dataset_id = ?",
+        "update run_datasets set label = coalesce(?, label), node_ids_json = ?, record_count = ?, invalid_count = ?, truncated = ?, updated_at_ms = max(updated_at_ms, ?), processing_json = null, processed_at_ms = null, answer_rows_retained = 0 where run_id = ? and dataset_id = ?",
         [label, JSON.stringify(withNodeId(startsOver ? undefined : existing?.node_ids_json, nodeId)), recordCount, invalidTotal, truncated ? 1 : 0, now, runId, datasetId]
       );
       const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
@@ -279,7 +289,7 @@ export class AutomationStudioProjectRunDatasetStore {
           continue;
         }
         await sql.run(
-          "update run_datasets set node_ids_json = ?, record_count = ?, invalid_count = ?, truncated = ?, processing_json = null, processed_at_ms = null where run_id = ? and dataset_id = ?",
+          "update run_datasets set node_ids_json = ?, record_count = ?, invalid_count = ?, truncated = ?, processing_json = null, processed_at_ms = null, answer_rows_retained = 0 where run_id = ? and dataset_id = ?",
           [JSON.stringify([...new Set(left.map((batch) => batch.node_id))]), left.reduce((sum, batch) => sum + batch.row_count, 0), left.reduce((sum, batch) => sum + batch.invalid_count, 0), left.some((batch) => batch.truncated === 1) ? 1 : 0, run, datasetId]
         );
         const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [run, datasetId]);
@@ -359,25 +369,28 @@ export class AutomationStudioProjectRunDatasetStore {
    * no such dataset. A processed dataset pages its answer, with the schema
    * narrowed to its declared `columns` in their order.
    */
-  async getPage(input: { runId: string; datasetId: string; limit?: unknown; cursor?: unknown }): Promise<AutomationStudioRunDatasetPage | null> {
+  async getPage(input: { runId: string; datasetId: string; limit?: unknown; cursor?: unknown; retained?: "collected" | "answer" }): Promise<(AutomationStudioRunDatasetPage & { displayColumns?: { id: string; label: string }[] }) | null> {
     const runId = requiredId(input.runId, "run");
     const datasetId = requiredDatasetId(input.datasetId);
     const limit = automationStudioPageLimit(input.limit);
     const owner = `run-dataset:${runId}:${datasetId}`;
-    const filterHash = automationStudioFilterHash({});
+    const filterHash = automationStudioFilterHash(input.retained === undefined ? {} : { retained: input.retained });
     const cursor = decodeAutomationStudioPageCursor<{ ordinal: number }>(input.cursor, { owner, filterHash, validate: (values) => isOrdinal(values.ordinal) });
     return this.lease.database.execute(async (sql): Promise<AutomationStudioRunDatasetPage | null> => {
       const dataset = await sql.get<RunDatasetDetailRow>(`select ${DETAIL_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
       if (!dataset) return null;
-      const stored = await sql.all<StoredRow>(`select ordinal, row_json from ${rowsTable(dataset)} where run_id = ? and dataset_id = ? and ordinal > ? order by ordinal limit ?`, [runId, datasetId, cursor?.ordinal ?? 0, limit + 1]);
+      if (input.retained === "answer" && (dataset.processed_at_ms === null || dataset.answer_rows_retained !== 1)) throw new Error("Run dataset retained answer is not ready; process collected rows first.");
+      const stored = await sql.all<StoredRow>(`select ordinal, row_json from ${input.retained === "collected" ? "run_dataset_rows" : rowsTable(dataset)} where run_id = ? and dataset_id = ? and ordinal > ? order by ordinal limit ?`, [runId, datasetId, cursor?.ordinal ?? 0, limit + 1]);
       const pageRows = stored.slice(0, limit);
       const last = pageRows.at(-1);
       const schema = JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema;
       const columns = dataset.processed_at_ms === null ? undefined : processDeclaration(dataset.process_json)?.columns;
+      const viewSchema = columns === undefined ? schema : automationStudioRecordSchemaOfColumns(schema, columns);
       return {
         summary: summaryFromRow(dataset),
-        schema: columns === undefined ? schema : automationStudioRecordSchemaOfColumns(schema, columns),
-        rows: pageRows.map(rowFromStored),
+        schema: input.retained === undefined ? viewSchema : schema,
+        rows: pageRows.map((row) => automationStudioRunDatasetRowOfColumns(rowFromStored(row), input.retained === undefined ? columns : undefined)),
+        ...(input.retained === "answer" ? { displayColumns: viewSchema.fields.map(({ id, label }) => ({ id, label })) } : {}),
         nextCursor: stored.length > limit && last ? encodeAutomationStudioPageCursor({ owner, filterHash, values: { ordinal: last.ordinal } }) : null
       };
     });
@@ -389,12 +402,12 @@ export class AutomationStudioProjectRunDatasetStore {
     const datasetId = requiredDatasetId(input.datasetId);
     const afterOrdinal = clampInteger(input.afterOrdinal, 0, Number.MAX_SAFE_INTEGER, 0);
     const limit = clampInteger(input.limit, 1, STREAM_READ_LIMIT, STREAM_READ_LIMIT);
-    const stored = await this.lease.database.execute(async (sql) => {
-      const dataset = await sql.get<{ processed_at_ms: number | null }>("select processed_at_ms from run_datasets where run_id = ? and dataset_id = ?", [runId, datasetId]);
-      return sql.all<StoredRow>(`select ordinal, row_json from ${rowsTable(dataset)} where run_id = ? and dataset_id = ? and ordinal > ? order by ordinal limit ?`, [runId, datasetId, afterOrdinal, limit + 1]);
+    const { stored, columns } = await this.lease.database.execute(async (sql) => {
+      const dataset = await sql.get<{ processed_at_ms: number | null; process_json: string | null }>("select processed_at_ms, process_json from run_datasets where run_id = ? and dataset_id = ?", [runId, datasetId]);
+      return { stored: await sql.all<StoredRow>(`select ordinal, row_json from ${rowsTable(dataset)} where run_id = ? and dataset_id = ? and ordinal > ? order by ordinal limit ?`, [runId, datasetId, afterOrdinal, limit + 1]), columns: dataset?.processed_at_ms === null || !dataset ? undefined : processDeclaration(dataset.process_json)?.columns };
     });
     const batch = stored.slice(0, limit);
-    return { rows: batch.map(rowFromStored), lastOrdinal: batch.at(-1)?.ordinal ?? afterOrdinal, hasMore: stored.length > limit };
+    return { rows: batch.map((row) => automationStudioRunDatasetRowOfColumns(rowFromStored(row), columns)), lastOrdinal: batch.at(-1)?.ordinal ?? afterOrdinal, hasMore: stored.length > limit };
   }
 
   /** Writes one typed audit event: an export's outcome, or a deletion. */
@@ -556,7 +569,7 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
   const answer = automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, processDeclaration(dataset.process_json), started?.started_at_ms ?? now);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
   await insertRows(sql, "run_dataset_answer_rows", runId, datasetId, answer.rows);
-  await sql.run("update run_datasets set processing_json = ?, processed_at_ms = ? where run_id = ? and dataset_id = ?", [JSON.stringify(answer.account), now, runId, datasetId]);
+  await sql.run("update run_datasets set processing_json = ?, processed_at_ms = ?, answer_rows_retained = 1 where run_id = ? and dataset_id = ?", [JSON.stringify(answer.account), now, runId, datasetId]);
   const saved = await sql.get<RunDatasetSummaryRow>(`select ${SUMMARY_COLUMNS} from run_datasets where run_id = ? and dataset_id = ?`, [runId, datasetId]);
   if (saved) await upsertCatalog(sql, saved, 0);
 }
@@ -676,26 +689,6 @@ function projectDatasetFromRow(row: CatalogRow): AutomationStudioProjectDatasetS
   return dataset;
 }
 
-function serializedRows(rows: unknown, schema: AutomationStudioRecordSchema): string[] {
-  if (!Array.isArray(rows)) throw new Error("Run dataset rows must be an array.");
-  const fieldIds = new Set(schema.fields.map((field) => field.id));
-  return rows.map((row: unknown) => {
-    if (!isPlainObject(row)) throw new Error("Run dataset row must be an object.");
-    for (const key of Object.keys(row)) {
-      if (!fieldIds.has(key)) throw new Error("Run dataset row holds a key that is not in the stored schema.");
-    }
-    const rowJson = JSON.stringify(row);
-    if (Buffer.byteLength(rowJson, "utf8") > AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.rowMaxBytes) throw new Error("Run dataset row exceeds the row size limit.");
-    return rowJson;
-  });
-}
-
-function storedSchema(value: unknown): AutomationStudioRecordSchema {
-  const parsed = parseAutomationStudioRecordSchema(value);
-  if (!parsed.ok) throw new Error("Invalid run dataset schema.");
-  return storedAutomationStudioRecordSchema(parsed.schema);
-}
-
 function withNodeId(nodeIdsJson: string | undefined, nodeId: string): string[] {
   const nodeIds = nodeIdsJson === undefined ? [] : nodeIdsFromJson(nodeIdsJson);
   return nodeIds.includes(nodeId) ? nodeIds : [...nodeIds, nodeId];
@@ -743,11 +736,6 @@ function hasControlCharacter(value: string): boolean {
 
 function requiredDatasetId(value: unknown): string {
   if (typeof value !== "string" || !AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.datasetIdPattern.test(value) || value === "." || value === "..") throw new Error("Invalid dataset ID.");
-  return value;
-}
-
-function requiredDigest(value: unknown): string {
-  if (typeof value !== "string" || !DIGEST_PATTERN.test(value)) throw new Error("Invalid run dataset schema digest.");
   return value;
 }
 

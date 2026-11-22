@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 
 /** The result's rows as the judge and the answer read them: one dataset, whole. */
 export type AutomationStudioAnswerFirstRowsSummary = {
@@ -9,6 +10,8 @@ export type AutomationStudioAnswerFirstRowsSummary = {
   truncated: boolean;
   columns: { id: string; label: string }[];
   rows: JsonObject[];
+  /** Full retained field metadata, independent of the answer's displayed columns. */
+  schema?: AutomationStudioRecordSchema;
   /**
    * The latest read of this list holds fewer rows than an earlier one did, and how many that was.
    * The rows are the latest read's all the same: it is what the list says now. This is so a person
