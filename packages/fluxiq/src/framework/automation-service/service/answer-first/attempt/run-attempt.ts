@@ -216,7 +216,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   });
   // The attempt's one result: which of the rows the sink stores are the answer (header).
   if (carried?.publications?.complete === false) sink.publicationsUnavailable();
-  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey, processing: opening.processing, processingReferenceTimeMs: session.processingReferenceTimeMs, requiresDataOutput: input.caller?.requiresDataOutput, inputs: input.caller?.inputs, publicationTrackingComplete: sink.publicationState().complete });
+  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey, processing: opening.processing, processingReferenceTimeMs: session.processingReferenceTimeMs, requiresDataOutput: input.caller?.requiresDataOutput, inputs: input.caller?.inputs, publicationTrackingComplete: sink.publicationState().complete, sourceRecorded: (refs, call) => journal.sourceRecorded(trail, refs, call) });
   const look = automationStudioEndViewLook({ tools: input.harnessOptions.tools, viewKeys: input.harnessOptions.observedStateKeys });
   let looks = 0;
   // Through the domain alone: a look is no call of the task's, and it reaches none of its records.
@@ -224,13 +224,14 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
   // Carried acts come with the before reading taken ahead of them, held in memory and never beside the Flow (`../witnesses/before-readings.ts`).
   const befores = automationStudioAnswerFirstBeforeReadingsOf(input.owner);
   const earlier = automationStudioAnswerFirstEarlierBefore(befores, { acts: opening.seed !== undefined, from: opening.seedFrom, sameAttempt: hold !== undefined });
-  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier, keep: (before) => befores.keep(attemptId, before) });
   // What the model's own looks found after the first lasting act: the chain hands each new one on, the check bounds, screens and judges it (`./call-chain.ts`).
   const looked: { where: string; found: string; callId?: string }[] = [];
   // Everything the attempt did, for its judge: every call the chain sent to the domain with its answer (`./call-chain.ts`), and every step
   // a saved Flow's run made (`./flow-stage.ts`), held across a resume so a carried-on attempt's judge still sees all of it (`../trail/`, t963).
   const journal = automationStudioAnswerFirstTrailsOf(input.owner);
   const trail = journal.of(attemptId, { carriedOn: hold !== undefined, askedAgain: again !== undefined, ...(carried && Object.hasOwn(carried, "judgeEvidence") ? { judgeEvidence: carried.judgeEvidence ?? null } : {}), ...(carried && Object.hasOwn(carried, "judgeEvidenceIssue") ? { judgeEvidenceIssue: carried.judgeEvidenceIssue ?? null } : {}) });
+  const restoredWitnesses = journal.witnesses(trail, {});
+  const witnesses = automationStudioAnswerFirstWitnesses({ read: async () => (await lookNow())?.view as JsonObject | undefined, earlier: restoredWitnesses.before === undefined ? earlier : { before: restoredWitnesses.before }, earlierActions: trail.flatMap((step) => step.judgeAct === undefined ? [] : [step.judgeAct]), ...(restoredWitnesses.association === undefined ? {} : { earlierAssociation: restoredWitnesses.association }), keep: (before) => befores.keep(attemptId, before) });
   const judgeEvidence = { ...journal.capability(trail, input.binding), projectJudgeEvidence: input.binding?.projectJudgeEvidence, deniedEvidenceKeys: input.binding?.deniedEvidenceKeys };
   const completion = automationStudioAnswerFirstCompletionCheck({
     instructions: input.instructionText,
@@ -246,7 +247,10 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
       return readiness;
     },
     acts: () => record.acts(),
-    endView: async () => (await automationStudioAnswerFirstEndViewRead(lookNow)).view,
+    endView: async () => (await automationStudioAnswerFirstEndViewRead(async () => {
+      const read = await witnesses.atEnd(true);
+      return read.kind === "read" ? { view: read.reading } : undefined;
+    })).view,
     witnesses: () => journal.witnesses(trail, witnesses.readings()),
     looked: () => looked,
     trail: () => trail,
@@ -293,7 +297,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     looked: (look) => { looked.push(look); },
     trailed: async (step) => {
       trail.push(step);
-      const checkpoint = journal.checkpoint(trail, witnesses.readings(), judgeEvidence);
+      const checkpoint = journal.checkpoint(trail, witnesses.readings(), { ...judgeEvidence, resultEvidence: result.sourceProof() });
       if (checkpoint !== undefined) {
         try { journal.recovered(trail, await store.saveJudgeEvidence(projectId, flowId, attemptId, checkpoint, { sourceOwner: journal.sourceOwner(trail) })); }
         catch { automationStudioAnswerFirstSay("Part of the record was not written", "The call's semantic evidence could not be saved for a restart. Its actual outcome remains in this attempt; I will try saving its record again."); }

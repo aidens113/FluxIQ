@@ -10,4 +10,6 @@ export type AutomationStudioResultTrailSemanticOptions = {
   /** A persisted semantic summary contains shown findings, never new domain inputs. */
   alreadyProjected?: boolean | undefined;
   invalidFormat?: boolean | undefined;
+  /** Actual current producer evidence, reused without processing or inferring a new source. */
+  resultEvidence?: Readonly<Record<string, unknown>> | undefined;
 };

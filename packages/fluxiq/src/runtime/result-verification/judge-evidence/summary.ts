@@ -6,6 +6,8 @@ import { automationStudioResultEvidenceScreen } from "../result-evidence/index.t
 import { automationStudioJudgeEvidenceFinding } from "./finding.ts";
 import { automationStudioShownJudgeFinding } from "./shown.ts";
 import { automationStudioReadJudgeEvidenceFormat } from "./format.ts";
+import { automationStudioReadJudgeEvidenceHistory } from "./history.ts";
+import { automationStudioReadJudgeWitnessAssociation } from "./witness-association.ts";
 
 /** One semantic request copy for Flow-less, completed-run and build judges; original rows/accounts/private evidence remain untouched. */
 export function automationStudioResultJudgeSummary(summary: AutomationStudioRunResultSummary, options: AutomationStudioResultTrailSemanticOptions): AutomationStudioRunResultSummary {
@@ -23,8 +25,16 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
   }
   const source = summary.buildTest ? "build-observation" : Object.hasOwn(summary, "acts") ? "call" : "flow-attempt";
   const projector = invalidFormat ? undefined : options.projectJudgeEvidence;
-  const trail = automationStudioResultSemanticTrail(summary.trail, { ...options, projectJudgeEvidence: projector, legacySource: source, alreadyProjected: tagged, invalidFormat });
-  const gaps = [...(format?.missing.filter((gap) => gap.source !== "binding") ?? []), ...trail.projection.missing];
+  const trail = automationStudioResultSemanticTrail(summary.trail, { ...options, projectJudgeEvidence: projector, legacySource: source, alreadyProjected: tagged, invalidFormat, resultEvidence: summary.resultEvidence });
+  const historical = new Map((trail.trail?.entries ?? []).map((step) => [step.callId ?? `n:${step.n}`, object(step.found)?.history]));
+  const retained = format?.missing.flatMap((gap) => {
+    if (gap.source === "binding") return [];
+    const history = historical.get(gap.source);
+    const resolved = Array.isArray(history) ? history.flatMap((item) => object(item)?.codes ?? []) : [];
+    const codes = gap.codes.filter((code) => !resolved.includes(code));
+    return codes.length ? [{ source: gap.source, codes }] : [];
+  }) ?? [];
+  const gaps = [...retained, ...trail.projection.missing];
   if (invalidFormat) gaps.push({ source: "binding", codes: ["judge_evidence.version_invalid"] });
   if (!unsupported && typeof projector !== "function") gaps.push({ source: "binding", codes: ["judge_evidence.projector_missing"] });
   let withheld = summary.withheld || trail.withheld;
@@ -49,7 +59,8 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
     const finding = invalidFormat ? { missing: ["judge_evidence.version_invalid"], withheld: true } : reopened ? reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true } : automationStudioProjectJudgeEvidence({ source: phase === undefined ? "legacy" : "state", evidence: { evidence: value }, ...(phase === undefined ? {} : { phase }) }, projector, options.deniedEvidenceKeys);
     if (finding.missing.length) gaps.push({ source, codes: finding.missing });
     withheld ||= finding.withheld;
-    return { ...(finding.role === undefined ? {} : { role: finding.role }), ...(finding.evidence === undefined ? {} : { evidence: finding.evidence }), ...(finding.missing.length ? { missing: [...finding.missing] } : {}) };
+    const history = "history" in finding ? automationStudioReadJudgeEvidenceHistory(finding.history) : undefined;
+    return { ...(finding.role === undefined ? {} : { role: finding.role }), ...(finding.evidence === undefined ? {} : { evidence: finding.evidence }), ...(finding.missing.length ? { missing: [...finding.missing] } : {}), ...(history === undefined ? {} : { history: history.map((entry) => ({ codes: [...entry.codes], by: entry.by })) }) };
   };
   const view = (key: "startView" | "endView", value: JsonValue): JsonValue | undefined => {
     // Complete data is judged from its complete rows and accounts. A support
@@ -77,6 +88,11 @@ export function automationStudioResultJudgeSummary(summary: AutomationStudioRunR
       }
       const shown: JsonObject = {};
       for (const phase of ["before", "after"] as const) if (witnesses[phase] !== undefined) shown[phase] = project(`witnesses.${phase}`, witnesses[phase]!, phase);
+      if (Object.hasOwn(witnesses, "association")) {
+        const association = automationStudioReadJudgeWitnessAssociation(witnesses.association);
+        if (association === undefined) gaps.push({ source: "witnesses.association", codes: ["judge_evidence.witness_association_invalid"] });
+        else shown.association = association;
+      }
       entries.push([key, shown]);
     } else if (key === "looked") {
       if (!Array.isArray(value)) {

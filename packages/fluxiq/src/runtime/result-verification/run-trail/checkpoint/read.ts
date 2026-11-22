@@ -5,6 +5,7 @@ import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts"
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 import { readAutomationStudioResultEvidenceSourceRef } from "../../result-evidence/index.ts";
 import { automationStudioReadJudgeActionRef } from "../../judge-evidence/action-ref.ts";
+import { automationStudioReadJudgeWitnessAssociation } from "../../judge-evidence/witness-association.ts";
 
 const TOP = new Set(["version", "revision", "trail", "witnesses"]);
 const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence", "judgeSource", "judgeSources", "judgeAct"]);
@@ -56,13 +57,20 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
   }
   const result: AutomationStudioJudgeEvidenceCheckpoint = { version: 1, revision: value.revision, trail };
   if (value.witnesses !== undefined) {
-    if (!object(value.witnesses) || Object.keys(value.witnesses).some((key) => key !== "before" && key !== "after")) return undefined;
+    if (!object(value.witnesses) || Object.keys(value.witnesses).some((key) => key !== "before" && key !== "after" && key !== "association")) return undefined;
     const witnesses: NonNullable<AutomationStudioJudgeEvidenceCheckpoint["witnesses"]> = {};
     for (const phase of ["before", "after"] as const) {
       if (value.witnesses[phase] === undefined) continue;
       const finding = automationStudioStoredJudgeFinding(value.witnesses[phase]);
       if (finding === undefined) return undefined;
       witnesses[phase] = finding;
+    }
+    if (Object.hasOwn(value.witnesses, "association")) {
+      const association = automationStudioReadJudgeWitnessAssociation(value.witnesses.association);
+      if (association === undefined) return undefined;
+      const actual = trail.flatMap((step) => step.judgeAct === undefined ? [] : [step.judgeAct]);
+      if ([...association.before, ...association.after].some((ref) => actual.filter((act) => act.callId === ref.callId && act.actId === ref.actId).length !== 1)) return undefined;
+      witnesses.association = association;
     }
     result.witnesses = witnesses;
   }

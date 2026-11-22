@@ -4,11 +4,12 @@ import { readAutomationStudioResultEvidenceSourceRef, readAutomationStudioResult
 import type { AutomationStudioJudgeEvidenceFinding } from "./finding.ts";
 
 /** A source receipt resolves only data projection for its exact origin, never an act or missing current state. */
-export function automationStudioJudgeEvidenceReplacement(step: AutomationStudioResultTrailStep, finding: AutomationStudioJudgeEvidenceFinding, evidence: JsonObject | undefined): AutomationStudioJudgeEvidenceFinding {
+export function automationStudioJudgeEvidenceReplacement(step: AutomationStudioResultTrailStep, finding: AutomationStudioJudgeEvidenceFinding, evidence: Readonly<Record<string, unknown>> | undefined, trail: readonly AutomationStudioResultTrailStep[]): AutomationStudioJudgeEvidenceFinding {
   if (finding.missing.length === 0 || (finding.role !== undefined && finding.role !== "data") || step.judgeAct !== undefined || consequential(step.framework)) return finding;
   if (finding.missing.some((code) => code === "judge_evidence.denied_keys_missing" || code === "judge_evidence.version_invalid")) return finding;
   const origins = step.judgeSources?.map(readAutomationStudioResultEvidenceSourceRef);
   if (!origins?.length || origins.some((ref) => ref === undefined)) return finding;
+  if ((origins as AutomationStudioResultEvidenceSourceRef[]).some((origin) => trail.filter((entry) => entry.judgeSources?.some((ref) => key(ref) === key(origin))).length !== 1)) return finding;
   const metadata = readAutomationStudioResultEvidenceSourceReplacements(evidence?.sourceReplacements);
   if (metadata === undefined || !Array.isArray(evidence?.pages)) return finding;
   const current = evidence.pages.flatMap((page) => {
@@ -30,7 +31,7 @@ export function automationStudioJudgeEvidenceReplacement(step: AutomationStudioR
     return true;
   };
   if (!(origins as AutomationStudioResultEvidenceSourceRef[]).every((origin) => resolve(origin, new Set())) || !replaced) return finding;
-  return { ...finding, missing: [], history: [...(finding.history ?? []), { codes: [...finding.missing], by: "source-replacement" }] };
+  return { ...finding, role: finding.role ?? "observation", evidence: finding.evidence ?? { sourceEvidence: "replaced", note: "Core validated replacement of this exact source evidence. The original projection role and response remain unknown; current rows and accounts are supplied separately. This is no action or task-success claim." }, missing: [], history: [...(finding.history ?? []), { codes: [...finding.missing], by: "source-replacement" }] };
 }
 
 function consequential(facts: JsonObject | undefined): boolean {

@@ -8,9 +8,11 @@ import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/retry.ts";
+import { automationStudioJudgeEvidenceReplacement } from "../../judge-evidence/replacement.ts";
+import { automationStudioReadJudgeWitnessAssociation, type AutomationStudioJudgeWitnessAssociation } from "../../judge-evidence/witness-association.ts";
 
 /** Private checkpoint from actual ordered findings; safe existing cells are rescreened when a current policy is known. */
-export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject }, options: AutomationStudioResultTrailSemanticOptions, prior?: AutomationStudioJudgeEvidenceCheckpoint): AutomationStudioJudgeEvidenceCheckpoint {
+export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation }, options: AutomationStudioResultTrailSemanticOptions, prior?: AutomationStudioJudgeEvidenceCheckpoint): AutomationStudioJudgeEvidenceCheckpoint {
   const read = (value: unknown): AutomationStudioJudgeEvidenceFinding => {
     if (options.deniedEvidenceKeys === undefined) return automationStudioStoredJudgeFinding(value) ?? gap("judge_evidence.finding_invalid");
     const result = automationStudioJudgeEvidenceFinding(value, options.deniedEvidenceKeys);
@@ -18,7 +20,7 @@ export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationSt
   };
   const trail = steps.map((step): AutomationStudioJudgeEvidenceCheckpoint["trail"][number] => {
     const original = Object.hasOwn(options, "judgeEvidenceVersion") && options.judgeEvidenceVersion !== 1 ? gap("judge_evidence.version_invalid") : Object.hasOwn(step, "judgeEvidence") ? read(step.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence({ source: "legacy", definitionId: step.did, evidence: { evidence: step.found ?? null, ...(step.callId === undefined ? {} : { source: { callId: step.callId } }) } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
-    const finding = AutomationStudioJudgeEvidenceRetry.finding(step, original, options);
+    const finding = automationStudioJudgeEvidenceReplacement(step, AutomationStudioJudgeEvidenceRetry.finding(step, original, options), options.resultEvidence, steps);
     const identity = { did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: automationStudioResultFrameworkOutcome(step.framework) }), ...(step.judgeSource === undefined ? {} : { judgeSource: step.judgeSource }), ...(step.judgeSources === undefined ? {} : { judgeSources: step.judgeSources }), ...(step.judgeAct === undefined ? {} : { judgeAct: step.judgeAct }) };
     // Unknown policy is not an empty declaration. Persist no new opaque
     // identities under it; existing semantic findings stay private until read.
@@ -31,9 +33,17 @@ export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationSt
     // checkpoint evidence; only a fresh read supplies the resumed current end.
     const earlier = phase === "before" ? prior?.witnesses?.before : undefined;
     const raw = witnesses[phase];
-    if (earlier !== undefined) kept[phase] = read(earlier);
-    else if (raw !== undefined) kept[phase] = Object.hasOwn(raw, "judgeEvidence") ? read(raw.judgeEvidence) : { version: 1, ...automationStudioProjectJudgeEvidence({ source: "state", phase, evidence: { evidence: raw } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
+    if (earlier !== undefined) kept[phase] = raw === undefined ? read(earlier) : AutomationStudioJudgeEvidenceRetry.finding(raw, read(earlier), options);
+    else if (raw !== undefined) {
+      const input = { source: "state" as const, phase, evidence: { evidence: raw } };
+      const finding = Object.hasOwn(raw, "judgeEvidence") ? read(raw.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence(input, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
+      if (!Object.hasOwn(raw, "judgeEvidence") && finding.missing.length > 0) AutomationStudioJudgeEvidenceRetry.remember(raw, input);
+      kept[phase] = finding;
+    }
   }
+  const association = automationStudioReadJudgeWitnessAssociation(witnesses.association);
+  if (association !== undefined) kept.association = association;
+  else if (prior?.witnesses?.association !== undefined) kept.association = { version: 1, before: structuredClone(prior.witnesses.association.before), after: [] };
   return { version: 1, revision: (prior?.revision ?? 0) + 1, trail, ...(Object.keys(kept).length ? { witnesses: kept } : {}) };
 }
 

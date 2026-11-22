@@ -53,13 +53,13 @@ export function automationStudioResultTrailOfAttempts(attempts: readonly TracedA
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const keys = (viewKeys ?? []).filter((key) => !key.includes("."));
   const steps: AutomationStudioResultTrailStep[] = [];
-  const walk = (list: readonly TracedAttempt[] | undefined, path: readonly string[]): void => {
+  const walk = (list: readonly TracedAttempt[] | undefined, path: readonly string[] | undefined): void => {
     for (const attempt of list ?? []) {
       const step = stepOf(attempt, byId.get(attempt.nodeId), keys, semantic);
-      if (semantic?.judgeEvidenceVersion === 1 && attempt.attemptId !== undefined) step.judgeSource = { source: automationStudioRecordBatchKey(path, attempt.attemptId) };
+      if (semantic?.judgeEvidenceVersion === 1 && path !== undefined && attempt.attemptId !== undefined) step.judgeSource = { source: automationStudioRecordBatchKey(path, attempt.attemptId) };
       steps.push(step);
-      if (attempt.attemptId !== undefined) walk(attempt.childTrace?.attempts, [...path, attempt.attemptId]);
-      else walk(attempt.childTrace?.attempts, path);
+      if (path !== undefined && attempt.attemptId !== undefined) walk(attempt.childTrace?.attempts, [...path, attempt.attemptId]);
+      else walk(attempt.childTrace?.attempts, undefined);
     }
   };
   walk(attempts, []);

@@ -44,7 +44,7 @@ export async function automationStudioAnswerFirstFinish(run: AutomationStudioAns
   // The step the saved Flow broke at leaves it where this attempt put its fix in the Flow, before the path reads the Flow and anything saves it (`../flow-run/stand-in.ts`).
   automationStudioAnswerFirstStandIn(run);
   run.path = automationStudioAnswerFirstPathAtEnding(run, ending);
-  await run.witnesses.atEnd();
+  await run.witnesses.atEnd(true);
   const flushed = await flushedRecord(run);
   run.result.draft(run.steps);
   let withheld = true;
@@ -117,7 +117,7 @@ async function endedSession(run: AutomationStudioAnswerFirstAttemptRun, ending: 
 async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked: ReturnType<typeof automationStudioAnswerFirstEnding>, candidateId: string | undefined, draftKept?: "not_assembled" | "not_saved"): Promise<{ ok: true } | { ok: false; errorName: string }> {
   try {
     const journal = automationStudioAnswerFirstTrailsOf(run.input.owner);
-    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
+    const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys, resultEvidence: run.result.sourceProof() });
     const kept = {
       attempt: checked.attempt,
       publications: run.sink.publicationState(),

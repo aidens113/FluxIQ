@@ -19,6 +19,13 @@ function summary(trail: ReturnType<typeof automationStudioResultRunTrail>["trail
 }
 
 describe("exact original semantic reprojection", () => {
+  it("uses the engine's actual complete call-flow path and never fills in a missing ancestor identity", () => {
+    const nested = { nodeId: "call", attemptId: "call/one", childTrace: { attempts: [{ nodeId: "read", attemptId: "read%two", outputs: value }] } };
+    expect(automationStudioResultTrailOfAttempts([nested], [], [], OPTIONS)[1]?.judgeSource?.source).toBe("call%2Fone/read%25two");
+    const legacy = { nodeId: "call", childTrace: nested.childTrace };
+    expect(automationStudioResultTrailOfAttempts([legacy], [], [], OPTIONS)[1]?.judgeSource).toBeUndefined();
+  });
+
   it.each(["call", "flow", "build"] as const)("repairs only the original %s input, keeps the historical code, and checkpoints the recovered finding", (source) => {
     const original = steps(source);
     const before = structuredClone(original);
@@ -46,7 +53,10 @@ describe("exact original semantic reprojection", () => {
     const original = steps("call");
     const restored = JSON.parse(JSON.stringify(automationStudioMakeJudgeCheckpoint(original, {}, OPTIONS))).trail;
     let calls = 0;
-    const shown = automationStudioResultJudgeSummary(summary(automationStudioResultRunTrail(restored, []).trail), { ...OPTIONS, projectJudgeEvidence: () => { calls += 1; return { role: "data", evidence: { unrelated: true } }; } });
+    const shown = automationStudioResultJudgeSummary(summary(automationStudioResultRunTrail(restored, []).trail), { ...OPTIONS, projectJudgeEvidence: () => {
+      calls += 1;
+      return { role: "data", evidence: { unrelated: true } };
+    } });
     expect(calls).toBe(0);
     expect(shown.evidenceProjection?.missing).toContainEqual({ source: "read.1", codes: ["judge_evidence.projector_missing"] });
     expect(shown.trail?.entries[0]?.found).not.toHaveProperty("history");
