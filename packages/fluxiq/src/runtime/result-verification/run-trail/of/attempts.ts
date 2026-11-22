@@ -25,13 +25,17 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
+import { automationStudioResultTrailSemanticStep, type AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
+import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 
 /** One traced attempt, as far as this reads it. */
 type TracedAttempt = {
   nodeId: string;
+  attemptId?: string | undefined;
   definitionId?: string | undefined;
   route?: string | undefined;
   status?: string | undefined;
+  effectApplied?: boolean | undefined;
   inputs?: Readonly<Record<string, unknown>> | undefined;
   outputs?: Readonly<Record<string, unknown>> | undefined;
   message?: string | undefined;
@@ -42,15 +46,15 @@ type TracedAttempt = {
 };
 
 /** A node of the Flow, as far as this reads it. */
-type Node = { id: string; definitionId?: string | undefined; label?: string | undefined; parameterValues?: JsonObject | undefined };
+type Node = { id: string; definitionId?: string | undefined; label?: string | undefined; parameterValues?: JsonObject | undefined; metadata?: JsonObject | undefined };
 
-export function automationStudioResultTrailOfAttempts(attempts: readonly TracedAttempt[] | undefined, nodes: readonly Node[], viewKeys: readonly string[] | undefined): AutomationStudioResultTrailStep[] {
+export function automationStudioResultTrailOfAttempts(attempts: readonly TracedAttempt[] | undefined, nodes: readonly Node[], viewKeys: readonly string[] | undefined, semantic?: AutomationStudioResultTrailSemanticOptions): AutomationStudioResultTrailStep[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const keys = (viewKeys ?? []).filter((key) => !key.includes("."));
   const steps: AutomationStudioResultTrailStep[] = [];
   const walk = (list: readonly TracedAttempt[] | undefined): void => {
     for (const attempt of list ?? []) {
-      steps.push(stepOf(attempt, byId.get(attempt.nodeId), keys));
+      steps.push(stepOf(attempt, byId.get(attempt.nodeId), keys, semantic));
       walk(attempt.childTrace?.attempts);
     }
   };
@@ -58,7 +62,7 @@ export function automationStudioResultTrailOfAttempts(attempts: readonly TracedA
   return steps;
 }
 
-function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly string[]): AutomationStudioResultTrailStep {
+function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly string[], semantic: AutomationStudioResultTrailSemanticOptions | undefined): AutomationStudioResultTrailStep {
   const failed = attempt.failure?.code;
   const parameters = node?.parameterValues && Object.keys(node.parameterValues).length ? node.parameterValues : undefined;
   const asked = parameters ?? (attempt.inputs && Object.keys(attempt.inputs).length ? (attempt.inputs as JsonValue) : undefined);
@@ -78,13 +82,27 @@ function stepOf(attempt: TracedAttempt, node: Node | undefined, keys: readonly s
     ...(Object.keys(changed).length ? { changed } : {}),
     ...(Object.keys(view).length ? { view } : {})
   };
-  return {
+  const step: AutomationStudioResultTrailStep = {
     did: attempt.definitionId ?? node?.definitionId ?? attempt.nodeId,
     ...(node?.label ? { on: node.label } : {}),
     ...(asked ? { asked } : {}),
     ...(outcome ? { outcome } : {}),
     ...(Object.keys(found).length ? { found } : {})
   };
+  if (semantic === undefined) return step;
+  // The projector reads actual outputs/states, before the legacy view/capture
+  // heuristic above. Only its screened finding enters the durable checkpoint.
+  const recordOutput = parameters?.recordOutput;
+  const recordSchema = recordOutput && typeof recordOutput === "object" && !Array.isArray(recordOutput) ? recordOutput.schema : undefined;
+  const envelope: JsonObject = {
+    evidence: (attempt.outputs ?? {}) as JsonValue,
+    source: { nodeId: attempt.nodeId, ...(attempt.attemptId === undefined ? {} : { attemptId: attempt.attemptId }) },
+    ...(recordSchema === undefined ? {} : { recordSchema }),
+    ...(before === undefined ? {} : { before }),
+    ...(after === undefined ? {} : { after }),
+    ...(diff === undefined ? {} : { changed: diff })
+  };
+  return automationStudioResultTrailSemanticStep(step, { source: "flow-attempt", definitionId: step.did, evidence: envelope, ...(asked === undefined ? {} : { asked }), ...(step.on === undefined ? {} : { on: step.on }) }, semantic, automationStudioResultFrameworkOutcome({ ...attempt, consequences: node?.metadata?.declaredConsequences }));
 }
 
 /** What stands in for the host's capture of a page the views show (header). */

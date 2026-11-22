@@ -25,6 +25,7 @@ import { readModelAccessState, type ModelAccessState } from "@fluxiq/contracts/p
 import type { AutomationStudioConversationDecision, AutomationStudioConversationInterpretation } from "./decision.ts";
 import { automationStudioConversationFallbackDecision } from "./fallback.ts";
 import { automationStudioConversationDeclaredActs } from "./acts.ts";
+import { automationStudioConversationDeclaredProcessing } from "./processing.ts";
 import { automationStudioConversationDeclaredIntent } from "./intent.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 import type { AutomationStudioConversationCaller, AutomationStudioConversationModel, AutomationStudioConversationModelTurn } from "./model.ts";
@@ -186,12 +187,12 @@ async function attemptWithin<T>(ms: number, attempt: (signal: AbortSignal) => Pr
 }
 
 /** What a decision that starts something declared it will cause (`./acts.ts`, t976); nothing for a reply, a question, or an answer that declared no list. */
-function declaredActs(decision: AutomationStudioConversationDecision, raw: unknown): { taskActs?: string[] } {
+function declaredActs(decision: AutomationStudioConversationDecision, raw: unknown): Pick<AutomationStudioConversationInterpretation, "taskActs" | "taskProcessing"> {
   if (decision.kind !== "invoke") return {};
   const acts = automationStudioConversationDeclaredActs(raw);
   // Even a malformed or omitted declaration stays explicit: a chat invocation never pays for a
   // separate interpretation. A missing risky class is refused if the task encounters it later.
-  return { taskActs: acts ?? [] };
+  return { taskActs: acts ?? [], taskProcessing: automationStudioConversationDeclaredProcessing(raw) };
 }
 
 /** The interpretation's `costUsd` and `pricedCalls`, present only when an attempt was priced. */

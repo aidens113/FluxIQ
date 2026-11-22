@@ -23,6 +23,7 @@
 import { isPlainRecord } from "../is-plain-record.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS, type AutomationStudioRecordSchema } from "../schema.ts";
 import { automationStudioRecordConditionPattern } from "./condition/index.ts";
+import { parseAutomationStudioRecordProcessingDeclaration } from "./declaration/index.ts";
 import { automationStudioRecordFieldComparisonFields } from "./field-comparison.ts";
 import { parseAutomationStudioRecordCondition } from "./parse-condition.ts";
 import {
@@ -45,7 +46,7 @@ export type AutomationStudioRecordProcessingParseResult =
   | { ok: true; processing: AutomationStudioRecordProcessing }
   | { ok: false; issues: string[] };
 
-const PROCESS_KEYS: ReadonlySet<string> = new Set(["derive", "dedupe", "where", "anyOf", "compare", "sort", "limit", "columns", "minRows"]);
+const PROCESS_KEYS: ReadonlySet<string> = new Set(["derive", "dedupe", "where", "anyOf", "compare", "sort", "limit", "columns", "minRows", "declaration"]);
 const SORT_KEY_KEYS: ReadonlySet<string> = new Set(["field", "order", "as"]);
 const DERIVE_KEYS: ReadonlySet<string> = new Set(["id", "from", "pattern", "as"]);
 const DERIVED_READS: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_RECORD_DERIVED_READS);
@@ -154,6 +155,12 @@ export function parseAutomationStudioRecordProcessing(value: unknown, schema: Au
   if (value.minRows !== undefined) {
     if (!isIntegerWithin(value.minRows, 0, Number.MAX_SAFE_INTEGER)) issues.add("record_output.process_invalid_min_rows");
     else processing.minRows = value.minRows;
+  }
+
+  if (Object.hasOwn(value, "declaration")) {
+    const declaration = parseAutomationStudioRecordProcessingDeclaration(value.declaration, schema);
+    if (declaration === null) issues.add("record_output.process_invalid_declaration");
+    else processing.declaration = declaration;
   }
 
   for (const id of named) checkStored(id);

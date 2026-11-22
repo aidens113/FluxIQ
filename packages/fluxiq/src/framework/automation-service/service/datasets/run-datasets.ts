@@ -81,7 +81,7 @@ export class AutomationStudioRunDatasets {
   }
 
   /** Verification-only provenance, separate from the public dataset page/export. */
-  readRunDatasetEvidence(input: { projectId: string; runId: string }): Promise<Array<{ datasetId: string; batchKey: string; evidence?: JsonObject }>> {
+  readRunDatasetEvidence(input: { projectId: string; runId: string }): Promise<Array<{ datasetId: string; batchKey: string; nodeId?: string; invalidCount?: number; evidence?: JsonObject }>> {
     return this.withProjectStore(input.projectId, (store) => store.readBatchEvidence(input.runId));
   }
 

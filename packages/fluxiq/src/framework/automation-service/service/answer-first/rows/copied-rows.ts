@@ -10,15 +10,15 @@
 // leaves the preview the attempt's row holds, which is rows it really read, under-counted at worst.
 
 import { createHash } from "node:crypto";
-import type { AutomationStudioRunDatasetPage, AutomationStudioRunDatasetSummary, AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
+import { parseAutomationStudioRecordSchema, type AutomationStudioRunDatasetPage, type AutomationStudioRunDatasetSummary, type AutomationStudioTaskResultRows } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioRecordBatchKey } from "../../../../../engine/automation/records/index.ts";
 import { stableJson } from "../../stable-json.ts";
 import { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "./sink-type.ts";
+import { AUTOMATION_STUDIO_ANSWER_FIRST_COPIED_ROW_NODE_ID } from "./copied-node.ts";
 
 const PAGE = 200;
-const NODE_ID = "carried.rows";
 
 type Input = {
   sink: Pick<AutomationStudioAnswerFirstRowSink, "recordBatch">;
@@ -26,6 +26,8 @@ type Input = {
   stored: { runId: string; list(): Promise<AutomationStudioRunDatasetSummary[]>; page(input: { datasetId: string; limit: number; cursor?: string }): Promise<AutomationStudioRunDatasetPage | null> } | undefined;
   /** What the attempt's row shows as its result. */
   shown: AutomationStudioTaskResultRows | undefined;
+  /** Reports only actual successful writes, so private publication ownership can follow the copied dataset. */
+  copied?: ((receipt: { fromRunId: string; fromDatasetId: string; datasetId: string }) => void) | undefined;
 };
 
 /** Copies them. Whether all of it went: a failure costs what was not copied, and the caller says so. */
@@ -49,8 +51,9 @@ async function fromStore(input: Input, stored: NonNullable<Input["stored"]>): Pr
     do {
       const page = await stored.page({ datasetId: dataset.datasetId, limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
       if (!page) break;
+      if (!page.rows.length && !parseAutomationStudioRecordSchema(page.schema).ok) throw new Error("The empty source has no validated retained schema.");
       const rows = page.rows.filter((row) => !seen.has(stableJson(row)) && Boolean(seen.add(stableJson(row))));
-      if (rows.length) await copy(input, stored.runId, dataset.datasetId, part, page.schema, rows, { label: dataset.label, truncated: dataset.truncated });
+      if (rows.length || part === 0 && page.rows.length === 0) await copy(input, stored.runId, dataset.datasetId, part, page.schema, rows, { label: dataset.label, truncated: dataset.truncated, invalidCount: part === 0 ? dataset.invalidCount : 0 });
       copied += rows.length;
       part += 1;
       cursor = page.nextCursor ?? undefined;
@@ -71,10 +74,10 @@ async function fromShown(input: Input, ok: boolean): Promise<{ ok: boolean; rows
   }
 }
 
-async function copy(input: Input, fromRunId: string, datasetId: string, part: number, schema: AutomationStudioRunDatasetPage["schema"], rows: readonly JsonObject[], how: { label?: string | undefined; truncated: boolean }): Promise<void> {
+async function copy(input: Input, fromRunId: string, datasetId: string, part: number, schema: AutomationStudioRunDatasetPage["schema"], rows: readonly JsonObject[], how: { label?: string | undefined; truncated: boolean; invalidCount?: number }): Promise<void> {
   const whence = createHash("sha256").update(JSON.stringify([fromRunId, datasetId, part])).digest("hex").slice(0, 40);
   await input.sink.recordBatch({
-    nodeId: NODE_ID,
+    nodeId: AUTOMATION_STUDIO_ANSWER_FIRST_COPIED_ROW_NODE_ID,
     attemptId: `carried.${whence}`,
     batchKey: automationStudioRecordBatchKey([], `carried.${whence}`),
     datasetId,
@@ -82,7 +85,8 @@ async function copy(input: Input, fromRunId: string, datasetId: string, part: nu
     writeMode: "append",
     schema,
     rows: [...rows],
-    invalidCount: 0,
+    invalidCount: how.invalidCount ?? 0,
     truncated: how.truncated
   });
+  input.copied?.({ fromRunId, fromDatasetId: datasetId, datasetId });
 }

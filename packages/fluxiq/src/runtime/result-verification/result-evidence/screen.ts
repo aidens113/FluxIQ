@@ -12,7 +12,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
 import type { AutomationStudioResultEvidenceBundle } from "./types.ts";
 
-export function automationStudioResultEvidenceScreen(bundle: AutomationStudioResultEvidenceBundle, deniedKeys: readonly string[]): { value: JsonObject; withheld: boolean } {
+export function automationStudioResultEvidenceScreen(bundle: AutomationStudioResultEvidenceBundle | JsonObject, deniedKeys: readonly string[]): { value: JsonObject; withheld: boolean } {
   let withheld = false;
   const visit = (raw: unknown): JsonValue => {
     if (raw === undefined) return null;

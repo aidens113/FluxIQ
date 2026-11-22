@@ -4,6 +4,7 @@
 export { automationStudioAnswerFirstAddressSplit } from "./address-split.ts";
 export { automationStudioAnswerFirstReadColumns } from "./carried-columns.ts";
 export { automationStudioAnswerFirstCopyRows } from "./copied-rows.ts";
+export { AUTOMATION_STUDIO_ANSWER_FIRST_COPIED_ROW_NODE_ID } from "./copied-node.ts";
 export { automationStudioAnswerFirstReadSchema } from "./derived-schema.ts";
 export { automationStudioAnswerFirstStoredDatasetId } from "./dataset-id.ts";
 export { automationStudioAnswerFirstSession } from "./exploration-session.ts";

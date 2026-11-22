@@ -1,3 +1,4 @@
+import type { AutomationStudioRecordProcessingDeclaration } from "./declaration/index.ts";
 import type {
   AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
   AUTOMATION_STUDIO_RECORD_DERIVED_READS,
@@ -135,6 +136,8 @@ export type AutomationStudioRecordFieldComparison = {
  * from its collected rows.
  */
 export type AutomationStudioRecordProcessing = {
+  /** Framework-stamped automatic provenance. Absent on legacy saved processing; never model-authored. */
+  declaration?: AutomationStudioRecordProcessingDeclaration;
   /** Columns computed before the filters, in order (t970). */
   derive?: AutomationStudioRecordDerivedField[];
   /** Absent: the whole row is the key (the answer's columns when `columns` is set). `false`: no dedupe. */

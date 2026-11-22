@@ -43,6 +43,12 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   // Rows a text condition left out though it kept their number on another row: Core's to see, whatever was judged (t478).
   const keptNumber = automationStudioResultLeftOutStatingAKeptNumber(input.summary);
   if (verdict === "answers") {
+    const projection = input.summary.evidenceProjection;
+    if (projection !== undefined && (!projection || projection.version !== 1 || !Array.isArray(projection.missing) || projection.missing.length > 0)) {
+      // Missing evidence warrants another meaningful read, not a claim that
+      // the Flow is wrong or a repeat of an already applied lasting action.
+      return failed("unsure", "model_unconfirmed", codes.semanticEvidenceMissing, "Some required evidence was not available, so the result remains unconfirmed.", observation);
+    }
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
     const unquoted = input.wording ? withoutUnaccounted(automationStudioResultLeftOutRowsUnquoted(input.summary, replyText(input), input.wording), unaccounted) : [];
     // The rows the result keeps that Core measured as unlike every other kept row, each named beside a quote of the request (header, t663).

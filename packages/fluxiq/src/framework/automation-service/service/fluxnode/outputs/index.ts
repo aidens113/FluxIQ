@@ -3,3 +3,4 @@
 export { fluxNodeInferredType } from "./inferred-type.ts";
 export { fluxNodeShapedOutputs, type FluxNodeOutputSources, type FluxNodeShapedOutputs } from "./shaped-outputs.ts";
 export { fluxNodeStoredRows, type FluxNodeStoredRows } from "./stored-rows.ts";
+export { fluxNodeOutputRequiresRows } from "./required-rows.ts";

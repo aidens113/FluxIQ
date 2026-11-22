@@ -4,6 +4,7 @@
 // the build checked field by field.
 
 import { humannessSchema } from "@fluxiq/contracts/automation";
+import { readAutomationStudioFlowTaskProcessing } from "../../../../runtime/flow-authoring/draft/index.ts";
 import { resolveAutomationStudioBuildAuthoringMode } from "../../../../flows/authoring/model/authoring-mode/index.ts";
 import type { GenerateFlowBootstrapAdaptationRequest, GenerateFlowBootstrapAdaptationResponse } from "../../../../api-contracts/automation.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
@@ -34,6 +35,7 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "interpretationCostUsd",
   "interpretationCalls",
   "taskActs",
+  "taskProcessing",
   "humanness"
 ]);
 
@@ -106,6 +108,8 @@ export async function generateFlowBootstrapAdaptationForRequest(
   let taskActs: AutomationStudioActionConsequence[] | undefined;
   try { taskActs = payload.taskActs === undefined ? undefined : parseAutomationStudioPermittedConsequences(payload.taskActs); }
   catch { return { ok: false, error: "Flow bootstrap generation request contains invalid task acts." }; }
+  const taskProcessing = payload.taskProcessing === undefined ? undefined : readAutomationStudioFlowTaskProcessing(payload.taskProcessing);
+  if (payload.taskProcessing !== undefined && taskProcessing === undefined) return { ok: false, error: "Flow bootstrap generation request contains invalid task processing." };
   const readiness = flowBootstrapGenerationReadiness(service);
   if (!readiness.supported) return flowBootstrapRuntimeUnavailable(readiness);
   // What the person allowed the build's actions to do. Absent is nothing;
@@ -147,6 +151,7 @@ export async function generateFlowBootstrapAdaptationForRequest(
       ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
       ...(interpretationCalls === undefined ? {} : { interpretationCalls: interpretationCalls as number }),
       ...(taskActs === undefined ? {} : { taskActs }),
+      ...(taskProcessing === undefined ? {} : { taskProcessing }),
       ...(humanness === undefined ? {} : { humanness: humanness as number }),
       // Somebody has just pressed build, so a question this build raises is
       // worth holding it open for: answered, the build carries on with

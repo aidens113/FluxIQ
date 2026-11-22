@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, encodeAutomationStudioRecordsCsvHeader, encodeAutomationStudioRecordsCsvRows, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioProjectRunDatasetStore, runDatasetSummariesForRun, type AutomationStudioRunDatasetBatch, type AutomationStudioRunDatasetRow } from "../run-dataset-store.ts";
-import { AutomationStudioProjectRuntimeStreamStore } from "../runtime-stream-store.ts";
-import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../../../administration.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../database.ts";
+import { AutomationStudioProjectRunDatasetStore, runDatasetSummariesForRun, type AutomationStudioRunDatasetBatch, type AutomationStudioRunDatasetRow } from "../../../run-dataset-store.ts";
+import { AutomationStudioProjectRuntimeStreamStore } from "../../../runtime-stream-store.ts";
+import { AutomationStudioSchemaMigrationRunner } from "../../../../schema-migrations.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -124,7 +124,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const evidence = { pages: [{ source: "capture.one", step: "read", version: 1, fields: { title: ".name" }, conditions: [], rows: items(2), kept: 2, place: "page=1" }], coverage: [], working: [], looks: [] };
     await store.appendBatch(batch({ rows: items(2), evidence }));
     await store.processRunDatasets("run.a");
-    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount, evidence }]);
     await store.close();
     const reopened = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
     fixture!.store = reopened;
@@ -132,7 +132,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     expect((await reopened.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(2));
     // A retried batch that genuinely carries no provenance must not inherit an older snapshot.
     await reopened.appendBatch(batch({ rows: items(1) }));
-    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey }]);
+    expect(await reopened.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount }]);
   });
 
   it("rolls back replacement rows and their evidence together when the provenance write fails", async () => {
@@ -143,7 +143,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     try { await lease.database.run("create trigger refuse_evidence_update before insert on run_dataset_batches when new.evidence_json is not null begin select raise(abort, 'fixture refuses evidence'); end"); } finally { await lease.release(); }
     await expect(store.appendBatch(batch({ writeMode: "replace", rows: items(3), evidence: { pages: [{ source: "replacement" }] } }))).rejects.toThrow(/fixture refuses evidence/u);
     expect((await store.getPage({ runId: "run.a", datasetId: "listings", limit: 10 }))?.rows).toEqual(items(1));
-    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, evidence }]);
+    expect(await store.readBatchEvidence("run.a")).toEqual([{ datasetId: "listings", batchKey: batch().batchKey, nodeId: batch().nodeId, invalidCount: batch().invalidCount, evidence }]);
   });
 
   it("assigns ordinals 1..N on the first append and continues from N+1", async () => {
@@ -335,8 +335,10 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
     const failed = await store.appendAuditEvent({ eventType: "export_failed", runId: "run.a", datasetId: "prices", now: 6 });
     await expect(store.listAuditEvents({ runId: "run.a" })).resolves.toEqual([exported, failed]);
     await expect(store.listAuditEvents({ runId: "run.a", datasetId: "prices" })).resolves.toEqual([{ eventId: failed.eventId, eventType: "export_failed", runId: "run.a", datasetId: "prices", rowCount: 0, byteCount: 0, createdAt: 6 }]);
-    await expect(store.appendAuditEvent({ eventType: "revealed" as never, runId: "run.a" })).rejects.toThrow("Invalid run dataset audit event type.");
-    await expect(store.appendAuditEvent({ eventType: "exported", runId: "run.a", format: "xml" as never })).rejects.toThrow("Invalid run dataset export format.");
+    // @ts-expect-error Exercise an untyped caller's invalid enum; this must remain a type error too.
+    await expect(store.appendAuditEvent({ eventType: "revealed", runId: "run.a" })).rejects.toThrow("Invalid run dataset audit event type.");
+    // @ts-expect-error Exercise an untyped caller's invalid format without hiding contract changes in a cast.
+    await expect(store.appendAuditEvent({ eventType: "exported", runId: "run.a", format: "xml" })).rejects.toThrow("Invalid run dataset export format.");
   });
 
   it("deletes a run's datasets, rows, and batches, keeps audit events, and writes a deleted event per dataset", async () => {

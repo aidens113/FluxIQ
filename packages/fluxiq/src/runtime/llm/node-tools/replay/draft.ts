@@ -81,6 +81,7 @@
 // after the step it reads therefore cannot send it either.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { automationStudioFlowDraftReplayObservation as observeReplay } from "./observation.ts";
 import type { AuthoringPartOfStep } from "../../../flow-authoring/bootstrap/record-defaults/index.ts";
 import {
   automationStudioFlowDraftExemptStepIds,
@@ -393,7 +394,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = modeFor(step);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf, input.namedColumns, input.steps);
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId), input.partOf, input.namedColumns, input.steps, input.forward?.callerInputs);
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     // A list read before the range is read on its own page (`./forward-range.ts`).
@@ -444,13 +445,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     if (ran.readable) {
       // The rows a read stored, beside its evidence and never in it (`./replay-span.ts`, the observation's type).
       const records = value ? automationStudioFlowDraftReplayStoredRecords(ran, mode) : undefined;
-      observations.push({
-        step: step.position,
-        stepId,
-        ...(ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
-        evidence: ran.result.evidence,
-        ...(records ? { records } : {})
-      });
+      observations.push(observeReplay({ step: step.position, stepId, consequences: value?.consequences }, ran.result, records));
     }
     if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed.slice(index + 1).find((next) => !automationStudioFlowDraftStepCarriedJoin(next)))) {
       withheldBy = step.position;

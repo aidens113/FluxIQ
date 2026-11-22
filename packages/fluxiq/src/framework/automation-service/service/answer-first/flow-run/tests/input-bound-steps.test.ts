@@ -22,9 +22,19 @@ describe("binding a step's fixed values to the inputs they equal", () => {
   it("leaves a step's own settings, values already bound, values two inputs share, and names a Flow input may not have", () => {
     const own = { recordOutput: { datasetId: "Atlas" }, ensureState: { state: "Atlas" }, retry: { maxAttempts: 3 } };
     const steps = [step({ ...own, held: input("title", "Atlas"), from: "Paris", to: "Paris", label: "x" }, 1)];
-    const [one] = bound(steps, { title: "Atlas", from: "Paris", to: "Paris", item: "x", bad_name: "x" });
+    const [one] = bound(steps, { title: "Atlas", from: "Paris", to: "Paris", item: "x", "bad.name": "x" });
     expect(one!.input.parameters).toEqual({ ...own, held: input("title", "Atlas"), from: "Paris", to: "Paris", label: "x" });
     expect(one).toBe(steps[0]);
+  });
+
+  it.each(["latest_date", "UpperCase", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__"])("binds an own lexical identifier %s while preserving its case and caller object", (name) => {
+    const inputs = Object.fromEntries([[name, "Atlas"]]);
+    const before = Object.getPrototypeOf(inputs);
+    const [one] = bound([step({ title: "Atlas", recordOutput: { label: "Atlas" } })], inputs);
+    expect(one!.input.parameters).toEqual({ title: input(name, "Atlas"), recordOutput: { label: "Atlas" } });
+    expect(Object.keys(inputs)).toEqual([name]);
+    expect(inputs[name]).toBe("Atlas");
+    expect(Object.getPrototypeOf(inputs)).toBe(before);
   });
 
   it("changes nothing with no inputs, or none that is bindable", () => {

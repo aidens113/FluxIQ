@@ -29,7 +29,7 @@ const ANSWERS: Record<string, AutomationStudioLlmEvidenceToolExecutionResult> = 
   refused: execution({ ok: false, location: WHERE, found: "0 matches" })
 };
 
-function chain(looks: { where: string; found: string }[]) {
+function chain(looks: { where: string; found: string; callId?: string }[], semantic = false) {
   return automationStudioAnswerFirstCallChain({
     domain: async (call) => ANSWERS[call.toolId]!,
     record: new AutomationStudioAttemptActRecord(),
@@ -39,7 +39,8 @@ function chain(looks: { where: string; found: string }[]) {
     describe: undefined,
     stepped: () => undefined,
     answered: () => undefined,
-    looked: (look) => { looks.push(look); }
+    looked: (look) => { looks.push(look); },
+    ...(semantic ? { judgeEvidence: { judgeEvidenceVersion: 1 as const, deniedEvidenceKeys: [], projectJudgeEvidence: () => ({ role: "observation" as const, evidence: {} }) } } : {})
   });
 }
 
@@ -47,6 +48,14 @@ const call = (toolId: string, value: JsonObject = {}) => ({ callId: `${toolId}.$
 const PRESS = call("press", { target: { handle: "t1" }, consequences: ["create_new"] });
 
 describe("a look the chain hands on", () => {
+  it("stamps the actual Core-issued call id only for an explicit semantic binding", async () => {
+    const looks: { where: string; found: string; callId?: string }[] = [];
+    const execute = chain(looks, true);
+    await execute(PRESS);
+    const find = { ...call("find", { query: "maker" }), callId: "core.issued.find.1" };
+    await execute(find);
+    expect(looks).toEqual([{ where: WHERE, found: FOUND, callId: find.callId }]);
+  });
   it("hands on nothing before the first lasting act", async () => {
     const looks: { where: string; found: string }[] = [];
     const execute = chain(looks);

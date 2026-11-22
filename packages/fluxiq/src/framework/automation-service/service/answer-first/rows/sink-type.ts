@@ -29,6 +29,12 @@ export type AutomationStudioAnswerFirstRowSink = {
    * Once it is stored, every other publication the run holds is retired (`./row-sink.ts`, "One result in the run").
    */
   publish(answer: AutomationStudioAnswerFirstRowsSummary, evidence?: AutomationStudioResultEvidenceBundle): Promise<void>;
+  /** Retire only this logical attempt's tracked publications when its answer is no longer ready. Failed retirement remains tracked for retry and is reported. */
+  withhold(): Promise<void>;
+  /** Exact publications still tracked by this sink, including failed retirements; incomplete tracking never means none remain. */
+  publicationState(): { version: 1; knownDatasetIds: string[]; complete: boolean };
+  /** Preserve an explicit gap when optional private publication metadata could not be read. Reads cannot restore that bookkeeping. */
+  publicationsUnavailable(): void;
   /**
    * The earlier segment's publication, which a carried-on attempt copied into this run (`./copied-rows.ts`): retired
    * like this sink's own once a publication under another id supersedes it. An id outside the publications' namespace is ignored.

@@ -39,6 +39,9 @@ type Step = { item: string; path: readonly (string | number)[]; account: (value:
 
 /** The summary told more briefly, one more item summarised at each step: the shortest last. Empty where nothing can be summarised. */
 export function automationStudioFlowLessSummaryFitting(sent: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary[] {
+  // Versioned semantic evidence is complete data, not a raw-view fallback.
+  // Keep exact answer cells/accounts/action findings even when they do not fit.
+  if (sent.evidenceProjection?.version === 1) return [];
   const whole = sent as unknown as JsonObject;
   const forms: AutomationStudioRunResultSummary[] = [];
   const items: string[] = [];

@@ -22,6 +22,7 @@ import type { AutomationStudioAnswerFirstTaskMemory } from "./memory.ts";
 import { automationStudioAnswerFirstScreenedNote } from "./screened-note.ts";
 import type { AutomationStudioAnswerFirstTaskNote } from "./task-note.ts";
 import type { AutomationStudioAnswerFirstTaskActs } from "./task-acts.ts";
+import { readAutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 
 const KEPT_NOTES = 10;
 const KEPT_ATTEMPTS = 100;
@@ -231,6 +232,7 @@ export class AutomationStudioAnswerFirstTaskMemoryStore {
 
 /** The caps, and the screen on every note. */
 function tidy(memory: AutomationStudioAnswerFirstTaskMemory, taskId: string): AutomationStudioAnswerFirstTaskMemory {
+  if (memory.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(memory.processing)) throw new Error("The task processing declaration is invalid.");
   if (memory.startingModel !== undefined && (typeof memory.startingModel !== "string" || !MODEL_ID.test(memory.startingModel))) throw new Error("The task starting model is invalid.");
   const notes: AutomationStudioAnswerFirstTaskNote[] = [];
   for (const note of memory.notes ?? []) {
@@ -244,6 +246,7 @@ function readHeld(value: JsonObject, projectId: string, taskId: string, scoped =
   const memory = value.memory as Partial<AutomationStudioAnswerFirstTaskMemory> | undefined;
   if (value.kind !== "answer_first_task_memory" || value.schemaVersion !== 1 || value.projectId !== projectId || typeof memory !== "object" || memory === null) return undefined;
   if (memory.taskId !== taskId || typeof memory.flowId !== "string" || !Array.isArray(memory.notes) || !Array.isArray(memory.attempts)) return undefined;
+  if (memory.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(memory.processing)) throw new Error("The stored automatic processing declaration is unreadable; repair it before retrying.");
   if (memory.startingModel !== undefined && (typeof memory.startingModel !== "string" || !MODEL_ID.test(memory.startingModel))) throw new Error("The stored task starting model is invalid; repair its model selection before retrying.");
   if (scoped && !readableExecutionState(memory)) return undefined;
   for (const flow of [memory.best, memory.latest]) {

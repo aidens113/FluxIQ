@@ -33,6 +33,7 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
   const datasets = new Map<string, Stored>();
   const batches = new Map<string, Map<string, IndexedBatch>>();
   const published = new Map<string, string>();
+  let publicationTrackingComplete = true;
   let readsAnswered = 0;
   let publication = 0;
   const summary = (datasetId?: string): AutomationStudioAnswerFirstRowsSummary => {
@@ -113,6 +114,17 @@ export function automationStudioAnswerFirstRowSink(input: AutomationStudioAnswer
       published.set(answer.datasetId, fingerprint);
       await retireSuperseded(answer.datasetId);
     },
+    async withhold() {
+      for (const datasetId of [...published.keys()]) {
+        // A real persistence owner supplies retire. With no persistent store, forget only our in-memory publication.
+        await input.retire?.(datasetId);
+        published.delete(datasetId);
+        datasets.delete(datasetId);
+        batches.delete(datasetId);
+      }
+    },
+    publicationState: () => ({ version: 1, knownDatasetIds: [...published.keys()], complete: publicationTrackingComplete }),
+    publicationsUnavailable() { publicationTrackingComplete = false; },
     carried(datasetId) {
       if (datasetId.startsWith(PUBLICATION_PREFIX) && !published.has(datasetId)) published.set(datasetId, CARRIED);
     },

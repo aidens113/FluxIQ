@@ -56,6 +56,8 @@ export type AutomationStudioAnswerFirstAttemptRun = {
   ordinal: number;
   runId: string;
   startedAtMs: number;
+  /** One reference for data processing across every segment of this logical attempt, independent of runtime segment timing. */
+  processingReferenceTimeMs?: number | undefined;
   /** When this segment began: the gap before a person's press is no time spent working. */
   segmentStartedAtMs: number;
   record: AutomationStudioAttemptActRecord;

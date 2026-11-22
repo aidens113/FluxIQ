@@ -4,6 +4,8 @@ import type { AutomationStudioFlowLessReadLeftOut } from "../flow-less/index.ts"
 /** A contributing read, kept whole with its source and current authored version. Shared by both judges. */
 export type AutomationStudioResultEvidencePage = {
   source: string;
+  /** Actual retained dataset observed for this source; storage chunk keys may change on carry-on. */
+  datasetId?: string;
   step: string;
   position?: number;
   version: number;
@@ -14,6 +16,8 @@ export type AutomationStudioResultEvidencePage = {
   place?: string;
   kept: number;
   rows: readonly JsonObject[];
+  /** Original rows rejected by this source's schema validation. Absent is legacy/unknown. */
+  invalidCount?: number;
   leftOut?: AutomationStudioFlowLessReadLeftOut | { reported: JsonObject; parameters?: JsonObject };
   carried?: boolean;
 };
