@@ -10,6 +10,7 @@ export * from "./says-what-to-do.ts";
 export * from "./invocation.ts";
 export * from "./answer-record.ts";
 export * from "./intent.ts";
+export * from "./acts.ts";
 export * from "./unanswered-task.ts";
 export * from "./unanswered-route.ts";
 export * from "./parse.ts";

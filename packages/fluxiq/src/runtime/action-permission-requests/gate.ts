@@ -50,6 +50,15 @@
 // nothing new leaves the domain to ask them. The gate keeps a bounded amount of
 // what was shown, forgetting the oldest first, so a name shown only long ago
 // may be withheld and a name on the page in front of the model never is.
+//
+// **A task's own question, and the answer a chat already gave (t976).** A caller
+// that asks once when a task starts raises that question here
+// (`raiseForTaskStart`), for the classes the instruction needs, naming the task
+// rather than a control. Its no is a no to the class, whatever control later
+// declares it. And a caller holding the person's answer from earlier in the same
+// chat hands it over before anything is checked (`holdAnswer`): a class they
+// allowed is permitted, a class they refused is refused unasked, carrying the
+// request they answered.
 
 import { randomUUID } from "node:crypto";
 import type { JsonValue } from "../../core/index.ts";
@@ -61,6 +70,7 @@ import { readAutomationStudioActionDeclaration, type AutomationStudioActionPermi
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 import { automationStudioActionPermissionProjection } from "./projection.ts";
 import { automationStudioActionAssessmentEffect, beginAutomationStudioActionAssessment } from "./assessment-observation/index.ts";
+import { AUTOMATION_STUDIO_ACTION_PERMISSION_TASK_START, automationStudioActionPermissionTaskStartSentence, isAutomationStudioActionPermissionTaskStart } from "./task-start.ts";
 import {
   AUTOMATION_STUDIO_ACTION_PERMISSION_CONTROL_NAME_MAX,
   AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
@@ -132,9 +142,14 @@ export class AutomationStudioActionPermissionGate {
   private readonly declined: Array<{ request: AutomationStudioActionPermissionRequest; controlName: string; controlKind: string | null }> = [];
   /** The declined request, while a no is the last word on a lasting act (see `standingDecline`). */
   private lastDeclined: AutomationStudioActionPermissionRequest | undefined;
+  /** Classes a person refused for the whole task (a task-start question, or a chat's held answer), each with the request they answered. */
+  private readonly declinedClasses = new Map<AutomationStudioActionConsequence, { requestId: string | null; request?: AutomationStudioActionPermissionRequest }>();
   private readonly stopped = new AbortController();
   private instructedEntries: readonly AutomationStudioInstructedConsequence[] | undefined;
   private deriving: Promise<{ derived: true; entries: readonly AutomationStudioInstructedConsequence[] } | { derived: false; reason: unknown }> | undefined;
+  private askingClosed = false;
+  private unforeseen: ((classes: readonly AutomationStudioActionConsequence[]) => unknown) | undefined;
+  private readonly unseenClasses = new Set<AutomationStudioActionConsequence>();
 
   constructor(private readonly input: AutomationStudioActionPermissionGateInput) {
     // Only a recognised class is ever permitted. Filtering rather than trusting
@@ -234,7 +249,9 @@ export class AutomationStudioActionPermissionGate {
     this.outstanding = undefined;
     const control = this.askedAbout.get(settled.requestId);
     if (answer === "declined") {
-      if (control) this.declined.push({ request: settled, ...control });
+      // A task's own question was about the classes, not a control: its no stands in front of every control.
+      if (isAutomationStudioActionPermissionTaskStart(settled)) for (const consequence of settled.missing) this.declinedClasses.set(consequence, { requestId: settled.requestId, request: settled });
+      else if (control) this.declined.push({ request: settled, ...control });
       this.lastDeclined = settled;
       // Answered, so no longer what the run stands on; a Flow step that needs it puts it back.
       if (this.latest === settled) this.latest = undefined;
@@ -243,6 +260,72 @@ export class AutomationStudioActionPermissionGate {
     this.lastDeclined = undefined;
     for (const consequence of settled.missing) this.permitted.add(consequence);
     if (this.latest === settled) this.latest = undefined;
+  }
+
+  /**
+   * The person's answer from earlier in the same chat, before anything is checked (t976). A class
+   * they allowed is permitted, exactly as a grant here would; a class they refused is refused for
+   * every control, unasked, carrying `requestId`, the request they answered. A class in both is
+   * refused: a permission gate never grants by default. Only gated classes are taken.
+   */
+  holdAnswer(answer: { granted: readonly string[]; declined: readonly string[]; requestId: string | null }): void {
+    const declined = automationStudioDestructiveConsequences(answer.declined.filter(isAutomationStudioActionConsequence));
+    for (const consequence of automationStudioDestructiveConsequences(answer.granted.filter(isAutomationStudioActionConsequence))) {
+      if (!declined.includes(consequence)) this.permitted.add(consequence);
+    }
+    for (const consequence of declined) {
+      this.permitted.delete(consequence);
+      if (!this.declinedClasses.has(consequence)) this.declinedClasses.set(consequence, { requestId: answer.requestId });
+    }
+  }
+
+  /** The gated classes this gate permits now, in Core's order. */
+  get permittedClasses(): readonly AutomationStudioActionConsequence[] {
+    return automationStudioDestructiveConsequences([...this.permitted]);
+  }
+
+  /** The classes a person refused for the whole task, in Core's order. */
+  get declinedTaskClasses(): readonly AutomationStudioActionConsequence[] {
+    return automationStudioConsequencesInOrder([...this.declinedClasses.keys()]);
+  }
+
+  /** A run already under way cannot ask: an uncovered consequence is refused as evidence, without ending the run. */
+  closeAsking(unforeseen?: (classes: readonly AutomationStudioActionConsequence[]) => unknown): void {
+    this.askingClosed = true;
+    if (unforeseen) this.unforeseen = unforeseen;
+  }
+
+  /**
+   * Raises the one question a task asks when it starts (t976, `task-start.ts`): about the gated
+   * classes in `classes` that this run neither holds nor was refused, or `undefined` when none
+   * is left to ask, or a request already stands. It is the request the caller puts to the person
+   * and settles like any other; nothing is permitted until it is granted.
+   */
+  raiseForTaskStart(classes: readonly string[]): AutomationStudioActionPermissionRequest | undefined {
+    if (this.askingClosed || this.outstanding) return undefined;
+    const missing = automationStudioDestructiveConsequences(classes.filter(isAutomationStudioActionConsequence)).filter((consequence) => !this.permitted.has(consequence) && !this.declinedClasses.has(consequence));
+    if (!missing.length) return undefined;
+    const stage = this.input.stage;
+    const instructed = this.instructedEntries ?? NOTHING_INSTRUCTED;
+    const { kind, id, ref, verb } = AUTOMATION_STUDIO_ACTION_PERMISSION_TASK_START;
+    const raised: AutomationStudioActionPermissionRequest = {
+      schemaVersion: AUTOMATION_STUDIO_ACTION_PERMISSION_REQUEST_SCHEMA_VERSION,
+      requestId: this.input.newRequestId?.() ?? `permission-request:${randomUUID()}`,
+      requestedAtMs: Math.trunc(this.input.now?.() ?? Date.now()),
+      action: { kind, id, ref, verb },
+      control: { name: null, kind: null },
+      consequences: [...missing],
+      missing,
+      reason: { stage, instructionIds: [...(this.input.instructionIds ?? [])] },
+      authority: {
+        granted: automationStudioConsequencesInOrder([...this.permitted]),
+        instructed: instructed.map((entry) => ({ consequence: entry.consequence, instructionId: entry.instructionId, quote: entry.quote }))
+      },
+      sentence: automationStudioActionPermissionTaskStartSentence(missing)
+    };
+    this.outstanding = this.latest = raised;
+    if (this.input.endsOnRequest !== false) this.stopped.abort();
+    return raised;
   }
 
   /** Whether the request the run carries was raised for this action: a call, or a plan step. */
@@ -366,10 +449,20 @@ export class AutomationStudioActionPermissionGate {
         && entry.request.missing.every((consequence) => gated.includes(consequence)));
       if (declined) {
         // Only a step of the Flow makes the run stand on it again (see `request`).
-        if (action.kind === "flow_step") this.latest = declined.request;
+        if (action.kind === "flow_step" && !this.askingClosed) this.latest = declined.request;
         // Tried again after the no: the no is the last word once more.
         this.lastDeclined = declined.request;
         return record({ permitted: false, missing: [...declined.request.missing], requestId: declined.request.requestId, declined: true });
+      }
+      // A class the person refused for the whole task: refused on any control, unasked, carrying the request they answered.
+      const refusedForTask = gated.filter((consequence) => !this.permitted.has(consequence) && this.declinedClasses.has(consequence));
+      if (refusedForTask.length) {
+        const answered = this.declinedClasses.get(refusedForTask[0]!)!;
+        if (answered.request) {
+          if (action.kind === "flow_step" && !this.askingClosed) this.latest = answered.request;
+          this.lastDeclined = answered.request;
+        }
+        return record({ permitted: false, missing: refusedForTask, requestId: answered.requestId, declined: true });
       }
       // Undoing an act this build made may do what its ledger allowed, for
       // this one action: the classes are held here and never join `permitted`,
@@ -378,6 +471,14 @@ export class AutomationStudioActionPermissionGate {
       const undoing = new Set((action.undoes?.allowed ?? []).filter(isAutomationStudioActionConsequence));
       const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence) && !undoing.has(consequence)));
       if (!missing.length) return record({ permitted: true });
+      if (this.askingClosed) {
+        const fresh = missing.filter((consequence) => !this.unseenClasses.has(consequence));
+        if (fresh.length) {
+          await this.unforeseen?.(fresh);
+          for (const consequence of fresh) this.unseenClasses.add(consequence);
+        }
+        return record({ permitted: false, missing, requestId: null });
+      }
       if (this.outstanding) {
         this.latest = this.outstanding;
         return record({ permitted: false, missing, requestId: this.outstanding.requestId });

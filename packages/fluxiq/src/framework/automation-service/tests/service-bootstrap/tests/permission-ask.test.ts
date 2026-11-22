@@ -8,6 +8,10 @@
 // and left a request nobody was shown. These drive the real
 // `generateFlowBootstrapAdaptation` against a real conversation store and read
 // the thread back.
+//
+// Since t976 the build asks once, when it starts and before its first call, about what the chat's
+// reading declared (`taskActs`), and never at a press (the user's rule: a dangerous act asks only when a
+// Flow or chat starts). A no holds for the whole class.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -95,7 +99,7 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
       parks: true,
       status: "pending",
       missing: ASKED_ABOUT,
-      permissionRequest: { requestId, action: { kind: "exploration_step" } }
+      permissionRequest: { requestId, action: { kind: "flow_step", id: "core.task_start" } }
     });
     // The turn the question hangs on says it in Core's own words.
     const thread = await run.instance.conversations.getConversation({ projectId: run.project.id, conversationId: ask!.conversationId });
@@ -141,26 +145,26 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
     ]);
   }, 30_000);
 
-  // A person's no was once the end of every question in the build: the first
-  // ask set a build-wide flag, and the declined request refused every later
-  // press with its own id. Live, a no to "Continue to checkout" meant "Place
-  // order" was never asked about (t195-w18).
-  it("asks about another control after the person declines one, and presses it once granted", async () => {
+  // Until t976 a no was about one control, and the build asked again at the next press of another
+  // (t195-w18: a no to "Continue to checkout" let "Place order" be asked about). The question is the
+  // task's now, put once when it starts, so its answer holds for every press of that class and nobody is
+  // asked again mid-build: both money presses go ahead on the one grant.
+  it("asks once when it starts, and the answer holds for every press of that class with nothing asked mid-build", async () => {
     const run = await checkoutBuild();
-    const answered = answerEach(run, ["deny", "grant"]);
+    const answered = answerEach(run, ["grant"]);
     const result = await run.generation;
-    const [declinedId, grantedId] = await answered;
+    const [grantedId] = await answered;
 
-    expect(run.acted).toEqual(["Place order"]);
+    expect(run.acted).toEqual(["Continue to checkout", "Place order"]);
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toBeUndefined();
-    expect(declinedId).not.toBe(grantedId);
     expect(askRows()).toEqual([
-      ["waiting_permission", declinedId, "started", undefined],
-      ["building", declinedId, "failed", "declined"],
       ["waiting_permission", grantedId, "started", undefined],
       ["building", grantedId, "succeeded", "allowed"]
     ]);
+    const [conversation] = await run.instance.conversations.listConversations({ projectId: run.project.id, subject: { kind: "flow", id: run.flow.flowId } });
+    const thread = await run.instance.conversations.getConversation({ projectId: run.project.id, conversationId: conversation!.conversationId });
+    expect(thread!.turns.filter((turn) => turn.ask?.kind === "permission")).toHaveLength(1);
   }, 30_000);
 });
 
@@ -198,7 +202,7 @@ async function checkoutBuild() {
   // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls press nothing.
   const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never, llmEvidenceRuntime: automationStudioReplayingBinding(binding) });
   services.add(instance);
-  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 30_000 });
+  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 30_000, taskActs: ["move_money"] });
   return { instance, project, flow, acted, generation };
 }
 
@@ -254,7 +258,7 @@ describe("a build that never explored", () => {
     services.add(instance);
 
     // No `evidenceGuided`: one call, a whole plan, nothing explored.
-    await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() }))
+    await expect(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), taskActs: ["move_money"] }))
       .rejects.toThrow("Flow Bootstrap generation failed (flow_bootstrap.permission_required).");
     expect(asked).toEqual(["refused"]);
 
@@ -310,8 +314,9 @@ async function build(options: { waitMs?: number } = {}) {
   });
   services.add(instance);
   // The control's name has to have been shown before a request may carry it.
+  // What the chat's reading declared: the build asks about it once when it starts (t976).
   const generation = instance.generateFlowBootstrapAdaptation({
-    projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(),
+    projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), taskActs: ["move_money", "modify_existing"],
     ...(options.waitMs === undefined ? {} : { permissionAskTimeoutMs: options.waitMs })
   });
   return { instance, project, flow, acted, generation };

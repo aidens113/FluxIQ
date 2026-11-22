@@ -59,7 +59,7 @@ export async function appendConversationTurnForRequest(
       caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null,
       ...(lookup ? { knownTask: automationStudioConversationKnownTask(lookup) } : {})
     });
-    const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls, ...(humanness === undefined ? {} : { humanness }) });
+    const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, attachedRecordingId: onScreen.recordingId, interpretationCostUsd: answer.interpretationCostUsd, interpretationCalls: answer.interpretationCalls, taskActs: answer.taskActs, ...(humanness === undefined ? {} : { humanness }) });
     const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;
     return { turn: answer.turn, response: answer.response ? { ...answer.response, execution } : null, problem: answer.problem };
   }

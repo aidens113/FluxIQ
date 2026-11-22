@@ -51,9 +51,10 @@ type Run = {
 };
 
 describe("a run a person asked the model into, and a lasting consequence", () => {
-  // With nothing permitted the press stops at the gate and a request is raised
-  // in the run's thread; the run waits there for the person. This person says no.
-  it("calls the model with no grant, and stops at permission_required when the run permits nothing", async () => {
+  // With nothing permitted the press stops at the gate and a request is raised. A repair runs inside the
+  // Flow's run, so since t976 nobody is asked mid-Flow: the recovery ends on the request (the user's rule:
+  // a dangerous act asks only when a Flow or chat starts). The person is never reached, so "deny" is unused.
+  it("calls the model with no grant, refuses an uncovered action and continues repairing without asking", async () => {
     const run = await recover(undefined, "deny");
 
     // The model was called: diagnosis, then the exploration's decision. No
@@ -64,23 +65,12 @@ describe("a run a person asked the model into, and a lasting consequence", () =>
       expect(input.caller).toEqual(CALLER);
       expect(input).not.toHaveProperty("executionGrant");
     }
-    // The press asked, the person was asked in the run's thread, and the press
-    // was not taken.
-    expect(run.ask).toMatchObject({
-      kind: "permission",
-      missing: ["delete"],
-      permissionRequest: {
-        schemaVersion: "automation-studio.action-permission-request.v1",
-        action: { kind: "exploration_step", id: "test.press", verb: "press" },
-        consequences: ["delete"],
-        missing: ["delete"],
-        reason: { stage: "recovery" }
-      }
-    });
+    // The press asked the gate, nobody was asked in the run's thread, and the press was not taken.
+    expect(run.ask).toBeUndefined();
     expect(run.pressed).toEqual([]);
-    // Refused, the recovery ends at the gate without a patch call.
-    expect(run.metadata?.llmGate).toMatchObject({ patchSkippedCode: "llm.runtime_patch_permission_required", permissions: { granted: [] } });
-    expect(run.taskKinds).not.toContain("runtime_patch");
+    expect(run.metadata?.llmGate).toMatchObject({ permissions: { granted: [] } });
+    expect((run.metadata?.llmGate as JsonObject | undefined)?.patchSkippedCode).not.toBe("llm.runtime_patch_permission_required");
+    expect(run.taskKinds).toContain("runtime_patch");
   }, 60_000);
 
   it("proceeds when the run's own request permits the consequence, asking nobody", async () => {
