@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmHarnessInput } from "../../../../../../../runtime/llm/index.ts";
-import { automationStudioAnswerFirstResultFeed } from "../../../result-feed/index.ts";
-import { automaticFeed, REFERENCE } from "../../../result-feed/tests/automatic-support.ts";
-import { automationStudioAnswerFirstTaskProcessing } from "../../../result-processing/index.ts";
-import type { AutomationStudioAnswerFirstAttemptRun } from "../../state.ts";
-import { automationStudioAnswerFirstDecide } from "../../decide.ts";
+import type { AutomationStudioLlmHarnessInput } from "../../../../../../../../runtime/llm/index.ts";
+import { automationStudioAnswerFirstResultFeed } from "../../../../result-feed/index.ts";
+import { automaticFeed, REFERENCE } from "../../../../result-feed/tests/automatic-support.ts";
+import { automationStudioAnswerFirstTaskProcessing } from "../../../../result-processing/index.ts";
+import type { AutomationStudioAnswerFirstAttemptRun } from "../../../state.ts";
+import { automationStudioAnswerFirstDecide } from "../../../decide.ts";
 
 const CAPTURED = new Error("Stopped after capturing the actual provider-free model request.");
 

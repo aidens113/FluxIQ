@@ -7,12 +7,12 @@
 // row needs a loop over a list around it, and an input needs a name no output
 // of the Flow overwrites.
 import { describe, expect, it } from "vitest";
-import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../../../framework/automation-service/nodes/index.ts";
-import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../../../draft/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan } from "../../../plan/index.ts";
-import { webDomainNodeDefinitionsFixture } from "../../../plan/tests/index.ts";
-import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../../assemble-draft.ts";
+import type { JsonObject, JsonValue } from "../../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../../../../framework/automation-service/nodes/index.ts";
+import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../../../../draft/index.ts";
+import { validateAutomationStudioFlowBootstrapPlan } from "../../../../plan/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../../plan/tests/index.ts";
+import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../../../assemble-draft.ts";
 
 const resolution = {
   scope: { kind: "domain" as const, domainId: "web-automation" },

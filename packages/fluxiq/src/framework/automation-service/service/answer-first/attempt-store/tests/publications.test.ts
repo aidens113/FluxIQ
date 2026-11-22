@@ -9,6 +9,7 @@ import { automationStudioAnswerFirstCarriedOpening } from "../../carry-on/index.
 import { automationStudioAnswerFirstResultFeed } from "../../result-feed/index.ts";
 import { automaticFeed, REFERENCE } from "../../result-feed/tests/automatic-support.ts";
 import { reread } from "../../result-feed/tests/source-validation-support.ts";
+import { automationStudioAnswerFirstTrailsOf } from "../../trail/index.ts";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); });
@@ -74,4 +75,37 @@ it("keeps unknown publication tracking repairable and explicit while retaining s
   expect(feed.amendProcessing({ columns: ["title"] }, "Keep the same data declaration.")).toMatchObject({ ok: true });
   reread(feed, step, "fresh", [...page.rows], schema, "page=1");
   expect(feed.readiness()).toMatchObject({ code: "answer_first.publication_tracking_missing" });
+});
+
+it("keeps publication tracking, actual task evidence and the independent judge issue through metadata saves and reopen", async () => {
+  const io = await disk();
+  const store = io.open();
+  const snapshot = record();
+  const journal = automationStudioAnswerFirstTrailsOf({});
+  const trail = journal.of("attempt", { carriedOn: false, askedAgain: false });
+  trail.push({ did: "library.read", callId: "actual.read", framework: { effectApplied: false }, judgeEvidence: { version: 1, role: "observation", evidence: { observed: "Actual safe retained records" }, missing: [], withheld: false } });
+  const checkpoint = journal.checkpoint(trail, {}, { judgeEvidenceVersion: 1, deniedEvidenceKeys: [] })!;
+  await store.save("project", "flow", { ...snapshot, judgeEvidence: checkpoint });
+  const conflicting = { ...structuredClone(checkpoint), trail: [{ ...checkpoint.trail[0]!, framework: { effectApplied: true } }] };
+  await expect(store.saveJudgeEvidence("project", "flow", "attempt", conflicting)).rejects.toThrow("revision conflict");
+  const marked = (await io.open().get("project", "flow", "attempt"))!;
+  expect(marked).toMatchObject({ ...snapshot, judgeEvidence: checkpoint, judgeEvidenceIssue: { code: "checkpoint_conflict" } });
+  trail.push({ did: "library.look", callId: "actual.look", framework: { effectApplied: false }, judgeEvidence: { version: 1, role: "observation", evidence: { observed: "Another actual harmless observation" }, missing: [], withheld: false } });
+  const newer = journal.checkpoint(trail, {}, { judgeEvidenceVersion: 1, deniedEvidenceKeys: [] })!;
+  expect(newer.revision).toBeGreaterThan(checkpoint.revision);
+  await store.saveJudgeEvidence("project", "flow", "attempt", newer);
+  await store.saveJudgeEvidence("project", "flow", "attempt", checkpoint);
+  const afterStaleSave = (await io.open().get("project", "flow", "attempt"))!;
+  expect(afterStaleSave).toMatchObject({ ...snapshot, judgeEvidence: newer, judgeEvidenceIssue: { code: "checkpoint_conflict" } });
+  expect(afterStaleSave.publications).toEqual(snapshot.publications);
+  const retired = { version: 1 as const, knownDatasetIds: [], complete: true };
+  await store.save("project", "flow", { ...afterStaleSave, publications: retired });
+  const reopened = (await io.open().get("project", "flow", "attempt"))!;
+  expect(reopened).toMatchObject({ ...snapshot, publications: retired, judgeEvidence: newer, judgeEvidenceIssue: { code: "checkpoint_conflict" } });
+  const carried = automationStudioAnswerFirstCarriedOpening({ projectId: "project", flowId: "flow", taskId: "task", attemptId: "attempt", before: reopened, kept: undefined, acts: undefined, askedUsd: 5, budgetUsd: 5, opened: false });
+  expect(carried.publications).toEqual(retired);
+  expect(carried.judgeEvidence).toEqual(newer);
+  expect(carried.judgeEvidenceIssue).toMatchObject({ code: "checkpoint_conflict" });
+  expect(carried.resultEvidence).toEqual(snapshot.resultEvidence);
+  expect(carried.processingReferenceTimeMs).toBe(snapshot.processingReferenceTimeMs);
 });

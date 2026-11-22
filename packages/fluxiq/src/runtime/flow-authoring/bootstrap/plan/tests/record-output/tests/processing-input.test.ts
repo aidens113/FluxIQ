@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry } from "../../../../../../framework/automation-service/nodes/index.ts";
-import { automationStudioFlowBootstrapRecordOutputIssues, automationStudioFlowBootstrapRecordOutputStaticValue } from "../../record-output-contract.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../index.ts";
-import { webDomainNodeDefinitionsFixture } from "../index.ts";
+import type { JsonObject } from "../../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../../../../../framework/automation-service/nodes/index.ts";
+import { automationStudioFlowBootstrapRecordOutputIssues, automationStudioFlowBootstrapRecordOutputStaticValue } from "../../../record-output-contract.ts";
+import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan } from "../../../index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../index.ts";
 
 const definitions = webDomainNodeDefinitionsFixture();
 const definition = definitions.find((node) => node.id === "web.output.dom-extract_list")!;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../../../framework/automation-service/nodes/index.ts";
-import { acceptAutomationStudioFlowBootstrapResult } from "../../index.ts";
-import { webDomainNodeDefinitionsFixture } from "../../../plan/tests/index.ts";
+import type { JsonObject } from "../../../../../../../core/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../../../../framework/automation-service/nodes/index.ts";
+import { acceptAutomationStudioFlowBootstrapResult } from "../../../index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../../../plan/tests/index.ts";
 
 const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...webDomainNodeDefinitionsFixture()]);
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };

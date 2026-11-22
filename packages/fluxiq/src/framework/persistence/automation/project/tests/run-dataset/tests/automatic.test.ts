@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, stampAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
-import { AutomationStudioProjectAdministration } from "../../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../../database.ts";
-import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../../run-dataset-store.ts";
-import { AutomationStudioProjectRuntimeStreamStore } from "../../runtime-stream-store.ts";
+import { AutomationStudioProjectAdministration } from "../../../administration.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../database.ts";
+import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../../../run-dataset-store.ts";
+import { AutomationStudioProjectRuntimeStreamStore } from "../../../runtime-stream-store.ts";
 
 const PROJECT = "project.automatic";
 const ids = { runId: "run", datasetId: "items" };
