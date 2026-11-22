@@ -62,7 +62,7 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 - Agent: Senior supervisor.
 - Changed: judge recovery, usage receipts and architecture note; source checkpoint 021b1f631 followed by parent merges.
 - Why: unreadable replies must recover on the same model without losing billed usage or exceeding the shared purse.
-- Validation: `pnpm --filter fluxiq exec vitest run --maxWorkers=1 --minWorkers=1 --fileParallelism=false <12 owning judge/receipt/trail files>` -> Test Files 12 passed; Tests 125 passed; 87.51 s. `pnpm --filter fluxiq check` -> exit 0, build-cache fluxiq:check 72209 ms.
+- Validation: `pnpm --filter fluxiq exec vitest run --maxWorkers=1 --minWorkers=1 --fileParallelism=false src/runtime/result-verification/build-test/tests/judge.test.ts src/runtime/result-verification/flow-less/tests/judge-unreadable.test.ts src/runtime/result-verification/tests/judge-reply/tests/unreadable-reply.test.ts src/runtime/result-verification/tests/run-outcome.test.ts src/runtime/llm/harness/tests/paid-refusal.test.ts src/runtime/llm/build-purse/tests/refused-unbilled.test.ts src/runtime/llm/role-routing/tests/judge-same-model.test.ts src/runtime/llm/anthropic/tests/judge-continuation.test.ts src/runtime/models/providers/anthropic/tests/judge-trail-references.test.ts src/runtime/result-verification/build-test/tests/request-size.test.ts src/runtime/result-verification/flow-less/tests/judge-size.test.ts src/runtime/result-verification/run-trail/tests/repeats.test.ts` -> Test Files 12 passed; Tests 125 passed; 87.51 s. `pnpm --filter fluxiq check` -> exit 0, build-cache fluxiq:check 72209 ms.
 - Outcome: Partial.
 - Follow-up: final structure audit and paired task integration; live acceptance remains later.
 
