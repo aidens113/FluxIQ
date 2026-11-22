@@ -37,7 +37,10 @@ export function automationStudioAnswerFirstResultReplacements() {
     restore(value: AutomationStudioResultEvidenceBundle["sourceReplacements"]) {
       if (value === undefined) return;
       const parsed = readAutomationStudioResultEvidenceSourceReplacements(value);
-      if (!parsed) { if (metadata === undefined) metadata = null; return; }
+      if (!parsed) {
+        if (metadata === undefined) metadata = null;
+        return;
+      }
       const receipts = new Map([...(metadata?.receipts ?? []), ...parsed.receipts].map((entry) => [stableJson(entry), entry]));
       metadata = readAutomationStudioResultEvidenceSourceReplacements({ version: 1, receipts: [...receipts.values()] }) ?? null;
     },

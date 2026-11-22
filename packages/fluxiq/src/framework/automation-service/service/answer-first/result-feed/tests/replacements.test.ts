@@ -42,7 +42,10 @@ it("reads only current source proof without evaluating rows or substituting held
   reread(p.feed, step, "fresh", [row], SCHEMA, "page=1");
   let reads = 0;
   const original = p.feed.port.outputGroup()[0]!.pages[0]!.kept[0]!;
-  Object.defineProperty(original, "title", { configurable: true, enumerable: true, get: () => { reads += 1; return row.title; } });
+  Object.defineProperty(original, "title", { configurable: true, enumerable: true, get: () => {
+    reads += 1;
+    return row.title;
+  } });
   expect(p.feed.sourceProof().pages[0]?.source).toBe("fresh");
   expect(reads).toBe(0);
   Object.defineProperty(original, "title", { configurable: true, enumerable: true, value: row.title });
@@ -127,7 +130,10 @@ it("emits producer tuples only when their real pages have been recorded, includi
   const step = p.read("old", [row]);
   const recorded: (readonly AutomationStudioResultEvidenceSourceRef[])[] = [];
   const calls: unknown[] = [];
-  const feed = automationStudioAnswerFirstResultFeed({ instructionText: "List matching records.", readRowsKey: "read.extracted", processing: p.processing, processingReferenceTimeMs: REFERENCE, sourceRecorded: (refs, call) => { recorded.push(refs); calls.push(call); } });
+  const feed = automationStudioAnswerFirstResultFeed({ instructionText: "List matching records.", readRowsKey: "read.extracted", processing: p.processing, processingReferenceTimeMs: REFERENCE, sourceRecorded: (refs, call) => {
+    recorded.push(refs);
+    calls.push(call);
+  } });
   const answer = { kind: "llm_evidence_tool_execution" as const, effectApplied: false, evidence: { read: { extracted: [row], listKey: "fixture.records", place: "page=1" } } };
   const call = { callId: "forward", toolId: "core.run_node", value: { ...step.input, replay: "forward" } };
   feed.called(call, answer, { rows: [row], schema: SCHEMA, datasetId: "read.forward", invalidCount: 0, truncated: false });
