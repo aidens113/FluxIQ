@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioJudgeEvidenceProjector } from "../../../llm/harness-options/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
-import { automationStudioProjectJudgeEvidence } from "../../judge-evidence/index.ts";
+import { automationStudioProjectJudgeEvidence } from "../../judge-evidence/project.ts";
 import type { AutomationStudioResultTrailSemanticOptions } from "./options.ts";
 
 /** Add one durable finding before any legacy bookkeeping screen; leave the private finding and framework facts intact. */

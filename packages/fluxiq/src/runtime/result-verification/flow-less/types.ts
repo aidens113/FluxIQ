@@ -2,7 +2,7 @@
 
 import type { AutomationStudioAttemptAct } from "@fluxiq/contracts/automation";
 import type { JsonObject } from "../../../core/index.ts";
-import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import type { AutomationStudioJudgeEvidenceProjector, AutomationStudioLlmHarnessInput, AutomationStudioLlmProvider, AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import type { AutomationStudioLlmTokenLimits } from "../../models/limits/index.ts";
 import type { AutomationStudioResultEndView, AutomationStudioResultTrailStep } from "../contracts/index.ts";
 import type { AutomationStudioFlowLessReadLeftOut } from "./read-left-out.ts";
@@ -57,7 +57,9 @@ export type AutomationStudioFlowLessJudgeInput = {
    * "deny nothing" (`../../llm/harness/request-evidence-check.ts`). A domain with
    * nothing to deny declares `[]`.
    */
-  deniedEvidenceKeys: readonly string[];
+  deniedEvidenceKeys?: readonly string[] | undefined;
+  /** Optional host projector; unknown domain evidence never falls back to raw captures. */
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
   timeoutMs?: number | undefined;
   /**
    * The judging model's window, as its resolution gives it (the attempt's provider's, when no role routes the judge

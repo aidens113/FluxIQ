@@ -104,7 +104,7 @@ export function automationStudioProjectBuildSubflowTrials(input: {
       const entry = AutomationStudioProjectBuildTaskChecklist.entry(summary, scope.predecessors.length ? input.proposals.predecessors(scope) : []);
       return await automationStudioBuildTestJudge({
         provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: [scopeInstruction(scope, successCheck, projectId, flowId, entry !== undefined)],
-        deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal
+        deniedEvidenceKeys: binding.deniedEvidenceKeys, projectJudgeEvidence: binding.projectJudgeEvidence, projectId, flowId, signal: input.judge.signal
       })({ summary, taskChecklist: await AutomationStudioProjectBuildTaskChecklist.subflow(source, scope, entry, possiblyLasting) });
     }
   };

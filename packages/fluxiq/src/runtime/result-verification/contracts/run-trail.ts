@@ -1,5 +1,5 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
+import type { AutomationStudioJudgeEvidenceFinding } from "../judge-evidence/finding.ts";
 
 /**
  * One thing a run or an attempt did on its target, from Core's own record of it (`../run-trail/`, t963): a look at a

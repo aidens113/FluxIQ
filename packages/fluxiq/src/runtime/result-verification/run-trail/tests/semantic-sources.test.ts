@@ -25,6 +25,18 @@ function summary(step: AutomationStudioResultTrailStep, projector?: AutomationSt
 }
 
 describe.each(["call", "flow", "build"] as const)("semantic findings through the %s adapter", (source) => {
+  it("withholds reopened findings and identities under an unknown current privacy policy", () => {
+    const projector: AutomationStudioJudgeEvidenceProjector = () => ({ role: "action", evidence: { state: "saved" } });
+    const step = adapted(source, { capture: RAW }, projector);
+    const privateTrail = automationStudioResultRunTrail([step], []).trail;
+    const before = structuredClone(privateTrail);
+    const reopened = JSON.parse(JSON.stringify(privateTrail));
+    const shown = automationStudioResultSemanticTrail(reopened, { deniedEvidenceKeys: undefined });
+    expect(shown.projection.missing).toEqual([{ source: "trail", codes: ["judge_evidence.denied_keys_missing"] }]);
+    expect(shown.trail?.entries).toEqual([{ n: 1, did: "(withheld)" }]);
+    expect(privateTrail).toEqual(before);
+    expect(automationStudioResultSemanticTrail(reopened, { deniedEvidenceKeys: [] }).projection.missing).toEqual([]);
+  });
   it("projects before bookkeeping stripping, keeps every row/value and accepts complete data with captures omitted", () => {
     let calls = 0;
     const projector: AutomationStudioJudgeEvidenceProjector = (input) => {
@@ -50,8 +62,12 @@ describe.each(["call", "flow", "build"] as const)("semantic findings through the
   });
 
   it("keeps historical uncertainty as a fact and permits acceptance when current semantic evidence proves the action", () => {
-    const projector: AutomationStudioJudgeEvidenceProjector = () => ({ role: "action", evidence: { effectUncertain: "The earlier command did not prove the effect", confirmation: { before: false, after: true, source: "current observed value" } } });
-    const shown = summary(adapted(source, { capture: RAW }, projector), projector);
+    const evidence = { capture: RAW, effectUncertain: "The earlier command did not prove the effect", confirmation: { before: false, after: true, source: "current observed value" } };
+    const projector: AutomationStudioJudgeEvidenceProjector = (input) => {
+      const observed = (input.evidence as JsonObject).evidence as JsonObject;
+      return { role: "action", evidence: { effectUncertain: observed.effectUncertain!, confirmation: observed.confirmation! } };
+    };
+    const shown = summary(adapted(source, evidence, projector), projector);
     expect(shown.trail?.entries[0]?.framework?.failure).toEqual({ category: FAILURE.category, code: FAILURE.code, retryable: false, stage: FAILURE.stage, effect: "ambiguous" });
     expect(JSON.stringify(shown)).toContain("The earlier command did not prove the effect");
     expect(JSON.stringify(shown)).not.toContain("PRIVATE_RAW_CAPTURE");

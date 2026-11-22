@@ -75,7 +75,7 @@ export function automationStudioProjectBuildWholeTrials(input: {
 }): AutomationStudioProjectBuildWholeTrials {
   const { environment, binding } = input;
   const { projectId, flowId } = environment;
-  const asked = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectId, flowId, signal: input.judge.signal });
+  const asked = automationStudioBuildTestJudge({ provider: input.judge.provider, timeoutMs: input.judge.timeoutMs, instructions: input.judge.instructions, deniedEvidenceKeys: binding.deniedEvidenceKeys, projectJudgeEvidence: binding.projectJudgeEvidence, projectId, flowId, signal: input.judge.signal });
   const judge: typeof asked = async (judged) => {
     const taskChecklist = await AutomationStudioProjectBuildTaskChecklist.whole(environment);
     return await asked(taskChecklist ? { ...judged, taskChecklist } : judged);

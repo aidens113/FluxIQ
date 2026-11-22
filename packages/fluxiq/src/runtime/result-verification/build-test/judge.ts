@@ -111,7 +111,7 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../flows/authoring/model/index.ts";
 import { AutomationStudioCompletedVerificationChecks } from "../completed-checks/index.ts";
 import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
-import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
+import type { AutomationStudioJudgeEvidenceProjector, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts/index.ts";
 import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
@@ -287,6 +287,7 @@ export function automationStudioBuildTestJudge(deps: {
   provider?: AutomationStudioLlmProvider | undefined;
   instructions: readonly AutomationStudioFlowInstruction[];
   deniedEvidenceKeys?: readonly string[] | undefined;
+  projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined;
   projectId: string;
   flowId: string;
   signal?: AbortSignal | undefined;
@@ -323,6 +324,7 @@ export function automationStudioBuildTestJudge(deps: {
         flowId: deps.flowId,
         runId: `build-test.${randomUUID()}`,
         summary: judged,
+        projectJudgeEvidence: deps.projectJudgeEvidence,
         instructions: deps.instructions,
         ...(deps.deniedEvidenceKeys ? { deniedEvidenceKeys: deps.deniedEvidenceKeys } : {}),
         ...(deps.provider ? { provider: deps.provider } : {}),

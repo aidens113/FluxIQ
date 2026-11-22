@@ -107,7 +107,8 @@ function automationStudioFlowLessJudgeDeadline(deadlineMs: number, heldMs: (() =
 }
 
 export async function automationStudioFlowLessJudge(input: AutomationStudioFlowLessJudgeInput): Promise<AutomationStudioFlowLessJudgement> {
-  const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys);
+  if (input.deniedEvidenceKeys === undefined) return { verdict: "unsure", reason: "The current evidence privacy declaration is unavailable, so this result remains unconfirmed.", checkedWhat: "Required semantic evidence could not be disclosed under an unknown privacy declaration." };
+  const { read, sent } = automationStudioFlowLessJudgedSummary(input.summary, input.deniedEvidenceKeys, { projectJudgeEvidence: input.projectJudgeEvidence });
   // Today's race leaves a call running behind its deadline, and a call waiting on a locked key would then be paid for with nobody to read it. This deadline stops the call, and gives back what a person was waited for.
   const expiry = new AbortController();
   const signal = input.signal ? AbortSignal.any([input.signal, expiry.signal]) : expiry.signal;

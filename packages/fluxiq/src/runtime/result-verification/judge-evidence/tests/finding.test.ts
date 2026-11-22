@@ -3,6 +3,11 @@ import { automationStudioJudgeEvidenceFinding, automationStudioProjectJudgeEvide
 import type { AutomationStudioJudgeEvidenceFinding } from "../index.ts";
 
 describe("a durable semantic finding", () => {
+  it("requires a current privacy declaration on reopen; an explicit empty declaration remains valid", () => {
+    const value = { version: 1, role: "action", evidence: { state: "saved" }, missing: [], withheld: false };
+    expect(automationStudioJudgeEvidenceFinding(value, undefined)).toEqual({ ok: false, code: "judge_evidence.denied_keys_missing" });
+    expect(automationStudioJudgeEvidenceFinding(value, [])).toEqual({ ok: true, finding: value });
+  });
   it("survives spread, structuredClone and JSON reopen without re-projecting or losing semantic values", () => {
     let calls = 0;
     const projected = automationStudioProjectJudgeEvidence({ source: "call", evidence: { capture: "raw capture deliberately omitted" } }, () => {

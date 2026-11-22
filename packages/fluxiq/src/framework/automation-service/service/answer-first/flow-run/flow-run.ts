@@ -186,7 +186,7 @@ async function run(ports: AutomationStudioAnswerFirstFlowRunPorts, assembly: Ass
   for (const attempt of executed.trace?.attempts ?? []) if (attempt.failure?.stage === "verification") ports.record.doubted(`node:${attempt.nodeId}`);
   // Everything the run did, for the attempt's judge (header): evidence for a later check, never a reason to lose the run's own answer.
   try {
-    if (ports.trail && executed.trace?.attempts.length) ports.trail.add(automationStudioResultTrailOfAttempts(executed.trace.attempts, executed.graph?.nodes ?? [], ports.trail.viewKeys));
+    if (ports.trail && executed.trace?.attempts.length) await ports.trail.add(automationStudioResultTrailOfAttempts(executed.trace.attempts, executed.graph?.nodes ?? [], ports.trail.viewKeys, ports.trail.semantic));
   } catch {
     /* best-effort: the trail is evidence for a later check, as the call chain's is (`../attempt/call-chain.ts`) */
   }

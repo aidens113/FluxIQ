@@ -13,7 +13,7 @@ import type { AutomationStudioResultTrail, AutomationStudioResultTrailShownStep,
 import { AUTOMATION_STUDIO_RESULT_TRAIL_NOTE } from "./note.ts";
 import { automationStudioResultTrailRepeatsOnce } from "./repeats.ts";
 import { automationStudioResultTrailScreened } from "./screen.ts";
-import { automationStudioJudgeEvidenceFinding } from "../judge-evidence/index.ts";
+import { automationStudioJudgeEvidenceFinding } from "../judge-evidence/finding.ts";
 import { automationStudioResultEvidenceScreen } from "../result-evidence/index.ts";
 
 /** The trail a judge is shown, or none for no steps; `withheld` where anything in it was screened. Absent `deniedEvidenceKeys`, nobody declared them, and nothing is carried. */

@@ -30,6 +30,8 @@ import { AUTOMATION_STUDIO_FLOW_LESS_QUESTION } from "./question.ts";
 import { automationStudioFlowLessReadPagesShown } from "./read-pages-shown.ts";
 import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
+import type { AutomationStudioJudgeEvidenceProjector } from "../../llm/harness-options/index.ts";
+import { automationStudioResultJudgeSummary } from "../judge-evidence/index.ts";
 
 /** Stands in for a value that may not be sent, as a finished run's rows say it. */
 const WITHHELD_VALUE = "[withheld]";
@@ -40,7 +42,7 @@ const ANSWER_NOTE = "The model's own words, not evidence.";
 /** The rows' one record set has no dataset id here: the writer's result names the real one. */
 const SET_ID = "result";
 
-export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioFlowLessSummary, deniedEvidenceKeys: readonly string[]): { read: AutomationStudioRunResultSummary; sent: AutomationStudioRunResultSummary } {
+export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioFlowLessSummary, deniedEvidenceKeys: readonly string[], semantic?: { projectJudgeEvidence?: AutomationStudioJudgeEvidenceProjector | undefined }): { read: AutomationStudioRunResultSummary; sent: AutomationStudioRunResultSummary } {
   const rows = summary.rows ? screenedSet(summary.rows, deniedEvidenceKeys) : undefined;
   const ended = summary.endView ? automationStudioResultEndView(summary.endView, deniedEvidenceKeys) : { withheld: false };
   const before = witness(summary.witnesses?.before, deniedEvidenceKeys);
@@ -85,7 +87,10 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
     ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {})
   };
-  return { read, sent: jsonForm(sent) as unknown as AutomationStudioRunResultSummary };
+  const sendable = jsonForm(sent) as unknown as AutomationStudioRunResultSummary;
+  if (semantic === undefined) return { read, sent: sendable };
+  const projected = automationStudioResultJudgeSummary(sendable, { projectJudgeEvidence: semantic.projectJudgeEvidence, deniedEvidenceKeys });
+  return { read: { ...read, evidenceProjection: projected.evidenceProjection }, sent: projected };
 }
 
 /**

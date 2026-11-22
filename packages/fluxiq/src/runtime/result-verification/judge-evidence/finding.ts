@@ -7,7 +7,8 @@ export type AutomationStudioJudgeEvidenceFinding = { version: 1 } & AutomationSt
 const KEYS = new Set(["version", "role", "evidence", "missing", "withheld"]);
 
 /** Read a durable finding and rescreen it with today's privacy declaration without calling the domain projector again. */
-export function automationStudioJudgeEvidenceFinding(value: unknown, deniedKeys: readonly string[]): { ok: true; finding: AutomationStudioJudgeEvidenceFinding } | { ok: false; code: "judge_evidence.finding_invalid" } {
+export function automationStudioJudgeEvidenceFinding(value: unknown, deniedKeys: readonly string[] | undefined): { ok: true; finding: AutomationStudioJudgeEvidenceFinding } | { ok: false; code: "judge_evidence.finding_invalid" | "judge_evidence.denied_keys_missing" } {
+  if (deniedKeys === undefined) return { ok: false, code: "judge_evidence.denied_keys_missing" };
   const invalid = () => ({ ok: false as const, code: "judge_evidence.finding_invalid" as const });
   if (typeof value !== "object" || value === null || Array.isArray(value)) return invalid();
   let held: Record<string, unknown>;

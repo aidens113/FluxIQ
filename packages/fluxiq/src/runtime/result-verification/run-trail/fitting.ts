@@ -17,6 +17,9 @@ type Item = { item: string; path: readonly (string | number)[] };
 
 /** The summary told more briefly, one more item summarised at each step: the shortest last. Empty where nothing can be. */
 export function automationStudioResultTrailFitting(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary[] {
+  // The semantic format already omits captures. Its exact facts, rows and
+  // accounts must not be traded for labels/counts to fit a provider window.
+  if (summary.evidenceProjection?.version === 1) return [];
   const whole = summary as unknown as JsonObject;
   const forms: AutomationStudioRunResultSummary[] = [];
   const items: string[] = [];
