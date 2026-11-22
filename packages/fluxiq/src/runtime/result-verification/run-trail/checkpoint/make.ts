@@ -7,6 +7,7 @@ import type { AutomationStudioResultTrailSemanticOptions } from "../semantic/opt
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/retry.ts";
 
 /** Private checkpoint from actual ordered findings; safe existing cells are rescreened when a current policy is known. */
 export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationStudioResultTrailStep[], witnesses: { before?: JsonObject; after?: JsonObject }, options: AutomationStudioResultTrailSemanticOptions, prior?: AutomationStudioJudgeEvidenceCheckpoint): AutomationStudioJudgeEvidenceCheckpoint {
@@ -16,8 +17,9 @@ export function automationStudioMakeJudgeCheckpoint(steps: readonly AutomationSt
     return result.ok ? result.finding : gap(result.code);
   };
   const trail = steps.map((step): AutomationStudioJudgeEvidenceCheckpoint["trail"][number] => {
-    const finding = Object.hasOwn(options, "judgeEvidenceVersion") && options.judgeEvidenceVersion !== 1 ? gap("judge_evidence.version_invalid") : Object.hasOwn(step, "judgeEvidence") ? read(step.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence({ source: "legacy", definitionId: step.did, evidence: { evidence: step.found ?? null, ...(step.callId === undefined ? {} : { source: { callId: step.callId } }) } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
-    const identity = { did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: automationStudioResultFrameworkOutcome(step.framework) }) };
+    const original = Object.hasOwn(options, "judgeEvidenceVersion") && options.judgeEvidenceVersion !== 1 ? gap("judge_evidence.version_invalid") : Object.hasOwn(step, "judgeEvidence") ? read(step.judgeEvidence) : { version: 1 as const, ...automationStudioProjectJudgeEvidence({ source: "legacy", definitionId: step.did, evidence: { evidence: step.found ?? null, ...(step.callId === undefined ? {} : { source: { callId: step.callId } }) } }, options.projectJudgeEvidence, options.deniedEvidenceKeys) };
+    const finding = AutomationStudioJudgeEvidenceRetry.finding(step, original, options);
+    const identity = { did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: automationStudioResultFrameworkOutcome(step.framework) }), ...(step.judgeSource === undefined ? {} : { judgeSource: step.judgeSource }), ...(step.judgeSources === undefined ? {} : { judgeSources: step.judgeSources }), ...(step.judgeAct === undefined ? {} : { judgeAct: step.judgeAct }) };
     // Unknown policy is not an empty declaration. Persist no new opaque
     // identities under it; existing semantic findings stay private until read.
     const screened = options.deniedEvidenceKeys === undefined ? { did: "(withheld)", ...(identity.framework === undefined ? {} : { framework: identity.framework }) } : automationStudioResultEvidenceScreen(identity, options.deniedEvidenceKeys).value;

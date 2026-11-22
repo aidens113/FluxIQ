@@ -3,9 +3,11 @@ import { automationStudioStoredJudgeFinding } from "../../judge-evidence/stored-
 import type { AutomationStudioJudgeEvidenceCheckpoint } from "./types.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
+import { readAutomationStudioResultEvidenceSourceRef } from "../../result-evidence/index.ts";
+import { automationStudioReadJudgeActionRef } from "../../judge-evidence/action-ref.ts";
 
 const TOP = new Set(["version", "revision", "trail", "witnesses"]);
-const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence"]);
+const STEP = new Set(["callId", "did", "on", "outcome", "where", "framework", "judgeEvidence", "judgeSource", "judgeSources", "judgeAct"]);
 
 /** Validate private stored shape only. Current capability/privacy checks still govern every model-bound read. */
 export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationStudioJudgeEvidenceCheckpoint | undefined {
@@ -17,6 +19,22 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
     for (const key of ["callId", "on", "outcome", "where"] as const) {
       if (raw[key] !== undefined && typeof raw[key] !== "string") return undefined;
       if (typeof raw[key] === "string") step[key] = raw[key];
+    }
+    if (Object.hasOwn(raw, "judgeSource")) {
+      const source = raw.judgeSource;
+      if (!object(source) || Object.keys(source).some((key) => key !== "source" && key !== "datasetId") || typeof source.source !== "string" || !source.source.trim() || (Object.hasOwn(source, "datasetId") && typeof source.datasetId !== "string")) return undefined;
+      step.judgeSource = { source: source.source, ...(typeof source.datasetId === "string" ? { datasetId: source.datasetId } : {}) };
+    }
+    if (Object.hasOwn(raw, "judgeSources")) {
+      if (!Array.isArray(raw.judgeSources) || raw.judgeSources.length === 0) return undefined;
+      const sources = raw.judgeSources.map(readAutomationStudioResultEvidenceSourceRef);
+      if (sources.some((source) => source === undefined)) return undefined;
+      step.judgeSources = sources as NonNullable<typeof step.judgeSources>;
+    }
+    if (Object.hasOwn(raw, "judgeAct")) {
+      const act = automationStudioReadJudgeActionRef(raw.judgeAct);
+      if (act === undefined || (step.callId !== undefined && step.callId !== act.callId)) return undefined;
+      step.judgeAct = act;
     }
     if (raw.framework !== undefined) {
       if (!object(raw.framework)) return undefined;
@@ -32,7 +50,7 @@ export function automationStudioReadJudgeCheckpoint(value: unknown): AutomationS
     if (finding === undefined) return undefined;
     // Structural credential enforcement only, not current domain disclosure
     // policy. Opaque identities/framework facts cannot carry a credential.
-    if (automationStudioResultEvidenceScreen({ did: step.did, ...(step.callId === undefined ? {} : { callId: step.callId }), ...(step.on === undefined ? {} : { on: step.on }), ...(step.outcome === undefined ? {} : { outcome: step.outcome }), ...(step.where === undefined ? {} : { where: step.where }), ...(step.framework === undefined ? {} : { framework: step.framework }) }, []).withheld) return undefined;
+    if (automationStudioResultEvidenceScreen(step as unknown as JsonObject, []).withheld) return undefined;
     step.judgeEvidence = finding;
     trail.push(step);
   }

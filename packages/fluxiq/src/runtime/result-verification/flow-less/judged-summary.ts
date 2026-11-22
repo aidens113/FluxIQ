@@ -32,6 +32,7 @@ import { automationStudioFlowLessScreenedWords } from "./screened-words.ts";
 import type { AutomationStudioFlowLessSummary } from "./types.ts";
 import { automationStudioJudgeEvidenceCapability, type AutomationStudioJudgeEvidenceProjector } from "../../llm/harness-options/index.ts";
 import { automationStudioResultJudgeSummary } from "../judge-evidence/index.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../judge-evidence/retry.ts";
 
 /** Stands in for a value that may not be sent, as a finished run's rows say it. */
 const WITHHELD_VALUE = "[withheld]";
@@ -82,7 +83,7 @@ export function automationStudioFlowLessJudgedSummary(summary: AutomationStudioF
     ...(rows?.columnLabels ? { columnLabels: rows.columnLabels } : {}),
     acts: acts.map((act) => ({ ...act, what: act.what.text, where: act.where.text })),
     ...(answer.text ? { answerText: { author: "model", note: ANSWER_NOTE, text: answer.text } } : {}),
-    ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}) } } : {}),
+    ...(before.view || after.view ? { witnesses: { ...(before.view ? { before: before.view } : {}), ...(after.view ? { after: after.view } : {}), ...(summary.witnesses?.association === undefined ? {} : { association: summary.witnesses.association }) } } : {}),
     ...(looked.looks.length ? { looked: looked.looks } : {}),
     ...(readPages.pages.length ? { readPages: readPages.pages } : {}),
     ...(resultEvidence ? { resultEvidence: resultEvidence.value } : {})
@@ -112,6 +113,7 @@ function jsonForm(value: unknown, holding: Set<object> = new Set()): JsonValue |
       const kept = jsonForm(member, holding);
       if (kept !== undefined) shown[key] = kept;
     }
+    AutomationStudioJudgeEvidenceRetry.carry(value, shown);
     return shown;
   } finally {
     holding.delete(value);

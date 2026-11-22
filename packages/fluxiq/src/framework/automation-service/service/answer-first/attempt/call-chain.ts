@@ -58,6 +58,7 @@ import { automationStudioResultTrailStepOfCall, type AutomationStudioResultTrail
 import type { AutomationStudioAnswerFirstResultFeed } from "../result-feed/index.ts";
 import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 import type { AutomationStudioAnswerFirstWitnesses } from "../witnesses/index.ts";
+import { AutomationStudioJudgeEvidenceOrigins } from "../../../../../runtime/result-verification/judge-evidence/origins.ts";
 
 type Execute = AutomationStudioHarnessOptionLoopBinding["executeTool"];
 
@@ -78,8 +79,8 @@ export function automationStudioAnswerFirstCallChain(input: {
   record: AutomationStudioAttemptActRecord;
   sink: Pick<AutomationStudioAnswerFirstRowSink, "fromCall">;
   /** The attempt's one result, told every call's answer and what the sink stored of it (header). Absent, no read is told anything. */
-  result?: Pick<AutomationStudioAnswerFirstResultFeed, "called"> | undefined;
-  witnesses: Pick<AutomationStudioAnswerFirstWitnesses, "beforeFirstLastingAct">;
+  result?: (Pick<AutomationStudioAnswerFirstResultFeed, "called"> & Partial<Pick<AutomationStudioAnswerFirstResultFeed, "sourceRefs">>) | undefined;
+  witnesses: Pick<AutomationStudioAnswerFirstWitnesses, "beforeFirstLastingAct"> & Partial<Pick<AutomationStudioAnswerFirstWitnesses, "settled">>;
   readRowsKey: string | undefined;
   describe: ((call: { toolId: string; value: JsonObject }) => { target?: string | undefined; wouldRunWith?: JsonObject | undefined } | undefined) | undefined;
   /** One call reached the domain. */
@@ -94,6 +95,7 @@ export function automationStudioAnswerFirstCallChain(input: {
   judgeEvidence?: AutomationStudioResultTrailSemanticOptions | undefined;
 }): Execute {
   const handedOn = new Set<string>();
+  const pending = new Map<Parameters<Execute>[0], AutomationStudioResultTrailStep>();
   const noteLook = (answer: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult, callId: string) => {
     if (!input.looked || input.record.acts().length === 0) return;
     const look = lookOf(answer, input.readRowsKey);
@@ -113,17 +115,16 @@ export function automationStudioAnswerFirstCallChain(input: {
     } catch {
       /* best-effort: a look's note is evidence for a later check, never a reason to lose the call's answer */
     }
-    try {
-      if (input.trailed) {
-        const about = described({ toolId: call.toolId, value: call.value });
-        const on = "said" in about && typeof about.said?.target === "string" ? about.said.target : undefined;
-        await input.trailed(automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on, input.judgeEvidence));
-      }
-    } catch {
-      /* best-effort: the trail is evidence for a later check, never a reason to lose the call's answer */
-    }
-    // The result's line goes on the read's own answer (header); the trail above keeps the domain's answer as it came.
-    const recorded = isExecution(answer) ? input.result?.called({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, rows) : undefined;
+    const about = described({ toolId: call.toolId, value: call.value });
+    const on = "said" in about && typeof about.said?.target === "string" ? about.said.target : undefined;
+    const step = automationStudioResultTrailStepOfCall({ callId: call.callId, toolId: call.toolId, value: call.value }, answer, on, input.judgeEvidence);
+    if (input.judgeEvidence?.judgeEvidenceVersion === 1) step.judgeSource = { source: call.callId, ...(rows?.datasetId === undefined ? {} : { datasetId: rows.datasetId }) };
+    pending.set(call, step);
+    AutomationStudioJudgeEvidenceOrigins.capture(call, step);
+    // The trail keeps the original domain answer; result recording precedes its checkpoint so origin tuples are actual.
+    const recorded = isExecution(answer) ? input.result?.called(call, answer, rows) : undefined;
+    const refs = input.result?.sourceRefs?.(call.callId);
+    if (refs?.length && step.judgeSource !== undefined) AutomationStudioJudgeEvidenceOrigins.recorded([], refs, call);
     const line = rows?.failure ? `The read's rows could not be stored (${rows.failure.code}). They did not enter the result. Recover the read before claiming these rows.` : recorded;
     return isExecution(answer) && line ? withResultNote(answer, line) : answer;
   };
@@ -137,6 +138,13 @@ export function automationStudioAnswerFirstCallChain(input: {
   const gated = automationStudioAttemptActGate({
     record: input.record,
     executeTool: stored,
+    settled(ref) {
+      if (input.judgeEvidence?.judgeEvidenceVersion !== 1) return;
+      const actual = [...pending.entries()].filter(([call]) => call.callId === ref.callId);
+      if (actual.length !== 1) return;
+      actual[0]![1].judgeAct = { ...ref };
+      input.witnesses.settled?.(ref);
+    },
     ...(input.readRowsKey ? { readRowsKey: input.readRowsKey } : {}),
     wordsOf: (call, answer) => {
       const about = described(call);
@@ -155,7 +163,15 @@ export function automationStudioAnswerFirstCallChain(input: {
   return async (call) => {
     if (call.value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: NO_RESET_CODE, instruction: NO_RESET_SAID }, effectApplied: false, targetsUnchanged: true, resultCode: NO_RESET_CODE };
     if (declaresLasting(call.value)) await input.witnesses.beforeFirstLastingAct();
-    return await gated(call);
+    try { return await gated(call); }
+    finally {
+      const step = pending.get(call);
+      pending.delete(call);
+      if (step !== undefined) {
+        try { await input.trailed?.(step); }
+        catch { /* Evidence persistence cannot change the actual call or settlement. */ }
+      }
+    }
   };
 }
 

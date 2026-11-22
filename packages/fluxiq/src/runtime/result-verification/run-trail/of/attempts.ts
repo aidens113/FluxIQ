@@ -27,6 +27,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioResultTrailStep } from "../../contracts/index.ts";
 import { automationStudioResultTrailSemanticStep, type AutomationStudioResultTrailSemanticOptions } from "../semantic/index.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
+import { automationStudioRecordBatchKey } from "../../../../engine/automation/records/index.ts";
 
 /** One traced attempt, as far as this reads it. */
 type TracedAttempt = {
@@ -52,13 +53,16 @@ export function automationStudioResultTrailOfAttempts(attempts: readonly TracedA
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const keys = (viewKeys ?? []).filter((key) => !key.includes("."));
   const steps: AutomationStudioResultTrailStep[] = [];
-  const walk = (list: readonly TracedAttempt[] | undefined): void => {
+  const walk = (list: readonly TracedAttempt[] | undefined, path: readonly string[]): void => {
     for (const attempt of list ?? []) {
-      steps.push(stepOf(attempt, byId.get(attempt.nodeId), keys, semantic));
-      walk(attempt.childTrace?.attempts);
+      const step = stepOf(attempt, byId.get(attempt.nodeId), keys, semantic);
+      if (semantic?.judgeEvidenceVersion === 1 && attempt.attemptId !== undefined) step.judgeSource = { source: automationStudioRecordBatchKey(path, attempt.attemptId) };
+      steps.push(step);
+      if (attempt.attemptId !== undefined) walk(attempt.childTrace?.attempts, [...path, attempt.attemptId]);
+      else walk(attempt.childTrace?.attempts, path);
     }
   };
-  walk(attempts);
+  walk(attempts, []);
   return steps;
 }
 

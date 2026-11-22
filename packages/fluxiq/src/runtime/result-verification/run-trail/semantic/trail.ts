@@ -6,6 +6,7 @@ import { automationStudioProjectJudgeEvidence, type AutomationStudioJudgeEvidenc
 import { automationStudioResultEvidenceScreen } from "../../result-evidence/index.ts";
 import { automationStudioResultFrameworkOutcome } from "../framework-outcome.ts";
 import type { AutomationStudioResultTrailSemanticOptions } from "./options.ts";
+import { AutomationStudioJudgeEvidenceRetry } from "../../judge-evidence/retry.ts";
 
 const NOTE = "Core's ordered record of every call, read and act. found contains the domain's semantic finding, with raw captures deliberately omitted. framework contains actual execution status, failure and effect facts; a successful command alone does not prove its lasting effect. Data rows, source pages and processing/comparison/removal accounts are supplied separately in full. missing names unavailable semantic evidence; intentional omission of a capture is not a gap. Judge from these findings and the final data together, and name a concrete contradiction or the requested part for which evidence is missing.";
 
@@ -28,7 +29,7 @@ export function automationStudioResultSemanticTrail(trail: AutomationStudioResul
     if (options.invalidFormat) finding = { missing: ["judge_evidence.version_invalid"], withheld: true };
     else if (Object.hasOwn(step, "judgeEvidence")) {
       const reopened = automationStudioJudgeEvidenceFinding(step.judgeEvidence, deniedKeys);
-      finding = reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true };
+      finding = reopened.ok ? AutomationStudioJudgeEvidenceRetry.finding(step, reopened.finding, options) : { missing: [reopened.code], withheld: true };
     } else if (options.alreadyProjected) {
       const reopened = automationStudioShownJudgeFinding(step.found, deniedKeys);
       finding = reopened.ok ? reopened.finding : { missing: [reopened.code], withheld: true };
@@ -48,6 +49,7 @@ export function automationStudioResultSemanticTrail(trail: AutomationStudioResul
     if (finding?.role !== undefined) found.role = finding.role;
     if (finding?.evidence !== undefined) found.evidence = finding.evidence;
     if (finding?.missing.length) found.missing = [...finding.missing];
+    if (finding && "history" in finding && finding.history !== undefined) found.history = finding.history as unknown as JsonObject["history"];
     return { ...(identity.value as JsonObject), n: step.n, did: typeof (identity.value as JsonObject)?.did === "string" ? (identity.value as JsonObject).did as string : "(withheld)", ...(Object.keys(found).length ? { found } : {}), ...(facts === undefined || Object.keys(facts.value).length === 0 ? {} : { framework: facts.value }) } as AutomationStudioResultTrailShownStep;
   });
   return { ...(entries.length ? { trail: { note: NOTE, entries } } : {}), projection: { version: 1, missing }, withheld };

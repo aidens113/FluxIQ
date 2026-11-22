@@ -20,6 +20,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ANSWER_FIRST_EARLIER_BEFORE_WORDS as WORDS } from "./earlier-words.ts";
 import type { AutomationStudioAnswerFirstWitnessesInput } from "./input.ts";
 import type { AutomationStudioAnswerFirstWitnessNote, AutomationStudioAnswerFirstWitnessRead, AutomationStudioAnswerFirstWitnessReadings, AutomationStudioAnswerFirstWitnessSide } from "./reading.ts";
+import type { AutomationStudioJudgeActionRef } from "../../../../../runtime/result-verification/judge-evidence/action-ref.ts";
 
 export type AutomationStudioAnswerFirstWitnesses = {
   /** Reads the before side once; a later call, even a concurrent one, gets the same answer. */
@@ -30,6 +31,8 @@ export type AutomationStudioAnswerFirstWitnesses = {
   readings(): AutomationStudioAnswerFirstWitnessReadings;
   /** The sides whose read gave nothing, in the order they failed. */
   notes(): readonly AutomationStudioAnswerFirstWitnessNote[];
+  /** Only a real Core act settlement calls this. */
+  settled(ref: AutomationStudioJudgeActionRef): void;
 };
 
 export function automationStudioAnswerFirstWitnesses(input: AutomationStudioAnswerFirstWitnessesInput): AutomationStudioAnswerFirstWitnesses {
@@ -37,6 +40,8 @@ export function automationStudioAnswerFirstWitnesses(input: AutomationStudioAnsw
   const notes: AutomationStudioAnswerFirstWitnessNote[] = [];
   const reads = new Map<AutomationStudioAnswerFirstWitnessSide, Promise<AutomationStudioAnswerFirstWitnessRead>>();
   const carriedIn = input.earlier;
+  const settled = new Map<string, AutomationStudioJudgeActionRef>();
+  const association = { version: 1 as const, before: [] as AutomationStudioJudgeActionRef[], after: [] as AutomationStudioJudgeActionRef[] };
   const keep = (before: JsonObject): void => {
     try {
       input.keep?.(before);
@@ -58,10 +63,12 @@ export function automationStudioAnswerFirstWitnesses(input: AutomationStudioAnsw
       return { kind: "unread", note };
     };
     const read = (async (): Promise<AutomationStudioAnswerFirstWitnessRead> => {
+      const covered = side === "after" ? [...settled.values()] : [];
       try {
         const reading = await input.read(side);
         if (reading === undefined) return unread();
         readings[side] = reading;
+        if (side === "after") association.after = covered;
         if (side === "before" && !carriedIn) keep(reading);
         return { kind: "read", reading };
       } catch (error) {
@@ -74,8 +81,17 @@ export function automationStudioAnswerFirstWitnesses(input: AutomationStudioAnsw
   return {
     beforeFirstLastingAct: () => once("before"),
     atEnd: () => once("after"),
-    readings: () => shown(readings, carriedIn),
-    notes: () => [...notes]
+    readings: () => ({ ...shown(readings, carriedIn), ...(settled.size === 0 ? {} : { association: structuredClone(association) }) }),
+    notes: () => [...notes],
+    settled(ref) {
+      if (settled.has(ref.callId)) return;
+      settled.set(ref.callId, { ...ref });
+      if (readings.before !== undefined && (!carriedIn || carriedIn.before !== undefined)) association.before.push({ ...ref });
+      // A later act makes the prior end historical. The next completion must read a fresh after.
+      reads.delete("after");
+      delete readings.after;
+      association.after = [];
+    }
   };
 }
 

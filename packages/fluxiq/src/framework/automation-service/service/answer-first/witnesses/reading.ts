@@ -1,10 +1,11 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioJudgeWitnessAssociation } from "../../../../../runtime/result-verification/judge-evidence/witness-association.ts";
 
 /** Which side of the exploration a witness read is: before its first lasting act, or at its end. */
 export type AutomationStudioAnswerFirstWitnessSide = "before" | "after";
 
 /** The witnesses' readings as the Flow-less judge's summary carries them (`witnesses: { before?, after? }`). */
-export type AutomationStudioAnswerFirstWitnessReadings = { before?: JsonObject; after?: JsonObject };
+export type AutomationStudioAnswerFirstWitnessReadings = { before?: JsonObject; after?: JsonObject; association?: AutomationStudioJudgeWitnessAssociation };
 
 /** What one side's read came to: its reading, or the note saying it gave nothing. */
 export type AutomationStudioAnswerFirstWitnessRead = { kind: "read"; reading: JsonObject } | { kind: "unread"; note: AutomationStudioAnswerFirstWitnessNote };
