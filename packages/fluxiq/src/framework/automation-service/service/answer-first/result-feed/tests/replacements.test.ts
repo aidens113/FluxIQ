@@ -43,6 +43,27 @@ it("does not grant page authority to an unrelated place or an indistinguishable 
   expect(p.feed.evidence().sourceReplacements).toBeUndefined();
 });
 
+it("cannot use a previously observed target tuple to repair held evidence or reinterpret its later contents", () => {
+  const p = automaticFeed({ columns: ["title"] });
+  const step = p.read("old", [row]);
+  reread(p.feed, step, "shared", [{ ...row, id: "b" }], SCHEMA, "page=2");
+  p.feed.sourceUnavailable("Repair both exact source pages.", p.feed.evidence());
+  reread(p.feed, step, "shared", [{ ...row, title: "A different occurrence under the same tuple" }], SCHEMA, "page=1");
+  expect(p.feed.evidence().sourceReplacements).toBeUndefined();
+});
+
+it("never mints a later replacement from a tuple whose contents were indistinguishably reused", () => {
+  const p = automaticFeed({ columns: ["title"] });
+  const step = p.read("old", [row]);
+  reread(p.feed, step, "shared", [row], SCHEMA, "page=1");
+  const first = p.feed.evidence().sourceReplacements;
+  expect(first?.receipts).toHaveLength(1);
+  reread(p.feed, step, "shared", [{ ...row, title: "Changed with no new identity" }], SCHEMA, "page=1");
+  reread(p.feed, step, "latest", [row], SCHEMA, "page=1");
+  expect(p.feed.evidence().sourceReplacements).toEqual(first);
+  expect(p.feed.evidence().sourceReplacements?.receipts.some((entry) => entry.from.some((ref) => ref.source === "shared"))).toBe(false);
+});
+
 it.each([undefined, 1])("cannot mint authority without a known zero original rejection count: %s", (invalidCount) => {
   const p = automaticFeed({ columns: ["title"] });
   const step = p.read("old", [row]);

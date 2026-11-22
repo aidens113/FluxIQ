@@ -29,7 +29,7 @@ export function automationStudioAnswerFirstResultReplacements() {
   const page = (from: AutomationStudioResultEvidencePage, to: AutomationStudioResultEvidencePage, schema: AutomationStudioRecordSchema | undefined): boolean => {
     if (!samePage(from, to) || key(from) === key(to) || !fresh(to, schema)) return false;
     const reused = history.get(key(to));
-    if (reused?.observed && !current.some((prior) => key(prior) === key(to))) return false;
+    if (reused?.observed) return false;
     return add({ kind: "page", from: [ref(from)], to: [ref(to)] });
   };
   return {
@@ -48,7 +48,7 @@ export function automationStudioAnswerFirstResultReplacements() {
       // Both directions must be unique. A pair of indistinguishable page associations authorises neither.
       for (const prior of removed) {
         const matches = added.filter((entry) => samePage(prior, entry));
-        if (matches.length === 1 && removed.filter((entry) => samePage(entry, matches[0]!)).length === 1) page(prior, matches[0]!, schemas.get(matches[0]!.source));
+        if (matches.length === 1 && bundle.pages.filter((entry) => key(entry) === key(matches[0]!)).length === 1 && removed.filter((entry) => samePage(entry, matches[0]!)).length === 1) page(prior, matches[0]!, schemas.get(matches[0]!.source));
       }
       remember(bundle.pages, true);
       current = structuredClone(bundle.pages);
