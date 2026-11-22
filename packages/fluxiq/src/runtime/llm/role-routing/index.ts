@@ -1,7 +1,5 @@
-// A run's model per role (W3, t899): each model call goes to the model its role names
-// (`AutomationStudioRunOverrides["models"]`), through one provider that routes by role, and is
-// measured, held and charged at the model that served it (`ModelProvider.servedBy`). No run frame,
-// or no models, is exactly one provider, as before.
+// Automation keeps one starting model across roles. Role labels and historical ladder exports
+// remain available for accounting, record compatibility and continuation identity.
 export type { AutomationStudioLlmModelRole } from "./kind-roles.ts";
 export { AUTOMATION_STUDIO_LLM_TASK_KIND_ROLES } from "./kind-roles.ts";
 export { automationStudioLlmModelRoleOf } from "./request-role.ts";

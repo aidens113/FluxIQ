@@ -52,6 +52,14 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 
 ## Work Ledger
 
+### 2026-11-22 ? t983 combined lead acceptance
+
+- Merged accepted permission source and current dev; semantic auto-merge preserves taskActs and fixed-model interpretation. Core version 0.51.0. Final parent sync changed documentation only.
+- Validation: `pnpm --filter fluxiq exec vitest run src/framework/automation-service/service/answer-first/task-model/tests/resolve.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-seams.test.ts src/framework/automation-service/service/answer-first/attempt/tests/caller-replay.test.ts src/framework/automation-service/service/answer-first/chat-permission/tests src/runtime/conversations/instructions/tests/unanswered-task.test.ts src/runtime/conversations/instructions/tests/recorded-chat-requests.test.ts src/runtime/conversations/instructions/tests/interpret.test.ts src/runtime/conversations/instructions/tests/acts.test.ts src/runtime/llm/anthropic/tests/panel-command-climb.test.ts src/runtime/llm/role-routing/tests src/runtime/llm/role-routing/ladder/tests/state.test.ts src/runtime/llm/decision-handlers/tests/loop-decision.test.ts src/runtime/llm/attempt-loop/tests/run.test.ts --maxWorkers=1 --minWorkers=1 --fileParallelism=false` -> 20 files, 140/140 tests passed, 152.82 s.
+- Validation: `pnpm --filter fluxiq check` -> exit 0, 90624 ms. `node scripts/structure-audit.mjs` -> passed, 564 warnings, 909 baselined. All through machine heavy-slot gate in t983 Core.
+- Validation: `pnpm --workspace-concurrency=1 --filter @fluxiq/contracts --filter @fluxiq/sdk --filter fluxiq --filter @fluxiq/client-gateway-websocket --filter @fluxiq/ui-components build` -> exit 0; fluxiq build 155364 ms, UI build 17430 ms, other libraries reused current stamps. Paired integration next. No paid/live/full-sweep claim.
+
+
 ### 2026-11-22 ? Permission paired integration
 
 - Validation: downstream `pnpm task finish t976` -> structure audit passed, merged, worktree removed. Core `pnpm task finish t976 --skip-checks` -> mandatory contract gate 70/70 passed; merged and task branch detached/deleted. Independent acceptance commands/results recorded below.

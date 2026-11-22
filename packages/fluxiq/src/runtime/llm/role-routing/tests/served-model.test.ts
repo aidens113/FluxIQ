@@ -56,16 +56,16 @@ describe("a call routed by role", () => {
     const result = await automationStudioLlmBuildPurseScope(purse, () => harness({ provider, runBudget: ledger }));
 
     expect(result.ok, JSON.stringify(result.diagnostics)).toBe(true);
-    expect(sent).toEqual(["dear:runtime_diagnosis"]);
-    expect(result.provider).toEqual({ provider: "mock", model: "dear" });
-    expect(result.intervention.model).toBe("dear");
+    expect(sent).toEqual(["cheap:runtime_diagnosis"]);
+    expect(result.provider).toEqual({ provider: "mock", model: "cheap" });
+    expect(result.intervention.model).toBe("cheap");
     // Measured by the model that serves it, and held at its price for that measure and the reply's reserve.
-    expect(result.request.estimatedInputTokens).toBe(MODELS.dear.measures);
-    expect(purse.lastProjectedCostUsd).toBeCloseTo((MODELS.dear.measures + 2_000) * MODELS.dear.perToken, 12);
+    expect(result.request.estimatedInputTokens).toBe(MODELS.cheap.measures);
+    expect(purse.lastProjectedCostUsd).toBeCloseTo((MODELS.cheap.measures + 2_000) * MODELS.cheap.perToken, 12);
     // Charged what it reported costing, on the run's receipt under its own model.
-    expect(purse.spentUsd()).toBeCloseTo((MODELS.dear.measures + 10) * MODELS.dear.perToken, 12);
-    expect(ledger.snapshot(RUN).estimatedCostUsd).toBeCloseTo((MODELS.dear.measures + 10) * MODELS.dear.perToken, 12);
-    expect(ledger.callRecords(RUN).calls[0]).toMatchObject({ model: "dear", provider: "mock", taskKind: "runtime_diagnosis" });
+    expect(purse.spentUsd()).toBeCloseTo((MODELS.cheap.measures + 10) * MODELS.cheap.perToken, 12);
+    expect(ledger.snapshot(RUN).estimatedCostUsd).toBeCloseTo((MODELS.cheap.measures + 10) * MODELS.cheap.perToken, 12);
+    expect(ledger.callRecords(RUN).calls[0]).toMatchObject({ model: "cheap", provider: "mock", taskKind: "runtime_diagnosis" });
   });
 
   it("prices one attempt's calls each at its own model, under the one purse", async () => {
@@ -93,7 +93,7 @@ describe("a call routed by role", () => {
       return purse.judgingHoldUsd();
     };
 
-    expect(await reserveAfterOneCall(routed)).toBeCloseTo(1_100 * MODELS.dear.perToken, 12);
+    expect(await reserveAfterOneCall(routed)).toBeCloseTo(1_100 * MODELS.cheap.perToken, 12);
     // A provider that routes nothing prices the reserve at its own model, as before.
     expect(await reserveAfterOneCall(model("cheap", sent))).toBeCloseTo(1_100 * MODELS.cheap.perToken, 12);
   });

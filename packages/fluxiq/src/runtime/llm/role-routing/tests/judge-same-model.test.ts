@@ -16,7 +16,7 @@ async function resolver(input: AutomationStudioLlmProviderResolverInput): Promis
 describe("a judge retrying on the same model", () => {
   it("ignores obsolete judge climb metadata and keeps the starting model", async () => {
     const resolution = await automationStudioLlmRoleRoutedResolution(resolver, { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
-    const served = (request: AutomationStudioLlmTaskRequest) => resolution?.provider.servedBy?.(request).metadata.model;
+    const served = (request: AutomationStudioLlmTaskRequest) => (resolution?.provider.servedBy?.(request) ?? resolution?.provider)?.metadata.model;
     const attempt = automationStudioLlmModelLadder();
     const seen = runWithAutomationStudioLlmModelLadder(attempt, () => [
       served(judge()), served(judge({ judgeRungsUp: 1 })), served(judge({ judgeRungsUp: 2 })), served(judge({ judgeRungsUp: 5 })),
@@ -30,7 +30,7 @@ describe("a judge retrying on the same model", () => {
 
   it("keeps a continuing judge gone standalone on the decider's model", async () => {
     const resolution = await automationStudioLlmRoleRoutedResolution(resolver, { projectId: "p", flowId: "f", modelId: "claude-haiku-5-5" });
-    const served = (request: AutomationStudioLlmTaskRequest) => resolution?.provider.servedBy?.(request).metadata.model;
+    const served = (request: AutomationStudioLlmTaskRequest) => (resolution?.provider.servedBy?.(request) ?? resolution?.provider)?.metadata.model;
     const attempt = automationStudioLlmModelLadder();
     const seen = runWithAutomationStudioLlmModelLadder(attempt, () => {
       served(decision);
@@ -38,14 +38,14 @@ describe("a judge retrying on the same model", () => {
       return [served(judge({ continuesDecider: true })), served(judge({ judgeStandaloneAfterUnreadable: true })), served(judge({ judgeStandaloneAfterUnreadable: true, judgeRungsUp: 1 })), served(judge())];
     });
     // The decider climbed to Sonnet: all standalone retries stay there and other judges keep the base.
-    expect(seen).toEqual(["claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
+    expect(seen).toEqual(Array(4).fill("claude-haiku-5-5"));
   });
 
   it("uses its own provider without a ladder", () => {
     const explore = { metadata: { provider: "mock", model: "explore" }, runTask: async () => ({}) } as unknown as AutomationStudioLlmProvider;
     const own = { metadata: { provider: "mock", model: "judge" }, runTask: async () => ({}) } as unknown as AutomationStudioLlmProvider;
     const routed = automationStudioLlmProviderRoutedByRole({ explore, judge: own });
-    expect(routed.servedBy?.(judge({ judgeRungsUp: 1 })).metadata.model).toBe("judge");
-    expect(routed.servedBy?.(judge({ judgeStandaloneAfterUnreadable: true })).metadata.model).toBe("judge");
+    expect(routed.servedBy?.(judge({ judgeRungsUp: 1 })).metadata.model).toBe("explore");
+    expect(routed.servedBy?.(judge({ judgeStandaloneAfterUnreadable: true })).metadata.model).toBe("explore");
   });
 });

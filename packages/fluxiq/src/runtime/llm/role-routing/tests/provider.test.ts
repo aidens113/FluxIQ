@@ -1,4 +1,4 @@
-// One provider over a model per role: each request reaches its role's model, `servedBy` names it, a person's wait on
+// One provider over a model per role: every request keeps its starting model, `servedBy` names it, a person's wait on
 // any of them is heard, and a domain's instructions are stamped on what it serves.
 import { describe, expect, it } from "vitest";
 import { automationStudioLlmProviderWithDomainInstructions } from "../../domain-instructions/index.ts";
@@ -20,7 +20,7 @@ function model(name: string, ran: string[], over: Partial<AutomationStudioLlmPro
 }
 
 describe("a provider routed by role", () => {
-  it("sends each request to its role's model and names that model to whoever asks", async () => {
+  it("sends every role to its starting model and names that model to whoever asks", async () => {
     const ran: string[] = [];
     const explore = model("cheap", ran);
     const judge = model("dear", ran);
@@ -31,21 +31,21 @@ describe("a provider routed by role", () => {
     await routed.runTask(request("runtime_patch"));
     await runWithAutomationStudioLlmModelRole("repair", async () => await routed.runTask(request("evidence_tool_decision")));
 
-    expect(ran).toEqual(["cheap:evidence_tool_decision:-", "dear:loop_verification:-", "cheap:runtime_patch:-", "cheap:evidence_tool_decision:-"]);
-    expect(routed.servedBy?.(request("loop_verification"))).toBe(judge);
+    expect(ran).toEqual(["cheap:evidence_tool_decision:-", "cheap:loop_verification:-", "cheap:runtime_patch:-", "cheap:evidence_tool_decision:-"]);
+    expect(routed.servedBy?.(request("loop_verification"))).toBe(explore);
     expect(routed.servedBy?.(request("flow_bootstrap"))).toBe(explore);
     // The attempt's own model is the explore model, and a price asked without a request is its.
     expect(routed.metadata).toEqual(explore.metadata);
     expect(routed.estimateCostUsd?.({ inputTokens: 10, outputTokens: 0 })).toBe(10);
   });
 
-  it("routes a repair round's decisions to the repair model", async () => {
+  it("keeps repair rounds on the starting model", async () => {
     const ran: string[] = [];
     const routed = automationStudioLlmProviderRoutedByRole({ explore: model("cheap", ran), repair: model("fixer", ran) });
     await runWithAutomationStudioLlmModelRole("repair", async () => await routed.runTask(request("evidence_tool_decision")));
     await routed.runTask(request("runtime_diagnosis"));
     await routed.runTask(request("evidence_tool_decision"));
-    expect(ran).toEqual(["fixer:evidence_tool_decision:-", "fixer:runtime_diagnosis:-", "cheap:evidence_tool_decision:-"]);
+    expect(ran).toEqual(["cheap:evidence_tool_decision:-", "cheap:runtime_diagnosis:-", "cheap:evidence_tool_decision:-"]);
   });
 
   it("measures and waits by the model that serves, and hears a person's wait on any model", async () => {
@@ -62,21 +62,21 @@ describe("a provider routed by role", () => {
     });
     const routed = automationStudioLlmProviderRoutedByRole({ explore: withHolds("cheap", 5), judge: withHolds("dear", 7) });
 
-    expect(routed.measureInput?.(request("loop_verification"))).toEqual({ estimatedInputTokens: 7, estimatedInputBytes: 21 });
+    expect(routed.measureInput?.(request("loop_verification"))).toEqual({ estimatedInputTokens: 5, estimatedInputBytes: 15 });
     await routed.whenReady?.(request("loop_verification"));
-    expect(waited).toEqual(["dear"]);
+    expect(waited).toEqual(["cheap"]);
     const heard: string[] = [];
     const stop = routed.observeHolds?.((state) => void heard.push(state));
-    listeners.dear?.("started", 0);
+    listeners.cheap?.("started", 0);
     listeners.cheap?.("ended", 3);
     expect(heard).toEqual(["started", "ended"]);
     stop?.();
     expect(Object.keys(listeners)).toEqual([]);
   });
 
-  it("refuses to measure on a model that does not, so the harness measures the packed request", () => {
+  it("measures on the starting model despite a legacy alternate judge", () => {
     const routed = automationStudioLlmProviderRoutedByRole({ explore: model("cheap", [], { measureInput: () => ({ estimatedInputTokens: 1, estimatedInputBytes: 3 }) }), judge: model("dear", []) });
-    expect(() => routed.measureInput?.(request("loop_verification"))).toThrow(/dear/u);
+    expect(routed.measureInput?.(request("loop_verification"))).toEqual({ estimatedInputTokens: 1, estimatedInputBytes: 3 });
   });
 
   it("is stamped by a domain's instructions on whichever model serves, and names that one through the wrapper", async () => {
@@ -89,9 +89,9 @@ describe("a provider routed by role", () => {
     const served = wrapped.servedBy?.(request("loop_verification"));
     await served?.runTask(request("loop_verification", "r2"));
 
-    expect(ran).toEqual(["dear:loop_verification:web", "dear:loop_verification:web"]);
-    expect(served?.metadata.model).toBe("dear");
-    expect(served?.estimateCostUsd?.({ inputTokens: 10, outputTokens: 0 })).toBe(20);
+    expect(ran).toEqual(["cheap:loop_verification:web", "cheap:loop_verification:web"]);
+    expect(served?.metadata.model).toBe("cheap");
+    expect(served?.estimateCostUsd?.({ inputTokens: 10, outputTokens: 0 })).toBe(10);
     // A provider that routes nothing has nothing to forward.
     expect(automationStudioLlmProviderWithDomainInstructions(judge, instructions).servedBy).toBeUndefined();
   });

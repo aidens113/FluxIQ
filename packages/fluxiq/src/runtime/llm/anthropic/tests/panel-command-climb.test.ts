@@ -27,15 +27,15 @@ function adapter(model: AutomationStudioAnthropicModel) {
 
 const execution = () => ({ signal: new AbortController().signal, caller: null });
 
-describe("a chat attempt asked one rung up", () => {
-  it("is sent to the next model on the ladder, with no thinking, and an ordinary attempt is not", async () => {
+describe("a chat retry retaining its starting model", () => {
+  it("keeps its starting model despite historical climb metadata", async () => {
     const { chat, sent } = adapter("claude-haiku-5-5");
     await chat.decide(REQUEST, execution());
     await chat.decide({ ...REQUEST, correction: "You said their message is a task and answered it with a reply.", climb: { reason: "task_answered_in_words" } }, execution());
-    expect(sent.map((body) => body.model)).toEqual(["claude-haiku-5-5", "claude-sonnet-5-5"]);
+    expect(sent.map((body) => body.model)).toEqual(["claude-haiku-5-5", "claude-haiku-5-5"]);
     // No thinking on either, each model's own way (`../../../models/providers/anthropic/no-thinking.ts`).
     expect(sent[0]!.thinking).toEqual({ type: "disabled" });
-    expect(sent[1]!.thinking).toEqual({ type: "between_tools" });
+    expect(sent[1]!.thinking).toEqual({ type: "disabled" });
     expect(sent[1]!.messages.at(-1)).toEqual({ role: "user", content: "You said their message is a task and answered it with a reply." });
   });
 
@@ -45,7 +45,7 @@ describe("a chat attempt asked one rung up", () => {
     expect(sent[0]!.model).toBe("claude-opus-5-5");
   });
 
-  it("says in its step meta which model it climbed from and why", async () => {
+  it("never reports a model switch that did not happen", async () => {
     const directory = mkdtempSync(join(tmpdir(), "t973-step-log-"));
     const before = process.env.FLUXIQ_LLM_STEP_LOG_DIR;
     process.env.FLUXIQ_LLM_STEP_LOG_DIR = directory;
@@ -56,7 +56,7 @@ describe("a chat attempt asked one rung up", () => {
       const metas = readdirSync(directory).filter((folder) => folder.endsWith("-chat")).sort().map((folder) => JSON.parse(readFileSync(join(directory, folder, "meta.json"), "utf8")) as { model: string; climb?: unknown });
       expect(metas.map((meta) => [meta.model, meta.climb])).toEqual([
         ["claude-haiku-5-5", undefined],
-        ["claude-sonnet-5-5", { from: "claude-haiku-5-5", reason: "task_answered_in_words" }]
+        ["claude-haiku-5-5", undefined]
       ]);
     } finally {
       if (before === undefined) delete process.env.FLUXIQ_LLM_STEP_LOG_DIR;

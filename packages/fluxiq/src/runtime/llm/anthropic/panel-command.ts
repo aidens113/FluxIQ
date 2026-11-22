@@ -6,7 +6,7 @@ import { automationStudioAnthropicMessageBody } from "./request.ts";
 import { automationStudioAnthropicOutputFormat } from "../../models/providers/anthropic/index.ts";
 import { automationStudioAnthropicMessage, automationStudioAnthropicPaidFailure } from "./messages.ts";
 import { isRecord } from "../provider-transport/index.ts";
-import { AUTOMATION_STUDIO_LLM_MODEL_LADDER, automationStudioLlmModelLadderRung } from "../role-routing/ladder/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED } from "../../models/catalog/index.ts";
 
 export type AutomationStudioAnthropicPanelCommandOptions = {
   resolveKey(caller: AutomationStudioConversationCaller | null): Promise<string>;
@@ -16,7 +16,7 @@ export type AutomationStudioAnthropicPanelCommandOptions = {
 };
 
 export function createAutomationStudioAnthropicPanelCommandModel(options: AutomationStudioAnthropicPanelCommandOptions): AutomationStudioConversationModel {
-  const model = options.model ?? AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL;
+  const model = options.model ?? (AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_NAMED ? AUTOMATION_STUDIO_ANTHROPIC_DEFAULT_MODEL : "claude-haiku-5-5");
   if (!isAutomationStudioAnthropicModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", "Unsupported Anthropic panel-command model.");
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "Anthropic response-byte limit is invalid.");
@@ -26,13 +26,10 @@ export function createAutomationStudioAnthropicPanelCommandModel(options: Automa
       const messages: Array<{ role: "user" | "assistant"; content: string }> = request.transcript.map((turn) => ({ role: turn.author === "person" ? "user" : "assistant", content: turn.author === "panel" ? `[The panel reported] ${turn.text}` : turn.text }));
       messages.push({ role: "user", content: request.message });
       if (request.correction) messages.push({ role: "user", content: request.correction });
-      // A task left unanswered in words is asked one rung up the ladder, still with no thinking (t973); the step meta says from where and why.
-      const asked = request.climb ? automationStudioAnthropicPanelCommandClimbed(model) : model;
-      const climb = request.climb ? { from: model, reason: request.climb.reason } : undefined;
-      const body = JSON.stringify(automationStudioAnthropicMessageBody({ model: asked, system: request.instructions, messages, format: automationStudioAnthropicOutputFormat(undefined), markLastBlock: true }));
+      const body = JSON.stringify(automationStudioAnthropicMessageBody({ model, system: request.instructions, messages, format: automationStudioAnthropicOutputFormat(undefined), markLastBlock: true }));
       let billed = false;
       try {
-        const result = await automationStudioAnthropicMessage({ body, model: asked, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes, timeoutMs: AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, signal: execution.signal, taskKind: "panel_command", ...(climb ? { climb } : {}), resolveKey: async () => await options.resolveKey(execution.caller), readAnswer: (text, usage) => {
+        const result = await automationStudioAnthropicMessage({ body, model, fetchImpl: options.fetchImpl ?? fetch, maxResponseBytes, timeoutMs: AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS, signal: execution.signal, taskKind: "panel_command", resolveKey: async () => await options.resolveKey(execution.caller), readAnswer: (text, usage) => {
           // A decision that cannot be read was still paid for.
           execution.paid?.(usage.estimatedCostUsd!);
           billed = true;
@@ -50,11 +47,4 @@ export function createAutomationStudioAnthropicPanelCommandModel(options: Automa
       }
     }
   };
-}
-
-/** The rung above `model` on the ladder (`../role-routing/ladder/`), or `model` itself at the top or off the ladder. */
-function automationStudioAnthropicPanelCommandClimbed(model: AutomationStudioAnthropicModel): AutomationStudioAnthropicModel {
-  const rung = automationStudioLlmModelLadderRung(model);
-  const above = rung === undefined ? undefined : AUTOMATION_STUDIO_LLM_MODEL_LADDER[rung + 1];
-  return above !== undefined && isAutomationStudioAnthropicModel(above) ? above : model;
 }

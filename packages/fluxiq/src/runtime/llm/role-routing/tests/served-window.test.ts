@@ -42,7 +42,7 @@ function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<Autom
 describe("a request's limits", () => {
   it("are the judging model's own where its provider says them, and the request is refused by the harness, not the adapter, when over them", async () => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    const provider = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", []), judge: automationStudioLlmProviderWithTokenLimits(model("judge", seen), SMALL) });
+    const provider = automationStudioLlmProviderRoutedByRole({ explore: automationStudioLlmProviderWithTokenLimits(model("explorer", seen), SMALL), judge: model("judge", []) });
 
     const fitting = await harness({ provider, taskKind: "loop_verification", resultSummary: SHORTER });
     expect(fitting.ok, JSON.stringify(fitting.diagnostics)).toBe(true);
@@ -58,7 +58,7 @@ describe("a request's limits", () => {
 
   it("reach the harness through a decorator that re-applies itself to the provider that serves", async () => {
     const seen: AutomationStudioLlmTaskRequest[] = [];
-    const routed = automationStudioLlmProviderRoutedByRole({ explore: model("explorer", []), judge: automationStudioLlmProviderWithTokenLimits(model("judge", seen), SMALL) });
+    const routed = automationStudioLlmProviderRoutedByRole({ explore: automationStudioLlmProviderWithTokenLimits(model("explorer", seen), SMALL), judge: model("judge", []) });
     const decorated = automationStudioLlmProviderWithDomainInstructions(routed, { domainId: "domain.room", version: "1", text: "Rooms have desks." });
 
     const result = await harness({ provider: decorated, taskKind: "loop_verification", resultSummary: SHORTER });
@@ -116,8 +116,8 @@ describe("a role resolved with limits of its own", () => {
     const resolution = await runWithAutomationStudioRunOverrides({ models: { judge: "judge-model" } }, async () => await automationStudioLlmRoleRoutedResolution(resolver, { projectId: "p", flowId: "f", modelId: "explorer" }));
 
     expect(resolution?.tokenLimits).toEqual(CALLER);
-    expect(automationStudioLlmServedTokenLimits(resolution?.provider.servedBy?.(request("loop_verification")))).toEqual(SMALL);
-    expect(resolution?.provider.servedBy?.(request("loop_verification")).metadata).toMatchObject({ provider: "mock", model: "judge-model" });
+    expect(automationStudioLlmServedTokenLimits(resolution?.provider)).toBeUndefined();
+    expect(resolution?.provider.metadata).toMatchObject({ provider: "mock", model: "explorer" });
     expect(automationStudioLlmServedTokenLimits(resolution?.provider.servedBy?.(request("evidence_tool_decision")))).toBeUndefined();
   });
 });

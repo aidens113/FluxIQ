@@ -137,27 +137,29 @@ first decision. A steer then names the repeat, how many times, and what each rep
 came back with (`decide.cameBack`, the calls' result codes), and asks for one decision:
 `continue` (with `why`) ends the incident, so the repeat may run and a further catch
 asks again with the count; `change_approach` (with `approach`) keeps the repeat
-refused; `ask_person` (with one plain `question`) raises the `ask_person` signal with
-the model's question, which the attempt posts and does not wait for; `escalate_model`
-climbs the model ladder; `finish_with_best` (with `result`) goes to the completion
+refused; `ask_person` (with one plain `question` and `why` explaining genuine
+impossibility) raises the `ask_person` signal with the model's question, which the
+attempt posts and does not wait for; `finish_with_best` (with `result`) goes to the completion
 check as any completion does. The loop carries it out
 (`decision-handlers/model-decision.ts`); each goes on the attempt's record
 (`decisions`), into a `NNNN-loop_decision` step folder and into the chat. Detection
 alone never stops anything; the purse still ends the task.
 
-**The model ladder** (t962, `runtime/llm/role-routing/ladder/`). An attempt's calls start
-on its base model -- the run's named model, else Haiku 5.5 where nothing named one on a
-Claude key -- and climb one rung at a time (Haiku, Sonnet, Opus), sticky for the
-attempt, on: the model's own `escalate_model`; a completion refused again over unchanged
-evidence; a repair round that ends without the result; a window of no progress; and a
-round stopped on refusals. Where no model is asked to decide (no `loopSignal`), any
-steer climbs. Each climb is a `NNNN-escalate` step folder (`from`, `to`, `reason`,
-`pattern`) and goes on the attempt's row (`tried.ladder`). Every evidence loop runs
-inside its attempt's ladder frame (`runtime/llm/attempt-loop/`), so the routed provider
-serves each call on the rung the attempt stands on; each role climbs from its own start,
-and a role off the ladder stays where it is. A new attempt, with a new record, starts on
-its base again; a zero-call replay makes no call to route. Progress ends the incident at any step, but for a
-lasting act, whose refusal stands until a new row or an undo.
+**One starting model** (`runtime/llm/role-routing/`). Automation defaults to Haiku
+unless a model or compatible provider was explicitly selected. Every role, repair,
+judge and same-task later attempt keeps that choice. No detector signal, failed
+repair or loop decision selects a stronger model; obsolete `escalate_model` calls
+receive feedback to choose a supported decision. Asking the person does not require
+a prior approach count or model change, but still requires a genuinely impossible
+instruction rather than difficulty or repetition.
+
+Answer First stores the public `startingModel` id in its existing version-1 task
+memory. The same task identity retains it across restart and Run again; a distinct
+task identity may choose differently. Historical ladder records/exports remain
+readable but inert, and the attempt frame still provides cached-continuation
+identity. See [the task model contract](./llm-flow-bootstrap.md#one-starting-model-per-automation-task)
+for default, concurrency and legacy-record rules. Progress ends the repeat incident
+at any step, except a lasting-act refusal which stands until a new row or an undo.
 
 **What it never does.** It adds refusals and notes and removes none. It lifts
 nothing the guard refuses, and what the guard has lifted (a handle since shown, a
@@ -180,7 +182,7 @@ kinds, never a value or a word the model wrote, and `data()` is plain JSON for t
 attempt row and for `seed` on the next attempt. It is how the same fix is known
 after a fresh context, how many fresh approaches have been tried, what the last stopped
 loop repeated (`stoppedOn`, which the next round is told with the words to take a
-different approach), the attempt's model ladder, and the model's loop decisions.
+different approach), historical model-ladder metadata, and the model's loop decisions.
 
 **What a run reports.** Rows in the trace (`automationStudioLlmLoopsCaught`, by
 pattern, with no new row member, so every rebuilder already carries them), and in

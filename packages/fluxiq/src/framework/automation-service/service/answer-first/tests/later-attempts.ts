@@ -56,12 +56,13 @@ export type LaterAttemptOptions = {
 export type LaterAttemptsRestart = { dataDir: string; projectId: string; target: LibraryTarget; flows: readonly string[] };
 
 /** One service and one library, to run attempts on one after another. */
-export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]>; domain?: (binding: AutomationStudioLlmEvidenceRuntimeBinding) => Partial<AutomationStudioLlmEvidenceRuntimeBinding> } = {}) {
+export async function laterAttempts(cleanups: (() => Promise<void>)[], options: { bindSelectedModel?: boolean; fault?: FakeLibraryFault; titles?: readonly string[]; restart?: LaterAttemptsRestart; describe?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["describeCall"]>; domain?: (binding: AutomationStudioLlmEvidenceRuntimeBinding) => Partial<AutomationStudioLlmEvidenceRuntimeBinding> } = {}) {
   const dataDir = options.restart?.dataDir ?? await mkdtemp(path.join(os.tmpdir(), "fluxiq-later-attempts-"));
   const target = options.restart?.target ?? libraryTarget(options.titles);
   const current: { script: readonly Decision[]; judge: unknown[]; decided: number; keepLooking: boolean; stop?: () => void; costUsd?: number | undefined; resolver: { maxTotalEstimatedCostUsd?: number; timeoutMs?: number } } = { script: [], judge: [], decided: 0, keepLooking: false, resolver: {} };
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let resolved = 0;
+  const resolvedModels: (string | undefined)[] = [];
   const scripted = mockProvider(async (request: AutomationStudioLlmTaskRequest) => {
     requests.push(request);
     if (request.metadata?.source === "instructionAuthority") return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
@@ -80,9 +81,11 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   /** Every by-hand call that reached the target, and where it was told to start from. */
   const seen: { toolId: string; startLocation: string | undefined }[] = [];
   const service = new AutomationStudioService({
-    dataDir, llmProviderResolver: () => {
+    dataDir, llmProviderResolver: (request) => {
       resolved += 1;
-      return { provider, ...current.resolver };
+      resolvedModels.push(request.modelId);
+      const selected = options.bindSelectedModel ? { ...provider, metadata: { ...provider.metadata, model: request.modelId! } } : provider;
+      return { provider: selected, ...current.resolver };
     },
     llmEvidenceRuntime: { ...binding, ...(options.describe ? { describeCall: options.describe } : {}), executeTool: async (call) => {
       seen.push({ toolId: call.toolId, startLocation: call.startLocation });
@@ -159,7 +162,7 @@ export async function laterAttempts(cleanups: (() => Promise<void>)[], options: 
   };
 
   return {
-    service, target, said, seen, memory, projectId: project.id, stores,
+    service, target, said, seen, memory, resolvedModels, projectId: project.id, stores,
     /** What a new service over the same data needs. */
     restart: (): LaterAttemptsRestart => ({ dataDir, projectId: project.id, target, flows: [...flows] }),
     attempt: start,
