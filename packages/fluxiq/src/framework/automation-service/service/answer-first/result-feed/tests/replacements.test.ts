@@ -85,8 +85,14 @@ it("never mints a later replacement from a tuple whose contents were indistingui
 it.each([undefined, 1])("cannot mint authority without a known zero original rejection count: %s", (invalidCount) => {
   const p = automaticFeed({ columns: ["title"] });
   const step = p.read("old", [row]);
-  p.feed.expect({ kind: "rerun", step });
-  p.feed.called({ callId: "fresh", toolId: "core.run_node", value: step.input }, { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { read: { extracted: [row], listKey: "fixture.records", place: "page=1" } } }, { rows: [row], schema: SCHEMA, datasetId: "read.fresh", truncated: false, ...(invalidCount === undefined ? {} : { invalidCount }) });
+  if (invalidCount === undefined) {
+    // Older copied pages genuinely allow an unknown count; a modern sink result always supplies its required number.
+    const prior = p.feed.evidence().pages[0]!;
+    p.feed.restored([{ step, read: { source: "fresh", version: { conditions: prior.conditions, fields: prior.fields, ...(prior.listKey === undefined ? {} : { listKey: prior.listKey }) }, kept: [row], place: "page=1" }, schema: SCHEMA, version: prior.version, datasetId: "read.fresh" }]);
+  } else {
+    p.feed.expect({ kind: "rerun", step });
+    p.feed.called({ callId: "fresh", toolId: "core.run_node", value: step.input }, { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { read: { extracted: [row], listKey: "fixture.records", place: "page=1" } } }, { rows: [row], schema: SCHEMA, datasetId: "read.fresh", truncated: false, invalidCount });
+  }
   expect(p.feed.evidence().sourceReplacements).toBeUndefined();
   expect(p.feed.readiness().state).toBe("missing-evidence");
 });
