@@ -27,6 +27,17 @@ Reports are in each downstream task tree's data-first-simplification-plan/report
 No new acceptance is claimed. No paid runs or full sweeps launched.
 
 After P0: establish a retained-row contract before parallel extraction and processing work.
+The lead froze that contract on 2026-11-22 after source discovery: keep JsonObject
+rows and RecordSchema/RecordBatch; optional RecordField semanticType
+(text/number/currency/count/date/datetime/url/id/flag) and mark (badge/flag/state);
+valueType is the actual JSON type and primaryKey the validated identity fields.
+Keep original display values; shared parsers derive typed comparisons against the
+run reference time. Parsed column samples are not row truth. Full safe schemas
+survive live/saved bindings and replay; process.columns alone selects display.
+Explicit exclusions stay authoritative and schema overflow must not silently trim.
+Implementation is pending in paired t982. P4 compatibility preserves historical
+attempt records and attempt identity, but old escalation cannot change serving;
+automation defaults to Haiku and all its roles retain its explicit starting model.
 Core owns domain-neutral storage, processing, judging, models and replay.
 Browser reads/DOM extraction and Lab scenarios remain downstream.
 Build, repair and judging stay on Haiku; no model escalation.
