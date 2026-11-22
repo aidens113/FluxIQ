@@ -7,7 +7,10 @@ import { laterAttempts, readLoans } from "../../tests/later-attempts.ts";
 
 vi.setConfig({ testTimeout: 120_000 });
 const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanups.splice(0)) await close(); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const close of cleanups.splice(0)) await close();
+});
 const INSTRUCTION = "List every loan due on or before 2 January 2030, ordered alphabetically by title, with columns title only.";
 const CRITERIA = { where: [{ field: "due", atMost: "2030-01-02", as: "date" }], sort: [{ field: "title", order: "asc", as: "text" }], columns: ["title"] };
 
@@ -22,29 +25,39 @@ it("applies one declaration on exploration and three saved continuations, preser
   const lane = await laneWith({ process: CRITERIA });
   const first = await lane.attempt({ instruction: INSTRUCTION, script: [readLoans(), complete("Listed the matching loans.")] });
   expect(first.answer.attempt.status).toBe("achieved");
-  expect(first.answer.result?.rows?.previewRows).toEqual([{ title: "Atlas of Rivers", due: "2030-01-01" }, { title: "Birds of the Coast", due: "2030-01-02" }]);
+  const originals = [{ title: "Atlas of Rivers", due: "2030-01-01" }, { title: "Birds of the Coast", due: "2030-01-02" }];
+  expect(first.answer.result?.rows?.previewRows).toEqual(originals.map(({ title }) => ({ title })));
   expect(first.answer.result?.rows?.columns).toEqual([{ id: "title", label: "title" }]);
-  expect(first.answer.result?.rows?.previewRows.every((row) => Object.hasOwn(row, "due"))).toBe(true);
+  const retained = async (answer: typeof first.answer) => {
+    const rows = answer.result!.rows!;
+    const persisted = await lane.service.runDatasets.getRunDatasetPage({ projectId: lane.projectId, runId: rows.runId, datasetId: rows.datasetId }, { retained: "answer" });
+    expect(persisted?.rows).toEqual(originals);
+    expect(persisted?.schema.fields.map((field) => field.id)).toEqual(["title", "due"]);
+    expect(persisted?.displayColumns?.map((column) => column.id)).toEqual(["title"]);
+  };
+  await retained(first.answer);
   const kept = await lane.kept(INSTRUCTION);
   expect(kept?.processing).toMatchObject({ version: 1, revision: 1, task: { process: CRITERIA } });
   expect(JSON.stringify(kept?.best?.steps)).toContain('"declaration":{"version":1');
   const attempts = [first];
+  const diagnostics: string[] = [];
   for (let replay = 0; replay < 3; replay += 1) {
+    const prior = await lane.kept(INSTRUCTION);
     const next = await lane.attempt({ instruction: INSTRUCTION, script: [] });
     attempts.push(next);
     expect(next.answer.attempt.status).toBe("achieved");
     expect(next.answer.result?.rows?.previewRows).toEqual(first.answer.result?.rows?.previewRows);
     expect(next.answer.attempt.path).toBe("run_flow");
     expect(next.decisions).toHaveLength(0);
-    expect(next.asked.some((request) => JSON.stringify(request.context.evidenceLoop?.evidence).includes('"toolId":"core.set_result_processing"'))).toBe(false);
+    expect(next.asked.some((request) => request.context.evidenceLoop?.evidence !== undefined && JSON.stringify(request.context.evidenceLoop.evidence).includes('"toolId":"core.set_result_processing"'))).toBe(false);
+    await retained(next.answer);
+    const record = (await lane.rows()).at(-1);
+    const after = await lane.kept(INSTRUCTION);
+    const deviation = record?.replay?.stood === false ? record.replay.deviation : record?.replay?.stood === true ? "stood" : "not_recorded";
+    diagnostics.push(`attempt${replay + 2}:deviation=${deviation},priorProven=${prior?.best?.provenWhole},latestMatchesBest=${after?.latest?.stepsDigest === after?.best?.stepsDigest}`);
   }
-  expect(attempts[2]?.judgeCalls).toHaveLength(0);
-  expect(attempts[3]?.judgeCalls).toHaveLength(0);
-  const last = attempts.at(-1)!.answer;
-  const rows = last.result!.rows!;
-  const persisted = await lane.service.runDatasets.getRunDatasetPage({ projectId: lane.projectId, runId: rows.runId, datasetId: rows.datasetId }, { retained: "answer" });
-  expect(persisted?.rows).toEqual(rows.previewRows);
-  expect(persisted?.displayColumns?.map((column) => column.id)).toEqual(["title"]);
+  expect(attempts[2]?.judgeCalls, diagnostics.join("; ")).toHaveLength(0);
+  expect(attempts[3]?.judgeCalls, diagnostics.join("; ")).toHaveLength(0);
 });
 
 it("a genuinely new direct task with omitted declaration keeps repairing and cannot gain a success from its judge", async () => {

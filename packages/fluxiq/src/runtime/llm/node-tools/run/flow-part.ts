@@ -117,7 +117,10 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   const readSince = input.signal?.aborted ? undefined : input.forward?.started?.();
   const invoked: string[] = [];
   const done = await automationStudioFlowDraftReplaySteps({
-    executeTool: (call) => { invoked.push(call.callId); return input.executeTool(call); },
+    executeTool: (call) => {
+      invoked.push(call.callId);
+      return input.executeTool(call);
+    },
     ...(input.signal ? { signal: input.signal } : {}),
     steps: input.steps,
     run: proposed.filter((each) => each.position >= range.from && each.position <= to),

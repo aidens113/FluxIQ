@@ -13,7 +13,8 @@ afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { rec
 const PROJECTS = { ensureProjectStructure: async () => undefined } as unknown as ConstructorParameters<typeof AutomationStudioAnswerFirstAttemptStore>[2];
 const record = (): AutomationStudioAnswerFirstAttemptRecord => ({ attempt: { taskId: "task", attemptId: "attempt", ordinal: 1, projectId: "project", flowId: "flow", runId: "run.first", path: "explore", status: "working", spend: { calls: 0, inputTokens: 0, outputTokens: 0, usd: 0, ms: 0 }, budget: { usd: 5 }, liveSteps: 1, loopsCaught: automationStudioTaskAttemptNoLoopsCaught(), startedAtMs: REFERENCE }, tried: { version: 1, tried: [], approaches: 0 } });
 async function disk() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-processing-attempt-")); roots.push(root);
+  const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-processing-attempt-"));
+  roots.push(root);
   const flows = { flowDirectory: () => root };
   const open = () => new AutomationStudioAnswerFirstAttemptStore({ root }, flows, PROJECTS);
   return { root, open, store: open() };
@@ -44,7 +45,7 @@ it("reopens pending data with the same full originals/reference, repairs its bin
   expect(feed.processingDeclaration()?.revision).toBe(2);
 });
 
-it("preserves legacy absence but refuses invalid persisted clock/declaration/page metadata", async () => {
+it("preserves legacy absence but refuses invalid saved and persisted clock metadata", async () => {
   const io = await disk();
   await io.store.save("project", "flow", record());
   expect((await io.open().get("project", "flow", "attempt"))?.processingReferenceTimeMs).toBeUndefined();
@@ -52,7 +53,9 @@ it("preserves legacy absence but refuses invalid persisted clock/declaration/pag
   await io.store.save("project", "flow", { ...record(), processingReferenceTimeMs: REFERENCE });
   const file = path.join(io.root, "answer-attempts.json");
   const stored = JSON.parse(await readFile(file, "utf8"));
-  stored.attempts[0].processingReferenceTimeMs = null;
+  expect(stored.version).toBe(1);
+  expect(stored.data.attempts).toHaveLength(1);
+  stored.data.attempts[0].processingReferenceTimeMs = null;
   await writeFile(file, JSON.stringify(stored));
   await expect(io.open().list("project", "flow")).rejects.toBeInstanceOf(AutomationStudioAnswerFirstAttemptsUnreadable);
 });

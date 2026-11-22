@@ -215,7 +215,8 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     }
   });
   // The attempt's one result: which of the rows the sink stores are the answer (header).
-  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey, processing: opening.processing, processingReferenceTimeMs: session.processingReferenceTimeMs, requiresDataOutput: input.caller?.requiresDataOutput, inputs: input.caller?.inputs });
+  if (carried?.publications?.complete === false) sink.publicationsUnavailable();
+  const result = automationStudioAnswerFirstResultFeed({ instructionText: input.instructionText, readRowsKey: input.binding?.readRowsKey, processing: opening.processing, processingReferenceTimeMs: session.processingReferenceTimeMs, requiresDataOutput: input.caller?.requiresDataOutput, inputs: input.caller?.inputs, publicationTrackingComplete: sink.publicationState().complete });
   const look = automationStudioEndViewLook({ tools: input.harnessOptions.tools, viewKeys: input.harnessOptions.observedStateKeys });
   let looks = 0;
   // Through the domain alone: a look is no call of the task's, and it reaches none of its records.
@@ -352,8 +353,14 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
   state.answerText = carried.result?.answerText?.text;
   state.checkedWhat = carried.result?.checkedWhat;
   const lastRun = carried.runId;
+  const shown = carried.result?.rows;
+  const knownPublications = new Set(carried.publications?.knownDatasetIds);
+  if (shown) knownPublications.add(shown.datasetId);
   const copied = await automationStudioAnswerFirstCopyRows({
     sink: run.sink,
+    copied: (receipt) => {
+      if (receipt.fromRunId === (lastRun ?? shown?.runId) && knownPublications.has(receipt.fromDatasetId)) run.sink.carried(receipt.datasetId);
+    },
     // An automatic task's preview is never an original capture or a retained schema.
     shown: carried.processing !== undefined && carried.processing.task !== null ? undefined : carried.result?.rows,
     stored: datasets.available && lastRun !== undefined ? {
@@ -363,9 +370,7 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
     } : undefined
   });
   // What it found so far is the answer again, as its output step's page carried from the earlier segment (`../result-feed/feed.ts`).
-  const shown = carried.result?.rows;
-  // The copy of the earlier segment's publication is a result too: it leaves once this run publishes under another id.
-  if (shown) run.sink.carried(shown.datasetId);
+  // Only successful copy receipts can transfer the earlier segment's exact publication ownership into this run.
   const declaration = run.result.processingDeclaration();
   if (declaration !== undefined && declaration.task !== null) {
     try {

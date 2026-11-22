@@ -10,6 +10,7 @@ export type AutomationStudioAnswerFirstProcessingInputs =
 
 /** Resolve only explicit existing $input forms against real current nonsecret caller inputs. Equality never turns a constant into a binding, and fallback never supplies a missing runtime input. */
 export function automationStudioAnswerFirstProcessingInputs(raw: JsonValue, inputs: Readonly<Record<string, JsonValue>> | undefined): AutomationStudioAnswerFirstProcessingInputs {
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw) && Object.hasOwn(raw, "declaration")) return { ok: false, issues: ["record_output.process_declaration_framework_owned"] };
   const issues: string[] = [];
   const bindings: BoundInput[] = [];
   const walk = (value: JsonValue, path: (string | number)[]): JsonValue => {

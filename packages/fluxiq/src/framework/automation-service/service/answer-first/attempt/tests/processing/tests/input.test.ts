@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AutomationStudioAnswerFirstAttemptRun } from "../state.ts";
-import { automationStudioAnswerFirstFlowStage } from "../flow-stage.ts";
+import type { AutomationStudioAnswerFirstAttemptRun } from "../../../state.ts";
+import { automationStudioAnswerFirstFlowStage } from "../../../flow-stage.ts";
 
 function fixture(readInput: unknown) {
   const start = vi.fn();

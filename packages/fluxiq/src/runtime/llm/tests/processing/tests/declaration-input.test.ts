@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { automationStudioLlmEvidenceDecisionIssueCodes, automationStudioLlmEvidenceParseDecision } from "../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceDecisionIssueCodes, automationStudioLlmEvidenceParseDecision } from "../../../evidence-loop-decision.ts";
 
 const CODE = "record_output.process_declaration_framework_owned";
 it("refuses any model-authored processing stamp on run/write at the documented record-output locations", () => {

@@ -28,10 +28,16 @@ export function automationStudioAnswerFirstRestoreResult(input: {
   };
   for (const [pageIndex, page] of evidence.pages.entries()) {
     const candidates = input.steps.filter((step) => step.disposition === "kept" && step.effect === "observe" && automationStudioFlowDraftStepIsAction(step) && !automationStudioAnswerFirstResultIntermediate(step.input) && [step.id, step.callId, step.standsFor].includes(page.step));
-    if (candidates.length !== 1) { issues.push(`Contributing page ${page.source} no longer names exactly one kept read step ${page.step}. Repair that source association.`); continue; }
+    if (candidates.length !== 1) {
+      issues.push(`Contributing page ${page.source} no longer names exactly one kept read step ${page.step}. Repair that source association.`);
+      continue;
+    }
     const step = candidates[0]!;
     const version = automationStudioAnswerFirstResultVersionOf(step.input, page.listKey);
-    if (stableJson(version) !== stableJson({ conditions: page.conditions, fields: page.fields, ...(page.listKey === undefined ? {} : { listKey: page.listKey }) })) { issues.push(`Contributing page ${page.source} has different conditions or fields from kept step ${page.step}. Re-read its current version.`); continue; }
+    if (stableJson(version) !== stableJson({ conditions: page.conditions, fields: page.fields, ...(page.listKey === undefined ? {} : { listKey: page.listKey }) })) {
+      issues.push(`Contributing page ${page.source} has different conditions or fields from kept step ${page.step}. Re-read its current version.`);
+      continue;
+    }
     const matching = input.batches.filter((entry) => entry.batchKey === page.source || entry.batchKey === `read/${encodeURIComponent(page.source)}`);
     const originals = matching.filter((entry) => typeof entry.nodeId === "string" && entry.nodeId.trim().length > 0 && entry.nodeId !== AUTOMATION_STUDIO_ANSWER_FIRST_COPIED_ROW_NODE_ID);
     const ids = [...new Set((page.datasetId === undefined ? matching : originals).map((entry) => entry.datasetId))];
@@ -53,10 +59,16 @@ export function automationStudioAnswerFirstRestoreResult(input: {
     if (invalidCount === undefined) requireDataset(datasetId, `Original per-source validation is unavailable for ${page.source}; copied storage chunks and missing producer identity cannot supply it. Replace the whole source collection.`);
     else knownCounts.set(pageIndex, invalidCount);
     const source = input.source(datasetId);
-    if (!source?.schema || !parseAutomationStudioRecordSchema(source.schema).ok) { issues.push(`The full retained schema for contributing source ${page.source} (${datasetId}) is unavailable or invalid.`); continue; }
+    if (!source?.schema || !parseAutomationStudioRecordSchema(source.schema).ok) {
+      issues.push(`The full retained schema for contributing source ${page.source} (${datasetId}) is unavailable or invalid.`);
+      continue;
+    }
     const checked = validateAutomationStudioRecords(page.rows, source.schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
     const actual = new Set(source.rows.map(stableJson));
-    if (checked.invalidCount || checked.truncated || stableJson(checked.rows) !== stableJson(page.rows) || page.rows.some((row) => !actual.has(stableJson(row)))) { issues.push(`Contributing page ${page.source} disagrees with its copied full original records or schema. Restore the actual source evidence instead of a projection.`); continue; }
+    if (checked.invalidCount || checked.truncated || stableJson(checked.rows) !== stableJson(page.rows) || page.rows.some((row) => !actual.has(stableJson(row)))) {
+      issues.push(`Contributing page ${page.source} disagrees with its copied full original records or schema. Restore the actual source evidence instead of a projection.`);
+      continue;
+    }
     entries.push({ step, version: page.version, schema: source.schema, datasetId, ...(page.leftOut === undefined ? {} : { leftOut: page.leftOut }), read: { source: page.source, version, kept: page.rows, carried: true, ...(invalidCount === undefined ? {} : { invalidCount }), ...(page.place === undefined ? {} : { place: page.place }), ...(page.where === undefined ? {} : { where: page.where }) } });
   }
   for (const datasetId of new Set(datasetOf.values())) {

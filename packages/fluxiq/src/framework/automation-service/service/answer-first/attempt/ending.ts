@@ -120,6 +120,7 @@ async function storedEnding(run: AutomationStudioAnswerFirstAttemptRun, checked:
     const judgeEvidence = journal.checkpoint(run.trail, run.witnesses.readings(), { ...journal.capability(run.trail, run.input.binding), projectJudgeEvidence: run.input.binding?.projectJudgeEvidence, deniedEvidenceKeys: run.input.binding?.deniedEvidenceKeys });
     const kept = {
       attempt: checked.attempt,
+      publications: run.sink.publicationState(),
       ...(run.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: run.processingReferenceTimeMs }),
       ...(run.result.processingDeclaration() === undefined ? {} : { processing: run.result.processingDeclaration()!, resultEvidence: run.result.evidence() }),
       ...(judgeEvidence === undefined ? {} : { judgeEvidence }),

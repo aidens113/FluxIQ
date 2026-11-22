@@ -37,6 +37,22 @@ function storedWith(pages: Record<string, readonly AutomationStudioRunDatasetPag
 }
 
 describe("copying a run's rows", () => {
+  it("reports only actual successful copy receipts, including the accepted part before a later write fails", async () => {
+    const receipts: { fromRunId: string; fromDatasetId: string; datasetId: string }[] = [];
+    let writes = 0;
+    const stored = storedWith({ loans: [[{ title: "A" }], [{ title: "B" }]] }, ["loans"]);
+    const copied = await automationStudioAnswerFirstCopyRows({ shown: undefined, stored, copied: (receipt) => { receipts.push(receipt); }, sink: { recordBatch: async () => {
+      writes += 1;
+      if (writes === 2) throw new Error("second write failed");
+      return summary("loans");
+    } } });
+    expect(copied.ok).toBe(false);
+    expect(writes).toBe(2);
+    expect(receipts).toEqual([{ fromRunId: "run.old", fromDatasetId: "loans", datasetId: "loans" }]);
+    const failed: typeof receipts = [];
+    await automationStudioAnswerFirstCopyRows({ shown: undefined, stored, sink: sinkOf(true).sink, copied: (receipt) => { failed.push(receipt); } });
+    expect(failed).toEqual([]);
+  });
   it("preserves an original dataset's rejected-row count exactly once across copied pages", async () => {
     const first = sinkOf();
     const pages = storedWith({ raw: [[{ title: "A" }], [{ title: "B" }]] }, ["raw"]);

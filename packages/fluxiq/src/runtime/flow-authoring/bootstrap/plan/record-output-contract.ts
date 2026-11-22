@@ -64,11 +64,14 @@ export function automationStudioFlowBootstrapRecordOutputStaticValue(value: Json
   if (!isPlainObject(value) || !isPlainObject(value.process)) return value;
   const inputs: JsonObject = {};
   const examples = (entry: JsonValue): void => {
-    if (Array.isArray(entry)) { entry.forEach(examples); return; }
+    if (Array.isArray(entry)) {
+      entry.forEach(examples);
+      return;
+    }
     if (!isPlainObject(entry)) return;
     if (isPlainObject(entry.$state) && typeof entry.$state.path === "string" && entry.$state.fallback !== undefined) {
       const name = entry.$state.path;
-      if (!Object.hasOwn(inputs, name)) inputs[name] = entry.$state.fallback;
+      if (!Object.hasOwn(inputs, name)) Object.defineProperty(inputs, name, { value: entry.$state.fallback, enumerable: true, configurable: true, writable: true });
       return;
     }
     Object.values(entry).forEach(examples);

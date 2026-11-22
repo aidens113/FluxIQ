@@ -5,7 +5,7 @@ import { automationStudioRefreshInputs } from "../index.ts";
 
 const output: JsonObject = { schema: { schemaVersion: "0.1", fields: [{ id: "date", label: "Date", valueType: "string" }] }, process: { where: [{ field: "date", atMost: { $state: { path: "latest", fallback: "2030-01-02" } }, as: "date" }], declaration: { version: 1, source: "a".repeat(64), revision: 1, bindings: { date: "date" } } } };
 const node: AutomationStudioFlowNode = { id: "read", definitionId: "fixture.read", parameterValues: { recordOutput: output } };
-const flow: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: "flow.test", ownerKind: "policy", ownerId: "flow.test", name: "Test", nodes: [node], edges: [], createdAt: 1, updatedAt: 1 };
+const flow: AutomationStudioFlowDocument = { flowId: "flow.test", nodes: [node], edges: [] };
 
 describe("engine automatic processing input provenance", () => {
   it("refuses a missing caller input even when arbitrary state/variables hold a matching name", () => {

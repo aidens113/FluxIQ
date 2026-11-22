@@ -109,8 +109,9 @@ export type AutomationStudioAnswerFirstResultFeed = {
 
 const EMPTY: AutomationStudioAnswerFirstRowsSummary = { totalRows: 0, truncated: false, columns: [], rows: [] };
 const CARRIED_SOURCE = "carried";
+const PUBLICATION_TRACKING_MISSING = "The attempt's pending-publication metadata is unavailable. Restore the exact private record before publishing an answer; a later read cannot prove which earlier answer publications need retirement. The original source records and processing reference are preserved.";
 
-export function automationStudioAnswerFirstResultFeed(input: { instructionText: string; readRowsKey: string | undefined; processing?: AutomationStudioAnswerFirstProcessingDeclaration | undefined; processingReferenceTimeMs?: number | null | undefined; requiresDataOutput?: true | undefined; inputs?: Readonly<Record<string, JsonValue>> | undefined }): AutomationStudioAnswerFirstResultFeed {
+export function automationStudioAnswerFirstResultFeed(input: { instructionText: string; readRowsKey: string | undefined; processing?: AutomationStudioAnswerFirstProcessingDeclaration | undefined; processingReferenceTimeMs?: number | null | undefined; requiresDataOutput?: true | undefined; inputs?: Readonly<Record<string, JsonValue>> | undefined; publicationTrackingComplete?: boolean | undefined }): AutomationStudioAnswerFirstResultFeed {
   const port = automationStudioAnswerFirstResultPort(input.instructionText);
   const stage = automationStudioAnswerFirstDataStage(input.processing, input.processingReferenceTimeMs, input.requiresDataOutput === true || automationStudioFlowBootstrapInstructionAsk(input.instructionText).records, input.inputs);
   const reference = input.processingReferenceTimeMs ?? Date.now();
@@ -175,16 +176,23 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
   const rows = (): AutomationStudioAnswerFirstRowsSummary => {
       account = undefined;
       legacyRefusal = undefined;
+      if (input.publicationTrackingComplete === false) return EMPTY;
       if (sourceState.reason() !== undefined && stage.active()) return EMPTY;
       // The output step, after the steps appending to its output before it (`../result/output-group.ts`).
       const group = port.outputGroup();
       const output = group.at(-1);
-      if (!output) { stage.evaluate({ rows: [], columns: [] }); return EMPTY; }
+      if (!output) {
+        stage.evaluate({ rows: [], columns: [] });
+        return EMPTY;
+      }
       const answer = port.answer();
       const pages = group.flatMap((step) => step.pages);
       const sources = pages.map((page) => page.source);
       const datasetId = automationStudioAnswerFirstStoredDatasetId("step", output.id, output.version);
-      if (!sources.length) { stage.evaluate({ rows: [], columns: [] }); return EMPTY; }
+      if (!sources.length) {
+        stage.evaluate({ rows: [], columns: [] });
+        return EMPTY;
+      }
       // A row repeated whole on two pages is one row, as the store's default processing counts it.
       const columns = answer.columns.length ? answer.columns : [...new Set(group.flatMap((step) => Object.keys(step.reads.fields)))];
       const schema = retainedSchema();
@@ -232,7 +240,10 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
     port,
     idOf,
     processingDeclaration: stage.declaration,
-    sourceUnavailable(reason, originalEvidence) { const current = baseEvidence(); sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined, datasets); },
+    sourceUnavailable(reason, originalEvidence) {
+      const current = baseEvidence();
+      sourceState.hold(reason, originalEvidence ?? current, current, originalEvidence !== undefined, datasets);
+    },
     collectionReplaced(receipt) {
       if (!stage.active() || sourceState.reason() === undefined) return undefined;
       const refuse = (said: string): JsonObject => ({ replaced: false, code: "answer_first.collection_replacement_incomplete", said });
@@ -258,9 +269,19 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       told("A complete fresh collection superseded unavailable original evidence; it was collected now, not restored.");
       return { replaced: true, kind: "fresh_collection", sources: pages.map((page) => page.source), readSince: receipt.readSince };
     },
-    boundProcessing() { rows(); return sourceState.reason() === undefined ? stage.processing() : undefined; },
-    storedProcessing() { rows(); return sourceState.reason() === undefined ? stage.storedProcessing() : undefined; },
-    readiness() { rows(); const missing = sourceState.reason(); return missing !== undefined && stage.active() ? { state: "missing-evidence", code: "answer_first.processing_source_missing", reason: missing } : legacyRefusal === undefined ? stage.readiness() : { state: "missing-evidence", code: "answer_first.processing_invalid", reason: legacyRefusal }; },
+    boundProcessing() {
+      rows();
+      return input.publicationTrackingComplete !== false && sourceState.reason() === undefined ? stage.processing() : undefined;
+    },
+    storedProcessing() {
+      rows();
+      return input.publicationTrackingComplete !== false && sourceState.reason() === undefined ? stage.storedProcessing() : undefined;
+    },
+    readiness() {
+      rows();
+      const missing = sourceState.reason();
+      return input.publicationTrackingComplete === false ? { state: "missing-evidence", code: "answer_first.publication_tracking_missing", reason: PUBLICATION_TRACKING_MISSING } : missing !== undefined && stage.active() ? { state: "missing-evidence", code: "answer_first.processing_source_missing", reason: missing } : legacyRefusal === undefined ? stage.readiness() : { state: "missing-evidence", code: "answer_first.processing_invalid", reason: legacyRefusal };
+    },
     amendProcessing(process, why) {
       const schema = retainedSchema();
       return stage.amend(process, why, schema.ok ? schema.schema : undefined);
@@ -362,7 +383,7 @@ export function automationStudioAnswerFirstResultFeed(input: { instructionText: 
       const lines = said.splice(0);
       const header = port.header(rows().totalRows);
       const sourceMissing = sourceState.reason();
-      const readiness = sourceMissing ? { state: "missing-evidence", reason: sourceMissing } : legacyRefusal ? { state: "missing-evidence", reason: legacyRefusal } : stage.readiness();
+      const readiness = input.publicationTrackingComplete === false ? { state: "missing-evidence", reason: PUBLICATION_TRACKING_MISSING } : sourceMissing ? { state: "missing-evidence", reason: sourceMissing } : legacyRefusal ? { state: "missing-evidence", reason: legacyRefusal } : stage.readiness();
       const missing = readiness.state === "missing-evidence" ? ` Data processing needs evidence: ${readiness.reason}` : "";
       return `${header}${lines.length ? ` Changed since your last decision: ${lines.join(" ")}` : ""}${missing}`;
     },

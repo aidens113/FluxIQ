@@ -1,4 +1,4 @@
-import { parseAutomationStudioRecordProcessing, parseAutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { parseAutomationStudioRecordProcessing, parseAutomationStudioRecordSchema } from "@fluxiq/contracts/records";
 import { FLOW_INPUT_IDENTIFIER, isJsonValue } from "@fluxiq/contracts/fluxnode";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import { resolveAutomationNodeParameterValues } from "./parameter-bindings.ts";

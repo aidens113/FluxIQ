@@ -3,11 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { stampAutomationStudioRecordProcessing, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
-import { AutomationStudioProjectAdministration } from "../administration.ts";
-import { AutomationStudioProjectDatabasePool } from "../database.ts";
-import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../run-dataset-store.ts";
-import { AutomationStudioProjectRuntimeStreamStore } from "../runtime-stream-store.ts";
+import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, stampAutomationStudioRecordProcessing, validateAutomationStudioRecords, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
+import { AutomationStudioProjectAdministration } from "../../../administration.ts";
+import { AutomationStudioProjectDatabasePool } from "../../../database.ts";
+import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../../../run-dataset-store.ts";
+import { AutomationStudioProjectRuntimeStreamStore } from "../../../runtime-stream-store.ts";
 
 const PROJECT = "project.automatic";
 const ids = { runId: "run", datasetId: "items" };
@@ -49,7 +49,11 @@ beforeEach(async () => {
   await admin.close();
   store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
 });
-afterEach(async () => { await store.close(); await pool.closeAll(); await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); });
+afterEach(async () => {
+  await store.close();
+  await pool.closeAll();
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+});
 
 it("withholds a previously-ready valid subset across restart until its exact rejected-source batch is repaired or genuinely replaced", async () => {
   const process = processOf({ where: [{ field: "promoted", equals: "false" }], columns: ["title"] });
@@ -64,7 +68,8 @@ it("withholds a previously-ready valid subset across restart until its exact rej
   await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("not ready");
   expect(await sql("select invalid_count, answer_rows_retained from run_datasets where dataset_id = 'items'")).toEqual([{ invalid_count: 1, answer_rows_retained: 0 }]);
   expect(await sql("select count(*) as retained from run_dataset_answer_rows")).toEqual([{ retained: 0 }]);
-  await store.close(); store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
+  await store.close();
+  store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
   await store.processRunDatasets("run");
   await expect(store.getPage({ ...ids, retained: "answer" })).rejects.toThrow("not ready");
   expect((await store.getPage({ ...ids, retained: "collected" }))?.rows).toEqual([safe]);
@@ -86,7 +91,11 @@ it("saved replay uses the same original reference/selection and full originals a
   const promoted = { id: "a", title: "Promoted A", price: "$1", date: "1 day ago", promoted: true, secret: "excluded" };
   const organic = { id: "a", title: "Organic A", price: "$10", date: "1 day ago", promoted: false };
   const old = { id: "b", title: "Old B", price: "$2", date: "4 days ago", promoted: false };
-  await store.appendBatch(batch({ process, rows: [promoted] }));
+  const captured = validateAutomationStudioRecords([promoted], schema, { maxRecords: AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling });
+  expect(captured.invalidCount).toBe(0);
+  expect(captured.rows[0]).not.toHaveProperty("secret");
+  expect(promoted.secret).toBe("excluded");
+  await store.appendBatch(batch({ process, rows: captured.rows, invalidCount: captured.invalidCount, truncated: captured.truncated }));
   await store.appendBatch(batch({ process, attemptId: "organic", batchKey: "organic", rows: [organic, organic, old] }));
   await store.processRunDatasets("run", { now: Date.UTC(2040, 0, 1) });
   expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([organic]);
@@ -94,7 +103,8 @@ it("saved replay uses the same original reference/selection and full originals a
   expect(await sql("select attempt_id, batch_key from run_dataset_answer_rows")).toEqual([{ attempt_id: "organic", batch_key: "organic" }]);
   const actual = await sql<{ started_at_ms: number }>("select started_at_ms from runtime_runs where run_id = 'run'");
   expect(actual[0]?.started_at_ms).toBe(SEGMENT);
-  await store.close(); store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
+  await store.close();
+  store = await AutomationStudioProjectRunDatasetStore.open({ pool, projectId: PROJECT });
   await store.processRunDatasets("run", { now: Date.UTC(2050, 0, 1) });
   expect((await store.getPage({ ...ids, retained: "answer" }))?.rows).toEqual([organic]);
   expect((await store.getPage({ ...ids, retained: "collected" }))?.rows).toEqual([{ id: "a", title: "Promoted A", price: "$1", date: "1 day ago", promoted: true }, organic, organic, old]);

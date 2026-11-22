@@ -102,11 +102,14 @@ function withResultProcessing(step: AutomationStudioFlowDraftStep, declared: Aut
   const input = step.input;
   const parameters = isObject(input.parameters) ? input.parameters : undefined;
   const holder = parameters ?? input;
-  const output = isObject(holder.recordOutput) ? holder.recordOutput : {};
+  const base = isObject(holder.recordOutput) ? holder.recordOutput : {};
+  const output = declared.declaration !== undefined && isObject(step.settings?.recordOutput) ? { ...base, ...step.settings.recordOutput } : base;
   const own = isObject(output.process) ? output.process : {};
   const canonical = JSON.parse(JSON.stringify(declared)) as JsonObject;
   const recordOutput: JsonObject = { ...output, ...(schema === undefined ? {} : { schema: JSON.parse(JSON.stringify(schema)) as JsonObject }), process: declared.declaration === undefined ? { ...own, ...canonical } : canonical };
-  return { ...step, input: parameters ? { ...input, parameters: { ...parameters, recordOutput } } : { ...input, recordOutput } };
+  // The real writer takes ranWith first, then settings. Keep the actual call record intact and carry
+  // this framework-applied data configuration through its existing later-settings seam too.
+  return { ...step, input: parameters ? { ...input, parameters: { ...parameters, recordOutput } } : { ...input, recordOutput }, ...(declared.declaration === undefined ? {} : { settings: { ...step.settings, recordOutput } }) };
 }
 
 function isObject(value: unknown): value is JsonObject {

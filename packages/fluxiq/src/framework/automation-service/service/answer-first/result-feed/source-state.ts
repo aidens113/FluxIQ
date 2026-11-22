@@ -28,7 +28,11 @@ export function automationStudioAnswerFirstResultSourceState() {
       held = { reason, original: recorded, replacements: new Map(), remaining: new Set(recorded?.pages.map((_, index) => index)), missing, unidentified: !parsed?.pages.length, datasets: new Map(datasets), associations };
       recorded?.pages.forEach((page, index) => {
         const exact = preserveRestored ? current.pages.filter((entry) => entry.carried === true && entry.invalidCount === 0 && entry.source === page.source && entry.step === page.step && entry.version === page.version && entry.place === page.place && entry.where === page.where && sameRead(page, { conditions: entry.conditions, fields: entry.fields, ...(entry.listKey === undefined ? {} : { listKey: entry.listKey }) }) && stableJson(entry.rows) === stableJson(page.rows)) : [];
-        if (exact.length === 1) { held!.replacements.set(index, structuredClone(exact[0]!)); held!.remaining.delete(index); settle(page); }
+        if (exact.length === 1) {
+          held!.replacements.set(index, structuredClone(exact[0]!));
+          held!.remaining.delete(index);
+          settle(page);
+        }
       });
     },
     validate(current: AutomationStudioResultEvidenceBundle, datasets: ReadonlyMap<string, string>) {

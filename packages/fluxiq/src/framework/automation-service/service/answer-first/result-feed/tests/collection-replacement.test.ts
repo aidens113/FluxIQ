@@ -63,7 +63,7 @@ it("does not hide an uncollected declared writer merely because its node has no 
   const p = fixture();
   const original = p.step.input.parameters as Record<string, unknown>;
   original.recordOutput = { datasetId: "answer", writeMode: "append", schema: SCHEMA };
-  p.steps.push({ id: "missing-writer", callId: "missing-writer", position: 2, disposition: "kept", proposes: true, effect: "observe", toolId: "core.run_node", actionId: "fixture.other-read", input: { node: "fixture.other-read", parameters: { recordOutput: { datasetId: "answer", writeMode: "append", schema: JSON.parse(JSON.stringify(SCHEMA)) } } } });
+  p.steps.push({ id: "missing-writer", callId: "missing-writer", position: 2, iteration: 2, disposition: "kept", proposes: true, effect: "observe", toolId: "core.run_node", actionId: "fixture.other-read", input: { node: "fixture.other-read", parameters: { recordOutput: { datasetId: "answer", writeMode: "append", schema: JSON.parse(JSON.stringify(SCHEMA)) } } } });
   p.feed.draft(p.steps);
   const readSince = p.feed.port.ledger().seq;
   reread(p.feed, p.step, "reused", [row], SCHEMA, "page=1");
@@ -80,7 +80,7 @@ it("refuses an unrelated complete collection when the original list identity is 
   const value = { node: "fixture.read", parameters: { read: { fields: { title: ".title" } } } };
   p.feed.expect({ kind: "add", position: 2, intermediate: false });
   p.feed.called({ callId: "other", toolId: "core.run_node", value }, { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { read: { extracted: [{ title: "Other" }], listKey: "unrelated.records", place: "page=1" } } }, { datasetId: "read.other", schema: { schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string" }] }, rows: [{ title: "Other" }], invalidCount: 0, truncated: false });
-  p.steps.push({ id: "other", callId: "other", position: 2, disposition: "kept", proposes: true, effect: "observe", input: value, toolId: "core.run_node", actionId: "fixture.read" });
+  p.steps.push({ id: "other", callId: "other", position: 2, iteration: 2, disposition: "kept", proposes: true, effect: "observe", input: value, toolId: "core.run_node", actionId: "fixture.read" });
   p.feed.port.record([{ kind: "paging", stepId: "other", paging: { verdict: "ended", reason: "No further page." } }]);
   expect(p.feed.collectionReplaced({ from: 1, to: 2, readSince, callIds: ["other"], steps: p.steps })).toMatchObject({ replaced: false });
   expect(p.feed.readiness().state).toBe("missing-evidence");

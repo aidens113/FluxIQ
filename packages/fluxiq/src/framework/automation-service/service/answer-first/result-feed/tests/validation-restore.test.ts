@@ -26,7 +26,10 @@ function namedCollection() {
 
 async function copy(runId: string, datasetId: string, sourceRows = rows, invalidCount = 0) {
   const copied: AutomationStudioRecordBatch[] = [];
-  expect(await automationStudioAnswerFirstCopyRows({ shown: undefined, sink: { recordBatch: async (batch) => { copied.push(batch); return summary(datasetId, invalidCount); } }, stored: { runId, list: async () => [summary(datasetId, invalidCount)], page: async () => ({ summary: summary(datasetId, invalidCount), schema, rows: sourceRows, nextCursor: null }) } })).toEqual({ ok: true, rows: sourceRows.length });
+  expect(await automationStudioAnswerFirstCopyRows({ shown: undefined, sink: { recordBatch: async (batch) => {
+    copied.push(batch);
+    return summary(datasetId, invalidCount);
+  } }, stored: { runId, list: async () => [summary(datasetId, invalidCount)], page: async () => ({ summary: summary(datasetId, invalidCount), schema, rows: sourceRows, nextCursor: null }) } })).toEqual({ ok: true, rows: sourceRows.length });
   return copied;
 }
 
@@ -40,7 +43,8 @@ it("retains actual named-dataset provenance through two checkpoint/copy/reopen c
     expect(copied.every((batch) => !evidence.pages.some((page) => page.source === batch.batchKey))).toBe(true);
     const restored = p.restore(JSON.parse(JSON.stringify(evidence)), copied);
     if (!restored.ok) throw new Error(restored.reason);
-    const reopened = p.feed(); reopened.restored(restored.entries);
+    const reopened = p.feed();
+    reopened.restored(restored.entries);
     expect(reopened.readiness()).toEqual({ state: "ready" });
     expect(reopened.rows().rows).toEqual(rows);
     evidence = reopened.evidence();
@@ -79,7 +83,8 @@ it("does not use copied storage chunk collisions or missing producer identity to
 
 it.each([1, undefined])("holds unrepresented dataset validation (%s) even when every present original page has an exact zero count", (invalidCount) => {
   const p = namedCollection();
-  const stored = [...p.batches, { ...p.batches[0]!, batchKey: "unrepresented-original", invalidCount }];
+  const { invalidCount: _known, ...original } = p.batches[0]!;
+  const stored = [...p.batches, { ...original, batchKey: "unrepresented-original", ...(invalidCount === undefined ? {} : { invalidCount }) }];
   const restored = automationStudioAnswerFirstRestoreResult({ evidence: p.current.evidence(), steps: [p.step], batches: stored, source: (id) => p.sources.get(id) });
   expect(restored.ok).toBe(false);
   expect(restored.entries).toHaveLength(2);
@@ -91,7 +96,9 @@ it("keeps dataset-wide rejection uncertainty after an exact first-page reread an
   const p = namedCollection();
   const restored = p.restore(p.current.evidence(), [...p.batches, { ...p.batches[0]!, batchKey: "unrepresented-original", invalidCount: 1 }]);
   if (restored.ok) throw new Error("Unrepresented rejected source must remain missing");
-  const reopened = p.feed(); reopened.restored(restored.entries); reopened.sourceUnavailable(restored.reason, restored.evidence);
+  const reopened = p.feed();
+  reopened.restored(restored.entries);
+  reopened.sourceUnavailable(restored.reason, restored.evidence);
   reread(reopened, p.step, "fresh-one", [rows[0]!], SCHEMA, "page=1");
   const checkpoint = JSON.parse(JSON.stringify(reopened.evidence()));
   expect(checkpoint.pages[0]).toMatchObject({ source: "fresh-one", datasetId: "read.fresh-one", invalidCount: 0 });
@@ -103,7 +110,9 @@ it("keeps dataset-wide rejection uncertainty after an exact first-page reread an
   expect(again.ok).toBe(false);
   expect(again.entries.map((entry) => entry.datasetId)).toEqual(["read.fresh-one", "shared"]);
   if (again.ok) throw new Error("One page cannot settle a whole-dataset requirement");
-  const second = p.feed(); second.restored(again.entries); second.sourceUnavailable(again.reason, again.evidence);
+  const second = p.feed();
+  second.restored(again.entries);
+  second.sourceUnavailable(again.reason, again.evidence);
   expect(second.readiness().state).toBe("missing-evidence");
   expect(second.rows().datasetId).toBeUndefined();
   expect(second.evidence().missingEvidence).toContainEqual({ datasetId: "shared" });

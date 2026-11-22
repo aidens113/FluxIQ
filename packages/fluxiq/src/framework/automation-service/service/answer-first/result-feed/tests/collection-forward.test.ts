@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../../../../runtime/flow-authoring/draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../../../../../runtime/llm/index.ts";
-import { runAutomationStudioFlowDraftPart } from "../../../../../../runtime/llm/node-tools/run/flow-part.ts";
+import { runAutomationStudioFlowDraftPart } from "../../../../../../runtime/llm/node-tools/run/index.ts";
 import { automaticFeed, SCHEMA } from "./automatic-support.ts";
 
 it("only an actual fresh forward read plus observed paginator end replaces unavailable originals", async () => {
@@ -10,7 +10,7 @@ it("only an actual fresh forward read plus observed paginator end replaces unava
   read.ranWith = read.input;
   read.replay = { from: { location: "fixture://records" } };
   read.routing = { kind: "repeat", through: "pager", while: "pager" };
-  const pager: AutomationStudioFlowDraftStep = { id: "pager", callId: "pager", position: 2, disposition: "kept", proposes: true, effect: "mutate", toolId: "core.run_node", actionId: "fixture.next", input: { node: "fixture.next", parameters: {} }, ranWith: { node: "fixture.next", parameters: {} }, replay: { from: { location: "fixture://records" } } };
+  const pager: AutomationStudioFlowDraftStep = { id: "pager", callId: "pager", position: 2, iteration: 2, disposition: "kept", proposes: true, effect: "mutate", toolId: "core.run_node", actionId: "fixture.next", input: { node: "fixture.next", parameters: {} }, ranWith: { node: "fixture.next", parameters: {} }, replay: { from: { location: "fixture://records" } } };
   p.steps.push(pager);
   p.feed.draft(p.steps);
   p.feed.sourceUnavailable("Original source metadata is unavailable.", { pages: [], coverage: [], working: [], looks: [] });
@@ -18,10 +18,15 @@ it("only an actual fresh forward read plus observed paginator end replaces unava
   const starts: number[] = [];
   const actualCalls: string[][] = [];
   const forward = async () => {
-    const calls: string[] = []; actualCalls.push(calls);
+    const calls: string[] = [];
+    actualCalls.push(calls);
     return runAutomationStudioFlowDraftPart({ steps: p.steps, value: { from: 1, to: 2 }, callId: "same-forward-id", forward: {
       rowDone: () => false, stepDone: () => false,
-      started: () => { const seq = p.feed.port.ledger().seq; starts.push(seq); return seq; },
+      started: () => {
+        const seq = p.feed.port.ledger().seq;
+        starts.push(seq);
+        return seq;
+      },
       passed: (step, _row, answer) => p.feed.passed(step, p.steps, answer),
       completed: (receipt) => p.feed.collectionReplaced({ ...receipt, steps: p.steps })
     }, executeTool: async ({ callId, toolId, value }) => {

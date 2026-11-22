@@ -15,7 +15,10 @@ import { READ_LOANS, runNode, scriptedAttempt } from "../../tests/fake-library.t
 vi.setConfig({ testTimeout: 180_000 });
 
 const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const cleanup of cleanups.splice(0)) await cleanup();
+});
 
 /** A read that meets a check only a person can clear, as the web domain answers one: what makes the attempt wait. */
 const check = (call: { value: JsonObject }): AutomationStudioLlmEvidenceToolExecutionResult => ({
@@ -28,6 +31,8 @@ describe("an attempt waiting for a person", () => {
     const hold = held();
     const generating = scriptedAttempt({
       before: (service, project) => {
+        const generate = service.generateFlowBootstrapAdaptation.bind(service);
+        vi.spyOn(service, "generateFlowBootstrapAdaptation").mockImplementation((input) => generate({ ...input, taskProcessing: { process: {} } }));
         noWaiting()(service);
         hold.before(service, project);
       },

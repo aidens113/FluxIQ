@@ -569,9 +569,10 @@ async function processDataset(sql: AutomationStudioSqlExecutor, runId: string, d
   const process = processDeclaration(dataset.process_json);
   const automatic = process?.declaration?.version === 1;
   const started = nowGiven && !automatic ? undefined : await sql.get<{ started_at_ms: number | null; summary_json: string }>("select started_at_ms, summary_json from runtime_runs where run_id = ?", [runId]);
-  const reference = automatic ? automationStudioRunDatasetProcessingReference(started) : started?.started_at_ms ?? now;
+  const reference = automatic ? automationStudioRunDatasetProcessingReference(started) : { ok: true as const, referenceTimeMs: started?.started_at_ms ?? now };
   const answer = automatic && dataset.invalid_count > 0 ? { unavailable: true as const, reason: "processing_source_invalid" }
-    : automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, process, reference);
+    : !reference.ok ? { unavailable: true as const, reason: reference.reason }
+    : automationStudioRunDatasetAnswer(collected, JSON.parse(dataset.schema_json) as AutomationStudioRecordSchema, process, reference.referenceTimeMs);
   await sql.run("delete from run_dataset_answer_rows where run_id = ? and dataset_id = ?", [runId, datasetId]);
   if ("unavailable" in answer) {
     // Missing evidence invalidates a previously-ready answer in this same transaction. Collected originals remain available for repair.

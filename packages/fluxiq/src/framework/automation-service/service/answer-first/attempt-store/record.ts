@@ -4,6 +4,7 @@ import type { AutomationStudioAnswerFirstReplayVerdict } from "./replay-verdict.
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import type { AutomationStudioResultEvidenceBundle, AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "./judge-evidence-issue.ts";
+import type { AutomationStudioAnswerFirstRowSink } from "../rows/index.ts";
 
 /** One attempt as it is kept beside its Flow (`./store.ts`). */
 export type AutomationStudioAnswerFirstAttemptRecord = {
@@ -14,6 +15,8 @@ export type AutomationStudioAnswerFirstAttemptRecord = {
   processing?: AutomationStudioAnswerFirstProcessingDeclaration;
   /** Exact current source-page provenance, also while data readiness prevents an answer publication. One latest snapshot replaces this attempt's prior checkpoint. */
   resultEvidence?: AutomationStudioResultEvidenceBundle;
+  /** Exact still-tracked publications from this segment. An incomplete optional snapshot preserves a tracking gap independently of the task/source record. */
+  publications?: ReturnType<AutomationStudioAnswerFirstRowSink["publicationState"]>;
   /** Validated semantic journal. Null records explicitly rejected metadata; absence alone is legacy. */
   judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null;
   /** Historical coverage uncertainty survives restart; null is explicitly unreadable issue metadata. */

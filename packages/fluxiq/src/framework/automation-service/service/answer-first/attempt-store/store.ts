@@ -71,13 +71,14 @@ export class AutomationStudioAnswerFirstAttemptStore {
     if (record.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(record.processingReferenceTimeMs) || record.processingReferenceTimeMs < 0)) throw new Error("Invalid processing reference time.");
     if (record.processing !== undefined && !readAutomationStudioAnswerFirstProcessingDeclaration(record.processing)) throw new Error("Invalid processing declaration.");
     if (record.resultEvidence !== undefined && !readAutomationStudioAnswerFirstResultEvidence(record.resultEvidence)) throw new Error("Invalid result page provenance.");
+    const publications = Object.hasOwn(record, "publications") ? readPublications(record.publications) : undefined;
     const hasJudgeEvidence = Object.hasOwn(record, "judgeEvidence");
     const parsedJudgeEvidence = hasJudgeEvidence ? automationStudioReadJudgeCheckpoint(record.judgeEvidence) : undefined;
     const rejectedJudgeEvidence = hasJudgeEvidence && record.judgeEvidence !== null && parsedJudgeEvidence === undefined;
     const hasIssue = Object.hasOwn(record, "judgeEvidenceIssue");
     const parsedIssue = hasIssue ? readAutomationStudioAnswerFirstJudgeEvidenceIssue(record.judgeEvidenceIssue) : undefined;
     const rejectedIssue = hasIssue && record.judgeEvidenceIssue !== null && parsedIssue === undefined;
-    const safeRecord = { ...record, ...(hasJudgeEvidence ? { judgeEvidence: parsedJudgeEvidence ?? null } : {}), ...(hasIssue ? { judgeEvidenceIssue: parsedIssue ?? null } : {}) };
+    const safeRecord = { ...record, ...(publications === undefined ? {} : { publications }), ...(hasJudgeEvidence ? { judgeEvidence: parsedJudgeEvidence ?? null } : {}), ...(hasIssue ? { judgeEvidenceIssue: parsedIssue ?? null } : {}) };
     await this.queued(projectId, flowId, async () => {
       const attempts = (await this.readOrSetAside(projectId, flowId))?.attempts ?? [];
       const at = attempts.findIndex((each) => each.attempt.attemptId === record.attempt.attemptId);
@@ -233,7 +234,7 @@ function withLatestCheckpoint(previous: AutomationStudioAnswerFirstAttemptRecord
 
 function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown; judgeEvidence?: unknown; judgeEvidenceIssue?: unknown };
+  const held = value as { attempt?: unknown; result?: unknown; tried?: unknown; steps?: unknown; candidateId?: unknown; draftKept?: unknown; replay?: unknown; processingReferenceTimeMs?: unknown; processing?: unknown; resultEvidence?: unknown; publications?: unknown; judgeEvidence?: unknown; judgeEvidenceIssue?: unknown };
   if (held.processingReferenceTimeMs !== undefined && (!Number.isSafeInteger(held.processingReferenceTimeMs) || (held.processingReferenceTimeMs as number) < 0)) return undefined;
   const processing = held.processing === undefined ? undefined : readAutomationStudioAnswerFirstProcessingDeclaration(held.processing);
   if (held.processing !== undefined && processing === undefined) return undefined;
@@ -255,6 +256,7 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
     ...(held.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: held.processingReferenceTimeMs as number }),
     ...(processing === undefined ? {} : { processing }),
     ...(resultEvidence === undefined ? {} : { resultEvidence }),
+    ...(Object.hasOwn(held, "publications") ? { publications: readPublications(held.publications) } : {}),
     // Reject only this optional metadata. The actual result, effects and
     // processing/source provenance must survive a malformed new field.
     ...(Object.hasOwn(held, "judgeEvidence") ? { judgeEvidence: automationStudioReadJudgeCheckpoint(held.judgeEvidence) ?? null } : {}),
@@ -266,6 +268,17 @@ function readRecord(value: unknown): AutomationStudioAnswerFirstAttemptRecord | 
     ...(held.draftKept === "not_assembled" || held.draftKept === "not_saved" ? { draftKept: held.draftKept } : {}),
     ...(replay ? { replay } : {})
   };
+}
+
+/** Optional bookkeeping corruption cannot erase the task, real result, original clock or source evidence. */
+function readPublications(value: unknown): NonNullable<AutomationStudioAnswerFirstAttemptRecord["publications"]> {
+  const unknown = (): NonNullable<AutomationStudioAnswerFirstAttemptRecord["publications"]> => ({ version: 1, knownDatasetIds: [], complete: false });
+  if (!value || typeof value !== "object" || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return unknown();
+  const held = value as { version?: unknown; knownDatasetIds?: unknown; complete?: unknown };
+  if (Reflect.ownKeys(value).some((key) => key !== "version" && key !== "knownDatasetIds" && key !== "complete") || held.version !== 1 || typeof held.complete !== "boolean" || !Array.isArray(held.knownDatasetIds)) return unknown();
+  const ids = held.knownDatasetIds;
+  if (!Array.from({ length: ids.length }, (_, index) => Object.hasOwn(ids, index) && typeof ids[index] === "string" && ids[index].trim().length > 0).every(Boolean) || new Set(ids).size !== ids.length) return unknown();
+  return { version: 1, knownDatasetIds: [...ids] as string[], complete: held.complete };
 }
 
 /** Whether a list reads as a draft's steps: each one what the loop's seed needs of it. */

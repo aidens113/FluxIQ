@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { FLOW_INPUT_IDENTIFIER, flowInputNames, flowInterfaceSchema } from "../index.ts";
+import { FLOW_INPUT_IDENTIFIER, flowInputNames, flowInterfaceSchema } from "../../index.ts";
 
 it.each(["latest_date", "LatestDate", "_leading", "a".repeat(65), "constructor", "prototype", "__proto__", "item"])("accepts lexical identifier %s without changing its case", (name) => {
   expect(FLOW_INPUT_IDENTIFIER.test(name)).toBe(true);

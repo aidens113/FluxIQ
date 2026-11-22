@@ -37,10 +37,26 @@ describe("a superseded publication", () => {
     sink.carried("step.first.v1");
     sink.carried("step.second.v1");
     sink.carried("step.third.v1");
+    expect(sink.publicationState()).toEqual({ version: 1, knownDatasetIds: ["step.first.v1", "step.second.v1", "step.third.v1"], complete: true });
     await expect(sink.withhold()).rejects.toThrow("store unavailable");
     expect(retired).toEqual(["step.first.v1"]);
+    expect(sink.publicationState()).toEqual({ version: 1, knownDatasetIds: ["step.second.v1", "step.third.v1"], complete: true });
     await sink.withhold();
     expect(retired).toEqual(["step.first.v1", "step.second.v1", "step.third.v1"]);
+    expect(sink.publicationState()).toEqual({ version: 1, knownDatasetIds: [], complete: true });
+  });
+  it("keeps an unknown tracking gap explicit after retiring its known subset and never scans raw dataset names", async () => {
+    const { sink, store, retired } = setup();
+    await sink.fromCall(call("raw"), liveAnswer([item(1)]));
+    await sink.recordBatch({ ...store.batches[0]!, nodeId: "fixture.raw", datasetId: "step.raw-user-owned", batchKey: "raw-user-owned", writeMode: "replace" });
+    sink.carried("step.actual-publication.v1");
+    const shown = sink.publicationState();
+    shown.knownDatasetIds.length = 0;
+    sink.publicationsUnavailable();
+    await sink.withhold();
+    expect(retired).toEqual(["step.actual-publication.v1"]);
+    expect(sink.summary("step.raw-user-owned").rows).toEqual([item(1)]);
+    expect(sink.publicationState()).toEqual({ version: 1, knownDatasetIds: [], complete: false });
   });
   it("is retired once the new one is stored, and a capture never is", async () => {
     const { sink, store, retired } = setup();

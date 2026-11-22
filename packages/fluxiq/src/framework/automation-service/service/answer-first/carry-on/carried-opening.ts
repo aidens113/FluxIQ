@@ -12,6 +12,7 @@ import type { AutomationStudioAnswerFirstAttemptPrior } from "./prior.ts";
 import type { AutomationStudioAnswerFirstProcessingDeclaration } from "../result-processing/index.ts";
 import type { AutomationStudioResultEvidenceBundle, AutomationStudioJudgeEvidenceCheckpoint } from "../../../../../runtime/result-verification/index.ts";
 import type { AutomationStudioAnswerFirstJudgeEvidenceIssue } from "../attempt-store/judge-evidence-issue.ts";
+import type { AutomationStudioAnswerFirstAttemptRecord } from "../attempt-store/index.ts";
 
 export type AutomationStudioAnswerFirstCarriedOpening = {
   route: AutomationStudioAnswerFirstRoute;
@@ -20,6 +21,7 @@ export type AutomationStudioAnswerFirstCarriedOpening = {
   processingReferenceTimeMs?: number;
   processing?: AutomationStudioAnswerFirstProcessingDeclaration;
   resultEvidence?: AutomationStudioResultEvidenceBundle;
+  publications?: AutomationStudioAnswerFirstAttemptRecord["publications"];
   judgeEvidence?: AutomationStudioJudgeEvidenceCheckpoint | null;
   judgeEvidenceIssue?: AutomationStudioAnswerFirstJudgeEvidenceIssue | null;
   steps: AutomationStudioFlowDraftStep[];
@@ -51,6 +53,7 @@ export function automationStudioAnswerFirstCarriedOpening(hold: AutomationStudio
     ...(before.processingReferenceTimeMs === undefined ? {} : { processingReferenceTimeMs: before.processingReferenceTimeMs }),
     ...(before.processing === undefined ? {} : { processing: structuredClone(before.processing) }),
     ...(before.resultEvidence === undefined ? {} : { resultEvidence: structuredClone(before.resultEvidence) }),
+    ...(before.publications === undefined ? {} : { publications: structuredClone(before.publications) }),
     ...(Object.hasOwn(before, "judgeEvidence") ? { judgeEvidence: before.judgeEvidence == null ? null : structuredClone(before.judgeEvidence) } : {}),
     ...(Object.hasOwn(before, "judgeEvidenceIssue") ? { judgeEvidenceIssue: before.judgeEvidenceIssue == null ? null : structuredClone(before.judgeEvidenceIssue) } : {}),
     steps,

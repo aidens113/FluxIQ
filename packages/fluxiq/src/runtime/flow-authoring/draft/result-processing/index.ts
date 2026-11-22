@@ -2,3 +2,4 @@
 export * from "./held.ts";
 export * from "./task.ts";
 export * from "./authored.ts";
+export * from "./amendments.ts";

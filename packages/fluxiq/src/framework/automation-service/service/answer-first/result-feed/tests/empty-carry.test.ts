@@ -14,7 +14,7 @@ it("restores a truthful known-empty minRows:0 source while an absent source/sche
   expect(feed.readiness()).toEqual({ state: "ready" });
   expect(feed.rows()).toMatchObject({ totalRows: 0, rows: [], schema: { primaryKey: ["id"] } });
   expect(automationStudioAnswerFirstRestoreResult({ ...input, source: () => undefined }).ok).toBe(false);
-  expect(automationStudioAnswerFirstRestoreResult({ ...input, source: () => ({ rows: [], schema: undefined }) }).ok).toBe(false);
+  expect(automationStudioAnswerFirstRestoreResult({ ...input, source: () => ({ rows: [] }) }).ok).toBe(false);
 });
 
 it("refuses a corrupt retained schema as source feedback instead of accepting it or throwing out of the repair path", () => {
