@@ -50,6 +50,14 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 
 ## Work Ledger
 
+### 2026-11-22 - Repeat repair integrated after lead acceptance
+- Agent: Senior supervisor.
+- Changed: t981 merged in both repositories; paired execution checkpoint updated.
+- Validation: `pnpm task finish t981` downstream -> audit passed, merged and worktree removed. Core `pnpm task finish t981 --skip-checks` -> mandatory contract gate 70/70 passed, merged and branch detached/deleted. Independent 281 tests/typecheck/audit recorded in paired Core ledger.
+- Outcome: Accepted for t981; whole plan remains active. No paid/full-sweep claim.
+- Follow-up: paired dev push, t976 acceptance, P1/P4/P2/P5 and offline proof.
+
+
 ### 2026-11-22 - Independent repeat-repair acceptance
 - Agent: Senior supervisor.
 - Changed: t981 repeat-safe amendments, rerun reference/order repair, refusal feedback and architecture note; package version 0.50.4. Parent synced through accepted judge unit.
@@ -59,7 +67,7 @@ Paid acceptance follows provider-free proofs, four attempts per task and the $50
 - Follow-up: finish paired task after remaining gate; P5 replay continuity follows.
 
 
-### 2026-11-22 ? Judge integrated and next lanes dispatched
+### 2026-11-22 - Judge integrated and next lanes dispatched
 - Agent: Senior supervisor.
 - Changed: t979 merged into both dev branches; t982 extraction and t983 fixed-model implementations active in isolated paired trees. t981 checkpointed and synced for lead verification.
 - Validation: `pnpm task finish t979 --skip-checks` -> mandatory contract tests 70/70 passed and merge completed. Downstream `pnpm task finish t979` -> structure audit passed and paired merge completed. Earlier independent 125 tests, package typecheck and audit recorded below.
