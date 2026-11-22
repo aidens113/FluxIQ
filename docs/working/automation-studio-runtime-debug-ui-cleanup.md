@@ -1,9 +1,9 @@
 # Automation Studio Runtime Debug UI Cleanup
 
-Status: Active
-Status detail: Implemented; live browser review pending (the restructure is in place and focused tests pass, but live browser validation and a clean web typecheck are still outstanding).
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-05
-Last updated: 2026-09-10
+Last updated: 2026-11-22
 Owner: Automation Studio web UI
 Scope: Restructure the Flow-owned Runtime Debug inner view in Automation Studio (run launcher, Runs/Replays history, responsive styling) into one configure-run-inspect workflow while preserving runtime commands, bounded data loading, query pagination, subscriptions, and detail navigation.
 Paired document: none
@@ -12,6 +12,8 @@ Related: none
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Implemented; live browser review pending (the restructure is in place and focused tests pass, but live browser validation and a clean web typecheck are still outstanding).
 
 **Summary:** The document's own status line reads "Implemented; live browser review pending". The three implementation phases (view hierarchy, history hierarchy, responsive styling and test coverage) are recorded as delivered, but final validation is incomplete because live browser review and the web typecheck have not been completed.
 

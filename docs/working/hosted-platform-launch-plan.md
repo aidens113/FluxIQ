@@ -1,15 +1,17 @@
 # Hosted Platform Implementation
 
-Status: Active
-Status detail: Isolated paired task t914: default-lock removal/app registry pushed; tenant routes, reconnect metadata and private extension foundations verified. PKCE/privacy composition and remaining tenant routes are next. Nothing deployed.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-11-14
-Last updated: 2026-11-14
+Last updated: 2026-11-22
 Owner: Senior supervisor
 Scope: Core-owned hosted platform: account routing, API credentials, billing/entitlements, deployment profiles and cloud runtime integration, preserving local and experimental execution.
 Paired document: ../!FluxIQWebExtension/docs/working/hosted-platform-launch-plan.md
 Related: [Hosted production](./hosted-production-plan.md), [FluxNode](./fluxnode-plan.md), [Code structure](../architecture/code-structure.md)
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Isolated paired task t914: default-lock removal/app registry pushed; tenant routes, reconnect metadata and private extension foundations verified. PKCE/privacy composition and remaining tenant routes are next. Nothing deployed.
 
 Last updated 2026-11-17. This copy records the Core-side implementation; the product plan, schedule and
 units live in the extension copy (`!FluxIQWebExtension/docs/working/hosted-platform-launch-plan.md`).

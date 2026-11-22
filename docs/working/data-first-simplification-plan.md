@@ -11,44 +11,29 @@ Related: [FluxNodes](./fluxnode-plan.md), [Answer First](./answer-first-plan.md)
 
 ## Current State
 
-**2026-11-22 integration checkpoint:** Both dev branches pushed through Core 4ddfe98a5 and downstream 93cda7b0d. P1 source checkpoint 3b85dd9d0 is synced with permission/P4 and awaiting final public-export validation. P2 lead independent checks passed 77/77 operator tests and 79/79 provenance/automatic/binder tests; provenance checkpoint 8c86122d0 is on its task branch, runtime integration still held for P1.  t979 judge, t981 repeat repair and t976 start-only permission are accepted and integrated in both dev branches. Permission lead acceptance: 161 Core tests, 66 Lab tests, 13 catalog tests, types/builds/audits, then mandatory Core merge contracts 70/70. Fixed-model t983 includes permission source and is integrated after 140/140 combined tests, typecheck/build/audit and merge contracts 70/70. P1 extraction consumes t984 retainedRows seam 2c4099965 (lead 25/25 tests, source-symbol provenance preserved). P2 exact field binder and automatic readiness work, plus t986 strict recorded-trace wrapper/CLI/preflight, are active. No paid/full-sweep/live-browser acceptance yet. Detailed downstream plan and task reports remain authoritative for lane status.
+**Execution active, 2026-11-22.** The paired downstream Data-First Simplification Plan is the approved plan of record. The user requested agents and durable progress; lead owns integration, shared documents and verification. Reports below are claims until independently checked.
 
-The downstream paired plan is the approved plan of record (2026-11-20).
-The user requested execution with agents and durable progress on 2026-11-22.
-P0 resumes interrupted paired task trees under C:/Users/osrs_/FluxStuff/fxwork/.
+| Unit | Accepted evidence / current state | Next |
+| --- | --- | --- |
+| P0 t979 judge recovery | Integrated and pushed; lead 125/125 tests, types/audit and 70/70 merge contracts. Same-model recovery preserves paid receipts. | Included in combined parent checks. |
+| P0 t981 repeat-safe repair | Integrated and pushed; lead 281/281 tests, types/audit and 70/70 merge contracts. | Recorded replay acceptance remains later. |
+| P0 t976 start-only permission | Integrated and pushed; lead 161 Core, 66 Lab and 13 catalog tests, types/builds/audits, 70/70 merge contracts. | Included in fixed-model checks. |
+| P4 t983 fixed model | Integrated and pushed, fluxiq 0.51.0; lead 140/140 combined tests, types/build/audit and 70/70 merge contracts. One starting model survives repair/replay; Haiku default. | Do not reopen completed model/permission units. |
+| P1 t982 retained extraction | Core frozen and lead-accepted: 111 retention/store/rows/public-export tests and 69 schema-contract tests. Published package metadata contracts 0.23.0 / fluxiq 0.52.0; five-library build passes, no registry publication. | Downstream focused fixture/type/audit corrections, paired integration. |
+| P2 t984 automatic processing | Independent operator/binding/provenance source checkpointed; lead 77/77 and 79/79 tests pass. Latest accepted P1 source/version/baseline synced; p0_permission resumes runtime. | Interpreter/task-memory declaration, one clock, atomic retained answer persistence and readiness before success. |
+| P5 t985 replay continuity | F24 successful unchanged retry no longer invalidates replay proof. Lead combined 55/55 tests, types and audit pass. Source checkpointed, not integrated. F23 exact target/repair cause unproven. | Finish recorded diagnosis; never infer zero calls from null counts or no saved repairs from partial evidence. |
+| P6 t987 smaller judge | Paired trees and written brief prepared; p0_repair doing read-only intake during P1 gates. | All three trail sources share a compact semantic contract retaining all rows, removal accounts and uncertain effects. |
+| S1/S2/S6 t986 offline proof | Public strict trace scope passes worker 11 tests/types/audit/build; lead acceptance pending. Runner types/build pass. F25 has 57 verified artifacts but an open trace; original binding/capture correlation is under investigation. | Named owner tests, actual public-entry preflight/capture and exact recorded parity. Prefixes are not whole-task acceptance. |
+| S7 t988 one plan | Integrated both sides. Only this implementation plan stays Active; historical unresolved work preserved in paused plans and five exact archives. Downstream structure gate and Core 70/70 contracts pass. | Paired dev backup with this refreshed state. |
+| S8 shared heavy gate | MeritPrompts source59341fc, lead94/94 full suite passes; current machine gate unchanged. Windows kernel ownership, strict FIFO, fresh physical/commit reservations. | Tooling integration, then quiet compatibility switch only when holders and queue drain. |
 
-| Task | Worker | Owned change | Acceptance |
-| --- | --- | --- | --- |
-| t976 | p0_permission | Declare consequential act classes in chat interpretation; ask once at start; retain grants/refusals; close all mid-Flow permission paths | Start-only permission, no added chat model call, continuation/repair/legacy/project tests plus downstream Lab |
-| t979 | p0_judge | Recover unreadable replies on the same model; native standalone format and accurate feedback | Judge recovery/cancel/purse tests plus affected framework mocks |
-| t981 | p0_repair | Refuse invalid repeat amendments and rebind reruns before withdrawal | Recorded-failure-shaped tests, valid assembly and rerun regression |
+Stable retained-row interface: JsonObject plus RecordSchema/RecordBatch; optional semanticType and mark, actual JSON valueType, validated identity primaryKey. Keep original values and all safe fields; process.columns alone selects display. Exclusions remain authoritative, overflow explicit, detector samples never replace row truth. Core owns neutral storage/processing/judging/replay; DOM, browser and Lab stay downstream. Internal collected/answer paging differs from public projected output. Migration0040 keeps private exclusions and explicit full-answer readiness; legacy projected rows are never guessed into full rows.
 
-Workers own only their task trees and reports; lead owns shared documents, verification and git.
-Written briefs are in the downstream main checkout's data-first-simplification-plan/briefs/.
-Reports are in each downstream task tree's data-first-simplification-plan/reports/.
-**t979 lead acceptance, 2026-11-22:** after synchronizing current dev (including
-t978 trail deduplication), the lead ran 12 focused files: 125/125 tests passed
-in 87.51 s. `pnpm --filter fluxiq check` passed in 72.209 s. This covers same-model
-native fallback, billed malformed replies, aggregate purse, settled spend at
-deadline and parent trail-size compatibility. Source is checkpointed at 0.50.3;
-final structure/merge gates remain. No paid runs or full sweeps launched.
+Automatic processing uses exact field IDs or unique labels, one real run reference clock, deterministic selection once, framework-stamped source/revision/bindings and explicit missing evidence. No fuzzy schema guesses, new terminal failure, or model ladder. Action-row selection remains distinct from broad collection.
 
-After P0: establish a retained-row contract before parallel extraction and processing work.
-The lead froze that contract on 2026-11-22 after source discovery: keep JsonObject
-rows and RecordSchema/RecordBatch; optional RecordField semanticType
-(text/number/currency/count/date/datetime/url/id/flag) and mark (badge/flag/state);
-valueType is the actual JSON type and primaryKey the validated identity fields.
-Keep original display values; shared parsers derive typed comparisons against the
-run reference time. Parsed column samples are not row truth. Full safe schemas
-survive live/saved bindings and replay; process.columns alone selects display.
-Explicit exclusions stay authoritative and schema overflow must not silently trim.
-Implementation is active in paired t982; worker reports the schema seam stable with 60 record-set tests and contracts typecheck passing. Lead acceptance remains pending. P4 compatibility preserves historical
-attempt records and attempt identity, but old escalation cannot change serving;
-automation defaults to Haiku and all its roles retain its explicit starting model.
-Core owns domain-neutral storage, processing, judging, models and replay.
-Browser reads/DOM extraction and Lab scenarios remain downstream.
-Build, repair and judging stay on Haiku; no model escalation.
-Paid acceptance follows provider-free proofs, four attempts per task and the $50 campaign ceiling.
+No paid calls, browser acceptance or completed full FluxIQ sweep. A default t988 finish inadvertently started pnpm check after contracts; lead stopped only that identified owned check during script tests, verified its processes gone, then finished with the prior narrow document audit and mandatory contracts. The interrupted check is not a pass. No main promotion. Final paid acceptance requires provider-free proofs, four attempts, predecessor Flow continuation and zero calls on attempts2-4, within the approved total$50 ceiling.
+
+Assignments: p0_repair owns P1 downstream then P6; p0_permission owns P2 runtime after its finished S8 source report; p0_judge owns offline proof. Root owns P5, verification, documentation and git. Main downstream briefs and task-local reports under data-first-simplification-plan/ are the handoff. Main user edits remain untouched.
 
 ## Work Ledger
 

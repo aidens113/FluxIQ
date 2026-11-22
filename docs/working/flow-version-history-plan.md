@@ -1,9 +1,9 @@
 # Flow Version History Plan
 
-Status: Active
-Status detail: Design only, nothing implemented; the three storage gaps and the rollback rule are specified, and the phase order deliberately puts recording before deciding.
+Status: Paused
+Status detail: Paused as a separate workstream during the approved data-first execution week; unresolved work and historical evidence are retained below.
 Created: 2026-09-25
-Last updated: 2026-09-25
+Last updated: 2026-11-22
 Owner: Senior supervisor agent (Core runtime: `programs/automation-studio/runtime/` and `programs/automation-studio/storage/project/`)
 Scope: A version history for Flows and subflows in Core, such that every model-made change produces a reachable version, the evaluator's judgement is bound to the version it judged, and a change the evaluator finds worse is rolled back automatically. Covers the graph revision chain, its provenance, the judgement binding, the restore command, the rollback rule, and what bounds the history. It does not cover browser behaviour, the extension, or any UI.
 Paired document: none
@@ -12,6 +12,8 @@ Related: [AGENTS.md](../../AGENTS.md), [working document index](./README.md), [f
 ---
 
 ## Current State
+
+**Priority reconciliation, 2026-11-22:** [Data-first simplification](./data-first-simplification-plan.md) is the current implementation plan of record (approved S7). This pauses this separate plan, does not mark its remaining work complete, and does not cancel another running session. The earlier snapshot below is historical; its code and acceptance were not revalidated by this documentation change. Prior status detail: Design only, nothing implemented; the three storage gaps and the rollback rule are specified, and the phase order deliberately puts recording before deciding.
 
 **Design only. Nothing here is implemented and no code has been changed.**
 
