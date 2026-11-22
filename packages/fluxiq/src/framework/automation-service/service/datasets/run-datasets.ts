@@ -264,8 +264,8 @@ export class AutomationStudioRunDatasets {
   }
 
   /** One page of a dataset's rows (1-200, default 50), or null when the run stored no such dataset. */
-  getRunDatasetPage(input: AutomationStudioRunDatasetPageRequest): Promise<AutomationStudioRunDatasetPage | null> {
-    return this.withProjectStore(input.projectId, (store) => store.getPage({ runId: input.runId, datasetId: input.datasetId, limit: input.limit, cursor: input.cursor }));
+  getRunDatasetPage(input: AutomationStudioRunDatasetPageRequest, options: { retained?: "collected" | "answer" } = {}): Promise<(AutomationStudioRunDatasetPage & { displayColumns?: { id: string; label: string }[] }) | null> {
+    return this.withProjectStore(input.projectId, (store) => store.getPage({ runId: input.runId, datasetId: input.datasetId, limit: input.limit, cursor: input.cursor, ...options }));
   }
 
   /**

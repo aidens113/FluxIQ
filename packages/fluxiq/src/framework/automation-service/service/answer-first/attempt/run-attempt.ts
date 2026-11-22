@@ -210,7 +210,7 @@ async function opened(input: AutomationStudioAnswerFirstAttemptInput, attemptId:
     ...(datasets.available ? { retire: (datasetId: string) => datasets.deleteRunDatasets({ projectId, runId, datasetId }) } : {}),
     reader: {
       listDatasets: () => datasets.listRunDatasetsForVerification({ projectId, runId }),
-      getPage: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) }),
+      getPage: ({ datasetId, limit, cursor, retained }) => datasets.getRunDatasetPage({ projectId, runId, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) }, retained === undefined ? {} : { retained }),
       process: async () => { if (sessionEnded) await datasets.processEndedRunDatasets({ projectId, runId }); }
     }
   });
@@ -340,7 +340,7 @@ async function carriedOn(run: AutomationStudioAnswerFirstAttemptRun, carried: Au
     stored: datasets.available && lastRun !== undefined ? {
       runId: lastRun,
       list: () => datasets.listRunDatasetsForVerification({ projectId, runId: lastRun }),
-      page: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId: lastRun, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) })
+      page: ({ datasetId, limit, cursor }) => datasets.getRunDatasetPage({ projectId, runId: lastRun, datasetId, limit, ...(cursor === undefined ? {} : { cursor }) }, { retained: "collected" })
     } : undefined
   });
   // What it found so far is the answer again, as its output step's page carried from the earlier segment (`../result-feed/feed.ts`).

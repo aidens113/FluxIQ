@@ -226,4 +226,108 @@ describe("processAutomationStudioRecordRows", () => {
     processOf(collected, { sort: [{ field: "price", order: "asc" }], columns: ["title"] });
     expect(collected).toEqual(snapshot);
   });
+
+  it("retains full qualifying originals from the exact filtered, deduped, sorted and limited selection", () => {
+    const schema: AutomationStudioRecordSchema = {
+      schemaVersion: "0.1",
+      fields: [
+        { id: "id", label: "Id", valueType: "string" },
+        { id: "name", label: "Name", valueType: "string" },
+        { id: "price", label: "Price", valueType: "number" },
+        { id: "promoted", label: "Promoted", valueType: "boolean" },
+        { id: "secret", label: "Secret", valueType: "string", handling: "exclude" }
+      ]
+    };
+    const promoted = { id: "a", name: "Alpha", price: 1, promoted: true, secret: "excluded" };
+    const organic = { id: "a", name: "Alpha", price: 8, promoted: false };
+    const selected = { id: "b", name: "Beta", price: 2, promoted: false, secret: "excluded", unmodeled: "not stored" };
+    const collected = rows("read", "batch", promoted, organic, selected, { ...selected });
+    const snapshot = structuredClone(collected);
+    const result = processAutomationStudioRecordRows({
+      rows: collected, schema, now: NOW,
+      process: { where: [{ field: "promoted", equals: "false" }], dedupe: { by: ["id"] }, sort: [{ field: "price", order: "asc", as: "number" }], limit: 1, columns: ["name"] }
+    });
+    expect(result.rows).toEqual([{ name: "Beta" }]);
+    expect(result.retainedRows).toEqual([{ id: "b", name: "Beta", price: 2, promoted: false }]);
+    expect(result.account).toMatchObject({ collected: 4, filteredOut: 1, duplicates: 1, cut: 1, kept: 1 });
+    expect(result.rows[0]).not.toBe(result.retainedRows[0]);
+    expect(result.retainedRows[0]).not.toBe(selected);
+    expect(collected).toEqual(snapshot);
+  });
+
+  it("retains source display values without derived virtual columns", () => {
+    const collected = rows("read", "batch", A, B);
+    const result = processOf(collected, {
+      derive: [{ id: "amount", from: "price", as: "number" }],
+      where: [{ field: "amount", atMost: 20 }],
+      columns: ["title"]
+    });
+    expect(result.rows).toEqual([{ title: "Beta" }]);
+    expect(result.retainedRows).toEqual([B]);
+    expect(result.retainedRows[0]).not.toHaveProperty("amount");
+  });
+
+  it("preserves the existing displayed-column dedupe representative instead of evaluating again without columns", () => {
+    const first = { title: "Same", price: "$99", url: "/first" };
+    const later = { title: "Same", price: "$1", url: "/later" };
+    const other = { title: "Other", price: "$2", url: "/other" };
+    const result = processOf(rows("read", "batch", first, later, other), {
+      columns: ["title"], sort: [{ field: "price", order: "asc", as: "number" }], limit: 2
+    });
+    expect(result.rows).toEqual([{ title: "Other" }, { title: "Same" }]);
+    expect(result.retainedRows).toEqual([other, first]);
+    expect(result.account).toMatchObject({ duplicates: 1, kept: 2, cut: 0 });
+  });
+
+  it("keeps excluded and unmodeled values out of both outputs when no columns are declared", () => {
+    const first = { ...A, secret: "excluded one", unmodeled: "not stored" };
+    const second = { ...A, secret: "excluded two" };
+    const collected = rows("read", "batch", first, second);
+    const snapshot = structuredClone(collected);
+    const result = processOf(collected);
+    expect(result.rows).toEqual([A]);
+    expect(result.retainedRows).toEqual([A]);
+    expect(result.rows[0]).not.toBe(result.retainedRows[0]);
+    expect(result.account.duplicates).toBe(1);
+    expect(collected).toEqual(snapshot);
+  });
+
+  it.each([false, true])("preserves the selected source's enumerable own symbols through all processing, with projection %s", (projected) => {
+    const source = Symbol("source row");
+    const hidden = Symbol("non-enumerable metadata");
+    const inherited = Symbol("inherited metadata");
+    const firstSource = { id: "original-alpha" };
+    const otherSource = { id: "original-beta" };
+    const first = { title: "Alpha", price: "$30", url: "/a", secret: "excluded", unmodeled: "not stored", [source]: firstSource };
+    Object.defineProperty(first, hidden, { value: "not enumerable", enumerable: false });
+    Object.setPrototypeOf(first, { [inherited]: "not own" });
+    const other = { title: "Beta", price: "$10", url: "/b", [source]: otherSource };
+    const collected = rows("read", "batch",
+      { title: "Drop", price: "$1", url: "/b", [source]: { id: "filtered" } },
+      first,
+      { title: "Duplicate", price: "$5", url: "/a", [source]: { id: "duplicate-alpha" } },
+      other,
+      { title: "Gamma", price: "$50", url: "/c", [source]: { id: "limited" } }
+    );
+    const before = collected.map((row) => JSON.stringify(row.values));
+    const result = processOf(collected, {
+      derive: [{ id: "amount", from: "price", as: "number" }],
+      where: [{ field: "title", contains: "Drop", not: true }],
+      dedupe: { by: ["url"] }, sort: [{ field: "price", order: "asc", as: "number" }], limit: 2,
+      ...(projected ? { columns: ["title"] } : {})
+    });
+    const retained = [B, A];
+    expect(JSON.stringify(result.retainedRows)).toBe(JSON.stringify(retained));
+    expect(result.retainedRows.map((row) => Reflect.get(row, source))).toEqual([otherSource, firstSource]);
+    expect(Reflect.get(result.retainedRows[0]!, source)).toBe(otherSource);
+    expect(Reflect.get(result.retainedRows[1]!, source)).toBe(firstSource);
+    expect(result.retainedRows.map((row) => Object.getOwnPropertySymbols(row))).toEqual([[source], [source]]);
+    expect(JSON.stringify(result.rows)).toBe(JSON.stringify(projected ? [{ title: "Beta" }, { title: "Alpha" }] : retained));
+    expect(result.rows.map((row) => Object.getOwnPropertySymbols(row))).toEqual(projected ? [[], []] : [[source], [source]]);
+    expect(result.account).toMatchObject({ collected: 5, filteredOut: 1, duplicates: 1, cut: 1, kept: 2 });
+    expect(collected.map((row) => JSON.stringify(row.values))).toEqual(before);
+    expect(Reflect.get(first, source)).toBe(firstSource);
+    expect(Object.getOwnPropertySymbols(first)).toEqual([source, hidden]);
+    expect(Object.getPrototypeOf(first)[inherited]).toBe("not own");
+  });
 });

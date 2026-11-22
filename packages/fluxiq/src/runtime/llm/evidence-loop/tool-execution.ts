@@ -6,7 +6,7 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
-import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord } from "@fluxiq/contracts/automation";
+import type { AutomationStudioFailureRecord, AutomationStudioTargetActionabilityRecord, AutomationStudioRecordSchema } from "@fluxiq/contracts/automation";
 import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepCondition, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-authoring/draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
@@ -135,6 +135,8 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    * never fatal: without it the test runs the repeat once, as before.
    */
   outputs?: JsonObject;
+  /** Host metadata for real rows. Null means rejected metadata; it never erases the execution's effect or failure. */
+  recordSchema?: AutomationStudioRecordSchema | null;
   /**
    * What this one call did, for the draft the loop is accruing.
    *
